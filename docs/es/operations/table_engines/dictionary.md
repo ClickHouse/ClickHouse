@@ -1,6 +1,6 @@
 # Diccionario {#dictionary}
 
-El `Dictionary` el motor muestra el [diccionario](../../query_language/dicts/external_dicts.md) datos como una tabla ClickHouse.
+El `Dictionary` el motor muestra el [Diccionario](../../query_language/dicts/external_dicts.md) datos como una tabla ClickHouse.
 
 Como ejemplo, considere un diccionario de `products` con la siguiente configuración:
 

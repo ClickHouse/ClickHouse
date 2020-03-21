@@ -1,6 +1,6 @@
 # Funciones para trabajar con coordenadas geográficas {#functions-for-working-with-geographical-coordinates}
 
-## GreatCircleDistance {#greatcircledistance}
+## GranCircleDistance {#greatcircledistance}
 
 Calcule la distancia entre dos puntos en la superficie de la Tierra usando [la fórmula del gran círculo](https://en.wikipedia.org/wiki/Great-circle_distance).
 
@@ -135,7 +135,7 @@ Decodifica cualquier cadena codificada por geohash en longitud y latitud.
 
 **Valores de entrada**
 
--   encoded string - cadena codificada geohash.
+-   cadena codificada - cadena codificada geohash.
 
 **Valores devueltos**
 
@@ -206,16 +206,16 @@ Devuelve una matriz de cadenas codificadas por geohash de precisión dada que ca
 -   latitude\_min - latitud mínima, valor flotante en el rango `[-90°, 90°]`
 -   longitude\_max - longitud máxima, valor flotante en el rango `[-180°, 180°]`
 -   latitude\_max - latitud máxima, valor flotante en el rango `[-90°, 90°]`
--   precisión - precisión del geohash, `UInt8` en el rango `[1, 12]`
+-   precisión - precisión del geohash, `UInt8` es el rango `[1, 12]`
 
 Tenga en cuenta que todos los parámetros de coordenadas deben ser del mismo tipo: `Float32` o `Float64`.
 
 **Valores devueltos**
 
 -   matriz de cadenas de precisión largas de geohash-cajas que cubren el área proporcionada, no debe confiar en el orden de los artículos.
--   \[\] - matriz vacía si *minuto* valores de *latitud* y *longitud* no son menos que correspondiente *máximo* valor.
+-   \[\] - matriz vacía si *minuto* Valores de *latitud* y *longitud* no son menos que correspondiente *máximo* valor.
 
-Tenga en cuenta que la función arrojará una excepción si la matriz resultante tiene más de 10’000’000 elementos de longitud.
+Tenga en cuenta que la función arrojará una excepción si la matriz resultante tiene más de 10'000'000 elementos de longitud.
 
 **Ejemplo**
 

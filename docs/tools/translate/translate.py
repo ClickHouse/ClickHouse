@@ -25,14 +25,19 @@ def translate(text):
     elif target_language == 'typograph_ru':
         return typograph_ru.typograph(text)
     elif is_yandex:
-        text = urllib.parse.quote(text)
-        url = f'http://translate.yandex.net/api/v1/tr.json/translate?srv=docs&lang=en-{target_language}&text={text}'
-        result = requests.get(url).json()
-        if result.get('code') == 200:
-            return result['text'][0]
+        text = text.replace('‘', '\'')
+        text = text.replace('’', '\'')
+        if text.isascii() and not text.isupper():
+            text = urllib.parse.quote(text)
+            url = f'http://translate.yandex.net/api/v1/tr.json/translate?srv=docs&lang=en-{target_language}&text={text}'
+            result = requests.get(url).json()
+            if result.get('code') == 200:
+                return result['text'][0]
+            else:
+                print('Failed to translate', str(result), file=sys.stderr)
+                sys.exit(1)
         else:
-            print('Failed to translate', str(result), file=sys.stderr)
-            sys.exit(1)
+            return text
     else:
         time.sleep(random.random())
         return translator.translate(text, target_language).text

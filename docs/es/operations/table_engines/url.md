@@ -1,7 +1,7 @@
-# URL(URL, Formato) {#table-engines-url}
+# Nombre de la red inalámbrica (SSID):) {#table-engines-url}
 
 Administra datos en un servidor HTTP/HTTPS remoto. Este motor es similar
-a la [File](file.md) motor.
+Angeles [File](file.md) motor.
 
 ## Uso del motor en el servidor ClickHouse {#using-the-engine-in-the-clickhouse-server}
 
@@ -13,8 +13,8 @@ El `URL` debe ajustarse a la estructura de un localizador uniforme de recursos. 
 que utiliza HTTP o HTTPS. Esto no requiere ningún
 encabezados adicionales para obtener una respuesta del servidor.
 
-`INSERT` y `SELECT` las consultas se transforman en `POST` y `GET` peticiones,
-respectivamente. Para el procesamiento `POST` solicitudes, el servidor remoto debe admitir
+`INSERT` y `SELECT` las consultas se transforman en `POST` y `GET` Peticiones,
+Respectivamente. Para el procesamiento `POST` solicitudes, el servidor remoto debe admitir
 [Codificación de transferencia fragmentada](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
 Puede limitar el número máximo de saltos de redirección HTTP GET utilizando el [Nombre de la red inalámbrica (SSID):](../settings/settings.md#setting-max_http_get_redirects) configuración.

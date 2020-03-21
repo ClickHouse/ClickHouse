@@ -1,16 +1,16 @@
-# Interval {#data-type-interval}
+# Intervalo {#data-type-interval}
 
-The family of data types representing time and date intervals. The resulting types of the [INTERVAL](../../query_language/operators.md#operator-interval) operator.
+La familia de tipos de datos que representan intervalos de fecha y hora. Los tipos resultantes del [INTERVALO](../../query_language/operators.md#operator-interval) operador.
 
-!!! warning "Warning"
-    `Interval` data type values can’t be stored in tables.
+!!! warning "Advertencia"
+    `Interval` los valores de tipo de datos no se pueden almacenar en tablas.
 
-Structure:
+Estructura:
 
--   Time interval as an unsigned integer value.
--   Type of an interval.
+-   Intervalo de tiempo como un valor entero sin signo.
+-   Tipo de intervalo.
 
-Supported interval types:
+Tipos de intervalo admitidos:
 
 -   `SECOND`
 -   `MINUTE`
@@ -21,7 +21,7 @@ Supported interval types:
 -   `QUARTER`
 -   `YEAR`
 
-For each interval type, there is a separate data type. For example, the `DAY` interval is expressed as the `IntervalDay` data type:
+Para cada tipo de intervalo, hay un tipo de datos independiente. Por ejemplo, el `DAY` se expresa como el intervalo `IntervalDay` Tipo de datos:
 
 ``` sql
 SELECT toTypeName(INTERVAL 4 DAY)
@@ -33,9 +33,9 @@ SELECT toTypeName(INTERVAL 4 DAY)
 └──────────────────────────────┘
 ```
 
-## Usage Remarks {#data-type-interval-usage-remarks}
+## Observaciones de uso {#data-type-interval-usage-remarks}
 
-You can use `Interval`-type values in arithmetical operations with [Date](../../data_types/date.md) and [DateTime](../../data_types/datetime.md)-type values. For example, you can add 4 days to the current time:
+Usted puede utilizar `Interval`-type valores en operaciones aritméticas con [Fecha](../../data_types/date.md) y [FechaHora](../../data_types/datetime.md)-type valores. Por ejemplo, puede agregar 4 días a la hora actual:
 
 ``` sql
 SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
@@ -47,9 +47,9 @@ SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
 └─────────────────────┴───────────────────────────────┘
 ```
 
-Intervals with different types can’t be combined. You can’t use intervals like `4 DAY 1 HOUR`. Express intervals in units that are smaller or equal to the smallest unit of the interval, for example, the interval `1 day and an hour` interval can be expressed as `25 HOUR` or `90000 SECOND`.
+Los intervalos con diferentes tipos no se pueden combinar. No puedes usar intervalos como `4 DAY 1 HOUR`. Exprese los intervalos en unidades que son más pequeñas o iguales que la unidad más pequeña del intervalo, por ejemplo, el intervalo `1 day and an hour` se puede expresar como `25 HOUR` o `90000 SECOND`.
 
-You can’t perform arithmetical operations with `Interval`-type values, but you can add intervals of different types consequently to values in `Date` or `DateTime` data types. For example:
+No puede realizar operaciones aritméticas con `Interval`-type valores, pero puede agregar intervalos de diferentes tipos en consecuencia a los valores en `Date` o `DateTime` tipos de datos. Por ejemplo:
 
 ``` sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
@@ -61,7 +61,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 └─────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-The following query causes an exception:
+La siguiente consulta provoca una excepción:
 
 ``` sql
 select now() AS current_date_time, current_date_time + (INTERVAL 4 DAY + INTERVAL 3 HOUR)
@@ -72,7 +72,7 @@ Received exception from server (version 19.14.1):
 Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argument types for function plus: if one argument is Interval, then another must be Date or DateTime..
 ```
 
-## See Also {#see-also}
+## Ver también {#see-also}
 
--   [INTERVAL](../../query_language/operators.md#operator-interval) operator
--   [toInterval](../../query_language/functions/type_conversion_functions.md#function-tointerval) type convertion functions
+-   [INTERVALO](../../query_language/operators.md#operator-interval) operador
+-   [ToInterval](../../query_language/functions/type_conversion_functions.md#function-tointerval) funciones de conversión de tipo

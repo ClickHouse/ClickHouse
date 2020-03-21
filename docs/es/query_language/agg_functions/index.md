@@ -35,7 +35,7 @@ Método de codificación de datos:
 │ 7 │
 ¿Qué puedes encontrar en Neodigit
 
-El `sum` función interpreta `NULL` como `0`. En particular, esto significa que si la función recibe la entrada de una selección donde todos los valores son `NULL`, entonces el resultado será `0`, ni `NULL`.
+El `sum` función interpreta `NULL` como `0`. En particular, esto significa que si la función recibe la entrada de una selección donde todos los valores son `NULL`, entonces el resultado será `0`Nuestra `NULL`.
 
 Ahora puedes usar el `groupArray` función para crear una matriz a partir de la `y` columna:
 

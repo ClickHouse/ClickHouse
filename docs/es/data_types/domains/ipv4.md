@@ -1,8 +1,8 @@
 ## IPv4 {#ipv4}
 
-`IPv4` is a domain based on `UInt32` type and serves as typed replacement for storing IPv4 values. It provides compact storage with human-friendly input-output format, and column type information on inspection.
+`IPv4` es un dominio basado en `UInt32` tipo y sirve como reemplazo tipo para almacenar valores IPv4. Proporciona un almacenamiento compacto con un formato de entrada-salida amigable para los humanos e información de tipo de columna sobre la inspección.
 
-### Basic Usage {#basic-usage}
+### Uso básico {#basic-usage}
 
 ``` sql
 CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY url;
@@ -17,13 +17,13 @@ DESCRIBE TABLE hits;
 └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
 ```
 
-OR you can use IPv4 domain as a key:
+O puede usar el dominio IPv4 como clave:
 
 ``` sql
 CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY from;
 ```
 
-`IPv4` domain supports custom input format as IPv4-strings:
+`IPv4` Todos los derechos reservados:
 
 ``` sql
 INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')('https://clickhouse.tech', '183.247.232.58')('https://clickhouse.yandex/docs/es/', '116.106.34.242');
@@ -39,7 +39,7 @@ SELECT * FROM hits;
 └────────────────────────────────────┴────────────────┘
 ```
 
-Values are stored in compact binary form:
+Los valores se almacenan en forma binaria compacta:
 
 ``` sql
 SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
@@ -51,8 +51,8 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 └──────────────────┴───────────┘
 ```
 
-Domain values are not implicitly convertible to types other than `UInt32`.
-If you want to convert `IPv4` value to a string, you have to do that explicitly with `IPv4NumToString()` function:
+Los valores de dominio no se pueden convertir implícitamente en tipos distintos de `UInt32`.
+Si desea convertir `IPv4` valor a una cadena, tienes que hacer eso explícitamente con `IPv4NumToString()` función:
 
 ``` sql
 SELECT toTypeName(s), IPv4NumToString(from) as s FROM hits LIMIT 1;
@@ -62,7 +62,7 @@ SELECT toTypeName(s), IPv4NumToString(from) as s FROM hits LIMIT 1;
     │ String                            │ 183.247.232.58 │
     └───────────────────────────────────┴────────────────┘
 
-Or cast to a `UInt32` value:
+O echar una ONU `UInt32` valor:
 
 ``` sql
 SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
@@ -74,4 +74,4 @@ SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
 └──────────────────────────────────┴────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/es/data_types/domains/ipv4) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/domains/ipv4) <!--hide-->

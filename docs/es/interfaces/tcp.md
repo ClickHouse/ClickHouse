@@ -1,5 +1,5 @@
-# Native Interface (TCP) {#native-interface-tcp}
+# Interfaz nativa (TCP) {#native-interface-tcp}
 
-The native protocol is used in the [command-line client](cli.md), for inter-server communication during distributed query processing, and also in other C++ programs. Unfortunately, native ClickHouse protocol does not have formal specification yet, but it can be reverse-engineered from ClickHouse source code (starting [around here](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/src/Client)) and/or by intercepting and analyzing TCP traffic.
+El protocolo nativo se utiliza en el [cliente de línea de comandos](cli.md), para la comunicación entre servidores durante el procesamiento de consultas distribuidas, y también en otros programas de C, Desafortunadamente, el protocolo nativo de ClickHouse aún no tiene especificaciones formales, pero puede ser diseñado de manera inversa desde el código fuente de ClickHouse (comenzando [por aquí](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/src/Client)) y/o mediante la interceptación y el análisis del tráfico TCP.
 
-[Original article](https://clickhouse.tech/docs/es/interfaces/tcp/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/interfaces/tcp/) <!--hide-->

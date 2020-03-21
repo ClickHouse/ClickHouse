@@ -16,7 +16,7 @@ sudo apt-get install clang-8
 
 # Instalar conjunto de herramientas de compilación cruzada {#install-cross-compilation-toolset}
 
-Recordemos la ruta donde instalamos `cctools` como ${CCTOOLS}
+Recordemos la ruta donde instalamos `cctools` Como ${CCTOOLS}
 
 ``` bash
 mkdir ${CCTOOLS}

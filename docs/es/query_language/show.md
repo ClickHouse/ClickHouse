@@ -6,7 +6,7 @@
 SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Devuelve una sola `String`-tipo ‘statement’ columna, que contiene un único valor – el `CREATE` consulta utilizada para crear el objeto especificado.
+Devuelve una sola `String`-tipo ‘statement’ columna, que contiene un único valor – el `CREATE` Consulta utilizada para crear el objeto especificado.
 
 ## MOSTRAR BASAS DE DATOS {#show-databases}
 
@@ -23,9 +23,9 @@ Esta consulta es idéntica a `SELECT name FROM system.databases [INTO OUTFILE fi
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Envía el contenido de la [sistema.procesa](../operations/system_tables.md#system_tables-processes) tabla, que contiene una lista de consultas que se están procesando en este momento, exceptuando `SHOW PROCESSLIST` consulta.
+Envía el contenido de la [sistema.proceso](../operations/system_tables.md#system_tables-processes) tabla, que contiene una lista de consultas que se están procesando en este momento, exceptuando `SHOW PROCESSLIST` consulta.
 
-El `SELECT * FROM system.processes` query devuelve datos sobre todas las consultas actuales.
+El `SELECT * FROM system.processes` todas las consultas actuales.
 
 Consejo (ejecutar en la consola):
 
@@ -43,7 +43,7 @@ SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMI
 
 Si el `FROM` no se especifica la cláusula, la consulta devuelve la lista de tablas de la base de datos actual.
 
-Puede obtener los mismos resultados que el `SHOW TABLES` consulta de la siguiente manera:
+Puede obtener los mismos resultados que el `SHOW TABLES` Consulta de la siguiente manera:
 
 ``` sql
 SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
@@ -74,7 +74,7 @@ SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <file
 
 Si el `FROM` no se especifica la cláusula, la consulta devuelve la lista de diccionarios de la base de datos actual.
 
-Puede obtener los mismos resultados que el `SHOW DICTIONARIES` consulta de la siguiente manera:
+Puede obtener los mismos resultados que el `SHOW DICTIONARIES` Consulta de la siguiente manera:
 
 ``` sql
 SELECT name FROM system.dictionaries WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]

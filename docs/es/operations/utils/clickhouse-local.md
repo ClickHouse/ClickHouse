@@ -29,7 +29,7 @@ Argumento:
 -   `-of`, `--format`, `--output-format` — formato de salida, `TSV` predeterminada.
 -   `--stacktrace` — si volcar la salida de depuración en caso de excepción.
 -   `--verbose` — más detalles sobre la ejecución de la consulta.
--   `-s` — desactivar `stderr` tala.
+-   `-s` — desactivar `stderr` Tala.
 -   `--config-file` — ruta al archivo de configuración en el mismo formato que para el servidor ClickHouse, por defecto la configuración vacía.
 -   `--help` — argumentos referencias para `clickhouse-local`.
 

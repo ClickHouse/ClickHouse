@@ -17,9 +17,9 @@ Se admiten las siguientes acciones:
 
 -   [AÑADIR COLUMNA](#alter_add-column) — Agrega una nueva columna a la tabla.
 -   [COLUMNA DE GOTA](#alter_drop-column) — Elimina la columna.
--   [COLUMNA CLARA](#alter_clear-column) — Restablece los valores de las columnas.
+-   [Sistema abierto.](#alter_clear-column) — Restablece los valores de las columnas.
 -   [COLUMNA DE COMENTARIOS](#alter_comment-column) — Agrega un comentario de texto a la columna.
--   [MODIFICAR COLUMNA](#alter_modify-column) — Cambia el tipo de columna, la expresión predeterminada y el TTL.
+-   [COLUMNA MODIFICAR](#alter_modify-column) — Cambia el tipo de columna, la expresión predeterminada y el TTL.
 
 Estas acciones se describen en detalle a continuación.
 
@@ -59,7 +59,7 @@ Ejemplo:
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-#### COLUMNA CLARA {#alter-clear-column}
+#### Sistema abierto. {#alter-clear-column}
 
 ``` sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -93,7 +93,7 @@ Ejemplo:
 ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for accessing the site.'
 ```
 
-#### MODIFICAR COLUMNA {#alter-modify-column}
+#### COLUMNA MODIFICAR {#alter-modify-column}
 
 ``` sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
@@ -137,11 +137,11 @@ El `ALTER` se replica la consulta para cambiar columnas. Las instrucciones se gu
 
 El `ALTER` query le permite crear y eliminar elementos separados (columnas) en estructuras de datos anidadas, pero no en estructuras de datos anidadas completas. Para agregar una estructura de datos anidada, puede agregar columnas con un nombre como `name.nested_name` y el tipo `Array(T)`. Una estructura de datos anidada es equivalente a varias columnas de matriz con un nombre que tiene el mismo prefijo antes del punto.
 
-No hay soporte para eliminar columnas en la clave principal o la clave de muestreo (columnas que se utilizan en el `ENGINE` expresion). Solo es posible cambiar el tipo de las columnas que se incluyen en la clave principal si este cambio no provoca que se modifiquen los datos (por ejemplo, puede agregar valores a un Enum o cambiar un tipo de `DateTime` a `UInt32`).
+No hay soporte para eliminar columnas en la clave principal o la clave de muestreo (columnas que se utilizan en el `ENGINE` expresión). Solo es posible cambiar el tipo de las columnas que se incluyen en la clave principal si este cambio no provoca que se modifiquen los datos (por ejemplo, puede agregar valores a un Enum o cambiar un tipo de `DateTime` Naciones `UInt32`).
 
-Si el `ALTER` la consulta no es suficiente para realizar los cambios en la tabla que necesita, puede crear una nueva tabla, copiar los datos [INSERTAR SELECCIONAR](insert_into.md#insert_query_insert-select) consulta, luego cambie las tablas usando el [Renombrar](misc.md#misc_operations-rename) consulta y elimina la tabla anterior. Puede usar el [Método de codificación de datos:](../operations/utils/clickhouse-copier.md) como una alternativa a la `INSERT SELECT` consulta.
+Si el `ALTER` la consulta no es suficiente para realizar los cambios en la tabla que necesita, puede crear una nueva tabla, copiar los datos [INSERTAR SELECCIONAR](insert_into.md#insert_query_insert-select) Consulta, luego cambie las tablas usando el [Renombrar](misc.md#misc_operations-rename) Consulta y elimina la tabla anterior. Puede usar el [Método de codificación de datos:](../operations/utils/clickhouse-copier.md) como una alternativa a la `INSERT SELECT` consulta.
 
-El `ALTER` query bloquea todas las lecturas y escrituras para la tabla. En otras palabras, si un largo `SELECT` se está ejecutando en el momento de la `ALTER` consulta, el `ALTER` la consulta esperará a que se complete. Al mismo tiempo, todas las consultas nuevas a la misma tabla esperarán `ALTER` se está ejecutando.
+El `ALTER` query bloquea todas las lecturas y escrituras para la tabla. En otras palabras, si un largo `SELECT` se está ejecutando en el momento de la `ALTER` Consulta, el `ALTER` la consulta esperará a que se complete. Al mismo tiempo, todas las consultas nuevas a la misma tabla esperarán `ALTER` se está ejecutando.
 
 Para tablas que no almacenan datos por sí mismas (como `Merge` y `Distributed`), `ALTER` simplemente cambia la estructura de la tabla, y no cambia la estructura de las tablas subordinadas. Por ejemplo, cuando se ejecuta ALTER para un `Distributed` mesa, también tendrá que ejecutar `ALTER` para las tablas en todos los servidores remotos.
 
@@ -156,7 +156,7 @@ MODIFY ORDER BY new_expression
 Solo funciona para tablas en el [`MergeTree`](../operations/table_engines/mergetree.md) familia (incluyendo
 [repetición](../operations/table_engines/replication.md) tabla). El comando cambia el
 [clave de clasificación](../operations/table_engines/mergetree.md) de la mesa
-a `new_expression` (una expresión o una tupla de expresiones). La clave principal sigue siendo la misma.
+Naciones `new_expression` (una expresión o una tupla de expresiones). La clave principal sigue siendo la misma.
 
 El comando es liviano en el sentido de que solo cambia los metadatos. Para mantener la propiedad esa parte de datos
 las filas están ordenadas por la expresión de clave de ordenación, no puede agregar expresiones que contengan columnas existentes
@@ -196,7 +196,7 @@ Todos los cambios en las tablas replicadas se transmiten a ZooKeeper, por lo que
 
 Las siguientes operaciones con [partición](../operations/table_engines/custom_partitioning_key.md) están disponibles:
 
--   [DETACH PARTITION](#alter_detach-partition) – Mueve una partición a la `detached` directorio y olvidarlo.
+-   [DETACH PARTITION](#alter_detach-partition) – Mueve una partición a la `detached` Directorio y olvidarlo.
 -   [PARTICIÓN DE CAÍDA](#alter_drop-partition) – Elimina una partición.
 -   [ADJUNTA PARTE\|PARTICIÓN](#alter_attach-partition) – Añade una pieza o partición desde el `detached` directorio a la tabla.
 -   [REEMPLAZAR LA PARTICIÓN](#alter_replace-partition) - Copia la partición de datos de una tabla a otra.
@@ -229,7 +229,7 @@ Lea cómo configurar la expresión de partición en una sección [Cómo especifi
 
 Después de ejecutar la consulta, puede hacer lo que quiera con los datos en el `detached` directorio — eliminarlo del sistema de archivos, o simplemente dejarlo.
 
-Esta consulta se replica – mueve los datos a la `detached` directorio en todas las réplicas. Tenga en cuenta que solo puede ejecutar esta consulta en una réplica de líder. Para averiguar si una réplica es un líder, realice `SELECT` consulta a la [sistema.Replica](../operations/system_tables.md#system_tables-replicas) tabla. Alternativamente, es más fácil hacer un `DETACH` consulta en todas las réplicas: todas las réplicas producen una excepción, excepto la réplica líder.
+Esta consulta se replica – mueve los datos a la `detached` directorio en todas las réplicas. Tenga en cuenta que solo puede ejecutar esta consulta en una réplica de líder. Para averiguar si una réplica es un líder, realice `SELECT` Consulta a la [sistema.Replica](../operations/system_tables.md#system_tables-replicas) tabla. Alternativamente, es más fácil hacer un `DETACH` consulta en todas las réplicas: todas las réplicas producen una excepción, excepto la réplica líder.
 
 #### PARTICIÓN DE CAÍDA {#alter-drop-partition}
 
@@ -277,7 +277,7 @@ Entonces puedes poner datos en el `detached` en una réplica, y utilice el direc
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 ```
 
-Esta consulta copia la partición de datos `table1` a `table2` añade datos a los que existen en el `table2`. Tenga en cuenta que los datos no se eliminarán de `table1`.
+Esta consulta copia la partición de datos `table1` Naciones `table2` añade datos a los que existen en el `table2`. Tenga en cuenta que los datos no se eliminarán de `table1`.
 
 Para que la consulta se ejecute correctamente, se deben cumplir las siguientes condiciones:
 
@@ -290,7 +290,7 @@ Para que la consulta se ejecute correctamente, se deben cumplir las siguientes c
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 ```
 
-Esta consulta copia la partición de datos `table1` a `table2` y reemplaza la partición existente en el `table2`. Tenga en cuenta que los datos no se eliminarán de `table1`.
+Esta consulta copia la partición de datos `table1` Naciones `table2` y reemplaza la partición existente en el `table2`. Tenga en cuenta que los datos no se eliminarán de `table1`.
 
 Para que la consulta se ejecute correctamente, se deben cumplir las siguientes condiciones:
 
@@ -303,7 +303,7 @@ Para que la consulta se ejecute correctamente, se deben cumplir las siguientes c
 ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
 ```
 
-Esta consulta mueve la partición de datos `table_source` a `table_dest` con la eliminación de los datos de `table_source`.
+Esta consulta mueve la partición de datos `table_source` Naciones `table_dest` con la eliminación de los datos de `table_source`.
 
 Para que la consulta se ejecute correctamente, se deben cumplir las siguientes condiciones:
 
@@ -345,11 +345,11 @@ En el momento de la ejecución, para una instantánea de datos, la consulta crea
 -   `N` es el número incremental de la copia de seguridad.
 
 !!! note "Nota"
-    Si usted usa [un conjunto de discos para el almacenamiento de datos en una tabla](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes), el `shadow/N` directorio aparece en cada disco, almacenando partes de datos que coinciden con el `PARTITION` expresion.
+    Si usted estados unidos [un conjunto de discos para el almacenamiento de datos en una tabla](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes) el `shadow/N` directorio aparece en cada disco, almacenando partes de datos que coinciden con el `PARTITION` expresión.
 
 La misma estructura de directorios se crea dentro de la copia de seguridad que dentro `/var/lib/clickhouse/`. La consulta realiza ‘chmod’ para todos los archivos, prohibiendo escribir en ellos.
 
-Después de crear la copia de seguridad, puede copiar los datos desde `/var/lib/clickhouse/shadow/` al servidor remoto y, a continuación, elimínelo del servidor local. Tenga en cuenta que el `ALTER t FREEZE PARTITION` consulta no se replica. Crea una copia de seguridad local solo en el servidor local.
+Después de crear la copia de seguridad, puede copiar los datos desde `/var/lib/clickhouse/shadow/` al servidor remoto y, a continuación, elimínelo del servidor local. Tenga en cuenta que el `ALTER t FREEZE PARTITION` consulta no se réplica. Crea una copia de seguridad local solo en el servidor local.
 
 La consulta crea una copia de seguridad casi instantáneamente (pero primero espera a que las consultas actuales a la tabla correspondiente terminen de ejecutarse).
 
@@ -357,9 +357,9 @@ La consulta crea una copia de seguridad casi instantáneamente (pero primero esp
 
 Para restaurar los datos de una copia de seguridad, haga lo siguiente:
 
-1.  Cree la tabla si no existe. Para ver la consulta, utilice el .archivo sql (reemplazar `ATTACH` en ella con `CREATE`).
-2.  Copie los datos de la `data/database/table/` directorio dentro de la copia de seguridad a la `/var/lib/clickhouse/data/database/table/detached/` directorio.
-3.  Ejecutar `ALTER TABLE t ATTACH PARTITION` consultas para agregar los datos a una tabla.
+1.  Cree la tabla si no existe. Para ver la consulta, utilice el .archivo sql (reemplazar `ATTACH` es ella con `CREATE`).
+2.  Copie los datos de la `data/database/table/` Directorio dentro de la copia de seguridad a la `/var/lib/clickhouse/data/database/table/detached/` Directorio.
+3.  Ejecutar `ALTER TABLE t ATTACH PARTITION` Consultas para agregar los datos a una tabla.
 
 La restauración desde una copia de seguridad no requiere detener el servidor.
 
@@ -384,7 +384,7 @@ Descarga una partición desde otro servidor. Esta consulta solo funciona para la
 La consulta hace lo siguiente:
 
 1.  Descarga la partición del fragmento especificado. En ‘path-in-zookeeper’ debe especificar una ruta al fragmento en ZooKeeper.
-2.  Luego, la consulta coloca los datos descargados en el `detached` directorio de la `table_name` tabla. Utilice el [ADJUNTA PARTICIÓN\|PARTE](#alter_attach-partition) consulta para agregar los datos a la tabla.
+2.  Luego, la consulta coloca los datos descargados en el `detached` Directorio de la `table_name` tabla. Descripción [ADJUNTA PARTICIÓN\|PARTE](#alter_attach-partition) consulta para agregar los datos a la tabla.
 
 Por ejemplo:
 
@@ -410,7 +410,7 @@ Mueve particiones o partes de datos a otro volumen o disco para `MergeTree`-mesa
 ALTER TABLE table_name MOVE PARTITION|PART partition_expr TO DISK|VOLUME 'disk_name'
 ```
 
-El `ALTER TABLE t MOVE` consulta:
+El `ALTER TABLE t MOVE` Consulta:
 
 -   No replicado, porque diferentes réplicas pueden tener diferentes directivas de almacenamiento.
 -   Devuelve un error si el disco o volumen especificado no está configurado. La consulta también devuelve un error si no se pueden aplicar las condiciones de movimiento de datos especificadas en la directiva de almacenamiento.
@@ -430,11 +430,11 @@ Puede especificar la expresión de partición en `ALTER ... PARTITION` de difere
 -   Como valor de la `partition` columna de la `system.parts` tabla. Por ejemplo, `ALTER TABLE visits DETACH PARTITION 201901`.
 -   Como la expresión de la columna de la tabla. Se admiten constantes y expresiones constantes. Por ejemplo, `ALTER TABLE visits DETACH PARTITION toYYYYMM(toDate('2019-01-25'))`.
 -   Usando el ID de partición. El ID de partición es un identificador de cadena de la partición (legible por humanos, si es posible) que se usa como nombres de particiones en el sistema de archivos y en ZooKeeper. El ID de partición debe especificarse en el `PARTITION ID` cláusula, entre comillas simples. Por ejemplo, `ALTER TABLE visits DETACH PARTITION ID '201901'`.
--   En el [ALTERAR PIEZA DE ADJUNTO](#alter_attach-partition) y [PARTE DESMONTADA DE GOTA](#alter_drop-detached) consulta, para especificar el nombre de una parte, utilice un literal de cadena con un valor `name` columna de la [sistema.detached\_parts](../operations/system_tables.md#system_tables-detached_parts) tabla. Por ejemplo, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
+-   En el [ALTERAR PIEZA DE ADJUNTO](#alter_attach-partition) y [PARTE DESMONTADA DE GOTA](#alter_drop-detached) Consulta, para especificar el nombre de una parte, utilice un literal de cadena con un valor `name` columna de la [sistema.detached\_parts](../operations/system_tables.md#system_tables-detached_parts) tabla. Por ejemplo, `ALTER TABLE visits ATTACH PART '201901_1_1_0'`.
 
-El uso de comillas al especificar la partición depende del tipo de expresión de partición. Por ejemplo, para el `String` tipo, debe especificar su nombre entre comillas (`'`). Para el `Date` y `Int*` tipos no se necesitan comillas.
+El uso de comillas al especificar la partición depende del tipo de expresión de partición. Por ejemplo, para el `String` Tipo, debe especificar su nombre entre comillas (`'`). Para el `Date` y `Int*` tipos no se necesitan comillas.
 
-Para las tablas de estilo antiguo, puede especificar la partición como un número `201901` o una cadena `'201901'`. La sintaxis para las tablas de nuevo estilo es más estricta con los tipos (similar al analizador para el formato de entrada VALUES).
+Para las tablas de estilo antiguo, puede especificar la partición como un número `201901` O una cadena `'201901'`. La sintaxis para las tablas de nuevo estilo es más estricta con los tipos (similar al analizador para el formato de entrada VALUES).
 
 Todas las reglas anteriores también son ciertas para el [OPTIMIZAR](misc.md#misc_operations-optimize) consulta. Si necesita especificar la única partición al optimizar una tabla no particionada, establezca la expresión `PARTITION tuple()`. Por ejemplo:
 
@@ -446,7 +446,7 @@ Los ejemplos de `ALTER ... PARTITION` las consultas se demuestran en las pruebas
 
 ### Manipulaciones con Tabla TTL {#manipulations-with-table-ttl}
 
-Usted puede cambiar [tabla TTL](../operations/table_engines/mergetree.md#mergetree-table-ttl) con una solicitud del siguiente formulario:
+Usted puede cambiar [Tabla TTL](../operations/table_engines/mergetree.md#mergetree-table-ttl) con una solicitud del siguiente formulario:
 
 ``` sql
 ALTER TABLE table-name MODIFY TTL ttl-expression
@@ -456,7 +456,7 @@ ALTER TABLE table-name MODIFY TTL ttl-expression
 
 Para tablas no replicables, todas `ALTER` las consultas se realizan de forma sincrónica. Para las tablas replicables, la consulta solo agrega instrucciones para las acciones apropiadas para `ZooKeeper`, y las acciones mismas se realizan tan pronto como sea posible. Sin embargo, la consulta puede esperar a que estas acciones se completen en todas las réplicas.
 
-Para `ALTER ... ATTACH|DETACH|DROP` consultas, puede utilizar el `replication_alter_partitions_sync` configuración para configurar la espera.
+Para `ALTER ... ATTACH|DETACH|DROP` Consultas, puede utilizar el `replication_alter_partitions_sync` configuración para configurar la espera.
 Valores posibles: `0` – no espere; `1` – sólo esperar a su propia ejecución (por defecto); `2` – esperar a todos.
 
 ### Mutación {#alter-mutations}

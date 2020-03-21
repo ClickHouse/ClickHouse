@@ -38,9 +38,9 @@ Parámetros requeridos:
 Parámetros opcionales:
 
 -   `kafka_row_delimiter` – Carácter delimitador, que termina el mensaje.
--   `kafka_schema` – Parámetro que debe utilizarse si el formato requiere una definición de esquema. Por ejemplo, [Cap’n Proto](https://capnproto.org/) requiere la ruta de acceso al archivo de esquema y el nombre de la raíz `schema.capnp:Message` objeto.
+-   `kafka_schema` – Parámetro que debe utilizarse si el formato requiere una definición de esquema. Por ejemplo, [Cap'n Proto](https://capnproto.org/) requiere la ruta de acceso al archivo de esquema y el nombre de la raíz `schema.capnp:Message` objeto.
 -   `kafka_num_consumers` – El número de consumidores por tabla. Predeterminado: `1`. Especifique más consumidores si el rendimiento de un consumidor es insuficiente. El número total de consumidores no debe exceder el número de particiones en el tema, ya que solo se puede asignar un consumidor por partición.
--   `kafka_skip_broken_messages` – Tolerancia analizador de mensajes Kafka a los mensajes incompatibles con el esquema por bloque. Predeterminado: `0`. Si `kafka_skip_broken_messages = N` entonces el motor salta *Y* Mensajes de Kafka que no se pueden analizar (un mensaje es igual a una fila de datos).
+-   `kafka_skip_broken_messages` – Tolerancia analizador de mensajes Kafka a los mensajes incompatibles con el esquema por bloque. Predeterminado: `0`. Si `kafka_skip_broken_messages = N` Entonces el motor salta *Y* Mensajes de Kafka que no se pueden analizar (un mensaje es igual a una fila de datos).
 
 Ejemplos:
 
@@ -86,7 +86,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 </details>
 
-## Descripci {#description}
+## Descripción {#description}
 
 Los mensajes entregados se realizan un seguimiento automático, por lo que cada mensaje de un grupo solo se cuenta una vez. Si desea obtener los datos dos veces, cree una copia de la tabla con otro nombre de grupo.
 
@@ -154,7 +154,7 @@ Similar a GraphiteMergeTree, el motor Kafka admite una configuración extendida 
 
 Para obtener una lista de posibles opciones de configuración, consulte [referencia de configuración librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Usa el guión bajo (`_`) en lugar de un punto en la configuración de ClickHouse. Por ejemplo, `check.crcs=true` será `<check_crcs>true</check_crcs>`.
 
-## Virtual Columnas {#virtual-columns}
+## Columnas virtuales {#virtual-columns}
 
 -   `_topic` — El tema de Kafka.
 -   `_key` — Clave del mensaje.
@@ -164,6 +164,6 @@ Para obtener una lista de posibles opciones de configuración, consulte [referen
 
 **Ver también**
 
--   [Virtual columnas](index.md#table_engines-virtual_columns)
+-   [Columnas virtuales](index.md#table_engines-virtual_columns)
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/kafka/) <!--hide-->

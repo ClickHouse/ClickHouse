@@ -15,7 +15,7 @@ La consulta puede especificar una lista de columnas para insertar `[(c1, c2, c3)
 
 Si [strict\_insert\_defaults=1](../operations/settings/settings.md), columnas que no tienen `DEFAULT` definido debe figurar en la consulta.
 
-Los datos se pueden pasar al INSERT en cualquier [formato](../interfaces/formats.md#formats) con el apoyo de ClickHouse. El formato debe especificarse explícitamente en la consulta:
+Los datos se pueden pasar al INSERT en cualquier [Formato](../interfaces/formats.md#formats) con el apoyo de ClickHouse. El formato debe especificarse explícitamente en la consulta:
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set

@@ -1,5 +1,5 @@
-# Set {#set}
+# Establecer {#set}
 
-Used for the right half of an [IN](../../query_language/select.md#select-in-operators) expression.
+Utilizado para la mitad derecha de un [ES](../../query_language/select.md#select-in-operators) expresión.
 
-[Original article](https://clickhouse.tech/docs/es/data_types/special_data_types/set/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/special_data_types/set/) <!--hide-->

@@ -1,8 +1,8 @@
-# Command-line Client {#command-line-client}
+# Cliente de línea de comandos {#command-line-client}
 
-ClickHouse provides a native command-line client: `clickhouse-client`. The client supports command-line options and configuration files. For more information, see [Configuring](#interfaces_cli_configuration).
+ClickHouse proporciona un cliente de línea de comandos nativo: `clickhouse-client`. El cliente admite opciones de línea de comandos y archivos de configuración. Para obtener más información, consulte [Configuración](#interfaces_cli_configuration).
 
-[Install](../getting_started/index.md) it from the `clickhouse-client` package and run it with the command `clickhouse-client`.
+[Instalar](../getting_started/index.md) desde el `clickhouse-client` paquete y ejecútelo con el comando `clickhouse-client`.
 
 ``` bash
 $ clickhouse-client
@@ -13,15 +13,15 @@ Connected to ClickHouse server version 19.17.1 revision 54428.
 :)
 ```
 
-Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version of the client as the server app. When you try to use a client of the older version, then the server, `clickhouse-client` displays the message:
+Las diferentes versiones de cliente y servidor son compatibles entre sí, pero es posible que algunas funciones no estén disponibles en clientes anteriores. Se recomienda utilizar la misma versión del cliente que la aplicación de servidor. Cuando intenta usar un cliente de la versión anterior, entonces el servidor, `clickhouse-client` muestra el mensaje:
 
       ClickHouse client version is older than ClickHouse server. It may lack support for new features.
 
-## Usage {#cli-usage}
+## Uso {#cli-usage}
 
-The client can be used in interactive and non-interactive (batch) mode. To use batch mode, specify the ‘query’ parameter, or send data to ‘stdin’ (it verifies that ‘stdin’ is not a terminal), or both. Similar to the HTTP interface, when using the ‘query’ parameter and sending data to ‘stdin’, the request is a concatenation of the ‘query’ parameter, a line feed, and the data in ‘stdin’. This is convenient for large INSERT queries.
+El cliente se puede utilizar en modo interactivo y no interactivo (por lotes). Para utilizar el modo por lotes, especifique el ‘query’ parámetro, o enviar datos a ‘stdin’ (verifica que ‘stdin’ no es un terminal), o ambos. Similar a la interfaz HTTP, cuando se utiliza el ‘query’ parámetro y el envío de datos a ‘stdin’ la solicitud es una concatenación de la ‘query’ parámetro, un avance de línea y los datos en ‘stdin’. Esto es conveniente para grandes consultas INSERT.
 
-Example of using the client to insert data:
+Ejemplo de uso del cliente para insertar datos:
 
 ``` bash
 $ echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
@@ -34,102 +34,102 @@ _EOF
 $ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
 ```
 
-In batch mode, the default data format is TabSeparated. You can set the format in the FORMAT clause of the query.
+En el modo por lotes, el formato de datos predeterminado es TabSeparated. Puede establecer el formato en la cláusula FORMAT de la consulta.
 
-By default, you can only process a single query in batch mode. To make multiple queries from a “script,” use the `--multiquery` parameter. This works for all queries except INSERT. Query results are output consecutively without additional separators. Similarly, to process a large number of queries, you can run ‘clickhouse-client’ for each query. Note that it may take tens of milliseconds to launch the ‘clickhouse-client’ program.
+De forma predeterminada, solo puede procesar una única consulta en modo por lotes. Para realizar múltiples consultas desde un “script,” utilizar el `--multiquery` parámetro. Esto funciona para todas las consultas excepto INSERT . Los resultados de la consulta se generan consecutivamente sin separadores adicionales. Del mismo modo, para procesar un gran número de consultas, puede ejecutar ‘clickhouse-client’ para cada consulta. Tenga en cuenta que puede tomar decenas de milisegundos para iniciar el ‘clickhouse-client’ programa.
 
-In interactive mode, you get a command line where you can enter queries.
+En el modo interactivo, obtiene una línea de comandos donde puede ingresar consultas.
 
-If ‘multiline’ is not specified (the default): To run the query, press Enter. The semicolon is not necessary at the end of the query. To enter a multiline query, enter a backslash `\` before the line feed. After you press Enter, you will be asked to enter the next line of the query.
+Si ‘multiline’ no se especifica (el valor predeterminado): Para ejecutar la consulta, pulse Intro. El punto y coma no es necesario al final de la consulta. Para introducir una consulta de varias líneas, introduzca una barra invertida `\` antes de la alimentación de línea. Después de presionar Enter, se le pedirá que ingrese la siguiente línea de la consulta.
 
-If multiline is specified: To run a query, end it with a semicolon and press Enter. If the semicolon was omitted at the end of the entered line, you will be asked to enter the next line of the query.
+Si se especifica multilínea: Para ejecutar una consulta, finalícela con un punto y coma y presione Intro. Si se omitió el punto y coma al final de la línea ingresada, se le pedirá que ingrese la siguiente línea de la consulta.
 
-Only a single query is run, so everything after the semicolon is ignored.
+Solo se ejecuta una sola consulta, por lo que se ignora todo después del punto y coma.
 
-You can specify `\G` instead of or after the semicolon. This indicates Vertical format. In this format, each value is printed on a separate line, which is convenient for wide tables. This unusual feature was added for compatibility with the MySQL CLI.
+Puede especificar `\G` en lugar o después del punto y coma. Esto indica el formato vertical. En este formato, cada valor se imprime en una línea separada, lo cual es conveniente para tablas anchas. Esta característica inusual se agregó por compatibilidad con la CLI de MySQL.
 
-The command line is based on ‘replxx’ (similar to ‘readline’). In other words, it uses the familiar keyboard shortcuts and keeps a history. The history is written to `~/.clickhouse-client-history`.
+La línea de comandos se basa en ‘replxx’ (similar a ‘readline’). En otras palabras, utiliza los atajos de teclado familiares y mantiene un historial. La historia está escrita para `~/.clickhouse-client-history`.
 
-By default, the format used is PrettyCompact. You can change the format in the FORMAT clause of the query, or by specifying `\G` at the end of the query, using the `--format` or `--vertical` argument in the command line, or using the client configuration file.
+De forma predeterminada, el formato utilizado es PrettyCompact. Puede cambiar el formato en la cláusula FORMAT de la consulta o especificando `\G` al final de la consulta, utilizando el `--format` o `--vertical` en la línea de comandos, o utilizando el archivo de configuración del cliente.
 
-To exit the client, press Ctrl+D (or Ctrl+C), or enter one of the following instead of a query: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
+Para salir del cliente, presione Ctrl+D (o Ctrl+C) o introduzca una de las siguientes opciones en lugar de una consulta: “exit”, “quit”, “logout”, “exit;”, “quit;”, “logout;”, “q”, “Q”, “:q”
 
-When processing a query, the client shows:
+Al procesar una consulta, el cliente muestra:
 
-1.  Progress, which is updated no more than 10 times per second (by default). For quick queries, the progress might not have time to be displayed.
-2.  The formatted query after parsing, for debugging.
-3.  The result in the specified format.
-4.  The number of lines in the result, the time passed, and the average speed of query processing.
+1.  Progreso, que se actualiza no más de 10 veces por segundo (de forma predeterminada). Para consultas rápidas, es posible que el progreso no tenga tiempo para mostrarse.
+2.  La consulta con formato después del análisis, para la depuración.
+3.  El resultado en el formato especificado.
+4.  El número de líneas en el resultado, el tiempo transcurrido y la velocidad promedio de procesamiento de consultas.
 
-You can cancel a long query by pressing Ctrl+C. However, you will still need to wait for a little for the server to abort the request. It is not possible to cancel a query at certain stages. If you don’t wait and press Ctrl+C a second time, the client will exit.
+Puede cancelar una consulta larga presionando Ctrl + C. Sin embargo, aún tendrá que esperar un poco para que el servidor aborte la solicitud. No es posible cancelar una consulta en determinadas etapas. Si no espera y presiona Ctrl + C por segunda vez, el cliente saldrá.
 
-The command-line client allows passing external data (external temporary tables) for querying. For more information, see the section “External data for query processing”.
+El cliente de línea de comandos permite pasar datos externos (tablas temporales externas) para consultar. Para obtener más información, consulte la sección “External data for query processing”.
 
-### Queries with Parameters {#cli-queries-with-parameters}
+### Consultas con parámetros {#cli-queries-with-parameters}
 
-You can create a query with parameters and pass values to them from client application. This allows to avoid formatting query with specific dynamic values on client side. For example:
+Puede crear una consulta con parámetros y pasarles valores desde la aplicación cliente. Esto permite evitar formatear consultas con valores dinámicos específicos en el lado del cliente. Por ejemplo:
 
 ``` bash
 $ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {parName:Array(UInt16)}"
 ```
 
-#### Query Syntax {#cli-queries-with-parameters-syntax}
+#### Sintaxis de consulta {#cli-queries-with-parameters-syntax}
 
-Format a query as usual, then place the values that you want to pass from the app parameters to the query in braces in the following format:
+Formatee una consulta como de costumbre, luego coloque los valores que desea pasar de los parámetros de la aplicación a la consulta entre llaves en el siguiente formato:
 
 ``` sql
 {<name>:<data type>}
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Data type](../data_types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../data_types/int_uint.md) types).
+-   `data type` — [Tipo de datos](../data_types/index.md) del valor del parámetro de la aplicación. Por ejemplo, una estructura de datos como `(integer, ('string', integer))` puede tener el `Tuple(UInt8, Tuple(String, UInt8))` tipo de datos (también puede usar otro [Entero](../data_types/int_uint.md) tipo).
 
-#### Example {#example}
+#### Ejemplo {#example}
 
 ``` bash
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
 ```
 
-## Configuring {#interfaces-cli-configuration}
+## Configuración {#interfaces-cli-configuration}
 
-You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
+Puede pasar parámetros a `clickhouse-client` (todos los parámetros tienen un valor predeterminado) usando:
 
--   From the Command Line
+-   Desde la línea de comandos
 
-    Command-line options override the default values and settings in configuration files.
+    Las opciones de la línea de comandos anulan los valores y valores predeterminados de los archivos de configuración.
 
--   Configuration files.
+-   Archivos de configuración.
 
-    Settings in the configuration files override the default values.
+    Los valores de los archivos de configuración anulan los valores predeterminados.
 
-### Command Line Options {#command-line-options}
+### Opciones de línea de comandos {#command-line-options}
 
--   `--host, -h` -– The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.
+-   `--host, -h` -– The server name, ‘localhost’ predeterminada. Puede utilizar el nombre o la dirección IPv4 o IPv6.
 -   `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
 -   `--user, -u` – The username. Default value: default.
 -   `--password` – The password. Default value: empty string.
 -   `--query, -q` – The query to process when using non-interactive mode.
--   `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
+-   `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ predeterminada).
 -   `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
 -   `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
 -   `--format, -f` – Use the specified default format to output the result.
--   `--vertical, -E` – If specified, use the Vertical format by default to output the result. This is the same as ‘–format=Vertical’. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
--   `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
+-   `--vertical, -E` – If specified, use the Vertical format by default to output the result. This is the same as ‘–format=Vertical’. En este formato, cada valor se imprime en una línea separada, lo que es útil cuando se muestran tablas anchas.
+-   `--time, -t` – If specified, print the query execution time to ‘stderr’ en modo no interactivo.
 -   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
 -   `--config-file` – The name of the configuration file.
 -   `--secure` – If specified, will connect to server over secure connection.
--   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
+-   `--param_<name>` — Value for a [consulta con parámetros](#cli-queries-with-parameters).
 
-### Configuration Files {#configuration-files}
+### Archivos de configuración {#configuration-files}
 
-`clickhouse-client` uses the first existing file of the following:
+`clickhouse-client` utiliza el primer archivo existente de los siguientes:
 
--   Defined in the `--config-file` parameter.
+-   Definido en el `--config-file` parámetro.
 -   `./clickhouse-client.xml`
 -   `~/.clickhouse-client/config.xml`
 -   `/etc/clickhouse-client/config.xml`
 
-Example of a config file:
+Ejemplo de un archivo de configuración:
 
 ``` xml
 <config>
@@ -139,4 +139,4 @@ Example of a config file:
 </config>
 ```
 
-[Original article](https://clickhouse.tech/docs/es/interfaces/cli/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/interfaces/cli/) <!--hide-->

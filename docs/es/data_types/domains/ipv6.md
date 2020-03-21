@@ -1,8 +1,8 @@
 ## IPv6 {#ipv6}
 
-`IPv6` is a domain based on `FixedString(16)` type and serves as typed replacement for storing IPv6 values. It provides compact storage with human-friendly input-output format, and column type information on inspection.
+`IPv6` es un dominio basado en `FixedString(16)` tipo y sirve como reemplazo tipo para almacenar valores IPv6. Proporciona un almacenamiento compacto con un formato de entrada-salida amigable para los humanos e información de tipo de columna sobre la inspección.
 
-### Basic Usage {#basic-usage}
+### Uso básico {#basic-usage}
 
 ``` sql
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY url;
@@ -17,13 +17,13 @@ DESCRIBE TABLE hits;
 └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
 ```
 
-OR you can use `IPv6` domain as a key:
+O puedes usar `IPv6` dominio como clave:
 
 ``` sql
 CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY from;
 ```
 
-`IPv6` domain supports custom input as IPv6-strings:
+`IPv6` dominio admite entradas personalizadas como cadenas IPv6:
 
 ``` sql
 INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:3100::2')('https://clickhouse.tech', '2001:44c8:129:2632:33:0:252:2')('https://clickhouse.yandex/docs/es/', '2a02:e980:1e::1');
@@ -39,7 +39,7 @@ SELECT * FROM hits;
 └────────────────────────────────────┴───────────────────────────────┘
 ```
 
-Values are stored in compact binary form:
+Los valores se almacenan en forma binaria compacta:
 
 ``` sql
 SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
@@ -51,8 +51,8 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 └──────────────────┴──────────────────────────────────┘
 ```
 
-Domain values are not implicitly convertible to types other than `FixedString(16)`.
-If you want to convert `IPv6` value to a string, you have to do that explicitly with `IPv6NumToString()` function:
+Los valores de dominio no se pueden convertir implícitamente en tipos distintos de `FixedString(16)`.
+Si desea convertir `IPv6` valor a una cadena, tienes que hacer eso explícitamente con `IPv6NumToString()` función:
 
 ``` sql
 SELECT toTypeName(s), IPv6NumToString(from) as s FROM hits LIMIT 1;
@@ -64,7 +64,7 @@ SELECT toTypeName(s), IPv6NumToString(from) as s FROM hits LIMIT 1;
 └───────────────────────────────────┴───────────────────────────────┘
 ```
 
-Or cast to a `FixedString(16)` value:
+O echar una ONU `FixedString(16)` valor:
 
 ``` sql
 SELECT toTypeName(i), CAST(from as FixedString(16)) as i FROM hits LIMIT 1;
@@ -76,4 +76,4 @@ SELECT toTypeName(i), CAST(from as FixedString(16)) as i FROM hits LIMIT 1;
 └───────────────────────────────────────────┴─────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/es/data_types/domains/ipv6) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/domains/ipv6) <!--hide-->

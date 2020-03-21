@@ -4,7 +4,7 @@ Las tablas del sistema se utilizan para implementar parte de la funcionalidad de
 No puede eliminar una tabla del sistema (pero puede realizar DETACH).
 Las tablas del sistema no tienen archivos con datos en el disco o archivos con metadatos. El servidor crea todas las tablas del sistema cuando se inicia.
 Las tablas del sistema son de solo lectura.
-Están ubicados en el ‘system’ base.
+Están ubicados en el ‘system’ basar.
 
 ## sistema.asynchronous\_metrics {#system-tables-asynchronous-metrics}
 
@@ -72,7 +72,7 @@ Tenga en cuenta que `errors_count` se actualiza una vez por consulta al clúster
 
 Contiene información sobre las columnas de todas las tablas.
 
-Puede utilizar esta tabla para obtener información similar a la [TABLA DE DESCRIBE](../query_language/misc.md#misc-describe-table) consulta, pero para varias tablas a la vez.
+Puede utilizar esta tabla para obtener información similar a la [TABLA DE DESCRIBE](../query_language/misc.md#misc-describe-table) Consulta, pero para varias tablas a la vez.
 
 El `system.columns` tabla contiene las siguientes columnas (el tipo de columna se muestra entre corchetes):
 
@@ -132,7 +132,7 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 └──────────────────┘
 ```
 
-## sistema.base {#system-databases}
+## sistema.basar {#system-databases}
 
 Esta tabla contiene una sola columna String llamada ‘name’ – el nombre de una base de datos.
 Cada base de datos que el servidor conoce tiene una entrada correspondiente en la tabla.
@@ -142,7 +142,7 @@ Esta tabla del sistema se utiliza para implementar el `SHOW DATABASES` consulta.
 
 Contiene información sobre piezas separadas de [Método de codificación de datos:](table_engines/mergetree.md) tabla. El `reason` columna especifica por qué se separó la pieza. Para las piezas separadas por el usuario, el motivo está vacío. Tales partes se pueden unir con [ALTER TABLE ATTACH PARTITION\|PARTE](../query_language/query_language/alter/#alter_attach-partition) comando. Para obtener la descripción de otras columnas, consulte [sistema.parte](#system_tables-parts). Si el nombre de la pieza no es válido, los valores de algunas columnas pueden ser `NULL`. Tales partes se pueden eliminar con [ALTER MESA GOTA PARTE DESMONTADA](../query_language/query_language/alter/#alter_drop-detached).
 
-## sistema.diccionario {#system-dictionaries}
+## sistema.Diccionario {#system-dictionaries}
 
 Contiene información sobre diccionarios externos.
 
@@ -222,7 +222,7 @@ Columna:
 -   `Tables.database` (Array(String)) - Matriz de nombres de tablas de base de datos que utilizan `config_name` parámetro.
 -   `Tables.table` (Array(String)) - Matriz de nombres de tablas que utilizan `config_name` parámetro.
 
-## sistema.fusionar {#system-merges}
+## sistema.Fusionar {#system-merges}
 
 Contiene información sobre fusiones y mutaciones de piezas actualmente en proceso para tablas de la familia MergeTree.
 
@@ -338,7 +338,7 @@ CurrentMetric_ReplicatedChecks:                             0
 -   [sistema.métricas](#system_tables-metrics) - Contiene métricas calculadas al instante.
 -   [Monitoreo](monitoring.md) — Conceptos básicos de monitoreo ClickHouse.
 
-## sistema.numero {#system-numbers}
+## sistema.número {#system-numbers}
 
 Esta tabla contiene una única columna UInt64 llamada ‘number’ que contiene casi todos los números naturales a partir de cero.
 Puede usar esta tabla para pruebas, o si necesita hacer una búsqueda de fuerza bruta.
@@ -440,7 +440,7 @@ Columna:
 
 El `system.part_log` se crea sólo si el [part\_log](server_settings/settings.md#server_settings-part-log) se especifica la configuración del servidor.
 
-Esta tabla contiene información sobre eventos que ocurrieron con [partes de datos](table_engines/custom_partitioning_key.md) en el [Método de codificación de datos:](table_engines/mergetree.md) tablas familiares, como agregar o fusionar datos.
+Esta tabla contiene información sobre eventos que ocurrieron con [partes de datos](table_engines/custom_partitioning_key.md) es el [Método de codificación de datos:](table_engines/mergetree.md) tablas familiares, como agregar o fusionar datos.
 
 El `system.part_log` contiene las siguientes columnas:
 
@@ -469,7 +469,7 @@ El `system.part_log` contiene las siguientes columnas:
 
 El `system.part_log` se crea después de la primera inserción de datos `MergeTree` tabla.
 
-## sistema.procesa {#system-tables-processes}
+## sistema.proceso {#system-tables-processes}
 
 Esta tabla del sistema se utiliza para implementar el `SHOW PROCESSLIST` consulta.
 
@@ -910,7 +910,7 @@ Esta tabla contiene las siguientes columnas (el tipo de columna se muestra entre
 -   `metadata_path` (String) - Ruta de acceso a los metadatos de la tabla en el sistema de archivos.
 -   `metadata_modification_time` (DateTime) - Hora de la última modificación de los metadatos de la tabla.
 -   `dependencies_database` (Array(String)) - Dependencias de base de datos.
--   `dependencies_table` (Array(String)) - Dependencias de tabla ([Método de codificación de datos:](table_engines/materializedview.md) tablas basadas en la tabla actual).
+-   `dependencies_table` (Array(String)) - Dependencias de tabla ([Método de codificación de datos:](table_engines/materializedview.md) tablas basadas en la tabla real).
 -   `create_table_query` (String) - La consulta que se utilizó para crear la tabla.
 -   `engine_full` (String) - Parámetros del motor de tabla.
 -   `partition_key` (String) - La expresión de clave de partición especificada en la tabla.
@@ -925,7 +925,7 @@ El `system.tables` se utiliza en `SHOW TABLES` implementación de consultas.
 La tabla no existe si ZooKeeper no está configurado. Permite leer datos del clúster ZooKeeper definido en la configuración.
 La consulta debe tener un ‘path’ condición de igualdad en la cláusula WHERE. Este es el camino en ZooKeeper para los niños para los que desea obtener datos.
 
-Consulta `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` salidas de datos para todos los niños en el `/clickhouse` nodo.
+Consulta `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` salidas de datos para todos los niños en el `/clickhouse` Nodo.
 Para generar datos para todos los nodos raíz, escriba path = ‘/’.
 Si la ruta especificada en ‘path’ no existe, se lanzará una excepción.
 
@@ -933,7 +933,7 @@ Columna:
 
 -   `name` (String) — El nombre del nodo.
 -   `path` (String) — La ruta al nodo.
--   `value` (Cadena) - Valor de nodo.
+-   `value` (Cadena) - el Valor de nodo.
 -   `dataLength` (Int32) — Tamaño del valor.
 -   `numChildren` (Int32) — Número de descendientes.
 -   `czxid` (Int64) — ID de la transacción que creó el nodo.
@@ -995,15 +995,15 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 La tabla contiene información sobre [mutación](../query_language/alter.md#alter-mutations) de las tablas MergeTree y su progreso. Cada comando de mutación está representado por una sola fila. La tabla tiene las siguientes columnas:
 
-**base**, **tabla** - El nombre de la base de datos y la tabla a la que se aplicó la mutación.
+**basar**, **tabla** - El nombre de la base de datos y la tabla a la que se aplicó la mutación.
 
-**mutation\_id** - La identificación de la mutación. Para las tablas replicadas, estos identificadores corresponden a los nombres de znode `<table_path_in_zookeeper>/mutations/` directorio en ZooKeeper. Para las tablas no duplicadas, los ID corresponden a los nombres de archivo en el directorio de datos de la tabla.
+**mutation\_id** - La identificación de la mutación. Para las tablas replicadas, estos identificadores corresponden a los nombres de znode `<table_path_in_zookeeper>/mutations/` Directorio en ZooKeeper. Para las tablas no duplicadas, los ID corresponden a los nombres de archivo en el directorio de datos de la tabla.
 
 **comando** - La cadena de comandos de mutación (la parte de la consulta después de `ALTER TABLE [db.]table`).
 
 **create\_time** - Cuando este comando de mutación fue enviado para su ejecución.
 
-**block\_numbers.partition\_id**, **block\_numbers.numero** - Una columna anidada. Para las mutaciones de tablas replicadas, contiene un registro para cada partición: el ID de partición y el número de bloque que fue adquirido por la mutación (en cada partición, solo se mutarán las partes que contienen bloques con números menores que el número de bloque adquirido por la mutación en esa partición). En tablas no replicadas, los números de bloque en todas las particiones forman una sola secuencia. Esto significa que para las mutaciones de tablas no replicadas, la columna contendrá un registro con un solo número de bloque adquirido por la mutación.
+**block\_numbers.partition\_id**, **block\_numbers.número** - Una columna anidada. Para las mutaciones de tablas replicadas, contiene un registro para cada partición: el ID de partición y el número de bloque que fue adquirido por la mutación (en cada partición, solo se mutarán las partes que contienen bloques con números menores que el número de bloque adquirido por la mutación en esa partición). En tablas no replicadas, los números de bloque en todas las particiones forman una sola secuencia. Esto significa que para las mutaciones de tablas no replicadas, la columna contendrá un registro con un solo número de bloque adquirido por la mutación.
 
 **partes\_a\_do** - El número de partes de datos que deben mutarse para que finalice la mutación.
 
@@ -1017,7 +1017,7 @@ Si hubo problemas con la mutación de algunas partes, las siguientes columnas co
 
 **Método de codificación de datos:** - El mensaje de excepción que causó el error de mutación de parte más reciente.
 
-## sistema.disco {#system-tables-disks}
+## sistema.Discoteca {#system-tables-disks}
 
 Contiene información sobre los discos definidos en el [configuración del servidor](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
@@ -1038,7 +1038,7 @@ Columna:
 -   `policy_name` ([Cadena](../data_types/string.md)) — Nombre de la política de almacenamiento.
 -   `volume_name` ([Cadena](../data_types/string.md)) — Nombre de volumen definido en la política de almacenamiento.
 -   `volume_priority` ([UInt64](../data_types/int_uint.md)) — Número de orden de volumen en la configuración.
--   `disks` ([Array(Cadena)](../data_types/array.md)) — Nombres de disco, definidos en la directiva de almacenamiento.
+-   `disks` ([Matriz (Cadena)](../data_types/array.md)) — Nombres de disco, definidos en la directiva de almacenamiento.
 -   `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — Tamaño máximo de una parte de datos que se puede almacenar en discos de volumen (0 — sin límite).
 -   `move_factor` ([Float64](../data_types/float.md)) — Relación de espacio libre en disco. Cuando la relación excede el valor del parámetro de configuración, ClickHouse comienza a mover los datos al siguiente volumen en orden.
 

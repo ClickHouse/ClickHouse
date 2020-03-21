@@ -6,7 +6,7 @@ El Yandex.Metrica construye informes personalizados sobre la marcha basados en h
 
 A partir de abril de 2014, Yandex.Metrica estaba rastreando alrededor de 12 mil millones de eventos (vistas de páginas y clics) diariamente. Todos estos eventos deben almacenarse para crear informes personalizados. Una sola consulta puede requerir escanear millones de filas en unos pocos cientos de milisegundos, o cientos de millones de filas en solo unos segundos.
 
-## Uso en Yandex.Metrica y otros servicios de Yandex {#usage-in-yandex-metrica-and-other-yandex-services}
+## Uso en el Yandex.Metrica y otros servicios de Yandex {#usage-in-yandex-metrica-and-other-yandex-services}
 
 ClickHouse se utiliza para múltiples propósitos en Yandex.Métrica.
 Su tarea principal es crear informes en modo en línea utilizando datos no agregados. Utiliza un clúster de 374 servidores, que almacenan más de 20,3 billones de filas en la base de datos. El volumen de datos comprimidos, sin contar la duplicación y la replicación, es de aproximadamente 2 PB. El volumen de datos sin comprimir (en formato TSV) sería de aproximadamente 17 PB.

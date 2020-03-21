@@ -1,5 +1,5 @@
-# C++ Client Library {#c-client-library}
+# Biblioteca de clientes de C++ {#c-client-library}
 
-See README at [clickhouse-cpp](https://github.com/ClickHouse/clickhouse-cpp) repository.
+Ver README en [Bienvenidos](https://github.com/ClickHouse/clickhouse-cpp) repositorio.
 
-[Original article](https://clickhouse.tech/docs/es/interfaces/cpp/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/interfaces/cpp/) <!--hide-->

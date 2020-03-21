@@ -25,7 +25,7 @@ Para obtener una descripción de los parámetros de consulta, consulte [descripc
 
 **CollapsingMergeTree Parámetros**
 
--   `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” fila.
+-   `sign` — Nombre de la columna con el tipo de fila: `1` es una “state” fila, `-1` es una “cancel” Fila.
 
     Tipo de datos de columna — `Int8`.
 
@@ -51,7 +51,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Todos los parámetros excepto `sign` el mismo significado que en `MergeTree`.
 
--   `sign` — Nombre de la columna con el tipo de fila: `1` — “state” fila, `-1` — “cancel” fila.
+-   `sign` — Nombre de la columna con el tipo de fila: `1` — “state” fila, `-1` — “cancel” Fila.
 
     Tipo de datos de columna — `Int8`.
 
@@ -63,7 +63,7 @@ Todos los parámetros excepto `sign` el mismo significado que en `MergeTree`.
 
 Considere la situación en la que necesita guardar datos que cambian continuamente para algún objeto. Parece lógico tener una fila para un objeto y actualizarla en cualquier cambio, pero la operación de actualización es costosa y lenta para DBMS porque requiere la reescritura de los datos en el almacenamiento. Si necesita escribir datos rápidamente, la actualización no es aceptable, pero puede escribir los cambios de un objeto secuencialmente de la siguiente manera.
 
-Utilice la columna en particular `Sign`. Si `Sign = 1` significa que la fila es un estado de un objeto, llamémoslo “state” fila. Si `Sign = -1` significa la cancelación del estado de un objeto con los mismos atributos, llamémoslo “cancel” fila.
+Utilice la columna en particular `Sign`. Si `Sign = 1` significa que la fila es un estado de un objeto, llamémoslo “state” Fila. Si `Sign = -1` significa la cancelación del estado de un objeto con los mismos atributos, llamémoslo “cancel” Fila.
 
 Por ejemplo, queremos calcular cuántas páginas revisaron los usuarios en algún sitio y cuánto tiempo estuvieron allí. En algún momento escribimos la siguiente fila con el estado de la actividad del usuario:
 
@@ -111,22 +111,22 @@ Cuando ClickHouse combina partes de datos, cada grupo de filas consecutivas tien
 
 Para cada parte de datos resultante, ClickHouse guarda:
 
-1.  El primero “cancel” y el último “state” si el número de “state” y “cancel” y la última fila es una “state” fila.
+1.  El primero “cancel” y el último “state” si el número de “state” y “cancel” y la última fila es una “state” Fila.
 
-2.  El último “state” fila, si hay más “state” filas que “cancel” filas.
+2.  El último “state” fila, si hay más “state” películas que “cancel” películas.
 
-3.  El primero “cancel” fila, si hay más “cancel” filas que “state” filas.
+3.  El primero “cancel” fila, si hay más “cancel” películas que “state” películas.
 
 4.  Ninguna de las filas, en todos los demás casos.
 
-También cuando hay al menos 2 más “state” filas que “cancel” filas, o al menos 2 más “cancel” filas entonces “state” fila, la fusión continúa, pero ClickHouse trata esta situación como un error lógico y la registra en el registro del servidor. Este error puede producirse si se insertan los mismos datos más de una vez.
+También cuando hay al menos 2 más “state” películas que “cancel” filas, o al menos 2 más “cancel” películas entonces “state” fila, la fusión continúa, pero ClickHouse trata esta situación como un error lógico y la registra en el registro del servidor. Este error puede producirse si se insertan los mismos datos más de una vez.
 
 Por lo tanto, el colapso no debe cambiar los resultados del cálculo de las estadísticas.
 Los cambios colapsaron gradualmente para que al final solo quedara el último estado de casi todos los objetos.
 
 El `Sign` se requiere porque el algoritmo de fusión no garantiza que todas las filas con la misma clave de ordenación estarán en la misma parte de datos resultante e incluso en el mismo servidor físico. Proceso de ClickHouse `SELECT` consultas con múltiples hilos, y no puede predecir el orden de las filas en el resultado. La agregación es necesaria si hay una necesidad de obtener completamente “collapsed” datos de `CollapsingMergeTree` tabla.
 
-Para finalizar el colapso, escriba una consulta con `GROUP BY` cláusula y funciones agregadas que representan el signo. Por ejemplo, para calcular la cantidad, use `sum(Sign)` en lugar de `count()`. Para calcular la suma de algo, use `sum(Sign * x)` en lugar de `sum(x)` y así sucesivamente, y también añadir `HAVING sum(Sign) > 0`.
+Para finalizar el colapso, escriba una consulta con `GROUP BY` cláusula y funciones agregadas que representan el signo. Por ejemplo, para calcular la cantidad, use `sum(Sign)` es lugar de `count()`. Para calcular la suma de algo, use `sum(Sign * x)` es lugar de `sum(x)` y así sucesivamente, y también añadir `HAVING sum(Sign) > 0`.
 
 Los agregados `count`, `sum` y `avg` podría calcularse de esta manera. El agregado `uniq` podría calcularse si un objeto tiene al menos un estado no colapsado. Los agregados `min` y `max` no se pudo calcular porque `CollapsingMergeTree` no guarda el historial de valores de los estados colapsados.
 
@@ -188,7 +188,7 @@ SELECT * FROM UAct
 
 ¿Qué vemos y dónde está colapsando?
 
-Con dos `INSERT` consultas, hemos creado 2 partes de datos. El `SELECT` la consulta se realizó en 2 hilos, y obtuvimos un orden aleatorio de filas. No se ha producido un colapso porque todavía no se había fusionado las partes de datos. ClickHouse fusiona parte de datos en un momento desconocido que no podemos predecir.
+Con dos `INSERT` Consultas, hemos creado 2 partes de datos. El `SELECT` la consulta se realizó en 2 hilos, y obtuvimos un orden aleatorio de filas. No se ha producido un colapso porque todavía no se había fusionado las partes de datos. ClickHouse fusiona parte de datos en un momento desconocido que no podemos predecir.
 
 Por lo tanto, necesitamos agregación:
 
@@ -208,7 +208,7 @@ HAVING sum(Sign) > 0
 └─────────────────────┴───────────┴──────────┘
 ```
 
-Si no necesitamos agregación y queremos forzar el colapso, podemos usar `FINAL` modificador para `FROM` clausula.
+Si no necesitamos agregación y queremos forzar el colapso, podemos usar `FINAL` Modificador para `FROM` clausula.
 
 ``` sql
 SELECT * FROM UAct FINAL

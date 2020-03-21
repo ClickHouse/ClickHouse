@@ -14,7 +14,7 @@ Sustituye todas las apariciones del ‘pattern’ subcadena en ‘haystack’ co
 Reemplazo usando el ‘pattern’ expresión regular. Una expresión regular re2.
 Sustituye sólo la primera ocurrencia, si existe.
 Un patrón se puede especificar como ‘replacement’. Este patrón puede incluir sustituciones `\0-\9`.
-Sustitución `\0` incluye toda la expresión regular. Sustitución `\1-\9` corresponden a los números de subpatrón. `\` en una plantilla, escapar de ella usando `\`.
+Sustitución `\0` incluye toda la expresión regular. Sustitución `\1-\9` corresponden a los números de subpatrón. `\` es una plantilla, escapar de ella usando `\`.
 También tenga en cuenta que un literal de cadena requiere un escape adicional.
 
 Ejemplo 1. Conversión de la fecha a formato americano:
@@ -80,7 +80,7 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ## Sistema abierto.) {#regexpquotemetas}
 
 La función agrega una barra invertida antes de algunos caracteres predefinidos en la cadena.
-Caracteres predefinidos: ‘0’, ‘\\’, ‘\|’, ‘(’, ‘)’, ‘^’, ‘$’, ‘.’, ‘\[’Lugar de origen, ‘?’Acerca de\*‘,’+‘,’{‘,’:‘,’-’.
+Caracteres predefinidos: ‘0’, ‘\\’, ‘\|’, ‘(’, ‘)’, ‘^’, ‘$’, ‘.’, ‘\[’Lugar de origen, ‘?’Acerca de\*‘,’+‘,’{‘,’:‘,’¿Por qué?
 Esta implementación difiere ligeramente de re2::RE2::QuoteMeta. Escapa de byte cero como \\0 en lugar de 00 y escapa solo de los caracteres requeridos.
 Para obtener más información, consulte el enlace: [Bienvenido](https://github.com/google/re2/blob/master/re2/re2.cc#L473)
 

@@ -50,14 +50,14 @@ FROM WatchLog
 └────────────┴────────┴───────────┴─────┘
 ```
 
-## Virtual Columnas {#virtual-columns}
+## Columnas virtuales {#virtual-columns}
 
 -   `_table` — Contiene el nombre de la tabla de la que se leyeron los datos. Tipo: [Cadena](../../data_types/string.md).
 
-    Puede establecer las condiciones constantes en `_table` en el `WHERE/PREWHERE` cláusula (por ejemplo, `WHERE _table='xyz'`). En este caso, la operación de lectura se realiza sólo para las tablas donde la condición en `_table` está satisfecho, por lo que el `_table` columna actúa como un índice.
+    Puede establecer las condiciones constantes en `_table` es el `WHERE/PREWHERE` cláusula (por ejemplo, `WHERE _table='xyz'`). En este caso, la operación de lectura se realiza sólo para las tablas donde la condición en `_table` está satisfecho, por lo que el `_table` columna actúa como un índice.
 
 **Ver también**
 
--   [Virtual columnas](index.md#table_engines-virtual_columns)
+-   [Columnas virtuales](index.md#table_engines-virtual_columns)
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/merge/) <!--hide-->

@@ -1,30 +1,30 @@
-# Installation {#installation}
+# Instalación {#installation}
 
-## System Requirements {#system-requirements}
+## Requisitos del sistema {#system-requirements}
 
-ClickHouse can run on any Linux, FreeBSD or Mac OS X with x86\_64, AArch64 or PowerPC64LE CPU architecture.
+ClickHouse puede ejecutarse en cualquier Linux, FreeBSD o Mac OS X con arquitectura de CPU x86\_64, AArch64 o PowerPC64LE.
 
-Official pre-built binaries are typically compiled for x86\_64 and leverage SSE 4.2 instruction set, so unless otherwise stated usage of CPU that supports it becomes an additional system requirement. Here’s the command to check if current CPU has support for SSE 4.2:
+Los binarios oficiales preconstruidos generalmente se compilan para x86\_64 y aprovechan el conjunto de instrucciones SSE 4.2, por lo que, a menos que se indique lo contrario, el uso de la CPU que lo admite se convierte en un requisito adicional del sistema. Aquí está el comando para verificar si la CPU actual tiene soporte para SSE 4.2:
 
 ``` bash
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-To run ClickHouse on processors that do not support SSE 4.2 or have AArch64 or PowerPC64LE architecture, you should [build ClickHouse from sources](#from-sources) with proper configuration adjustments.
+Para ejecutar ClickHouse en procesadores que no admiten SSE 4.2 o tienen arquitectura AArch64 o PowerPC64LE, debe [Construir ClickHouse a partir de fuentes](#from-sources) con los ajustes de configuración adecuados.
 
-## Available Installation Options {#available-installation-options}
+## Opciones de instalación disponibles {#available-installation-options}
 
-### From DEB Packages {#install-from-deb-packages}
+### De paquetes DEB {#install-from-deb-packages}
 
-It is recommended to use official pre-compiled `deb` packages for Debian or Ubuntu.
+Se recomienda utilizar pre-compilado oficial `deb` " resultados de la búsqueda relacionados
 
-To install official packages add the Yandex repository in `/etc/apt/sources.list` or in a separate `/etc/apt/sources.list.d/clickhouse.list` file:
+Para instalar paquetes oficiales, agregue el repositorio de Yandex en `/etc/apt/sources.list` o en otra `/etc/apt/sources.list.d/clickhouse.list` file:
 
       deb http://repo.clickhouse.tech/deb/stable/ main/
 
-If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
+Si desea utilizar la versión más reciente, reemplace `stable` desventaja `testing` (esto se recomienda para sus entornos de prueba).
 
-Then run these commands to actually install packages:
+A continuación, ejecute estos comandos para instalar realmente los paquetes:
 
 ``` bash
 sudo apt-get install dirmngr # optional
@@ -33,20 +33,20 @@ sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
 ```
 
-You can also download and install packages manually from here: https://repo.yandex.ru/clickhouse/deb/stable/main/.
+También puede descargar e instalar paquetes manualmente desde aquí: https://repo.yandex.ru/clickhouse/deb/stable/main/.
 
-#### Packages {#packages}
+#### Paquete {#packages}
 
 -   `clickhouse-common-static` — Installs ClickHouse compiled binary files.
--   `clickhouse-server` — Creates a symbolic link for `clickhouse-server`. Installs server configuration.
--   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. Installs client configurations.
+-   `clickhouse-server` — Creates a symbolic link for `clickhouse-server`. Instala la configuración del servidor.
+-   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` y otras herramientas relacionadas con el cliente. Instala configuraciones de cliente.
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
-### From RPM Packages {#from-rpm-packages}
+### De paquetes RPM {#from-rpm-packages}
 
-It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat and all other rpm-based Linux distributions.
+Se recomienda utilizar pre-compilado oficial `rpm` paquetes para CentOS, RedHat y todas las demás distribuciones de Linux basadas en rpm.
 
-First, you need to add the official repository:
+Primero, necesitas agregar el repositorio oficial:
 
 ``` bash
 sudo yum install yum-utils
@@ -54,22 +54,22 @@ sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
 sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
 ```
 
-If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments). The `prestable` tag is sometimes available too.
+Si desea utilizar la versión más reciente, reemplace `stable` desventaja `testing` (esto se recomienda para sus entornos de prueba). El `prestable` etiqueta a veces está disponible también.
 
-Then run these commands to install packages:
+A continuación, ejecute estos comandos para instalar paquetes:
 
 ``` bash
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-You can also download and install packages manually from here: https://repo.clickhouse.tech/rpm/stable/x86\_64.
+También puede descargar e instalar paquetes manualmente desde aquí: https://repo.casa de clic.tecnología / rpm / estable / x86\_64.
 
-### From tgz archives {#from-tgz-archives}
+### De archivos tgz {#from-tgz-archives}
 
-It is recommended to use official pre-compiled `tgz` archives for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
+Se recomienda utilizar pre-compilado oficial `tgz` para todas las distribuciones de Linux, donde la instalación de `deb` o `rpm` paquetes no es posible.
 
-The required version can be downloaded with `curl` or `wget` from repository https://repo.yandex.ru/clickhouse/tgz/.
-After that downloaded archives should be unpacked and installed with installation scripts. Example for the latest version:
+La versión requerida se puede descargar con `curl` o `wget` desde el repositorio https://repo.yandex.ru/clickhouse/tgz/.
+Después de eso, los archivos descargados deben desempaquetarse e instalarse con scripts de instalación. Ejemplo para la última versión:
 
 ``` bash
 export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
@@ -92,71 +92,71 @@ tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
 sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 ```
 
-For production environments, it’s recommended to use the latest `stable`-version. You can find its number on GitHub page https://github.com/ClickHouse/ClickHouse/tags with postfix `-stable`.
+Para los entornos de producción, se recomienda utilizar las últimas `stable`-versión. Puede encontrar su número en la página de GitHub https://github.com/ClickHouse/ClickHouse/tags con postfix `-stable`.
 
-### From Docker Image {#from-docker-image}
+### Imagen de Desde Docker {#from-docker-image}
 
-To run ClickHouse inside Docker follow the guide on [Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/). Those images use official `deb` packages inside.
+Para ejecutar ClickHouse dentro de Docker, siga la guía en [Eje de acoplador](https://hub.docker.com/r/yandex/clickhouse-server/). Esas imágenes usan oficial `deb` paquetes dentro.
 
-### From Sources {#from-sources}
+### De fuentes {#from-sources}
 
-To manually compile ClickHouse, follow the instructions for [Linux](../development/build.md) or [Mac OS X](../development/build_osx.md).
+Para compilar manualmente ClickHouse, siga las instrucciones para [Linux](../development/build.md) o [Mac OS X](../development/build_osx.md).
 
-You can compile packages and install them or use programs without installing packages. Also by building manually you can disable SSE 4.2 requirement or build for AArch64 CPUs.
+Puede compilar paquetes e instalarlos o usar programas sin instalar paquetes. Además, al construir manualmente, puede deshabilitar el requisito de SSE 4.2 o compilar para CPU AArch64.
 
       Client: dbms/programs/clickhouse-client
       Server: dbms/programs/clickhouse-server
 
-You’ll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/dbms/programs/server/config.xml), by default they are:
+Tendrá que crear carpetas de datos y metadatos y `chown` para el usuario deseado. Sus rutas se pueden cambiar en la configuración del servidor (src/dbms/programs/server/config .xml), por defecto son:
 
       /opt/clickhouse/data/default/
       /opt/clickhouse/metadata/default/
 
-On Gentoo, you can just use `emerge clickhouse` to install ClickHouse from sources.
+En Gentoo, puedes usar `emerge clickhouse` para instalar ClickHouse desde fuentes.
 
-## Launch {#launch}
+## Lanzar {#launch}
 
-To start the server as a daemon, run:
+Para iniciar el servidor como demonio, ejecute:
 
 ``` bash
 $ sudo service clickhouse-server start
 ```
 
-If you don’t have `service` command, run as
+Si no tienes `service` comando ejecutar como
 
 ``` bash
 $ sudo /etc/init.d/clickhouse-server start
 ```
 
-See the logs in the `/var/log/clickhouse-server/` directory.
+Vea los registros en el `/var/log/clickhouse-server/` Directorio.
 
-If the server doesn’t start, check the configurations in the file `/etc/clickhouse-server/config.xml`.
+Si el servidor no se inicia, compruebe las configuraciones en el archivo `/etc/clickhouse-server/config.xml`.
 
-You can also manually launch the server from the console:
+También puede iniciar manualmente el servidor desde la consola:
 
 ``` bash
 $ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
 
-In this case, the log will be printed to the console, which is convenient during development.
-If the configuration file is in the current directory, you don’t need to specify the `--config-file` parameter. By default, it uses `./config.xml`.
+En este caso, el registro se imprimirá en la consola, lo cual es conveniente durante el desarrollo.
+Si el archivo de configuración está en el directorio actual, no es necesario `--config-file` parámetro. De forma predeterminada, utiliza `./config.xml`.
 
-ClickHouse supports access restriction settings. They are located in the `users.xml` file (next to `config.xml`).
-By default, access is allowed from anywhere for the `default` user, without a password. See `user/default/networks`.
-For more information, see the section [“Configuration Files”](../operations/configuration_files.md).
+ClickHouse admite la configuración de restricción de acceso. Están ubicados en el `users.xml` Archivo (junto a `config.xml`).
+De forma predeterminada, se permite el acceso desde cualquier lugar `default` usuario, sin una contraseña. Ver `user/default/networks`.
+Para obtener más información, consulte la sección [“Configuration Files”](../operations/configuration_files.md).
 
-After launching server, you can use the command-line client to connect to it:
+Después de iniciar el servidor, puede usar el cliente de línea de comandos para conectarse a él:
 
 ``` bash
 $ clickhouse-client
 ```
 
-By default, it connects to `localhost:9000` on behalf of the user `default` without a password. It can also be used to connect to a remote server using `--host` argument.
+Por defecto, se conecta a `localhost:9000` es nombre del usuario `default` sin una contraseña. También se puede usar para conectarse a un servidor remoto usando `--host` argumento.
 
-The terminal must use UTF-8 encoding.
-For more information, see the section [“Command-line client”](../interfaces/cli.md).
+El terminal debe usar codificación UTF-8.
+Para obtener más información, consulte la sección [“Command-line client”](../interfaces/cli.md).
 
-Example:
+Ejemplo:
 
 ``` bash
 $ ./clickhouse-client
@@ -177,8 +177,8 @@ SELECT 1
 :)
 ```
 
-**Congratulations, the system works!**
+**Felicidades, el sistema funciona!**
 
-To continue experimenting, you can download one of the test data sets or go through [tutorial](https://clickhouse.tech/tutorial.html).
+Para continuar experimentando, puede descargar uno de los conjuntos de datos de prueba o pasar por [tutorial](https://clickhouse.tech/tutorial.html).
 
-[Original article](https://clickhouse.tech/docs/es/getting_started/install/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/getting_started/install/) <!--hide-->

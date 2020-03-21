@@ -1,6 +1,6 @@
 # Funciones de redondeo {#rounding-functions}
 
-## piso(x\[, N\]) {#floorx-n}
+## Piso(x\[, N\]) {#floorx-n}
 
 Devuelve el número de ronda más grande que es menor o igual que `x`. Un número redondo es un múltiplo de 1/10N, o el número más cercano del tipo de datos apropiado si 1 / 10N no es exacto.
 ‘N’ es una constante entera, parámetro opcional. Por defecto es cero, lo que significa redondear a un entero.
@@ -32,7 +32,7 @@ round(expression [, decimal_places])
 
 **Parámetros:**
 
--   `expression` — Un número que se redondeará. Puede ser cualquier [expresion](../syntax.md#syntax-expressions) devolviendo el numérico [tipo de datos](../../data_types/index.md#data_types).
+-   `expression` — Un número que se redondeará. Puede ser cualquier [expresión](../syntax.md#syntax-expressions) devolviendo el numérico [Tipo de datos](../../data_types/index.md#data_types).
 -   `decimal-places` — Un valor entero.
     -   Si `decimal-places > 0` luego la función redondea el valor a la derecha del punto decimal.
     -   Si `decimal-places < 0` luego la función redondea el valor a la izquierda del punto decimal.
@@ -111,7 +111,7 @@ roundBankers(expression [, decimal_places])
 
 **Parámetros**
 
--   `expression` — Un número que se redondeará. Puede ser cualquier [expresion](../syntax.md#syntax-expressions) devolviendo el numérico [tipo de datos](../../data_types/index.md#data_types).
+-   `expression` — Un número que se redondeará. Puede ser cualquier [expresión](../syntax.md#syntax-expressions) devolviendo el numérico [Tipo de datos](../../data_types/index.md#data_types).
 -   `decimal-places` — Lugares decimales. Un número entero.
     -   `decimal-places > 0` — La función redondea el número a la derecha del punto decimal. Ejemplo: `roundBankers(3.55, 1) = 3.6`.
     -   `decimal-places < 0` — La función redondea el número a la izquierda del punto decimal. Ejemplo: `roundBankers(24.55, -1) = 20`.
@@ -162,7 +162,7 @@ roundBankers(10.755, 2) = 11,76
 
 **Ver también**
 
--   [ronda](#rounding_functions-round)
+-   [Ronda](#rounding_functions-round)
 
 ## ¿Cómo puedo hacerlo?) {#roundtoexp2num}
 

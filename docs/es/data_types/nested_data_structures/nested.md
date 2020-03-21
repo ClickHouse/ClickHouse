@@ -2,7 +2,7 @@
 
 A nested data structure is like a nested table. The parameters of a nested data structure – the column names and types – are specified the same way as in a CREATE query. Each table row can correspond to any number of rows in a nested data structure.
 
-Example:
+Ejemplo:
 
 ``` sql
 CREATE TABLE test.visits
@@ -27,13 +27,13 @@ CREATE TABLE test.visits
 ) ENGINE = CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
 ```
 
-This example declares the `Goals` nested data structure, which contains data about conversions (goals reached). Each row in the ‘visits’ table can correspond to zero or any number of conversions.
+Este ejemplo declara la `Goals` estructura de datos anidada, que contiene datos sobre conversiones (objetivos alcanzados). Cada fila en el ‘visits’ la tabla puede corresponder a cero o cualquier número de conversiones.
 
-Only a single nesting level is supported. Columns of nested structures containing arrays are equivalent to multidimensional arrays, so they have limited support (there is no support for storing these columns in tables with the MergeTree engine).
+Solo se admite un único nivel de anidamiento. Las columnas de estructuras anidadas que contienen matrices son equivalentes a matrices multidimensionales, por lo que tienen un soporte limitado (no hay soporte para almacenar estas columnas en tablas con el motor MergeTree).
 
-In most cases, when working with a nested data structure, its individual columns are specified. To do this, the column names are separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
+En la mayoría de los casos, cuando se trabaja con una estructura de datos anidada, se especifican sus columnas individuales. Para hacer esto, los nombres de columna están separados por un punto. Estas columnas forman una matriz de tipos coincidentes. Todas las matrices de columnas de una sola estructura de datos anidados tienen la misma longitud.
 
-Example:
+Ejemplo:
 
 ``` sql
 SELECT
@@ -59,9 +59,9 @@ LIMIT 10
 └────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-It is easiest to think of a nested data structure as a set of multiple column arrays of the same length.
+Es más fácil pensar en una estructura de datos anidados como un conjunto de múltiples matrices de columnas de la misma longitud.
 
-The only place where a SELECT query can specify the name of an entire nested data structure instead of individual columns is the ARRAY JOIN clause. For more information, see “ARRAY JOIN clause”. Example:
+El único lugar donde una consulta SELECT puede especificar el nombre de una estructura de datos anidada completa en lugar de columnas individuales es la cláusula ARRAY JOIN. Para obtener más información, consulte “ARRAY JOIN clause”. Ejemplo:
 
 ``` sql
 SELECT
@@ -88,12 +88,12 @@ LIMIT 10
 └─────────┴─────────────────────┘
 ```
 
-You can’t perform SELECT for an entire nested data structure. You can only explicitly list individual columns that are part of it.
+No puede realizar SELECT para toda una estructura de datos anidados. Solo puede enumerar explícitamente columnas individuales que forman parte de él.
 
-For an INSERT query, you should pass all the component column arrays of a nested data structure separately (as if they were individual column arrays). During insertion, the system checks that they have the same length.
+Para una consulta INSERT, debe pasar todas las matrices de columnas de componentes de una estructura de datos anidada por separado (como si fueran matrices de columnas individuales). Durante la inserción, el sistema comprueba que tienen la misma longitud.
 
-For a DESCRIBE query, the columns in a nested data structure are listed separately in the same way.
+Para una consulta DESCRIBE, las columnas de una estructura de datos anidada se enumeran por separado de la misma manera.
 
-The ALTER query is very limited for elements in a nested data structure.
+La consulta ALTER es muy limitada para los elementos de una estructura de datos anidada.
 
-[Original article](https://clickhouse.tech/docs/es/data_types/nested_data_structures/nested/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/nested_data_structures/nested/) <!--hide-->

@@ -5,7 +5,7 @@ En el Yandex.Metrica, JSON es transmitido por los usuarios como parámetros de s
 Se hacen las siguientes suposiciones:
 
 1.  El nombre de campo (argumento de función) debe ser una constante.
-2.  El nombre del campo de alguna manera está codificado canónicamente en JSON. Por ejemplo: `visitParamHas('{"abc":"def"}', 'abc') = 1`, pero `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
+2.  El nombre del campo de alguna manera está codificado canónicamente en JSON. Por ejemplo: `visitParamHas('{"abc":"def"}', 'abc') = 1` pero `visitParamHas('{"\\u0061\\u0062\\u0063":"def"}', 'abc') = 0`
 3.  Los campos se buscan en cualquier nivel de anidación, indiscriminadamente. Si hay varios campos coincidentes, se utiliza la primera aparición.
 4.  El JSON no tiene caracteres de espacio fuera de los literales de cadena.
 
@@ -40,7 +40,7 @@ visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
 visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 ```
 
-## visitParamExtractString(params, nombre) {#visitparamextractstringparams-name}
+## Por favor, consulte el siguiente enlace:) {#visitparamextractstringparams-name}
 
 Analiza la cadena entre comillas dobles. El valor es sin escape. Si no se pudo desescapar, devuelve una cadena vacía.
 

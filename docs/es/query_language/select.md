@@ -119,7 +119,7 @@ Si una consulta no muestra ninguna columnas (por ejemplo, `SELECT count() FROM t
 
 #### Modificador FINAL {#select-from-final}
 
-Aplicable al seleccionar datos de tablas del [Método de codificación de datos:](../operations/table_engines/mergetree.md)-Familia de motores distintos de `GraphiteMergeTree`. Cuando `FINAL` se especifica, ClickHouse fusiona completamente los datos antes de devolver el resultado y, por lo tanto, realiza todas las transformaciones de datos que ocurren durante las fusiones para el motor de tabla dado.
+Aplicable al seleccionar datos de tablas del [Método de codificación de datos:](../operations/table_engines/mergetree.md)-Familia de motores distintos de `GraphiteMergeTree`. Cuando `FINAL` ClickHouse fusiona completamente los datos antes de devolver el resultado y, por lo tanto, realiza todas las transformaciones de datos que ocurren durante las fusiones para el motor de tabla dado.
 
 También soportado para:
 - [Replicado](../operations/table_engines/replication.md) versiones de `MergeTree` motor.
@@ -150,20 +150,20 @@ El procesamiento de consultas aproximado puede ser útil en los siguientes casos
 Las características del muestreo de datos se enumeran a continuación:
 
 -   El muestreo de datos es un mecanismo determinista. El resultado de la misma `SELECT .. SAMPLE` la consulta es siempre la misma.
--   El muestreo funciona consistentemente para diferentes tablas. Para tablas con una sola clave de muestreo, una muestra con el mismo coeficiente siempre selecciona el mismo subconjunto de datos posibles. Por ejemplo, una muestra de ID de usuario toma filas con el mismo subconjunto de todos los ID de usuario posibles de diferentes tablas. Esto significa que puede utilizar el ejemplo en subconsultas [EN](#select-in-operators) clausula. Además, puede unir muestras usando el [UNIR](#select-join) clausula.
+-   El muestreo funciona consistentemente para diferentes tablas. Para tablas con una sola clave de muestreo, una muestra con el mismo coeficiente siempre selecciona el mismo subconjunto de datos posibles. Por ejemplo, una muestra de ID de usuario toma filas con el mismo subconjunto de todos los ID de usuario posibles de diferentes tablas. Esto significa que puede utilizar el ejemplo en subconsultas [ES](#select-in-operators) clausula. Además, puede unir muestras usando el [UNIR](#select-join) clausula.
 -   El muestreo permite leer menos datos de un disco. Tenga en cuenta que debe especificar la clave de muestreo correctamente. Para obtener más información, consulte [Creación de una tabla MergeTree](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table).
 
 Para el `SAMPLE` cláusula se admite la siguiente sintaxis:
 
-| MUESTRA Clause Syntax | Descripci                                                                                                                                                                                                                                                                     |
-|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `SAMPLE k`            | Aqui `k` es el número de 0 a 1.</br>La consulta se ejecuta en `k` de datos. Por ejemplo, `SAMPLE 0.1` ejecuta la consulta en el 10% de los datos. [Leer más](#select-sample-k)                                                                                                |
-| `SAMPLE n`            | Aqui `n` es un entero suficientemente grande.</br>La consulta se ejecuta en una muestra de al menos `n` filas (pero no significativamente más que esto). Por ejemplo, `SAMPLE 10000000` ejecuta la consulta en un mínimo de 10.000.000 de filas. [Leer más](#select-sample-n) |
-| `SAMPLE k OFFSET m`   | Aqui `k` y `m` son los números del 0 al 1.</br>La consulta se ejecuta en una muestra de `k` de los datos. Los datos utilizados para el ejemplo se compensan por `m` fracción. [Leer más](#select-sample-offset)                                                               |
+| Sintaxis de la cláusula MUESTRA | Descripción                                                                                                                                                                                                                                                                   |
+|---------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `SAMPLE k`                      | Aquí `k` es el número de 0 a 1.</br>La consulta se ejecuta en `k` de datos. Por ejemplo, `SAMPLE 0.1` Ejecuta la consulta en el 10% de los datos. [Leer más](#select-sample-k)                                                                                                |
+| `SAMPLE n`                      | Aquí `n` es un entero suficientemente grande.</br>La consulta se ejecuta en una muestra de al menos `n` filas (pero no significativamente más que esto). Por ejemplo, `SAMPLE 10000000` ejecuta la consulta en un mínimo de 10.000.000 de filas. [Leer más](#select-sample-n) |
+| `SAMPLE k OFFSET m`             | Aquí `k` y `m` son los números del 0 al 1.</br>La consulta se ejecuta en una muestra de `k` de los datos. Los datos utilizados para el ejemplo se compensan por `m` fracción. [Leer más](#select-sample-offset)                                                               |
 
 #### MUESTRA k {#select-sample-k}
 
-Aqui `k` es el número de 0 a 1 (se admiten notaciones fraccionarias y decimales). Por ejemplo, `SAMPLE 1/2` o `SAMPLE 0.5`.
+Aquí `k` es el número de 0 a 1 (se admiten notaciones fraccionarias y decimales). Por ejemplo, `SAMPLE 1/2` o `SAMPLE 0.5`.
 
 En un `SAMPLE k` cláusula, la muestra se toma de la `k` de datos. El ejemplo se muestra a continuación:
 
@@ -183,7 +183,7 @@ En este ejemplo, la consulta se ejecuta en una muestra de 0,1 (10%) de datos. Lo
 
 #### MUESTRA n {#select-sample-n}
 
-Aqui `n` es un entero suficientemente grande. Por ejemplo, `SAMPLE 10000000`.
+Aquí `n` es un entero suficientemente grande. Por ejemplo, `SAMPLE 10000000`.
 
 En este caso, la consulta se ejecuta en una muestra de al menos `n` filas (pero no significativamente más que esto). Por ejemplo, `SAMPLE 10000000` ejecuta la consulta en un mínimo de 10.000.000 de filas.
 
@@ -219,7 +219,7 @@ SAMPLE 10000000
 
 #### MUESTRA k OFFSET m {#select-sample-offset}
 
-Aqui `k` y `m` son números del 0 al 1. Los ejemplos se muestran a continuación.
+Aquí `k` y `m` son números del 0 al 1. Los ejemplos se muestran a continuación.
 
 **Ejemplo 1**
 
@@ -529,13 +529,13 @@ Los nombres de tabla se pueden especificar en lugar de `<left_subquery>` y `<rig
 
 #### Tipos admitidos de `JOIN` {#select-join-types}
 
--   `INNER JOIN` (o `JOIN`)
--   `LEFT JOIN` (o `LEFT OUTER JOIN`)
--   `RIGHT JOIN` (o `RIGHT OUTER JOIN`)
--   `FULL JOIN` (o `FULL OUTER JOIN`)
--   `CROSS JOIN` (o `,` )
+-   `INNER JOIN` (o)) `JOIN`)
+-   `LEFT JOIN` (o)) `LEFT OUTER JOIN`)
+-   `RIGHT JOIN` (o)) `RIGHT OUTER JOIN`)
+-   `FULL JOIN` (o)) `FULL OUTER JOIN`)
+-   `CROSS JOIN` (o)) `,` )
 
-Ver el estándar [SQL UNIRSE](https://en.wikipedia.org/wiki/Join_(SQL)) descripci.
+Ver el estándar [SQL UNIRSE](https://en.wikipedia.org/wiki/Join_(SQL)) Descripción
 
 #### ÚNETE Múltiple {#multiple-join}
 
@@ -557,7 +557,7 @@ SELECT * FROM t1, t2, t3 WHERE t1.a = t2.a AND t1.a = t3.a
 
 No mezcle estas sintaxis.
 
-ClickHouse no admite directamente la sintaxis con comas, por lo que no recomendamos su uso. El algoritmo intenta reescribir la consulta en términos de `CROSS JOIN` y `INNER JOIN` y luego procede al procesamiento de consultas. Al reescribir la consulta, ClickHouse intenta optimizar el rendimiento y el consumo de memoria. De forma predeterminada, ClickHouse trata las comas como `INNER JOIN` cláusula y convierte `INNER JOIN` a `CROSS JOIN` cuando el algoritmo no puede garantizar que `INNER JOIN` devuelve los datos requeridos.
+ClickHouse no admite directamente la sintaxis con comas, por lo que no recomendamos su uso. El algoritmo intenta reescribir la consulta en términos de `CROSS JOIN` y `INNER JOIN` y luego procede al procesamiento de consultas. Al reescribir la consulta, ClickHouse intenta optimizar el rendimiento y el consumo de memoria. De forma predeterminada, ClickHouse trata las comas como `INNER JOIN` cláusula y convierte `INNER JOIN` Naciones `CROSS JOIN` cuando el algoritmo no puede garantizar que `INNER JOIN` devuelve los datos requeridos.
 
 #### Rigor {#select-join-strictness}
 
@@ -565,7 +565,7 @@ ClickHouse no admite directamente la sintaxis con comas, por lo que no recomenda
 -   `ANY` — Si la tabla correcta tiene varias filas coincidentes, solo se une la primera encontrada. Si la tabla correcta solo tiene una fila coincidente, los resultados de las consultas `ANY` y `ALL` palabras clave son las mismas.
 -   `ASOF` — Para unir secuencias con una coincidencia no exacta. `ASOF JOIN` el uso se describe a continuación.
 
-**ASOF JOIN Uso**
+**ASOF UNIRSE A Uso**
 
 `ASOF JOIN` es útil cuando necesita unir registros que no tienen una coincidencia exacta.
 
@@ -609,7 +609,7 @@ event_1_2 |  13:00  |  42         event_2_3 |  13:00  |   42
               ...                               ...
 ```
 
-`ASOF JOIN` puede tomar la marca de tiempo de un evento de usuario de `table_1` y encontrar un evento en `table_2` donde la marca de tiempo es la más cercana a la marca de tiempo del evento `table_1` correspondiente a la condición de coincidencia más cercana. Los valores de marca de tiempo iguales son los más cercanos si están disponibles. Aquí, el `user_id` se puede utilizar para unirse a la igualdad y el `ev_time` columna se puede utilizar para unirse en el partido más cercano. En nuestro ejemplo, `event_1_1` se puede unir con `event_2_1` y `event_1_2` se puede unir con `event_2_3`, pero `event_2_2` no se puede unir.
+`ASOF JOIN` puede tomar la marca de tiempo de un evento de usuario de `table_1` y encontrar un evento en `table_2` donde la marca de tiempo es la más cercana a la marca de tiempo del evento `table_1` correspondiente a la condición de coincidencia más cercana. Los valores de marca de tiempo iguales son los más cercanos si están disponibles. Aquí, el `user_id` se puede utilizar para unirse a la igualdad y el `ev_time` columna se puede utilizar para unirse en el partido más cercano. En nuestro ejemplo, `event_1_1` se puede unir con `event_2_1` y `event_1_2` se puede unir con `event_2_3` pero `event_2_2` no se puede unir.
 
 !!! note "Nota"
     `ASOF` unirse es **ni** apoyado en el [Unir](../operations/table_engines/join.md) motor de mesa.
@@ -626,7 +626,7 @@ Tenga cuidado al usar `GLOBAL`. Para obtener más información, consulte la secc
 
 #### Recomendaciones de uso {#usage-recommendations}
 
-Cuando se ejecuta un `JOIN`, no hay optimización del orden de ejecución en relación con otras etapas de la consulta. La combinación (una búsqueda en la tabla de la derecha) se ejecuta antes de filtrar `WHERE` y antes de la agregación. Para establecer explícitamente el orden de procesamiento, recomendamos ejecutar un `JOIN` subconsulta con una subconsulta.
+Cuando se ejecuta un `JOIN`, no hay optimización del orden de ejecución en relación con otras etapas de la consulta. La combinación (una búsqueda en la tabla de la derecha) se ejecuta antes de filtrar `WHERE` y antes de la agregación. Para establecer explícitamente el orden de procesamiento, recomendamos ejecutar un `JOIN` Subconsulta con una subconsulta.
 
 Ejemplo:
 
@@ -678,14 +678,14 @@ La tabla correcta (el resultado de la subconsulta) reside en la RAM. Si no hay s
 
 Cada vez que se ejecuta una consulta `JOIN`, la subconsulta se ejecuta de nuevo porque el resultado no se almacena en caché. Para evitar esto, use el especial [Unir](../operations/table_engines/join.md) motor de tabla, que es una matriz preparada para unirse que siempre está en RAM.
 
-En algunos casos, es más eficiente de usar `IN` en lugar de `JOIN`.
-Entre los diversos tipos de `JOIN` el más eficiente es `ANY LEFT JOIN`, entonces `ANY INNER JOIN`. Los menos eficientes son `ALL LEFT JOIN` y `ALL INNER JOIN`.
+En algunos casos, es más eficiente de usar `IN` es lugar de `JOIN`.
+Entre los diversos tipos de `JOIN` el más eficiente es `ANY LEFT JOIN`, entonces `ANY INNER JOIN`. Los menos eficientes hijo `ALL LEFT JOIN` y `ALL INNER JOIN`.
 
 Si necesita un `JOIN` para unirse a tablas de dimensión (son tablas relativamente pequeñas que contienen propiedades de dimensión, como nombres para campañas publicitarias), un `JOIN` podría no ser muy conveniente debido al hecho de que se vuelve a acceder a la tabla correcta para cada consulta. Para tales casos, hay un «external dictionaries» característica que debe utilizar en lugar de `JOIN`. Para obtener más información, consulte la sección [Diccionarios externos](dicts/external_dicts.md).
 
 **Limitaciones de memoria**
 
-ClickHouse utiliza el [hash unirse](https://en.wikipedia.org/wiki/Hash_join) algoritmo. ClickHouse toma el `<right_subquery>` y crea una tabla hash para ello en RAM. Si necesita restringir el consumo de memoria de la operación de unión, use la siguiente configuración:
+ClickHouse utiliza el [hash unirse](https://en.wikipedia.org/wiki/Hash_join) algoritmo. Haga clic enCasa toma el `<right_subquery>` y crea una tabla hash para ello en RAM. Si necesita restringir el consumo de memoria de la operación de unión, use la siguiente configuración:
 
 -   [Método de codificación de datos:](../operations/settings/query_complexity.md#settings-max_rows_in_join) — Limita el número de filas en la tabla hash.
 -   [Método de codificación de datos:](../operations/settings/query_complexity.md#settings-max_bytes_in_join) — Limita el tamaño de la tabla hash.
@@ -696,11 +696,11 @@ Cuando se alcanza cualquiera de estos límites, ClickHouse actúa como el [join\
 
 Al unir tablas, pueden aparecer las celdas vacías. Configuración [Sistema abierto.](../operations/settings/settings.md#join_use_nulls) definir cómo ClickHouse llena estas celdas.
 
-Si el `JOIN` las llaves son [NULL](../data_types/nullable.md) campos, las filas donde al menos una de las claves tiene el valor [NULO](syntax.md#null-literal) no se unen.
+Si el `JOIN` las llaves hijo [NULO](../data_types/nullable.md) campos, las filas donde al menos una de las claves tiene el valor [NULO](syntax.md#null-literal) no se unen.
 
 #### Limitaciones de sintaxis {#syntax-limitations}
 
-Para múltiples `JOIN` cláusulas en una sola `SELECT` consulta:
+Para múltiples `JOIN` cláusulas en una sola `SELECT` Consulta:
 
 -   Tomando todas las columnas a través de `*` está disponible solo si se unen tablas, no subconsultas.
 -   El `PREWHERE` cláusula no está disponible.
@@ -725,7 +725,7 @@ Tiene sentido usar PREWHERE si hay condiciones de filtración utilizadas por una
 
 Por ejemplo, es útil escribir PREWHERE para consultas que extraen un gran número de columnas, pero que solo tienen filtración para unas pocas columnas.
 
-PREWHERE solo es compatible con tablas de la `*MergeTree` familia.
+PREWHERE solo es compatible con tablas de la `*MergeTree` Familia.
 
 Una consulta puede especificar simultáneamente PREWHERE y WHERE. En este caso, PREWHERE precede WHERE.
 
@@ -807,7 +807,7 @@ Si pasa varias teclas a `GROUP BY` el resultado le dará todas las combinaciones
 
 Si se especifica el modificador WITH TOTALS, se calculará otra fila. Esta fila tendrá columnas clave que contienen valores predeterminados (zeros o líneas vacías) y columnas de funciones agregadas con los valores calculados en todas las filas (el «total» valor).
 
-Esta fila adicional se genera en formatos JSON \*, TabSeparated \* y Pretty \*, por separado de las otras filas. En los otros formatos, esta fila no se genera.
+Esta fila adicional se genera en formatos JSON \*, TabSeparated \* y Pretty \*, por separado de las otras filas. En los otros formatos, esta fila no se géneros.
 
 En los formatos JSON\*, esta fila se muestra como una ‘totals’ campo. En los formatos TabSeparated\*, la fila viene después del resultado principal, precedida por una fila vacía (después de los otros datos). En los formatos Pretty\*, la fila se muestra como una tabla separada después del resultado principal.
 
@@ -818,9 +818,9 @@ Las otras alternativas incluyen solo las filas que pasan por HAVING en ‘totals
 
 `after_having_exclusive` – No incluya filas que no hayan pasado `max_rows_to_group_by`. En otras palabras, ‘totals’ tendrá menos o el mismo número de filas que si `max_rows_to_group_by` se omitieron.
 
-`after_having_inclusive` – Incluir todas las filas que no pasaron ‘max\_rows\_to\_group\_by’ en ‘totals’. En otras palabras, ‘totals’ tendrá más o el mismo número de filas como lo haría si `max_rows_to_group_by` se omitieron.
+`after_having_inclusive` – Incluir todas las filas que no pasaron ‘max\_rows\_to\_group\_by’ es ‘totals’. En otras palabras, ‘totals’ tendrá más o el mismo número de filas como lo haría si `max_rows_to_group_by` se omitieron.
 
-`after_having_auto` – Cuente el número de filas que pasaron por HAVING. Si es más de una cierta cantidad (de forma predeterminada, 50%), incluya todas las filas que no pasaron ‘max\_rows\_to\_group\_by’ en ‘totals’. De lo contrario, no los incluya.
+`after_having_auto` – Cuente el número de filas que pasaron por HAVING. Si es más de una cierta cantidad (de forma predeterminada, 50%), incluya todas las filas que no pasaron ‘max\_rows\_to\_group\_by’ es ‘totals’. De lo contrario, no los incluya.
 
 `totals_auto_threshold` – Por defecto, 0.5. El coeficiente para `after_having_auto`.
 
@@ -828,7 +828,7 @@ Si `max_rows_to_group_by` y `group_by_overflow_mode = 'any'` no se utilizan, tod
 
 Puede usar WITH TOTALS en subconsultas, incluidas las subconsultas en la cláusula JOIN (en este caso, se combinan los valores totales respectivos).
 
-#### GROUP BY en memoria externa {#select-group-by-in-external-memory}
+#### GRUPO POR en memoria externa {#select-group-by-in-external-memory}
 
 Puede habilitar el volcado de datos temporales en el disco para restringir el uso de memoria durante `GROUP BY`.
 El [max\_bytes\_before\_external\_group\_by](../operations/settings/settings.md#settings-max_bytes_before_external_group_by) determina el umbral de consumo de RAM para el dumping `GROUP BY` datos temporales al sistema de archivos. Si se establece en 0 (el valor predeterminado), está deshabilitado.
@@ -894,7 +894,7 @@ SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id
 └────┴─────┘
 ```
 
-El `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` query devuelve el mismo resultado.
+El `SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` consulta devuelve el mismo resultado.
 
 La siguiente consulta devuelve las 5 referencias principales para cada `domain, device_type` par con un máximo de 100 filas en total (`LIMIT n BY + LIMIT`).
 
@@ -986,7 +986,7 @@ La clasificación externa funciona con mucha menos eficacia que la clasificació
 
 Si desea incluir todas las columnas en el resultado, use el asterisco (`*`) simbolo. Por ejemplo, `SELECT * FROM ...`.
 
-Para hacer coincidir algunas columnas en el resultado con un [Re2](https://en.wikipedia.org/wiki/RE2_(software)) expresión regular, puede utilizar el `COLUMNS` expresion.
+Para hacer coincidir algunas columnas en el resultado con un [Re2](https://en.wikipedia.org/wiki/RE2_(software)) expresión regular, puede utilizar el `COLUMNS` expresión.
 
 ``` sql
 COLUMNS('regexp')
@@ -1039,7 +1039,7 @@ Received exception from server (version 19.14.1):
 Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus doesn't match: passed 3, should be 2.
 ```
 
-En este ejemplo, `COLUMNS('a')` devuelve dos columnas: `aa` y `ab`. `COLUMNS('c')` devuelve el `bc` columna. El `+` operador no puede aplicar a 3 argumentos, por lo que ClickHouse lanza una excepción con el mensaje relevante.
+En este ejemplo, `COLUMNS('a')` Todos los derechos reservados: `aa` y `ab`. `COLUMNS('c')` Nosotros `bc` columna. El `+` operador no puede aplicar a 3 argumentos, por lo que ClickHouse lanza una excepción con el mensaje relevante.
 
 Columnas que coinciden con el `COLUMNS` expresión puede tener diferentes tipos de datos. Si `COLUMNS` no coincide con ninguna columna y es la única expresión en `SELECT`, ClickHouse lanza una excepción.
 
@@ -1069,7 +1069,7 @@ Tabla de ejemplo:
 └───┴───┘
 ```
 
-Al seleccionar datos con el `SELECT DISTINCT a FROM t1 ORDER BY b ASC` consulta, obtenemos el siguiente resultado:
+Al seleccionar datos con el `SELECT DISTINCT a FROM t1 ORDER BY b ASC` Consulta, obtenemos el siguiente resultado:
 
 ``` text
 ┌─a─┐
@@ -1095,9 +1095,9 @@ Tenga en cuenta esta especificidad de implementación al programar consultas.
 
 ### Cláusula LIMIT {#limit-clause}
 
-`LIMIT m` permite seleccionar la primera `m` filas del resultado.
+`LIMIT m` permita seleccionar la primera `m` filas del resultado.
 
-`LIMIT n, m` permite seleccionar la primera `m` el resultado después de omitir la primera `n` filas. El `LIMIT m OFFSET n` sintaxis también es compatible.
+`LIMIT n, m` permita seleccionar la primera `m` el resultado después de omitir la primera `n` películas. El `LIMIT m OFFSET n` sintaxis también es compatible.
 
 `n` y `m` deben ser enteros no negativos.
 
@@ -1145,7 +1145,7 @@ Si se omite la cláusula FORMAT, se utiliza el formato predeterminado, que depen
 
 Cuando se utiliza el cliente de línea de comandos, los datos se pasan al cliente en un formato interno eficiente. El cliente interpreta independientemente la cláusula FORMAT de la consulta y da formato a los datos en sí (aliviando así la red y el servidor de la carga).
 
-### IN Operadores {#select-in-operators}
+### ES Operadores {#select-in-operators}
 
 El `IN`, `NOT IN`, `GLOBAL IN`, y `GLOBAL NOT IN` están cubiertos por separado, ya que su funcionalidad es bastante rica.
 
@@ -1349,7 +1349,7 @@ También tiene sentido especificar una tabla local en el `GLOBAL IN` cláusula, 
 
 Además de los resultados, también puede obtener valores mínimos y máximos para las columnas de resultados. Para hacer esto, establezca el **extremo** a 1. Los mínimos y máximos se calculan para tipos numéricos, fechas y fechas con horas. Para otras columnas, se generan los valores predeterminados.
 
-Se calculan dos filas adicionales: los mínimos y los máximos, respectivamente. Estas dos filas adicionales se generan en `JSON*`, `TabSeparated*`, y `Pretty*` [formato](../interfaces/formats.md), separado de las otras filas. No se emiten para otros formatos.
+Se calculan dos filas adicionales: los mínimos y los máximos, respectivamente. Estas dos filas adicionales se generan en `JSON*`, `TabSeparated*`, y `Pretty*` [Formato](../interfaces/formats.md), separado de las otras filas. No se emiten para otros formatos.
 
 En `JSON*` los valores extremos se emiten en un formato separado. ‘extremes’ campo. En `TabSeparated*` , la fila viene después del resultado principal, y después de ‘totals’ si está presente. Está precedido por una fila vacía (después de los otros datos). En `Pretty*` formatea, la fila se muestra como una tabla separada después del resultado principal, y después de `totals` si está presente.
 
@@ -1360,7 +1360,7 @@ Los valores extremos se calculan para las filas anteriores `LIMIT`, pero despué
 El `GROUP BY` y `ORDER BY` las cláusulas no admiten argumentos posicionales. Esto contradice MySQL, pero se ajusta al SQL estándar.
 Por ejemplo, `GROUP BY 1, 2` se interpretará como agrupación por constantes (es decir, agregación de todas las filas en una).
 
-Puedes usar sinónimos (`AS` aliases) en cualquier parte de una consulta.
+Puedes usar sinónimos (`AS` Cualquier parte de una consulta.
 
 Puede poner un asterisco en cualquier parte de una consulta en lugar de una expresión. Cuando se analiza la consulta, el asterisco se expande a una lista de todas las columnas de la tabla `MATERIALIZED` y `ALIAS` columna). Solo hay unos pocos casos en los que se justifica el uso de un asterisco:
 

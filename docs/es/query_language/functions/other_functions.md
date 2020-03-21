@@ -97,7 +97,7 @@ SELECT 'some-file-name' AS a, basename(a)
 Calcula el ancho aproximado al enviar valores a la consola en formato de texto (separado por tabuladores).
 Esta función es utilizada por el sistema para implementar formatos Pretty.
 
-`NULL` se representa como una cadena correspondiente a `NULL` en `Pretty` formato.
+`NULL` se representa como una cadena correspondiente a `NULL` es `Pretty` formato.
 
 ``` sql
 SELECT visibleWidth(NULL)
@@ -134,7 +134,7 @@ Sin embargo, el argumento aún se evalúa. Esto se puede usar para puntos de ref
 
 Dormir ‘seconds’ segundos en cada bloque de datos. Puede especificar un número entero o un número de punto flotante.
 
-## sleepEachRow(segundos) {#sleepeachrowseconds}
+## SueñoCada fila(segundos) {#sleepeachrowseconds}
 
 Dormir ‘seconds’ segundos en cada fila. Puede especificar un número entero o un número de punto flotante.
 
@@ -180,7 +180,7 @@ Resultado:
 
 Acepta Float32 y Float64 y devuelve UInt8 igual a 1 si el argumento no es infinito y no es un NaN, de lo contrario 0.
 
-## IsInfinite(x) {#isinfinitex}
+## IsInfinite (x) {#isinfinitex}
 
 Acepta Float32 y Float64 y devuelve UInt8 igual a 1 si el argumento es infinito, de lo contrario 0. Tenga en cuenta que se devuelve 0 para un NaN.
 
@@ -214,7 +214,7 @@ Resultado:
     │     inf │                            42 │
     └─────────┴───────────────────────────────┘
 
-Puede obtener un resultado similar usando [operador ternario](conditional_functions.md#ternary-operator): `isFinite(x) ? x : y`.
+Puede obtener un resultado similar usando [Operador ternario](conditional_functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
 ## isNaN(x) {#isnanx}
 
@@ -230,7 +230,7 @@ Para los elementos de una estructura de datos anidada, la función comprueba la 
 
 Permite construir un diagrama unicode-art.
 
-`bar(x, min, max, width)` dibuja una banda con un ancho proporcional a `(x - min)` e igual a `width` caracteres cuando `x = max`.
+`bar(x, min, max, width)` Dibuja una banda con un ancho proporcional a `(x - min)` E igual a `width` Caracteres cuando `x = max`.
 
 Parámetros:
 
@@ -281,7 +281,7 @@ ORDER BY h ASC
 └────┴────────┴────────────────────┘
 ```
 
-## transformar {#transform}
+## Ciudad {#transform}
 
 Transforma un valor de acuerdo con la asignación explícitamente definida de algunos elementos a otros.
 Hay dos variaciones de esta función:
@@ -292,7 +292,7 @@ Hay dos variaciones de esta función:
 
 `array_from` – Matriz constante de valores para la conversión.
 
-`array_to` – Matriz constante de valores para convertir los valores en ‘from’ a.
+`array_to` – Matriz constante de valores para convertir los valores en ‘from’ Naciones.
 
 `default` – ¿Qué valor utilizar si ‘x’ no es igual a ninguno de los valores en ‘from’.
 
@@ -388,7 +388,7 @@ SELECT
 
 Devuelve el valor más pequeño de a y b.
 
-## mayor(a, b) {#greatesta-b}
+## alcalde(a, b) {#greatesta-b}
 
 Devuelve el valor más grande de a y b.
 
@@ -437,7 +437,7 @@ Si realiza una subconsulta con ORDER BY y llama a la función desde fuera de la 
 
 **Valores devueltos**
 
--   Valor para `column` en `offset` distancia de la fila actual si `offset` valor no está fuera de los límites del bloque.
+-   Valor para `column` es `offset` distancia de la fila actual si `offset` valor no está fuera de los límites del bloque.
 -   Valor predeterminado para `column` si `offset` valor está fuera de los límites del bloque. Si `default_value` se da, entonces será utilizado.
 
 Tipo: tipo de bloques de datos afectados o tipo de valor predeterminado.
@@ -758,7 +758,7 @@ defaultValueOfArgumentType(expression)
 
 -   `0` para los números.
 -   Cadena vacía para cadenas.
--   `ᴺᵁᴸᴸ` para [NULL](../../data_types/nullable.md).
+-   `ᴺᵁᴸᴸ` para [NULO](../../data_types/nullable.md).
 
 **Ejemplo**
 
@@ -927,7 +927,7 @@ Por lo tanto, el resultado de la función depende de la partición de los datos 
 
 ## joinGet {#joinget}
 
-La función le permite extraer datos de la tabla de la misma manera que [diccionario](../../query_language/dicts/index.md).
+La función le permite extraer datos de la tabla de la misma manera que [Diccionario](../../query_language/dicts/index.md).
 
 Obtiene datos de [Unir](../../operations/table_engines/join.md#creating-a-table) usando la clave de unión especificada.
 
@@ -951,7 +951,7 @@ Devuelve la lista de valores correspondientes a la lista de claves.
 
 Si cierto no existe en la tabla fuente, entonces `0` o `null` será devuelto basado en [Sistema abierto.](../../operations/settings/settings.md#join_use_nulls) configuración.
 
-Más información sobre `join_use_nulls` en [Únase a la operación](../../operations/table_engines/join.md).
+Más información sobre `join_use_nulls` es [Únase a la operación](../../operations/table_engines/join.md).
 
 **Ejemplo**
 

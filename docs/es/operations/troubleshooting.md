@@ -74,7 +74,7 @@ Revision: 54413
 
 **Ver sistema.d registros**
 
-Si no encuentra ninguna información útil en `clickhouse-server` registros o no hay ningún registro, puede ver `system.d` registros usando el comando:
+Si no encuentra ninguna información útil en `clickhouse-server` registros o no hay ningún registro, puede ver `system.d` comando el comando:
 
 ``` bash
 $ sudo journalctl -u clickhouse-server

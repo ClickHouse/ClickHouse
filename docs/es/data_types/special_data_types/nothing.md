@@ -1,10 +1,10 @@
-# Nothing {#nothing}
+# Nada {#nothing}
 
-The only purpose of this data type is to represent cases where value is not expected. So you can’t create a `Nothing` type value.
+El único propósito de este tipo de datos es representar casos en los que no se espera un valor. Entonces no puedes crear un `Nothing` valor de tipo.
 
-For example, literal [NULL](../../query_language/syntax.md#null-literal) has type of `Nullable(Nothing)`. See more about [Nullable](../../data_types/nullable.md).
+Por ejemplo, literal [NULO](../../query_language/syntax.md#null-literal) tiene tipo de `Nullable(Nothing)`. Ver más sobre [NULO](../../data_types/nullable.md).
 
-The `Nothing` type can also used to denote empty arrays:
+El `Nothing` tipo puede también se utiliza para denotar matrices vacías:
 
 ``` sql
 SELECT toTypeName(array())
@@ -16,4 +16,4 @@ SELECT toTypeName(array())
 └─────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/es/data_types/special_data_types/nothing/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/data_types/special_data_types/nothing/) <!--hide-->

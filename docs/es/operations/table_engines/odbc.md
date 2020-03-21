@@ -4,7 +4,7 @@ Permite que ClickHouse se conecte a bases de datos externas a través de [ODBC](
 
 Para implementar con seguridad conexiones ODBC, ClickHouse usa un programa separado `clickhouse-odbc-bridge`. Si el controlador ODBC se carga directamente desde `clickhouse-server`, problemas de controlador pueden bloquear el servidor ClickHouse. ClickHouse se inicia automáticamente `clickhouse-odbc-bridge` cuando se requiere. El programa de puente ODBC se instala desde el mismo paquete que el `clickhouse-server`.
 
-Este motor soporta el [NULL](../../data_types/nullable.md) tipo de datos.
+Este motor soporta el [NULO](../../data_types/nullable.md) tipo de datos.
 
 ## Creación de una tabla {#creating-a-table}
 
@@ -23,7 +23,7 @@ Vea una descripción detallada del [CREAR TABLA](../../query_language/create.md#
 La estructura de la tabla puede diferir de la estructura de la tabla de origen:
 
 -   Los nombres de columna deben ser los mismos que en la tabla de origen, pero puede usar solo algunas de estas columnas y en cualquier orden.
--   Los tipos de columna pueden diferir de los de la tabla de origen. ClickHouse intenta [elenco](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) valores a los tipos de datos ClickHouse.
+-   Los tipos de columna pueden diferir de los de la tabla de origen. Haga clic en Casa intenta [elenco](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) valores a los tipos de datos ClickHouse.
 
 **Parámetros del motor**
 

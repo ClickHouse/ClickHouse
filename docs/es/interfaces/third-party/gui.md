@@ -1,145 +1,145 @@
-# Visual Interfaces from Third-party Developers {#visual-interfaces-from-third-party-developers}
+# Interfaces visuales de desarrolladores de terceros {#visual-interfaces-from-third-party-developers}
 
-## Open-Source {#open-source}
+## De código abierto {#open-source}
 
 ### Tabix {#tabix}
 
-Web interface for ClickHouse in the [Tabix](https://github.com/tabixio/tabix) project.
+Interfaz web para ClickHouse en el [Tabix](https://github.com/tabixio/tabix) proyecto.
 
-Features:
+Función:
 
--   Works with ClickHouse directly from the browser, without the need to install additional software.
--   Query editor with syntax highlighting.
--   Auto-completion of commands.
--   Tools for graphical analysis of query execution.
--   Colour scheme options.
+-   Funciona con ClickHouse directamente desde el navegador, sin la necesidad de instalar software adicional.
+-   Editor de consultas con resaltado de sintaxis.
+-   Autocompletado de comandos.
+-   Herramientas para el análisis gráfico de la ejecución de consultas.
+-   Opciones de esquema de color.
 
-[Tabix documentation](https://tabix.io/doc/).
+[Documentación de Tabix](https://tabix.io/doc/).
 
-### HouseOps {#houseops}
+### Sistema abierto. {#houseops}
 
-[HouseOps](https://github.com/HouseOps/HouseOps) is a UI/IDE for OSX, Linux and Windows.
+[Sistema abierto.](https://github.com/HouseOps/HouseOps) Es una interfaz de usuario / IDE para OSX, Linux y Windows.
 
-Features:
+Función:
 
--   Query builder with syntax highlighting. View the response in a table or JSON view.
--   Export query results as CSV or JSON.
--   List of processes with descriptions. Write mode. Ability to stop (`KILL`) a process.
--   Database graph. Shows all tables and their columns with additional information.
--   A quick view of the column size.
--   Server configuration.
+-   Generador de consultas con resaltado de sintaxis. Ver la respuesta en una tabla o vista JSON.
+-   Exportar resultados de consultas como CSV o JSON.
+-   Lista de procesos con descripciones. Modo de escritura. Capacidad de parar (`KILL`) proceso.
+-   Gráfico de base de datos. Muestra todas las tablas y sus columnas con información adicional.
+-   Una vista rápida del tamaño de la columna.
+-   Configuración del servidor.
 
-The following features are planned for development:
+Las siguientes características están planificadas para el desarrollo:
 
--   Database management.
--   User management.
--   Real-time data analysis.
--   Cluster monitoring.
--   Cluster management.
--   Monitoring replicated and Kafka tables.
+-   Gestión de bases de datos.
+-   Gestión de usuarios.
+-   Análisis de datos en tiempo real.
+-   Supervisión de clúster.
+-   Gestión de clústeres.
+-   Monitoreo de tablas replicadas y Kafka.
 
-### LightHouse {#lighthouse}
+### Faro {#lighthouse}
 
-[LightHouse](https://github.com/VKCOM/lighthouse) is a lightweight web interface for ClickHouse.
+[Faro](https://github.com/VKCOM/lighthouse) Es una interfaz web ligera para ClickHouse.
 
-Features:
+Función:
 
--   Table list with filtering and metadata.
--   Table preview with filtering and sorting.
--   Read-only queries execution.
+-   Lista de tablas con filtrado y metadatos.
+-   Vista previa de la tabla con filtrado y clasificación.
+-   Ejecución de consultas de sólo lectura.
 
 ### Redash {#redash}
 
-[Redash](https://github.com/getredash/redash) is a platform for data visualization.
+[Redash](https://github.com/getredash/redash) es una plataforma para la visualización de datos.
 
-Supports for multiple data sources including ClickHouse, Redash can join results of queries from different data sources into one final dataset.
+Admite múltiples fuentes de datos, incluido ClickHouse, Redash puede unir los resultados de consultas de diferentes fuentes de datos en un conjunto de datos final.
 
-Features:
+Función:
 
--   Powerful editor of queries.
--   Database explorer.
--   Visualization tools, that allow you to represent data in different forms.
+-   Potente editor de consultas.
+-   Explorador de base de datos.
+-   Herramientas de visualización, que le permiten representar datos en diferentes formas.
 
 ### DBeaver {#dbeaver}
 
-[DBeaver](https://dbeaver.io/) - universal desktop database client with ClickHouse support.
+[DBeaver](https://dbeaver.io/) - Cliente de base de datos de escritorio universal con soporte ClickHouse.
 
-Features:
+Función:
 
--   Query development with syntax highlight and autocompletion.
--   Table list with filters and metadata search.
--   Table data preview.
--   Full-text search.
+-   Desarrollo de consultas con resaltado de sintaxis y autocompletado.
+-   Lista de tablas con filtros y búsqueda de metadatos.
+-   Vista previa de datos de tabla.
+-   Búsqueda de texto completo.
 
-### clickhouse-cli {#clickhouse-cli}
+### Sistema abierto. {#clickhouse-cli}
 
-[clickhouse-cli](https://github.com/hatarist/clickhouse-cli) is an alternative command-line client for ClickHouse, written in Python 3.
+[Sistema abierto.](https://github.com/hatarist/clickhouse-cli) es un cliente de línea de comandos alternativo para ClickHouse, escrito en Python 3.
 
-Features:
+Función:
 
--   Autocompletion.
--   Syntax highlighting for the queries and data output.
--   Pager support for the data output.
--   Custom PostgreSQL-like commands.
+-   Autocompletado.
+-   Resaltado de sintaxis para las consultas y la salida de datos.
+-   Soporte de buscapersonas para la salida de datos.
+-   Comandos similares a PostgreSQL personalizados.
 
-### clickhouse-flamegraph {#clickhouse-flamegraph}
+### Sistema abierto. {#clickhouse-flamegraph}
 
-[clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) is a specialized tool to visualize the `system.trace_log` as [flamegraph](http://www.brendangregg.com/flamegraphs.html).
+[Sistema abierto.](https://github.com/Slach/clickhouse-flamegraph) es una herramienta especializada para visualizar el `system.trace_log` como [Gráfico de llamas](http://www.brendangregg.com/flamegraphs.html).
 
-## Commercial {#commercial}
+## Comercial {#commercial}
 
 ### DataGrip {#datagrip}
 
-[DataGrip](https://www.jetbrains.com/datagrip/) is a database IDE from JetBrains with dedicated support for ClickHouse. It is also embedded in other IntelliJ-based tools: PyCharm, IntelliJ IDEA, GoLand, PhpStorm and others.
+[DataGrip](https://www.jetbrains.com/datagrip/) Es un IDE de base de datos de JetBrains con soporte dedicado para ClickHouse. También está integrado en otras herramientas basadas en IntelliJ: PyCharm, IntelliJ IDEA, GoLand, PhpStorm y otros.
 
-Features:
+Función:
 
--   Very fast code completion.
--   ClickHouse syntax highlighting.
--   Support for features specific to ClickHouse, for example, nested columns, table engines.
--   Data Editor.
--   Refactorings.
--   Search and Navigation.
+-   Finalización de código muy rápida.
+-   Resaltado de sintaxis de ClickHouse.
+-   Soporte para características específicas de ClickHouse, por ejemplo, columnas anidadas, motores de tablas.
+-   Editor de datos.
+-   Refactorizaciones.
+-   Búsqueda y navegación.
 
 ### Yandex DataLens {#yandex-datalens}
 
-[Yandex DataLens](https://cloud.yandex.ru/services/datalens) is a service of data visualization and analytics.
+[Yandex DataLens](https://cloud.yandex.ru/services/datalens) es un servicio de visualización y análisis de datos.
 
-Features:
+Función:
 
--   Wide range of available visualizations, from simple bar charts to complex dashboards.
--   Dashboards could be made publicly available.
--   Support for multiple data sources including ClickHouse.
--   Storage for materialized data based on ClickHouse.
+-   Amplia gama de visualizaciones disponibles, desde simples gráficos de barras hasta paneles complejos.
+-   Los paneles podrían ponerse a disposición del público.
+-   Soporte para múltiples fuentes de datos, incluyendo ClickHouse.
+-   Almacenamiento de datos materializados basados en ClickHouse.
 
-DataLens is [available for free](https://cloud.yandex.com/docs/datalens/pricing) for low-load projects, even for commercial use.
+Nivel de Cifrado WEP [disponible de forma gratuita](https://cloud.yandex.com/docs/datalens/pricing) para proyectos de baja carga, incluso para uso comercial.
 
--   [DataLens documentation](https://cloud.yandex.com/docs/datalens/).
--   [Tutorial](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) on visualizing data from a ClickHouse database.
+-   [Documentación de DataLens](https://cloud.yandex.com/docs/datalens/).
+-   [Tutorial](https://cloud.yandex.com/docs/solutions/datalens/data-from-ch-visualization) en la visualización de datos de una base de datos ClickHouse.
 
-### Holistics Software {#holistics-software}
+### Software de Holística {#holistics-software}
 
-[Holistics](https://www.holistics.io/) is a full-stack data platform and business intelligence tool.
+[Holística](https://www.holistics.io/) Este es una plataforma de datos de pila completa y una herramienta de inteligencia de negocios.
 
-Features:
+Función:
 
--   Automated email, Slack and Google Sheet schedules of reports.
--   SQL editor with visualizations, version control, auto-completion, reusable query components and dynamic filters.
--   Embedded analytics of reports and dashboards via iframe.
--   Data preparation and ETL capabilities.
--   SQL data modelling support for relational mapping of data.
+-   Correo electrónico automatizado, Slack y horarios de informes de Google Sheet.
+-   Editor SQL con visualizaciones, control de versiones, autocompletado, componentes de consulta reutilizables y filtros dinámicos.
+-   Análisis integrado de informes y cuadros de mando a través de iframe.
+-   Preparación de datos y capacidades ETL.
+-   Soporte de modelado de datos SQL para mapeo relacional de datos.
 
-### Looker {#looker}
+### Mirador {#looker}
 
-[Looker](https://looker.com) is a data platform and business intelligence tool with support for 50+ database dialects including ClickHouse. Looker is available as a SaaS platform and self-hosted. Users can use Looker via the browser to explore data, build visualizations and dashboards, schedule reports, and share their insights with colleagues. Looker provides a rich set of tools to embed these features in other applications, and an API
-to integrate data with other applications.
+[Mirador](https://looker.com) Es una plataforma de datos y una herramienta de inteligencia de negocios con soporte para más de 50 dialectos de bases de datos, incluido ClickHouse. Bravo está disponible como una plataforma SaaS y auto-organizada. Los usuarios pueden utilizar Looker a través del navegador para explorar datos, crear visualizaciones y paneles, programar informes y compartir sus conocimientos con colegas. Looker proporciona un amplio conjunto de herramientas para incrustar estas características en otras aplicaciones y una API
+para integrar datos con otras aplicaciones.
 
-Features:
+Función:
 
--   Easy and agile development using LookML, a language which supports curated
-    [Data Modeling](https://looker.com/platform/data-modeling) to support report writers and end-users.
--   Powerful workflow integration via Looker’s [Data Actions](https://looker.com/platform/actions).
+-   Desarrollo fácil y ágil utilizando LookML, un lenguaje que soporta curado
+    [Modelado de datos](https://looker.com/platform/data-modeling) para apoyar a los redactores de informes y a los usuarios finales.
+-   Potente integración de flujo de trabajo a través de Looker's [Acciones de datos](https://looker.com/platform/actions).
 
-[How to configure ClickHouse in Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
+[Cómo configurar ClickHouse en Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
-[Original article](https://clickhouse.tech/docs/es/interfaces/third-party/gui/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/es/interfaces/third-party/gui/) <!--hide-->

@@ -38,7 +38,7 @@ Puede establecer cadenas vacías entre comillas simples para la base de datos y 
 Al leer desde una tabla de búfer, los datos se procesan tanto desde el búfer como desde la tabla de destino (si hay uno).
 Tenga en cuenta que las tablas Buffer no admiten un índice. En otras palabras, los datos del búfer se analizan por completo, lo que puede ser lento para los búferes grandes. (Para los datos de una tabla subordinada, se utilizará el índice que admite.)
 
-Si el conjunto de columnas de la tabla Buffer no coincide con el conjunto de columnas de una tabla subordinada, se inserta un subconjunto de columnas que existen en ambas tablas.
+Si el conjunto de columnas de la tabla Buffer no coinciden con el conjunto de columnas de una tabla subordinada, se inserta un subconjunto de columnas que existen en ambas tablas.
 
 Si los tipos no coinciden con una de las columnas de la tabla Búfer y una tabla subordinada, se escribe un mensaje de error en el registro del servidor y se borra el búfer.
 Lo mismo sucede si la tabla subordinada no existe cuando se vacía el búfer.

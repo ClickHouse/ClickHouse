@@ -1,6 +1,6 @@
 # Hdfs {#hdfs}
 
-Crea una tabla a partir de archivos en HDFS. Esta función de tabla es similar a [URL](url.md) y [file](file.md) aquel.
+Crea una tabla a partir de archivos en HDFS. Esta función de tabla es similar a [URL](url.md) y [file](file.md) Aquel.
 
 ``` sql
 hdfs(URI, format, structure)
@@ -9,7 +9,7 @@ hdfs(URI, format, structure)
 **Parámetros de entrada**
 
 -   `URI` — El URI relativo al archivo en HDFS. Soporte de ruta a archivo siguiendo globs en modo de solo lectura: `*`, `?`, `{abc,def}` y `{N..M}` donde `N`, `M` — numero, \``'abc', 'def'` — cadena.
--   `format` — El [formato](../../interfaces/formats.md#formats) del archivo.
+-   `format` — El [Formato](../../interfaces/formats.md#formats) del archivo.
 -   `structure` — Estructura de la mesa. Formato `'column1_name column1_type, column2_name column2_type, ...'`.
 
 **Valor devuelto**
@@ -42,7 +42,7 @@ Múltiples componentes de ruta de acceso pueden tener globs. Para ser procesado,
 -   `{some_string,another_string,yet_another_one}` — Sustituye cualquiera de las cadenas `'some_string', 'another_string', 'yet_another_one'`.
 -   `{N..M}` — Sustituye cualquier número en el intervalo de N a M, incluidas ambas fronteras.
 
-Construcciones con `{}` son similares a la [función de tabla remota](../../query_language/table_functions/remote.md)).
+Construcciones con `{}` hijo similares a la [función de tabla remota](../../query_language/table_functions/remote.md)).
 
 **Ejemplo**
 
@@ -85,13 +85,13 @@ SELECT count(*)
 FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name String, value UInt32')
 ```
 
-## Virtual Columnas {#virtual-columns}
+## Columnas virtuales {#virtual-columns}
 
 -   `_path` — Ruta de acceso al archivo.
 -   `_file` — Nombre del expediente.
 
 **Ver también**
 
--   [Virtual columnas](https://clickhouse.tech/docs/es/operations/table_engines/#table_engines-virtual_columns)
+-   [Columnas virtuales](https://clickhouse.tech/docs/es/operations/table_engines/#table_engines-virtual_columns)
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/table_functions/hdfs/) <!--hide-->

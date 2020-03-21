@@ -16,13 +16,13 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `dict_name` — Nombre del diccionario. [Literal de cadena](../syntax.md#syntax-string-literal).
 -   `attr_name` — Nombre de la columna del diccionario. [Literal de cadena](../syntax.md#syntax-string-literal).
 -   `id_expr` — Valor clave. [Expresion](../syntax.md#syntax-expressions) devolviendo un [UInt64](../../data_types/int_uint.md) o [Tupla](../../data_types/tuple.md)valor -type dependiendo de la configuración del diccionario.
--   `default_value_expr` — Valor devuelto si el diccionario no contiene una fila `id_expr` clave. [Expresion](../syntax.md#syntax-expressions) devolviendo el valor en el tipo de datos configurado para `attr_name` atributo.
+-   `default_value_expr` — Valor devuelto si el diccionario no contiene una fila `id_expr` Nivel de Cifrado WEP [Expresion](../syntax.md#syntax-expressions) devolviendo el valor en el tipo de datos configurado para `attr_name` atributo.
 
 **Valor devuelto**
 
 -   Si ClickHouse analiza el atributo correctamente en el [tipo de datos del atributo](../../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), funciones devuelven el valor del atributo de diccionario que corresponde a `id_expr`.
 
--   Si no hay la clave, correspondiente a `id_expr` en el diccionario, entonces:
+-   Si no hay la clave, correspondiente a `id_expr` es el diccionario, entonces:
 
         - `dictGet` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
         - `dictGetOrDefault` returns the value passed as the `default_value_expr` parameter.
@@ -145,7 +145,7 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 
 -   `dict_name` — Nombre del diccionario. [Literal de cadena](../syntax.md#syntax-string-literal).
 -   `child_id_expr` — Clave a comprobar. [Expresion](../syntax.md#syntax-expressions) devolviendo un [UInt64](../../data_types/int_uint.md)-tipo de valor.
--   `ancestor_id_expr` — Presunto ancestro de la `child_id_expr` clave. [Expresion](../syntax.md#syntax-expressions) devolviendo un [UInt64](../../data_types/int_uint.md)-tipo de valor.
+-   `ancestor_id_expr` — Presunto ancestro de la `child_id_expr` Nivel de Cifrado WEP [Expresion](../syntax.md#syntax-expressions) devolviendo un [UInt64](../../data_types/int_uint.md)-tipo de valor.
 
 **Valor devuelto**
 
@@ -182,13 +182,13 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 -   `dict_name` — Nombre del diccionario. [Literal de cadena](../syntax.md#syntax-string-literal).
 -   `attr_name` — Nombre de la columna del diccionario. [Literal de cadena](../syntax.md#syntax-string-literal).
 -   `id_expr` — Valor clave. [Expresion](../syntax.md#syntax-expressions) devolviendo un [UInt64](../../data_types/int_uint.md)-tipo de valor.
--   `default_value_expr` — Valor que se devuelve si el diccionario no contiene una fila `id_expr` clave. [Expresion](../syntax.md#syntax-expressions) devolviendo un valor en el tipo de datos configurado para `attr_name` atributo.
+-   `default_value_expr` — Valor que se devuelve si el diccionario no contiene una fila `id_expr` Nivel de Cifrado WEP [Expresion](../syntax.md#syntax-expressions) devolviendo un valor en el tipo de datos configurado para `attr_name` atributo.
 
 **Valor devuelto**
 
 -   Si ClickHouse analiza el atributo correctamente en el [tipo de datos del atributo](../../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), funciones devuelven el valor del atributo de diccionario que corresponde a `id_expr`.
 
--   Si no se solicita `id_expr` en el diccionario entonces:
+-   Si no se solicita `id_expr` es el diccionario entonces:
 
         - `dictGet[Type]` returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
         - `dictGet[Type]OrDefault` returns the value passed as the `default_value_expr` parameter.

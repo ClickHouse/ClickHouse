@@ -1,4 +1,4 @@
-# remoto, remoteSecure {#remote-remotesecure}
+# Remoto, remoteSecure {#remote-remotesecure}
 
 Le permite acceder a servidores remotos sin crear un `Distributed` tabla.
 
@@ -9,7 +9,7 @@ remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
 ```
 
-`addresses_expr` – Una expresión que genera direcciones de servidores remotos. Esta puede ser solo una dirección de servidor. La dirección del servidor es `host:port` o simplemente `host`. El host se puede especificar como nombre de servidor o como dirección IPv4 o IPv6. Una dirección IPv6 se especifica entre corchetes. El puerto es el puerto TCP del servidor remoto. Si se omite el puerto, utiliza `tcp_port` del archivo de configuración del servidor (por defecto, 9000).
+`addresses_expr` – Una expresión que genera direcciones de servidores remotos. Esta puede ser solo una dirección de servidor. La dirección del servidor es `host:port` O simplemente `host`. El host se puede especificar como nombre de servidor o como dirección IPv4 o IPv6. Una dirección IPv6 se especifica entre corchetes. El puerto es el puerto TCP del servidor remoto. Si se omite el puerto, utiliza `tcp_port` del archivo de configuración del servidor (por defecto, 9000).
 
 !!! important "Importante"
     El puerto es necesario para una dirección IPv6.
@@ -71,6 +71,6 @@ El `remote` puede ser útil en los siguientes casos:
 Si el usuario no está especificado, `default` se utiliza.
 Si no se especifica la contraseña, se utiliza una contraseña vacía.
 
-`remoteSecure` - igual que `remote` pero con conexión segura. Puerto predeterminado — [Tcp\_port\_secure](../../operations/server_settings/settings.md#server_settings-tcp_port_secure) de config o 9440.
+`remoteSecure` - igual que `remote` pero con conexión segura. Puerto predeterminado — [Tcp\_port\_secure](../../operations/server_settings/settings.md#server_settings-tcp_port_secure) de configuración o 9440.
 
 [Artículo Original](https://clickhouse.tech/docs/es/query_language/table_functions/remote/) <!--hide-->

@@ -45,7 +45,7 @@ Puede configurar múltiples `<case>` apartado.
 Acciones cuando se cumplen las condiciones:
 
 -   Si un elemento de datos coincide con un conjunto de condiciones, ClickHouse utiliza el método de compresión especificado.
--   Si un elemento de datos coincide con varios conjuntos de condiciones, ClickHouse utiliza el primer conjunto de condiciones coincidente.
+-   Si un elemento de datos coinciden con varios conjuntos de condiciones, ClickHouse utiliza el primer conjunto de condiciones coincidente.
 
 Si no se cumplen condiciones para un elemento de datos, ClickHouse utiliza el `lz4` compresión.
 
@@ -129,14 +129,14 @@ La ruta de acceso al directorio con los esquemas para los datos de entrada, como
   <format_schema_path>format_schemas/</format_schema_path>
 ```
 
-## grafito {#server-settings-graphite}
+## Grafito {#server-settings-graphite}
 
 Envío de datos a [Grafito](https://github.com/graphite-project).
 
 Configuración:
 
 -   host – El servidor de grafito.
--   port: el puerto del servidor Graphite.
+-   el puerto del servidor grafito.
 -   intervalo – El intervalo para el envío, en segundos.
 -   timeout – El tiempo de espera para el envío de datos, en segundos.
 -   root\_path – Prefijo para las claves.
@@ -339,7 +339,7 @@ Claves:
 -   use\_syslog — Ajuste requerido si desea escribir en el syslog.
 -   address — El host\[:port\] de syslogd. Si se omite, se utiliza el daemon local.
 -   hostname — Opcional. El nombre del host desde el que se envían los registros.
--   instalación — [La palabra clave syslog facility](https://en.wikipedia.org/wiki/Syslog#Facility) en letras mayúsculas con el “LOG\_” prefijo: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` y así sucesivamente).
+-   instalación — [La palabra clave syslog instalación](https://en.wikipedia.org/wiki/Syslog#Facility) en letras mayúsculas con el “LOG\_” prefijo: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3` y así sucesivamente).
     Valor predeterminado: `LOG_USER` si `address` se especifica, `LOG_DAEMON otherwise.`
 -   format – Formato de mensaje. Valores posibles: `bsd` y `syslog.`
 
@@ -359,7 +359,7 @@ Para obtener más información, consulte la sección “[Creación de tablas rep
 
 ## Método de codificación de datos: {#server-mark-cache-size}
 
-Tamaño aproximado (en bytes) de la memoria caché de marcas utilizadas por los motores de [Método de codificación de datos:](../table_engines/mergetree.md) familia.
+Tamaño aproximado (en bytes) de la memoria caché de marcas utilizadas por los motores de [Método de codificación de datos:](../table_engines/mergetree.md) Familia.
 
 La memoria caché se comparte para el servidor y la memoria se asigna según sea necesario. El tamaño de la memoria caché debe ser al menos 5368709120.
 
@@ -407,7 +407,7 @@ Recomendamos usar esta opción en Mac OS X desde el `getrlimit()` función devue
 
 Restricción en la eliminación de tablas.
 
-Si el tamaño de un [Método de codificación de datos:](../table_engines/mergetree.md) mesa excede `max_table_size_to_drop` (en bytes), no puede eliminarlo mediante una consulta DROP.
+Si el tamaño de un [Método de codificación de datos:](../table_engines/mergetree.md) más caliente `max_table_size_to_drop` (en bytes), no puede eliminarlo mediante una consulta DROP.
 
 Si aún necesita eliminar la tabla sin reiniciar el servidor ClickHouse, cree el `<clickhouse-path>/flags/force_drop_table` y ejecute la consulta DROP.
 
@@ -446,10 +446,10 @@ Claves para la configuración del servidor/cliente:
 -   privateKeyFile: la ruta de acceso al archivo con la clave secreta del certificado PEM. El archivo puede contener una clave y un certificado al mismo tiempo.
 -   certificateFile: la ruta de acceso al archivo de certificado cliente/servidor en formato PEM. Puede omitirlo si `privateKeyFile` contiene el certificado.
 -   caConfig: la ruta de acceso al archivo o directorio que contiene certificados raíz de confianza.
--   verificationMode: el método para verificar los certificados del nodo. Los detalles están en la descripción del [Contexto](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) clase. Valores posibles: `none`, `relaxed`, `strict`, `once`.
+-   verificationMode: el método para verificar los certificados del nodo. Los detalles están en la descripción del [Contexto](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) Clase. Valores posibles: `none`, `relaxed`, `strict`, `once`.
 -   Profundidad de verificación: la longitud máxima de la cadena de verificación. La verificación fallará si la longitud de la cadena del certificado supera el valor establecido.
 -   loadDefaultCAFile: indica que se usarán certificados de CA integrados para OpenSSL. Valores aceptables: `true`, `false`. \|
--   cipherList: encriptaciones OpenSSL compatibles. Por ejemplo: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
+-   cipherList: encriptaciones compatibles con OpenSSL. Por ejemplo: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
 -   cacheSessions: habilita o deshabilita las sesiones de almacenamiento en caché. Debe usarse en combinación con `sessionIdContext`. Valores aceptables: `true`, `false`.
 -   sessionIdContext: un conjunto único de caracteres aleatorios que el servidor agrega a cada identificador generado. La longitud de la cuerda no debe exceder `SSL_MAX_SSL_SESSION_ID_LENGTH`. Este parámetro siempre se recomienda ya que ayuda a evitar problemas tanto si el servidor almacena en caché la sesión como si el cliente solicita el almacenamiento en caché. Valor predeterminado: `${application.name}`.
 -   sessionCacheSize: el número máximo de sesiones que el servidor almacena en caché. Valor predeterminado: 1024\*20. 0 – Sesiones ilimitadas.
@@ -824,7 +824,7 @@ Esta sección contiene los siguientes parámetros:
 
 Método de almacenamiento para encabezados de parte de datos en ZooKeeper.
 
-Esta configuración sólo se aplica a `MergeTree` familia. Se puede especificar:
+Esta configuración sólo se aplica a `MergeTree` Familia. Se puede especificar:
 
 -   A nivel mundial en el [merge\_tree](#server_settings-merge_tree) sección de la `config.xml` file.
 

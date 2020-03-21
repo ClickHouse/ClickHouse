@@ -60,9 +60,9 @@ Para clústeres muy grandes, puede usar diferentes clústeres de ZooKeeper para 
 
 La replicación es asíncrona y multi-master. `INSERT` consultas (así como `ALTER`) se puede enviar a cualquier servidor disponible. Los datos se insertan en el servidor donde se ejecuta la consulta y, a continuación, se copian a los demás servidores. Debido a que es asincrónico, los datos insertados recientemente aparecen en las otras réplicas con cierta latencia. Si parte de las réplicas no está disponible, los datos se escriben cuando estén disponibles. Si hay una réplica disponible, la latencia es la cantidad de tiempo que tarda en transferir el bloque de datos comprimidos a través de la red.
 
-De forma predeterminada, una consulta INSERT espera la confirmación de la escritura de los datos de una sola réplica. Si los datos fue correctamente escrito a sólo una réplica y el servidor con esta réplica deja de existir, los datos almacenados se perderán. Para habilitar la confirmación de las escrituras de datos de varias réplicas, utilice `insert_quorum` opcion.
+De forma predeterminada, una consulta INSERT espera la confirmación de la escritura de los datos de una sola réplica. Si los datos fue correctamente escrito a sólo una réplica y el servidor con esta réplica deja de existir, los datos almacenados se perderán. Para habilitar la confirmación de las escrituras de datos de varias réplicas, utilice `insert_quorum` opción.
 
-Cada bloque de datos se escribe atómicamente. La consulta INSERT se divide en bloques hasta `max_insert_block_size = 1048576` filas. En otras palabras, si el `INSERT` consulta tiene menos de 1048576 filas, se hace atómicamente.
+Cada bloque de datos se escribe atómicamente. La consulta INSERT se divide en bloques hasta `max_insert_block_size = 1048576` películas. En otras palabras, si el `INSERT` consulta tiene menos de 1048576 filas, se hace atómicamente.
 
 Los bloques de datos se deduplican. Para varias escrituras del mismo bloque de datos (bloques de datos del mismo tamaño que contienen las mismas filas en el mismo orden), el bloque solo se escribe una vez. La razón de esto es en caso de errores de red cuando la aplicación cliente no sabe si los datos se escribieron en la base de datos, por lo que `INSERT` consulta simplemente se puede repetir. No importa a qué réplica se enviaron los INSERT con datos idénticos. `INSERTs` son idempotentes. Los parámetros de desduplicación son controlados por [merge\_tree](../server_settings/settings.md#server_settings-merge_tree) configuración del servidor.
 
@@ -158,7 +158,7 @@ Cuando el servidor se inicia (o establece una nueva sesión con ZooKeeper), solo
 
 Si el conjunto local de datos difiere demasiado del esperado, se activa un mecanismo de seguridad. El servidor ingresa esto en el registro y se niega a iniciarse. La razón de esto es que este caso puede indicar un error de configuración, como si una réplica en un fragmento se configurara accidentalmente como una réplica en un fragmento diferente. Sin embargo, los umbrales para este mecanismo se establecen bastante bajos, y esta situación puede ocurrir durante la recuperación de falla normal. En este caso, los datos se restauran semiautomáticamente, mediante “pushing a button”.
 
-Para iniciar la recuperación, cree el nodo `/path_to_table/replica_name/flags/force_restore_data` en ZooKeeper con cualquier contenido, o ejecute el comando para restaurar todas las tablas replicadas:
+Para iniciar la recuperación, cree el nodo `/path_to_table/replica_name/flags/force_restore_data` es ZooKeeper con cualquier contenido, o ejecute el comando para restaurar todas las tablas replicadas:
 
 ``` bash
 sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data

@@ -62,7 +62,7 @@ Un número máximo de bytes (datos sin comprimir) que se pueden leer de una tabl
 
 ## Método de codificación de datos: {#read-overflow-mode}
 
-Qué hacer cuando el volumen de datos leídos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
+Qué hacer cuando el volumen de datos leídos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
 
 ## Método de codificación de datos: {#settings-max-rows-to-group-by}
 
@@ -70,12 +70,12 @@ Un número máximo de claves únicas recibidas de la agregación. Esta configura
 
 ## Grupo\_by\_overflow\_mode {#group-by-overflow-mode}
 
-Qué hacer cuando el número de claves únicas para la agregación excede el límite: ‘throw’, ‘break’, o ‘any’. Por defecto, throw.
+Qué hacer cuando el número de claves únicas para la agregación excede el límite: ‘throw’, ‘break’, o ‘any’. Por defecto, tirar.
 Uso de la ‘any’ valor le permite ejecutar una aproximación de GROUP BY. La calidad de esta aproximación depende de la naturaleza estadística de los datos.
 
 ## max\_bytes\_before\_external\_group\_by {#settings-max-bytes-before-external-group-by}
 
-Habilita o deshabilita la ejecución de `GROUP BY` en la memoria externa. Ver [GROUP BY en memoria externa](../../query_language/select.md#select-group-by-in-external-memory).
+Habilita o deshabilita la ejecución de `GROUP BY` en la memoria externa. Ver [GRUPO POR en memoria externa](../../query_language/select.md#select-group-by-in-external-memory).
 
 Valores posibles:
 
@@ -94,7 +94,7 @@ Un número máximo de bytes antes de ordenar.
 
 ## sort\_overflow\_mode {#sort-overflow-mode}
 
-Qué hacer si el número de filas recibidas antes de ordenar excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
+Qué hacer si el número de filas recibidas antes de ordenar excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
 
 ## max\_result\_rows {#setting-max-result-rows}
 
@@ -106,9 +106,9 @@ Límite en el número de bytes en el resultado. Lo mismo que el ajuste anterior.
 
 ## result\_overflow\_mode {#result-overflow-mode}
 
-Qué hacer si el volumen del resultado excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
+Qué hacer si el volumen del resultado excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
 
-Utilizar ‘break’ es similar a usar LIMIT. `Break` interrumpe la ejecución sólo en el nivel de bloque. Esto significa que la cantidad de filas devueltas es mayor que [max\_result\_rows](#setting-max_result_rows), múltiplo de [max\_block\_size](settings.md#setting-max_block_size) y depende de [max\_threads](settings.md#settings-max_threads).
+Utilizar ‘break’ es similar a un límite de usar. `Break` interrumpe la ejecución sólo en el nivel de bloque. Esto significa que la cantidad de filas devueltas es mayor que [max\_result\_rows](#setting-max_result_rows), múltiplo de [max\_block\_size](settings.md#setting-max_block_size) y depende de [max\_threads](settings.md#settings-max_threads).
 
 Ejemplo:
 
@@ -134,7 +134,7 @@ En este momento, no se comprueba una de las etapas de clasificación, o al fusio
 
 ## timeout\_overflow\_mode {#timeout-overflow-mode}
 
-Qué hacer si la consulta se ejecuta más de ‘max\_execution\_time’: ‘throw’ o ‘break’. Por defecto, throw.
+Qué hacer si la consulta se ejecuta más de ‘max\_execution\_time’: ‘throw’ o ‘break’. Por defecto, tirar.
 
 ## Método de codificación de datos: {#min-execution-speed}
 
@@ -197,7 +197,7 @@ Número máximo de bytes (datos sin comprimir) utilizados por un conjunto en la 
 
 ## set\_overflow\_mode {#set-overflow-mode}
 
-Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
+Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
 
 ## Método de codificación de datos: {#max-rows-in-distinct}
 
@@ -209,7 +209,7 @@ Un número máximo de bytes utilizados por una tabla hash cuando se utiliza DIST
 
 ## distinct\_overflow\_mode {#distinct-overflow-mode}
 
-Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
+Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
 
 ## max\_rows\_to\_transfer {#max-rows-to-transfer}
 
@@ -221,7 +221,7 @@ Un número máximo de bytes (datos sin comprimir) que se pueden pasar a un servi
 
 ## transfer\_overflow\_mode {#transfer-overflow-mode}
 
-Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
+Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
 
 ## Método de codificación de datos: {#settings-max-rows-in-join}
 
