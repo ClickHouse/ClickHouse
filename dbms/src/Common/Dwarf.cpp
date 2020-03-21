@@ -1,4 +1,4 @@
-#if defined(__ELF__) && !defined(__FreeBSD__)
+#if defined(__ELF__) && !defined(__FreeBSD__) && !defined(__clang_tidy__)
 
 /*
  * Copyright 2012-present Facebook, Inc.

@@ -106,7 +106,7 @@ namespace S3
 
     URI::URI(const Poco::URI & uri_)
     {
-        static const std::regex BUCKET_KEY_PATTERN("([^/]+)/(.*)");
+        static const std::regex bucket_key_pattern("([^/]+)/(.*)"); /// TODO std::regex is discouraged
 
         uri = uri_;
 
@@ -133,7 +133,7 @@ namespace S3
 
         // Parse bucket and key from path.
         std::smatch match;
-        std::regex_search(uri.getPath(), match, BUCKET_KEY_PATTERN);
+        std::regex_search(uri.getPath(), match, bucket_key_pattern);
         if (!match.empty())
         {
             bucket = match.str(1);
