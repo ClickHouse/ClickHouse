@@ -80,7 +80,7 @@ def build_for_lang(lang, args):
             'ru': 'Документация ClickHouse %s',
             'zh': 'ClickHouse文档 %s',
             'ja': 'ClickHouseドキュメント %s',
-            'fa': 'مستندات %sClickHouse%'
+            'fa': 'مستندات %sClickHouse'
         }
 
         if args.version_prefix:
