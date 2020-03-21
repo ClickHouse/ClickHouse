@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Poco/Logger.h>
 
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/box.hpp>
@@ -88,7 +89,7 @@ private:
 
 /** Generate edge indexes during its construction in
  *  the following way: sort all polygon's vertexes by x coordinate, and then store all interesting
- *  polygon edges for each adjacent x coordinates. For each query finds interesting edges and 
+ *  polygon edges for each adjacent x coordinates. For each query finds interesting edges and
  *  iterates over them, finding required polygon. If there is more than one any such polygon may be returned.
  */
 class BucketsPolygonIndex
