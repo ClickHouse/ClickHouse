@@ -131,10 +131,10 @@ Chunk MergeSorter::mergeImpl(TSortingHeap & queue)
 
 SortingTransform::SortingTransform(
     const Block & header,
-    const SortDescription & description_,
+    SortDescription description_,
     size_t max_merged_block_size_, UInt64 limit_)
     : IProcessor({header}, {header})
-    , description(description_)
+    , description(std::move(description_))
     , max_merged_block_size(max_merged_block_size_)
     , limit(limit_)
 {

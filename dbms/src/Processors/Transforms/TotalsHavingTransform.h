@@ -24,7 +24,7 @@ public:
         const Block & header,
         bool overflow_row_,
         const ExpressionActionsPtr & expression_,
-        const std::string & filter_column_,
+        std::string filter_column_,
         TotalsMode totals_mode_,
         double auto_include_threshold_,
         bool final_);

@@ -28,21 +28,21 @@ void IMergeTreeDataPartWriter::Stream::sync()
 }
 
 IMergeTreeDataPartWriter::Stream::Stream(
-    const String & escaped_column_name_,
+    String escaped_column_name_,
     DiskPtr disk_,
-    const String & data_path_,
-    const std::string & data_file_extension_,
-    const std::string & marks_path_,
-    const std::string & marks_file_extension_,
-    const CompressionCodecPtr & compression_codec_,
+    String data_path_,
+    std::string data_file_extension_,
+    std::string marks_path_,
+    std::string marks_file_extension_,
+    CompressionCodecPtr compression_codec_,
     size_t max_compress_block_size_,
     size_t estimated_size_,
     size_t aio_threshold_) :
-    escaped_column_name(escaped_column_name_),
-    data_file_extension{data_file_extension_},
-    marks_file_extension{marks_file_extension_},
-    plain_file(disk_->writeFile(data_path_ + data_file_extension, max_compress_block_size_, WriteMode::Rewrite, estimated_size_, aio_threshold_)),
-    plain_hashing(*plain_file), compressed_buf(plain_hashing, compression_codec_), compressed(compressed_buf),
+    escaped_column_name(std::move(escaped_column_name_)),
+    data_file_extension{std::move(data_file_extension_)},
+    marks_file_extension{std::move(marks_file_extension_)},
+    plain_file(disk_->writeFile(std::move(data_path_) + data_file_extension, max_compress_block_size_, WriteMode::Rewrite, estimated_size_, aio_threshold_)),
+    plain_hashing(*plain_file), compressed_buf(plain_hashing, std::move(compression_codec_)), compressed(compressed_buf),
     marks_file(disk_->writeFile(marks_path_ + marks_file_extension, 4096, WriteMode::Rewrite)), marks(*marks_file)
 {
 }
@@ -64,24 +64,24 @@ void IMergeTreeDataPartWriter::Stream::addToChecksums(MergeTreeData::DataPart::C
 
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     DiskPtr disk_,
-    const String & part_path_,
+    String part_path_,
     const MergeTreeData & storage_,
-    const NamesAndTypesList & columns_list_,
-    const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
-    const String & marks_file_extension_,
-    const CompressionCodecPtr & default_codec_,
-    const MergeTreeWriterSettings & settings_,
-    const MergeTreeIndexGranularity & index_granularity_,
+    NamesAndTypesList columns_list_,
+    std::vector<MergeTreeIndexPtr> indices_to_recalc_,
+    String marks_file_extension_,
+    CompressionCodecPtr default_codec_,
+    MergeTreeWriterSettings settings_,
+    MergeTreeIndexGranularity index_granularity_,
     bool need_finish_last_granule_)
     : disk(std::move(disk_))
-    , part_path(part_path_)
+    , part_path(std::move(part_path_))
     , storage(storage_)
-    , columns_list(columns_list_)
-    , marks_file_extension(marks_file_extension_)
-    , index_granularity(index_granularity_)
-    , default_codec(default_codec_)
-    , skip_indices(indices_to_recalc_)
-    , settings(settings_)
+    , columns_list(std::move(columns_list_))
+    , marks_file_extension(std::move(marks_file_extension_))
+    , index_granularity(std::move(index_granularity_))
+    , default_codec(std::move(default_codec_))
+    , skip_indices(std::move(indices_to_recalc_))
+    , settings(std::move(settings_))
     , compute_granularity(index_granularity.empty())
     , with_final_mark(storage.getSettings()->write_final_mark && settings.can_use_adaptive_granularity)
     , need_finish_last_granule(need_finish_last_granule_)

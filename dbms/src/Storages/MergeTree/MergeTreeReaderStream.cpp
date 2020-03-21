@@ -15,14 +15,14 @@ namespace ErrorCodes
 
 MergeTreeReaderStream::MergeTreeReaderStream(
         DiskPtr disk_,
-        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
+        String path_prefix_, String data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings,
         MarkCache * mark_cache_,
         UncompressedCache * uncompressed_cache, size_t file_size,
         const MergeTreeIndexGranularityInfo * index_granularity_info_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback, clockid_t clock_type)
-        : disk(std::move(disk_)), path_prefix(path_prefix_), data_file_extension(data_file_extension_), marks_count(marks_count_)
+        : disk(std::move(disk_)), path_prefix(std::move(path_prefix_)), data_file_extension(std::move(data_file_extension_)), marks_count(marks_count_)
         , mark_cache(mark_cache_), save_marks_in_cache(settings.save_marks_in_cache)
         , index_granularity_info(index_granularity_info_)
         , marks_loader(disk, mark_cache, index_granularity_info->getMarksFilePath(path_prefix),

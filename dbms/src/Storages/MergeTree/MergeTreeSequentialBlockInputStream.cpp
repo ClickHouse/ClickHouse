@@ -10,15 +10,15 @@ namespace ErrorCodes
 
 MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     const MergeTreeData & storage_,
-    const MergeTreeData::DataPartPtr & data_part_,
+    MergeTreeData::DataPartPtr data_part_,
     Names columns_to_read_,
     bool read_with_direct_io_,
     bool take_column_types_from_storage,
     bool quiet)
     : storage(storage_)
-    , data_part(data_part_)
+    , data_part(std::move(data_part_))
     , part_columns_lock(data_part->columns_lock)
-    , columns_to_read(columns_to_read_)
+    , columns_to_read(std::move(columns_to_read_))
     , read_with_direct_io(read_with_direct_io_)
     , mark_cache(storage.global_context.getMarkCache())
 {

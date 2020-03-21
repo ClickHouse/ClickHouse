@@ -59,17 +59,17 @@ public:
 
     IMergeTreeDataPart(
         const MergeTreeData & storage_,
-        const String & name_,
-        const MergeTreePartInfo & info_,
-        const DiskPtr & disk,
-        const std::optional<String> & relative_path,
+        String name_,
+        MergeTreePartInfo info_,
+        DiskPtr disk,
+        std::optional<String> relative_path,
         Type part_type_);
 
     IMergeTreeDataPart(
         MergeTreeData & storage_,
-        const String & name_,
-        const DiskPtr & disk,
-        const std::optional<String> & relative_path,
+        String name_,
+        DiskPtr disk,
+        std::optional<String> relative_path,
         Type part_type_);
 
     virtual MergeTreeReaderPtr getReader(

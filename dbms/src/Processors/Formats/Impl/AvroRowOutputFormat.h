@@ -43,7 +43,7 @@ private:
 class AvroRowOutputFormat : public IRowOutputFormat
 {
 public:
-    AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_);
+    AvroRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, FormatSettings settings_);
     virtual ~AvroRowOutputFormat() override;
 
     String getName() const override { return "AvroRowOutputFormat"; }

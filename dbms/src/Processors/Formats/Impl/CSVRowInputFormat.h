@@ -19,8 +19,8 @@ class CSVRowInputFormat : public RowInputFormatWithDiagnosticInfo
 public:
     /** with_names - in the first line the header with column names
       */
-    CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
-                      bool with_names_, const FormatSettings & format_settings_);
+    CSVRowInputFormat(Block header_, ReadBuffer & in_, Params params_,
+                      bool with_names_, FormatSettings format_settings_);
 
     String getName() const override { return "CSVRowInputFormat"; }
 

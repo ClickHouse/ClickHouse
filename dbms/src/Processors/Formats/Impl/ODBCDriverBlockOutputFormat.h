@@ -21,7 +21,7 @@ class WriteBuffer;
 class ODBCDriverBlockOutputFormat : public IOutputFormat
 {
 public:
-    ODBCDriverBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_);
+    ODBCDriverBlockOutputFormat(WriteBuffer & out_, Block header_, FormatSettings format_settings_);
 
     String getName() const override { return "ODBCDriverBlockOutputFormat"; }
 

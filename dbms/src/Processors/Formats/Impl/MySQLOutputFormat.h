@@ -19,14 +19,15 @@ class Context;
 class MySQLOutputFormat final : public IOutputFormat
 {
 public:
-    MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_);
+    MySQLOutputFormat(WriteBuffer & out_, Block header_, FormatSettings settings_);
 
     String getName() const override { return "MySQLOutputFormat"; }
 
     void setContext(const Context & context_)
     {
         context = &context_;
-        packet_sender = std::make_unique<MySQLProtocol::PacketSender>(out, const_cast<uint8_t &>(context_.mysql.sequence_id)); /// TODO: fix it
+        packet_sender = std::make_unique<MySQLProtocol::PacketSender>(
+            out, const_cast<uint8_t &>(context_.mysql.sequence_id)); /// TODO: fix it
         packet_sender->max_packet_size = context_.mysql.max_packet_size;
     }
 

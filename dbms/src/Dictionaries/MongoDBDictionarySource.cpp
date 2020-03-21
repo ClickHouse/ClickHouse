@@ -169,24 +169,24 @@ authenticate(Poco::MongoDB::Connection & connection, const std::string & databas
 
 
 MongoDBDictionarySource::MongoDBDictionarySource(
-    const DictionaryStructure & dict_struct_,
-    const std::string & host_,
+    DictionaryStructure dict_struct_,
+    std::string host_,
     UInt16 port_,
-    const std::string & user_,
-    const std::string & password_,
-    const std::string & method_,
-    const std::string & db_,
-    const std::string & collection_,
-    const Block & sample_block_)
-    : dict_struct{dict_struct_}
-    , host{host_}
+    std::string user_,
+    std::string password_,
+    std::string method_,
+    std::string db_,
+    std::string collection_,
+    Block sample_block_)
+    : dict_struct{std::move(dict_struct_)}
+    , host{std::move(host_)}
     , port{port_}
-    , user{user_}
-    , password{password_}
-    , method{method_}
-    , db{db_}
-    , collection{collection_}
-    , sample_block{sample_block_}
+    , user{std::move(user_)}
+    , password{std::move(password_)}
+    , method{std::move(method_)}
+    , db{std::move(db_)}
+    , collection{std::move(collection_)}
+    , sample_block{std::move(sample_block_)}
     , connection{std::make_shared<Poco::MongoDB::Connection>(host, port)}
 {
     if (!user.empty())
@@ -203,7 +203,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
 
 
 MongoDBDictionarySource::MongoDBDictionarySource(
-    const DictionaryStructure & dict_struct_,
+    DictionaryStructure dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     Block & sample_block_)

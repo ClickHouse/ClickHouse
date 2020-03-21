@@ -348,7 +348,17 @@ void registerStorageS3(StorageFactory & factory)
         else
             compression_method = "auto";
 
-        return StorageS3::create(s3_uri, access_key_id, secret_access_key, args.table_id, format_name, min_upload_part_size, args.columns, args.constraints, args.context);
+        return StorageS3::create(
+            s3_uri,
+            access_key_id,
+            secret_access_key,
+            args.table_id,
+            format_name,
+            min_upload_part_size,
+            args.columns,
+            args.constraints,
+            args.context,
+            compression_method);
     });
 }
 

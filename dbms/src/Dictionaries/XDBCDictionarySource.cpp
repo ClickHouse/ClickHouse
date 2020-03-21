@@ -67,20 +67,20 @@ static const UInt64 max_block_size = 8192;
 
 
 XDBCDictionarySource::XDBCDictionarySource(
-    const DictionaryStructure & dict_struct_,
+    DictionaryStructure dict_struct_,
     const Poco::Util::AbstractConfiguration & config_,
     const std::string & config_prefix_,
-    const Block & sample_block_,
+    Block sample_block_,
     const Context & context_,
     const BridgeHelperPtr bridge_)
     : log(&Logger::get(bridge_->getName() + "DictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
-    , dict_struct{dict_struct_}
+    , dict_struct{std::move(dict_struct_)}
     , db{config_.getString(config_prefix_ + ".db", "")}
     , table{config_.getString(config_prefix_ + ".table")}
     , where{config_.getString(config_prefix_ + ".where", "")}
     , update_field{config_.getString(config_prefix_ + ".update_field", "")}
-    , sample_block{sample_block_}
+    , sample_block{std::move(sample_block_)}
     , query_builder{dict_struct, db, table, where, bridge_->getIdentifierQuotingStyle()}
     , load_all_query{query_builder.composeLoadAllQuery()}
     , invalidate_query{config_.getString(config_prefix_ + ".invalidate_query", "")}

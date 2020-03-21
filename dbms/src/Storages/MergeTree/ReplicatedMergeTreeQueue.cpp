@@ -1116,8 +1116,9 @@ Int64 ReplicatedMergeTreeQueue::getCurrentMutationVersion(const String & partiti
 }
 
 
-ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(const ReplicatedMergeTreeQueue::LogEntryPtr & entry_, ReplicatedMergeTreeQueue & queue_)
-    : entry(entry_), queue(queue_)
+ReplicatedMergeTreeQueue::CurrentlyExecuting::CurrentlyExecuting(
+    ReplicatedMergeTreeQueue::LogEntryPtr entry_, ReplicatedMergeTreeQueue & queue_)
+    : entry(std::move(entry_)), queue(queue_)
 {
     entry->currently_executing = true;
     ++entry->num_tries;

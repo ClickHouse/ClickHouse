@@ -16,8 +16,8 @@ class MergeSortingTransform : public SortingTransform
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
-    MergeSortingTransform(const Block & header,
-                          const SortDescription & description_,
+    MergeSortingTransform(Block header,
+                          SortDescription description_,
                           size_t max_merged_block_size_, UInt64 limit_,
                           size_t max_bytes_before_remerge_,
                           size_t max_bytes_before_external_sort_, VolumePtr tmp_volume_,

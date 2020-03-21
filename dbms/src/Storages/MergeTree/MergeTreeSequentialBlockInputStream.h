@@ -14,7 +14,7 @@ class MergeTreeSequentialBlockInputStream : public IBlockInputStream
 public:
     MergeTreeSequentialBlockInputStream(
         const MergeTreeData & storage_,
-        const MergeTreeData::DataPartPtr & data_part_,
+        MergeTreeData::DataPartPtr data_part_,
         Names columns_to_read_,
         bool read_with_direct_io_,
         bool take_column_types_from_storage,

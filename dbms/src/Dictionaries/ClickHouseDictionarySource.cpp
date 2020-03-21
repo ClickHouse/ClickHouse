@@ -47,13 +47,13 @@ static ConnectionPoolWithFailoverPtr createPool(
 
 
 ClickHouseDictionarySource::ClickHouseDictionarySource(
-    const DictionaryStructure & dict_struct_,
+    DictionaryStructure dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    const Block & sample_block_,
+    Block sample_block_,
     const Context & context_)
     : update_time{std::chrono::system_clock::from_time_t(0)}
-    , dict_struct{dict_struct_}
+    , dict_struct{std::move(dict_struct_)}
     , host{config.getString(config_prefix + ".host")}
     , port(config.getInt(config_prefix + ".port"))
     , secure(config.getBool(config_prefix + ".secure", false))
@@ -65,7 +65,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , invalidate_query{config.getString(config_prefix + ".invalidate_query", "")}
     , query_builder{dict_struct, db, table, where, IdentifierQuotingStyle::Backticks}
-    , sample_block{sample_block_}
+    , sample_block{std::move(sample_block_)}
     , context(context_)
     , is_local{isLocalAddress({host, port}, secure ? context.getTCPPortSecure().value_or(0) : context.getTCPPort())}
     , pool{is_local ? nullptr : createPool(host, port, secure, db, user, password)}

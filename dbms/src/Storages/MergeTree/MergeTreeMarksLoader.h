@@ -14,7 +14,7 @@ public:
     MergeTreeMarksLoader(
         DiskPtr disk_,
         MarkCache * mark_cache_,
-        const String & mrk_path,
+        String mrk_path,
         size_t marks_count_,
         const MergeTreeIndexGranularityInfo & index_granularity_info_,
         bool save_marks_in_cache_,

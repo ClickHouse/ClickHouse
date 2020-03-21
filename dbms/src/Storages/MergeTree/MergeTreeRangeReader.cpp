@@ -489,11 +489,11 @@ size_t MergeTreeRangeReader::ReadResult::countBytesInResultFilter(const IColumn:
 MergeTreeRangeReader::MergeTreeRangeReader(
     IMergeTreeReader * merge_tree_reader_,
     MergeTreeRangeReader * prev_reader_,
-    const PrewhereInfoPtr & prewhere_,
+    PrewhereInfoPtr prewhere_,
     bool last_reader_in_chain_)
     : merge_tree_reader(merge_tree_reader_)
     , index_granularity(&(merge_tree_reader->data_part->index_granularity)), prev_reader(prev_reader_)
-    , prewhere(prewhere_), last_reader_in_chain(last_reader_in_chain_), is_initialized(true)
+    , prewhere(std::move(prewhere_)), last_reader_in_chain(last_reader_in_chain_), is_initialized(true)
 {
     if (prev_reader)
         sample_block = prev_reader->getSampleBlock();

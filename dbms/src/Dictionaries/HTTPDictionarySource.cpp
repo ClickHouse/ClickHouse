@@ -25,19 +25,19 @@ static const UInt64 max_block_size = 8192;
 
 
 HTTPDictionarySource::HTTPDictionarySource(
-    const DictionaryStructure & dict_struct_,
+    DictionaryStructure dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    Block & sample_block_,
+    Block sample_block_,
     const Context & context_,
     bool check_config)
     : log(&Logger::get("HTTPDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
-    , dict_struct{dict_struct_}
+    , dict_struct{std::move(dict_struct_)}
     , url{config.getString(config_prefix + ".url", "")}
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , format{config.getString(config_prefix + ".format")}
-    , sample_block{sample_block_}
+    , sample_block{std::move(sample_block_)}
     , context(context_)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {

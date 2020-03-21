@@ -8,16 +8,17 @@ namespace DB
 {
 
 
-JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(WriteBuffer & out_,
-        const Block & header_,
-        FormatFactory::WriteCallback callback,
-        const FormatSettings & settings_,
-        bool with_names_)
-        : IRowOutputFormat(header_, out_, callback), settings(settings_), with_names(with_names_)
+JSONCompactEachRowRowOutputFormat::JSONCompactEachRowRowOutputFormat(
+    WriteBuffer & out_,
+    Block header_,
+    FormatFactory::WriteCallback callback,
+    FormatSettings settings_,
+    bool with_names_)
+    : IRowOutputFormat(std::move(header_), out_, std::move(callback)), settings(std::move(settings_)), with_names(with_names_)
 {
-            auto & sample = getPort(PortKind::Main).getHeader();
-            NamesAndTypesList columns(sample.getNamesAndTypesList());
-            fields.assign(columns.begin(), columns.end());
+    auto & sample = getPort(PortKind::Main).getHeader();
+    NamesAndTypesList columns(sample.getNamesAndTypesList());
+    fields.assign(columns.begin(), columns.end());
 }
 
 

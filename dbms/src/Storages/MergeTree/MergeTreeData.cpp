@@ -125,24 +125,24 @@ namespace
 
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
-    const String & relative_data_path_,
+    String relative_data_path_,
     const StorageInMemoryMetadata & metadata,
     Context & context_,
     const String & date_column_name,
-    const MergingParams & merging_params_,
+    MergingParams merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
     : IStorage(table_id_)
     , global_context(context_)
-    , merging_params(merging_params_)
+    , merging_params(std::move(merging_params_))
     , partition_by_ast(metadata.partition_by_ast)
     , sample_by_ast(metadata.sample_by_ast)
     , settings_ast(metadata.settings_ast)
     , require_part_metadata(require_part_metadata_)
-    , relative_data_path(relative_data_path_)
-    , broken_part_callback(broken_part_callback_)
+    , relative_data_path(std::move(relative_data_path_))
+    , broken_part_callback(std::move(broken_part_callback_))
     , log_name(table_id_.getNameForLogs())
     , log(&Logger::get(log_name))
     , storage_settings(std::move(storage_settings_))

@@ -20,11 +20,11 @@ namespace ErrorCodes
 
 
 FileDictionarySource::FileDictionarySource(
-    const std::string & filepath_, const std::string & format_,
-    Block & sample_block_, const Context & context_, bool check_config)
-    : filepath{filepath_}
-    , format{format_}
-    , sample_block{sample_block_}
+    std::string filepath_, std::string format_,
+    Block sample_block_, const Context & context_, bool check_config)
+    : filepath{std::move(filepath_)}
+    , format{std::move(format_)}
+    , sample_block{std::move(sample_block_)}
     , context(context_)
 {
     if (check_config)

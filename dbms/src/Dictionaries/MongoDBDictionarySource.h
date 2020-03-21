@@ -32,15 +32,15 @@ namespace ErrorCodes
 class MongoDBDictionarySource final : public IDictionarySource
 {
     MongoDBDictionarySource(
-        const DictionaryStructure & dict_struct_,
-        const std::string & host_,
+        DictionaryStructure dict_struct_,
+        std::string host_,
         UInt16 port_,
-        const std::string & user_,
-        const std::string & password_,
-        const std::string & method_,
-        const std::string & db_,
-        const std::string & collection_,
-        const Block & sample_block_);
+        std::string user_,
+        std::string password_,
+        std::string method_,
+        std::string db_,
+        std::string collection_,
+        Block sample_block_);
 
 public:
     MongoDBDictionarySource(

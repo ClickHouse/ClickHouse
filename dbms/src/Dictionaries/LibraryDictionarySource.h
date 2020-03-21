@@ -33,10 +33,10 @@ class LibraryDictionarySource final : public IDictionarySource
 {
 public:
     LibraryDictionarySource(
-        const DictionaryStructure & dict_struct_,
+        DictionaryStructure dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
-        const std::string & config_prefix_,
-        Block & sample_block_,
+        std::string config_prefix_,
+        Block sample_block_,
         const Context & context,
         bool check_config);
 

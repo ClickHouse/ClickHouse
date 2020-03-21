@@ -21,7 +21,7 @@ static const auto max_array_size = 500000;
 FlatDictionary::FlatDictionary(
     const std::string & database_,
     const std::string & name_,
-    const DictionaryStructure & dict_struct_,
+    DictionaryStructure dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_,
@@ -29,7 +29,7 @@ FlatDictionary::FlatDictionary(
     : database(database_)
     , name(name_)
     , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
-    , dict_struct(dict_struct_)
+    , dict_struct(std::move(dict_struct_))
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
     , require_nonempty(require_nonempty_)

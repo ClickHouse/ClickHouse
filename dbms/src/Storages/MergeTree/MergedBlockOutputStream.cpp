@@ -14,11 +14,11 @@ namespace ErrorCodes
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
-    const NamesAndTypesList & columns_list_,
+    NamesAndTypesList columns_list_,
     CompressionCodecPtr default_codec,
     bool blocks_are_granules_size)
     : MergedBlockOutputStream(
-        data_part, columns_list_, default_codec, {},
+        data_part, std::move(columns_list_), std::move(default_codec), {},
         data_part->storage.global_context.getSettings().min_bytes_to_use_direct_io,
         blocks_are_granules_size)
 {
@@ -26,13 +26,13 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
-    const NamesAndTypesList & columns_list_,
+    NamesAndTypesList columns_list_,
     CompressionCodecPtr default_codec,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
     size_t aio_threshold,
     bool blocks_are_granules_size)
     : IMergedBlockOutputStream(data_part)
-    , columns_list(columns_list_)
+    , columns_list(std::move(columns_list_))
 {
     MergeTreeWriterSettings writer_settings(data_part->storage.global_context.getSettings(),
         data_part->storage.canUseAdaptiveGranularity(), aio_threshold, blocks_are_granules_size);
@@ -49,7 +49,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     disk->createDirectories(part_path);
 
-    writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), default_codec, writer_settings);
+    writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), std::move(default_codec), writer_settings);
     writer->initPrimaryIndex();
     writer->initSkipIndices();
 }

@@ -27,10 +27,10 @@ class XDBCDictionarySource final : public IDictionarySource
 {
 public:
     XDBCDictionarySource(
-        const DictionaryStructure & dict_struct_,
+        DictionaryStructure dict_struct_,
         const Poco::Util::AbstractConfiguration & config_,
         const std::string & config_prefix_,
-        const Block & sample_block_,
+        Block sample_block_,
         const Context & context_,
         BridgeHelperPtr bridge);
 

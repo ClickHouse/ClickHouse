@@ -62,18 +62,18 @@ namespace DB
     static const size_t max_block_size = 8192;
 
     RedisDictionarySource::RedisDictionarySource(
-            const DictionaryStructure & dict_struct_,
-            const String & host_,
+            DictionaryStructure dict_struct_,
+            String host_,
             UInt16 port_,
             UInt8 db_index_,
             RedisStorageType storage_type_,
-            const Block & sample_block_)
-            : dict_struct{dict_struct_}
-            , host{host_}
+            Block sample_block_)
+            : dict_struct{std::move(dict_struct_)}
+            , host{std::move(host_)}
             , port{port_}
             , db_index{db_index_}
             , storage_type{storage_type_}
-            , sample_block{sample_block_}
+            , sample_block{std::move(sample_block_)}
             , client{std::make_shared<Poco::Redis::Client>(host, port)}
     {
         if (dict_struct.attributes.size() != 1)
@@ -109,17 +109,17 @@ namespace DB
 
 
     RedisDictionarySource::RedisDictionarySource(
-            const DictionaryStructure & dict_struct_,
-            const Poco::Util::AbstractConfiguration & config_,
-            const String & config_prefix_,
-            Block & sample_block_)
-            : RedisDictionarySource(
-            dict_struct_,
+        DictionaryStructure dict_struct_,
+        const Poco::Util::AbstractConfiguration & config_,
+        const String & config_prefix_,
+        Block sample_block_)
+        : RedisDictionarySource(
+            std::move(dict_struct_),
             config_.getString(config_prefix_ + ".host"),
             config_.getUInt(config_prefix_ + ".port"),
             config_.getUInt(config_prefix_ + ".db_index", 0),
             parseStorageType(config_.getString(config_prefix_ + ".storage_type", "")),
-            sample_block_)
+            std::move(sample_block_))
     {
     }
 

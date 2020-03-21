@@ -28,7 +28,7 @@ namespace DB
         using RedisBulkString = Poco::Redis::BulkString;
 
         RedisBlockInputStream(
-                const std::shared_ptr<Poco::Redis::Client> & client_,
+                std::shared_ptr<Poco::Redis::Client> client_,
                 const Poco::Redis::Array & keys_,
                 const RedisStorageType & storage_type_,
                 const Block & sample_block,

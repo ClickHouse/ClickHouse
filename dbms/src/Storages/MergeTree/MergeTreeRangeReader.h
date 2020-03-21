@@ -24,7 +24,7 @@ public:
     MergeTreeRangeReader(
         IMergeTreeReader * merge_tree_reader_,
         MergeTreeRangeReader * prev_reader_,
-        const PrewhereInfoPtr & prewhere_,
+        PrewhereInfoPtr prewhere_,
         bool last_reader_in_chain_);
 
     MergeTreeRangeReader() = default;

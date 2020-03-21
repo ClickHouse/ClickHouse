@@ -8,12 +8,12 @@ namespace DB
 {
 TabSeparatedRowOutputFormat::TabSeparatedRowOutputFormat(
     WriteBuffer & out_,
-    const Block & header_,
+    Block header_,
     bool with_names_,
     bool with_types_,
     FormatFactory::WriteCallback callback,
-    const FormatSettings & format_settings_)
-    : IRowOutputFormat(header_, out_, callback), with_names(with_names_), with_types(with_types_), format_settings(format_settings_)
+    FormatSettings format_settings_)
+    : IRowOutputFormat(std::move(header_), out_, std::move(callback)), with_names(with_names_), with_types(with_types_), format_settings(std::move(format_settings_))
 {
 }
 

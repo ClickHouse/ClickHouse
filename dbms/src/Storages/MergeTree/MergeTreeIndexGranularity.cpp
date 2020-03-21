@@ -9,8 +9,8 @@ namespace ErrorCodes
 {
 }
 
-MergeTreeIndexGranularity::MergeTreeIndexGranularity(const std::vector<size_t> & marks_rows_partial_sums_)
-    : marks_rows_partial_sums(marks_rows_partial_sums_)
+MergeTreeIndexGranularity::MergeTreeIndexGranularity(std::vector<size_t> marks_rows_partial_sums_)
+    : marks_rows_partial_sums(std::move(marks_rows_partial_sums_))
 {
 }
 

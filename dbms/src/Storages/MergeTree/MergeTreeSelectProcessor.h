@@ -18,17 +18,17 @@ class MergeTreeSelectProcessor : public MergeTreeBaseSelectProcessor
 public:
     MergeTreeSelectProcessor(
         const MergeTreeData & storage,
-        const MergeTreeData::DataPartPtr & owned_data_part,
+        MergeTreeData::DataPartPtr owned_data_part,
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
         size_t preferred_max_column_in_block_size_bytes,
         Names required_columns_,
         MarkRanges mark_ranges,
         bool use_uncompressed_cache,
-        const PrewhereInfoPtr & prewhere_info,
+        PrewhereInfoPtr prewhere_info,
         bool check_columns,
-        const MergeTreeReaderSettings & reader_settings,
-        const Names & virt_column_names = {},
+        MergeTreeReaderSettings reader_settings,
+        Names virt_column_names = {},
         size_t part_index_in_query = 0,
         bool quiet = false);
 

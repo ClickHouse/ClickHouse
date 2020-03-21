@@ -8,7 +8,7 @@ namespace ErrorCodes
 }
 
 MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
-    const MergeTreeDataPartPtr & data_part, const Block & header_, bool sync_,
+    const MergeTreeDataPartPtr & data_part, Block header_, bool sync_,
     CompressionCodecPtr default_codec, bool skip_offsets_,
     const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
     WrittenOffsetColumns * offset_columns_,
@@ -16,7 +16,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     const MergeTreeIndexGranularityInfo * index_granularity_info,
     bool is_writing_temp_files)
     : IMergedBlockOutputStream(data_part),
-    header(header_), sync(sync_)
+    header(std::move(header_)), sync(sync_)
 {
     const auto & global_settings = data_part->storage.global_context.getSettings();
     MergeTreeWriterSettings writer_settings(

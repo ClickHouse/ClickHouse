@@ -13,11 +13,11 @@
 namespace DB
 {
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, Int64 tmp_number)
+MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, String path_prefix_, Int64 tmp_number)
     : create_time(time(nullptr))
     , commands(std::move(commands_))
     , disk(std::move(disk_))
-    , path_prefix(path_prefix_)
+    , path_prefix(std::move(path_prefix_))
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
 {
@@ -59,10 +59,10 @@ void MergeTreeMutationEntry::removeFile()
     }
 }
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)
+MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, String path_prefix_, String file_name_)
     : disk(std::move(disk_))
-    , path_prefix(path_prefix_)
-    , file_name(file_name_)
+    , path_prefix(std::move(path_prefix_))
+    , file_name(std::move(file_name_))
     , is_temp(false)
 {
     ReadBufferFromString file_name_buf(file_name);

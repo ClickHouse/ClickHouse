@@ -21,11 +21,12 @@ static bool isPrefix(const SortDescription & pref_descr, const SortDescription &
 }
 
 FinishSortingTransform::FinishSortingTransform(
-    const Block & header, const SortDescription & description_sorted_,
-    const SortDescription & description_to_sort_,
+    Block header,
+    SortDescription description_sorted_,
+    SortDescription description_to_sort_,
     size_t max_merged_block_size_, UInt64 limit_)
-    : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_)
-    , description_sorted(description_sorted_)
+    : SortingTransform(std::move(header), std::move(description_to_sort_), max_merged_block_size_, limit_)
+    , description_sorted(std::move(description_sorted_))
 {
     const auto & sample = inputs.front().getHeader();
 

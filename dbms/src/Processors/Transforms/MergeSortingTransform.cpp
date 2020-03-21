@@ -92,15 +92,15 @@ private:
 };
 
 MergeSortingTransform::MergeSortingTransform(
-    const Block & header,
-    const SortDescription & description_,
+    Block header,
+    SortDescription description_,
     size_t max_merged_block_size_, UInt64 limit_,
     size_t max_bytes_before_remerge_,
     size_t max_bytes_before_external_sort_, VolumePtr tmp_volume_,
     size_t min_free_disk_space_)
-    : SortingTransform(header, description_, max_merged_block_size_, limit_)
+    : SortingTransform(std::move(header), std::move(description_), max_merged_block_size_, limit_)
     , max_bytes_before_remerge(max_bytes_before_remerge_)
-    , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(tmp_volume_)
+    , max_bytes_before_external_sort(max_bytes_before_external_sort_), tmp_volume(std::move(tmp_volume_))
     , min_free_disk_space(min_free_disk_space_) {}
 
 Processors MergeSortingTransform::expandPipeline()

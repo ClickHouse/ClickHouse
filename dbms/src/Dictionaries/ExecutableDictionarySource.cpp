@@ -49,17 +49,17 @@ namespace
 
 
 ExecutableDictionarySource::ExecutableDictionarySource(
-    const DictionaryStructure & dict_struct_,
+    DictionaryStructure dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    Block & sample_block_,
+    Block sample_block_,
     const Context & context_)
     : log(&Logger::get("ExecutableDictionarySource"))
-    , dict_struct{dict_struct_}
+    , dict_struct{std::move(dict_struct_)}
     , command{config.getString(config_prefix + ".command")}
     , update_field{config.getString(config_prefix + ".update_field", "")}
     , format{config.getString(config_prefix + ".format")}
-    , sample_block{sample_block_}
+    , sample_block{std::move(sample_block_)}
     , context(context_)
 {
 }
@@ -108,8 +108,8 @@ namespace
     {
     public:
         BlockInputStreamWithBackgroundThread(
-            const BlockInputStreamPtr & stream_, std::unique_ptr<ShellCommand> && command_, std::packaged_task<void()> && task_)
-            : stream{stream_}, command{std::move(command_)}, task(std::move(task_)), thread([this] {
+            BlockInputStreamPtr stream_, std::unique_ptr<ShellCommand> command_, std::packaged_task<void()> task_)
+            : stream{std::move(stream_)}, command{std::move(command_)}, task(std::move(task_)), thread([this] {
                 task();
                 command->in.close();
             })

@@ -31,11 +31,11 @@ MergeTreeWhereOptimizer::MergeTreeWhereOptimizer(
     SelectQueryInfo & query_info,
     const Context & context,
     const MergeTreeData & data,
-    const Names & queried_columns_,
+    Names queried_columns_,
     Logger * log_)
         : table_columns{ext::map<std::unordered_set>(data.getColumns().getAllPhysical(),
             [] (const NameAndTypePair & col) { return col.name; })},
-        queried_columns{queried_columns_},
+        queried_columns{std::move(queried_columns_)},
         block_with_constants{KeyCondition::getBlockWithConstants(query_info.query, query_info.syntax_analyzer_result, context)},
         log{log_}
 {

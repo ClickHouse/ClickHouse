@@ -21,10 +21,10 @@ class HTTPDictionarySource final : public IDictionarySource
 {
 public:
     HTTPDictionarySource(
-        const DictionaryStructure & dict_struct_,
+        DictionaryStructure dict_struct_,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        Block & sample_block_,
+        Block sample_block_,
         const Context & context_,
         bool check_config);
 

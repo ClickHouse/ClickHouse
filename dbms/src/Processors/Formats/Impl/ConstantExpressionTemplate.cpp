@@ -42,8 +42,8 @@ struct SpecialParserType
 struct LiteralInfo
 {
     using ASTLiteralPtr = std::shared_ptr<ASTLiteral>;
-    LiteralInfo(const ASTLiteralPtr & literal_, const String & column_name_, bool force_nullable_)
-            : literal(literal_), dummy_column_name(column_name_), force_nullable(force_nullable_) { }
+    LiteralInfo(ASTLiteralPtr literal_, String column_name_, bool force_nullable_)
+            : literal(std::move(literal_)), dummy_column_name(std::move(column_name_)), force_nullable(force_nullable_) {}
     ASTLiteralPtr literal;
     String dummy_column_name;
     /// Make column nullable even if expression type is not.

@@ -13,10 +13,10 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, const FormatSettings & settings_,
+TemplateBlockOutputFormat::TemplateBlockOutputFormat(const Block & header_, WriteBuffer & out_, FormatSettings settings_,
                                                      ParsedTemplateFormatString format_, ParsedTemplateFormatString row_format_,
                                                      std::string row_between_delimiter_)
-    : IOutputFormat(header_, out_), settings(settings_), format(std::move(format_))
+    : IOutputFormat(header_, out_), settings(std::move(settings_)), format(std::move(format_))
     , row_format(std::move(row_format_)), row_between_delimiter(std::move(row_between_delimiter_))
 {
     auto & sample = getPort(PortKind::Main).getHeader();

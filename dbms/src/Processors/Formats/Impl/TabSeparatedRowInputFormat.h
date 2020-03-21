@@ -16,8 +16,8 @@ public:
     /** with_names - the first line is the header with the names of the columns
       * with_types - on the next line header with type names
       */
-    TabSeparatedRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
-                               bool with_names_, bool with_types_, const FormatSettings & format_settings_);
+    TabSeparatedRowInputFormat(Block header_, ReadBuffer & in_, Params params_,
+                               bool with_names_, bool with_types_, FormatSettings format_settings_);
 
     String getName() const override { return "TabSeparatedRowInputFormat"; }
 

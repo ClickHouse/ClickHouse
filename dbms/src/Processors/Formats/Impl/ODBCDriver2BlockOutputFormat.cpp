@@ -12,8 +12,8 @@
 namespace DB
 {
 ODBCDriver2BlockOutputFormat::ODBCDriver2BlockOutputFormat(
-    WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings(format_settings_)
+    WriteBuffer & out_, Block header_, FormatSettings format_settings_)
+    : IOutputFormat(std::move(header_), out_), format_settings(std::move(format_settings_))
 {
 }
 

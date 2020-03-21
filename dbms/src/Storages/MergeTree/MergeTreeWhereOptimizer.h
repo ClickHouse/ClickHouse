@@ -31,7 +31,7 @@ public:
         SelectQueryInfo & query_info,
         const Context & context,
         const MergeTreeData & data,
-        const Names & queried_columns_,
+        Names queried_columns_,
         Poco::Logger * log_);
 
 private:

@@ -16,8 +16,8 @@ namespace ErrorCodes
 }
 
 
-TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(format_settings_), name_map(header_.columns())
+TSKVRowInputFormat::TSKVRowInputFormat(ReadBuffer & in_, Block header_, Params params_, FormatSettings format_settings_)
+    : IRowInputFormat(std::move(header_), in_, std::move(params_)), format_settings(std::move(format_settings_)), name_map(header_.columns())
 {
     /// In this format, we assume that column name cannot contain BOM,
     ///  so BOM at beginning of stream cannot be confused with name of field, and it is safe to skip it.

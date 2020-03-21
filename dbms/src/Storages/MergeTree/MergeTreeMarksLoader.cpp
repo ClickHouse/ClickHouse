@@ -18,14 +18,14 @@ namespace ErrorCodes
 MergeTreeMarksLoader::MergeTreeMarksLoader(
     DiskPtr disk_,
     MarkCache * mark_cache_,
-    const String & mrk_path_,
+    String mrk_path_,
     size_t marks_count_,
     const MergeTreeIndexGranularityInfo & index_granularity_info_,
     bool save_marks_in_cache_,
     size_t columns_in_mark_)
     : disk(std::move(disk_))
     , mark_cache(mark_cache_)
-    , mrk_path(mrk_path_)
+    , mrk_path(std::move(mrk_path_))
     , marks_count(marks_count_)
     , index_granularity_info(index_granularity_info_)
     , save_marks_in_cache(save_marks_in_cache_)

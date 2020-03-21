@@ -26,13 +26,13 @@ public:
     struct Stream
     {
         Stream(
-            const String & escaped_column_name_,
+            String escaped_column_name_,
             DiskPtr disk_,
-            const String & data_path_,
-            const std::string & data_file_extension_,
-            const std::string & marks_path_,
-            const std::string & marks_file_extension_,
-            const CompressionCodecPtr & compression_codec_,
+            String data_path_,
+            std::string data_file_extension_,
+            std::string marks_path_,
+            std::string marks_file_extension_,
+            CompressionCodecPtr compression_codec_,
             size_t max_compress_block_size_,
             size_t estimated_size_,
             size_t aio_threshold_);
@@ -62,14 +62,14 @@ public:
 
     IMergeTreeDataPartWriter(
         DiskPtr disk,
-        const String & part_path,
+        String part_path,
         const MergeTreeData & storage,
-        const NamesAndTypesList & columns_list,
-        const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
-        const String & marks_file_extension,
-        const CompressionCodecPtr & default_codec,
-        const MergeTreeWriterSettings & settings,
-        const MergeTreeIndexGranularity & index_granularity,
+        NamesAndTypesList columns_list,
+        std::vector<MergeTreeIndexPtr> indices_to_recalc,
+        String marks_file_extension,
+        CompressionCodecPtr default_codec,
+        MergeTreeWriterSettings settings,
+        MergeTreeIndexGranularity index_granularity,
         bool need_finish_last_granule);
 
     virtual ~IMergeTreeDataPartWriter();

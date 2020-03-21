@@ -35,8 +35,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TYPE;
 }
 
-ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & format_settings_)
-    : IOutputFormat(header_, out_), format_settings{format_settings_}
+ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, Block header_, FormatSettings format_settings_)
+    : IOutputFormat(std::move(header_), out_), format_settings{std::move(format_settings_)}
 {
 }
 

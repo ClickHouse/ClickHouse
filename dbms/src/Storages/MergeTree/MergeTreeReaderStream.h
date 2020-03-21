@@ -18,7 +18,7 @@ class MergeTreeReaderStream
 public:
     MergeTreeReaderStream(
         DiskPtr disk_,
-        const String & path_prefix_, const String & data_file_extension_, size_t marks_count_,
+        String path_prefix_, String data_file_extension_, size_t marks_count_,
         const MarkRanges & all_mark_ranges,
         const MergeTreeReaderSettings & settings_,
         MarkCache * mark_cache, UncompressedCache * uncompressed_cache,

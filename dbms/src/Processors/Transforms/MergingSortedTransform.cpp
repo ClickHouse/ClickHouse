@@ -13,13 +13,13 @@ namespace ErrorCodes
 MergingSortedTransform::MergingSortedTransform(
     const Block & header,
     size_t num_inputs,
-    const SortDescription & description_,
+    SortDescription description_,
     size_t max_block_size_,
     UInt64 limit_,
     bool quiet_,
     bool have_all_inputs_)
     : IProcessor(InputPorts(num_inputs, header), {header})
-    , description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
+    , description(std::move(description_)), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
     , have_all_inputs(have_all_inputs_)
     , merged_data(header), source_chunks(num_inputs), cursors(num_inputs)
 {

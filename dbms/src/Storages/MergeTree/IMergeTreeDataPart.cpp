@@ -134,12 +134,12 @@ void IMergeTreeDataPart::MinMaxIndex::merge(const MinMaxIndex & other)
 
 
 IMergeTreeDataPart::IMergeTreeDataPart(
-    MergeTreeData & storage_, const String & name_, const DiskPtr & disk_, const std::optional<String> & relative_path_, Type part_type_)
+    MergeTreeData & storage_, String name_, DiskPtr disk_, std::optional<String> relative_path_, Type part_type_)
     : storage(storage_)
-    , name(name_)
-    , info(MergeTreePartInfo::fromPartName(name_, storage.format_version))
-    , disk(disk_)
-    , relative_path(relative_path_.value_or(name_))
+    , name(std::move(name_))
+    , info(MergeTreePartInfo::fromPartName(name, storage.format_version))
+    , disk(std::move(disk_))
+    , relative_path(std::move(relative_path_).value_or(name))
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
 {
@@ -147,16 +147,16 @@ IMergeTreeDataPart::IMergeTreeDataPart(
 
 IMergeTreeDataPart::IMergeTreeDataPart(
     const MergeTreeData & storage_,
-    const String & name_,
-    const MergeTreePartInfo & info_,
-    const DiskPtr & disk_,
-    const std::optional<String> & relative_path_,
+    String name_,
+    MergeTreePartInfo info_,
+    DiskPtr disk_,
+    std::optional<String> relative_path_,
     Type part_type_)
     : storage(storage_)
-    , name(name_)
-    , info(info_)
-    , disk(disk_)
-    , relative_path(relative_path_.value_or(name_))
+    , name(std::move(name_))
+    , info(std::move(info_))
+    , disk(std::move(disk_))
+    , relative_path(std::move(relative_path_).value_or(name))
     , index_granularity_info(storage_, part_type_)
     , part_type(part_type_)
 {

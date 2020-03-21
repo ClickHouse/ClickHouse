@@ -119,17 +119,17 @@ namespace
 
 
 LibraryDictionarySource::LibraryDictionarySource(
-    const DictionaryStructure & dict_struct_,
+    DictionaryStructure dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
-    const std::string & config_prefix_,
-    Block & sample_block_,
+    std::string config_prefix_,
+    Block sample_block_,
     const Context & context,
     bool check_config)
     : log(&Logger::get("LibraryDictionarySource"))
-    , dict_struct{dict_struct_}
-    , config_prefix{config_prefix_}
+    , dict_struct{std::move(dict_struct_)}
+    , config_prefix{std::move(config_prefix_)}
     , path{config.getString(config_prefix + ".path", "")}
-    , sample_block{sample_block_}
+    , sample_block{std::move(sample_block_)}
 {
 
     if (check_config)

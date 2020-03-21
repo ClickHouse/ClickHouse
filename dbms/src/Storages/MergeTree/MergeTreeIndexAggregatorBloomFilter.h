@@ -9,7 +9,7 @@ namespace DB
 class MergeTreeIndexAggregatorBloomFilter : public IMergeTreeIndexAggregator
 {
 public:
-    MergeTreeIndexAggregatorBloomFilter(size_t bits_per_row_, size_t hash_functions_, const Names & columns_name_);
+    MergeTreeIndexAggregatorBloomFilter(size_t bits_per_row_, size_t hash_functions_, Names columns_name_);
 
     bool empty() const override;
 

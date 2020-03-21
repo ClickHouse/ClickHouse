@@ -18,11 +18,11 @@ namespace ErrorCodes
 }
 
 
-CSVRowInputFormat::CSVRowInputFormat(const Block & header_, ReadBuffer & in_, const Params & params_,
-                                     bool with_names_, const FormatSettings & format_settings_)
-    : RowInputFormatWithDiagnosticInfo(header_, in_, params_)
+CSVRowInputFormat::CSVRowInputFormat(Block header_, ReadBuffer & in_, Params params_,
+                                     bool with_names_, FormatSettings format_settings_)
+    : RowInputFormatWithDiagnosticInfo(std::move(header_), in_, std::move(params_))
     , with_names(with_names_)
-    , format_settings(format_settings_)
+    , format_settings(std::move(format_settings_))
 {
 
     const String bad_delimiters = " \t\"'.UL";

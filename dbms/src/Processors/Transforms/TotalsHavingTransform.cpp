@@ -42,14 +42,14 @@ TotalsHavingTransform::TotalsHavingTransform(
     const Block & header,
     bool overflow_row_,
     const ExpressionActionsPtr & expression_,
-    const std::string & filter_column_,
+    std::string filter_column_,
     TotalsMode totals_mode_,
     double auto_include_threshold_,
     bool final_)
     : ISimpleTransform(header, createOutputHeader(header, expression_, final_), true)
     , overflow_row(overflow_row_)
     , expression(expression_)
-    , filter_column_name(filter_column_)
+    , filter_column_name(std::move(filter_column_))
     , totals_mode(totals_mode_)
     , auto_include_threshold(auto_include_threshold_)
     , final(final_)

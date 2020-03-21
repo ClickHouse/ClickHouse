@@ -15,12 +15,15 @@ namespace ErrorCodes
 }
 
 
-JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(ReadBuffer & in_,
-        const Block & header_,
-        Params params_,
-        const FormatSettings & format_settings_,
-        bool with_names_)
-        : IRowInputFormat(header_, in_, std::move(params_)), format_settings(format_settings_), with_names(with_names_)
+JSONCompactEachRowRowInputFormat::JSONCompactEachRowRowInputFormat(
+    ReadBuffer & in_,
+    Block header_,
+    Params params_,
+    FormatSettings format_settings_,
+    bool with_names_)
+    : IRowInputFormat(std::move(header_), in_, std::move(params_)),
+    format_settings(std::move(format_settings_)),
+    with_names(with_names_)
 {
     /// In this format, BOM at beginning of stream cannot be confused with value, so it is safe to skip it.
     skipBOMIfExists(in);

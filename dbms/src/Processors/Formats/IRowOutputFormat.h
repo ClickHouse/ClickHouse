@@ -25,7 +25,7 @@ protected:
 
 public:
     IRowOutputFormat(const Block & header, WriteBuffer & out_, FormatFactory::WriteCallback callback)
-        : IOutputFormat(header, out_), types(header.getDataTypes()), write_single_row_callback(callback)
+        : IOutputFormat(header, out_), types(header.getDataTypes()), write_single_row_callback(std::move(callback))
     {
     }
 

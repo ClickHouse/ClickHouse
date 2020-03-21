@@ -15,7 +15,7 @@ namespace DB
 class JSONEachRowRowOutputFormat : public IRowOutputFormat
 {
 public:
-    JSONEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_);
+    JSONEachRowRowOutputFormat(WriteBuffer & out_, Block header_, FormatFactory::WriteCallback callback, FormatSettings settings_);
 
     String getName() const override { return "JSONEachRowRowOutputFormat"; }
 

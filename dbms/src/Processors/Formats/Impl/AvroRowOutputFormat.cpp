@@ -334,9 +334,9 @@ static avro::Codec getCodec(const std::string & codec_name)
 }
 
 AvroRowOutputFormat::AvroRowOutputFormat(
-    WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_)
-    : IRowOutputFormat(header_, out_, callback)
-    , settings(settings_)
+    WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, FormatSettings settings_)
+    : IRowOutputFormat(header_, out_, std::move(callback))
+    , settings(std::move(settings_))
     , serializer(header_.getColumnsWithTypeAndName())
     , file_writer(
         std::make_unique<OutputStreamWriteBufferAdapter>(out_),

@@ -450,8 +450,8 @@ public:
     size_t sum_index_columns = 0;
     size_t sum_ordinary_columns = 0;
 
-    ColumnSizeEstimator(const MergeTreeData::DataPart::ColumnToSize & map_, const Names & key_columns, const Names & ordinary_columns)
-        : map(map_)
+    ColumnSizeEstimator(MergeTreeData::DataPart::ColumnToSize map_, const Names & key_columns, const Names & ordinary_columns)
+        : map(std::move(map_))
     {
         for (const auto & name : key_columns)
             if (!map.count(name)) map[name] = 0;

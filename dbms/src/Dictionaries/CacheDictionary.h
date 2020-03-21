@@ -52,7 +52,7 @@ public:
     CacheDictionary(
         const std::string & database_,
         const std::string & name_,
-        const DictionaryStructure & dict_struct_,
+        DictionaryStructure dict_struct_,
         DictionarySourcePtr source_ptr_,
         DictionaryLifetime dict_lifetime_,
         size_t size_,

@@ -26,10 +26,10 @@ struct ExternalQueryBuilder
 
 
     ExternalQueryBuilder(
-        const DictionaryStructure & dict_struct_,
-        const std::string & db_,
+        DictionaryStructure dict_struct_,
+        std::string db_,
         const std::string & table_,
-        const std::string & where_,
+        std::string where_,
         IdentifierQuotingStyle quoting_style_);
 
     /** Generate a query to load all data. */

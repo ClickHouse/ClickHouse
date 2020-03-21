@@ -12,9 +12,9 @@ namespace DB
 using namespace MySQLProtocol;
 
 
-MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, const Block & header_, const FormatSettings & settings_)
-    : IOutputFormat(header_, out_)
-    , format_settings(settings_)
+MySQLOutputFormat::MySQLOutputFormat(WriteBuffer & out_, Block header_, FormatSettings settings_)
+    : IOutputFormat(std::move(header_), out_)
+    , format_settings(std::move(settings_))
 {
 }
 

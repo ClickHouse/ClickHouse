@@ -20,7 +20,7 @@ public:
     AddingMissedTransform(
         Block header_,
         Block result_header_,
-        const ColumnDefaults & column_defaults_,
+        ColumnDefaults column_defaults_,
         const Context & context_);
 
     String getName() const override { return "AddingMissed"; }

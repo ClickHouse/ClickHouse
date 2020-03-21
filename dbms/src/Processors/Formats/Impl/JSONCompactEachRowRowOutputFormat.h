@@ -15,7 +15,8 @@ namespace DB
 class JSONCompactEachRowRowOutputFormat : public IRowOutputFormat
 {
 public:
-    JSONCompactEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_, bool with_names);
+    JSONCompactEachRowRowOutputFormat(
+        WriteBuffer & out_, Block header_, FormatFactory::WriteCallback callback, FormatSettings settings_, bool with_names);
 
     String getName() const override { return "JSONCompactEachRowRowOutputFormat"; }
 

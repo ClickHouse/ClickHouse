@@ -32,12 +32,12 @@ namespace DB
 
 
     RedisBlockInputStream::RedisBlockInputStream(
-            const std::shared_ptr<Poco::Redis::Client> & client_,
+            std::shared_ptr<Poco::Redis::Client> client_,
             const RedisArray & keys_,
             const RedisStorageType & storage_type_,
             const DB::Block & sample_block,
             const size_t max_block_size_)
-            : client(client_), keys(keys_), storage_type(storage_type_), max_block_size{max_block_size_}
+            : client(std::move(client_)), keys(keys_), storage_type(storage_type_), max_block_size{max_block_size_}
     {
         description.init(sample_block);
     }

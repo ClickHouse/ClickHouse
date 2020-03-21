@@ -20,7 +20,7 @@ public:
     RangeHashedDictionary(
         const std::string & database_,
         const std::string & name_,
-        const DictionaryStructure & dict_struct_,
+        DictionaryStructure dict_struct_,
         DictionarySourcePtr source_ptr_,
         const DictionaryLifetime dict_lifetime_,
         bool require_nonempty_);

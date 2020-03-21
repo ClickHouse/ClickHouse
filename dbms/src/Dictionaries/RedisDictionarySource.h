@@ -40,22 +40,22 @@ namespace ErrorCodes
     class RedisDictionarySource final : public IDictionarySource
     {
         RedisDictionarySource(
-                const DictionaryStructure & dict_struct,
-                const std::string & host,
+                DictionaryStructure dict_struct,
+                std::string host,
                 UInt16 port,
                 UInt8 db_index,
                 RedisStorageType storage_type,
-                const Block & sample_block);
+                Block sample_block);
 
     public:
         using RedisArray = Poco::Redis::Array;
         using RedisCommand = Poco::Redis::Command;
 
         RedisDictionarySource(
-                const DictionaryStructure & dict_struct,
+                DictionaryStructure dict_struct,
                 const Poco::Util::AbstractConfiguration & config,
                 const std::string & config_prefix,
-                Block & sample_block);
+                Block sample_block);
 
         RedisDictionarySource(const RedisDictionarySource & other);
 

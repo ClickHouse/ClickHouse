@@ -65,9 +65,10 @@ class SortingTransform : public IProcessor
 {
 public:
     /// limit - if not 0, allowed to return just first 'limit' rows in sorted order.
-    SortingTransform(const Block & header,
-                          const SortDescription & description_,
-                          size_t max_merged_block_size_, UInt64 limit_);
+    SortingTransform(
+        const Block & header,
+        SortDescription description_,
+        size_t max_merged_block_size_, UInt64 limit_);
 
     ~SortingTransform() override;
 

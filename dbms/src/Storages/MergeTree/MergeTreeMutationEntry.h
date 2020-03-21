@@ -29,7 +29,7 @@ struct MergeTreeMutationEntry
     String latest_fail_reason;
 
     /// Create a new entry and write it to a temporary file.
-    MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, Int64 tmp_number);
+    MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, String path_prefix_, Int64 tmp_number);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 
@@ -39,7 +39,7 @@ struct MergeTreeMutationEntry
     void removeFile();
 
     /// Load an existing entry.
-    MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_);
+    MergeTreeMutationEntry(DiskPtr disk_, String path_prefix_, String file_name_);
 
     ~MergeTreeMutationEntry();
 };

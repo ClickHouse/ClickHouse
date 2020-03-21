@@ -17,12 +17,12 @@ namespace ErrorCodes
 
 
 ExternalQueryBuilder::ExternalQueryBuilder(
-    const DictionaryStructure & dict_struct_,
-    const std::string & db_,
+    DictionaryStructure dict_struct_,
+    std::string db_,
     const std::string & table_,
-    const std::string & where_,
+    std::string where_,
     IdentifierQuotingStyle quoting_style_)
-    : dict_struct(dict_struct_), db(db_), where(where_), quoting_style(quoting_style_)
+    : dict_struct(std::move(dict_struct_)), db(std::move(db_)), where(std::move(where_)), quoting_style(quoting_style_)
 {
     if (auto pos = table_.find('.'); pos != std::string::npos)
     {
