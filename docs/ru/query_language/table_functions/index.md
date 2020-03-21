@@ -4,13 +4,13 @@
 
 Табличные функции можно использовать в:
 
-- Секции [FROM](../select.md#select-from) запроса `SELECT`.
+-   Секции [FROM](../select.md#select-from) запроса `SELECT`.
 
-    Это способ создания временной таблицы, которая доступна только в текущем запросе.
+        Это способ создания временной таблицы, которая доступна только в текущем запросе.
 
-- Запросе [CREATE TABLE AS \<table\_function()\>](../create.md#create-table-query).
+-   Запросе [CREATE TABLE AS \<table\_function()\>](../create.md#create-table-query).
 
-    Это один из методов создания таблицы.
+        Это один из методов создания таблицы.
 
 !!! warning "Предупреждение"
     Если настройка [allow\_ddl](../../operations/settings/permissions_for_queries.md#settings_allow_ddl) выключена, то использовать табличные функции невозможно.

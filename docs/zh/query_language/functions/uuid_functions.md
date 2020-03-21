@@ -102,6 +102,6 @@ SELECT
 
 ## 另请参阅 {#ling-qing-can-yue}
 
-- [dictGetUUID](ext_dict_functions.md)
+-   [dictGetUUID](ext_dict_functions.md)
 
 [来源文章](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->

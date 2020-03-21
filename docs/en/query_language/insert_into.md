@@ -10,8 +10,8 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 
 The query can specify a list of columns to insert `[(c1, c2, c3)]`. In this case, the rest of the columns are filled with:
 
-- The values calculated from the `DEFAULT` expressions specified in the table definition.
-- Zeros and empty strings, if `DEFAULT` expressions are not defined.
+-   The values calculated from the `DEFAULT` expressions specified in the table definition.
+-   Zeros and empty strings, if `DEFAULT` expressions are not defined.
 
 If [strict\_insert\_defaults=1](../operations/settings/settings.md), columns that do not have `DEFAULT` defined must be listed in the query.
 
@@ -43,7 +43,7 @@ You can insert data separately from the query by using the command-line client o
 
 If table has [constraints](create.md#constraints), their expressions will be checked for each row of inserted data. If any of those constraints is not satisfied — server will raise an exception containing constraint name and expression, the query will be stopped.
 
-### Inserting The Results of `SELECT` {#insert_query_insert-select}
+### Inserting The Results of `SELECT` {#insert-query-insert-select}
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
@@ -62,12 +62,12 @@ However, you can delete old data using `ALTER TABLE ... DROP PARTITION`.
 
 `INSERT` sorts the input data by primary key and splits them into partitions by a partition key. If you insert data into several partitions at once, it can significantly reduce the performance of the `INSERT` query. To avoid this:
 
-- Add data in fairly large batches, such as 100,000 rows at a time.
-- Group data by a partition key before uploading it to ClickHouse.
+-   Add data in fairly large batches, such as 100,000 rows at a time.
+-   Group data by a partition key before uploading it to ClickHouse.
 
 Performance will not decrease if:
 
-- Data is added in real time.
-- You upload data that is usually sorted by time.
+-   Data is added in real time.
+-   You upload data that is usually sorted by time.
 
 [Original article](https://clickhouse.tech/docs/en/query_language/insert_into/) <!--hide-->

@@ -1,4 +1,4 @@
-# Functions for working with Yandex.Metrica dictionaries {#functions-for-working-with-yandex.metrica-dictionaries}
+# Functions for working with Yandex.Metrica dictionaries {#functions-for-working-with-yandex-metrica-dictionaries}
 
 In order for the functions below to work, the server config must specify the paths and addresses for getting all the Yandex.Metrica dictionaries. The dictionaries are loaded at the first call of any of these functions. If the reference lists can’t be loaded, an exception is thrown.
 

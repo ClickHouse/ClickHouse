@@ -1,4 +1,4 @@
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 # فرمت های Input و Output {#formats}
 
@@ -55,12 +55,12 @@ Dates با فرمت YYY-MM-DD نوشته می شوند و به همین حالت
 
 </div>
 
-  Hello\nworld
+    Hello\nworld
 
-  Hello\
-  world
+    Hello\
+    world
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 نوع دوم به دلیل پشتیبانی MySQL در هنگام نوشتن دامپ به صورت tab-separate، پشتیبانی می شود.
 
@@ -80,20 +80,20 @@ Dates با فرمت YYY-MM-DD نوشته می شوند و به همین حالت
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT TabSeparated``
 ```
 
-  2014-03-17      1406958
-  2014-03-18      1383658
-  2014-03-19      1405797
-  2014-03-20      1353623
-  2014-03-21      1245779
-  2014-03-22      1031592
-  2014-03-23      1046491
+    2014-03-17      1406958
+    2014-03-18      1383658
+    2014-03-19      1405797
+    2014-03-20      1353623
+    2014-03-21      1245779
+    2014-03-22      1031592
+    2014-03-23      1046491
 
-  0000-00-00      8873898
+    0000-00-00      8873898
 
-  2014-03-17      1031592
-  2014-03-23      1406958
+    2014-03-17      1031592
+    2014-03-23      1406958
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 این فرمت نیز تحت نام `TSV` موجود است.
 
@@ -125,39 +125,39 @@ Format string `format_schema_rows` specifies rows format with the following synt
 
 `delimiter_1${column_1:serializeAs_1}delimiter_2${column_2:serializeAs_2} ... delimiter_N`,
 
-  where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`),
-  `column_i` is a name of a column whose values are to be selected or inserted (if empty, then column will be skipped),
-  `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
+    where `delimiter_i` is a delimiter between values (`$` symbol can be escaped as `$$`),
+    `column_i` is a name of a column whose values are to be selected or inserted (if empty, then column will be skipped),
+    `serializeAs_i` is an escaping rule for the column values. The following escaping rules are supported:
 
-  - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
-  - `Escaped` (similarly to `TSV`)
-  - `Quoted` (similarly to `Values`)
-  - `Raw` (without escaping, similarly to `TSVRaw`)
-  - `None` (no escaping rule, see further)
+    - `CSV`, `JSON`, `XML` (similarly to the formats of the same names)
+    - `Escaped` (similarly to `TSV`)
+    - `Quoted` (similarly to `Values`)
+    - `Raw` (without escaping, similarly to `TSVRaw`)
+    - `None` (no escaping rule, see further)
 
-  If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
+    If escaping rule is omitted, then`None` will be used. `XML` and `Raw` are suitable only for output.
 
-  So, for the following format string:
+    So, for the following format string:
 
-    `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
+      `Search phrase: ${SearchPhrase:Quoted}, count: ${c:Escaped}, ad price: $$${price:JSON};`
 
-  the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase: `, `, count: `, `, ad price: $` and `;` delimiters respectively. For example:
+    the values of `SearchPhrase`, `c` and `price` columns, which are escaped as `Quoted`, `Escaped` and `JSON` will be printed (for select) or will be expected (for insert) between `Search phrase: `, `, count: `, `, ad price: $` and `;` delimiters respectively. For example:
 
-  `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
+    `Search phrase: 'bathroom interior design', count: 2166, ad price: $3;`
 
 The `format_schema_rows_between_delimiter` setting specifies delimiter between rows, which is printed (or expected) after every row except the last one (`\n` by default)
 
 Format string `format_schema` has the same syntax as `format_schema_rows` and allows to specify a prefix, a suffix and a way to print some additional information. It contains the following placeholders instead of column names:
 
-- `data` is the rows with data in `format_schema_rows` format, separated by `format_schema_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
-- `totals` is the row with total values in `format_schema_rows` format (when using WITH TOTALS)
-- `min` is the row with minimum values in `format_schema_rows` format (when extremes is set to 1)
-- `max` is the row with maximum values in `format_schema_rows` format (when extremes is set to 1)
-- `rows` is the total number of output rows
-- `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact number of rows there would have been without a LIMIT.
-- `time` is the request execution time in seconds
-- `rows_read` is the number of rows have been read
-- `bytes_read` is the number of bytes (uncompressed) have been read
+-   `data` is the rows with data in `format_schema_rows` format, separated by `format_schema_rows_between_delimiter`. This placeholder must be the first placeholder in the format string.
+-   `totals` is the row with total values in `format_schema_rows` format (when using WITH TOTALS)
+-   `min` is the row with minimum values in `format_schema_rows` format (when extremes is set to 1)
+-   `max` is the row with maximum values in `format_schema_rows` format (when extremes is set to 1)
+-   `rows` is the total number of output rows
+-   `rows_before_limit` is the minimal number of rows there would have been without LIMIT. Output only if the query contains LIMIT. If the query contains GROUP BY, rows\_before\_limit\_at\_least is the exact number of rows there would have been without a LIMIT.
+-   `time` is the request execution time in seconds
+-   `rows_read` is the number of rows have been read
+-   `bytes_read` is the number of bytes (uncompressed) have been read
 
 The placeholders `data`, `totals`, `min` and `max` must not have escaping rule specified (or `None` must be specified explicitly). The remaining placeholders may have any escaping rule specified.
 If the `format_schema` setting is an empty string, `${data}` is used as default value.
@@ -207,10 +207,10 @@ format_schema_rows_between_delimiter = '\n    '
 
 `Insert` example:
 
-  Some header
-  Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
-  Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
-  Total rows: 2
+    Some header
+    Page views: 5, User id: 4324182021466249494, Useless field: hello, Duration: 146, Sign: -1
+    Page views: 6, User id: 4324182021466249494, Useless field: world, Duration: 185, Sign: 1
+    Total rows: 2
 
 ``` sql
 INSERT INTO UserActivity FORMAT Template SETTINGS
@@ -240,18 +240,18 @@ format_schema_rows_between_delimiter = ','
 
 </div>
 
-  SearchPhrase=   count()=8267016
-  SearchPhrase=bathroom interior design    count()=2166
-  SearchPhrase=yandex     count()=1655
-  SearchPhrase=spring 2014 fashion    count()=1549
-  SearchPhrase=freeform photos       count()=1480
-  SearchPhrase=angelina jolia    count()=1245
-  SearchPhrase=omsk       count()=1112
-  SearchPhrase=photos of dog breeds    count()=1091
-  SearchPhrase=curtain design        count()=1064
-  SearchPhrase=baku       count()=1000
+    SearchPhrase=   count()=8267016
+    SearchPhrase=bathroom interior design    count()=2166
+    SearchPhrase=yandex     count()=1655
+    SearchPhrase=spring 2014 fashion    count()=1549
+    SearchPhrase=freeform photos       count()=1480
+    SearchPhrase=angelina jolia    count()=1245
+    SearchPhrase=omsk       count()=1112
+    SearchPhrase=photos of dog breeds    count()=1091
+    SearchPhrase=curtain design        count()=1064
+    SearchPhrase=baku       count()=1000
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 وقتی تعداد زیادی از ستون ها وجود دارد، این فرمت بی فایده است، و در حالت کلی دلیلی بر استفاده از این فرمت در این مواقع وجود ندارد. این فرمت در بعضی از دپارتمان های Yandex استفاده می شد.
 
@@ -267,9 +267,9 @@ Comma Separated Values format ([RFC](https://tools.ietf.org/html/rfc4180)).
 
 </div>
 
-  clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
+    clickhouse-client --format_csv_delimiter="|" --query="INSERT INTO test.csv FORMAT CSV" < data.csv
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 \*به صورت پیش فرض — `,`. برای اطلاعات بیشتر [format\_csv\_delimiter](/operations/settings/settings/#settings-format_csv_delimiter) را ببینید.
 
@@ -355,7 +355,7 @@ SELECT SearchPhrase, count() AS c FROM test.hits GROUP BY SearchPhrase WITH TOTA
 }
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 JSON با جاوااسکریپت سازگار است. برای اطمینان از این، بعضی از کاراکتر ها ecape های اضافه دارند: اسلش `/` به صورت `\/` escape می شود؛ line break جایگزین یعنی `U+2028` و `U+2029` که باعث break در بعضی از مروگرها می شود، به شکل `\uXXXX` escape می شوند. کاراکتر های کنترلی ASCII هم escape می شوند: backspace، form feed، line feed، carriage return، و horizontal tab به ترتیب با `\b`، `\f`، `\n`، `\r`، `\t` جایگزین می شوند. همچنین بایت های باقی مانده در محدوده 00 تا 1F با استفاده از `\uXXXX` جایگزین می شوند. کاراکتر های بی اعتبار UTF-8 با � جایگزین می شوند، پس خروجی JSON شامل موارد معتبر UTF-8 می باشد. برای سازگاری با جاوااسکریپت، اعداد Int64 و Uint64 به صورت پیش فرض، با استفاده از دابل کوتیشن enclose می شوند. برای حذف کوتیشن، شما باید پارامتر output\_format\_json\_quote\_64bit\_integers v رو برابر با 0 قرار دهید.
 
@@ -414,7 +414,7 @@ JSON با جاوااسکریپت سازگار است. برای اطمینان ا
 }
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 این فرمت فقط مناسب خروجی query های می باشد، به این معنی که برای عملیات پارس کردن (دریافت داده برای insert در جدول) نیست. همچنین فرمت JSONEachRow را ببینید.
 
@@ -437,7 +437,7 @@ JSON با جاوااسکریپت سازگار است. برای اطمینان ا
 {"SearchPhrase":"baku","count()":"1000"}
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 بر خلاف فرمت JSON، هیچ جایگزینی برای کاراکتر های بی اعتبار UTF-8 وجود ندارد. هر مجموعه ای از بایت های می تواند داخل سطر در خروجی باشند. پس داده ها بدون از دست دادن هیچ اطلاعاتی فرمت می شوند. مقادیر شبیه به JSON، escape می شوند.
 
@@ -524,28 +524,28 @@ SELECT * FROM json_each_row_nested
 SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORDER BY EventDate FORMAT PrettyCompact
 ```
 
-  ┌──EventDate─┬───────c─┐
-  │ 2014-03-17 │ 1406958 │
-  │ 2014-03-18 │ 1383658 │
-  │ 2014-03-19 │ 1405797 │
-  │ 2014-03-20 │ 1353623 │
-  │ 2014-03-21 │ 1245779 │
-  │ 2014-03-22 │ 1031592 │
-  │ 2014-03-23 │ 1046491 │
-  └────────────┴─────────┘
+    ┌──EventDate─┬───────c─┐
+    │ 2014-03-17 │ 1406958 │
+    │ 2014-03-18 │ 1383658 │
+    │ 2014-03-19 │ 1405797 │
+    │ 2014-03-20 │ 1353623 │
+    │ 2014-03-21 │ 1245779 │
+    │ 2014-03-22 │ 1031592 │
+    │ 2014-03-23 │ 1046491 │
+    └────────────┴─────────┘
 
-  Totals:
-  ┌──EventDate─┬───────c─┐
-  │ 0000-00-00 │ 8873898 │
-  └────────────┴─────────┘
+    Totals:
+    ┌──EventDate─┬───────c─┐
+    │ 0000-00-00 │ 8873898 │
+    └────────────┴─────────┘
 
-  Extremes:
-  ┌──EventDate─┬───────c─┐
-  │ 2014-03-17 │ 1031592 │
-  │ 2014-03-23 │ 1406958 │
-  └────────────┴─────────┘
+    Extremes:
+    ┌──EventDate─┬───────c─┐
+    │ 2014-03-17 │ 1031592 │
+    │ 2014-03-23 │ 1406958 │
+    └────────────┴─────────┘
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 ## PrettyCompact {#prettycompact}
 
@@ -567,7 +567,7 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FORMAT PrettyCompactNoEscapes'"
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 شما می توانید برای نمایش در مرورگر از interface HTTP استفاده کنید.
 
@@ -611,31 +611,31 @@ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FOR
 
 </div>
 
-  :) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
-  Row 1:
-  ──────
-  statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
+    :) SHOW CREATE TABLE geonames FORMAT VerticalRaw;
+    Row 1:
+    ──────
+    statement: CREATE TABLE default.geonames ( geonameid UInt32, date Date DEFAULT CAST('2017-12-08' AS Date)) ENGINE = MergeTree(date, geonameid, 8192)
 
-  :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
-  Row 1:
-  ──────
-  test: string with 'quotes' and   with some special
-   characters
+    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT VerticalRaw;
+    Row 1:
+    ──────
+    test: string with 'quotes' and   with some special
+     characters
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 در مقایسه با فرمت Vertical:
 
 </div>
 
-  :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
-  Row 1:
-  ──────
-  test: string with \'quotes\' and \t with some special \n characters
+    :) SELECT 'string with \'quotes\' and \t with some special \n characters' AS test FORMAT Vertical;
+    Row 1:
+    ──────
+    test: string with \'quotes\' and \t with some special \n characters
 
 ## XML {#xml}
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 فرمت XML فقط برای خروجی مناسب است، نه برای پارس کردن. مثال:
 
@@ -703,7 +703,7 @@ watch -n1 "clickhouse-client --query='SELECT event, value FROM system.events FOR
 </result>
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 اگر نام فیلد، فرمت قابل قبولی نداشته باشد، اسم ‘field’ به عنوان نام عنصر استفاده می شود. به طور کلی، ساختار XML مشابه ساختار JSON می باشد. فقط در JSON، موارد بی اعتبار UTF-8 تبدیل به کاراکتر � می شوند که منجر به خروجی معتبر UTF-8 می شود.
 
@@ -724,18 +724,18 @@ SELECT SearchPhrase, count() AS c FROM test.hits
        GROUP BY SearchPhrase FORMAT CapnProto SETTINGS schema = 'schema:Message'
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 جایی که `schema.capnp` شبیه این است:
 
 </div>
 
-  struct Message {
-    SearchPhrase @0 :Text;
-    c @1 :Uint64;
-  }
+    struct Message {
+      SearchPhrase @0 :Text;
+      c @1 :Uint64;
+    }
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 فایل های Schema در فایلی قرار دارند که این فایل در دایرکتوری مشخص شده کانفیگ [format\_schema\_path](../operations/server_settings/settings.md) قرار گرفته اند.
 
@@ -867,8 +867,8 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
 
 Column names must:
 
-- start with `[A-Za-z_]`
-- subsequently contain only `[A-Za-z0-9_]`
+-   start with `[A-Za-z_]`
+-   subsequently contain only `[A-Za-z0-9_]`
 
 Output Avro file compression and sync interval can be configured with [output\_format\_avro\_codec](../operations/settings/settings.md#settings-output_format_avro_codec) and [output\_format\_avro\_sync\_interval](../operations/settings/settings.md#settings-output_format_avro_sync_interval) respectively.
 

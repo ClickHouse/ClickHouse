@@ -24,12 +24,12 @@ The function also works for arrays.
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
 
-## char\_length, CHAR\_LENGTH {#char_length}
+## char\_length, CHAR\_LENGTH {#char-length}
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
 
-## character\_length, CHARACTER\_LENGTH {#character_length}
+## character\_length, CHARACTER\_LENGTH {#character-length}
 
 Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
@@ -70,7 +70,7 @@ toValidUTF8( input_string )
 
 Parameters:
 
-- input\_string — Any set of bytes represented as the [String](../../data_types/string.md) data type object.
+-   input\_string — Any set of bytes represented as the [String](../../data_types/string.md) data type object.
 
 Returned value: Valid UTF-8 string.
 
@@ -98,8 +98,8 @@ repeat(s, n)
 
 **Parameters**
 
-- `s` — The string to repeat. [String](../../data_types/string.md).
-- `n` — The number of times to repeat the string. [UInt](../../data_types/int_uint.md).
+-   `s` — The string to repeat. [String](../../data_types/string.md).
+-   `n` — The number of times to repeat the string. [UInt](../../data_types/int_uint.md).
 
 **Returned value**
 
@@ -290,8 +290,8 @@ SELECT startsWith('Spider-Man', 'Spi');
 
 **Returned values**
 
-- 1, if the string starts with the specified prefix.
-- 0, if the string doesn’t start with the specified prefix.
+-   1, if the string starts with the specified prefix.
+-   0, if the string doesn’t start with the specified prefix.
 
 **Example**
 
@@ -322,8 +322,8 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Parameters**
 
-- `trim_character` — specified characters for trim. [String](../../data_types/string.md).
-- `input_string` — string for trim. [String](../../data_types/string.md).
+-   `trim_character` — specified characters for trim. [String](../../data_types/string.md).
+-   `input_string` — string for trim. [String](../../data_types/string.md).
 
 **Returned value**
 
@@ -361,7 +361,7 @@ Alias: `ltrim(input_string)`.
 
 **Parameters**
 
-- `input_string` — string to trim. [String](../../data_types/string.md).
+-   `input_string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 
@@ -399,7 +399,7 @@ Alias: `rtrim(input_string)`.
 
 **Parameters**
 
-- `input_string` — string to trim. [String](../../data_types/string.md).
+-   `input_string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 
@@ -437,7 +437,7 @@ Alias: `trim(input_string)`.
 
 **Parameters**
 
-- `input_string` — string to trim. [String](../../data_types/string.md).
+-   `input_string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 

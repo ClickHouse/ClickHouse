@@ -86,8 +86,8 @@ In most cases, the read method is only responsible for reading the specified col
 
 But there are notable exceptions:
 
-- The AST query is passed to the `read` method and the table engine can use it to derive index usage and to read less data from a table.
-- Sometimes the table engine can process data itself to a specific stage. For example, `StorageDistributed` can send a query to remote servers, ask them to process data to a stage where data from different remote servers can be merged, and return that preprocessed data. The query interpreter then finishes processing the data.
+-   The AST query is passed to the `read` method and the table engine can use it to derive index usage and to read less data from a table.
+-   Sometimes the table engine can process data itself to a specific stage. For example, `StorageDistributed` can send a query to remote servers, ask them to process data to a stage where data from different remote servers can be merged, and return that preprocessed data. The query interpreter then finishes processing the data.
 
 The table’s `read` method can return multiple `IBlockInputStream` objects to allow parallel data processing. These multiple block input streams can read from a table in parallel. Then you can wrap these streams with various transformations (such as expression evaluation or filtering) that can be calculated independently and create a `UnionBlockInputStream` on top of them, to read from multiple streams in parallel.
 
@@ -139,9 +139,9 @@ Aggregation states can be serialized and deserialized to pass over the network d
 
 The server implements several different interfaces:
 
-- An HTTP interface for any foreign clients.
-- A TCP interface for the native ClickHouse client and for cross-server communication during distributed query execution.
-- An interface for transferring data for replication.
+-   An HTTP interface for any foreign clients.
+-   A TCP interface for the native ClickHouse client and for cross-server communication during distributed query execution.
+-   An interface for transferring data for replication.
 
 Internally, it is just a basic multithreaded server without coroutines, fibers, etc. Since the server is not designed to process a high rate of simple queries but is intended to process a relatively low rate of complex queries, each of them can process a vast amount of data for analytics.
 

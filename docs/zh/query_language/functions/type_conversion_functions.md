@@ -24,8 +24,8 @@
 
 toDate/toDateTime函数的日期和日期时间格式定义如下：
 
-  YYYY-MM-DD
-  YYYY-MM-DD hh:mm:ss
+    YYYY-MM-DD
+    YYYY-MM-DD hh:mm:ss
 
 例外的是，如果将UInt32、Int32、UInt64或Int64类型的数值转换为Date类型，并且其对应的值大于等于65536，则该数值将被解析成unix时间戳（而不是对应的天数）。这意味着允许写入‘toDate(unix\_timestamp)’这种常见情况，否则这将是错误的，并且需要便携更加繁琐的‘toDate(toDateTime(unix\_timestamp))’。
 
@@ -41,9 +41,9 @@ SELECT
     toString(now(), 'Asia/Yekaterinburg') AS now_yekat
 ```
 
-  ┌───────────now_local─┬─now_yekat───────────┐
-  │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
-  └─────────────────────┴─────────────────────┘
+    ┌───────────now_local─┬─now_yekat───────────┐
+    │ 2016-06-15 00:11:21 │ 2016-06-15 02:11:21 │
+    └─────────────────────┴─────────────────────┘
 
 另请参阅`toUnixTimestamp`函数。
 
@@ -66,17 +66,17 @@ SELECT
 SELECT toFixedString('foo', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-  ┌─s─────────────┬─s_cut─┐
-  │ foo\0\0\0\0\0 │ foo   │
-  └───────────────┴───────┘
+    ┌─s─────────────┬─s_cut─┐
+    │ foo\0\0\0\0\0 │ foo   │
+    └───────────────┴───────┘
 
 ``` sql
 SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 ```
 
-  ┌─s──────────┬─s_cut─┐
-  │ foo\0bar\0 │ foo   │
-  └────────────┴───────┘
+    ┌─s──────────┬─s_cut─┐
+    │ foo\0bar\0 │ foo   │
+    └────────────┴───────┘
 
 ## reinterpretAsUInt8, reinterpretAsUInt16, reinterpretAsUInt32, reinterpretAsUInt64 {#reinterpretasuint8-reinterpretasuint16-reinterpretasuint32-reinterpretasuint64}
 
@@ -111,27 +111,27 @@ SELECT
     CAST(timestamp, 'FixedString(22)') AS fixed_string
 ```
 
-  ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
-  │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
-  └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
+    ┌─timestamp───────────┬────────────datetime─┬───────date─┬─string──────────────┬─fixed_string──────────────┐
+    │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00 │ 2016-06-15 │ 2016-06-15 23:00:00 │ 2016-06-15 23:00:00\0\0\0 │
+    └─────────────────────┴─────────────────────┴────────────┴─────────────────────┴───────────────────────────┘
 
 将参数转换为FixedString(N)，仅适用于String或FixedString(N)类型的参数。
 
 支持将数据转换为[Nullable](../../data_types/nullable.md)。例如：
 
-  SELECT toTypeName(x) FROM t_null
+    SELECT toTypeName(x) FROM t_null
 
-  ┌─toTypeName(x)─┐
-  │ Int8          │
-  │ Int8          │
-  └───────────────┘
+    ┌─toTypeName(x)─┐
+    │ Int8          │
+    │ Int8          │
+    └───────────────┘
 
-  SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
+    SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 
-  ┌─toTypeName(CAST(x, 'Nullable(UInt16)'))─┐
-  │ Nullable(UInt16)                        │
-  │ Nullable(UInt16)                        │
-  └─────────────────────────────────────────┘
+    ┌─toTypeName(CAST(x, 'Nullable(UInt16)'))─┐
+    │ Nullable(UInt16)                        │
+    │ Nullable(UInt16)                        │
+    └─────────────────────────────────────────┘
 
 ## toIntervalYear, toIntervalQuarter, toIntervalMonth, toIntervalWeek, toIntervalDay, toIntervalHour, toIntervalMinute, toIntervalSecond {#function-tointerval}
 
@@ -148,9 +148,9 @@ SELECT
     date + interval_to_week
 ```
 
-  ┌─plus(date, interval_week)─┬─plus(date, interval_to_week)─┐
-  │                2019-01-08 │                   2019-01-08 │
-  └───────────────────────────┴──────────────────────────────┘
+    ┌─plus(date, interval_week)─┬─plus(date, interval_to_week)─┐
+    │                2019-01-08 │                   2019-01-08 │
+    └───────────────────────────┴──────────────────────────────┘
 
 ## parseDateTimeBestEffort {#type-conversion-functions-parsedatetimebesteffort}
 

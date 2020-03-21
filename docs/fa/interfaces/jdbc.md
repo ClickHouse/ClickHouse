@@ -1,4 +1,4 @@
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 # درایور JDBC {#drywr-jdbc}
 
@@ -6,7 +6,7 @@
 
 درایور JDBC توسط سازمان های دیگر اجرا می شوند.
 
-- [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)
+-   [ClickHouse-Native-JDBC](https://github.com/housepower/ClickHouse-Native-JDBC)
 
 </div>
 

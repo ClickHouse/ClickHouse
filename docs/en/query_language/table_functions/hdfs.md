@@ -8,9 +8,9 @@ hdfs(URI, format, structure)
 
 **Input parameters**
 
-- `URI` — The relative URI to the file in HDFS. Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, \``'abc', 'def'` — strings.
-- `format` — The [format](../../interfaces/formats.md#formats) of the file.
-- `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
+-   `URI` — The relative URI to the file in HDFS. Path to file support following globs in readonly mode: `*`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, \``'abc', 'def'` — strings.
+-   `format` — The [format](../../interfaces/formats.md#formats) of the file.
+-   `structure` — Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
 
 **Returned value**
 
@@ -37,10 +37,10 @@ LIMIT 2
 
 Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern (not only suffix or prefix).
 
-- `*` — Substitutes any number of any characters except `/` including empty string.
-- `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
-- `{N..M}` — Substitutes any number in range from N to M including both borders.
+-   `*` — Substitutes any number of any characters except `/` including empty string.
+-   `?` — Substitutes any single character.
+-   `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+-   `{N..M}` — Substitutes any number in range from N to M including both borders.
 
 Constructions with `{}` are similar to the [remote table function](../../query_language/table_functions/remote.md)).
 
@@ -48,12 +48,12 @@ Constructions with `{}` are similar to the [remote table function](../../query_l
 
 1.  Suppose that we have several files with following URIs on HDFS:
 
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
 
 1.  Query the amount of rows in these files:
 
@@ -87,11 +87,11 @@ FROM hdfs('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV', 'name Strin
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file.
-- `_file` — Name of the file.
+-   `_path` — Path to the file.
+-   `_file` — Name of the file.
 
 **See Also**
 
-- [Virtual columns](https://clickhouse.tech/docs/en/operations/table_engines/#table_engines-virtual_columns)
+-   [Virtual columns](https://clickhouse.tech/docs/en/operations/table_engines/#table_engines-virtual_columns)
 
 [Original article](https://clickhouse.tech/docs/en/query_language/table_functions/hdfs/) <!--hide-->

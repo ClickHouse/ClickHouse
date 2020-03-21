@@ -62,10 +62,10 @@ The `name` column contains the names of the partition data parts. You can use th
 
 Let’s break down the name of the first part: `201901_1_3_1`:
 
-- `201901` is the partition name.
-- `1` is the minimum number of the data block.
-- `3` is the maximum number of the data block.
-- `1` is the chunk level (the depth of the merge tree it is formed from).
+-   `201901` is the partition name.
+-   `1` is the minimum number of the data block.
+-   `3` is the maximum number of the data block.
+-   `1` is the chunk level (the depth of the merge tree it is formed from).
 
 !!! info "Info"
     The parts of old-type tables have the name: `20190117_20190123_2_2_0` (minimum date - maximum date - minimum block number - maximum block number - level).

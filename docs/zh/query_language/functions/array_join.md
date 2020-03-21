@@ -19,10 +19,10 @@
 SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 ```
 
-  ┌─dst─┬─\'Hello\'─┬─src─────┐
-  │   1 │ Hello     │ [1,2,3] │
-  │   2 │ Hello     │ [1,2,3] │
-  │   3 │ Hello     │ [1,2,3] │
-  └─────┴───────────┴─────────┘
+    ┌─dst─┬─\'Hello\'─┬─src─────┐
+    │   1 │ Hello     │ [1,2,3] │
+    │   2 │ Hello     │ [1,2,3] │
+    │   3 │ Hello     │ [1,2,3] │
+    └─────┴───────────┴─────────┘
 
 [来源文章](https://clickhouse.tech/docs/en/query_language/functions/array_join/) <!--hide-->

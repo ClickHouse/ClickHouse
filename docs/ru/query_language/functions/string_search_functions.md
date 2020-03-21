@@ -22,13 +22,13 @@ position(haystack, needle)
 
 **Параметры**
 
-- `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
-- `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
+-   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
 
 **Возвращаемые значения**
 
-- Начальная позиция в байтах (начиная с 1), если подстрока найдена.
-- 0, если подстрока не найдена.
+-   Начальная позиция в байтах (начиная с 1), если подстрока найдена.
+-   0, если подстрока не найдена.
 
 Тип: `Integer`.
 
@@ -80,13 +80,13 @@ positionCaseInsensitive(haystack, needle)
 
 **Параметры**
 
-- `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
-- `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
+-   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
 
 **Возвращаемые значения**
 
-- Начальная позиция в байтах (начиная с 1), если подстрока найдена.
-- 0, если подстрока не найдена.
+-   Начальная позиция в байтах (начиная с 1), если подстрока найдена.
+-   0, если подстрока не найдена.
 
 Тип: `Integer`.
 
@@ -122,13 +122,13 @@ positionUTF8(haystack, needle)
 
 **Параметры**
 
-- `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
-- `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
+-   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
 
 **Возвращаемые значения**
 
-- Начальная позиция в кодовых точках Unicode (начиная с 1), если подстрока найдена.
-- 0, если подстрока не найдена.
+-   Начальная позиция в кодовых точках Unicode (начиная с 1), если подстрока найдена.
+-   0, если подстрока не найдена.
 
 Тип: `Integer`.
 
@@ -194,13 +194,13 @@ positionCaseInsensitiveUTF8(haystack, needle)
 
 **Параметры**
 
-- `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
-- `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
+-   `haystack` — строка, по которой выполняется поиск. [Строка](../syntax.md#syntax-string-literal).
+-   `needle` — подстрока, которую необходимо найти. [Строка](../syntax.md#syntax-string-literal).
 
 **Возвращаемые значения**
 
-- Начальная позиция в байтах (начиная с 1), если подстрока найдена.
-- 0, если подстрока не найдена.
+-   Начальная позиция в байтах (начиная с 1), если подстрока найдена.
+-   0, если подстрока не найдена.
 
 Тип: `Integer`.
 
@@ -226,9 +226,9 @@ The same as [position](#position) but returns `Array` of positions (in bytes) of
 
 The search is performed on sequences of bytes without respect to string encoding and collation.
 
-- For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
-- For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
-- For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
+-   For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
+-   For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+-   For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
 
 **Syntax**
 
@@ -238,12 +238,12 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 
 **Parameters**
 
-- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
-- `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
 
 **Returned values**
 
-- Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
+-   Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
 
 **Example**
 

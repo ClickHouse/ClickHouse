@@ -15,9 +15,9 @@ Connected to ClickHouse server version 19.17.1 revision 54428.
 
 Different client and server versions are compatible with one another, but some features may not be available in older clients. We recommend using the same version of the client as the server app. When you try to use a client of the older version, then the server, `clickhouse-client` displays the message:
 
-    ClickHouse client version is older than ClickHouse server. It may lack support for new features.
+      ClickHouse client version is older than ClickHouse server. It may lack support for new features.
 
-## Usage {#cli_usage}
+## Usage {#cli-usage}
 
 The client can be used in interactive and non-interactive (batch) mode. To use batch mode, specify the ‘query’ parameter, or send data to ‘stdin’ (it verifies that ‘stdin’ is not a terminal), or both. Similar to the HTTP interface, when using the ‘query’ parameter and sending data to ‘stdin’, the request is a concatenation of the ‘query’ parameter, a line feed, and the data in ‘stdin’. This is convenient for large INSERT queries.
 
@@ -81,8 +81,8 @@ Format a query as usual, then place the values that you want to pass from the ap
 {<name>:<data type>}
 ```
 
-- `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
-- `data type` — [Data type](../data_types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../data_types/int_uint.md) types).
+-   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
+-   `data type` — [Data type](../data_types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../data_types/int_uint.md) types).
 
 #### Example {#example}
 
@@ -90,44 +90,44 @@ Format a query as usual, then place the values that you want to pass from the ap
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
 ```
 
-## Configuring {#interfaces_cli_configuration}
+## Configuring {#interfaces-cli-configuration}
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
 
-- From the Command Line
+-   From the Command Line
 
-  Command-line options override the default values and settings in configuration files.
+    Command-line options override the default values and settings in configuration files.
 
-- Configuration files.
+-   Configuration files.
 
-  Settings in the configuration files override the default values.
+    Settings in the configuration files override the default values.
 
 ### Command Line Options {#command-line-options}
 
-- `--host, -h` -– The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.
-- `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
-- `--user, -u` – The username. Default value: default.
-- `--password` – The password. Default value: empty string.
-- `--query, -q` – The query to process when using non-interactive mode.
-- `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
-- `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
-- `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
-- `--format, -f` – Use the specified default format to output the result.
-- `--vertical, -E` – If specified, use the Vertical format by default to output the result. This is the same as ‘–format=Vertical’. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
-- `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
-- `--stacktrace` – If specified, also print the stack trace if an exception occurs.
-- `--config-file` – The name of the configuration file.
-- `--secure` – If specified, will connect to server over secure connection.
-- `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
+-   `--host, -h` -– The server name, ‘localhost’ by default. You can use either the name or the IPv4 or IPv6 address.
+-   `--port` – The port to connect to. Default value: 9000. Note that the HTTP interface and the native interface use different ports.
+-   `--user, -u` – The username. Default value: default.
+-   `--password` – The password. Default value: empty string.
+-   `--query, -q` – The query to process when using non-interactive mode.
+-   `--database, -d` – Select the current default database. Default value: the current database from the server settings (‘default’ by default).
+-   `--multiline, -m` – If specified, allow multiline queries (do not send the query on Enter).
+-   `--multiquery, -n` – If specified, allow processing multiple queries separated by semicolons.
+-   `--format, -f` – Use the specified default format to output the result.
+-   `--vertical, -E` – If specified, use the Vertical format by default to output the result. This is the same as ‘–format=Vertical’. In this format, each value is printed on a separate line, which is helpful when displaying wide tables.
+-   `--time, -t` – If specified, print the query execution time to ‘stderr’ in non-interactive mode.
+-   `--stacktrace` – If specified, also print the stack trace if an exception occurs.
+-   `--config-file` – The name of the configuration file.
+-   `--secure` – If specified, will connect to server over secure connection.
+-   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
 
 ### Configuration Files {#configuration-files}
 
 `clickhouse-client` uses the first existing file of the following:
 
-- Defined in the `--config-file` parameter.
-- `./clickhouse-client.xml`
-- `~/.clickhouse-client/config.xml`
-- `/etc/clickhouse-client/config.xml`
+-   Defined in the `--config-file` parameter.
+-   `./clickhouse-client.xml`
+-   `~/.clickhouse-client/config.xml`
+-   `/etc/clickhouse-client/config.xml`
 
 Example of a config file:
 

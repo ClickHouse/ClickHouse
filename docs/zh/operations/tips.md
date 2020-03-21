@@ -178,8 +178,8 @@ dynamicConfigFile=/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/zoo.
 
 Java version:
 
-  Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
-  Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
+    Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
+    Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 
 JVM parameters:
 
@@ -224,31 +224,31 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
 
 Salt init:
 
-  description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
+    description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
 
-  start on runlevel [2345]
-  stop on runlevel [!2345]
+    start on runlevel [2345]
+    stop on runlevel [!2345]
 
-  respawn
+    respawn
 
-  limit nofile 8192 8192
+    limit nofile 8192 8192
 
-  pre-start script
-      [ -r "/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment" ] || exit 0
-      . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment
-      [ -d $ZOO_LOG_DIR ] || mkdir -p $ZOO_LOG_DIR
-      chown $USER:$GROUP $ZOO_LOG_DIR
-  end script
+    pre-start script
+        [ -r "/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment" ] || exit 0
+        . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment
+        [ -d $ZOO_LOG_DIR ] || mkdir -p $ZOO_LOG_DIR
+        chown $USER:$GROUP $ZOO_LOG_DIR
+    end script
 
-  script
-      . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment
-      [ -r /etc/default/zookeeper ] && . /etc/default/zookeeper
-      if [ -z "$JMXDISABLE" ]; then
-          JAVA_OPTS="$JAVA_OPTS -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=$JMXLOCALONLY"
-      fi
-      exec start-stop-daemon --start -c $USER --exec $JAVA --name zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} \
-          -- -cp $CLASSPATH $JAVA_OPTS -Dzookeeper.log.dir=${ZOO_LOG_DIR} \
-          -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
-  end script
+    script
+        . /etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/environment
+        [ -r /etc/default/zookeeper ] && . /etc/default/zookeeper
+        if [ -z "$JMXDISABLE" ]; then
+            JAVA_OPTS="$JAVA_OPTS -Dcom.sun.management.jmxremote -Dcom.sun.management.jmxremote.local.only=$JMXLOCALONLY"
+        fi
+        exec start-stop-daemon --start -c $USER --exec $JAVA --name zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} \
+            -- -cp $CLASSPATH $JAVA_OPTS -Dzookeeper.log.dir=${ZOO_LOG_DIR} \
+            -Dzookeeper.root.logger=${ZOO_LOG4J_PROP} $ZOOMAIN $ZOOCFG
+    end script
 
 [Original article](https://clickhouse.tech/docs/en/operations/tips/) <!--hide-->

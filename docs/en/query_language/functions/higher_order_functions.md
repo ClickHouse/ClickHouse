@@ -14,16 +14,16 @@ For some functions, such as [arrayCount](#higher_order_functions-array-count) or
 
 A lambda function can’t be omitted for the following functions:
 
-- [arrayMap](#higher_order_functions-array-map)
-- [arrayFilter](#higher_order_functions-array-filter)
-- [arrayFill](#higher_order_functions-array-fill)
-- [arrayReverseFill](#higher_order_functions-array-reverse-fill)
-- [arraySplit](#higher_order_functions-array-split)
-- [arrayReverseSplit](#higher_order_functions-array-reverse-split)
-- [arrayFirst](#higher_order_functions-array-first)
-- [arrayFirstIndex](#higher_order_functions-array-first-index)
+-   [arrayMap](#higher_order_functions-array-map)
+-   [arrayFilter](#higher_order_functions-array-filter)
+-   [arrayFill](#higher_order_functions-array-fill)
+-   [arrayReverseFill](#higher_order_functions-array-reverse-fill)
+-   [arraySplit](#higher_order_functions-array-split)
+-   [arrayReverseSplit](#higher_order_functions-array-reverse-split)
+-   [arrayFirst](#higher_order_functions-array-first)
+-   [arrayFirstIndex](#higher_order_functions-array-first-index)
 
-### arrayMap(func, arr1, …) {#higher_order_functions-array-map}
+### arrayMap(func, arr1, …) {#higher-order-functions-array-map}
 
 Returns an array obtained from the original application of the `func` function to each element in the `arr` array.
 
@@ -53,7 +53,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 
 Note that the first argument (lambda function) can’t be omitted in the `arrayMap` function.
 
-### arrayFilter(func, arr1, …) {#higher_order_functions-array-filter}
+### arrayFilter(func, arr1, …) {#higher-order-functions-array-filter}
 
 Returns an array containing only the elements in `arr1` for which `func` returns something other than 0.
 
@@ -86,7 +86,7 @@ SELECT
 
 Note that the first argument (lambda function) can’t be omitted in the `arrayFilter` function.
 
-### arrayFill(func, arr1, …) {#higher_order_functions-array-fill}
+### arrayFill(func, arr1, …) {#higher-order-functions-array-fill}
 
 Scan through `arr1` from the first element to the last element and replace `arr1[i]` by `arr1[i - 1]` if `func` returns 0. The first element of `arr1` will not be replaced.
 
@@ -104,7 +104,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, 
 
 Note that the first argument (lambda function) can’t be omitted in the `arrayFill` function.
 
-### arrayReverseFill(func, arr1, …) {#higher_order_functions-array-reverse-fill}
+### arrayReverseFill(func, arr1, …) {#higher-order-functions-array-reverse-fill}
 
 Scan through `arr1` from the last element to the first element and replace `arr1[i]` by `arr1[i + 1]` if `func` returns 0. The last element of `arr1` will not be replaced.
 
@@ -122,7 +122,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 
 
 Note that the first argument (lambda function) can’t be omitted in the `arrayReverseFill` function.
 
-### arraySplit(func, arr1, …) {#higher_order_functions-array-split}
+### arraySplit(func, arr1, …) {#higher-order-functions-array-split}
 
 Split `arr1` into multiple arrays. When `func` returns something other than 0, the array will be split on the left hand side of the element. The array will not be split before the first element.
 
@@ -140,7 +140,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 
 Note that the first argument (lambda function) can’t be omitted in the `arraySplit` function.
 
-### arrayReverseSplit(func, arr1, …) {#higher_order_functions-array-reverse-split}
+### arrayReverseSplit(func, arr1, …) {#higher-order-functions-array-reverse-split}
 
 Split `arr1` into multiple arrays. When `func` returns something other than 0, the array will be split on the right hand side of the element. The array will not be split after the last element.
 
@@ -158,7 +158,7 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 
 Note that the first argument (lambda function) can’t be omitted in the `arraySplit` function.
 
-### arrayCount(\[func,\] arr1, …) {#higher_order_functions-array-count}
+### arrayCount(\[func,\] arr1, …) {#higher-order-functions-array-count}
 
 Returns the number of elements in the arr array for which func returns something other than 0. If ‘func’ is not specified, it returns the number of non-zero elements in the array.
 
@@ -170,17 +170,17 @@ Returns 1 if there is at least one element in ‘arr’ for which ‘func’ ret
 
 Returns 1 if ‘func’ returns something other than 0 for all the elements in ‘arr’. Otherwise, it returns 0.
 
-### arraySum(\[func,\] arr1, …) {#higher_order_functions-array-sum}
+### arraySum(\[func,\] arr1, …) {#higher-order-functions-array-sum}
 
 Returns the sum of the ‘func’ values. If the function is omitted, it just returns the sum of the array elements.
 
-### arrayFirst(func, arr1, …) {#higher_order_functions-array-first}
+### arrayFirst(func, arr1, …) {#higher-order-functions-array-first}
 
 Returns the first element in the ‘arr1’ array for which ‘func’ returns something other than 0.
 
 Note that the first argument (lambda function) can’t be omitted in the `arrayFirst` function.
 
-### arrayFirstIndex(func, arr1, …) {#higher_order_functions-array-first-index}
+### arrayFirstIndex(func, arr1, …) {#higher-order-functions-array-first-index}
 
 Returns the index of the first element in the ‘arr1’ array for which ‘func’ returns something other than 0.
 

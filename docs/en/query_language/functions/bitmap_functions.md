@@ -8,7 +8,7 @@ RoaringBitmap is wrapped into a data structure while actual storage of Bitmap ob
 
 For more information on RoaringBitmap, see: [CRoaring](https://github.com/RoaringBitmap/CRoaring).
 
-## bitmapBuild {#bitmap_functions-bitmapbuild}
+## bitmapBuild {#bitmap-functions-bitmapbuild}
 
 Build a bitmap from unsigned integer array.
 
@@ -18,7 +18,7 @@ bitmapBuild(array)
 
 **Parameters**
 
-- `array` – unsigned integer array.
+-   `array` – unsigned integer array.
 
 **Example**
 
@@ -42,7 +42,7 @@ bitmapToArray(bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -56,7 +56,7 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res
 └─────────────┘
 ```
 
-## bitmapSubsetInRange {#bitmap_functions-bitmapsubsetinrange}
+## bitmapSubsetInRange {#bitmap-functions-bitmapsubsetinrange}
 
 Return subset in specified range (not include the range\_end).
 
@@ -66,9 +66,9 @@ bitmapSubsetInRange(bitmap, range_start, range_end)
 
 **Parameters**
 
-- `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
-- `range_start` – range start point. Type: [UInt32](../../data_types/int_uint.md).
-- `range_end` – range end point(excluded). Type: [UInt32](../../data_types/int_uint.md).
+-   `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+-   `range_start` – range start point. Type: [UInt32](../../data_types/int_uint.md).
+-   `range_end` – range end point(excluded). Type: [UInt32](../../data_types/int_uint.md).
 
 **Example**
 
@@ -94,9 +94,9 @@ bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 
 **Parameters**
 
-- `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
-- `range_start` – The subset starting point. Type: [UInt32](../../data_types/int_uint.md).
-- `cardinality_limit` – The subset cardinality upper limit. Type: [UInt32](../../data_types/int_uint.md).
+-   `bitmap` – [Bitmap object](#bitmap_functions-bitmapbuild).
+-   `range_start` – The subset starting point. Type: [UInt32](../../data_types/int_uint.md).
+-   `cardinality_limit` – The subset cardinality upper limit. Type: [UInt32](../../data_types/int_uint.md).
 
 **Returned value**
 
@@ -120,7 +120,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## bitmapContains {#bitmap_functions-bitmapcontains}
+## bitmapContains {#bitmap-functions-bitmapcontains}
 
 Checks whether the bitmap contains an element.
 
@@ -130,13 +130,13 @@ bitmapContains(haystack, needle)
 
 **Parameters**
 
-- `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the function searches.
-- `needle` – Value that the function searches. Type: [UInt32](../../data_types/int_uint.md).
+-   `haystack` – [Bitmap object](#bitmap_functions-bitmapbuild), where the function searches.
+-   `needle` – Value that the function searches. Type: [UInt32](../../data_types/int_uint.md).
 
 **Returned values**
 
-- 0 — If `haystack` doesn’t contain `needle`.
-- 1 — If `haystack` contains `needle`.
+-   0 — If `haystack` doesn’t contain `needle`.
+-   1 — If `haystack` contains `needle`.
 
 Type: `UInt8`.
 
@@ -164,12 +164,12 @@ If you are sure that `bitmap2` contains strictly one element, consider using the
 
 **Parameters**
 
-- `bitmap*` – bitmap object.
+-   `bitmap*` – bitmap object.
 
 **Return values**
 
-- `1`, if `bitmap1` and `bitmap2` have one similar element at least.
-- `0`, otherwise.
+-   `1`, if `bitmap1` and `bitmap2` have one similar element at least.
+-   `0`, otherwise.
 
 **Example**
 
@@ -194,7 +194,7 @@ bitmapHasAll(bitmap,bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -218,7 +218,7 @@ bitmapCardinality(bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -236,11 +236,11 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
 Retrun the smallest value of type UInt64 in the set, UINT32\_MAX if the set is empty.
 
-  bitmapMin(bitmap)
+    bitmapMin(bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -248,19 +248,19 @@ Retrun the smallest value of type UInt64 in the set, UINT32\_MAX if the set is e
 SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
-  ┌─res─┐
-  │   1 │
-  └─────┘
+    ┌─res─┐
+    │   1 │
+    └─────┘
 
 ## bitmapMax {#bitmapmax}
 
 Retrun the greatest value of type UInt64 in the set, 0 if the set is empty.
 
-  bitmapMax(bitmap)
+    bitmapMax(bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -268,21 +268,21 @@ Retrun the greatest value of type UInt64 in the set, 0 if the set is empty.
 SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
 ```
 
-  ┌─res─┐
-  │   5 │
-  └─────┘
+    ┌─res─┐
+    │   5 │
+    └─────┘
 
 ## bitmapTransform {#bitmaptransform}
 
 Transform an array of values in a bitmap to another array of values, the result is a new bitmap.
 
-  bitmapTransform(bitmap, from_array, to_array)
+    bitmapTransform(bitmap, from_array, to_array)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
-- `from_array` – UInt32 array. For idx in range \[0, from\_array.size()), if bitmap contains from\_array\[idx\], then replace it with to\_array\[idx\]. Note that the result depends on array ordering if there are common elements between from\_array and to\_array.
-- `to_array` – UInt32 array, its size shall be the same to from\_array.
+-   `bitmap` – bitmap object.
+-   `from_array` – UInt32 array. For idx in range \[0, from\_array.size()), if bitmap contains from\_array\[idx\], then replace it with to\_array\[idx\]. Note that the result depends on array ordering if there are common elements between from\_array and to\_array.
+-   `to_array` – UInt32 array, its size shall be the same to from\_array.
 
 **Example**
 
@@ -290,9 +290,9 @@ Transform an array of values in a bitmap to another array of values, the result 
 SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), cast([5,999,2] as Array(UInt32)), cast([2,888,20] as Array(UInt32)))) AS res
 ```
 
-  ┌─res───────────────────┐
-  │ [1,3,4,6,7,8,9,10,20] │
-  └───────────────────────┘
+    ┌─res───────────────────┐
+    │ [1,3,4,6,7,8,9,10,20] │
+    └───────────────────────┘
 
 ## bitmapAnd {#bitmapand}
 
@@ -304,7 +304,7 @@ bitmapAnd(bitmap,bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -328,7 +328,7 @@ bitmapOr(bitmap,bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -352,7 +352,7 @@ bitmapXor(bitmap,bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -376,7 +376,7 @@ bitmapAndnot(bitmap,bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -400,7 +400,7 @@ bitmapAndCardinality(bitmap,bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -424,7 +424,7 @@ bitmapOrCardinality(bitmap,bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -448,7 +448,7 @@ bitmapXorCardinality(bitmap,bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 
@@ -472,7 +472,7 @@ bitmapAndnotCardinality(bitmap,bitmap)
 
 **Parameters**
 
-- `bitmap` – bitmap object.
+-   `bitmap` – bitmap object.
 
 **Example**
 

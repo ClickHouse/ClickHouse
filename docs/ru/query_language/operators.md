@@ -77,12 +77,12 @@ EXTRACT(part FROM date);
 
 В параметре `part` указывается, какой фрагмент даты нужно получить. Доступные значения:
 
-- `DAY` — День. Возможные значения: 1–31.
-- `MONTH` — Номер месяца. Возможные значения: 1–12.
-- `YEAR` — Год.
-- `SECOND` — Секунда. Возможные значения: 0–59.
-- `MINUTE` — Минута. Возможные значения: 0–59.
-- `HOUR` — Час. Возможные значения: 0–23.
+-   `DAY` — День. Возможные значения: 1–31.
+-   `MONTH` — Номер месяца. Возможные значения: 1–12.
+-   `YEAR` — Год.
+-   `SECOND` — Секунда. Возможные значения: 0–59.
+-   `MINUTE` — Минута. Возможные значения: 0–59.
+-   `HOUR` — Час. Возможные значения: 0–23.
 
 Эти значения могут быть указаны также в нижнем регистре (`day`, `month`).
 
@@ -162,8 +162,8 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 **Смотрите также**
 
-- Тип данных [Interval](../data_types/special_data_types/interval.md)
-- Функции преобразования типов [toInterval](functions/type_conversion_functions.md#function-tointerval)
+-   Тип данных [Interval](../data_types/special_data_types/interval.md)
+-   Функции преобразования типов [toInterval](functions/type_conversion_functions.md#function-tointerval)
 
 ## Оператор логического отрицания {#operator-logicheskogo-otritsaniia}
 
@@ -232,10 +232,10 @@ ClickHouse поддерживает операторы `IS NULL` и `IS NOT NULL
 
 ### IS NULL {#operator-is-null}
 
-- Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NULL` возвращает:
-  - `1`, если значение — `NULL`.
-  - `0` в обратном случае.
-- Для прочих значений оператор `IS NULL` всегда возвращает `0`.
+-   Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NULL` возвращает:
+    -   `1`, если значение — `NULL`.
+    -   `0` в обратном случае.
+-   Для прочих значений оператор `IS NULL` всегда возвращает `0`.
 
 <!-- -->
 
@@ -251,10 +251,10 @@ SELECT x+100 FROM t_null WHERE y IS NULL
 
 ### IS NOT NULL {#is-not-null}
 
-- Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NOT NULL` возвращает:
-  - `0`, если значение — `NULL`.
-  - `1`, в обратном случае.
-- Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.
+-   Для значений типа [Nullable](../data_types/nullable.md) оператор `IS NOT NULL` возвращает:
+    -   `0`, если значение — `NULL`.
+    -   `1`, в обратном случае.
+-   Для прочих значений оператор `IS NOT NULL` всегда возвращает `1`.
 
 <!-- -->
 

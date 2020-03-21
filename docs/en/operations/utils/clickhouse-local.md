@@ -21,17 +21,17 @@ $ clickhouse-local --structure "table_structure" --input-format "format_of_incom
 
 Arguments:
 
-- `-S`, `--structure` — table structure for input data.
-- `-if`, `--input-format` — input format, `TSV` by default.
-- `-f`, `--file` — path to data, `stdin` by default.
-- `-q` `--query` — queries to execute with `;` as delimeter.
-- `-N`, `--table` — table name where to put output data, `table` by default.
-- `-of`, `--format`, `--output-format` — output format, `TSV` by default.
-- `--stacktrace` — whether to dump debug output in case of exception.
-- `--verbose` — more details on query execution.
-- `-s` — disables `stderr` logging.
-- `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
-- `--help` — arguments references for `clickhouse-local`.
+-   `-S`, `--structure` — table structure for input data.
+-   `-if`, `--input-format` — input format, `TSV` by default.
+-   `-f`, `--file` — path to data, `stdin` by default.
+-   `-q` `--query` — queries to execute with `;` as delimeter.
+-   `-N`, `--table` — table name where to put output data, `table` by default.
+-   `-of`, `--format`, `--output-format` — output format, `TSV` by default.
+-   `--stacktrace` — whether to dump debug output in case of exception.
+-   `--verbose` — more details on query execution.
+-   `-s` — disables `stderr` logging.
+-   `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
+-   `--help` — arguments references for `clickhouse-local`.
 
 Also there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
 

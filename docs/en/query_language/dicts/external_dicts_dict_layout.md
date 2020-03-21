@@ -1,4 +1,4 @@
-# Storing Dictionaries in Memory {#dicts-external_dicts_dict_layout}
+# Storing Dictionaries in Memory {#dicts-external-dicts-dict-layout}
 
 There are a variety of ways to store dictionaries in memory.
 
@@ -8,13 +8,13 @@ Caching is not recommended because of potentially poor performance and difficult
 
 There are several ways to improve dictionary performance:
 
-- Call the function for working with the dictionary after `GROUP BY`.
-- Mark attributes to extract as injective. An attribute is called injective if different attribute values correspond to different keys. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
+-   Call the function for working with the dictionary after `GROUP BY`.
+-   Mark attributes to extract as injective. An attribute is called injective if different attribute values correspond to different keys. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
 
 ClickHouse generates an exception for errors with dictionaries. Examples of errors:
 
-- The dictionary being accessed could not be loaded.
-- Error querying a `cached` dictionary.
+-   The dictionary being accessed could not be loaded.
+-   Error querying a `cached` dictionary.
 
 You can view the list of external dictionaries and their statuses in the `system.dictionaries` table.
 
@@ -45,14 +45,14 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 ## Ways to Store Dictionaries in Memory {#ways-to-store-dictionaries-in-memory}
 
-- [flat](#flat)
-- [hashed](#dicts-external_dicts_dict_layout-hashed)
-- [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
-- [cache](#cache)
-- [range\_hashed](#range-hashed)
-- [complex\_key\_hashed](#complex-key-hashed)
-- [complex\_key\_cache](#complex-key-cache)
-- [ip\_trie](#ip-trie)
+-   [flat](#flat)
+-   [hashed](#dicts-external_dicts_dict_layout-hashed)
+-   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+-   [cache](#cache)
+-   [range\_hashed](#range-hashed)
+-   [complex\_key\_hashed](#complex-key-hashed)
+-   [complex\_key\_cache](#complex-key-cache)
+-   [ip\_trie](#ip-trie)
 
 ### flat {#flat}
 
@@ -78,7 +78,7 @@ or
 LAYOUT(FLAT())
 ```
 
-### hashed {#dicts-external_dicts_dict_layout-hashed}
+### hashed {#dicts-external-dicts-dict-layout-hashed}
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 
@@ -98,7 +98,7 @@ or
 LAYOUT(HASHED())
 ```
 
-### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
+### sparse\_hashed {#dicts-external-dicts-dict-layout-sparse-hashed}
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
 
@@ -193,9 +193,9 @@ This function returns the value for the specified `id`s and the date range that 
 
 Details of the algorithm:
 
-- If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
-- If there are overlapping ranges, you can use any.
-- If the range delimiter is `NULL` or an invalid date (such as 1900-01-01 or 2039-01-01), the range is left open. The range can be open on both sides.
+-   If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
+-   If there are overlapping ranges, you can use any.
+-   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01 or 2039-01-01), the range is left open. The range can be open on both sides.
 
 Configuration example:
 

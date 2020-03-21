@@ -1,4 +1,4 @@
-# Array(T) {#data_type-array}
+# Array(T) {#data-type-array}
 
 Array of `T`-type items.
 

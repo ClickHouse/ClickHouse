@@ -8,11 +8,11 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 
 主要功能：
 
-- 浏览器直接连接 ClickHouse，不需要安装其他软件。
-- 高亮语法的编辑器。
-- 自动命令补全。
-- 查询命令执行的图形分析工具。
-- 配色方案选项。
+-   浏览器直接连接 ClickHouse，不需要安装其他软件。
+-   高亮语法的编辑器。
+-   自动命令补全。
+-   查询命令执行的图形分析工具。
+-   配色方案选项。
 
 [Tabix 文档](https://tabix.io/doc/).
 
@@ -22,12 +22,12 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 
 主要功能：
 
-- 查询高亮语法提示，可以以表格或 JSON 格式查看数据。
-- 支持导出 CSV 或 JSON 格式数据。
-- 支持查看查询执行的详情，支持 KILL 查询。
-- 图形化显示，支持显示数据库中所有的表和列的详细信息。
-- 快速查看列占用的空间。
-- 服务配置。
+-   查询高亮语法提示，可以以表格或 JSON 格式查看数据。
+-   支持导出 CSV 或 JSON 格式数据。
+-   支持查看查询执行的详情，支持 KILL 查询。
+-   图形化显示，支持显示数据库中所有的表和列的详细信息。
+-   快速查看列占用的空间。
+-   服务配置。
 
 以下功能正在计划开发：
 - 数据库管理
@@ -43,9 +43,9 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 
 特征：
 
-- 包含过滤和元数据的表列表。
-- 带有过滤和排序的表格预览。
-- 只读查询执行。
+-   包含过滤和元数据的表列表。
+-   带有过滤和排序的表格预览。
+-   只读查询执行。
 
 ### DBeaver {#dbeaver}
 
@@ -53,9 +53,9 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 
 特征：
 
-- 使用语法高亮显示查询开发。
-- 表格预览。
-- 自动完成。
+-   使用语法高亮显示查询开发。
+-   表格预览。
+-   自动完成。
 
 ### clickhouse-cli {#clickhouse-cli}
 
@@ -63,14 +63,14 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 
 特征：
 
-- 自动完成。
-- 查询和数据输出的语法高亮显示。
-- 寻呼机支持数据输出。
-- 自定义PostgreSQL类命令。
+-   自动完成。
+-   查询和数据输出的语法高亮显示。
+-   寻呼机支持数据输出。
+-   自定义PostgreSQL类命令。
 
 ### clickhouse-flamegraph {#clickhouse-flamegraph}
 
-  [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) 是一个可视化的专业工具`system.trace_log`如[flamegraph](http://www.brendangregg.com/flamegraphs.html).
+    [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) 是一个可视化的专业工具`system.trace_log`如[flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
 ## 商业 {#shang-ye}
 
@@ -92,11 +92,11 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 
 特征：
 
-- 非常快速的代码完成。
-- ClickHouse语法高亮显示。
-- 支持ClickHouse特有的功能，例如嵌套列，表引擎。
-- 数据编辑器。
-- 重构。
-- 搜索和导航。
+-   非常快速的代码完成。
+-   ClickHouse语法高亮显示。
+-   支持ClickHouse特有的功能，例如嵌套列，表引擎。
+-   数据编辑器。
+-   重构。
+-   搜索和导航。
 
 [来源文章](https://clickhouse.tech/docs/zh/interfaces/third-party/gui/) <!--hide-->

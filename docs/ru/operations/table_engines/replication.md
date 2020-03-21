@@ -2,13 +2,13 @@
 
 Репликация поддерживается только для таблиц семейства MergeTree:
 
-- ReplicatedMergeTree
-- ReplicatedSummingMergeTree
-- ReplicatedReplacingMergeTree
-- ReplicatedAggregatingMergeTree
-- ReplicatedCollapsingMergeTree
-- ReplicatedVersionedCollapsingMergeTree
-- ReplicatedGraphiteMergeTree
+-   ReplicatedMergeTree
+-   ReplicatedSummingMergeTree
+-   ReplicatedReplacingMergeTree
+-   ReplicatedAggregatingMergeTree
+-   ReplicatedCollapsingMergeTree
+-   ReplicatedVersionedCollapsingMergeTree
+-   ReplicatedGraphiteMergeTree
 
 Репликация работает на уровне отдельных таблиц, а не всего сервера. То есть, на сервере могут быть расположены одновременно реплицируемые и не реплицируемые таблицы.
 
@@ -18,9 +18,9 @@
 
 Запросы `CREATE`, `DROP`, `ATTACH`, `DETACH` и `RENAME` выполняются на одном сервере и не реплицируются:
 
-- Запрос `CREATE TABLE` создаёт новую реплицируемую таблицу на том сервере, где его выполнили. Если таблица уже существует на других серверах, запрос добавляет новую реплику.
-- `DROP TABLE` удаляет реплику, расположенную на том сервере, где выполняется запрос.
-- Запрос `RENAME` переименовывает таблицу на одной реплик. Другими словами, реплицируемые таблицы на разных репликах могут называться по-разному.
+-   Запрос `CREATE TABLE` создаёт новую реплицируемую таблицу на том сервере, где его выполнили. Если таблица уже существует на других серверах, запрос добавляет новую реплику.
+-   `DROP TABLE` удаляет реплику, расположенную на том сервере, где выполняется запрос.
+-   Запрос `RENAME` переименовывает таблицу на одной реплик. Другими словами, реплицируемые таблицы на разных репликах могут называться по-разному.
 
 ClickHouse хранит метаинформацию о репликах в [Apache ZooKeeper](https://zookeeper.apache.org). Используйте ZooKeeper 3.4.5 или новее.
 
@@ -78,8 +78,8 @@ ClickHouse хранит метаинформацию о репликах в [Apa
 
 **Параметры Replicated\*MergeTree**
 
-- `zoo_path` — путь к таблице в ZooKeeper.
-- `replica_name` — имя реплики в ZooKeeper.
+-   `zoo_path` — путь к таблице в ZooKeeper.
+-   `replica_name` — имя реплики в ZooKeeper.
 
 Пример:
 
@@ -199,8 +199,8 @@ $ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 Если вы хотите избавиться от таблицы `ReplicatedMergeTree`, не запуская сервер, то
 
-- удалите соответствующий файл `.sql` в директории с метаданными (`/var/lib/clickhouse/metadata/`);
-- удалите соответствующий путь в ZooKeeper (`/path_to_table/replica_name`);
+-   удалите соответствующий файл `.sql` в директории с метаданными (`/var/lib/clickhouse/metadata/`);
+-   удалите соответствующий путь в ZooKeeper (`/path_to_table/replica_name`);
 
 После этого, вы можете запустить сервер, создать таблицу типа `MergeTree`, перенести данные в её директорию, и перезапустить сервер.
 

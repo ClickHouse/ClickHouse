@@ -2,8 +2,8 @@
 
 This engine:
 
-- Allows quick writing of object states that are continually changing.
-- Deletes old object states in the background. This significantly reduces the volume of storage.
+-   Allows quick writing of object states that are continually changing.
+-   Deletes old object states in the background. This significantly reduces the volume of storage.
 
 See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
 
@@ -32,13 +32,13 @@ For a description of query parameters, see the [query description](../../query_l
 VersionedCollapsingMergeTree(sign, version)
 ```
 
-- `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
+-   `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
 
-  The column data type should be `Int8`.
+    The column data type should be `Int8`.
 
-- `version` — Name of the column with the version of the object state.
+-   `version` — Name of the column with the version of the object state.
 
-  The column data type should be `UInt*`.
+    The column data type should be `UInt*`.
 
 **Query Clauses**
 
@@ -62,17 +62,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters except `sign` and `version` have the same meaning as in `MergeTree`.
 
-- `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
+-   `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
 
-  Column Data Type — `Int8`.
+    Column Data Type — `Int8`.
 
-- `version` — Name of the column with the version of the object state.
+-   `version` — Name of the column with the version of the object state.
 
-  The column data type should be `UInt*`.
+    The column data type should be `UInt*`.
 
 </details>
 
-## Collapsing {#table_engines_versionedcollapsingmergetree}
+## Collapsing {#table-engines-versionedcollapsingmergetree}
 
 ### Data {#data}
 
@@ -120,7 +120,7 @@ To find out why we need two rows for each change, see [Algorithm](#table_engines
 2.  Long growing arrays in columns reduce the efficiency of the engine due to the load for writing. The more straightforward the data, the better the efficiency.
 3.  `SELECT` results depend strongly on the consistency of the history of object changes. Be accurate when preparing data for inserting. You can get unpredictable results with inconsistent data, such as negative values for non-negative metrics like session depth.
 
-### Algorithm {#table_engines-versionedcollapsingmergetree-algorithm}
+### Algorithm {#table-engines-versionedcollapsingmergetree-algorithm}
 
 When ClickHouse merges data parts, it deletes each pair of rows that have the same primary key and version and different `Sign`. The order of rows does not matter.
 

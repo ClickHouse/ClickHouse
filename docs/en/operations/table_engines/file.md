@@ -1,13 +1,13 @@
-# File {#table_engines-file}
+# File {#table-engines-file}
 
 The File table engine keeps the data in a file in one of the supported [file
 formats](../../interfaces/formats.md#formats) (TabSeparated, Native, etc.).
 
 Usage examples:
 
-- Data export from ClickHouse to file.
-- Convert data from one format to another.
-- Updating data in ClickHouse via editing a file on a disk.
+-   Data export from ClickHouse to file.
+-   Convert data from one format to another.
+-   Updating data in ClickHouse via editing a file on a disk.
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
@@ -71,13 +71,13 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 ## Details of Implementation {#details-of-implementation}
 
-- Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
-- Supported creating new file by `INSERT` query.
-- If file exists, `INSERT` would append new values in it.
-- Not supported:
-  - `ALTER`
-  - `SELECT ... SAMPLE`
-  - Indices
-  - Replication
+-   Multiple `SELECT` queries can be performed concurrently, but `INSERT` queries will wait each other.
+-   Supported creating new file by `INSERT` query.
+-   If file exists, `INSERT` would append new values in it.
+-   Not supported:
+    -   `ALTER`
+    -   `SELECT ... SAMPLE`
+    -   Indices
+    -   Replication
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/file/) <!--hide-->

@@ -23,7 +23,7 @@ Overflow is produced the same way as in C++.
 Calculates the sum of the numbers.
 You can also add integer numbers with a date or date and time. In the case of a date, adding an integer means adding the corresponding number of days. For a date with time, it means adding the corresponding number of seconds.
 
-## minus(a, b), a - b operator {#minusa-b-a---b-operator}
+## minus(a, b), a - b operator {#minusa-b-a-b-operator}
 
 Calculates the difference. The result is always signed.
 
@@ -59,11 +59,11 @@ An exception is thrown when dividing by zero or when dividing a minimal negative
 
 Differs from ‘modulo’ in that it returns zero when the divisor is zero.
 
-## negate(a), -a operator {#negatea--a-operator}
+## negate(a), -a operator {#negatea-a-operator}
 
 Calculates a number with the reverse sign. The result is always signed.
 
-## abs(a) {#arithm_func-abs}
+## abs(a) {#arithm-func-abs}
 
 Calculates the absolute value of the number (a). That is, if a \< 0, it returns -a. For unsigned types it doesn’t do anything. For signed integer types, it returns an unsigned number.
 

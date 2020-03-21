@@ -1,4 +1,4 @@
-# HDFS {#table_engines-hdfs}
+# HDFS {#table-engines-hdfs}
 
 This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)via ClickHouse. This engine is similar
 to the [File](file.md) and [URL](url.md) engines, but provides Hadoop-specific features.
@@ -45,20 +45,20 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Implementation Details {#implementation-details}
 
-- Reads and writes can be parallel
-- Not supported:
-  - `ALTER` and `SELECT...SAMPLE` operations.
-  - Indexes.
-  - Replication.
+-   Reads and writes can be parallel
+-   Not supported:
+    -   `ALTER` and `SELECT...SAMPLE` operations.
+    -   Indexes.
+    -   Replication.
 
 **Globs in path**
 
 Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern. Listing of files determines during `SELECT` (not at `CREATE` moment).
 
-- `*` — Substitutes any number of any characters except `/` including empty string.
-- `?` — Substitutes any single character.
-- `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
-- `{N..M}` — Substitutes any number in range from N to M including both borders.
+-   `*` — Substitutes any number of any characters except `/` including empty string.
+-   `?` — Substitutes any single character.
+-   `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
+-   `{N..M}` — Substitutes any number in range from N to M including both borders.
 
 Constructions with `{}` are similar to the [remote](../../query_language/table_functions/remote.md) table function.
 
@@ -66,12 +66,12 @@ Constructions with `{}` are similar to the [remote](../../query_language/table_f
 
 1.  Suppose we have several files in TSV format with the following URIs on HDFS:
 
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
 
 1.  There are several ways to make a table consisting of all six files:
 
@@ -106,11 +106,11 @@ CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 ## Virtual Columns {#virtual-columns}
 
-- `_path` — Path to the file.
-- `_file` — Name of the file.
+-   `_path` — Path to the file.
+-   `_file` — Name of the file.
 
 **See Also**
 
-- [Virtual columns](https://clickhouse.tech/docs/en/operations/table_engines/#table_engines-virtual_columns)
+-   [Virtual columns](https://clickhouse.tech/docs/en/operations/table_engines/#table_engines-virtual_columns)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/hdfs/) <!--hide-->

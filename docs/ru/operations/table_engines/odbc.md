@@ -22,14 +22,14 @@ ENGINE = ODBC(connection_settings, external_database, external_table)
 
 Структура таблицы может отличаться от структуры исходной таблицы в удалённой СУБД:
 
-- Имена столбцов должны быть такими же, как в исходной таблице, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
-- Типы столбцов могут отличаться от типов аналогичных столбцов в исходной таблице. ClickHouse пытается [приводить](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
+-   Имена столбцов должны быть такими же, как в исходной таблице, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
+-   Типы столбцов могут отличаться от типов аналогичных столбцов в исходной таблице. ClickHouse пытается [приводить](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
 
 **Параметры движка**
 
-- `connection_settings` — название секции с настройками соединения в файле `odbc.ini`.
-- `external_database` — имя базы данных во внешней СУБД.
-- `external_table` — имя таблицы в `external_database`.
+-   `connection_settings` — название секции с настройками соединения в файле `odbc.ini`.
+-   `external_database` — имя базы данных во внешней СУБД.
+-   `external_table` — имя таблицы в `external_database`.
 
 ## Пример использования {#primer-ispolzovaniia}
 
@@ -119,7 +119,7 @@ SELECT * FROM odbc_t
 
 ## Смотрите также {#smotrite-takzhe}
 
-- [Внешние словари ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
-- [Табличная функция odbc](../../query_language/table_functions/odbc.md)
+-   [Внешние словари ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
+-   [Табличная функция odbc](../../query_language/table_functions/odbc.md)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/odbc/) <!--hide-->

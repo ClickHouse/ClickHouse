@@ -74,18 +74,18 @@
 
 当您的系统上已经安装了 ClickHouse 时，您可以构建一个新的 `clickhouse` 二进制文件并替换现有的二进制文件：
 
-  sudo service clickhouse-server stop
-  sudo cp ./clickhouse /usr/bin/
-  sudo service clickhouse-server start
+    sudo service clickhouse-server stop
+    sudo cp ./clickhouse /usr/bin/
+    sudo service clickhouse-server start
 
 您也可以停止 clickhouse-server 并使用相同的配置运行您自己的服务器，日志打印到终端：
 
-  sudo service clickhouse-server stop
-  sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
+    sudo service clickhouse-server stop
+    sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
 使用 gdb 的一个示例:
 
-  sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
+    sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
 如果 clickhouse-server 已经运行并且您不想停止它，您可以更改 `config.xml` 中的端口号（或在 `config.d` 目录中的文件中覆盖它们），配置适当的数据路径，然后运行它。
 
@@ -95,7 +95,7 @@
 
 在将版本发布为稳定之前，我们将其部署在测试环境中 测试环境是一个处理\[Yandex.Metrica\]（https://metrica.yandex.com/）总数据的1/39部分大小的集群。 我们与 Yandex.Metrica 团队公用我们的测试环境。ClickHouse 在现有数据的基础上无需停机即可升级。 我们首先看到数据处理成功而不会实时滞后，复制继续工作，并且 Yandex.Metrica 团队无法看到问题。 首先的检查可以通过以下方式完成：
 
-  SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count() FROM remote('example01-01-{1..3}t', merge, hits) WHERE EventDate >= today() - 2 GROUP BY h ORDER BY h;
+    SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count() FROM remote('example01-01-{1..3}t', merge, hits) WHERE EventDate >= today() - 2 GROUP BY h ORDER BY h;
 
 在某些情况下，我们还部署到 Yandex 的合作团队的测试环境：市场，云等。此外，我们还有一些用于开发目的的硬件服务器。
 
@@ -107,13 +107,13 @@
 
 收集一天或更多的查询日志：
 
-  clickhouse-client --query="SELECT DISTINCT query FROM system.query_log WHERE event_date = today() AND query LIKE '%ym:%' AND query NOT LIKE '%system.query_log%' AND type = 2 AND is_initial_query" > queries.tsv
+    clickhouse-client --query="SELECT DISTINCT query FROM system.query_log WHERE event_date = today() AND query LIKE '%ym:%' AND query NOT LIKE '%system.query_log%' AND type = 2 AND is_initial_query" > queries.tsv
 
 这是一个复杂的例子。`type = 2` 将过滤成功执行的查询。`query LIKE'％ym：％'` 用于从 Yandex.Metrica 中选择相关查询。`is_initial_query` 是仅选择由客户端发起的查询，而不是由 ClickHouse 本身（作为分布式查询处理的一部分）。
 
 `scp` 这份日志到测试机器，并运行以下操作：
 
-  clickhouse benchmark --concurrency 16 < queries.tsv
+    clickhouse benchmark --concurrency 16 < queries.tsv
 
 (可能你需要指定运行的用户 `--user`)
 
@@ -131,10 +131,10 @@
 
 通常我们会在 ClickHouse 构建的单个版本上发布并运行所有测试。 但是有一些未经过彻底测试的替代构建版本。 例子：
 
-- 在 FreeBSD 中的构建；
-- 在 Debian 中使用系统包中的库进行构建；
-- 使用库的共享链接构建；
-- 在 AArch64 平台进行构建。
+-   在 FreeBSD 中的构建；
+-   在 Debian 中使用系统包中的库进行构建；
+-   使用库的共享链接构建；
+-   在 AArch64 平台进行构建。
 
 例如，使用系统包构建是不好的做法，因为我们无法保证系统具有的确切版本的软件包。但 Debian 维护者确实需要这样做。出于这个原因，我们至少必须支持这种构建。另一个例子：共享链接是一个常见的麻烦来源，但是对于一些爱好者来说需要它。
 

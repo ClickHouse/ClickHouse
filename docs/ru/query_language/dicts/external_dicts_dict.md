@@ -37,10 +37,10 @@ LAYOUT(...) -- Memory layout configuration
 LIFETIME(...) -- Lifetime of dictionary in memory
 ```
 
-- `name` — Идентификатор, под которым словарь будет доступен для использования. Используйте символы `[a-zA-Z0-9_\-]`.
-- [source](external_dicts_dict_sources.md) — Источник словаря.
-- [layout](external_dicts_dict_layout.md) — Размещение словаря в памяти.
-- [structure](external_dicts_dict_structure.md) — Структура словаря. Ключ и атрибуты, которые можно получить по ключу.
-- [lifetime](external_dicts_dict_lifetime.md) — Периодичность обновления словарей.
+-   `name` — Идентификатор, под которым словарь будет доступен для использования. Используйте символы `[a-zA-Z0-9_\-]`.
+-   [source](external_dicts_dict_sources.md) — Источник словаря.
+-   [layout](external_dicts_dict_layout.md) — Размещение словаря в памяти.
+-   [structure](external_dicts_dict_structure.md) — Структура словаря. Ключ и атрибуты, которые можно получить по ключу.
+-   [lifetime](external_dicts_dict_lifetime.md) — Периодичность обновления словарей.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict/) <!--hide-->

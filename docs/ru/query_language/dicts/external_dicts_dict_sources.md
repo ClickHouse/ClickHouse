@@ -32,15 +32,15 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 
 Типы источников (`source_type`):
 
-- [Локальный файл](#dicts-external_dicts_dict_sources-local_file)
-- [Исполняемый файл](#dicts-external_dicts_dict_sources-executable)
-- [HTTP(s)](#dicts-external_dicts_dict_sources-http)
-- СУБД:
-  - [ODBC](#dicts-external_dicts_dict_sources-odbc)
-  - [MySQL](#dicts-external_dicts_dict_sources-mysql)
-  - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-  - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
-  - [Redis](#dicts-external_dicts_dict_sources-redis)
+-   [Локальный файл](#dicts-external_dicts_dict_sources-local_file)
+-   [Исполняемый файл](#dicts-external_dicts_dict_sources-executable)
+-   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
+-   СУБД:
+    -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
+    -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+    -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    -   [Redis](#dicts-external_dicts_dict_sources-redis)
 
 ## Локальный файл {#dicts-external-dicts-dict-sources-local-file}
 
@@ -63,8 +63,8 @@ SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 
 Поля настройки:
 
-- `path` — Абсолютный путь к файлу.
-- `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
+-   `path` — Абсолютный путь к файлу.
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
 
 ## Исполняемый файл {#dicts-external-dicts-dict-sources-executable}
 
@@ -89,8 +89,8 @@ SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
 
 Поля настройки:
 
-- `command` — Абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
-- `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
+-   `command` — Абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
 
 ## HTTP(s) {#dicts-external-dicts-dict-sources-http}
 
@@ -132,8 +132,8 @@ SOURCE(HTTP(
 
 Поля настройки:
 
-- `url` — URL источника.
-- `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
+-   `url` — URL источника.
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
 
 ## ODBC {#dicts-external-dicts-dict-sources-odbc}
 
@@ -422,24 +422,24 @@ SOURCE(MYSQL(
 
 Поля настройки:
 
-- `port` — порт сервера MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
+-   `port` — порт сервера MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
 
-- `user` — имя пользователя MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
+-   `user` — имя пользователя MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
 
-- `password` — пароль пользователя MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
+-   `password` — пароль пользователя MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
 
-- `replica` — блок конфигурации реплики. Блоков может быть несколько.
+-   `replica` — блок конфигурации реплики. Блоков может быть несколько.
 
-    - `replica/host` — хост MySQL.
-    - `replica/priority` — приоритет реплики. При попытке соединения ClickHouse обходит реплики в соответствии с приоритетом. Чем меньше цифра, тем выше приоритет.
+        - `replica/host` — хост MySQL.
+        - `replica/priority` — приоритет реплики. При попытке соединения ClickHouse обходит реплики в соответствии с приоритетом. Чем меньше цифра, тем выше приоритет.
 
-- `db` — имя базы данных.
+-   `db` — имя базы данных.
 
-- `table` — имя таблицы.
+-   `table` — имя таблицы.
 
-- `where` — условие выбора. Синтаксис условия совпадает с синтаксисом секции `WHERE` в MySQL, например, `id > 10 AND id < 20`. Необязательный параметр.
+-   `where` — условие выбора. Синтаксис условия совпадает с синтаксисом секции `WHERE` в MySQL, например, `id > 10 AND id < 20`. Необязательный параметр.
 
-- `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
+-   `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
 
 MySQL можно подключить на локальном хосте через сокеты, для этого необходимо задать `host` и `socket`.
 
@@ -509,14 +509,14 @@ SOURCE(CLICKHOUSE(
 
 Поля настройки:
 
-- `host` — хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../operations/table_engines/distributed.md) и прописать её в дальнейших настройках.
-- `port` — порт сервера ClickHouse.
-- `user` — имя пользователя ClickHouse.
-- `password` — пароль пользователя ClickHouse.
-- `db` — имя базы данных.
-- `table` — имя таблицы.
-- `where` — условие выбора. Может отсутствовать.
-- `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
+-   `host` — хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../operations/table_engines/distributed.md) и прописать её в дальнейших настройках.
+-   `port` — порт сервера ClickHouse.
+-   `user` — имя пользователя ClickHouse.
+-   `password` — пароль пользователя ClickHouse.
+-   `db` — имя базы данных.
+-   `table` — имя таблицы.
+-   `where` — условие выбора. Может отсутствовать.
+-   `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
 
 ### MongoDB {#dicts-external-dicts-dict-sources-mongodb}
 
@@ -585,9 +585,9 @@ SOURCE(REDIS(
 
 Поля настройки:
 
-- `host` – хост Redis.
-- `port` – порт сервера Redis.
-- `storage_type` – способ хранения ключей. Необходимо использовать `simple` для источников с одним столбцом ключей, `hash_map` – для источников с двумя столбцами ключей. Источники с более, чем двумя столбцами ключей, не поддерживаются. Может отсутствовать, значение по умолчанию `simple`.
-- `db_index` – номер базы данных. Может отсутствовать, значение по умолчанию 0.
+-   `host` – хост Redis.
+-   `port` – порт сервера Redis.
+-   `storage_type` – способ хранения ключей. Необходимо использовать `simple` для источников с одним столбцом ключей, `hash_map` – для источников с двумя столбцами ключей. Источники с более, чем двумя столбцами ключей, не поддерживаются. Может отсутствовать, значение по умолчанию `simple`.
+-   `db_index` – номер базы данных. Может отсутствовать, значение по умолчанию 0.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

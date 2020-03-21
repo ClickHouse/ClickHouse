@@ -1,4 +1,4 @@
-# odbc {#table_functions-odbc}
+# odbc {#table-functions-odbc}
 
 Returns table that is connected via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
@@ -8,9 +8,9 @@ odbc(connection_settings, external_database, external_table)
 
 Parameters:
 
-- `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
-- `external_database` — Name of a database in an external DBMS.
-- `external_table` — Name of a table in the `external_database`.
+-   `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
+-   `external_database` — Name of a database in an external DBMS.
+-   `external_table` — Name of a table in the `external_database`.
 
 To safely implement ODBC connections, ClickHouse uses a separate program `clickhouse-odbc-bridge`. If the ODBC driver is loaded directly from `clickhouse-server`, driver problems can crash the ClickHouse server. ClickHouse automatically starts `clickhouse-odbc-bridge` when it is required. The ODBC bridge program is installed from the same package as the `clickhouse-server`.
 
@@ -95,7 +95,7 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 
 ## See Also {#see-also}
 
-- [ODBC external dictionaries](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
-- [ODBC table engine](../../operations/table_engines/odbc.md).
+-   [ODBC external dictionaries](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
+-   [ODBC table engine](../../operations/table_engines/odbc.md).
 
 [Original article](https://clickhouse.tech/docs/en/query_language/table_functions/jdbc/) <!--hide-->

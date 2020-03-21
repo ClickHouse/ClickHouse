@@ -8,21 +8,21 @@
 
 在最后一个斜杠或反斜杠后的字符串文本。 此函数通常用于从路径中提取文件名。
 
-  basename( expr )
+    basename( expr )
 
 **参数**
 
-- `expr` — 任何一个返回[String](../../data_types/string.md)结果的表达式。[String](../../data_types/string.md)
+-   `expr` — 任何一个返回[String](../../data_types/string.md)结果的表达式。[String](../../data_types/string.md)
 
 **返回值**
 
 一个String类型的值，其包含：
 
-- 在最后一个斜杠或反斜杠后的字符串文本内容。
+-   在最后一个斜杠或反斜杠后的字符串文本内容。
 
-    如果输入的字符串以斜杆或反斜杆结尾，例如：`/`或`c:\`，函数将返回一个空字符串。
+        如果输入的字符串以斜杆或反斜杆结尾，例如：`/`或`c:\`，函数将返回一个空字符串。
 
-- 如果输入的字符串中不包含斜杆或反斜杠，函数返回输入字符串本身。
+-   如果输入的字符串中不包含斜杆或反斜杠，函数返回输入字符串本身。
 
 **示例**
 
@@ -65,11 +65,11 @@ This function is used by the system for implementing Pretty formats.
 
 `NULL` is represented as a string corresponding to `NULL` in `Pretty` formats.
 
-  SELECT visibleWidth(NULL)
+    SELECT visibleWidth(NULL)
 
-  ┌─visibleWidth(NULL)─┐
-  │                  4 │
-  └────────────────────┘
+    ┌─visibleWidth(NULL)─┐
+    │                  4 │
+    └────────────────────┘
 
 ## toTypeName(x) {#totypenamex}
 
@@ -131,9 +131,9 @@ For elements in a nested data structure, the function checks for the existence o
 
 参数:
 
-- `x` — 要显示的尺寸。
-- `min, max` — 整数常量，该值必须是`Int64`。
-- `width` — 常量，可以是正整数或小数。
+-   `x` — 要显示的尺寸。
+-   `min, max` — 整数常量，该值必须是`Int64`。
+-   `width` — 常量，可以是正整数或小数。
 
 字符带的绘制精度是符号的八分之一。
 
@@ -149,32 +149,32 @@ GROUP BY h
 ORDER BY h ASC
 ```
 
-  ┌──h─┬──────c─┬─bar────────────────┐
-  │  0 │ 292907 │ █████████▋         │
-  │  1 │ 180563 │ ██████             │
-  │  2 │ 114861 │ ███▋               │
-  │  3 │  85069 │ ██▋                │
-  │  4 │  68543 │ ██▎                │
-  │  5 │  78116 │ ██▌                │
-  │  6 │ 113474 │ ███▋               │
-  │  7 │ 170678 │ █████▋             │
-  │  8 │ 278380 │ █████████▎         │
-  │  9 │ 391053 │ █████████████      │
-  │ 10 │ 457681 │ ███████████████▎   │
-  │ 11 │ 493667 │ ████████████████▍  │
-  │ 12 │ 509641 │ ████████████████▊  │
-  │ 13 │ 522947 │ █████████████████▍ │
-  │ 14 │ 539954 │ █████████████████▊ │
-  │ 15 │ 528460 │ █████████████████▌ │
-  │ 16 │ 539201 │ █████████████████▊ │
-  │ 17 │ 523539 │ █████████████████▍ │
-  │ 18 │ 506467 │ ████████████████▊  │
-  │ 19 │ 520915 │ █████████████████▎ │
-  │ 20 │ 521665 │ █████████████████▍ │
-  │ 21 │ 542078 │ ██████████████████ │
-  │ 22 │ 493642 │ ████████████████▍  │
-  │ 23 │ 400397 │ █████████████▎     │
-  └────┴────────┴────────────────────┘
+    ┌──h─┬──────c─┬─bar────────────────┐
+    │  0 │ 292907 │ █████████▋         │
+    │  1 │ 180563 │ ██████             │
+    │  2 │ 114861 │ ███▋               │
+    │  3 │  85069 │ ██▋                │
+    │  4 │  68543 │ ██▎                │
+    │  5 │  78116 │ ██▌                │
+    │  6 │ 113474 │ ███▋               │
+    │  7 │ 170678 │ █████▋             │
+    │  8 │ 278380 │ █████████▎         │
+    │  9 │ 391053 │ █████████████      │
+    │ 10 │ 457681 │ ███████████████▎   │
+    │ 11 │ 493667 │ ████████████████▍  │
+    │ 12 │ 509641 │ ████████████████▊  │
+    │ 13 │ 522947 │ █████████████████▍ │
+    │ 14 │ 539954 │ █████████████████▊ │
+    │ 15 │ 528460 │ █████████████████▌ │
+    │ 16 │ 539201 │ █████████████████▊ │
+    │ 17 │ 523539 │ █████████████████▍ │
+    │ 18 │ 506467 │ ████████████████▊  │
+    │ 19 │ 520915 │ █████████████████▎ │
+    │ 20 │ 521665 │ █████████████████▍ │
+    │ 21 │ 542078 │ ██████████████████ │
+    │ 22 │ 493642 │ ████████████████▍  │
+    │ 23 │ 400397 │ █████████████▎     │
+    └────┴────────┴────────────────────┘
 
 ## transform {#transform}
 
@@ -215,11 +215,11 @@ GROUP BY title
 ORDER BY c DESC
 ```
 
-  ┌─title─────┬──────c─┐
-  │ Yandex    │ 498635 │
-  │ Google    │ 229872 │
-  │ Other     │ 104472 │
-  └───────────┴────────┘
+    ┌─title─────┬──────c─┐
+    │ Yandex    │ 498635 │
+    │ Google    │ 229872 │
+    │ Other     │ 104472 │
+    └───────────┴────────┘
 
 1.  `transform(x, array_from, array_to)`
 
@@ -242,17 +242,17 @@ ORDER BY count() DESC
 LIMIT 10
 ```
 
-  ┌─s──────────────┬───────c─┐
-  │                │ 2906259 │
-  │ www.yandex     │  867767 │
-  │ ███████.ru     │  313599 │
-  │ mail.yandex.ru │  107147 │
-  │ ██████.ru      │  100355 │
-  │ █████████.ru   │   65040 │
-  │ news.yandex.ru │   64515 │
-  │ ██████.net     │   59141 │
-  │ example.com    │   57316 │
-  └────────────────┴─────────┘
+    ┌─s──────────────┬───────c─┐
+    │                │ 2906259 │
+    │ www.yandex     │  867767 │
+    │ ███████.ru     │  313599 │
+    │ mail.yandex.ru │  107147 │
+    │ ██████.ru      │  100355 │
+    │ █████████.ru   │   65040 │
+    │ news.yandex.ru │   64515 │
+    │ ██████.net     │   59141 │
+    │ example.com    │   57316 │
+    └────────────────┴─────────┘
 
 ## formatReadableSize(x) {#formatreadablesizex}
 
@@ -266,12 +266,12 @@ SELECT
     formatReadableSize(filesize_bytes) AS filesize
 ```
 
-  ┌─filesize_bytes─┬─filesize───┐
-  │              1 │ 1.00 B     │
-  │           1024 │ 1.00 KiB   │
-  │        1048576 │ 1.00 MiB   │
-  │      192851925 │ 183.92 MiB │
-  └────────────────┴────────────┘
+    ┌─filesize_bytes─┬─filesize───┐
+    │              1 │ 1.00 B     │
+    │           1024 │ 1.00 KiB   │
+    │        1048576 │ 1.00 MiB   │
+    │      192851925 │ 183.92 MiB │
+    └────────────────┴────────────┘
 
 ## least(a, b) {#leasta-b}
 
@@ -332,13 +332,13 @@ FROM
 )
 ```
 
-  ┌─EventID─┬───────────EventTime─┬─delta─┐
-  │    1106 │ 2016-11-24 00:00:04 │     0 │
-  │    1107 │ 2016-11-24 00:00:05 │     1 │
-  │    1108 │ 2016-11-24 00:00:05 │     0 │
-  │    1109 │ 2016-11-24 00:00:09 │     4 │
-  │    1110 │ 2016-11-24 00:00:10 │     1 │
-  └─────────┴─────────────────────┴───────┘
+    ┌─EventID─┬───────────EventTime─┬─delta─┐
+    │    1106 │ 2016-11-24 00:00:04 │     0 │
+    │    1107 │ 2016-11-24 00:00:05 │     1 │
+    │    1108 │ 2016-11-24 00:00:05 │     0 │
+    │    1109 │ 2016-11-24 00:00:09 │     4 │
+    │    1110 │ 2016-11-24 00:00:10 │     1 │
+    └─────────┴─────────────────────┴───────┘
 
 ## runningDifferenceStartingWithFirstValue {#runningdifferencestartingwithfirstvalue}
 
@@ -360,58 +360,58 @@ FROM
 
 返回[Enum](../../data_types/enum.md)中的枚举数量。
 
-  getSizeOfEnumType(value)
+    getSizeOfEnumType(value)
 
 **参数:**
 
-- `value` — `Enum`类型的值。
+-   `value` — `Enum`类型的值。
 
 **返回值**
 
-- `Enum`的枚举数量。
-- 如果类型不是`Enum`，则抛出异常。
+-   `Enum`的枚举数量。
+-   如果类型不是`Enum`，则抛出异常。
 
 **示例**
 
-  SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
+    SELECT getSizeOfEnumType( CAST('a' AS Enum8('a' = 1, 'b' = 2) ) ) AS x
 
-  ┌─x─┐
-  │ 2 │
-  └───┘
+    ┌─x─┐
+    │ 2 │
+    └───┘
 
 ## toColumnTypeName {#tocolumntypename}
 
 返回在RAM中列的数据类型的名称。
 
-  toColumnTypeName(value)
+    toColumnTypeName(value)
 
 **参数:**
 
-- `value` — 任何类型的值。
+-   `value` — 任何类型的值。
 
 **返回值**
 
-- 一个字符串，其内容是`value`在RAM中的类型名称。
+-   一个字符串，其内容是`value`在RAM中的类型名称。
 
 **`toTypeName ' 与 ' toColumnTypeName`的区别示例**
 
-  :) select toTypeName(cast('2018-01-01 01:02:03' AS DateTime))
+    :) select toTypeName(cast('2018-01-01 01:02:03' AS DateTime))
 
-  SELECT toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
+    SELECT toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
 
-  ┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
-  │ DateTime                                            │
-  └─────────────────────────────────────────────────────┘
+    ┌─toTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+    │ DateTime                                            │
+    └─────────────────────────────────────────────────────┘
 
-  1 rows in set. Elapsed: 0.008 sec.
+    1 rows in set. Elapsed: 0.008 sec.
 
-  :) select toColumnTypeName(cast('2018-01-01 01:02:03' AS DateTime))
+    :) select toColumnTypeName(cast('2018-01-01 01:02:03' AS DateTime))
 
-  SELECT toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
+    SELECT toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))
 
-  ┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
-  │ Const(UInt32)                                             │
-  └───────────────────────────────────────────────────────────┘
+    ┌─toColumnTypeName(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+    │ Const(UInt32)                                             │
+    └───────────────────────────────────────────────────────────┘
 
 该示例显示`DateTime`数据类型作为`Const(UInt32)`存储在内存中。
 
@@ -419,23 +419,23 @@ FROM
 
 输出在RAM中的数据结果的详细信息。
 
-  dumpColumnStructure(value)
+    dumpColumnStructure(value)
 
 **参数:**
 
-- `value` — 任何类型的值.
+-   `value` — 任何类型的值.
 
 **返回值**
 
-- 一个字符串，其内容是`value`在RAM中的数据结构的详细描述。
+-   一个字符串，其内容是`value`在RAM中的数据结构的详细描述。
 
 **示例**
 
-  SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
+    SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))
 
-  ┌─dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
-  │ DateTime, Const(size = 1, UInt32(size = 1))                  │
-  └──────────────────────────────────────────────────────────────┘
+    ┌─dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'))─┐
+    │ DateTime, Const(size = 1, UInt32(size = 1))                  │
+    └──────────────────────────────────────────────────────────────┘
 
 ## defaultValueOfArgumentType {#defaultvalueofargumenttype}
 
@@ -443,39 +443,39 @@ FROM
 
 不包括用户设置的自定义列的默认值。
 
-  defaultValueOfArgumentType(expression)
+    defaultValueOfArgumentType(expression)
 
 **参数:**
 
-- `expression` — 任意类型的值或导致任意类型值的表达式。
+-   `expression` — 任意类型的值或导致任意类型值的表达式。
 
 **返回值**
 
-- 数值类型返回`0`。
-- 字符串类型返回空的字符串。
-- [Nullable](../../data_types/nullable.md)类型返回`ᴺᵁᴸᴸ`。
+-   数值类型返回`0`。
+-   字符串类型返回空的字符串。
+-   [Nullable](../../data_types/nullable.md)类型返回`ᴺᵁᴸᴸ`。
 
 **示例**
 
-  :) SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
+    :) SELECT defaultValueOfArgumentType( CAST(1 AS Int8) )
 
-  SELECT defaultValueOfArgumentType(CAST(1, 'Int8'))
+    SELECT defaultValueOfArgumentType(CAST(1, 'Int8'))
 
-  ┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
-  │                                           0 │
-  └─────────────────────────────────────────────┘
+    ┌─defaultValueOfArgumentType(CAST(1, 'Int8'))─┐
+    │                                           0 │
+    └─────────────────────────────────────────────┘
 
-  1 rows in set. Elapsed: 0.002 sec.
+    1 rows in set. Elapsed: 0.002 sec.
 
-  :) SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
+    :) SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 
-  SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
+    SELECT defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))
 
-  ┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
-  │                                                  ᴺᵁᴸᴸ │
-  └───────────────────────────────────────────────────────┘
+    ┌─defaultValueOfArgumentType(CAST(1, 'Nullable(Int8)'))─┐
+    │                                                  ᴺᵁᴸᴸ │
+    └───────────────────────────────────────────────────────┘
 
-  1 rows in set. Elapsed: 0.002 sec.
+    1 rows in set. Elapsed: 0.002 sec.
 
 ## replicate {#replicate}
 
@@ -483,24 +483,24 @@ FROM
 
 用于[arrayJoin](array_join.md#functions_arrayjoin)的内部实现。
 
-  replicate(x, arr)
+    replicate(x, arr)
 
 **参数:**
 
-- `arr` — 原始数组。 ClickHouse创建一个与原始数据长度相同的新数组，并用值`x`填充它。
-- `x` — 生成的数组将被填充的值。
+-   `arr` — 原始数组。 ClickHouse创建一个与原始数据长度相同的新数组，并用值`x`填充它。
+-   `x` — 生成的数组将被填充的值。
 
 **输出**
 
-- 一个被`x`填充的数组。
+-   一个被`x`填充的数组。
 
 **示例**
 
-  SELECT replicate(1, ['a', 'b', 'c'])
+    SELECT replicate(1, ['a', 'b', 'c'])
 
-  ┌─replicate(1, ['a', 'b', 'c'])─┐
-  │ [1,1,1]                       │
-  └───────────────────────────────┘
+    ┌─replicate(1, ['a', 'b', 'c'])─┐
+    │ [1,1,1]                       │
+    └───────────────────────────────┘
 
 ## filesystemAvailable {#filesystemavailable}
 

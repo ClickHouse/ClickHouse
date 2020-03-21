@@ -20,13 +20,13 @@ Alias: `locate(haystack, needle)`.
 
 **Parameters**
 
-- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
-- `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
 
 **Returned values**
 
-- Starting position in bytes (counting from 1), if substring was found.
-- 0, if the substring was not found.
+-   Starting position in bytes (counting from 1), if substring was found.
+-   0, if the substring was not found.
 
 Type: `Integer`.
 
@@ -78,13 +78,13 @@ positionCaseInsensitive(haystack, needle)
 
 **Parameters**
 
-- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
-- `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
 
 **Returned values**
 
-- Starting position in bytes (counting from 1), if substring was found.
-- 0, if the substring was not found.
+-   Starting position in bytes (counting from 1), if substring was found.
+-   0, if the substring was not found.
 
 Type: `Integer`.
 
@@ -120,13 +120,13 @@ positionUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
-- `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
 
 **Returned values**
 
-- Starting position in Unicode points (counting from 1), if substring was found.
-- 0, if the substring was not found.
+-   Starting position in Unicode points (counting from 1), if substring was found.
+-   0, if the substring was not found.
 
 Type: `Integer`.
 
@@ -192,13 +192,13 @@ positionCaseInsensitiveUTF8(haystack, needle)
 
 **Parameters**
 
-- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
-- `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
 
 **Returned value**
 
-- Starting position in Unicode points (counting from 1), if substring was found.
-- 0, if the substring was not found.
+-   Starting position in Unicode points (counting from 1), if substring was found.
+-   0, if the substring was not found.
 
 Type: `Integer`.
 
@@ -218,15 +218,15 @@ Result:
 └────────────────────────────────────────────────────┘
 ```
 
-## multiSearchAllPositions {#multiSearchAllPositions}
+## multiSearchAllPositions {#multisearchallpositions}
 
 The same as [position](string_search_functions.md#position) but returns `Array` of positions (in bytes) of the found corresponding substrings in the string. Positions are indexed starting from 1.
 
 The search is performed on sequences of bytes without respect to string encoding and collation.
 
-- For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
-- For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
-- For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
+-   For case-insensitive ASCII search, use the function `multiSearchAllPositionsCaseInsensitive`.
+-   For search in UTF-8, use the function [multiSearchAllPositionsUTF8](#multiSearchAllPositionsUTF8).
+-   For case-insensitive UTF-8 search, use the function multiSearchAllPositionsCaseInsensitiveUTF8.
 
 **Syntax**
 
@@ -236,12 +236,12 @@ multiSearchAllPositions(haystack, [needle1, needle2, ..., needlen])
 
 **Parameters**
 
-- `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
-- `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
+-   `haystack` — string, in which substring will to be searched. [String](../syntax.md#syntax-string-literal).
+-   `needle` — substring to be searched. [String](../syntax.md#syntax-string-literal).
 
 **Returned values**
 
-- Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
+-   Array of starting positions in bytes (counting from 1), if the corresponding substring was found and 0 if not found.
 
 **Example**
 
@@ -259,11 +259,11 @@ Result:
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
+## multiSearchAllPositionsUTF8 {#multisearchallpositionsutf8}
 
 See `multiSearchAllPositions`.
 
-## multiSearchFirstPosition(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\]) {#multiSearchFirstPosition}
+## multiSearchFirstPosition(haystack, \[needle<sub>1</sub>, needle<sub>2</sub>, …, needle<sub>n</sub>\]) {#multisearchfirstposition}
 
 The same as `position` but returns the leftmost offset of the string `haystack` that is matched to some of the needles.
 

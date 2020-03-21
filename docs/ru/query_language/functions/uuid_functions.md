@@ -108,7 +108,7 @@ SELECT
 
 ## См. также: {#sm-takzhe}
 
-- [dictGetUUID](ext_dict_functions.md)
-- [dictGetUUIDOrDefault](ext_dict_functions.md)
+-   [dictGetUUID](ext_dict_functions.md)
+-   [dictGetUUIDOrDefault](ext_dict_functions.md)
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->

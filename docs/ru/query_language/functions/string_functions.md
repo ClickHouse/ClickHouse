@@ -70,7 +70,7 @@ toValidUTF8( input_string )
 
 Параметры:
 
-- input\_string — произвольный набор байтов, представленный как объект типа [String](../../data_types/string.md).
+-   input\_string — произвольный набор байтов, представленный как объект типа [String](../../data_types/string.md).
 
 Возвращаемое значение: Корректная строка UTF-8.
 
@@ -98,8 +98,8 @@ repeat(s, n)
 
 **Параметры**
 
-- `s` — Строка для повторения. [String](../../data_types/string.md).
-- `n` — Количество повторов. [UInt](../../data_types/int_uint.md).
+-   `s` — Строка для повторения. [String](../../data_types/string.md).
+-   `n` — Количество повторов. [UInt](../../data_types/int_uint.md).
 
 **Возвращаемое значение**
 
@@ -290,8 +290,8 @@ SELECT startsWith('Spider-Man', 'Spi');
 
 **Возвращаемые значения**
 
-- 1, если строка начинается указанным префиксом.
-- 0, если строка не начинается указанным префиксом.
+-   1, если строка начинается указанным префиксом.
+-   0, если строка не начинается указанным префиксом.
 
 **Пример**
 
@@ -322,8 +322,8 @@ trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 
 **Параметры**
 
-- `trim_character` — один или несколько символов, подлежащие удалению. [String](../../data_types/string.md).
-- `input_string` — строка для обрезки. [String](../../data_types/string.md).
+-   `trim_character` — один или несколько символов, подлежащие удалению. [String](../../data_types/string.md).
+-   `input_string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -361,7 +361,7 @@ trimLeft(input_string)
 
 **Параметры**
 
-- `input_string` — строка для обрезки. [String](../../data_types/string.md).
+-   `input_string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -399,7 +399,7 @@ trimRight(input_string)
 
 **Параметры**
 
-- `input_string` — строка для обрезки. [String](../../data_types/string.md).
+-   `input_string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -437,7 +437,7 @@ trimBoth(input_string)
 
 **Параметры**
 
-- `input_string` — строка для обрезки. [String](../../data_types/string.md).
+-   `input_string` — строка для обрезки. [String](../../data_types/string.md).
 
 **Возвращаемое значение**
 

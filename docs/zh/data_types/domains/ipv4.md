@@ -10,10 +10,10 @@ CREATE TABLE hits (url String, from IPv4) ENGINE = MergeTree() ORDER BY url;
 DESCRIBE TABLE hits;
 ```
 
-  ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┐
-  │ url  │ String │              │                    │         │                  │
-  │ from │ IPv4   │              │                    │         │                  │
-  └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
+    ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┐
+    │ url  │ String │              │                    │         │                  │
+    │ from │ IPv4   │              │                    │         │                  │
+    └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
 
 同时您也可以使用`IPv4`类型的列作为主键：
 
@@ -29,11 +29,11 @@ INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '116.253.40.133')(
 SELECT * FROM hits;
 ```
 
-  ┌─url────────────────────────────────┬───────────from─┐
-  │ https://clickhouse.tech/docs/en/ │ 116.106.34.242 │
-  │ https://wikipedia.org              │ 116.253.40.133 │
-  │ https://clickhouse.tech          │ 183.247.232.58 │
-  └────────────────────────────────────┴────────────────┘
+    ┌─url────────────────────────────────┬───────────from─┐
+    │ https://clickhouse.tech/docs/en/ │ 116.106.34.242 │
+    │ https://wikipedia.org              │ 116.253.40.133 │
+    │ https://clickhouse.tech          │ 183.247.232.58 │
+    └────────────────────────────────────┴────────────────┘
 
 同时它提供更为紧凑的二进制存储格式：
 
@@ -41,9 +41,9 @@ SELECT * FROM hits;
 SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 ```
 
-  ┌─toTypeName(from)─┬─hex(from)─┐
-  │ IPv4             │ B7F7E83A  │
-  └──────────────────┴───────────┘
+    ┌─toTypeName(from)─┬─hex(from)─┐
+    │ IPv4             │ B7F7E83A  │
+    └──────────────────┴───────────┘
 
 不可隐式转换为除`UInt32`以外的其他类型类型。如果要将`IPv4`类型的值转换成字符串，你可以使用`IPv4NumToString()`显示的进行转换：
 
@@ -51,9 +51,9 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 SELECT toTypeName(s), IPv4NumToString(from) as s FROM hits LIMIT 1;
 ```
 
-  ┌─toTypeName(IPv4NumToString(from))─┬─s──────────────┐
-  │ String                            │ 183.247.232.58 │
-  └───────────────────────────────────┴────────────────┘
+    ┌─toTypeName(IPv4NumToString(from))─┬─s──────────────┐
+    │ String                            │ 183.247.232.58 │
+    └───────────────────────────────────┴────────────────┘
 
 或可以使用`CAST`将它转换为`UInt32`类型:
 
@@ -61,8 +61,8 @@ SELECT toTypeName(s), IPv4NumToString(from) as s FROM hits LIMIT 1;
 SELECT toTypeName(i), CAST(from as UInt32) as i FROM hits LIMIT 1;
 ```
 
-  ┌─toTypeName(CAST(from, 'UInt32'))─┬──────────i─┐
-  │ UInt32                           │ 3086477370 │
-  └──────────────────────────────────┴────────────┘
+    ┌─toTypeName(CAST(from, 'UInt32'))─┬──────────i─┐
+    │ UInt32                           │ 3086477370 │
+    └──────────────────────────────────┴────────────┘
 
 [来源文章](https://clickhouse.tech/docs/en/data_types/domains/ipv4) <!--hide-->

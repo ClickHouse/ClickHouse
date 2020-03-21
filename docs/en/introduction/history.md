@@ -6,18 +6,18 @@ Yandex.Metrica builds customized reports on the fly based on hits and sessions, 
 
 As of April 2014, Yandex.Metrica was tracking about 12 billion events (page views and clicks) daily. All these events must be stored to build custom reports. A single query may require scanning millions of rows within a few hundred milliseconds, or hundreds of millions of rows in just a few seconds.
 
-## Usage in Yandex.Metrica and Other Yandex Services {#usage-in-yandex.metrica-and-other-yandex-services}
+## Usage in Yandex.Metrica and Other Yandex Services {#usage-in-yandex-metrica-and-other-yandex-services}
 
 ClickHouse is used for multiple purposes in Yandex.Metrica.
 Its main task is to build reports in online mode using non-aggregated data. It uses a cluster of 374 servers, which store over 20.3 trillion rows in the database. The volume of compressed data, without counting duplication and replication, is about 2 PB. The volume of uncompressed data (in TSV format) would be approximately 17 PB.
 
 ClickHouse is also used for:
 
-- Storing data for Session Replay from Yandex.Metrica.
-- Processing intermediate data.
-- Building global reports with Analytics.
-- Running queries for debugging the Yandex.Metrica engine.
-- Analyzing logs from the API and the user interface.
+-   Storing data for Session Replay from Yandex.Metrica.
+-   Processing intermediate data.
+-   Building global reports with Analytics.
+-   Running queries for debugging the Yandex.Metrica engine.
+-   Analyzing logs from the API and the user interface.
 
 ClickHouse has at least a dozen installations in other Yandex services: in search verticals, Market, Direct, business analytics, mobile development, AdFox, personal services, and others.
 
@@ -27,14 +27,14 @@ There is a popular opinion that to effectively calculate statistics, you must ag
 
 But data aggregation is a very limited solution, for the following reasons:
 
-- You must have a pre-defined list of reports the user will need.
-- The user can’t make custom reports.
-- When aggregating a large number of keys, the volume of data is not reduced, and aggregation is useless.
-- For a large number of reports, there are too many aggregation variations (combinatorial explosion).
-- When aggregating keys with high cardinality (such as URLs), the volume of data is not reduced by much (less than twofold).
-- For this reason, the volume of data with aggregation might grow instead of shrink.
-- Users do not view all the reports we generate for them. A large portion of those calculations is useless.
-- The logical integrity of data may be violated for various aggregations.
+-   You must have a pre-defined list of reports the user will need.
+-   The user can’t make custom reports.
+-   When aggregating a large number of keys, the volume of data is not reduced, and aggregation is useless.
+-   For a large number of reports, there are too many aggregation variations (combinatorial explosion).
+-   When aggregating keys with high cardinality (such as URLs), the volume of data is not reduced by much (less than twofold).
+-   For this reason, the volume of data with aggregation might grow instead of shrink.
+-   Users do not view all the reports we generate for them. A large portion of those calculations is useless.
+-   The logical integrity of data may be violated for various aggregations.
 
 If we do not aggregate anything and work with non-aggregated data, this might reduce the volume of calculations.
 

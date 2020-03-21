@@ -22,7 +22,7 @@ domain(url)
 
 **Parameters**
 
-- `url` — URL. Type: [String](../../data_types/string.md).
+-   `url` — URL. Type: [String](../../data_types/string.md).
 
 The URL can be specified with or without a scheme. Examples:
 
@@ -42,8 +42,8 @@ yandex.com
 
 **Returned values**
 
-- Host name. If ClickHouse can parse the input string as a URL.
-- Empty string. If ClickHouse can’t parse the input string as a URL.
+-   Host name. If ClickHouse can parse the input string as a URL.
+-   Empty string. If ClickHouse can’t parse the input string as a URL.
 
 Type: `String`.
 
@@ -73,7 +73,7 @@ topLevelDomain(url)
 
 **Parameters**
 
-- `url` — URL. Type: [String](../../data_types/string.md).
+-   `url` — URL. Type: [String](../../data_types/string.md).
 
 The URL can be specified with or without a scheme. Examples:
 
@@ -85,8 +85,8 @@ https://yandex.com/time/
 
 **Returned values**
 
-- Domain name. If ClickHouse can parse the input string as a URL.
-- Empty string. If ClickHouse cannot parse the input string as a URL.
+-   Domain name. If ClickHouse can parse the input string as a URL.
+-   Empty string. If ClickHouse cannot parse the input string as a URL.
 
 Type: `String`.
 
@@ -175,7 +175,7 @@ SELECT decodeURLComponent('http://127.0.0.1:8123/?query=SELECT%201%3B') AS Decod
 └────────────────────────────────────────┘
 ```
 
-## Functions that remove part of a URL. {#functions-that-remove-part-of-a-url.}
+## Functions that remove part of a URL. {#functions-that-remove-part-of-a-url}
 
 If the URL doesn’t have anything similar, the URL remains unchanged.
 

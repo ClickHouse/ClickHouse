@@ -30,8 +30,8 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 Ключевые слова не зависят от регистра, если они соответствуют:
 
-- Стандарту SQL. Например, применение любого из вариантов `SELECT`, `select` или `SeLeCt` не вызовет ошибки.
-- Реализации в некоторых популярных DBMS (MySQL или Postgres). Например, `DateTime` и `datetime`.
+-   Стандарту SQL. Например, применение любого из вариантов `SELECT`, `select` или `SeLeCt` не вызовет ошибки.
+-   Реализации в некоторых популярных DBMS (MySQL или Postgres). Например, `DateTime` и `datetime`.
 
 Зависимость от регистра для имён типов данных можно проверить в таблице `system.data_type_families`.
 
@@ -43,10 +43,10 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 Идентификаторы:
 
-- Имена кластеров, баз данных, таблиц, разделов и столбцов;
-- Функции;
-- Типы данных;
-- [Синонимы выражений](#syntax-expression_aliases).
+-   Имена кластеров, баз данных, таблиц, разделов и столбцов;
+-   Функции;
+-   Типы данных;
+-   [Синонимы выражений](#syntax-expression_aliases).
 
 Некоторые идентификаторы нужно указывать в кавычках (например, идентификаторы с пробелами). Прочие идентификаторы можно указывать без кавычек. Рекомендуется использовать идентификаторы, не требующие кавычек.
 
@@ -62,10 +62,10 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 
 Числовой литерал пытается распарситься:
 
-- Сначала как знаковое 64-разрядное число, функцией [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul).
-- Если не получилось, то как беззнаковое 64-разрядное число, функцией [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol).
-- Если не получилось, то как число с плавающей запятой, функцией [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof).
-- Иначе — ошибка.
+-   Сначала как знаковое 64-разрядное число, функцией [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul).
+-   Если не получилось, то как беззнаковое 64-разрядное число, функцией [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol).
+-   Если не получилось, то как число с плавающей запятой, функцией [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof).
+-   Иначе — ошибка.
 
 Соответствующее значение будет иметь тип минимального размера, который вмещает значение.
 Например, 1 парсится как `UInt8`, а 256 как `UInt16`. Подробнее о типах данных читайте в разделе [Типы данных](../data_types/index.md).
@@ -119,19 +119,19 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 expr AS alias
 ```
 
-- `AS` — ключевое слово для определения синонимов. Можно определить синоним для имени таблицы или столбца в секции `SELECT` без использования ключевого слова `AS` .
+-   `AS` — ключевое слово для определения синонимов. Можно определить синоним для имени таблицы или столбца в секции `SELECT` без использования ключевого слова `AS` .
 
-    Например, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
+        Например, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-    В функции [CAST](functions/type_conversion_functions.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
+        В функции [CAST](functions/type_conversion_functions.md#type_conversion_function-cast), ключевое слово `AS` имеет другое значение. Смотрите описание функции.
 
-- `expr` — любое выражение, которое поддерживает ClickHouse.
+-   `expr` — любое выражение, которое поддерживает ClickHouse.
 
-    Например, `SELECT column_name * 2 AS double FROM some_table`.
+        Например, `SELECT column_name * 2 AS double FROM some_table`.
 
-- `alias` — имя для `выражения`. Синонимы должны соответствовать синтаксису [идентификаторов](#syntax-identifiers).
+-   `alias` — имя для `выражения`. Синонимы должны соответствовать синтаксису [идентификаторов](#syntax-identifiers).
 
-    Например, `SELECT "table t".column_name FROM table_name AS "table t"`.
+        Например, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
 ### Примечания по использованию {#primechaniia-po-ispolzovaniiu}
 

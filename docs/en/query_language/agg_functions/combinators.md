@@ -1,4 +1,4 @@
-# Aggregate function combinators {#aggregate_functions_combinators}
+# Aggregate function combinators {#aggregate-functions-combinators}
 
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
@@ -26,17 +26,17 @@ If you apply this combinator, the aggregate function doesn’t return the result
 
 To work with these states, use:
 
-- [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md) table engine.
-- [finalizeAggregation](../functions/other_functions.md#function-finalizeaggregation) function.
-- [runningAccumulate](../functions/other_functions.md#function-runningaccumulate) function.
-- [-Merge](#aggregate_functions_combinators_merge) combinator.
-- [-MergeState](#aggregate_functions_combinators_mergestate) combinator.
+-   [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md) table engine.
+-   [finalizeAggregation](../functions/other_functions.md#function-finalizeaggregation) function.
+-   [runningAccumulate](../functions/other_functions.md#function-runningaccumulate) function.
+-   [-Merge](#aggregate_functions_combinators_merge) combinator.
+-   [-MergeState](#aggregate_functions_combinators_mergestate) combinator.
 
-## -Merge {#aggregate_functions_combinators_merge}
+## -Merge {#aggregate-functions-combinators-merge}
 
 If you apply this combinator, the aggregate function takes the intermediate aggregation state as an argument, combines the states to finish aggregation, and returns the resulting value.
 
-## -MergeState {#aggregate_functions_combinators_mergestate}
+## -MergeState {#aggregate-functions-combinators-mergestate}
 
 Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it doesn’t return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
 
@@ -88,7 +88,7 @@ FROM
 └────────────────────────────────┘
 ```
 
-## -Resample {#agg_functions-combinator-resample}
+## -Resample {#agg-functions-combinator-resample}
 
 Lets you divide data into groups, and then separately aggregates the data in those groups. Groups are created by splitting the values from one column into intervals.
 
@@ -98,15 +98,15 @@ Lets you divide data into groups, and then separately aggregates the data in tho
 
 **Parameters**
 
-- `start` — Starting value of the whole required interval for `resampling_key` values.
-- `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn’t include the `stop` value `[start, stop)`.
-- `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
-- `resampling_key` — Column whose values are used for separating data into intervals.
-- `aggFunction_params` — `aggFunction` parameters.
+-   `start` — Starting value of the whole required interval for `resampling_key` values.
+-   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn’t include the `stop` value `[start, stop)`.
+-   `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
+-   `resampling_key` — Column whose values are used for separating data into intervals.
+-   `aggFunction_params` — `aggFunction` parameters.
 
 **Returned values**
 
-- Array of `aggFunction` results for each subinterval.
+-   Array of `aggFunction` results for each subinterval.
 
 **Example**
 

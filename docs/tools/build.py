@@ -76,10 +76,11 @@ def build_for_lang(lang, args):
 
         site_names = {
             'en': 'ClickHouse %s Documentation',
+            'es': 'Documentación de ClickHouse %s',
             'ru': 'Документация ClickHouse %s',
             'zh': 'ClickHouse文档 %s',
             'ja': 'ClickHouseドキュメント %s',
-            'fa': 'مستندات  %sClickHouse'
+            'fa': 'مستندات %sClickHouse%'
         }
 
         if args.version_prefix:
@@ -301,7 +302,7 @@ if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
 
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,ru,zh,ja,fa')
+    arg_parser.add_argument('--lang', default='en,es,ru,zh,ja,fa')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default='mkdocs-material-theme')
     arg_parser.add_argument('--website-dir', default=os.path.join('..', 'website'))

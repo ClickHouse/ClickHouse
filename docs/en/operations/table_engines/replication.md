@@ -1,14 +1,14 @@
-# Data Replication {#table_engines-replication}
+# Data Replication {#table-engines-replication}
 
 Replication is only supported for tables in the MergeTree family:
 
-- ReplicatedMergeTree
-- ReplicatedSummingMergeTree
-- ReplicatedReplacingMergeTree
-- ReplicatedAggregatingMergeTree
-- ReplicatedCollapsingMergeTree
-- ReplicatedVersionedCollapsingMergeTree
-- ReplicatedGraphiteMergeTree
+-   ReplicatedMergeTree
+-   ReplicatedSummingMergeTree
+-   ReplicatedReplacingMergeTree
+-   ReplicatedAggregatingMergeTree
+-   ReplicatedCollapsingMergeTree
+-   ReplicatedVersionedCollapsingMergeTree
+-   ReplicatedGraphiteMergeTree
 
 Replication works at the level of an individual table, not the entire server. A server can store both replicated and non-replicated tables at the same time.
 
@@ -18,9 +18,9 @@ Compressed data for `INSERT` and `ALTER` queries is replicated (for more informa
 
 `CREATE`, `DROP`, `ATTACH`, `DETACH` and `RENAME` queries are executed on a single server and are not replicated:
 
-- The `CREATE TABLE` query creates a new replicatable table on the server where the query is run. If this table already exists on other servers, it adds a new replica.
-- The `DROP TABLE` query deletes the replica located on the server where the query is run.
-- The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
+-   The `CREATE TABLE` query creates a new replicatable table on the server where the query is run. If this table already exists on other servers, it adds a new replica.
+-   The `DROP TABLE` query deletes the replica located on the server where the query is run.
+-   The `RENAME` query renames the table on one of the replicas. In other words, replicated tables can have different names on different replicas.
 
 ClickHouse uses [Apache ZooKeeper](https://zookeeper.apache.org) for storing replicas meta information. Use ZooKeeper version 3.4.5 or newer.
 
@@ -78,8 +78,8 @@ The `Replicated` prefix is added to the table engine name. For example:`Replicat
 
 **Replicated\*MergeTree parameters**
 
-- `zoo_path` — The path to the table in ZooKeeper.
-- `replica_name` — The replica name in ZooKeeper.
+-   `zoo_path` — The path to the table in ZooKeeper.
+-   `replica_name` — The replica name in ZooKeeper.
 
 Example:
 
@@ -199,8 +199,8 @@ Create a MergeTree table with a different name. Move all the data from the direc
 
 If you want to get rid of a `ReplicatedMergeTree` table without launching the server:
 
-- Delete the corresponding `.sql` file in the metadata directory (`/var/lib/clickhouse/metadata/`).
-- Delete the corresponding path in ZooKeeper (`/path_to_table/replica_name`).
+-   Delete the corresponding `.sql` file in the metadata directory (`/var/lib/clickhouse/metadata/`).
+-   Delete the corresponding path in ZooKeeper (`/path_to_table/replica_name`).
 
 After this, you can launch the server, create a `MergeTree` table, move the data to its directory, and then restart the server.
 

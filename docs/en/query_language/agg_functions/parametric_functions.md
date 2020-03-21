@@ -1,4 +1,4 @@
-# Parametric aggregate functions {#aggregate_functions_parametric}
+# Parametric aggregate functions {#aggregate-functions-parametric}
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
@@ -19,15 +19,15 @@ The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.or
 
 **Returned values**
 
-- [Array](../../data_types/array.md) of [Tuples](../../data_types/tuple.md) of the following format:
+-   [Array](../../data_types/array.md) of [Tuples](../../data_types/tuple.md) of the following format:
 
-    ```
-    [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
-    ```
+        ```
+        [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
+        ```
 
-    - `lower` — Lower bound of the bin.
-    - `upper` — Upper bound of the bin.
-    - `height` — Calculated height of the bin.
+        - `lower` — Lower bound of the bin.
+        - `upper` — Upper bound of the bin.
+        - `height` — Calculated height of the bin.
 
 **Example**
 
@@ -86,27 +86,27 @@ sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 
 **Parameters**
 
-- `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
+-   `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
 
-- `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../data_types/int_uint.md) data types.
+-   `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../data_types/int_uint.md) data types.
 
-- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn’t described in a condition, the function skips them.
+-   `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn’t described in a condition, the function skips them.
 
 **Returned values**
 
-- 1, if the pattern is matched.
-- 0, if the pattern isn’t matched.
+-   1, if the pattern is matched.
+-   0, if the pattern isn’t matched.
 
 Type: `UInt8`.
 
 <a name="sequence-function-pattern-syntax"></a>
 **Pattern syntax**
 
-- `(?N)` — Matches the condition argument at position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
+-   `(?N)` — Matches the condition argument at position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
 
-- `.*` — Matches any number of events. You don’t need conditional arguments to match this element of the pattern.
+-   `.*` — Matches any number of events. You don’t need conditional arguments to match this element of the pattern.
 
-- `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=` operators.
+-   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=` operators.
 
 **Examples**
 
@@ -158,7 +158,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 
 **See Also**
 
-- [sequenceCount](#function-sequencecount)
+-   [sequenceCount](#function-sequencecount)
 
 ## sequenceCount(pattern)(time, cond1, cond2, …) {#function-sequencecount}
 
@@ -173,15 +173,15 @@ sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 
 **Parameters**
 
-- `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
+-   `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
 
-- `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../data_types/int_uint.md) data types.
+-   `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../data_types/int_uint.md) data types.
 
-- `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn’t described in a condition, the function skips them.
+-   `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn’t described in a condition, the function skips them.
 
 **Returned values**
 
-- Number of non-overlapping event chains that are matched.
+-   Number of non-overlapping event chains that are matched.
 
 Type: `UInt64`.
 
@@ -214,7 +214,7 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 
 **See Also**
 
-- [sequenceMatch](#function-sequencematch)
+-   [sequenceMatch](#function-sequencematch)
 
 ## windowFunnel {#windowfunnel}
 
@@ -222,11 +222,11 @@ Searches for event chains in a sliding time window and calculates the maximum nu
 
 The function works according to the algorithm:
 
-- The function searches for data that triggers the first condition in the chain and sets the event counter to 1. This is the moment when the sliding window starts.
+-   The function searches for data that triggers the first condition in the chain and sets the event counter to 1. This is the moment when the sliding window starts.
 
-- If events from the chain occur sequentially within the window, the counter is incremented. If the sequence of events is disrupted, the counter isn’t incremented.
+-   If events from the chain occur sequentially within the window, the counter is incremented. If the sequence of events is disrupted, the counter isn’t incremented.
 
-- If the data has multiple event chains at varying points of completion, the function will only output the size of the longest chain.
+-   If the data has multiple event chains at varying points of completion, the function will only output the size of the longest chain.
 
 **Syntax**
 
@@ -236,11 +236,11 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 
 **Parameters**
 
-- `window` — Length of the sliding window in seconds.
-- `mode` - It is an optional argument.
-  - `'strict'` - When the `'strict'` is set, the windowFunnel() applies conditions only for the unique values.
-- `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md#data_type-datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it’s value can’t exceed the Int64 maximum, which is 2^63 - 1).
-- `cond` — Conditions or data describing the chain of events. [UInt8](../../data_types/int_uint.md).
+-   `window` — Length of the sliding window in seconds.
+-   `mode` - It is an optional argument.
+    -   `'strict'` - When the `'strict'` is set, the windowFunnel() applies conditions only for the unique values.
+-   `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md#data_type-datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it’s value can’t exceed the Int64 maximum, which is 2^63 - 1).
+-   `cond` — Conditions or data describing the chain of events. [UInt8](../../data_types/int_uint.md).
 
 **Returned value**
 
@@ -321,14 +321,14 @@ retention(cond1, cond2, ..., cond32);
 
 **Parameters**
 
-- `cond` — an expression that returns a `UInt8` result (1 or 0).
+-   `cond` — an expression that returns a `UInt8` result (1 or 0).
 
 **Returned value**
 
 The array of 1 or 0.
 
-- 1 — condition was met for the event.
-- 0 — condition wasn’t met for the event.
+-   1 — condition was met for the event.
+-   0 — condition wasn’t met for the event.
 
 Type: `UInt8`.
 
@@ -461,9 +461,9 @@ Result:
 
 Where:
 
-- `r1`- the number of unique visitors who visited the site during 2020-01-01 (the `cond1` condition).
-- `r2`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-02 (`cond1` and `cond2` conditions).
-- `r3`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-03 (`cond1` and `cond3` conditions).
+-   `r1`- the number of unique visitors who visited the site during 2020-01-01 (the `cond1` condition).
+-   `r2`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-02 (`cond1` and `cond2` conditions).
+-   `r3`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-03 (`cond1` and `cond3` conditions).
 
 ## uniqUpTo(N)(x) {#uniquptonx}
 
@@ -487,6 +487,6 @@ Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >=
 
 [Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
 
-## sumMapFiltered(keys\_to\_keep)(keys, values) {#summapfilteredkeys_to_keepkeys-values}
+## sumMapFiltered(keys\_to\_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
 
 Same behavior as [sumMap](reference.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.

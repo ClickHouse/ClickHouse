@@ -67,38 +67,38 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 您可以通过以下方式传入参数到 `clickhouse-client` 中 （所有的参数都有默认值）：
 
-- 通过命令行
+-   通过命令行
 
-  命令行参数会覆盖默认值和配置文件的配置。
+    命令行参数会覆盖默认值和配置文件的配置。
 
-- 配置文件
+-   配置文件
 
-  配置文件的配置会覆盖默认值
+    配置文件的配置会覆盖默认值
 
 ### 命令行参数 {#ming-ling-xing-can-shu}
 
-- `--host, -h` -– 服务端的 host 名称, 默认是 ‘localhost’。 您可以选择使用 host 名称或者 IPv4 或 IPv6 地址。
-- `--port` – 连接的端口，默认值： 9000。注意 HTTP 接口以及 TCP 原生接口是使用不同端口的。
-- `--user, -u` – 用户名。 默认值： default。
-- `--password` – 密码。 默认值： 空字符串。
-- `--query, -q` – 非交互模式下的查询语句.
-- `--database, -d` – 默认当前操作的数据库. 默认值： 服务端默认的配置 （默认是 `default`）。
-- `--multiline, -m` – 如果指定，允许多行语句查询（Enter 仅代表换行，不代表查询语句完结）。
-- `--multiquery, -n` – 如果指定, 允许处理用逗号分隔的多个查询，只在非交互模式下生效。
-- `--format, -f` – 使用指定的默认格式输出结果。
-- `--vertical, -E` – 如果指定，默认情况下使用垂直格式输出结果。这与 ‘–format=Vertical’ 相同。在这种格式中，每个值都在单独的行上打印，这种方式对显示宽表很有帮助。
-- `--time, -t` – 如果指定，非交互模式下会打印查询执行的时间到 ‘stderr’ 中。
-- `--stacktrace` – 如果指定，如果出现异常，会打印堆栈跟踪信息。
-- `--config-file` – 配置文件的名称。
+-   `--host, -h` -– 服务端的 host 名称, 默认是 ‘localhost’。 您可以选择使用 host 名称或者 IPv4 或 IPv6 地址。
+-   `--port` – 连接的端口，默认值： 9000。注意 HTTP 接口以及 TCP 原生接口是使用不同端口的。
+-   `--user, -u` – 用户名。 默认值： default。
+-   `--password` – 密码。 默认值： 空字符串。
+-   `--query, -q` – 非交互模式下的查询语句.
+-   `--database, -d` – 默认当前操作的数据库. 默认值： 服务端默认的配置 （默认是 `default`）。
+-   `--multiline, -m` – 如果指定，允许多行语句查询（Enter 仅代表换行，不代表查询语句完结）。
+-   `--multiquery, -n` – 如果指定, 允许处理用逗号分隔的多个查询，只在非交互模式下生效。
+-   `--format, -f` – 使用指定的默认格式输出结果。
+-   `--vertical, -E` – 如果指定，默认情况下使用垂直格式输出结果。这与 ‘–format=Vertical’ 相同。在这种格式中，每个值都在单独的行上打印，这种方式对显示宽表很有帮助。
+-   `--time, -t` – 如果指定，非交互模式下会打印查询执行的时间到 ‘stderr’ 中。
+-   `--stacktrace` – 如果指定，如果出现异常，会打印堆栈跟踪信息。
+-   `--config-file` – 配置文件的名称。
 
 ### 配置文件 {#pei-zhi-wen-jian}
 
 `clickhouse-client` 使用一下第一个存在的文件：
 
-- 通过 `--config-file` 参数指定的文件.
-- `./clickhouse-client.xml`
-- `\~/.clickhouse-client/config.xml`
-- `/etc/clickhouse-client/config.xml`
+-   通过 `--config-file` 参数指定的文件.
+-   `./clickhouse-client.xml`
+-   `\~/.clickhouse-client/config.xml`
+-   `/etc/clickhouse-client/config.xml`
 
 配置文件示例:
 

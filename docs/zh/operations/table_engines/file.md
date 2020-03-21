@@ -4,13 +4,13 @@
 
 用法示例：
 
-- 从 ClickHouse 导出数据到文件。
-- 将数据从一种格式转换为另一种格式。
-- 通过编辑磁盘上的文件来更新 ClickHouse 中的数据。
+-   从 ClickHouse 导出数据到文件。
+-   将数据从一种格式转换为另一种格式。
+-   通过编辑磁盘上的文件来更新 ClickHouse 中的数据。
 
 ## 在 ClickHouse 服务器中的使用 {#zai-clickhouse-fu-wu-qi-zhong-de-shi-yong}
 
-  File(Format)
+    File(Format)
 
 选用的 `Format` 需要支持 `INSERT` 或 `SELECT` 。有关支持格式的完整列表，请参阅 [格式](../../interfaces/formats.md#formats)。
 
@@ -47,10 +47,10 @@ two 2
 SELECT * FROM file_engine_table
 ```
 
-  ┌─name─┬─value─┐
-  │ one  │     1 │
-  │ two  │     2 │
-  └──────┴───────┘
+    ┌─name─┬─value─┐
+    │ one  │     1 │
+    │ two  │     2 │
+    └──────┴───────┘
 
 ## 在 Clickhouse-local 中的使用 {#zai-clickhouse-local-zhong-de-shi-yong}
 
@@ -63,11 +63,11 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
 
 ## 功能实现 {#gong-neng-shi-xian}
 
-- 读操作可支持并发，但写操作不支持
-- 不支持:
-  - `ALTER`
-  - `SELECT ... SAMPLE`
-  - 索引
-  - 副本
+-   读操作可支持并发，但写操作不支持
+-   不支持:
+    -   `ALTER`
+    -   `SELECT ... SAMPLE`
+    -   索引
+    -   副本
 
 [来源文章](https://clickhouse.tech/docs/en/operations/table_engines/file/) <!--hide-->

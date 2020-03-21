@@ -31,8 +31,8 @@ Comments in C-style: from `/*` to `*/`. These comments can be multiline. Spaces 
 
 Keywords are case-insensitive when they correspond to:
 
-- SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
-- Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is same as `datetime`.
+-   SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
+-   Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is same as `datetime`.
 
 Whether data type name is case-sensitive can be checked in the `system.data_type_families` table.
 
@@ -44,10 +44,10 @@ Keywords are not reserved (they are just parsed as keywords in the corresponding
 
 Identifiers are:
 
-- Cluster, database, table, partition and column names.
-- Functions.
-- Data types.
-- [Expression aliases](#syntax-expression_aliases).
+-   Cluster, database, table, partition and column names.
+-   Functions.
+-   Data types.
+-   [Expression aliases](#syntax-expression_aliases).
 
 Identifiers can be quoted or non-quoted. It is recommended to use non-quoted identifiers.
 
@@ -63,10 +63,10 @@ There are: numeric, string, compound and `NULL` literals.
 
 A numeric literal tries to be parsed:
 
-- First as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
-- If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
-- If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
-- Otherwise, an error is returned.
+-   First as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
+-   If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
+-   If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
+-   Otherwise, an error is returned.
 
 The corresponding value will have the smallest type that the value fits in.
 For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../data_types/index.md).
@@ -112,7 +112,7 @@ For example, the expression `1 + 2 * 3 + 4` is transformed to `plus(plus(1, mult
 
 Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an arguments list in brackets. For more information, see the sections “Data types,” “Table engines,” and “CREATE”.
 
-## Expression Aliases {#syntax-expression_aliases}
+## Expression Aliases {#syntax-expression-aliases}
 
 An alias is a user-defined name for an expression in a query.
 
@@ -120,19 +120,19 @@ An alias is a user-defined name for an expression in a query.
 expr AS alias
 ```
 
-- `AS` — The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.
+-   `AS` — The keyword for defining aliases. You can define the alias for a table name or a column name in a `SELECT` clause without using the `AS` keyword.
 
-    For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
+        For example, `SELECT table_name_alias.column_name FROM table_name table_name_alias`.
 
-    In the [CAST](functions/type_conversion_functions.md#type_conversion_function-cast) function, the `AS` keyword has another meaning. See the description of the function.
+        In the [CAST](functions/type_conversion_functions.md#type_conversion_function-cast) function, the `AS` keyword has another meaning. See the description of the function.
 
-- `expr` — Any expression supported by ClickHouse.
+-   `expr` — Any expression supported by ClickHouse.
 
-    For example, `SELECT column_name * 2 AS double FROM some_table`.
+        For example, `SELECT column_name * 2 AS double FROM some_table`.
 
-- `alias` — Name for `expr`. Aliases should comply with the [identifiers](#syntax-identifiers) syntax.
+-   `alias` — Name for `expr`. Aliases should comply with the [identifiers](#syntax-identifiers) syntax.
 
-    For example, `SELECT "table t".column_name FROM table_name AS "table t"`.
+        For example, `SELECT "table t".column_name FROM table_name AS "table t"`.
 
 ### Notes on Usage {#notes-on-usage}
 

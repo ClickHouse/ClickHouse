@@ -28,9 +28,9 @@ Returns an array containing only the elements in ‘arr1’ for which ‘func’
 SELECT arrayFilter(x -> x LIKE '%World%', ['Hello', 'abc World']) AS res
 ```
 
-  ┌─res───────────┐
-  │ ['abc World'] │
-  └───────────────┘
+    ┌─res───────────┐
+    │ ['abc World'] │
+    └───────────────┘
 
 ``` sql
 SELECT
@@ -41,9 +41,9 @@ SELECT
     AS res
 ```
 
-  ┌─res─┐
-  │ [2] │
-  └─────┘
+    ┌─res─┐
+    │ [2] │
+    └─────┘
 
 ### arrayCount(\[func,\] arr1, …) {#arraycountfunc-arr1}
 
@@ -79,9 +79,9 @@ SELECT
 SELECT arrayCumSum([1, 1, 1, 1]) AS res
 ```
 
-  ┌─res──────────┐
-  │ [1, 2, 3, 4] │
-  └──────────────┘
+    ┌─res──────────┐
+    │ [1, 2, 3, 4] │
+    └──────────────┘
 
 ### arrayCumSumNonNegative(arr) {#arraycumsumnonnegativearr}
 
@@ -91,9 +91,9 @@ SELECT arrayCumSum([1, 1, 1, 1]) AS res
 SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 ```
 
-  ┌─res───────┐
-  │ [1,2,0,1] │
-  └───────────┘
+    ┌─res───────┐
+    │ [1,2,0,1] │
+    └───────────┘
 
 ### arraySort(\[func,\] arr1, …) {#arraysortfunc-arr1}
 
@@ -107,9 +107,9 @@ SELECT arrayCumSumNonNegative([1, 1, -4, 1]) AS res
 SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 ```
 
-  ┌─res────────────────┐
-  │ ['world', 'hello'] │
-  └────────────────────┘
+    ┌─res────────────────┐
+    │ ['world', 'hello'] │
+    └────────────────────┘
 
 请注意，NULL和NaN在最后（NaN在NULL之前）。例如：
 
@@ -117,9 +117,9 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]);
 SELECT arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])
 ```
 
-  ┌─arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
-  │ [1,2,3,4,nan,nan,NULL,NULL]                   │
-  └───────────────────────────────────────────────┘
+    ┌─arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
+    │ [1,2,3,4,nan,nan,NULL,NULL]                   │
+    └───────────────────────────────────────────────┘
 
 ### arrayReverseSort(\[func,\] arr1, …) {#arrayreversesortfunc-arr1}
 
@@ -131,8 +131,8 @@ SELECT arraySort([1, nan, 2, NULL, 3, nan, 4, NULL])
 SELECT arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])
 ```
 
-  ┌─arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
-  │ [4,3,2,1,nan,nan,NULL,NULL]                          │
-  └──────────────────────────────────────────────────────┘
+    ┌─arrayReverseSort([1, nan, 2, NULL, 3, nan, 4, NULL])─┐
+    │ [4,3,2,1,nan,nan,NULL,NULL]                          │
+    └──────────────────────────────────────────────────────┘
 
 [来源文章](https://clickhouse.tech/docs/en/query_language/functions/higher_order_functions/) <!--hide-->

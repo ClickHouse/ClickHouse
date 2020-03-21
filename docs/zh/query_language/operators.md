@@ -94,12 +94,12 @@ Extracts a part from a given date. For example, you can retrieve a month from a 
 
 The `part` parameter specifies which part of the date to retrieve. The following values are available:
 
-- `DAY` — The day of the month. Possible values: 1–31.
-- `MONTH` — The number of a month. Possible values: 1–12.
-- `YEAR` — The year.
-- `SECOND` — The second. Possible values: 0–59.
-- `MINUTE` — The minute. Possible values: 0–59.
-- `HOUR` — The hour. Possible values: 0–23.
+-   `DAY` — The day of the month. Possible values: 1–31.
+-   `MONTH` — The number of a month. Possible values: 1–12.
+-   `YEAR` — The year.
+-   `SECOND` — The second. Possible values: 0–59.
+-   `MINUTE` — The minute. Possible values: 0–59.
+-   `HOUR` — The hour. Possible values: 0–23.
 
 The `part` parameter is case-insensitive.
 
@@ -166,8 +166,8 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 **See Also**
 
-- [Interval](../data_types/special_data_types/interval.md) data type
-- [toInterval](functions/type_conversion_functions.md#function-tointerval) type convertion functions
+-   [Interval](../data_types/special_data_types/interval.md) data type
+-   [toInterval](functions/type_conversion_functions.md#function-tointerval) type convertion functions
 
 ## CASE条件表达式 {#operator-case}
 
@@ -216,10 +216,10 @@ ClickHouse 支持 `IS NULL` 和 `IS NOT NULL` 。
 
 ### IS NULL {#operator-is-null}
 
-- 对于 [Nullable](../data_types/nullable.md) 类型的值， `IS NULL` 会返回：
-  - `1` 值为 `NULL`
-  - `0` 否则
-- 对于其他类型的值， `IS NULL` 总会返回 `0`
+-   对于 [Nullable](../data_types/nullable.md) 类型的值， `IS NULL` 会返回：
+    -   `1` 值为 `NULL`
+    -   `0` 否则
+-   对于其他类型的值， `IS NULL` 总会返回 `0`
 
 <!-- -->
 
@@ -239,10 +239,10 @@ WHERE isNull(y)
 
 ### IS NOT NULL {#is-not-null}
 
-- 对于 [Nullable](../data_types/nullable.md) 类型的值， `IS NOT NULL` 会返回：
-  - `0` 值为 `NULL`
-  - `1` 否则
-- 对于其他类型的值，`IS NOT NULL` 总会返回 `1`
+-   对于 [Nullable](../data_types/nullable.md) 类型的值， `IS NOT NULL` 会返回：
+    -   `0` 值为 `NULL`
+    -   `1` 否则
+-   对于其他类型的值，`IS NOT NULL` 总会返回 `1`
 
 <!-- -->
 

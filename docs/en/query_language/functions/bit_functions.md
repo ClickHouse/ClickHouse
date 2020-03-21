@@ -32,8 +32,8 @@ SELECT bitTest(number, index)
 
 **Parameters**
 
-- `number` – integer number.
-- `index` – position of bit.
+-   `number` – integer number.
+-   `index` – position of bit.
 
 **Returned values**
 
@@ -97,8 +97,8 @@ SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 
 **Parameters**
 
-- `number` – integer number.
-- `index1`, `index2`, `index3`, `index4` – positions of bit. For example, for set of positions (`index1`, `index2`, `index3`, `index4`) is true if and only if all of its positions are true (`index1` ⋀ `index2`, ⋀ `index3` ⋀ `index4`).
+-   `number` – integer number.
+-   `index1`, `index2`, `index3`, `index4` – positions of bit. For example, for set of positions (`index1`, `index2`, `index3`, `index4`) is true if and only if all of its positions are true (`index1` ⋀ `index2`, ⋀ `index3` ⋀ `index4`).
 
 **Returned values**
 
@@ -162,8 +162,8 @@ SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 
 **Parameters**
 
-- `number` – integer number.
-- `index1`, `index2`, `index3`, `index4` – positions of bit.
+-   `number` – integer number.
+-   `index1`, `index2`, `index3`, `index4` – positions of bit.
 
 **Returned values**
 

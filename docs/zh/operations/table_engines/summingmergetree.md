@@ -6,25 +6,25 @@
 
 ## 建表 {#jian-biao}
 
-  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-  (
-      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-      ...
-  ) ENGINE = SummingMergeTree([columns])
-  [PARTITION BY expr]
-  [ORDER BY expr]
-  [SAMPLE BY expr]
-  [SETTINGS name=value, ...]
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+    (
+        name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+        name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+        ...
+    ) ENGINE = SummingMergeTree([columns])
+    [PARTITION BY expr]
+    [ORDER BY expr]
+    [SAMPLE BY expr]
+    [SETTINGS name=value, ...]
 
 请求参数的描述，参考 [请求描述](../../query_language/create.md)。
 
 **SummingMergeTree 的参数**
 
-- `columns` - 包含了将要被汇总的列的列名的元组。可选参数。
-  所选的列必须是数值类型，并且不可位于主键中。
+-   `columns` - 包含了将要被汇总的列的列名的元组。可选参数。
+    所选的列必须是数值类型，并且不可位于主键中。
 
-    如果没有指定 `columns`，ClickHouse 会把所有不在主键中的数值类型的列都进行汇总。
+        如果没有指定 `columns`，ClickHouse 会把所有不在主键中的数值类型的列都进行汇总。
 
 **子句**
 
@@ -37,16 +37,16 @@
 !!! attention "注意"
     不要在新项目中使用该方法，可能的话，请将旧项目切换到上述方法。
 
-  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-  (
-      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-      ...
-  ) ENGINE [=] SummingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [columns])
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+    (
+        name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+        name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+        ...
+    ) ENGINE [=] SummingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, [columns])
 
 除 `columns` 外的所有参数都与 `MergeTree` 中的含义相同。
 
-- `columns` — 包含将要被汇总的列的列名的元组。可选参数。有关说明，请参阅上文。
+-   `columns` — 包含将要被汇总的列的列名的元组。可选参数。有关说明，请参阅上文。
 
 </details>
 
@@ -66,7 +66,7 @@ ORDER BY key
 
 向其中插入数据：
 
-  :) INSERT INTO summtt Values(1,1),(1,2),(2,1)
+    :) INSERT INTO summtt Values(1,1),(1,2),(2,1)
 
 ClickHouse可能不会完整的汇总所有行（[见下文](#data-processing)）,因此我们在查询中使用了聚合函数 `sum` 和 `GROUP BY` 子句。
 
@@ -74,10 +74,10 @@ ClickHouse可能不会完整的汇总所有行（[见下文](#data-processing)�
 SELECT key, sum(value) FROM summtt GROUP BY key
 ```
 
-  ┌─key─┬─sum(value)─┐
-  │   2 │          1 │
-  │   1 │          3 │
-  └─────┴────────────┘
+    ┌─key─┬─sum(value)─┐
+    │   2 │          1 │
+    │   1 │          3 │
+    └─────┴────────────┘
 
 ## 数据处理 {#data-processing}
 
@@ -105,17 +105,17 @@ ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含
 
 如果嵌套表的名称以 `Map` 结尾，并且包含至少两个符合以下条件的列：
 
-- 第一列是数值类型 `(*Int*, Date, DateTime)`，我们称之为 `key`,
-- 其他的列是可计算的 `(*Int*, Float32/64)`，我们称之为 `(values...)`,
+-   第一列是数值类型 `(*Int*, Date, DateTime)`，我们称之为 `key`,
+-   其他的列是可计算的 `(*Int*, Float32/64)`，我们称之为 `(values...)`,
 
 然后这个嵌套表会被解释为一个 `key => (values...)` 的映射，当合并它们的行时，两个数据集中的元素会被根据 `key` 合并为相应的 `(values...)` 的汇总值。
 
 示例：
 
-  [(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
-  [(1, 100)] + [(1, 150)] -> [(1, 250)]
-  [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
-  [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
+    [(1, 100)] + [(2, 150)] -> [(1, 100), (2, 150)]
+    [(1, 100)] + [(1, 150)] -> [(1, 250)]
+    [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
+    [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 
 请求数据时，使用 [sumMap(key, value)](../../query_language/agg_functions/reference.md) 函数来对 `Map` 进行聚合。
 

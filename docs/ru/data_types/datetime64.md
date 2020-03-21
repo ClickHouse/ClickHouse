@@ -40,8 +40,8 @@ SELECT * FROM dt
 └─────────────────────────┴──────────┘
 ```
 
-- При вставке даты-времени как числа (аналогично ‘Unix timestamp’), время трактуется как UTC. Unix timestamp `1546300800` в часовом поясе `Europe/London (UTC+0)` представляет время `'2019-01-01 00:00:00'`. Однако, столбец `timestamp` имеет тип `DateTime('Europe/Moscow (UTC+3)')`, так что при выводе в виде строки время отобразится как `2019-01-01 03:00:00`.
-- При вставке даты-времени в виде строки, время трактуется соответственно часовому поясу установленному для колонки. `'2019-01-01 00:00:00'` трактуется как время по Москве (и в базу сохраняется `'2018-12-31 21:00:00'` в виде Unix Timestamp)
+-   При вставке даты-времени как числа (аналогично ‘Unix timestamp’), время трактуется как UTC. Unix timestamp `1546300800` в часовом поясе `Europe/London (UTC+0)` представляет время `'2019-01-01 00:00:00'`. Однако, столбец `timestamp` имеет тип `DateTime('Europe/Moscow (UTC+3)')`, так что при выводе в виде строки время отобразится как `2019-01-01 03:00:00`.
+-   При вставке даты-времени в виде строки, время трактуется соответственно часовому поясу установленному для колонки. `'2019-01-01 00:00:00'` трактуется как время по Москве (и в базу сохраняется `'2018-12-31 21:00:00'` в виде Unix Timestamp)
 
 **2.** Фильтрация по значениям даты-времени
 
@@ -87,11 +87,11 @@ FROM dt
 
 ## See Also {#see-also}
 
-- [Функции преобразования типов](../query_language/functions/type_conversion_functions.md)
-- [Функции для работы с датой и временем](../query_language/functions/date_time_functions.md)
-- [Функции для работы с массивами](../query_language/functions/array_functions.md)
-- [Настройка `date_time_input_format`](../operations/settings/settings.md#settings-date_time_input_format)
-- [Конфигурационный параметр сервера `timezone`](../operations/server_settings/settings.md#server_settings-timezone)
-- [Операторы для работы с датой и временем](../query_language/operators.md#operators-datetime)
-- [Тип данных `Date`](date.md)
-- [Тип данных `DateTime`](datetime.md)
+-   [Функции преобразования типов](../query_language/functions/type_conversion_functions.md)
+-   [Функции для работы с датой и временем](../query_language/functions/date_time_functions.md)
+-   [Функции для работы с массивами](../query_language/functions/array_functions.md)
+-   [Настройка `date_time_input_format`](../operations/settings/settings.md#settings-date_time_input_format)
+-   [Конфигурационный параметр сервера `timezone`](../operations/server_settings/settings.md#server_settings-timezone)
+-   [Операторы для работы с датой и временем](../query_language/operators.md#operators-datetime)
+-   [Тип данных `Date`](date.md)
+-   [Тип данных `DateTime`](datetime.md)

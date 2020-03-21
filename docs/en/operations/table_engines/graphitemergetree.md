@@ -27,21 +27,21 @@ See a detailed description of the [CREATE TABLE](../../query_language/create.md#
 
 A table for the Graphite data should have the following columns for the following data:
 
-- Metric name (Graphite sensor). Data type: `String`.
+-   Metric name (Graphite sensor). Data type: `String`.
 
-- Time of measuring the metric. Data type: `DateTime`.
+-   Time of measuring the metric. Data type: `DateTime`.
 
-- Value of the metric. Data type: any numeric.
+-   Value of the metric. Data type: any numeric.
 
-- Version of the metric. Data type: any numeric.
+-   Version of the metric. Data type: any numeric.
 
-  ClickHouse saves the rows with the highest version or the last written if versions are the same. Other rows are deleted during the merge of data parts.
+    ClickHouse saves the rows with the highest version or the last written if versions are the same. Other rows are deleted during the merge of data parts.
 
 The names of these columns should be set in the rollup configuration.
 
 **GraphiteMergeTree parameters**
 
-- `config_section` — Name of the section in the configuration file, where are the rules of rollup set.
+-   `config_section` — Name of the section in the configuration file, where are the rules of rollup set.
 
 **Query clauses**
 
@@ -68,7 +68,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `config_section` have the same meaning as in `MergeTree`.
 
-- `config_section` — Name of the section in the configuration file, where are the rules of rollup set.
+-   `config_section` — Name of the section in the configuration file, where are the rules of rollup set.
 
 </details>
 
@@ -78,15 +78,15 @@ The settings for rollup are defined by the [graphite\_rollup](../server_settings
 
 Rollup configuration structure:
 
-    required-columns
-    patterns
+      required-columns
+      patterns
 
 ### Required Columns {#required-columns}
 
-- `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
-- `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
-- `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
-- `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
+-   `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
+-   `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
+-   `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
+-   `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
 
 ### Patterns {#patterns}
 
@@ -116,18 +116,18 @@ default
 !!! warning "Attention"
     Patterns must be strictly ordered:
 
-    1. Patterns without `function` or `retention`.
-    1. Patterns with both `function` and `retention`.
-    1. Pattern `default`.
+      1. Patterns without `function` or `retention`.
+      1. Patterns with both `function` and `retention`.
+      1. Pattern `default`.
 
 When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections can contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
 
 Fields for `pattern` and `default` sections:
 
-- `regexp`– A pattern for the metric name.
-- `age` – The minimum age of the data in seconds.
-- `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
-- `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`.
+-   `regexp`– A pattern for the metric name.
+-   `age` – The minimum age of the data in seconds.
+-   `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
+-   `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`.
 
 ### Configuration Example {#configuration-example}
 
