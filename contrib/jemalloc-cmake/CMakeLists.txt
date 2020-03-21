@@ -76,9 +76,11 @@ if (ENABLE_JEMALLOC)
 
         add_library (jemalloc STATIC IMPORTED)
         set_property (TARGET jemalloc PROPERTY IMPORTED_LOCATION ${LIBRARY_JEMALLOC})
-        target_include_directories (jemalloc PUBLIC ${INCLUDE_JEMALLOC})
+        set_property (TARGET jemalloc PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_JEMALLOC})
 
-        set (CMAKE_REQUIRED_LIBRARIES jemalloc)
+        set(THREADS_PREFER_PTHREAD_FLAG ON)
+        find_package(Threads REQUIRED)
+        set (CMAKE_REQUIRED_LIBRARIES jemalloc Threads::Threads)
         check_cxx_source_compiles (
             "
             #include <jemalloc/jemalloc.h>
@@ -95,7 +97,7 @@ if (ENABLE_JEMALLOC)
         endif ()
     endif ()
 
-    target_compile_definitions(jemalloc PUBLIC USE_JEMALLOC=1)
+    target_compile_definitions(jemalloc INTERFACE USE_JEMALLOC=1)
 
     message (STATUS "Using jemalloc")
 else ()
