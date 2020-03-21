@@ -4,9 +4,9 @@
 
 This query is exactly the same as `CREATE`, but
 
-- Instead of the word `CREATE` it uses the word `ATTACH`.
-- The query does not create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table to the server.
-  After executing an ATTACH query, the server will know about the existence of the table.
+-   Instead of the word `CREATE` it uses the word `ATTACH`.
+-   The query does not create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table to the server.
+    After executing an ATTACH query, the server will know about the existence of the table.
 
 If the table was previously detached (`DETACH`), meaning that its structure is known, you can use shorthand without defining the structure.
 
@@ -29,15 +29,15 @@ The `CHECK TABLE` query compares actual file sizes with the expected values whic
 The query response contains the `result` column with a single row. The row has a value of
 [Boolean](../data_types/boolean.md) type:
 
-- 0 - The data in the table is corrupted.
-- 1 - The data maintains integrity.
+-   0 - The data in the table is corrupted.
+-   1 - The data maintains integrity.
 
 The `CHECK TABLE` query supports the following table engines:
 
-- [Log](../operations/table_engines/log.md)
-- [TinyLog](../operations/table_engines/tinylog.md)
-- [StripeLog](../operations/table_engines/stripelog.md)
-- [MergeTree family](../operations/table_engines/mergetree.md)
+-   [Log](../operations/table_engines/log.md)
+-   [TinyLog](../operations/table_engines/tinylog.md)
+-   [StripeLog](../operations/table_engines/stripelog.md)
+-   [MergeTree family](../operations/table_engines/mergetree.md)
 
 Performed over the tables with another table engines causes an exception.
 
@@ -62,11 +62,11 @@ DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 
 Returns the following `String` type columns:
 
-- `name` — Column name.
-- `type`— Column type.
-- `default_type` — Clause that is used in [default expression](create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` or `ALIAS`). Column contains an empty string, if the default expression isn’t specified.
-- `default_expression` — Value specified in the `DEFAULT` clause.
-- `comment_expression` — Comment text.
+-   `name` — Column name.
+-   `type`— Column type.
+-   `default_type` — Clause that is used in [default expression](create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` or `ALIAS`). Column contains an empty string, if the default expression isn’t specified.
+-   `default_expression` — Value specified in the `DEFAULT` clause.
+-   `comment_expression` — Comment text.
 
 Nested data structures are output in “expanded” format. Each column is shown separately, with the name after a dot.
 
@@ -101,7 +101,7 @@ DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 Deletes the table.
 If `IF EXISTS` is specified, it doesn’t return an error if the table doesn’t exist or the database doesn’t exist.
 
-  DROP DICTIONARY [IF EXISTS] [db.]name
+    DROP DICTIONARY [IF EXISTS] [db.]name
 
 Delets the dictionary.
 If `IF EXISTS` is specified, it doesn’t return an error if the table doesn’t exist or the database doesn’t exist.
@@ -176,7 +176,7 @@ The query is useful when a mutation is stuck and cannot finish (e.g. if some fu
 
 Changes already made by the mutation are not rolled back.
 
-## OPTIMIZE {#misc_operations-optimize}
+## OPTIMIZE {#misc-operations-optimize}
 
 ``` sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE]
@@ -188,15 +188,15 @@ The `OPTMIZE` query is also supported for the [MaterializedView](../operations/t
 
 When `OPTIMIZE` is used with the [ReplicatedMergeTree](../operations/table_engines/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
 
-- If `OPTIMIZE` doesn’t perform a merge for any reason, it doesn’t notify the client. To enable notifications, use the [optimize\_throw\_if\_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
-- If you specify a `PARTITION`, only the specified partition is optimized. [How to set partition expression](alter.md#alter-how-to-specify-part-expr).
-- If you specify `FINAL`, optimization is performed even when all the data is already in one part.
-- If you specify `DEDUPLICATE`, then completely identical rows will be deduplicated (all columns are compared), it makes sense only for the MergeTree engine.
+-   If `OPTIMIZE` doesn’t perform a merge for any reason, it doesn’t notify the client. To enable notifications, use the [optimize\_throw\_if\_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
+-   If you specify a `PARTITION`, only the specified partition is optimized. [How to set partition expression](alter.md#alter-how-to-specify-part-expr).
+-   If you specify `FINAL`, optimization is performed even when all the data is already in one part.
+-   If you specify `DEDUPLICATE`, then completely identical rows will be deduplicated (all columns are compared), it makes sense only for the MergeTree engine.
 
 !!! warning "Warning"
     `OPTIMIZE` can’t fix the “Too many parts” error.
 
-## RENAME {#misc_operations-rename}
+## RENAME {#misc-operations-rename}
 
 Renames one or more tables.
 

@@ -8,23 +8,23 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 **Parameters**
 
-- `host:port` — MySQL server address.
+-   `host:port` — MySQL server address.
 
-- `database` — Remote database name.
+-   `database` — Remote database name.
 
-- `table` — Remote table name.
+-   `table` — Remote table name.
 
-- `user` — MySQL user.
+-   `user` — MySQL user.
 
-- `password` — User password.
+-   `password` — User password.
 
-- `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is replaced.
+-   `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is replaced.
 
-- `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
+-   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
 
-    Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the MySQL documentation to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
+        Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the MySQL documentation to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
 
-    To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
+        To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
 Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on the MySQL server.
 
@@ -73,7 +73,7 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
 
 ## See Also {#see-also}
 
-- [The ‘MySQL’ table engine](../../operations/table_engines/mysql.md)
-- [Using MySQL as a source of external dictionary](../dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
+-   [The ‘MySQL’ table engine](../../operations/table_engines/mysql.md)
+-   [Using MySQL as a source of external dictionary](../dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
 [Original article](https://clickhouse.tech/docs/en/query_language/table_functions/mysql/) <!--hide-->

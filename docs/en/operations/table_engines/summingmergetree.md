@@ -23,10 +23,10 @@ For a description of request parameters, see [request description](../../query_l
 
 **Parameters of SummingMergeTree**
 
-- `columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
-  The columns must be of a numeric type and must not be in the primary key.
+-   `columns` - a tuple with the names of columns where values will be summarized. Optional parameter.
+    The columns must be of a numeric type and must not be in the primary key.
 
-  If `columns` not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
+    If `columns` not specified, ClickHouse summarizes the values in all columns with a numeric data type that are not in the primary key.
 
 **Query clauses**
 
@@ -50,7 +50,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `columns` have the same meaning as in `MergeTree`.
 
-- `columns` — tuple with names of columns values of which will be summarized. Optional parameter. For a description, see the text above.
+-   `columns` — tuple with names of columns values of which will be summarized. Optional parameter. For a description, see the text above.
 
 </details>
 
@@ -113,8 +113,8 @@ Table can have nested data structures that are processed in a special way.
 
 If the name of a nested table ends with `Map` and it contains at least two columns that meet the following criteria:
 
-- the first column is numeric `(*Int*, Date, DateTime)` or a string `(String, FixedString)`, let’s call it `key`,
-- the other columns are arithmetic `(*Int*, Float32/64)`, let’s call it `(values...)`,
+-   the first column is numeric `(*Int*, Date, DateTime)` or a string `(String, FixedString)`, let’s call it `key`,
+-   the other columns are arithmetic `(*Int*, Float32/64)`, let’s call it `(values...)`,
 
 then this nested table is interpreted as a mapping of `key => (values...)`, and when merging its rows, the elements of two data sets are merged by `key` with a summation of the corresponding `(values...)`.
 

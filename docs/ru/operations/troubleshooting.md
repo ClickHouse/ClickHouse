@@ -1,23 +1,23 @@
 # Устранение неисправностей {#ustranenie-neispravnostei}
 
-- [Установка дистрибутива](#troubleshooting-installation-errors)
-- [Соединение с сервером](#troubleshooting-accepts-no-connections)
-- [Обработка запросов](#troubleshooting-does-not-process-queries)
-- [Скорость обработки запросов](#troubleshooting-too-slow)
+-   [Установка дистрибутива](#troubleshooting-installation-errors)
+-   [Соединение с сервером](#troubleshooting-accepts-no-connections)
+-   [Обработка запросов](#troubleshooting-does-not-process-queries)
+-   [Скорость обработки запросов](#troubleshooting-too-slow)
 
 ## Установка дистрибутива {#troubleshooting-installation-errors}
 
 ### Не получается скачать deb-пакеты из репозитория ClickHouse с помощью apt-get {#ne-poluchaetsia-skachat-deb-pakety-iz-repozitoriia-clickhouse-s-pomoshchiu-apt-get}
 
-- Проверьте настройки брандмауэра.
-- Если по какой-либо причине вы не можете получить доступ к репозиторию, скачайте пакеты как описано в разделе [Начало работы](../getting_started/index.md) и установите их вручную командой `sudo dpkg -i <packages>`. Также, необходим пакет `tzdata`.
+-   Проверьте настройки брандмауэра.
+-   Если по какой-либо причине вы не можете получить доступ к репозиторию, скачайте пакеты как описано в разделе [Начало работы](../getting_started/index.md) и установите их вручную командой `sudo dpkg -i <packages>`. Также, необходим пакет `tzdata`.
 
 ## Соединение с сервером {#troubleshooting-accepts-no-connections}
 
 Возможные проблемы:
 
-- Сервер не запущен.
-- Неожиданные или неправильные параметры конфигурации.
+-   Сервер не запущен.
+-   Неожиданные или неправильные параметры конфигурации.
 
 ### Сервер не запущен {#server-ne-zapushchen}
 
@@ -41,8 +41,8 @@ $ sudo service clickhouse-server start
 
 В случае успешного запуска вы должны увидеть строки, содержащие:
 
-- `<Information> Application: starting up.` — сервер запускается.
-- `<Information> Application: Ready for connections.` — сервер запущен и готов принимать соединения.
+-   `<Information> Application: starting up.` — сервер запускается.
+-   `<Information> Application: Ready for connections.` — сервер запущен и готов принимать соединения.
 
 Если `clickhouse-server` не запустился из-за ошибки конфигурации вы увидите `<Error>` строку с описанием ошибки. Например:
 
@@ -92,32 +92,32 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 Проверьте:
 
-- Настройки Docker.
+-   Настройки Docker.
 
-    При запуске ClickHouse в Docker в сети IPv6 убедитесь, что установлено `network=host`.
+        При запуске ClickHouse в Docker в сети IPv6 убедитесь, что установлено `network=host`.
 
-- Параметры endpoint.
+-   Параметры endpoint.
 
-    Проверьте настройки [listen_host](server_settings/settings.md#server_settings-listen_host) и [tcp_port](server_settings/settings.md#server_settings-tcp_port).
+        Проверьте настройки [listen_host](server_settings/settings.md#server_settings-listen_host) и [tcp_port](server_settings/settings.md#server_settings-tcp_port).
 
-    По умолчанию, сервер ClickHouse принимает только локальные подключения.
+        По умолчанию, сервер ClickHouse принимает только локальные подключения.
 
-- Настройки протокола HTTP.
+-   Настройки протокола HTTP.
 
-    Проверьте настройки протокола для HTTP API.
+        Проверьте настройки протокола для HTTP API.
 
-- Параметры безопасного подключения.
+-   Параметры безопасного подключения.
 
-    Проверьте:
+        Проверьте:
 
-    - Настройку `tcp_port_secure`.
-    - Параметры для SSL-сертификатов.
+        - Настройку `tcp_port_secure`.
+        - Параметры для SSL-сертификатов.
 
-     Используйте правильные параметры при подключении. Например, используйте параметр `port_secure` при использовании `clickhouse_client`.
+         Используйте правильные параметры при подключении. Например, используйте параметр `port_secure` при использовании `clickhouse_client`.
 
-- Настройки пользователей.
+-   Настройки пользователей.
 
-    Возможно, вы используете неверное имя пользователя или пароль.
+        Возможно, вы используете неверное имя пользователя или пароль.
 
 ## Обработка запросов {#troubleshooting-does-not-process-queries}
 

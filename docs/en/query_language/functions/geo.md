@@ -10,10 +10,10 @@ greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
 
 **Input parameters**
 
-- `lon1Deg` — Longitude of the first point in degrees. Range: `[-180°, 180°]`.
-- `lat1Deg` — Latitude of the first point in degrees. Range: `[-90°, 90°]`.
-- `lon2Deg` — Longitude of the second point in degrees. Range: `[-180°, 180°]`.
-- `lat2Deg` — Latitude of the second point in degrees. Range: `[-90°, 90°]`.
+-   `lon1Deg` — Longitude of the first point in degrees. Range: `[-180°, 180°]`.
+-   `lat1Deg` — Latitude of the first point in degrees. Range: `[-90°, 90°]`.
+-   `lon2Deg` — Longitude of the second point in degrees. Range: `[-180°, 180°]`.
+-   `lat2Deg` — Latitude of the second point in degrees. Range: `[-90°, 90°]`.
 
 Positive values correspond to North latitude and East longitude, and negative values correspond to South latitude and West longitude.
 
@@ -46,9 +46,9 @@ pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
 
 **Input parameters**
 
-- `x, y` — Coordinates of a point on the plane.
-- `xᵢ, yᵢ` — Coordinates of the center of the `i`-th ellipsis.
-- `aᵢ, bᵢ` — Axes of the `i`-th ellipsis in units of x, y coordinates.
+-   `x, y` — Coordinates of a point on the plane.
+-   `xᵢ, yᵢ` — Coordinates of the center of the `i`-th ellipsis.
+-   `aᵢ, bᵢ` — Axes of the `i`-th ellipsis in units of x, y coordinates.
 
 The input parameters must be `2+4⋅n`, where `n` is the number of ellipses.
 
@@ -78,9 +78,9 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **Input values**
 
-- `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../data_types/tuple.md) — A tuple of two numbers.
-- `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](../../data_types/array.md). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3. The polygon must be constant.
-- The function also supports polygons with holes (cut out sections). In this case, add polygons that define the cut out sections using additional arguments of the function. The function does not support non-simply-connected polygons.
+-   `(x, y)` — Coordinates of a point on the plane. Data type — [Tuple](../../data_types/tuple.md) — A tuple of two numbers.
+-   `[(a, b), (c, d) ...]` — Polygon vertices. Data type — [Array](../../data_types/array.md). Each vertex is represented by a pair of coordinates `(a, b)`. Vertices should be specified in a clockwise or counterclockwise order. The minimum number of vertices is 3. The polygon must be constant.
+-   The function also supports polygons with holes (cut out sections). In this case, add polygons that define the cut out sections using additional arguments of the function. The function does not support non-simply-connected polygons.
 
 **Returned values**
 
@@ -109,13 +109,13 @@ geohashEncode(longitude, latitude, [precision])
 
 **Input values**
 
-- longitude - longitude part of the coordinate you want to encode. Floating in range`[-180°, 180°]`
-- latitude - latitude part of the coordinate you want to encode. Floating in range `[-90°, 90°]`
-- precision - Optional, length of the resulting encoded string, defaults to `12`. Integer in range `[1, 12]`. Any value less than `1` or greater than `12` is silently converted to `12`.
+-   longitude - longitude part of the coordinate you want to encode. Floating in range`[-180°, 180°]`
+-   latitude - latitude part of the coordinate you want to encode. Floating in range `[-90°, 90°]`
+-   precision - Optional, length of the resulting encoded string, defaults to `12`. Integer in range `[1, 12]`. Any value less than `1` or greater than `12` is silently converted to `12`.
 
 **Returned values**
 
-- alphanumeric `String` of encoded coordinate (modified version of the base32-encoding alphabet is used).
+-   alphanumeric `String` of encoded coordinate (modified version of the base32-encoding alphabet is used).
 
 **Example**
 
@@ -135,11 +135,11 @@ Decodes any geohash-encoded string into longitude and latitude.
 
 **Input values**
 
-- encoded string - geohash-encoded string.
+-   encoded string - geohash-encoded string.
 
 **Returned values**
 
-- (longitude, latitude) - 2-tuple of `Float64` values of longitude and latitude.
+-   (longitude, latitude) - 2-tuple of `Float64` values of longitude and latitude.
 
 **Example**
 
@@ -169,14 +169,14 @@ geoToH3(lon, lat, resolution)
 
 **Parameters**
 
-- `lon` — Longitude. Type: [Float64](../../data_types/float.md).
-- `lat` — Latitude. Type: [Float64](../../data_types/float.md).
-- `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
+-   `lon` — Longitude. Type: [Float64](../../data_types/float.md).
+-   `lat` — Latitude. Type: [Float64](../../data_types/float.md).
+-   `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
 
 **Returned values**
 
-- Hexagon index number.
-- 0 in case of error.
+-   Hexagon index number.
+-   0 in case of error.
 
 Type: `UInt64`.
 
@@ -202,18 +202,18 @@ Returns an array of geohash-encoded strings of given precision that fall inside 
 
 **Input values**
 
-- longitude\_min - min longitude, floating value in range `[-180°, 180°]`
-- latitude\_min - min latitude, floating value in range `[-90°, 90°]`
-- longitude\_max - max longitude, floating value in range `[-180°, 180°]`
-- latitude\_max - max latitude, floating value in range `[-90°, 90°]`
-- precision - geohash precision, `UInt8` in range `[1, 12]`
+-   longitude\_min - min longitude, floating value in range `[-180°, 180°]`
+-   latitude\_min - min latitude, floating value in range `[-90°, 90°]`
+-   longitude\_max - max longitude, floating value in range `[-180°, 180°]`
+-   latitude\_max - max latitude, floating value in range `[-90°, 90°]`
+-   precision - geohash precision, `UInt8` in range `[1, 12]`
 
 Please note that all coordinate parameters should be of the same type: either `Float32` or `Float64`.
 
 **Returned values**
 
-- array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items.
-- \[\] - empty array if *min* values of *latitude* and *longitude* aren’t less than corresponding *max* values.
+-   array of precision-long strings of geohash-boxes covering provided area, you should not rely on order of items.
+-   \[\] - empty array if *min* values of *latitude* and *longitude* aren’t less than corresponding *max* values.
 
 Please note that function will throw an exception if resulting array is over 10’000’000 items long.
 
@@ -241,11 +241,11 @@ h3GetBaseCell(index)
 
 **Parameters**
 
-- `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+-   `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
 
 **Returned values**
 
-- Hexagon base cell number. Type: [UInt8](../../data_types/int_uint.md).
+-   Hexagon base cell number. Type: [UInt8](../../data_types/int_uint.md).
 
 **Example**
 
@@ -275,11 +275,11 @@ h3HexAreaM2(resolution)
 
 **Parameters**
 
-- `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
+-   `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
 
 **Returned values**
 
-- Area in m². Type: [Float64](../../data_types/float.md).
+-   Area in m². Type: [Float64](../../data_types/float.md).
 
 **Example**
 
@@ -309,12 +309,12 @@ h3IndexesAreNeighbors(index1, index2)
 
 **Parameters**
 
-- `index1` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
-- `index2` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+-   `index1` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+-   `index2` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
 
 **Returned values**
 
-- Returns `1` if the indexes are neighbors, `0` otherwise. Type: [UInt8](../../data_types/int_uint.md).
+-   Returns `1` if the indexes are neighbors, `0` otherwise. Type: [UInt8](../../data_types/int_uint.md).
 
 **Example**
 
@@ -344,12 +344,12 @@ h3ToChildren(index, resolution)
 
 **Parameters**
 
-- `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
-- `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
+-   `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+-   `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
 
 **Returned values**
 
-- Array with the child H3 indexes. Array of type: [UInt64](../../data_types/int_uint.md).
+-   Array with the child H3 indexes. Array of type: [UInt64](../../data_types/int_uint.md).
 
 **Example**
 
@@ -379,12 +379,12 @@ h3ToParent(index, resolution)
 
 **Parameters**
 
-- `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
-- `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
+-   `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+-   `resolution` — Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
 
 **Returned values**
 
-- Parent H3 index. Type: [UInt64](../../data_types/int_uint.md).
+-   Parent H3 index. Type: [UInt64](../../data_types/int_uint.md).
 
 **Example**
 
@@ -412,11 +412,11 @@ h3ToString(index)
 
 **Parameters**
 
-- `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+-   `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
 
 **Returned values**
 
-- String representation of the H3 index. Type: [String](../../data_types/string.md).
+-   String representation of the H3 index. Type: [String](../../data_types/string.md).
 
 **Example**
 
@@ -444,11 +444,11 @@ stringToH3(index_str)
 
 **Parameters**
 
-- `index_str` — String representation of the H3 index. Type: [String](../../data_types/string.md).
+-   `index_str` — String representation of the H3 index. Type: [String](../../data_types/string.md).
 
 **Returned values**
 
-- Hexagon index number. Returns 0 on error. Type: [UInt64](../../data_types/int_uint.md).
+-   Hexagon index number. Returns 0 on error. Type: [UInt64](../../data_types/int_uint.md).
 
 **Example**
 
@@ -478,11 +478,11 @@ h3GetResolution(index)
 
 **Parameters**
 
-- `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
+-   `index` — Hexagon index number. Type: [UInt64](../../data_types/int_uint.md).
 
 **Returned values**
 
-- Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
+-   Index resolution. Range: `[0, 15]`. Type: [UInt8](../../data_types/int_uint.md).
 
 **Example**
 

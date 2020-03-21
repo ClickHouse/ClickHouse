@@ -4,31 +4,31 @@ These engines were developed for scenarios when you need to quickly write many s
 
 Engines of the family:
 
-- [StripeLog](stripelog.md)
-- [Log](log.md)
-- [TinyLog](tinylog.md)
+-   [StripeLog](stripelog.md)
+-   [Log](log.md)
+-   [TinyLog](tinylog.md)
 
 ## Common properties {#common-properties}
 
 Engines:
 
-- Store data on a disk.
+-   Store data on a disk.
 
-- Append data to the end of file when writing.
+-   Append data to the end of file when writing.
 
-- Support locks for concurrent data access.
+-   Support locks for concurrent data access.
 
-  During `INSERT` queries, the table is locked, and other queries for reading and writing data both wait for the table to unlock. If there are no data writing queries, any number of data reading queries can be performed concurrently.
+    During `INSERT` queries, the table is locked, and other queries for reading and writing data both wait for the table to unlock. If there are no data writing queries, any number of data reading queries can be performed concurrently.
 
-- Do not support [mutation](../../query_language/alter.md#alter-mutations) operations.
+-   Do not support [mutation](../../query_language/alter.md#alter-mutations) operations.
 
-- Do not support indexes.
+-   Do not support indexes.
 
-  This means that `SELECT` queries for ranges of data are not efficient.
+    This means that `SELECT` queries for ranges of data are not efficient.
 
-- Do not write data atomically.
+-   Do not write data atomically.
 
-  You can get a table with corrupted data if something breaks the write operation, for example, abnormal server shutdown.
+    You can get a table with corrupted data if something breaks the write operation, for example, abnormal server shutdown.
 
 ## Differences {#differences}
 

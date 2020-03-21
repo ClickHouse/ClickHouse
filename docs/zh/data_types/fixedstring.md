@@ -14,17 +14,17 @@
 
 可以有效存储在`FixedString`类型的列中的值的示例：
 
-- 二进制表示的IP地址（IPv6使用`FixedString(16)`）
-- 语言代码（ru\_RU, en\_US … ）
-- 货币代码（USD, RUB … ）
-- 二进制表示的哈希值（MD5使用`FixedString(16)`，SHA256使用`FixedString(32)`）
+-   二进制表示的IP地址（IPv6使用`FixedString(16)`）
+-   语言代码（ru\_RU, en\_US … ）
+-   货币代码（USD, RUB … ）
+-   二进制表示的哈希值（MD5使用`FixedString(16)`，SHA256使用`FixedString(32)`）
 
 请使用[UUID](uuid.md)数据类型来存储UUID值，。
 
 当向ClickHouse中插入数据时,
 
-- 如果字符串包含的字节数少于\`N’,将对字符串末尾进行空字节填充。
-- 如果字符串包含的字节数大于`N`,将抛出`Too large value for FixedString(N)`异常。
+-   如果字符串包含的字节数少于\`N’,将对字符串末尾进行空字节填充。
+-   如果字符串包含的字节数大于`N`,将抛出`Too large value for FixedString(N)`异常。
 
 当做数据查询时，ClickHouse不会删除字符串末尾的空字节。 如果使用`WHERE`子句，则须要手动添加空字节以匹配`FixedString`的值。 以下示例阐明了如何将`WHERE`子句与`FixedString`一起使用。
 

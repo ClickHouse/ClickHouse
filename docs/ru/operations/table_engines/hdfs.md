@@ -41,20 +41,20 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 ## Детали реализации {#detali-realizatsii}
 
-- Поддерживается многопоточное чтение и запись.
-- Не поддерживается:
-  - использование операций `ALTER` и `SELECT...SAMPLE`;
-  - индексы;
-  - репликация.
+-   Поддерживается многопоточное чтение и запись.
+-   Не поддерживается:
+    -   использование операций `ALTER` и `SELECT...SAMPLE`;
+    -   индексы;
+    -   репликация.
 
 **Шаблоны в пути**
 
 Шаблоны могут содержаться в нескольких компонентах пути. Обрабатываются только существующие файлы, название которых целиком удовлетворяет шаблону (не только суффиксом или префиксом).
 
-- `*` — Заменяет любое количество любых символов кроме `/`, включая отсутствие символов.
-- `?` — Заменяет ровно один любой символ.
-- `{some_string,another_string,yet_another_one}` — Заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`.
-- `{N..M}` — Заменяет любое число в интервале от `N` до `M` включительно.
+-   `*` — Заменяет любое количество любых символов кроме `/`, включая отсутствие символов.
+-   `?` — Заменяет ровно один любой символ.
+-   `{some_string,another_string,yet_another_one}` — Заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`.
+-   `{N..M}` — Заменяет любое число в интервале от `N` до `M` включительно.
 
 Конструкция с `{}` аналогична табличной функции [remote](../../query_language/table_functions/remote.md).
 
@@ -62,12 +62,12 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 
 1.  Предположим, у нас есть несколько файлов со следующими URI в HDFS:
 
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
-- ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
-- ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_3’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_1’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
+-   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
 
 1.  Есть несколько возможностей создать таблицу, состояющую из этих шести файлов:
 
@@ -102,11 +102,11 @@ CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 ## Виртуальные столбцы {#virtualnye-stolbtsy}
 
-- `_path` — Путь к файлу.
-- `_file` — Имя файла.
+-   `_path` — Путь к файлу.
+-   `_file` — Имя файла.
 
 **Смотрите также**
 
-- [Виртуальные столбцы](index.md#table_engines-virtual_columns)
+-   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/hdfs/) <!--hide-->

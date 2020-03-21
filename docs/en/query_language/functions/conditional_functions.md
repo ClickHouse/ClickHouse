@@ -14,9 +14,9 @@ If the condition `cond` evaluates to a non-zero value, returns the result of the
 
 **Parameters**
 
-- `cond` – The condition for evaluation that can be zero or not. The type is UInt8, Nullable(UInt8) or NULL.
-- `then` - The expression to return if condition is met.
-- `else` - The expression to return if condition is not met.
+-   `cond` – The condition for evaluation that can be zero or not. The type is UInt8, Nullable(UInt8) or NULL.
+-   `then` - The expression to return if condition is met.
+-   `else` - The expression to return if condition is not met.
 
 **Returned values**
 
@@ -52,7 +52,7 @@ Result:
 └────────────┘
 ```
 
-- `then` and `else` must have the lowest common type.
+-   `then` and `else` must have the lowest common type.
 
 **Example:**
 
@@ -98,13 +98,13 @@ Syntax: `cond ? then : else`
 
 Returns `then` if the `cond` evaluates to be true (greater than zero), otherwise returns `else`.
 
-- `cond` must be of type of `UInt8`, and `then` and `else` must have the lowest common type.
+-   `cond` must be of type of `UInt8`, and `then` and `else` must have the lowest common type.
 
-- `then` and `else` can be `NULL`
+-   `then` and `else` can be `NULL`
 
 **See also**
 
-- [ifNotFinite](other_functions.md#ifnotfinite).
+-   [ifNotFinite](other_functions.md#ifnotfinite).
 
 ## multiIf {#multiif}
 
@@ -114,9 +114,9 @@ Syntax: `multiIf(cond_1, then_1, cond_2, then_2, ..., else)`
 
 **Parameters:**
 
-- `cond_N` — The condition for the function to return `then_N`.
-- `then_N` — The result of the function when executed.
-- `else` — The result of the function if none of the conditions is met.
+-   `cond_N` — The condition for the function to return `then_N`.
+-   `then_N` — The result of the function when executed.
+-   `else` — The result of the function if none of the conditions is met.
 
 The function accepts `2N+1` parameters.
 

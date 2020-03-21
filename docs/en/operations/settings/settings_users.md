@@ -31,59 +31,59 @@ Structure of the `users` section:
 </users>
 ```
 
-### user\_name/password {#user_namepassword}
+### user\_name/password {#user-namepassword}
 
 Password can be specified in plaintext or in SHA256 (hex format).
 
-- To assign a password in plaintext (**not recommended**), place it in a `password` element.
+-   To assign a password in plaintext (**not recommended**), place it in a `password` element.
 
-  For example, `<password>qwerty</password>`. The password can be left blank.
+    For example, `<password>qwerty</password>`. The password can be left blank.
 
 <a id="password_sha256_hex"></a>
 
-- To assign a password using its SHA256 hash, place it in a `password_sha256_hex` element.
+-   To assign a password using its SHA256 hash, place it in a `password_sha256_hex` element.
 
-  For example, `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
+    For example, `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
 
-  Example of how to generate a password from shell:
+    Example of how to generate a password from shell:
 
-      PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
+          PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
 
-  The first line of the result is the password. The second line is the corresponding SHA256 hash.
+    The first line of the result is the password. The second line is the corresponding SHA256 hash.
 
 <a id="password_double_sha1_hex"></a>
 
-- For compatibility with MySQL clients, password can be specified in double SHA1 hash. Place it in `password_double_sha1_hex` element.
+-   For compatibility with MySQL clients, password can be specified in double SHA1 hash. Place it in `password_double_sha1_hex` element.
 
-  For example, `<password_double_sha1_hex>08b4a0f1de6ad37da17359e592c8d74788a83eb0</password_double_sha1_hex>`.
+    For example, `<password_double_sha1_hex>08b4a0f1de6ad37da17359e592c8d74788a83eb0</password_double_sha1_hex>`.
 
-  Example of how to generate a password from shell:
+    Example of how to generate a password from shell:
 
-      PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+          PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
 
-  The first line of the result is the password. The second line is the corresponding double SHA1 hash.
+    The first line of the result is the password. The second line is the corresponding double SHA1 hash.
 
-### user\_name/networks {#user_namenetworks}
+### user\_name/networks {#user-namenetworks}
 
 List of networks from which the user can connect to the ClickHouse server.
 
 Each element of the list can have one of the following forms:
 
-- `<ip>` — IP address or network mask.
+-   `<ip>` — IP address or network mask.
 
-  Examples: `213.180.204.3`, `10.0.0.1/8`, `10.0.0.1/255.255.255.0`, `2a02:6b8::3`, `2a02:6b8::3/64`, `2a02:6b8::3/ffff:ffff:ffff:ffff::`.
+    Examples: `213.180.204.3`, `10.0.0.1/8`, `10.0.0.1/255.255.255.0`, `2a02:6b8::3`, `2a02:6b8::3/64`, `2a02:6b8::3/ffff:ffff:ffff:ffff::`.
 
-- `<host>` — Hostname.
+-   `<host>` — Hostname.
 
-  Example: `example01.host.ru`.
+    Example: `example01.host.ru`.
 
-  To check access, a DNS query is performed, and all returned IP addresses are compared to the peer address.
+    To check access, a DNS query is performed, and all returned IP addresses are compared to the peer address.
 
-- `<host_regexp>` — Regular expression for hostnames.
+-   `<host_regexp>` — Regular expression for hostnames.
 
-  Example, `^example\d\d-\d\d-\d\.host\.ru$`
+    Example, `^example\d\d-\d\d-\d\.host\.ru$`
 
-  To check access, a [DNS PTR query](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) is performed for the peer address and then the specified regexp is applied. Then, another DNS query is performed for the results of the PTR query and all the received addresses are compared to the peer address. We strongly recommend that regexp ends with $.
+    To check access, a [DNS PTR query](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) is performed for the peer address and then the specified regexp is applied. Then, another DNS query is performed for the results of the PTR query and all the received addresses are compared to the peer address. We strongly recommend that regexp ends with $.
 
 All results of DNS requests are cached until the server restarts.
 
@@ -105,18 +105,18 @@ To open access only from localhost, specify:
 <ip>127.0.0.1</ip>
 ```
 
-### user\_name/profile {#user_nameprofile}
+### user\_name/profile {#user-nameprofile}
 
 You can assign a settings profile for the user. Settings profiles are configured in a separate section of the `users.xml` file. For more information, see [Profiles of Settings](settings_profiles.md).
 
-### user\_name/quota {#user_namequota}
+### user\_name/quota {#user-namequota}
 
 Quotas allow you to track or limit resource usage over a period of time. Quotas are configured in the `quotas`
 section of the `users.xml` configuration file.
 
 You can assign a quotas set for the user. For a detailed description of quotas configuration, see [Quotas](../quotas.md#quotas).
 
-### user\_name/databases {#user_namedatabases}
+### user\_name/databases {#user-namedatabases}
 
 In this section, you can you can limit rows that are returned by ClickHouse for `SELECT` queries made by the current user, thus implementing basic row-level security.
 

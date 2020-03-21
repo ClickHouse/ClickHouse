@@ -2,7 +2,7 @@
 
 The functions for working with UUID are listed below.
 
-## generateUUIDv4 {#uuid_function-generate}
+## generateUUIDv4 {#uuid-function-generate}
 
 Generates the [UUID](../../data_types/uuid.md) of [version 4](https://tools.ietf.org/html/rfc4122#section-4.4).
 
@@ -111,6 +111,6 @@ SELECT
 
 ## See also {#see-also}
 
-- [dictGetUUID](ext_dict_functions.md#ext_dict_functions-other)
+-   [dictGetUUID](ext_dict_functions.md#ext_dict_functions-other)
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->

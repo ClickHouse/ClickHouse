@@ -1,18 +1,18 @@
 # Запросы SYSTEM {#query-language-system}
 
-- [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
-- [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
-- [DROP DNS CACHE](#query_language-system-drop-dns-cache)
-- [DROP MARK CACHE](#query_language-system-drop-mark-cache)
-- [FLUSH LOGS](#query_language-system-flush_logs)
-- [RELOAD CONFIG](#query_language-system-reload-config)
-- [SHUTDOWN](#query_language-system-shutdown)
-- [KILL](#query_language-system-kill)
-- [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
-- [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
-- [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
-- [STOP MERGES](#query_language-system-stop-merges)
-- [START MERGES](#query_language-system-start-merges)
+-   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
+-   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
+-   [DROP DNS CACHE](#query_language-system-drop-dns-cache)
+-   [DROP MARK CACHE](#query_language-system-drop-mark-cache)
+-   [FLUSH LOGS](#query_language-system-flush_logs)
+-   [RELOAD CONFIG](#query_language-system-reload-config)
+-   [SHUTDOWN](#query_language-system-shutdown)
+-   [KILL](#query_language-system-kill)
+-   [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends)
+-   [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)
+-   [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends)
+-   [STOP MERGES](#query_language-system-stop-merges)
+-   [START MERGES](#query_language-system-start-merges)
 
 ## RELOAD DICTIONARIES {#query-language-system-reload-dictionaries}
 

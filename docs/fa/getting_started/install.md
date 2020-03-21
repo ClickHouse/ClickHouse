@@ -1,4 +1,4 @@
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 # ﯼﺯﺍﺪﻧﺍ ﻩﺍﺭ ﻭ ﺐﺼﻧ
 
@@ -14,7 +14,7 @@ ClickHouse ﺲﮐﻮﻨﯿﻟ ﻉﻮﻧ ﺮﻫ ﯼﻭﺭ ﺮﺑ ﺪﻧﺍﻮﺗ 
 grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 ﺪﯾﺎﺑ ، ﺪﻧﺭﺍﺪﻧ PowerPC64LE ﺎﯾ AArch64 ﯼﺭﺎﻤﻌﻣ ﺎﯾ ﺪﻨﻨﮐ ﯽﻤﻧ ﯽﻧﺎﺒﯿﺘﺸﭘ SSE 4.2 ﺯﺍ ﻪﮐ[ClickHouse ﺪﯿﻨﮐ ﺩﺎﺠﯾﺍ ﻊﺑﺎﻨﻣ ﺯﺍ ﺍﺭ](#from-sources) ﺐﺳﺎﻨﻣ ﺕﺎﻤﯿﻈﻨﺗ ﺎﺑ
 
@@ -27,9 +27,9 @@ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not su
 
 </div>
 
-  deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
+    deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 اگر شما میخوایید جدیدترین نسخه ی تست را استفاده کنید، ‘stable’ رو به ‘testing’ تغییر بدید.
 
@@ -44,7 +44,7 @@ sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 شما همچنین می توانید از طریق لینک زیر پکیج ClickHouse را به صورت دستی دانلود و نصب کنید: https://repo.yandex.ru/clickhouse/deb/stable/main/.
 
@@ -54,7 +54,7 @@ ClickHouse دارای تنظیمات محدودیت دسترسی می باشد. 
 
 .ﺪﻨﮐ ﯽﻣ ﻪﯿﺻﻮﺗ ﺲﮐﻮﻨﯿﻟ ﺮﺑ ﯽﻨﺘﺒﻣ rpm ﺮﺑ ﯽﻨﺘﺒﻣ ﯼﺎﻫ ﻊﯾﺯﻮﺗ ﺮﯾﺎﺳ ﻭ CentOS ، RedHat ﯼﺍ
 
-                                           :ﺪﯿﻨﮐ ﻪﻓﺎﺿﺍ ﺍﺭ ﯽﻤﺳﺭ ﻥﺰﺨﻣ ﺪﯾﺎﺑ ﺍﺪﺘﺑﺍ
+                                             :ﺪﯿﻨﮐ ﻪﻓﺎﺿﺍ ﺍﺭ ﯽﻤﺳﺭ ﻥﺰﺨﻣ ﺪﯾﺎﺑ ﺍﺪﺘﺑﺍ
 
 ``` bash
 sudo yum install yum-utils
@@ -64,7 +64,7 @@ sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/
 
 .(ﺩﻮﺷ ﯽﻣ ﻪﯿﺻﻮﺗ ﺎﻤﺷ ﺶﯾﺎﻣﺯﺁ ﯼﺎﻫ ﻂﯿﺤﻣ ﯼﺍﺮﺑ ﻦﯾﺍ) ﺪﯿﻨﮐ ﻦﯾﺰﮕﯾﺎﺟ «ﺖﺴﺗ» ﺎﺑ ﺍﺭ «ﺭﺍﺪﯾﺎﭘ»
 
-                  :ﺪﯿﻨﮐ ﺐﺼﻧ ﺍﺭ ﺎﻫ ﻪﺘﺴﺑ ﻊﻗﺍﻭ ﺭﺩ ﺎﺗ ﺪﯿﻨﮐ ﺍﺮﺟﺍ ﺍﺭ ﺕﺍﺭﻮﺘﺳﺩ ﻦﯾﺍ ﺲﭙﺳ
+                    :ﺪﯿﻨﮐ ﺐﺼﻧ ﺍﺭ ﺎﻫ ﻪﺘﺴﺑ ﻊﻗﺍﻭ ﺭﺩ ﺎﺗ ﺪﯿﻨﮐ ﺍﺮﺟﺍ ﺍﺭ ﺕﺍﺭﻮﺘﺳﺩ ﻦﯾﺍ ﺲﭙﺳ
 
 ``` bash
 sudo yum install clickhouse-server clickhouse-client
@@ -72,7 +72,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 .https://repo.yandex.ru/clickhouse/rpm/stable/x86\_64 :ﺪﯿﻨﮐ ﺐﺼﻧ ﻭ ﯼﺮﯿﮔﺭﺎﺑ ﺎﺠﻨ
 
-                                                           Docker Image ﺯﺍ ###
+                                                             Docker Image ﺯﺍ ###
 
 .ﺪﻨﻨﮐ ﯽﻣ ﻩﺩﺎﻔﺘﺳﺍ ﻞﺧﺍﺩ ﺭﺩ «deb» ﯽﻤﺳﺭ ﯼﺎﻫ ﻪﺘﺴﺑ ﺯﺍ ﺮﯾﻭﺎﺼﺗ ﻦﯾﺍ .ﺪﯿﻨﮐ ﻝﺎﺒﻧﺩ ﺍﺭ (/ht
 
@@ -84,19 +84,19 @@ sudo yum install clickhouse-server clickhouse-client
 
 </div>
 
-  Client: dbms/programs/clickhouse-client
-  Server: dbms/programs/clickhouse-server
+    Client: dbms/programs/clickhouse-client
+    Server: dbms/programs/clickhouse-server
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 برای سرور، یک کاتالوگ با دیتا بسازید، مانند
 
 </div>
 
-  /opt/clickhouse/data/default/
-  /opt/clickhouse/metadata/default/
+    /opt/clickhouse/data/default/
+    /opt/clickhouse/metadata/default/
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 (قابل تنظیم در تنظیمات سرور). ‘chown’ را برای کاربر دلخواه اجرا کنید.
 
@@ -120,7 +120,7 @@ Gentoo: `emerge clickhouse`
 sudo service clickhouse-server start
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 لاگ های دایرکتوری `/var/log/clickhouse-server/` directory. را مشاهده کنید.
 
@@ -134,7 +134,7 @@ sudo service clickhouse-server start
 clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 در این مورد که مناسب زمان توسعه می باشد، لاگ ها در کنسول پرینت می شوند. اگر فایل تنظیمات در دایرکتوری جاری باشد، نیازی به مشخص کردن ‘–config-file’ نمی باشد. به صورت پیش فرض از ‘./config.xml’ استفاده می شود.
 
@@ -146,7 +146,7 @@ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 clickhouse-client
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 پارامترهای پیش فرض، نشان از اتصال به localhost:9000 از طرف کاربر ‘default’ بدون پسورد را می دهد. از کلاینت میتوان برای اتصال به یک سرور remote استفاده کرد. مثال:
 
@@ -156,7 +156,7 @@ clickhouse-client
 clickhouse-client --host=example.com
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 برای اطلاعات بیشتر، بخش «کلاینت Command-line» را مشاهده کنید.
 
@@ -183,7 +183,7 @@ SELECT 1
 :)
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 **تبریک میگم، سیستم کار می کنه!**
 

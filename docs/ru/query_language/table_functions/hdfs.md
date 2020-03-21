@@ -8,9 +8,9 @@ hdfs(URI, format, structure)
 
 **Входные параметры**
 
-- `URI` — URI файла в HDFS. Путь к файлу поддерживает следующие шаблоны в режиме доступа только для чтения `*`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, \``'abc', 'def'` — строки.
-- `format` — [формат](../../interfaces/formats.md#formats) файла.
-- `structure` — структура таблицы. Формат `'column1_name column1_type, column2_name column2_type, ...'`.
+-   `URI` — URI файла в HDFS. Путь к файлу поддерживает следующие шаблоны в режиме доступа только для чтения `*`, `?`, `{abc,def}` и `{N..M}`, где `N`, `M` — числа, \``'abc', 'def'` — строки.
+-   `format` — [формат](../../interfaces/formats.md#formats) файла.
+-   `structure` — структура таблицы. Формат `'column1_name column1_type, column2_name column2_type, ...'`.
 
 **Возвращаемое значение**
 
@@ -35,10 +35,10 @@ LIMIT 2
 
 **Шаблоны в пути**
 
-- `*` — Заменяет любое количество любых символов кроме `/`, включая отсутствие символов.
-- `?` — Заменяет ровно один любой символ.
-- `{some_string,another_string,yet_another_one}` — Заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`.
-- `{N..M}` — Заменяет любое число в интервале от `N` до `M` включительно.
+-   `*` — Заменяет любое количество любых символов кроме `/`, включая отсутствие символов.
+-   `?` — Заменяет ровно один любой символ.
+-   `{some_string,another_string,yet_another_one}` — Заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`.
+-   `{N..M}` — Заменяет любое число в интервале от `N` до `M` включительно.
 
 Конструкция с `{}` аналогична табличной функции [remote](remote.md).
 
@@ -49,11 +49,11 @@ LIMIT 2
 
 ## Виртуальные столбцы {#virtualnye-stolbtsy}
 
-- `_path` — Путь к файлу.
-- `_file` — Имя файла.
+-   `_path` — Путь к файлу.
+-   `_file` — Имя файла.
 
 **Смотрите также**
 
-- [Виртуальные столбцы](index.md#table_engines-virtual_columns)
+-   [Виртуальные столбцы](index.md#table_engines-virtual_columns)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/hdfs/) <!--hide-->

@@ -1,4 +1,4 @@
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 # ویژگی های از ClickHouse که می تواند معایبی باشد. {#wyjgy-hy-z-clickhouse-khh-my-twnd-m-yby-bshd}
 

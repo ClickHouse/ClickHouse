@@ -1,4 +1,4 @@
-## Fixed in ClickHouse Release 19.14.3.3, 2019-09-10 {#fixed-in-clickhouse-release-19.14.3.3-2019-09-10}
+## Fixed in ClickHouse Release 19.14.3.3, 2019-09-10 {#fixed-in-clickhouse-release-19-14-3-3-2019-09-10}
 
 ### CVE-2019-15024 {#cve-2019-15024}
 
@@ -18,7 +18,7 @@ Stack overflow leading to DoS can be triggered by a malicious authenticated clie
 
 Credits: Eldar Zaitov of Yandex Information Security Team
 
-## Fixed in ClickHouse Release 19.13.6.1, 2019-09-20 {#fixed-in-clickhouse-release-19.13.6.1-2019-09-20}
+## Fixed in ClickHouse Release 19.13.6.1, 2019-09-20 {#fixed-in-clickhouse-release-19-13-6-1-2019-09-20}
 
 ### CVE-2019-18657 {#cve-2019-18657}
 
@@ -26,7 +26,7 @@ Table function `url` had the vulnerability allowed the attacker to inject arbitr
 
 Credits: [Nikita Tikhomirov](https://github.com/NSTikhomirov)
 
-## Fixed in ClickHouse Release 18.12.13, 2018-09-10 {#fixed-in-clickhouse-release-18.12.13-2018-09-10}
+## Fixed in ClickHouse Release 18.12.13, 2018-09-10 {#fixed-in-clickhouse-release-18-12-13-2018-09-10}
 
 ### CVE-2018-14672 {#cve-2018-14672}
 
@@ -34,7 +34,7 @@ Functions for loading CatBoost models allowed path traversal and reading arbitra
 
 Credits: Andrey Krasichkov of Yandex Information Security Team
 
-## Fixed in ClickHouse Release 18.10.3, 2018-08-13 {#fixed-in-clickhouse-release-18.10.3-2018-08-13}
+## Fixed in ClickHouse Release 18.10.3, 2018-08-13 {#fixed-in-clickhouse-release-18-10-3-2018-08-13}
 
 ### CVE-2018-14671 {#cve-2018-14671}
 
@@ -42,7 +42,7 @@ unixODBC allowed loading arbitrary shared objects from the file system which led
 
 Credits: Andrey Krasichkov and Evgeny Sidorov of Yandex Information Security Team
 
-## Fixed in ClickHouse Release 1.1.54388, 2018-06-28 {#fixed-in-clickhouse-release-1.1.54388-2018-06-28}
+## Fixed in ClickHouse Release 1.1.54388, 2018-06-28 {#fixed-in-clickhouse-release-1-1-54388-2018-06-28}
 
 ### CVE-2018-14668 {#cve-2018-14668}
 
@@ -50,7 +50,7 @@ Credits: Andrey Krasichkov and Evgeny Sidorov of Yandex Information Security Tea
 
 Credits: Andrey Krasichkov of Yandex Information Security Team
 
-## Fixed in ClickHouse Release 1.1.54390, 2018-07-06 {#fixed-in-clickhouse-release-1.1.54390-2018-07-06}
+## Fixed in ClickHouse Release 1.1.54390, 2018-07-06 {#fixed-in-clickhouse-release-1-1-54390-2018-07-06}
 
 ### CVE-2018-14669 {#cve-2018-14669}
 
@@ -58,7 +58,7 @@ ClickHouse MySQL client had “LOAD DATA LOCAL INFILE” functionality enabled t
 
 Credits: Andrey Krasichkov and Evgeny Sidorov of Yandex Information Security Team
 
-## Fixed in ClickHouse Release 1.1.54131, 2017-01-10 {#fixed-in-clickhouse-release-1.1.54131-2017-01-10}
+## Fixed in ClickHouse Release 1.1.54131, 2017-01-10 {#fixed-in-clickhouse-release-1-1-54131-2017-01-10}
 
 ### CVE-2018-14670 {#cve-2018-14670}
 

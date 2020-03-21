@@ -73,7 +73,7 @@ Usage example:
 create table products (product_id UInt64, title String) Engine = Dictionary(products);
 ```
 
-    Ok
+      Ok
 
 Take a look at what’s in the table.
 

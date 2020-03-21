@@ -5,20 +5,20 @@ Reading is automatically parallelized. During a read, the table indexes on remot
 
 The Distributed engine accepts parameters:
 
-- the cluster name in the server’s config file
+-   the cluster name in the server’s config file
 
-- the name of a remote database
+-   the name of a remote database
 
-- the name of a remote table
+-   the name of a remote table
 
-- (optionally) sharding key
+-   (optionally) sharding key
 
-- (optionally) policy name, it will be used to store temporary files for async send
+-   (optionally) policy name, it will be used to store temporary files for async send
 
-  See also:
+    See also:
 
-  - `insert_distributed_sync` setting
-  - [MergeTree](mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
+    -   `insert_distributed_sync` setting
+    -   [MergeTree](mergetree.md#table_engine-mergetree-multiple-volumes) for the examples
 
 Example:
 
@@ -124,8 +124,8 @@ SELECT queries are sent to all the shards and work regardless of how data is dis
 
 You should be concerned about the sharding scheme in the following cases:
 
-- Queries are used that require joining data (IN or JOIN) by a specific key. If data is sharded by this key, you can use local IN or JOIN instead of GLOBAL IN or GLOBAL JOIN, which is much more efficient.
-- A large number of servers is used (hundreds or more) with a large number of small queries (queries of individual clients - websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, as we’ve done in Yandex.Metrica, you can set up bi-level sharding: divide the entire cluster into “layers”, where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. Distributed tables are created for each layer, and a single shared distributed table is created for global queries.
+-   Queries are used that require joining data (IN or JOIN) by a specific key. If data is sharded by this key, you can use local IN or JOIN instead of GLOBAL IN or GLOBAL JOIN, which is much more efficient.
+-   A large number of servers is used (hundreds or more) with a large number of small queries (queries of individual clients - websites, advertisers, or partners). In order for the small queries to not affect the entire cluster, it makes sense to locate data for a single client on a single shard. Alternatively, as we’ve done in Yandex.Metrica, you can set up bi-level sharding: divide the entire cluster into “layers”, where a layer may consist of multiple shards. Data for a single client is located on a single layer, but shards can be added to a layer as necessary, and data is randomly distributed within them. Distributed tables are created for each layer, and a single shared distributed table is created for global queries.
 
 Data is written asynchronously. When inserted in the table, the data block is just written to the local file system. The data is sent to the remote servers in the background as soon as possible. The period for sending data is managed by the [distributed\_directory\_monitor\_sleep\_time\_ms](../settings/settings.md#distributed_directory_monitor_sleep_time_ms) and [distributed\_directory\_monitor\_max\_sleep\_time\_ms](../settings/settings.md#distributed_directory_monitor_max_sleep_time_ms) settings. The `Distributed` engine sends each file with inserted data separately, but you can enable batch sending of files with the [distributed\_directory\_monitor\_batch\_inserts](../settings/settings.md#distributed_directory_monitor_batch_inserts) setting. This setting improves cluster performance by better utilizing local server and network resources. You should check whether data is sent successfully by checking the list of files (data waiting to be sent) in the table directory: `/var/lib/clickhouse/data/database/table/`.
 
@@ -135,13 +135,13 @@ When the max\_parallel\_replicas option is enabled, query processing is parallel
 
 ## Virtual Columns {#virtual-columns}
 
-- `_shard_num` — Contains the `shard_num` (from `system.clusters`). Type: [UInt32](../../data_types/int_uint.md).
+-   `_shard_num` — Contains the `shard_num` (from `system.clusters`). Type: [UInt32](../../data_types/int_uint.md).
 
 !!! note "Note"
     Since [`remote`](../../query_language/table_functions/remote.md)/`cluster` table functions internally create temporary instance of the same Distributed engine, `_shard_num` is available there too.
 
 **See Also**
 
-- [Virtual columns](index.md#table_engines-virtual_columns)
+-   [Virtual columns](index.md#table_engines-virtual_columns)
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/distributed/) <!--hide-->

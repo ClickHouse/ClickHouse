@@ -62,7 +62,7 @@ Converts a date with time to a UInt8 number containing the number of the minute 
 Converts a date with time to a UInt8 number containing the number of the second in the minute (0-59).
 Leap seconds are not accounted for.
 
-## toUnixTimestamp {#to_unix_timestamp}
+## toUnixTimestamp {#to-unix-timestamp}
 
 For DateTime argument: converts value to its internal numeric representation (Unix Timestamp).
 For String argument: parse datetime from string according to the timezone (optional second argument, server timezone is used by default) and returns the corresponding unix timestamp.
@@ -77,7 +77,7 @@ toUnixTimestamp(str, [timezone])
 
 **Returned value**
 
-- Returns the unix timestamp.
+-   Returns the unix timestamp.
 
 Type: `UInt32`.
 
@@ -156,7 +156,7 @@ Rounds down a date with time to the start of the ten-minute interval.
 
 Rounds down the date with time to the start of the fifteen-minute interval.
 
-## toStartOfInterval(time\_or\_data, INTERVAL x unit \[, time\_zone\]) {#tostartofintervaltime_or_data-interval-x-unit-time_zone}
+## toStartOfInterval(time\_or\_data, INTERVAL x unit \[, time\_zone\]) {#tostartofintervaltime-or-data-interval-x-unit-time-zone}
 
 This is a generalization of other functions named `toStartOf*`. For example,
 `toStartOfInterval(t, INTERVAL 1 year)` returns the same as `toStartOfYear(t)`,
@@ -229,9 +229,9 @@ The following table describes how the mode argument works.
 
 For mode values with a meaning of “with 4 or more days this year,” weeks are numbered according to ISO 8601:1988:
 
-- If the week containing January 1 has 4 or more days in the new year, it is week 1.
+-   If the week containing January 1 has 4 or more days in the new year, it is week 1.
 
-- Otherwise, it is the last week of the previous year, and the next week is week 1.
+-   Otherwise, it is the last week of the previous year, and the next week is week 1.
 
 For mode values with a meaning of “contains January 1”, the week contains January 1 is week 1. It doesn’t matter how many days in the new year the week contained, even if it contained only one day.
 
@@ -241,9 +241,9 @@ toWeek(date, [, mode][, Timezone])
 
 **Parameters**
 
-- `date` – Date or DateTime.
-- `mode` – Optional parameter, Range of values is \[0,9\], default is 0.
-- `Timezone` – Optional parameter, it behaves like any other conversion function.
+-   `date` – Date or DateTime.
+-   `mode` – Optional parameter, Range of values is \[0,9\], default is 0.
+-   `Timezone` – Optional parameter, it behaves like any other conversion function.
 
 **Example**
 
@@ -359,26 +359,26 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 **Parameters**
 
-- `unit` — Time unit, in which the returned value is expressed. [String](../syntax.md#syntax-string-literal).
+-   `unit` — Time unit, in which the returned value is expressed. [String](../syntax.md#syntax-string-literal).
 
-    Supported values:
+        Supported values:
 
-    | unit   |
-    | ------ |
-    |second  |
-    |minute  |
-    |hour    |
-    |day     |
-    |week    |
-    |month   |
-    |quarter |
-    |year    |
+        | unit   |
+        | ------ |
+        |second  |
+        |minute  |
+        |hour    |
+        |day     |
+        |week    |
+        |month   |
+        |quarter |
+        |year    |
 
-- `startdate` — The first time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+-   `startdate` — The first time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 
-- `enddate` — The second time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+-   `enddate` — The second time value to compare. [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 
-- `timezone` — Optional parameter. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified.
+-   `timezone` — Optional parameter. If specified, it is applied to both `startdate` and `enddate`. If not specified, timezones of `startdate` and `enddate` are used. If they are not the same, the result is unspecified.
 
 **Returned value**
 

@@ -25,11 +25,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **ReplacingMergeTree Parameters**
 
-- `ver` — 版本列。类型为 `UInt*`, `Date` 或 `DateTime`。可选参数。
+-   `ver` — 版本列。类型为 `UInt*`, `Date` 或 `DateTime`。可选参数。
 
-    合并的时候，`ReplacingMergeTree` 从所有具有相同主键的行中选择一行留下：
-    - 如果 `ver` 列未指定，选择最后一条。
-    - 如果 `ver` 列已指定，选择 `ver` 值最大的版本。
+        合并的时候，`ReplacingMergeTree` 从所有具有相同主键的行中选择一行留下：
+        - 如果 `ver` 列未指定，选择最后一条。
+        - 如果 `ver` 列已指定，选择 `ver` 值最大的版本。
 
 **子句**
 
@@ -53,7 +53,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 除了 `ver` 的所有参数都与 `MergeTree` 中的含义相同。
 
-- `ver` - 版本列。可选参数，有关说明，请参阅上文。
+-   `ver` - 版本列。可选参数，有关说明，请参阅上文。
 
 </details>
 

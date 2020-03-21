@@ -26,12 +26,12 @@ For a description of request parameters, see [request description](../../query_l
 
 **ReplacingMergeTree Parameters**
 
-- `ver` — column with version. Type `UInt*`, `Date` or `DateTime`. Optional parameter.
+-   `ver` — column with version. Type `UInt*`, `Date` or `DateTime`. Optional parameter.
 
-  When merging, `ReplacingMergeTree` from all the rows with the same primary key leaves only one:
+    When merging, `ReplacingMergeTree` from all the rows with the same primary key leaves only one:
 
-  - Last in the selection, if `ver` not set.
-  - With the maximum version, if `ver` specified.
+    -   Last in the selection, if `ver` not set.
+    -   With the maximum version, if `ver` specified.
 
 **Query clauses**
 
@@ -55,7 +55,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 All of the parameters excepting `ver` have the same meaning as in `MergeTree`.
 
-- `ver` - column with the version. Optional parameter. For a description, see the text above.
+-   `ver` - column with the version. Optional parameter. For a description, see the text above.
 
 </details>
 

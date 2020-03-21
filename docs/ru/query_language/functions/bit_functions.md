@@ -28,8 +28,8 @@ SELECT bitTest(number, index)
 
 **Параметры**
 
-- `number` – целое число.
-- `index` – position of bit.
+-   `number` – целое число.
+-   `index` – position of bit.
 
 **Возвращаемое значение**
 
@@ -90,8 +90,8 @@ SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 
 **Параметры**
 
-- `number` – целое число.
-- `index1`, `index2`, `index3`, `index4` – позиция бита. Например, конъюнкция для набора позиций `index1`, `index2`, `index3`, `index4` является истинной, если все его позиции истинны `index1` ⋀ `index2` ⋀ `index3` ⋀ `index4`.
+-   `number` – целое число.
+-   `index1`, `index2`, `index3`, `index4` – позиция бита. Например, конъюнкция для набора позиций `index1`, `index2`, `index3`, `index4` является истинной, если все его позиции истинны `index1` ⋀ `index2` ⋀ `index3` ⋀ `index4`.
 
 **Возвращаемое значение**
 
@@ -152,8 +152,8 @@ SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 
 **Параметры**
 
-- `number` – целое число.
-- `index1`, `index2`, `index3`, `index4` – позиции бита.
+-   `number` – целое число.
+-   `index1`, `index2`, `index3`, `index4` – позиции бита.
 
 **Возвращаемое значение**
 

@@ -7,11 +7,11 @@ You can use functions described in this chapter to introspect [ELF](https://en.w
 
 For proper operation of introspection functions:
 
-- Install the `clickhouse-common-static-dbg` package.
+-   Install the `clickhouse-common-static-dbg` package.
 
-- Set the [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
+-   Set the [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
 
-    For security reasons introspection functions are disabled by default.
+        For security reasons introspection functions are disabled by default.
 
 ClickHouse saves profiler reports to the [trace\_log](../../operations/system_tables.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
 
@@ -29,17 +29,17 @@ addressToLine(address_of_binary_instruction)
 
 **Parameters**
 
-- `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Address of instruction in a running process.
+-   `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
-- Source code filename and the line number in this file delimited by colon.
+-   Source code filename and the line number in this file delimited by colon.
 
-    For example, `/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199`, where `199` is a line number.
+        For example, `/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199`, where `199` is a line number.
 
-- Name of a binary, if the function couldn’t find the debug information.
+-   Name of a binary, if the function couldn’t find the debug information.
 
-- Empty string, if the address is not valid.
+-   Empty string, if the address is not valid.
 
 Type: [String](../../data_types/string.md).
 
@@ -120,12 +120,12 @@ addressToSymbol(address_of_binary_instruction)
 
 **Parameters**
 
-- `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Address of instruction in a running process.
+-   `address_of_binary_instruction` ([UInt64](../../data_types/int_uint.md)) — Address of instruction in a running process.
 
 **Returned value**
 
-- Symbol from ClickHouse object files.
-- Empty string, if the address is not valid.
+-   Symbol from ClickHouse object files.
+-   Empty string, if the address is not valid.
 
 Type: [String](../../data_types/string.md).
 
@@ -217,12 +217,12 @@ demangle(symbol)
 
 **Parameters**
 
-- `symbol` ([String](../../data_types/string.md)) — Symbol from an object file.
+-   `symbol` ([String](../../data_types/string.md)) — Symbol from an object file.
 
 **Returned value**
 
-- Name of the C++ function.
-- Empty string if a symbol is not valid.
+-   Name of the C++ function.
+-   Empty string if a symbol is not valid.
 
 Type: [String](../../data_types/string.md).
 

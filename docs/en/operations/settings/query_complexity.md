@@ -16,7 +16,7 @@ It can take one of two values: `throw` or `break`. Restrictions on aggregation (
 
 `any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don’t add new keys to the set.
 
-## max\_memory\_usage {#settings_max_memory_usage}
+## max\_memory\_usage {#settings-max-memory-usage}
 
 The maximum amount of RAM to use for running a query on a single server.
 
@@ -33,7 +33,7 @@ Memory usage is not fully tracked for states of the aggregate functions `min`, `
 
 Memory consumption is also restricted by the parameters `max_memory_usage_for_user` and `max_memory_usage_for_all_queries`.
 
-## max\_memory\_usage\_for\_user {#max_memory_usage_for_user}
+## max\_memory\_usage\_for\_user {#max-memory-usage-for-user}
 
 The maximum amount of RAM to use for running a user’s queries on a single server.
 
@@ -41,7 +41,7 @@ Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHo
 
 See also the description of [max\_memory\_usage](#settings_max_memory_usage).
 
-## max\_memory\_usage\_for\_all\_queries {#max_memory_usage_for_all_queries}
+## max\_memory\_usage\_for\_all\_queries {#max-memory-usage-for-all-queries}
 
 The maximum amount of RAM to use for running all queries on a single server.
 
@@ -49,62 +49,62 @@ Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHo
 
 See also the description of [max\_memory\_usage](#settings_max_memory_usage).
 
-## max\_rows\_to\_read {#max_rows_to_read}
+## max\_rows\_to\_read {#max-rows-to-read}
 
 The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
 When running a query in multiple threads, the following restrictions apply to each thread separately.
 
 A maximum number of rows that can be read from a table when running a query.
 
-## max\_bytes\_to\_read {#max_bytes_to_read}
+## max\_bytes\_to\_read {#max-bytes-to-read}
 
 A maximum number of bytes (uncompressed data) that can be read from a table when running a query.
 
-## read\_overflow\_mode {#read_overflow_mode}
+## read\_overflow\_mode {#read-overflow-mode}
 
 What to do when the volume of data read exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
-## max\_rows\_to\_group\_by {#settings-max_rows_to_group_by}
+## max\_rows\_to\_group\_by {#settings-max-rows-to-group-by}
 
 A maximum number of unique keys received from aggregation. This setting lets you limit memory consumption when aggregating.
 
-## group\_by\_overflow\_mode {#group_by_overflow_mode}
+## group\_by\_overflow\_mode {#group-by-overflow-mode}
 
 What to do when the number of unique keys for aggregation exceeds the limit: ‘throw’, ‘break’, or ‘any’. By default, throw.
 Using the ‘any’ value lets you run an approximation of GROUP BY. The quality of this approximation depends on the statistical nature of the data.
 
-## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
+## max\_bytes\_before\_external\_group\_by {#settings-max-bytes-before-external-group-by}
 
 Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../query_language/select.md#select-group-by-in-external-memory).
 
 Possible values:
 
-- Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
-- 0 — `GROUP BY` in external memory disabled.
+-   Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
+-   0 — `GROUP BY` in external memory disabled.
 
 Default value: 0.
 
-## max\_rows\_to\_sort {#max_rows_to_sort}
+## max\_rows\_to\_sort {#max-rows-to-sort}
 
 A maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
 
-## max\_bytes\_to\_sort {#max_bytes_to_sort}
+## max\_bytes\_to\_sort {#max-bytes-to-sort}
 
 A maximum number of bytes before sorting.
 
-## sort\_overflow\_mode {#sort_overflow_mode}
+## sort\_overflow\_mode {#sort-overflow-mode}
 
 What to do if the number of rows received before sorting exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
-## max\_result\_rows {#setting-max_result_rows}
+## max\_result\_rows {#setting-max-result-rows}
 
 Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 
-## max\_result\_bytes {#max_result_bytes}
+## max\_result\_bytes {#max-result-bytes}
 
 Limit on the number of bytes in the result. The same as the previous setting.
 
-## result\_overflow\_mode {#result_overflow_mode}
+## result\_overflow\_mode {#result-overflow-mode}
 
 What to do if the volume of the result exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
@@ -127,103 +127,103 @@ Result:
 6666 rows in set. ...
 ```
 
-## max\_execution\_time {#max_execution_time}
+## max\_execution\_time {#max-execution-time}
 
 Maximum query execution time in seconds.
 At this time, it is not checked for one of the sorting stages, or when merging and finalizing aggregate functions.
 
-## timeout\_overflow\_mode {#timeout_overflow_mode}
+## timeout\_overflow\_mode {#timeout-overflow-mode}
 
 What to do if the query is run longer than ‘max\_execution\_time’: ‘throw’ or ‘break’. By default, throw.
 
-## min\_execution\_speed {#min_execution_speed}
+## min\_execution\_speed {#min-execution-speed}
 
 Minimal execution speed in rows per second. Checked on every data block when ‘timeout\_before\_checking\_execution\_speed’ expires. If the execution speed is lower, an exception is thrown.
 
-## min\_execution\_speed\_bytes {#min_execution_speed_bytes}
+## min\_execution\_speed\_bytes {#min-execution-speed-bytes}
 
 A minimum number of execution bytes per second. Checked on every data block when ‘timeout\_before\_checking\_execution\_speed’ expires. If the execution speed is lower, an exception is thrown.
 
-## max\_execution\_speed {#max_execution_speed}
+## max\_execution\_speed {#max-execution-speed}
 
 A maximum number of execution rows per second. Checked on every data block when ‘timeout\_before\_checking\_execution\_speed’ expires. If the execution speed is high, the execution speed will be reduced.
 
-## max\_execution\_speed\_bytes {#max_execution_speed_bytes}
+## max\_execution\_speed\_bytes {#max-execution-speed-bytes}
 
 A maximum number of execution bytes per second. Checked on every data block when ‘timeout\_before\_checking\_execution\_speed’ expires. If the execution speed is high, the execution speed will be reduced.
 
-## timeout\_before\_checking\_execution\_speed {#timeout_before_checking_execution_speed}
+## timeout\_before\_checking\_execution\_speed {#timeout-before-checking-execution-speed}
 
 Checks that execution speed is not too slow (no less than ‘min\_execution\_speed’), after the specified time in seconds has expired.
 
-## max\_columns\_to\_read {#max_columns_to_read}
+## max\_columns\_to\_read {#max-columns-to-read}
 
 A maximum number of columns that can be read from a table in a single query. If a query requires reading a greater number of columns, it throws an exception.
 
-## max\_temporary\_columns {#max_temporary_columns}
+## max\_temporary\_columns {#max-temporary-columns}
 
 A maximum number of temporary columns that must be kept in RAM at the same time when running a query, including constant columns. If there are more temporary columns than this, it throws an exception.
 
-## max\_temporary\_non\_const\_columns {#max_temporary_non_const_columns}
+## max\_temporary\_non\_const\_columns {#max-temporary-non-const-columns}
 
 The same thing as ‘max\_temporary\_columns’, but without counting constant columns.
 Note that constant columns are formed fairly often when running a query, but they require approximately zero computing resources.
 
-## max\_subquery\_depth {#max_subquery_depth}
+## max\_subquery\_depth {#max-subquery-depth}
 
 Maximum nesting depth of subqueries. If subqueries are deeper, an exception is thrown. By default, 100.
 
-## max\_pipeline\_depth {#max_pipeline_depth}
+## max\_pipeline\_depth {#max-pipeline-depth}
 
 Maximum pipeline depth. Corresponds to the number of transformations that each data block goes through during query processing. Counted within the limits of a single server. If the pipeline depth is greater, an exception is thrown. By default, 1000.
 
-## max\_ast\_depth {#max_ast_depth}
+## max\_ast\_depth {#max-ast-depth}
 
 Maximum nesting depth of a query syntactic tree. If exceeded, an exception is thrown.
 At this time, it isn’t checked during parsing, but only after parsing the query. That is, a syntactic tree that is too deep can be created during parsing, but the query will fail. By default, 1000.
 
-## max\_ast\_elements {#max_ast_elements}
+## max\_ast\_elements {#max-ast-elements}
 
 A maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
 In the same way as the previous setting, it is checked only after parsing the query. By default, 50,000.
 
-## max\_rows\_in\_set {#max_rows_in_set}
+## max\_rows\_in\_set {#max-rows-in-set}
 
 A maximum number of rows for a data set in the IN clause created from a subquery.
 
-## max\_bytes\_in\_set {#max_bytes_in_set}
+## max\_bytes\_in\_set {#max-bytes-in-set}
 
 A maximum number of bytes (uncompressed data) used by a set in the IN clause created from a subquery.
 
-## set\_overflow\_mode {#set_overflow_mode}
+## set\_overflow\_mode {#set-overflow-mode}
 
 What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
-## max\_rows\_in\_distinct {#max_rows_in_distinct}
+## max\_rows\_in\_distinct {#max-rows-in-distinct}
 
 A maximum number of different rows when using DISTINCT.
 
-## max\_bytes\_in\_distinct {#max_bytes_in_distinct}
+## max\_bytes\_in\_distinct {#max-bytes-in-distinct}
 
 A maximum number of bytes used by a hash table when using DISTINCT.
 
-## distinct\_overflow\_mode {#distinct_overflow_mode}
+## distinct\_overflow\_mode {#distinct-overflow-mode}
 
 What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
-## max\_rows\_to\_transfer {#max_rows_to_transfer}
+## max\_rows\_to\_transfer {#max-rows-to-transfer}
 
 A maximum number of rows that can be passed to a remote server or saved in a temporary table when using GLOBAL IN.
 
-## max\_bytes\_to\_transfer {#max_bytes_to_transfer}
+## max\_bytes\_to\_transfer {#max-bytes-to-transfer}
 
 A maximum number of bytes (uncompressed data) that can be passed to a remote server or saved in a temporary table when using GLOBAL IN.
 
-## transfer\_overflow\_mode {#transfer_overflow_mode}
+## transfer\_overflow\_mode {#transfer-overflow-mode}
 
 What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
-## max\_rows\_in\_join {#settings-max_rows_in_join}
+## max\_rows\_in\_join {#settings-max-rows-in-join}
 
 Limits the number of rows in the hash table that is used when joining tables.
 
@@ -235,12 +235,12 @@ ClickHouse can proceed with different actions when the limit is reached. Use the
 
 Possible values:
 
-- Positive integer.
-- 0 — Unlimited number of rows.
+-   Positive integer.
+-   0 — Unlimited number of rows.
 
 Default value: 0.
 
-## max\_bytes\_in\_join {#settings-max_bytes_in_join}
+## max\_bytes\_in\_join {#settings-max-bytes-in-join}
 
 Limits the size in bytes of the hash table used when joining tables.
 
@@ -252,36 +252,36 @@ ClickHouse can proceed with different actions when the limit is reached. Use [jo
 
 Possible values:
 
-- Positive integer.
-- 0 — Memory control is disabled.
+-   Positive integer.
+-   0 — Memory control is disabled.
 
 Default value: 0.
 
-## join\_overflow\_mode {#settings-join_overflow_mode}
+## join\_overflow\_mode {#settings-join-overflow-mode}
 
 Defines what action ClickHouse performs when any of the following join limits is reached:
 
-- [max\_bytes\_in\_join](#settings-max_bytes_in_join)
-- [max\_rows\_in\_join](#settings-max_rows_in_join)
+-   [max\_bytes\_in\_join](#settings-max_bytes_in_join)
+-   [max\_rows\_in\_join](#settings-max_rows_in_join)
 
 Possible values:
 
-- `THROW` — ClickHouse throws an exception and breaks operation.
-- `BREAK` — ClickHouse breaks operation and doesn’t throw an exception.
+-   `THROW` — ClickHouse throws an exception and breaks operation.
+-   `BREAK` — ClickHouse breaks operation and doesn’t throw an exception.
 
 Default value: `THROW`.
 
 **See Also**
 
-- [JOIN clause](../../query_language/select.md#select-join)
-- [Join table engine](../table_engines/join.md)
+-   [JOIN clause](../../query_language/select.md#select-join)
+-   [Join table engine](../table_engines/join.md)
 
-## max\_partitions\_per\_insert\_block {#max_partitions_per_insert_block}
+## max\_partitions\_per\_insert\_block {#max-partitions-per-insert-block}
 
 Limits the maximum number of partitions in a single inserted block.
 
-- Positive integer.
-- 0 — Unlimited number of partitions.
+-   Positive integer.
+-   0 — Unlimited number of partitions.
 
 Default value: 100.
 

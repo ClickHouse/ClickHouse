@@ -18,7 +18,7 @@ This function is case-insensitive.
 
 **Returned value**
 
-- String with the fully qualified domain name.
+-   String with the fully qualified domain name.
 
 Type: `String`.
 
@@ -48,17 +48,17 @@ basename( expr )
 
 **Parameters**
 
-- `expr` — Expression resulting in a [String](../../data_types/string.md) type value. All the backslashes must be escaped in the resulting value.
+-   `expr` — Expression resulting in a [String](../../data_types/string.md) type value. All the backslashes must be escaped in the resulting value.
 
 **Returned Value**
 
 A string that contains:
 
-- The trailing part of a string after the last slash or backslash.
+-   The trailing part of a string after the last slash or backslash.
 
-    If the input string contains a path ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
+        If the input string contains a path ending with slash or backslash, for example, `/` or `c:\`, the function returns an empty string.
 
-- The original string if there are no slashes or backslashes.
+-   The original string if there are no slashes or backslashes.
 
 **Example**
 
@@ -143,7 +143,7 @@ Sleeps ‘seconds’ seconds on each row. You can specify an integer or a floati
 Returns the name of the current database.
 You can use this function in table engine parameters in a CREATE TABLE query where you need to specify the database.
 
-## currentUser() {#other_function-currentuser}
+## currentUser() {#other-function-currentuser}
 
 Returns the login of current user. Login of user, that initiated query, will be returned in case distibuted query.
 
@@ -155,8 +155,8 @@ Alias: `user()`, `USER()`.
 
 **Returned values**
 
-- Login of current user.
-- Login of user that initiated query in case of disributed query.
+-   Login of current user.
+-   Login of user that initiated query in case of disributed query.
 
 Type: `String`.
 
@@ -190,29 +190,29 @@ Checks whether floating point value is finite.
 
 **Syntax**
 
-  ifNotFinite(x,y)
+    ifNotFinite(x,y)
 
 **Parameters**
 
-- `x` — Value to be checked for infinity. Type: [Float\*](../../data_types/float.md).
-- `y` — Fallback value. Type: [Float\*](../../data_types/float.md).
+-   `x` — Value to be checked for infinity. Type: [Float\*](../../data_types/float.md).
+-   `y` — Fallback value. Type: [Float\*](../../data_types/float.md).
 
 **Returned value**
 
-- `x` if `x` is finite.
-- `y` if `x` is not finite.
+-   `x` if `x` is finite.
+-   `y` if `x` is not finite.
 
 **Example**
 
 Query:
 
-  SELECT 1/0 as infimum, ifNotFinite(infimum,42)
+    SELECT 1/0 as infimum, ifNotFinite(infimum,42)
 
 Result:
 
-  ┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
-  │     inf │                            42 │
-  └─────────┴───────────────────────────────┘
+    ┌─infimum─┬─ifNotFinite(divide(1, 0), 42)─┐
+    │     inf │                            42 │
+    └─────────┴───────────────────────────────┘
 
 You can get similar result by using [ternary operator](conditional_functions.md#ternary-operator): `isFinite(x) ? x : y`.
 
@@ -234,9 +234,9 @@ Allows building a unicode-art diagram.
 
 Parameters:
 
-- `x` — Size to display.
-- `min, max` — Integer constants. The value must fit in `Int64`.
-- `width` — Constant, positive integer, can be fractional.
+-   `x` — Size to display.
+-   `min, max` — Integer constants. The value must fit in `Int64`.
+-   `width` — Constant, positive integer, can be fractional.
 
 The band is drawn with accuracy to one eighth of a symbol.
 
@@ -286,7 +286,7 @@ ORDER BY h ASC
 Transforms a value according to the explicitly defined mapping of some elements to other ones.
 There are two variations of this function:
 
-### transform(x, array\_from, array\_to, default) {#transformx-array_from-array_to-default}
+### transform(x, array\_from, array\_to, default) {#transformx-array-from-array-to-default}
 
 `x` – What to transform.
 
@@ -328,7 +328,7 @@ ORDER BY c DESC
 └───────────┴────────┘
 ```
 
-### transform(x, array\_from, array\_to) {#transformx-array_from-array_to}
+### transform(x, array\_from, array\_to) {#transformx-array-from-array-to}
 
 Differs from the first variation in that the ‘default’ argument is omitted.
 If the ‘x’ value is equal to one of the elements in the ‘array\_from’ array, it returns the matching element (that is numbered the same) from the ‘array\_to’ array. Otherwise, it returns ‘x’.
@@ -431,14 +431,14 @@ If you make a subquery with ORDER BY and call the function from outside the subq
 
 **Parameters**
 
-- `column` — A column name or scalar expression.
-- `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../data_types/int_uint.md).
-- `default_value` — Optional. The value to be returned if offset goes beyond the scope of the block. Type of data blocks affected.
+-   `column` — A column name or scalar expression.
+-   `offset` — The number of rows forwards or backwards from the current row of `column`. [Int64](../../data_types/int_uint.md).
+-   `default_value` — Optional. The value to be returned if offset goes beyond the scope of the block. Type of data blocks affected.
 
 **Returned values**
 
-- Value for `column` in `offset` distance from current row if `offset` value is not outside block bounds.
-- Default value for `column` if `offset` value is outside block bounds. If `default_value` is given, then it will be used.
+-   Value for `column` in `offset` distance from current row if `offset` value is not outside block bounds.
+-   Default value for `column` if `offset` value is outside block bounds. If `default_value` is given, then it will be used.
 
 Type: type of data blocks affected or default value type.
 
@@ -527,7 +527,7 @@ Result:
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## runningDifference(x) {#other_functions-runningdifference}
+## runningDifference(x) {#other-functions-runningdifference}
 
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.
@@ -625,12 +625,12 @@ getSizeOfEnumType(value)
 
 **Parameters:**
 
-- `value` — Value of type `Enum`.
+-   `value` — Value of type `Enum`.
 
 **Returned values**
 
-- The number of fields with `Enum` input values.
-- An exception is thrown if the type is not `Enum`.
+-   The number of fields with `Enum` input values.
+-   An exception is thrown if the type is not `Enum`.
 
 **Example**
 
@@ -654,11 +654,11 @@ blockSerializedSize(value[, value[, ...]])
 
 **Parameters:**
 
-- `value` — Any value.
+-   `value` — Any value.
 
 **Returned values**
 
-- The number of bytes that will be written to disk for block of values (without compression).
+-   The number of bytes that will be written to disk for block of values (without compression).
 
 **Example**
 
@@ -682,11 +682,11 @@ toColumnTypeName(value)
 
 **Parameters:**
 
-- `value` — Any type of value.
+-   `value` — Any type of value.
 
 **Returned values**
 
-- A string with the name of the class that is used for representing the `value` data type in RAM.
+-   A string with the name of the class that is used for representing the `value` data type in RAM.
 
 **Example of the difference between`toTypeName ' and ' toColumnTypeName`**
 
@@ -722,11 +722,11 @@ dumpColumnStructure(value)
 
 **Parameters:**
 
-- `value` — Any type of value.
+-   `value` — Any type of value.
 
 **Returned values**
 
-- A string describing the structure that is used for representing the `value` data type in RAM.
+-   A string describing the structure that is used for representing the `value` data type in RAM.
 
 **Example**
 
@@ -752,13 +752,13 @@ defaultValueOfArgumentType(expression)
 
 **Parameters:**
 
-- `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
+-   `expression` — Arbitrary type of value or an expression that results in a value of an arbitrary type.
 
 **Returned values**
 
-- `0` for numbers.
-- Empty string for strings.
-- `ᴺᵁᴸᴸ` for [Nullable](../../data_types/nullable.md).
+-   `0` for numbers.
+-   Empty string for strings.
+-   `ᴺᵁᴸᴸ` for [Nullable](../../data_types/nullable.md).
 
 **Example**
 
@@ -782,7 +782,7 @@ SELECT defaultValueOfArgumentType( CAST(1 AS Nullable(Int8) ) )
 └───────────────────────────────────────────────────────┘
 ```
 
-## replicate {#other_functions-replicate}
+## replicate {#other-functions-replicate}
 
 Creates an array with a single value.
 
@@ -794,8 +794,8 @@ SELECT replicate(x, arr);
 
 **Parameters:**
 
-- `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
-- `x` — The value that the resulting array will be filled with.
+-   `arr` — Original array. ClickHouse creates a new array of the same length as the original and fills it with the value `x`.
+-   `x` — The value that the resulting array will be filled with.
 
 **Returned value**
 
@@ -831,7 +831,7 @@ filesystemAvailable()
 
 **Returned value**
 
-- The amount of remaining space available in bytes.
+-   The amount of remaining space available in bytes.
 
 Type: [UInt64](../../data_types/int_uint.md).
 
@@ -863,7 +863,7 @@ filesystemFree()
 
 **Returned value**
 
-- Amount of free space in bytes.
+-   Amount of free space in bytes.
 
 Type: [UInt64](../../data_types/int_uint.md).
 
@@ -895,7 +895,7 @@ filesystemCapacity()
 
 **Returned value**
 
-- Capacity information of the filesystem in bytes.
+-   Capacity information of the filesystem in bytes.
 
 Type: [UInt64](../../data_types/int_uint.md).
 
@@ -941,9 +941,9 @@ joinGet(join_storage_table_name, `value_column`, join_keys)
 
 **Parameters**
 
-- `join_storage_table_name` — an [identifier](../syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
-- `value_column` — name of the column of the table that contains required data.
-- `join_keys` — list of keys.
+-   `join_storage_table_name` — an [identifier](../syntax.md#syntax-identifiers) indicates where search is performed. The identifier is searched in the default database (see parameter `default_database` in the config file). To override the default database, use the `USE db_name` or specify the database and the table through the separator `db_name.db_table`, see the example.
+-   `value_column` — name of the column of the table that contains required data.
+-   `join_keys` — list of keys.
 
 **Returned value**
 
@@ -993,7 +993,7 @@ Result:
 Evaluate external model.
 Accepts a model name and model arguments. Returns Float64.
 
-## throwIf(x\[, custom\_message\]) {#throwifx-custom_message}
+## throwIf(x\[, custom\_message\]) {#throwifx-custom-message}
 
 Throw an exception if the argument is non zero.
 custom\_message - is an optional parameter: a constant string, provides an error message
@@ -1045,13 +1045,13 @@ randomPrintableASCII(length)
 
 **Parameters**
 
-- `length` — Resulting string length. Positive integer.
+-   `length` — Resulting string length. Positive integer.
 
-    If you pass `length < 0`, behavior of the function is undefined.
+        If you pass `length < 0`, behavior of the function is undefined.
 
 **Returned value**
 
-- String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
+-   String with a random set of [ASCII](https://en.wikipedia.org/wiki/ASCII#Printable_characters) printable characters.
 
 Type: [String](../../data_types/string.md)
 

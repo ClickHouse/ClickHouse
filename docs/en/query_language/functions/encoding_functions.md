@@ -12,11 +12,11 @@ char(number_1, [number_2, ..., number_n]);
 
 **Parameters**
 
-- `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../../data_types/int_uint.md), [Float](../../data_types/float.md).
+-   `number_1, number_2, ..., number_n` — Numerical arguments interpreted as integers. Types: [Int](../../data_types/int_uint.md), [Float](../../data_types/float.md).
 
 **Returned value**
 
-- a string of given bytes.
+-   a string of given bytes.
 
 Type: `String`.
 
@@ -104,11 +104,11 @@ Values of floating point and Decimal types are encoded as their representation i
 
 **Parameters**
 
-- `arg` — A value to convert to hexadecimal. Types: [String](../../data_types/string.md), [UInt](../../data_types/int_uint.md), [Float](../../data_types/float.md), [Decimal](../../data_types/decimal.md), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
+-   `arg` — A value to convert to hexadecimal. Types: [String](../../data_types/string.md), [UInt](../../data_types/int_uint.md), [Float](../../data_types/float.md), [Decimal](../../data_types/decimal.md), [Date](../../data_types/date.md) or [DateTime](../../data_types/datetime.md).
 
 **Returned value**
 
-- A string with the hexadecimal representation of the argument.
+-   A string with the hexadecimal representation of the argument.
 
 Type: `String`.
 

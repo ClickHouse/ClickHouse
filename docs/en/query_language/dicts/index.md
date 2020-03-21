@@ -8,7 +8,7 @@ ClickHouse supports special functions for working with dictionaries that can be 
 
 ClickHouse supports:
 
-- [Built-in dictionaries](internal_dicts.md#internal_dicts) with a specific [set of functions](../functions/ym_dict_functions.md).
-- [Plug-in (external) dictionaries](external_dicts.md) with a [set of functions](../functions/ext_dict_functions.md).
+-   [Built-in dictionaries](internal_dicts.md#internal_dicts) with a specific [set of functions](../functions/ym_dict_functions.md).
+-   [Plug-in (external) dictionaries](external_dicts.md) with a [set of functions](../functions/ext_dict_functions.md).
 
 [Original article](https://clickhouse.tech/docs/en/query_language/dicts/) <!--hide-->

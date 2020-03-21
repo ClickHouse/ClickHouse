@@ -16,9 +16,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Параметры движка**
 
-- `join_strictness` – [строгость JOIN](../../query_language/select.md#select-join-strictness).
-- `join_type` – [тип JOIN](../../query_language/select.md#select-join-types).
-- `k1[, k2, ...]` – ключевые столбцы секции `USING` с которыми выполняется операция `JOIN`.
+-   `join_strictness` – [строгость JOIN](../../query_language/select.md#select-join-strictness).
+-   `join_type` – [тип JOIN](../../query_language/select.md#select-join-types).
+-   `k1[, k2, ...]` – ключевые столбцы секции `USING` с которыми выполняется операция `JOIN`.
 
 Вводите параметры `join_strictness` и `join_type` без кавычек, например, `Join(ANY, LEFT, col1)`. Они должны быть такими же как и в той операции `JOIN`, в которой таблица будет использоваться. Если параметры не совпадают, ClickHouse не генерирует исключение и может возвращать неверные данные.
 
@@ -78,18 +78,18 @@ SELECT joinGet('id_val_join', 'val', toUInt32(1))
 
 Из таблиц нельзя выбрать данные с помощью запроса `SELECT`. Вместо этого, используйте один из следующих методов:
 
-- Используйте таблицу как правую в секции `JOIN`.
-- Используйте функцию [joinGet](../../query_language/functions/other_functions.md#joinget), которая позволяет извлекать данные из таблицы таким же образом как из словаря.
+-   Используйте таблицу как правую в секции `JOIN`.
+-   Используйте функцию [joinGet](../../query_language/functions/other_functions.md#joinget), которая позволяет извлекать данные из таблицы таким же образом как из словаря.
 
 ### Ограничения и настройки {#join-limitations-and-settings}
 
 При создании таблицы, применяются следующие параметры :
 
-- [join\_use\_nulls](../settings/settings.md#join_use_nulls)
-- [max\_rows\_in\_join](../settings/query_complexity.md#settings-max_rows_in_join)
-- [max\_bytes\_in\_join](../settings/query_complexity.md#settings-max_bytes_in_join)
-- [join\_overflow\_mode](../settings/query_complexity.md#settings-join_overflow_mode)
-- [join\_any\_take\_last\_row](../settings/settings.md#settings-join_any_take_last_row)
+-   [join\_use\_nulls](../settings/settings.md#join_use_nulls)
+-   [max\_rows\_in\_join](../settings/query_complexity.md#settings-max_rows_in_join)
+-   [max\_bytes\_in\_join](../settings/query_complexity.md#settings-max_bytes_in_join)
+-   [join\_overflow\_mode](../settings/query_complexity.md#settings-join_overflow_mode)
+-   [join\_any\_take\_last\_row](../settings/settings.md#settings-join_any_take_last_row)
 
 Таблицы с движком `Join` нельзя использовать в операциях `GLOBAL JOIN`.
 

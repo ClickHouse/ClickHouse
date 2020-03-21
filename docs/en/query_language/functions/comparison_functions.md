@@ -4,10 +4,10 @@ Comparison functions always return 0 or 1 (Uint8).
 
 The following types can be compared:
 
-- numbers
-- strings and fixed strings
-- dates
-- dates with times
+-   numbers
+-   strings and fixed strings
+-   dates
+-   dates with times
 
 within each group, but not between different groups.
 

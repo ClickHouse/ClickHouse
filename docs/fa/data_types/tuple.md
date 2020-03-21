@@ -1,4 +1,4 @@
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 # Tuple(T1, T2, …) {#tuplet1-t2}
 

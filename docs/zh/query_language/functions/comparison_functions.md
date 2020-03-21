@@ -4,10 +4,10 @@
 
 可以比较以下类型：
 
-- Numbers
-- String 和 FixedString
-- Date
-- DateTime
+-   Numbers
+-   String 和 FixedString
+-   Date
+-   DateTime
 
 以上每个组内的类型均可互相比较，但是对于不同组的类型间不能够进行比较。
 

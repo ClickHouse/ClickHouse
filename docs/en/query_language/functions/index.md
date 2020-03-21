@@ -31,8 +31,8 @@ Functions can be implemented in different ways for constant and non-constant arg
 
 Functions have the following behaviors:
 
-- If at least one of the arguments of the function is `NULL`, the function result is also `NULL`.
-- Special behavior that is specified individually in the description of each function. In the ClickHouse source code, these functions have `UseDefaultImplementationForNulls=false`.
+-   If at least one of the arguments of the function is `NULL`, the function result is also `NULL`.
+-   Special behavior that is specified individually in the description of each function. In the ClickHouse source code, these functions have `UseDefaultImplementationForNulls=false`.
 
 ## Constancy {#constancy}
 
@@ -54,8 +54,8 @@ For distributed query processing, as many stages of query processing as possible
 This means that functions can be performed on different servers.
 For example, in the query `SELECT f(sum(g(x))) FROM distributed_table GROUP BY h(y),`
 
-- if a `distributed_table` has at least two shards, the functions ‘g’ and ‘h’ are performed on remote servers, and the function ‘f’ is performed on the requestor server.
-- if a `distributed_table` has only one shard, all the ‘f’, ‘g’, and ‘h’ functions are performed on this shard’s server.
+-   if a `distributed_table` has at least two shards, the functions ‘g’ and ‘h’ are performed on remote servers, and the function ‘f’ is performed on the requestor server.
+-   if a `distributed_table` has only one shard, all the ‘f’, ‘g’, and ‘h’ functions are performed on this shard’s server.
 
 The result of a function usually doesn’t depend on which server it is performed on. However, sometimes this is important.
 For example, functions that work with dictionaries use the dictionary that exists on the server they are running on.

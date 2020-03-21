@@ -2,13 +2,13 @@
 
 只有 MergeTree 系列里的表可支持副本：
 
-- ReplicatedMergeTree
-- ReplicatedSummingMergeTree
-- ReplicatedReplacingMergeTree
-- ReplicatedAggregatingMergeTree
-- ReplicatedCollapsingMergeTree
-- ReplicatedVersionedCollapsingMergeTree
-- ReplicatedGraphiteMergeTree
+-   ReplicatedMergeTree
+-   ReplicatedSummingMergeTree
+-   ReplicatedReplacingMergeTree
+-   ReplicatedAggregatingMergeTree
+-   ReplicatedCollapsingMergeTree
+-   ReplicatedVersionedCollapsingMergeTree
+-   ReplicatedGraphiteMergeTree
 
 副本是表级别的，不是整个服务器级的。所以，服务器里可以同时有复制表和非复制表。
 
@@ -18,9 +18,9 @@
 
 而 `CREATE`，`DROP`，`ATTACH`，`DETACH` 和 `RENAME` 语句只会在单个服务器上执行，不会被复制。
 
-- `The CREATE TABLE` 在运行此语句的服务器上创建一个新的可复制表。如果此表已存在其他服务器上，则给该表添加新副本。
-- `The DROP TABLE` 删除运行此查询的服务器上的副本。
-- `The RENAME` 重命名一个副本。换句话说，可复制表不同的副本可以有不同的名称。
+-   `The CREATE TABLE` 在运行此语句的服务器上创建一个新的可复制表。如果此表已存在其他服务器上，则给该表添加新副本。
+-   `The DROP TABLE` 删除运行此查询的服务器上的副本。
+-   `The RENAME` 重命名一个副本。换句话说，可复制表不同的副本可以有不同的名称。
 
 要使用副本，需在配置文件中设置 ZooKeeper 集群的地址。例如：
 
@@ -73,8 +73,8 @@
 
 **Replicated\*MergeTree 参数**
 
-- `zoo_path` — ZooKeeper 中该表的路径。
-- `replica_name` — ZooKeeper 中的该表的副本名称。
+-   `zoo_path` — ZooKeeper 中该表的路径。
+-   `replica_name` — ZooKeeper 中的该表的副本名称。
 
 示例:
 
@@ -164,7 +164,7 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 1.  在服务器上安装 ClickHouse。在包含分片标识符和副本的配置文件中正确定义宏配置，如果有用到的话，
 2.  如果服务器上有非复制表则必须手动复制，可以从副本服务器上（在 `/var/lib/clickhouse/data/db_name/table_name/` 目录中）复制它们的数据。
 3.  从副本服务器上中复制位于 `/var/lib/clickhouse/metadata/` 中的表定义信息。如果在表定义信息中显式指定了分片或副本标识符，请更正它以使其对应于该副本。（另外，启动服务器，然后会在 `/var/lib/clickhouse/metadata/` 中的.sql文件中生成所有的 `ATTACH TABLE` 语句。）
-  4.要开始恢复，ZooKeeper 中创建节点 `/path_to_table/replica_name/flags/force_restore_data`，节点内容不限，或运行命令来恢复所有复制的表：`sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data`
+    4.要开始恢复，ZooKeeper 中创建节点 `/path_to_table/replica_name/flags/force_restore_data`，节点内容不限，或运行命令来恢复所有复制的表：`sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data`
 
 然后启动服务器（如果它已运行则重启）。数据会从副本中下载。
 
@@ -190,8 +190,8 @@ sudo -u clickhouse touch /var/lib/clickhouse/flags/force_restore_data
 
 如果你想在不启动服务器的情况下清除 `ReplicatedMergeTree` 表：
 
-- 删除元数据目录中的相应 `.sql` 文件（`/var/lib/clickhouse/metadata/`）。
-- 删除 ZooKeeper 中的相应路径（`/path_to_table/replica_name`）。
+-   删除元数据目录中的相应 `.sql` 文件（`/var/lib/clickhouse/metadata/`）。
+-   删除 ZooKeeper 中的相应路径（`/path_to_table/replica_name`）。
 
 之后，你可以启动服务器，创建一个 `MergeTree` 表，将数据移动到其目录，然后重新启动服务器。
 

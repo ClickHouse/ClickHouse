@@ -31,8 +31,8 @@ ClickHouse中至少存在两种类型的函数 - 常规函数（它们称之为�
 
 函数具有以下行为：
 
-- 如果函数的参数至少一个是«NULL»，则函数结果也是«NULL»。
-- 在每个函数的描述中单独指定的特殊行为。在ClickHouse源代码中，这些函数具有«UseDefaultImplementationForNulls = false»。
+-   如果函数的参数至少一个是«NULL»，则函数结果也是«NULL»。
+-   在每个函数的描述中单独指定的特殊行为。在ClickHouse源代码中，这些函数具有«UseDefaultImplementationForNulls = false»。
 
 ## 不可变性 {#bu-ke-bian-xing}
 
@@ -54,8 +54,8 @@ ClickHouse中至少存在两种类型的函数 - 常规函数（它们称之为�
 这意味着可以在不同的服务器上执行功能。
 例如，在查询`SELECT f（sum（g（x）））FROM distributed_table GROUP BY h（y）中，`
 
-- 如果`distributed_table`至少有两个分片，则在远程服务器上执行函数’g’和’h’，并在请求服务器上执行函数’f’。
-- 如果`distributed_table`只有一个分片，则在该分片的服务器上执行所有’f’，’g’和’h’功能。
+-   如果`distributed_table`至少有两个分片，则在远程服务器上执行函数’g’和’h’，并在请求服务器上执行函数’f’。
+-   如果`distributed_table`只有一个分片，则在该分片的服务器上执行所有’f’，’g’和’h’功能。
 
 函数的结果通常不依赖于它在哪个服务器上执行。但是，有时这很重要。
 例如，使用字典的函数时将使用运行它们的服务器上存在的字典。

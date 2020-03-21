@@ -68,7 +68,7 @@ SELECT isValidJSON('{"a": "hello", "b": [-100, 200.0, 300]}') = 1
 SELECT isValidJSON('not a json') = 0
 ```
 
-## JSONHas(json\[, indices\_or\_keys\]…) {#jsonhasjson-indices_or_keys}
+## JSONHas(json\[, indices\_or\_keys\]…) {#jsonhasjson-indices-or-keys}
 
 If the value exists in the JSON document, `1` will be returned.
 
@@ -83,9 +83,9 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0
 
 `indices_or_keys` is a list of zero or more arguments each of them can be either string or integer.
 
-- String = access object member by key.
-- Positive integer = access the n-th member/key from the beginning.
-- Negative integer = access the n-th member/key from the end.
+-   String = access object member by key.
+-   Positive integer = access the n-th member/key from the beginning.
+-   Negative integer = access the n-th member/key from the end.
 
 Minimum index of the element is 1. Thus the element 0 doesn’t exist.
 
@@ -101,7 +101,7 @@ SELECT JSONExtractKey('{"a": "hello", "b": [-100, 200.0, 300]}', -2) = 'a'
 SELECT JSONExtractString('{"a": "hello", "b": [-100, 200.0, 300]}', 1) = 'hello'
 ```
 
-## JSONLength(json\[, indices\_or\_keys\]…) {#jsonlengthjson-indices_or_keys}
+## JSONLength(json\[, indices\_or\_keys\]…) {#jsonlengthjson-indices-or-keys}
 
 Return the length of a JSON array or a JSON object.
 
@@ -114,7 +114,7 @@ SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 3
 SELECT JSONLength('{"a": "hello", "b": [-100, 200.0, 300]}') = 2
 ```
 
-## JSONType(json\[, indices\_or\_keys\]…) {#jsontypejson-indices_or_keys}
+## JSONType(json\[, indices\_or\_keys\]…) {#jsontypejson-indices-or-keys}
 
 Return the type of a JSON value.
 
@@ -128,13 +128,13 @@ SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'a') = 'String'
 SELECT JSONType('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = 'Array'
 ```
 
-## JSONExtractUInt(json\[, indices\_or\_keys\]…) {#jsonextractuintjson-indices_or_keys}
+## JSONExtractUInt(json\[, indices\_or\_keys\]…) {#jsonextractuintjson-indices-or-keys}
 
-## JSONExtractInt(json\[, indices\_or\_keys\]…) {#jsonextractintjson-indices_or_keys}
+## JSONExtractInt(json\[, indices\_or\_keys\]…) {#jsonextractintjson-indices-or-keys}
 
-## JSONExtractFloat(json\[, indices\_or\_keys\]…) {#jsonextractfloatjson-indices_or_keys}
+## JSONExtractFloat(json\[, indices\_or\_keys\]…) {#jsonextractfloatjson-indices-or-keys}
 
-## JSONExtractBool(json\[, indices\_or\_keys\]…) {#jsonextractbooljson-indices_or_keys}
+## JSONExtractBool(json\[, indices\_or\_keys\]…) {#jsonextractbooljson-indices-or-keys}
 
 Parses a JSON and extract a value. These functions are similar to `visitParam` functions.
 
@@ -148,7 +148,7 @@ SELECT JSONExtractFloat('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 2) = 200
 SELECT JSONExtractUInt('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', -1) = 300
 ```
 
-## JSONExtractString(json\[, indices\_or\_keys\]…) {#jsonextractstringjson-indices_or_keys}
+## JSONExtractString(json\[, indices\_or\_keys\]…) {#jsonextractstringjson-indices-or-keys}
 
 Parses a JSON and extract a string. This function is similar to `visitParamExtractString` functions.
 
@@ -166,7 +166,7 @@ SELECT JSONExtractString('{"abc":"\\u263"}', 'abc') = ''
 SELECT JSONExtractString('{"abc":"hello}', 'abc') = ''
 ```
 
-## JSONExtract(json\[, indices\_or\_keys…\], return\_type) {#jsonextractjson-indices_or_keys-return_type}
+## JSONExtract(json\[, indices\_or\_keys…\], return\_type) {#jsonextractjson-indices-or-keys-return-type}
 
 Parses a JSON and extract a value of the given ClickHouse data type.
 
@@ -187,7 +187,7 @@ SELECT JSONExtract('{"day": "Thursday"}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday
 SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \'Tuesday\' = 2, \'Wednesday\' = 3, \'Thursday\' = 4, \'Friday\' = 5, \'Saturday\' = 6)') = 'Friday'
 ```
 
-## JSONExtractKeysAndValues(json\[, indices\_or\_keys…\], value\_type) {#jsonextractkeysandvaluesjson-indices_or_keys-value_type}
+## JSONExtractKeysAndValues(json\[, indices\_or\_keys…\], value\_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
 
 Parse key-value pairs from a JSON where the values are of the given ClickHouse data type.
 
@@ -197,7 +197,7 @@ Example:
 SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
 ```
 
-## JSONExtractRaw(json\[, indices\_or\_keys\]…) {#jsonextractrawjson-indices_or_keys}
+## JSONExtractRaw(json\[, indices\_or\_keys\]…) {#jsonextractrawjson-indices-or-keys}
 
 Returns a part of JSON.
 
@@ -209,7 +209,7 @@ Example:
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
-## JSONExtractArrayRaw(json\[, indices\_or\_keys\]…) {#jsonextractarrayrawjson-indices_or_keys}
+## JSONExtractArrayRaw(json\[, indices\_or\_keys\]…) {#jsonextractarrayrawjson-indices-or-keys}
 
 Returns an array with elements of JSON array, each represented as unparsed string.
 

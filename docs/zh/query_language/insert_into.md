@@ -10,8 +10,8 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 
 您可以在查询中指定插入的列的列表，如：`[(c1, c2, c3)]`。对于存在于表结构中但不存在于插入列表中的列，它们将会按照如下方式填充数据：
 
-- 如果存在`DEFAULT`表达式，根据`DEFAULT`表达式计算被填充的值。
-- 如果没有定义`DEFAULT`表达式，则填充零或空字符串。
+-   如果存在`DEFAULT`表达式，根据`DEFAULT`表达式计算被填充的值。
+-   如果没有定义`DEFAULT`表达式，则填充零或空字符串。
 
 如果 [strict\_insert\_defaults=1](../operations/settings/settings.md)，你必须在查询中列出所有没有定义`DEFAULT`表达式的列。
 
@@ -56,12 +56,12 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 
 在进行`INSERT`时将会对写入的数据进行一些处理，按照主键排序，按照月份对数据进行分区等。所以如果在您的写入数据中包含多个月份的混合数据时，将会显著的降低`INSERT`的性能。为了避免这种情况：
 
-- 数据总是以尽量大的batch进行写入，如每次写入100,000行。
-- 数据在写入ClickHouse前预先的对数据进行分组。
+-   数据总是以尽量大的batch进行写入，如每次写入100,000行。
+-   数据在写入ClickHouse前预先的对数据进行分组。
 
 在以下的情况下，性能不会下降：
 
-- 数据总是被实时的写入。
-- 写入的数据已经按照时间排序。
+-   数据总是被实时的写入。
+-   写入的数据已经按照时间排序。
 
 [来源文章](https://clickhouse.tech/docs/en/query_language/insert_into/) <!--hide-->

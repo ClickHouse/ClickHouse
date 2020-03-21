@@ -10,14 +10,14 @@ ClickHouse has the [same behavior as C++ programs](https://en.cppreference.com/w
 
 Converts an input value to the [Int](../../data_types/int_uint.md) data type. This function family includes:
 
-- `toInt8(expr)` — Results in the `Int8` data type.
-- `toInt16(expr)` — Results in the `Int16` data type.
-- `toInt32(expr)` — Results in the `Int32` data type.
-- `toInt64(expr)` — Results in the `Int64` data type.
+-   `toInt8(expr)` — Results in the `Int8` data type.
+-   `toInt16(expr)` — Results in the `Int16` data type.
+-   `toInt32(expr)` — Results in the `Int32` data type.
+-   `toInt64(expr)` — Results in the `Int64` data type.
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+-   `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
@@ -75,14 +75,14 @@ select toInt64OrNull('123123'), toInt8OrNull('123qwe123')
 
 Converts an input value to the [UInt](../../data_types/int_uint.md) data type. This function family includes:
 
-- `toUInt8(expr)` — Results in the `UInt8` data type.
-- `toUInt16(expr)` — Results in the `UInt16` data type.
-- `toUInt32(expr)` — Results in the `UInt32` data type.
-- `toUInt64(expr)` — Results in the `UInt64` data type.
+-   `toUInt8(expr)` — Results in the `UInt8` data type.
+-   `toUInt16(expr)` — Results in the `UInt16` data type.
+-   `toUInt32(expr)` — Results in the `UInt32` data type.
+-   `toUInt64(expr)` — Results in the `UInt64` data type.
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
+-   `expr` — [Expression](../syntax.md#syntax-expressions) returning a number or a string with the decimal representation of a number. Binary, octal, and hexadecimal representations of numbers are not supported. Leading zeroes are stripped.
 
 **Returned value**
 
@@ -130,31 +130,31 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 
 Converts `value` to the [Decimal](../../data_types/decimal.md) data type with precision of `S`. The `value` can be a number or a string. The `S` (scale) parameter specifies the number of decimal places.
 
-- `toDecimal32(value, S)`
-- `toDecimal64(value, S)`
-- `toDecimal128(value, S)`
+-   `toDecimal32(value, S)`
+-   `toDecimal64(value, S)`
+-   `toDecimal128(value, S)`
 
 ## toDecimal(32\|64\|128)OrNull {#todecimal3264128ornull}
 
 Converts an input string to a [Nullable(Decimal(P,S))](../../data_types/decimal.md) data type value. This family of functions include:
 
-- `toDecimal32OrNull(expr, S)` — Results in `Nullable(Decimal32(S))` data type.
-- `toDecimal64OrNull(expr, S)` — Results in `Nullable(Decimal64(S))` data type.
-- `toDecimal128OrNull(expr, S)` — Results in `Nullable(Decimal128(S))` data type.
+-   `toDecimal32OrNull(expr, S)` — Results in `Nullable(Decimal32(S))` data type.
+-   `toDecimal64OrNull(expr, S)` — Results in `Nullable(Decimal64(S))` data type.
+-   `toDecimal128OrNull(expr, S)` — Results in `Nullable(Decimal128(S))` data type.
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `NULL` value instead of an exception in the event of an input value parsing error.
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
-- `S` — Scale, the number of decimal places in the resulting value.
+-   `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+-   `S` — Scale, the number of decimal places in the resulting value.
 
 **Returned value**
 
 A value in the `Nullable(Decimal(P,S))` data type. The value contains:
 
-- Number with `S` decimal places, if ClickHouse interprets the input string as a number.
-- `NULL`, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
+-   Number with `S` decimal places, if ClickHouse interprets the input string as a number.
+-   `NULL`, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
 
 **Examples**
 
@@ -182,23 +182,23 @@ SELECT toDecimal32OrNull(toString(-1.111), 2) AS val, toTypeName(val)
 
 Converts an input value to the [Decimal(P,S)](../../data_types/decimal.md) data type. This family of functions include:
 
-- `toDecimal32OrZero( expr, S)` — Results in `Decimal32(S)` data type.
-- `toDecimal64OrZero( expr, S)` — Results in `Decimal64(S)` data type.
-- `toDecimal128OrZero( expr, S)` — Results in `Decimal128(S)` data type.
+-   `toDecimal32OrZero( expr, S)` — Results in `Decimal32(S)` data type.
+-   `toDecimal64OrZero( expr, S)` — Results in `Decimal64(S)` data type.
+-   `toDecimal128OrZero( expr, S)` — Results in `Decimal128(S)` data type.
 
 These functions should be used instead of `toDecimal*()` functions, if you prefer to get a `0` value instead of an exception in the event of an input value parsing error.
 
 **Parameters**
 
-- `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
-- `S` — Scale, the number of decimal places in the resulting value.
+-   `expr` — [Expression](../syntax.md#syntax-expressions), returns a value in the [String](../../data_types/string.md) data type. ClickHouse expects the textual representation of the decimal number. For example, `'1.111'`.
+-   `S` — Scale, the number of decimal places in the resulting value.
 
 **Returned value**
 
 A value in the `Nullable(Decimal(P,S))` data type. The value contains:
 
-- Number with `S` decimal places, if ClickHouse interprets the input string as a number.
-- 0 with `S` decimal places, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
+-   Number with `S` decimal places, if ClickHouse interprets the input string as a number.
+-   0 with `S` decimal places, if ClickHouse can’t interpret the input string as a number or if the input number contains more than `S` decimal places.
 
 **Example**
 
@@ -304,7 +304,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 These functions accept a string and interpret the bytes placed at the beginning of the string as a number in host order (little endian). If the string isn’t long enough, the functions work as if the string is padded with the necessary number of null bytes. If the string is longer than needed, the extra bytes are ignored. A date is interpreted as the number of days since the beginning of the Unix Epoch, and a date with time is interpreted as the number of seconds since the beginning of the Unix Epoch.
 
-## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
+## reinterpretAsString {#type-conversion-functions-reinterpretasstring}
 
 This function accepts a number or date or date with time, and returns a string containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a string that is one byte long.
 
@@ -312,7 +312,7 @@ This function accepts a number or date or date with time, and returns a string c
 
 This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
-## CAST(x, t) {#type_conversion_function-cast}
+## CAST(x, t) {#type-conversion-function-cast}
 
 Converts ‘x’ to the ‘t’ data type. The syntax CAST(x AS t) is also supported.
 
@@ -378,11 +378,11 @@ toIntervalYear(number)
 
 **Parameters**
 
-- `number` — Duration of interval. Positive integer number.
+-   `number` — Duration of interval. Positive integer number.
 
 **Returned values**
 
-- The value in `Interval` data type.
+-   The value in `Interval` data type.
 
 **Example**
 
@@ -402,7 +402,7 @@ SELECT
 └───────────────────────────┴──────────────────────────────┘
 ```
 
-## parseDateTimeBestEffort {#type_conversion_functions-parsedatetimebesteffort}
+## parseDateTimeBestEffort {#type-conversion-functions-parsedatetimebesteffort}
 
 Parse a number type argument to a Date or DateTime type.
 different from toDate and toDateTime, parseDateTimeBestEffort can progress more complex date format.

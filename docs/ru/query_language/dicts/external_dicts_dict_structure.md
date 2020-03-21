@@ -23,8 +23,8 @@
 
 Атрибуты описываются элементами:
 
-- `<id>` — [столбец с ключом](external_dicts_dict_structure.md#ext_dict_structure-key).
-- `<attribute>` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Можно задать несколько атрибутов.
+-   `<id>` — [столбец с ключом](external_dicts_dict_structure.md#ext_dict_structure-key).
+-   `<attribute>` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Можно задать несколько атрибутов.
 
 Создание словаря запросом:
 
@@ -39,15 +39,15 @@ PRIMARY KEY Id
 
 Атрибуты задаются в теле запроса:
 
-- `PRIMARY KEY` — [столбец с ключом](external_dicts_dict_structure.md#ext_dict_structure-key)
-- `AttrName AttrType` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Можно задать несколько столбцов.
+-   `PRIMARY KEY` — [столбец с ключом](external_dicts_dict_structure.md#ext_dict_structure-key)
+-   `AttrName AttrType` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Можно задать несколько столбцов.
 
 ## Ключ {#ext-dict-structure-key}
 
 ClickHouse поддерживает следующие виды ключей:
 
-- Числовой ключ. `UInt64`. Описывается в теге `<id>` или ключевым словом `PRIMARY KEY`.
-- Составной ключ. Набор значений разного типа. Описывается в теге `<key>` или ключевым словом `PRIMARY KEY`.
+-   Числовой ключ. `UInt64`. Описывается в теге `<id>` или ключевым словом `PRIMARY KEY`.
+-   Составной ключ. Набор значений разного типа. Описывается в теге `<key>` или ключевым словом `PRIMARY KEY`.
 
 Структура может содержать либо `<id>` либо `<key>`. DDL-запрос может содержать только `PRIMARY KEY`.
 
@@ -68,7 +68,7 @@ ClickHouse поддерживает следующие виды ключей:
 
 Поля конфигурации:
 
-- `name` — имя столбца с ключами.
+-   `name` — имя столбца с ключами.
 
 Для DDL-запроса:
 
@@ -81,7 +81,7 @@ PRIMARY KEY Id
 ...
 ```
 
-- `PRIMARY KEY` – имя столбца с ключами.
+-   `PRIMARY KEY` – имя столбца с ключами.
 
 ### Составной ключ {#sostavnoi-kliuch}
 
@@ -162,6 +162,6 @@ CREATE DICTIONARY somename (
 
 ## Смотрите также {#smotrite-takzhe}
 
-- [Функции для работы с внешними словарями](../functions/ext_dict_functions.md).
+-   [Функции для работы с внешними словарями](../functions/ext_dict_functions.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

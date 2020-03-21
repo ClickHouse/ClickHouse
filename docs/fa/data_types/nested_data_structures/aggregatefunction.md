@@ -1,4 +1,4 @@
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 # AggregateFunction(name, types\_of\_arguments…) {#aggregatefunctionname-types-of-arguments}
 

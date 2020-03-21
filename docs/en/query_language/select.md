@@ -105,9 +105,9 @@ The `system.one` table contains exactly one row (this table fulfills the same pu
 
 The `FROM` clause specifies the source to read data from:
 
-- Table
-- Subquery
-- [Table function](table_functions/index.md)
+-   Table
+-   Subquery
+-   [Table function](table_functions/index.md)
 
 `ARRAY JOIN` and the regular `JOIN` may also be included (see below).
 
@@ -127,8 +127,8 @@ Also supported for:
 
 Queries that use `FINAL` are executed not as fast as similar queries that don’t, because:
 
-- Query is executed in a single thread and data is merged during query execution.
-- Queries with `FINAL` read primary key columns in addition to the columns specified in the query.
+-   Query is executed in a single thread and data is merged during query execution.
+-   Queries with `FINAL` read primary key columns in addition to the columns specified in the query.
 
 In most cases, avoid using `FINAL`.
 
@@ -140,18 +140,18 @@ When data sampling is enabled, the query is not performed on all the data, but o
 
 Approximated query processing can be useful in the following cases:
 
-- When you have strict timing requirements (like \<100ms) but you can’t justify the cost of additional hardware resources to meet them.
-- When your raw data is not accurate, so approximation doesn’t noticeably degrade the quality.
-- Business requirements target approximate results (for cost-effectiveness, or in order to market exact results to premium users).
+-   When you have strict timing requirements (like \<100ms) but you can’t justify the cost of additional hardware resources to meet them.
+-   When your raw data is not accurate, so approximation doesn’t noticeably degrade the quality.
+-   Business requirements target approximate results (for cost-effectiveness, or in order to market exact results to premium users).
 
 !!! note "Note"
     You can only use sampling with the tables in the [MergeTree](../operations/table_engines/mergetree.md) family, and only if the sampling expression was specified during table creation (see [MergeTree engine](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table)).
 
 The features of data sampling are listed below:
 
-- Data sampling is a deterministic mechanism. The result of the same `SELECT .. SAMPLE` query is always the same.
-- Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This means that you can use the sample in subqueries in the [IN](#select-in-operators) clause. Also, you can join samples using the [JOIN](#select-join) clause.
-- Sampling allows reading less data from a disk. Note that you must specify the sampling key correctly. For more information, see [Creating a MergeTree Table](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table).
+-   Data sampling is a deterministic mechanism. The result of the same `SELECT .. SAMPLE` query is always the same.
+-   Sampling works consistently for different tables. For tables with a single sampling key, a sample with the same coefficient always selects the same subset of possible data. For example, a sample of user IDs takes rows with the same subset of all the possible user IDs from different tables. This means that you can use the sample in subqueries in the [IN](#select-in-operators) clause. Also, you can join samples using the [JOIN](#select-join) clause.
+-   Sampling allows reading less data from a disk. Note that you must specify the sampling key correctly. For more information, see [Creating a MergeTree Table](../operations/table_engines/mergetree.md#table_engine-mergetree-creating-a-table).
 
 For the `SAMPLE` clause the following syntax is supported:
 
@@ -259,8 +259,8 @@ The query execution order is optimized when running `ARRAY JOIN`. Although `ARRA
 
 Supported types of `ARRAY JOIN` are listed below:
 
-- `ARRAY JOIN` - In this case, empty arrays are not included in the result of `JOIN`.
-- `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
+-   `ARRAY JOIN` - In this case, empty arrays are not included in the result of `JOIN`.
+-   `LEFT ARRAY JOIN` - The result of `JOIN` contains rows with empty arrays. The value for an empty array is set to the default value for the array element type (usually 0, empty string or NULL).
 
 The examples below demonstrate the usage of the `ARRAY JOIN` and `LEFT ARRAY JOIN` clauses. Let’s create a table with an [Array](../data_types/array.md) type column and insert values into it:
 
@@ -529,11 +529,11 @@ The table names can be specified instead of `<left_subquery>` and `<right_subque
 
 #### Supported Types of `JOIN` {#select-join-types}
 
-- `INNER JOIN` (or `JOIN`)
-- `LEFT JOIN` (or `LEFT OUTER JOIN`)
-- `RIGHT JOIN` (or `RIGHT OUTER JOIN`)
-- `FULL JOIN` (or `FULL OUTER JOIN`)
-- `CROSS JOIN` (or `,` )
+-   `INNER JOIN` (or `JOIN`)
+-   `LEFT JOIN` (or `LEFT OUTER JOIN`)
+-   `RIGHT JOIN` (or `RIGHT OUTER JOIN`)
+-   `FULL JOIN` (or `FULL OUTER JOIN`)
+-   `CROSS JOIN` (or `,` )
 
 See the standard [SQL JOIN](https://en.wikipedia.org/wiki/Join_(SQL)) description.
 
@@ -561,9 +561,9 @@ ClickHouse doesn’t directly support syntax with commas, so we don’t recommen
 
 #### Strictness {#select-join-strictness}
 
-- `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the standard `JOIN` behavior in SQL.
-- `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of queries with `ANY` and `ALL` keywords are the same.
-- `ASOF` — For joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
+-   `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the standard `JOIN` behavior in SQL.
+-   `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of queries with `ANY` and `ALL` keywords are the same.
+-   `ASOF` — For joining sequences with a non-exact match. `ASOF JOIN` usage is described below.
 
 **ASOF JOIN Usage**
 
@@ -687,8 +687,8 @@ If you need a `JOIN` for joining with dimension tables (these are relatively sma
 
 ClickHouse uses the [hash join](https://en.wikipedia.org/wiki/Hash_join) algorithm. ClickHouse takes the `<right_subquery>` and creates a hash table for it in RAM. If you need to restrict join operation memory consumption use the following settings:
 
-- [max\_rows\_in\_join](../operations/settings/query_complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
-- [max\_bytes\_in\_join](../operations/settings/query_complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
+-   [max\_rows\_in\_join](../operations/settings/query_complexity.md#settings-max_rows_in_join) — Limits number of rows in the hash table.
+-   [max\_bytes\_in\_join](../operations/settings/query_complexity.md#settings-max_bytes_in_join) — Limits size of the hash table.
 
 When any of these limits is reached, ClickHouse acts as the [join\_overflow\_mode](../operations/settings/query_complexity.md#settings-join_overflow_mode) setting instructs.
 
@@ -702,12 +702,12 @@ If the `JOIN` keys are [Nullable](../data_types/nullable.md) fields, the rows wh
 
 For multiple `JOIN` clauses in a single `SELECT` query:
 
-- Taking all the columns via `*` is available only if tables are joined, not subqueries.
-- The `PREWHERE` clause is not available.
+-   Taking all the columns via `*` is available only if tables are joined, not subqueries.
+-   The `PREWHERE` clause is not available.
 
 For `ON`, `WHERE`, and `GROUP BY` clauses:
 
-- Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
+-   Arbitrary expressions cannot be used in `ON`, `WHERE`, and `GROUP BY` clauses, but you can define an expression in a `SELECT` clause and then use it in these clauses via an alias.
 
 ### WHERE Clause {#select-where}
 
@@ -851,8 +851,8 @@ A query with the `LIMIT n BY expressions` clause selects the first `n` rows for 
 
 ClickHouse supports the following syntax:
 
-- `LIMIT [offset_value, ]n BY expressions`
-- `LIMIT n OFFSET offset_value BY expressions`
+-   `LIMIT [offset_value, ]n BY expressions`
+-   `LIMIT n OFFSET offset_value BY expressions`
 
 During query processing, ClickHouse selects data ordered by sorting key. The sorting key is set explicitly using an [ORDER BY](#select-order-by) clause or implicitly as a property of the table engine. Then ClickHouse applies `LIMIT n BY expressions` and returns the first `n` rows for each distinct combination of `expressions`. If `OFFSET` is specified, then for each data block that belongs to a distinct combination of `expressions`, ClickHouse skips `offset_value` number of rows from the beginning of the block and returns a maximum of `n` rows as a result. If `offset_value` is bigger than the number of rows in the data block, ClickHouse returns zero rows from the block.
 
@@ -930,9 +930,9 @@ If the ORDER BY clause is omitted, the order of the rows is also undefined, and 
 
 `NaN` and `NULL` sorting order:
 
-- With the modifier `NULLS FIRST` — First `NULL`, then `NaN`, then other values.
-- With the modifier `NULLS LAST` — First the values, then `NaN`, then `NULL`.
-- Default — The same as with the `NULLS LAST` modifier.
+-   With the modifier `NULLS FIRST` — First `NULL`, then `NaN`, then other values.
+-   With the modifier `NULLS LAST` — First the values, then `NaN`, then `NULL`.
+-   Default — The same as with the `NULLS LAST` modifier.
 
 Example:
 
@@ -1048,9 +1048,9 @@ Columns that matched the `COLUMNS` expression can have different data types. If 
 If DISTINCT is specified, only a single row will remain out of all the sets of fully matching rows in the result.
 The result will be the same as if GROUP BY were specified across all the fields specified in SELECT without aggregate functions. But there are several differences from GROUP BY:
 
-- DISTINCT can be applied together with GROUP BY.
-- When ORDER BY is omitted and LIMIT is defined, the query stops running immediately after the required number of different rows has been read.
-- Data blocks are output as they are processed, without waiting for the entire query to finish running.
+-   DISTINCT can be applied together with GROUP BY.
+-   When ORDER BY is omitted and LIMIT is defined, the query stops running immediately after the required number of different rows has been read.
+-   Data blocks are output as they are processed, without waiting for the entire query to finish running.
 
 DISTINCT is not supported if SELECT has at least one array column.
 
@@ -1283,7 +1283,7 @@ Now let’s examine a query with IN:
 SELECT uniq(UserID) FROM distributed_table WHERE CounterID = 101500 AND UserID IN (SELECT UserID FROM local_table WHERE CounterID = 34)
 ```
 
-- Calculation of the intersection of audiences of two sites.
+-   Calculation of the intersection of audiences of two sites.
 
 This query will be sent to all remote servers as
 
@@ -1364,11 +1364,11 @@ You can use synonyms (`AS` aliases) in any part of a query.
 
 You can put an asterisk in any part of a query instead of an expression. When the query is analyzed, the asterisk is expanded to a list of all table columns (excluding the `MATERIALIZED` and `ALIAS` columns). There are only a few cases when using an asterisk is justified:
 
-- When creating a table dump.
-- For tables containing just a few columns, such as system tables.
-- For getting information about what columns are in a table. In this case, set `LIMIT 1`. But it is better to use the `DESC TABLE` query.
-- When there is strong filtration on a small number of columns using `PREWHERE`.
-- In subqueries (since columns that aren’t needed for the external query are excluded from subqueries).
+-   When creating a table dump.
+-   For tables containing just a few columns, such as system tables.
+-   For getting information about what columns are in a table. In this case, set `LIMIT 1`. But it is better to use the `DESC TABLE` query.
+-   When there is strong filtration on a small number of columns using `PREWHERE`.
+-   In subqueries (since columns that aren’t needed for the external query are excluded from subqueries).
 
 In all other cases, we don’t recommend using the asterisk, since it only gives you the drawbacks of a columnar DBMS instead of the advantages. In other words using the asterisk is not recommended.
 

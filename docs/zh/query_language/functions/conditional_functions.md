@@ -11,13 +11,13 @@
 
 允许您在查询中更紧凑地编写[CASE](../operators.md#operator_case)运算符。
 
-  multiIf(cond_1, then_1, cond_2, then_2...else)
+    multiIf(cond_1, then_1, cond_2, then_2...else)
 
 **参数:**
 
-- `cond_N` — 函数返回`then_N`的条件。
-- `then_N` — 执行时函数的结果。
-- `else` — 如果没有满足任何条件，则为函数的结果。
+-   `cond_N` — 函数返回`then_N`的条件。
+-   `then_N` — 执行时函数的结果。
+-   `else` — 如果没有满足任何条件，则为函数的结果。
 
 该函数接受`2N + 1`参数。
 
@@ -29,16 +29,16 @@
 
 存在如下一张表
 
-  ┌─x─┬────y─┐
-  │ 1 │ ᴺᵁᴸᴸ │
-  │ 2 │    3 │
-  └───┴──────┘
+    ┌─x─┬────y─┐
+    │ 1 │ ᴺᵁᴸᴸ │
+    │ 2 │    3 │
+    └───┴──────┘
 
 执行查询 `SELECT multiIf(isNull(y) x, y < 3, y, NULL) FROM t_null`。结果：
 
-  ┌─multiIf(isNull(y), x, less(y, 3), y, NULL)─┐
-  │                                          1 │
-  │                                       ᴺᵁᴸᴸ │
-  └────────────────────────────────────────────┘
+    ┌─multiIf(isNull(y), x, less(y, 3), y, NULL)─┐
+    │                                          1 │
+    │                                       ᴺᵁᴸᴸ │
+    └────────────────────────────────────────────┘
 
 [来源文章](https://clickhouse.tech/docs/en/query_language/functions/conditional_functions/) <!--hide-->

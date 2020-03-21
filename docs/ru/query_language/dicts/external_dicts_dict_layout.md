@@ -45,14 +45,14 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 
 ## Способы размещения словарей в памяти {#sposoby-razmeshcheniia-slovarei-v-pamiati}
 
-- [flat](#flat)
-- [hashed](#hashed)
-- [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
-- [cache](#cache)
-- [range\_hashed](#range-hashed)
-- [complex\_key\_hashed](#complex-key-hashed)
-- [complex\_key\_cache](#complex-key-cache)
-- [ip\_trie](#ip-trie)
+-   [flat](#flat)
+-   [hashed](#hashed)
+-   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
+-   [cache](#cache)
+-   [range\_hashed](#range-hashed)
+-   [complex\_key\_hashed](#complex-key-hashed)
+-   [complex\_key\_cache](#complex-key-cache)
+-   [ip\_trie](#ip-trie)
 
 ### flat {#flat}
 
@@ -189,7 +189,7 @@ RANGE(MIN first MAX last)
 
 Для работы с такими словарями в функцию `dictGetT` необходимо передавать дополнительный аргумент, для которого подбирается диапазон:
 
-    dictGetT('dict_name', 'attr_name', id, date)
+      dictGetT('dict_name', 'attr_name', id, date)
 
 Функция возвращает значение для заданных `id` и диапазона дат, в который входит переданная дата.
 

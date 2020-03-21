@@ -53,9 +53,9 @@ FROM system.dictionaries
 WHERE name = 'products'
 ```
 
-  ┌─name─────┬─type─┬─key────┬─attribute.names─┬─attribute.types─┬─bytes_allocated─┬─element_count─┬─source──────────┐
-  │ products │ Flat │ UInt64 │ ['title']       │ ['String']      │        23065376 │        175032 │ ODBC: .products │
-  └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
+    ┌─name─────┬─type─┬─key────┬─attribute.names─┬─attribute.types─┬─bytes_allocated─┬─element_count─┬─source──────────┐
+    │ products │ Flat │ UInt64 │ ['title']       │ ['String']      │        23065376 │        175032 │ ODBC: .products │
+    └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 
 你可以使用 [dictGet\*](../../query_language/functions/ext_dict_functions.md) 函数来获取这种格式的字典数据。
 
@@ -63,7 +63,7 @@ WHERE name = 'products'
 
 语法：
 
-  CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
+    CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
 
 示例：
 
@@ -78,9 +78,9 @@ CREATE TABLE products
 ENGINE = Dictionary(products)
 ```
 
-  Ok.
+    Ok.
 
-  0 rows in set. Elapsed: 0.004 sec.
+    0 rows in set. Elapsed: 0.004 sec.
 
 看一看表中的内容。
 
@@ -92,10 +92,10 @@ FROM products
 LIMIT 1
 ```
 
-  ┌────product_id─┬─title───────────┐
-  │        152689 │ Some item       │
-  └───────────────┴─────────────────┘
+    ┌────product_id─┬─title───────────┐
+    │        152689 │ Some item       │
+    └───────────────┴─────────────────┘
 
-  1 rows in set. Elapsed: 0.006 sec.
+    1 rows in set. Elapsed: 0.006 sec.
 
 [来源文章](https://clickhouse.tech/docs/en/operations/table_engines/dictionary/) <!--hide-->

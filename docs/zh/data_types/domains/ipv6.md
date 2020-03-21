@@ -10,10 +10,10 @@ CREATE TABLE hits (url String, from IPv6) ENGINE = MergeTree() ORDER BY url;
 DESCRIBE TABLE hits;
 ```
 
-  ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┐
-  │ url  │ String │              │                    │         │                  │
-  │ from │ IPv6   │              │                    │         │                  │
-  └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
+    ┌─name─┬─type───┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┐
+    │ url  │ String │              │                    │         │                  │
+    │ from │ IPv6   │              │                    │         │                  │
+    └──────┴────────┴──────────────┴────────────────────┴─────────┴──────────────────┘
 
 同时您也可以使用`IPv6`类型的列作为主键：
 
@@ -29,11 +29,11 @@ INSERT INTO hits (url, from) VALUES ('https://wikipedia.org', '2a02:aa08:e000:31
 SELECT * FROM hits;
 ```
 
-  ┌─url────────────────────────────────┬─from──────────────────────────┐
-  │ https://clickhouse.tech          │ 2001:44c8:129:2632:33:0:252:2 │
-  │ https://clickhouse.tech/docs/en/ │ 2a02:e980:1e::1               │
-  │ https://wikipedia.org              │ 2a02:aa08:e000:3100::2        │
-  └────────────────────────────────────┴───────────────────────────────┘
+    ┌─url────────────────────────────────┬─from──────────────────────────┐
+    │ https://clickhouse.tech          │ 2001:44c8:129:2632:33:0:252:2 │
+    │ https://clickhouse.tech/docs/en/ │ 2a02:e980:1e::1               │
+    │ https://wikipedia.org              │ 2a02:aa08:e000:3100::2        │
+    └────────────────────────────────────┴───────────────────────────────┘
 
 同时它提供更为紧凑的二进制存储格式：
 
@@ -41,9 +41,9 @@ SELECT * FROM hits;
 SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 ```
 
-  ┌─toTypeName(from)─┬─hex(from)────────────────────────┐
-  │ IPv6             │ 200144C8012926320033000002520002 │
-  └──────────────────┴──────────────────────────────────┘
+    ┌─toTypeName(from)─┬─hex(from)────────────────────────┐
+    │ IPv6             │ 200144C8012926320033000002520002 │
+    └──────────────────┴──────────────────────────────────┘
 
 不可隐式转换为除`FixedString(16)`以外的其他类型类型。如果要将`IPv6`类型的值转换成字符串，你可以使用`IPv6NumToString()`显示的进行转换：
 
@@ -51,9 +51,9 @@ SELECT toTypeName(from), hex(from) FROM hits LIMIT 1;
 SELECT toTypeName(s), IPv6NumToString(from) as s FROM hits LIMIT 1;
 ```
 
-  ┌─toTypeName(IPv6NumToString(from))─┬─s─────────────────────────────┐
-  │ String                            │ 2001:44c8:129:2632:33:0:252:2 │
-  └───────────────────────────────────┴───────────────────────────────┘
+    ┌─toTypeName(IPv6NumToString(from))─┬─s─────────────────────────────┐
+    │ String                            │ 2001:44c8:129:2632:33:0:252:2 │
+    └───────────────────────────────────┴───────────────────────────────┘
 
 或使用`CAST`将其转换为`FixedString(16)`：
 
@@ -61,8 +61,8 @@ SELECT toTypeName(s), IPv6NumToString(from) as s FROM hits LIMIT 1;
 SELECT toTypeName(i), CAST(from as FixedString(16)) as i FROM hits LIMIT 1;
 ```
 
-  ┌─toTypeName(CAST(from, 'FixedString(16)'))─┬─i───────┐
-  │ FixedString(16)                           │  ��� │
-  └───────────────────────────────────────────┴─────────┘
+    ┌─toTypeName(CAST(from, 'FixedString(16)'))─┬─i───────┐
+    │ FixedString(16)                           │  ��� │
+    └───────────────────────────────────────────┴─────────┘
 
 [来源文章](https://clickhouse.tech/docs/en/data_types/domains/ipv6) <!--hide-->

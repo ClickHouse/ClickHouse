@@ -2,8 +2,8 @@
 
 You can monitor:
 
-- Utilization of hardware resources.
-- ClickHouse server metrics.
+-   Utilization of hardware resources.
+-   ClickHouse server metrics.
 
 ## Resource Utilization {#resource-utilization}
 
@@ -11,11 +11,11 @@ ClickHouse does not monitor the state of hardware resources by itself.
 
 It is highly recommended to set up monitoring for:
 
-- Load and temperature on processors.
+-   Load and temperature on processors.
 
-  You can use [dmesg](https://en.wikipedia.org/wiki/Dmesg), [turbostat](https://www.linux.org/docs/man8/turbostat.html) or other instruments.
+    You can use [dmesg](https://en.wikipedia.org/wiki/Dmesg), [turbostat](https://www.linux.org/docs/man8/turbostat.html) or other instruments.
 
-- Utilization of storage system, RAM and network.
+-   Utilization of storage system, RAM and network.
 
 ## ClickHouse Server Metrics {#clickhouse-server-metrics}
 
@@ -25,8 +25,8 @@ To track server events use server logs. See the [logger](server_settings/setting
 
 ClickHouse collects:
 
-- Different metrics of how the server uses computational resources.
-- Common statistics on query processing.
+-   Different metrics of how the server uses computational resources.
+-   Common statistics on query processing.
 
 You can find metrics in the [system.metrics](system_tables.md#system_tables-metrics), [system.events](system_tables.md#system_tables-events), and [system.asynchronous\_metrics](system_tables.md#system_tables-asynchronous_metrics) tables.
 

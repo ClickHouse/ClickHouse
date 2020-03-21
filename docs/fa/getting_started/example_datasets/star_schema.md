@@ -1,4 +1,4 @@
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 # بنچمارک Star Schema {#bnchmrkh-star-schema}
 
@@ -12,7 +12,7 @@ cd ssb-dbgen
 make
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 در هنگام پردازش چند warnings نمایش داده می شود که مشکلی نیست و طبیعی است.
 
@@ -27,7 +27,7 @@ make
 ./dbgen -s 1000 -T l
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 ساخت جداول در ClickHouse
 
@@ -84,7 +84,7 @@ CREATE TABLE customerd AS customer ENGINE = Distributed(perftest_3shards_1replic
 CREATE TABLE partd AS part ENGINE = Distributed(perftest_3shards_1replicas, default, part, rand());
 ```
 
-<div markdown="1" dir="rtl">
+<div markdown="1" markdown="1" dir="rtl">
 
 برای تست بر روی یک سرور، فقط از جداول MergeTree استفاده کنید. برای تست توزیع شده، شما نیاز به کانفیگ `perftest_3shards_1replicas` در فایل کانفیگ را دارید. در ادامه جداول MergeTree را در هر سرور ایجاد کنید و موارد بالا را توزیع کنید.
 

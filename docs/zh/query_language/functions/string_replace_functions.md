@@ -28,13 +28,13 @@ LIMIT 7
 FORMAT TabSeparated
 ```
 
-  2014-03-17      03/17/2014
-  2014-03-18      03/18/2014
-  2014-03-19      03/19/2014
-  2014-03-20      03/20/2014
-  2014-03-21      03/21/2014
-  2014-03-22      03/22/2014
-  2014-03-23      03/23/2014
+    2014-03-17      03/17/2014
+    2014-03-18      03/18/2014
+    2014-03-19      03/19/2014
+    2014-03-20      03/20/2014
+    2014-03-21      03/21/2014
+    2014-03-22      03/22/2014
+    2014-03-23      03/23/2014
 
 示例2.复制字符串十次：
 
@@ -42,9 +42,9 @@ FORMAT TabSeparated
 SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
 
-  ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-  │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
-  └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+    │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 ## replaceRegexpAll(haystack, pattern, replacement) {#replaceregexpallhaystack-pattern-replacement}
 
@@ -54,9 +54,9 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 ```
 
-  ┌─res────────────────────────┐
-  │ HHeelllloo,,  WWoorrlldd!! │
-  └────────────────────────────┘
+    ┌─res────────────────────────┐
+    │ HHeelllloo,,  WWoorrlldd!! │
+    └────────────────────────────┘
 
 例外的是，如果使用正则表达式捕获空白子串，则仅会进行一次替换。
 示例:
@@ -65,9 +65,9 @@ SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ```
 
-  ┌─res─────────────────┐
-  │ here: Hello, World! │
-  └─────────────────────┘
+    ┌─res─────────────────┐
+    │ here: Hello, World! │
+    └─────────────────────┘
 
 ## regexpQuoteMeta(s) {#regexpquotemetas}
 

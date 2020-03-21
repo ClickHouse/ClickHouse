@@ -65,7 +65,7 @@ toUnixTimestamp(str, [timezone])
 
 **Returned value**
 
-- Returns the unix timestamp.
+-   Returns the unix timestamp.
 
 Type: `UInt32`.
 
@@ -200,26 +200,26 @@ dateDiff('unit', startdate, enddate, [timezone])
 
 **Параметры**
 
-- `unit` — Единица измерения времени, в которой будет вычислена разница между `startdate` и `enddate`. [String](../syntax.md#syntax-string-literal).
+-   `unit` — Единица измерения времени, в которой будет вычислена разница между `startdate` и `enddate`. [String](../syntax.md#syntax-string-literal).
 
-    Поддерживаемые значения:
+        Поддерживаемые значения:
 
-    | unit   |
-    | ------ |
-    |second  |
-    |minute  |
-    |hour    |
-    |day     |
-    |week    |
-    |month   |
-    |quarter |
-    |year    |
+        | unit   |
+        | ------ |
+        |second  |
+        |minute  |
+        |hour    |
+        |day     |
+        |week    |
+        |month   |
+        |quarter |
+        |year    |
 
-- `startdate` — Первая дата. [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
+-   `startdate` — Первая дата. [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
 
-- `enddate` — Вторая дата. [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
+-   `enddate` — Вторая дата. [Date](../../data_types/date.md) или [DateTime](../../data_types/datetime.md).
 
-- `timezone` — Опциональный параметр. Если определен, применяется к обоим значениям: `startdate` и `enddate`. Если не определен, используются часовые пояса `startdate` и `enddate`. Если часовые пояса не совпадают, вернется неожидаемый результат.
+-   `timezone` — Опциональный параметр. Если определен, применяется к обоим значениям: `startdate` и `enddate`. Если не определен, используются часовые пояса `startdate` и `enddate`. Если часовые пояса не совпадают, вернется неожидаемый результат.
 
 **Возвращаемое значение**
 

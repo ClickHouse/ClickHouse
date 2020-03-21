@@ -1,4 +1,4 @@
-# Permissions for Queries {#permissions_for_queries}
+# Permissions for Queries {#permissions-for-queries}
 
 Queries in ClickHouse can be divided into several types:
 
@@ -10,12 +10,12 @@ Queries in ClickHouse can be divided into several types:
 
 The following settings regulate user permissions by the type of query:
 
-- [readonly](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
-- [allow\_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
+-   [readonly](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
+-   [allow\_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
 
 `KILL QUERY` can be performed with any settings.
 
-## readonly {#settings_readonly}
+## readonly {#settings-readonly}
 
 Restricts permissions for reading data, write data and change settings queries.
 
@@ -23,9 +23,9 @@ See how the queries are divided into types [above](#permissions_for_queries).
 
 Possible values:
 
-- 0 — All queries are allowed.
-- 1 — Only read data queries are allowed.
-- 2 — Read data and change settings queries are allowed.
+-   0 — All queries are allowed.
+-   1 — Only read data queries are allowed.
+-   2 — Read data and change settings queries are allowed.
 
 After setting `readonly = 1`, the user can’t change `readonly` and `allow_ddl` settings in the current session.
 
@@ -36,7 +36,7 @@ from changing only specific settings, for details see [constraints on settings](
 
 Default value: 0
 
-## allow\_ddl {#settings_allow_ddl}
+## allow\_ddl {#settings-allow-ddl}
 
 Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
 
@@ -44,8 +44,8 @@ See how the queries are divided into types [above](#permissions_for_queries).
 
 Possible values:
 
-- 0 — DDL queries are not allowed.
-- 1 — DDL queries are allowed.
+-   0 — DDL queries are not allowed.
+-   1 — DDL queries are allowed.
 
 You can’t execute `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
 

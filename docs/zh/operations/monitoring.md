@@ -2,8 +2,8 @@
 
 可以监控到：
 
-- 硬件资源的利用率。
-- ClickHouse 服务的指标。
+-   硬件资源的利用率。
+-   ClickHouse 服务的指标。
 
 ## 硬件资源利用率 {#ying-jian-zi-yuan-li-yong-lu}
 
@@ -11,11 +11,11 @@ ClickHouse 本身不会去监控硬件资源的状态。
 
 强烈推荐监控以下监控项：
 
-- 处理器上的负载和温度。
+-   处理器上的负载和温度。
 
-    可以使用 [dmesg](https://en.wikipedia.org/wiki/Dmesg), [turbostat](https://www.linux.org/docs/man8/turbostat.html) 或者其他工具。
+        可以使用 [dmesg](https://en.wikipedia.org/wiki/Dmesg), [turbostat](https://www.linux.org/docs/man8/turbostat.html) 或者其他工具。
 
-- 磁盘存储，RAM和网络的使用率。
+-   磁盘存储，RAM和网络的使用率。
 
 ## ClickHouse 服务的指标。 {#clickhouse-fu-wu-de-zhi-biao}
 
@@ -25,8 +25,8 @@ ClickHouse服务本身具有用于自我状态监视指标。
 
 ClickHouse 收集的指标项：
 
-- 服务用于计算的资源占用的各种指标。
-- 关于查询处理的常见统计信息。
+-   服务用于计算的资源占用的各种指标。
+-   关于查询处理的常见统计信息。
 
 可以在 [system.metrics](system_tables.md#system_tables-metrics) ，[system.events](system_tables.md#system_tables-events) 以及[system.asynchronous\_metrics](system_tables.md#system_tables-asynchronous_metrics) 等系统表查看所有的指标项。
 

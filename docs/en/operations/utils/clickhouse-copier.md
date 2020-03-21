@@ -6,14 +6,14 @@ You can run multiple `clickhouse-copier` instances on different servers to perfo
 
 After starting, `clickhouse-copier`:
 
-- Connects to ZooKeeper and receives:
+-   Connects to ZooKeeper and receives:
 
-  - Copying jobs.
-  - The state of the copying jobs.
+    -   Copying jobs.
+    -   The state of the copying jobs.
 
-- It performs the jobs.
+-   It performs the jobs.
 
-  Each running process chooses the “closest” shard of the source cluster and copies the data into the destination cluster, resharding the data if necessary.
+    Each running process chooses the “closest” shard of the source cluster and copies the data into the destination cluster, resharding the data if necessary.
 
 `clickhouse-copier` tracks the changes in ZooKeeper and applies them on the fly.
 
@@ -29,14 +29,14 @@ $ clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/pat
 
 Parameters:
 
-- `daemon` — Starts `clickhouse-copier` in daemon mode.
-- `config` — The path to the `zookeeper.xml` file with the parameters for the connection to ZooKeeper.
-- `task-path` — The path to the ZooKeeper node. This node is used for syncing `clickhouse-copier` processes and storing tasks. Tasks are stored in `$task-path/description`.
-- `task-file` — Optional path to file with task configuration for initial upload to ZooKeeper.
-- `task-upload-force` — Force upload `task-file` even if node already exists.
-- `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` creates `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectories in `$base-dir`. If this parameter is omitted, the directories are created in the directory where `clickhouse-copier` was launched.
+-   `daemon` — Starts `clickhouse-copier` in daemon mode.
+-   `config` — The path to the `zookeeper.xml` file with the parameters for the connection to ZooKeeper.
+-   `task-path` — The path to the ZooKeeper node. This node is used for syncing `clickhouse-copier` processes and storing tasks. Tasks are stored in `$task-path/description`.
+-   `task-file` — Optional path to file with task configuration for initial upload to ZooKeeper.
+-   `task-upload-force` — Force upload `task-file` even if node already exists.
+-   `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` creates `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectories in `$base-dir`. If this parameter is omitted, the directories are created in the directory where `clickhouse-copier` was launched.
 
-## Format of zookeeper.xml {#format-of-zookeeper.xml}
+## Format of zookeeper.xml {#format-of-zookeeper-xml}
 
 ``` xml
 <yandex>

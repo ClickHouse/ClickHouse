@@ -6,9 +6,9 @@ The `MySQL` database engine translate queries to the MySQL server so you can per
 
 You cannot perform the following queries:
 
-- `RENAME`
-- `CREATE TABLE`
-- `ALTER`
+-   `RENAME`
+-   `CREATE TABLE`
+-   `ALTER`
 
 ## Creating a Database {#creating-a-database}
 
@@ -19,10 +19,10 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 
 **Engine Parameters**
 
-- `host:port` — MySQL server address.
-- `database` — Remote database name.
-- `user` — MySQL user.
-- `password` — User password.
+-   `host:port` — MySQL server address.
+-   `database` — Remote database name.
+-   `user` — MySQL user.
+-   `password` — User password.
 
 ## Data Types Support {#data-types-support}
 

@@ -8,9 +8,9 @@ odbc(connection_settings, external_database, external_table)
 
 Параметры:
 
-- `connection_settings` — название секции с настройками соединения в файле `odbc.ini`.
-- `external_database` — имя базы данных во внешней СУБД.
-- `external_table` — имя таблицы в `external_database`.
+-   `connection_settings` — название секции с настройками соединения в файле `odbc.ini`.
+-   `external_database` — имя базы данных во внешней СУБД.
+-   `external_table` — имя таблицы в `external_database`.
 
 Чтобы использование ODBC было безопасным, ClickHouse использует отдельную программу `clickhouse-odbc-bridge`. Если драйвер ODBC подгружать непосредственно из `clickhouse-server`, то проблемы с драйвером могут привести к аварийной остановке сервера ClickHouse. ClickHouse автоматически запускает `clickhouse-odbc-bridge` по мере необходимости. Программа устанавливается из того же пакета, что и `clickhouse-server`.
 
@@ -95,7 +95,7 @@ SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
 
 ## Смотрите также {#smotrite-takzhe}
 
-- [Внешние словари ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
-- [Движок таблиц ODBC](../../operations/table_engines/odbc.md).
+-   [Внешние словари ODBC](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
+-   [Движок таблиц ODBC](../../operations/table_engines/odbc.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/jdbc/) <!--hide-->
