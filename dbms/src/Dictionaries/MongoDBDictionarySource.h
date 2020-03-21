@@ -44,10 +44,10 @@ class MongoDBDictionarySource final : public IDictionarySource
 
 public:
     MongoDBDictionarySource(
-        const DictionaryStructure & dict_struct,
+        DictionaryStructure dict_struct,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        Block & sample_block);
+        Block sample_block);
 
     MongoDBDictionarySource(const MongoDBDictionarySource & other);
 

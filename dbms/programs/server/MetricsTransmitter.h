@@ -35,7 +35,11 @@ class AsynchronousMetrics;
 class MetricsTransmitter
 {
 public:
-    MetricsTransmitter(const Poco::Util::AbstractConfiguration & config, const std::string & config_name_, const AsynchronousMetrics & async_metrics_);
+    MetricsTransmitter(
+        const Poco::Util::AbstractConfiguration & config,
+        std::string config_name_,
+        const AsynchronousMetrics & async_metrics_);
+
     ~MetricsTransmitter();
 
 private:

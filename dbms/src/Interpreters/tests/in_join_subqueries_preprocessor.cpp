@@ -39,8 +39,11 @@ public:
     std::string getRemoteTableName() const { return remote_table; }
 
 protected:
-    StorageDistributedFake(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)
-        : IStorage({"", ""}), remote_database(remote_database_), remote_table(remote_table_), shard_count(shard_count_)
+    StorageDistributedFake(std::string remote_database_, std::string remote_table_, size_t shard_count_)
+        : IStorage({"", ""}),
+        remote_database(std::move(remote_database_)),
+        remote_table(std::move(remote_table_)),
+        shard_count(shard_count_)
     {
     }
 

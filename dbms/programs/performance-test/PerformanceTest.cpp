@@ -57,16 +57,16 @@ PerformanceTest::PerformanceTest(
     Connection & connection_,
     const ConnectionTimeouts & timeouts_,
     InterruptListener & interrupt_listener_,
-    const PerformanceTestInfo & test_info_,
+    PerformanceTestInfo test_info_,
     Context & context_,
-    const std::vector<size_t> & queries_to_run_)
+    std::vector<size_t> queries_to_run_)
     : config(config_)
     , connection(connection_)
     , timeouts(timeouts_)
     , interrupt_listener(interrupt_listener_)
-    , test_info(test_info_)
+    , test_info(std::move(test_info_))
     , context(context_)
-    , queries_to_run(queries_to_run_)
+    , queries_to_run(std::move(queries_to_run_))
     , log(&Poco::Logger::get("PerformanceTest"))
 {
 }

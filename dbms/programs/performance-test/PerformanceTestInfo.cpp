@@ -45,8 +45,8 @@ namespace fs = std::filesystem;
 
 PerformanceTestInfo::PerformanceTestInfo(
     XMLConfigurationPtr config,
-    const Settings & global_settings_)
-    : settings(global_settings_)
+    Settings global_settings_)
+    : settings(std::move(global_settings_))
 {
     path = config->getString("path");
     test_name = fs::path(path).stem().string();

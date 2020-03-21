@@ -59,11 +59,11 @@ public:
             bool cumulative_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
-            const String & json_path_, size_t confidence_, const String & query_id_, const Settings & settings_)
+            String json_path_, size_t confidence_, String query_id_, Settings settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
-        json_path(json_path_), confidence(confidence_), query_id(query_id_), settings(settings_),
+        json_path(std::move(json_path_)), confidence(confidence_), query_id(std::move(query_id_)), settings(std::move(settings_)),
         global_context(Context::createGlobal()), pool(concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;

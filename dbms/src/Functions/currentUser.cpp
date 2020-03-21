@@ -19,7 +19,7 @@ public:
         return std::make_shared<FunctionCurrentUser>(context.getClientInfo().initial_user);
     }
 
-    explicit FunctionCurrentUser(const String & user_name_) : user_name{user_name_}
+    explicit FunctionCurrentUser(String user_name_) : user_name{std::move(user_name_)}
     {
     }
 

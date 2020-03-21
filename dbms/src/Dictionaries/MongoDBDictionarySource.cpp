@@ -206,9 +206,9 @@ MongoDBDictionarySource::MongoDBDictionarySource(
     DictionaryStructure dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
-    Block & sample_block_)
+    Block sample_block_)
     : MongoDBDictionarySource(
-          dict_struct_,
+          std::move(dict_struct_),
           config.getString(config_prefix + ".host"),
           config.getUInt(config_prefix + ".port"),
           config.getString(config_prefix + ".user", ""),
@@ -216,7 +216,7 @@ MongoDBDictionarySource::MongoDBDictionarySource(
           config.getString(config_prefix + ".method", ""),
           config.getString(config_prefix + ".db", ""),
           config.getString(config_prefix + ".collection"),
-          sample_block_)
+          std::move(sample_block_))
 {
 }
 

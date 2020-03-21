@@ -21,7 +21,7 @@ using StringToVector = std::map<std::string, Strings>;
 class PerformanceTestInfo
 {
 public:
-    PerformanceTestInfo(XMLConfigurationPtr config, const Settings & global_settings_);
+    PerformanceTestInfo(XMLConfigurationPtr config, Settings global_settings_);
 
     std::string test_name;
     std::string path;

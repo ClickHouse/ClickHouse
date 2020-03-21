@@ -21,7 +21,7 @@ public:
         return std::make_shared<FunctionCurrentQuota>(context.getQuota()->getUsageInfo().quota_name);
     }
 
-    explicit FunctionCurrentQuota(const String & quota_name_) : quota_name{quota_name_}
+    explicit FunctionCurrentQuota(String quota_name_) : quota_name{std::move(quota_name_)}
     {
     }
 
@@ -97,7 +97,7 @@ public:
         return std::make_shared<FunctionCurrentQuotaKey>(context.getQuota()->getUsageInfo().quota_key);
     }
 
-    explicit FunctionCurrentQuotaKey(const String & quota_key_) : quota_key{quota_key_}
+    explicit FunctionCurrentQuotaKey(String quota_key_) : quota_key{std::move(quota_key_)}
     {
     }
 

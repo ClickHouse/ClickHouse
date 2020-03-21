@@ -9,7 +9,7 @@ namespace DB
 class ReportBuilder
 {
 public:
-    ReportBuilder(const std::string & server_version_);
+    ReportBuilder(std::string server_version_);
 
     std::string buildFullReport(
         const PerformanceTestInfo & test_info,

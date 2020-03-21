@@ -62,12 +62,12 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        const AccessRightsContextPtr & access_rights_,
+        AccessRightsContextPtr access_rights_,
         String query_id_)
         : SourceWithProgress(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
-        , query_id(std::move(query_id_)), total_tables(tables->size()), access_rights(access_rights_)
+        , query_id(std::move(query_id_)), total_tables(tables->size()), access_rights(std::move(access_rights_))
     {
     }
 

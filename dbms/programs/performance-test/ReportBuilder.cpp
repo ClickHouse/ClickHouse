@@ -31,8 +31,8 @@ String jsonString(const String & str, FormatSettings & settings)
 }
 }
 
-ReportBuilder::ReportBuilder(const std::string & server_version_)
-    : server_version(server_version_)
+ReportBuilder::ReportBuilder(std::string server_version_)
+    : server_version(std::move(server_version_))
     , hostname(getFQDNOrHostName())
     , num_cores(getNumberOfPhysicalCPUCores())
     , num_threads(std::thread::hardware_concurrency())

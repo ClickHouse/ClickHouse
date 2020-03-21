@@ -23,9 +23,9 @@ public:
         Connection & connection_,
         const ConnectionTimeouts & timeouts_,
         InterruptListener & interrupt_listener_,
-        const PerformanceTestInfo & test_info_,
+        PerformanceTestInfo test_info_,
         Context & context_,
-        const std::vector<size_t> & queries_to_run_);
+        std::vector<size_t> queries_to_run_);
 
     bool checkPreconditions() const;
     void prepare() const;
