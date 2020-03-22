@@ -196,21 +196,22 @@ def build_single_page_version(lang, args, cfg):
                     with open(os.devnull, 'w') as devnull:
                         subprocess.check_call(' '.join(create_pdf_command), shell=True, stderr=devnull)
 
-                with util.temp_dir() as test_dir:
-                    cfg.load_dict({
-                        'docs_dir': docs_temp_lang,
-                        'site_dir': test_dir,
-                        'extra': {
-                            'single_page': False
-                        },
-                        'nav': [
-                            {cfg.data.get('site_name'): 'single.md'}
-                        ]
-                    })
-                    mkdocs_build.build(cfg)
-                    if args.save_raw_single_page:
-                        shutil.copytree(test_dir, args.save_raw_single_page)
-                    if not args.version_prefix:  # maybe enable in future
+                if not args.version_prefix:  # maybe enable in future
+                    with util.temp_dir() as test_dir:
+                        cfg.load_dict({
+                            'docs_dir': docs_temp_lang,
+                            'site_dir': test_dir,
+                            'extra': {
+                                'single_page': False
+                            },
+                            'nav': [
+                                {cfg.data.get('site_name'): 'single.md'}
+                            ]
+                        })
+                        mkdocs_build.build(cfg)
+                        if args.save_raw_single_page:
+                            shutil.copytree(test_dir, args.save_raw_single_page)
+
                         test.test_single_page(os.path.join(test_dir, 'single', 'index.html'), lang)
 
 
