@@ -1,16 +1,5 @@
 #pragma once
 
-#include <atomic>
-#include <variant>
-#include <Core/Block.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <Common/Arena.h>
-
-#include "DictionaryStructure.h"
-#include "IDictionary.h"
-#include "IDictionarySource.h"
-
 #include <Core/Types.h>
 #include <Poco/Logger.h>
 

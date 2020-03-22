@@ -1,12 +1,8 @@
 #include "PolygonDictionaryUtils.h"
-#include "DictionaryBlockInputStream.h"
-#include "DictionaryFactory.h"
 
 #include <Common/ThreadPool.h>
 
-#include <Columns/ColumnArray.h>
-#include <Columns/ColumnTuple.h>
-#include <DataTypes/DataTypeArray.h>
+#include <common/logger_useful.h>
 
 #include <algorithm>
 #include <thread>
