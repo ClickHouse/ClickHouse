@@ -171,9 +171,9 @@ StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
     return result;
 }
 
-QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context) const
+QueryProcessingStage::Enum StorageMaterializedView::getQueryProcessingStage(const Context & context, const ASTPtr & query_ptr) const
 {
-    return getTargetTable()->getQueryProcessingStage(context);
+    return getTargetTable()->getQueryProcessingStage(context, query_ptr);
 }
 
 Pipes StorageMaterializedView::read(

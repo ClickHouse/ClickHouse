@@ -220,8 +220,11 @@ public:
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
       *  for example, the request can be partially processed on a remote server.)
+      *
+      * SelectQueryInfo is required since the stage can depends on the query
+      * (see Distributed() engine and optimize_skip_unused_shards).
       */
-    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const { return QueryProcessingStage::FetchColumns; }
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, const ASTPtr & = nullptr) const { return QueryProcessingStage::FetchColumns; }
 
     /** Watch live changes to the table.
      * Accepts a list of columns to read, as well as a description of the query,
