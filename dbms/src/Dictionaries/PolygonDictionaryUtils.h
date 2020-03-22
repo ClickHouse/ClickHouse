@@ -71,7 +71,7 @@ public:
 
     /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
     static constexpr size_t kSplit = 2;
-    static constexpr size_t kMultiProcessingDepth = 3;
+    static constexpr size_t kMultiProcessingDepth = 4;
 
 private:
     std::unique_ptr<ICell> root = nullptr;
