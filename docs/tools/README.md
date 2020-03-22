@@ -32,7 +32,7 @@ $ pip3 install -r requirements.txt
 
 Then running `build.py` without args (there are some, check `build.py --help`) will generate `ClickHouse/docs/build` folder with complete static html website.
 
-You can just directly open those HTML files in browser, but usually it is more convenient to have some sort of HTTP server hosting them. For example, you can launch one by running `cd ClickHouse/docs/build && python -m SimpleHTTPServer 8888` and then go to http://localhost:8888 in browser.
+The easiest way to see the result is to use `--livereload=8888` argument of build.py. Alternatively, you can manually launch a HTTP server to serve the docs, for example by running `cd ClickHouse/docs/build && python3 -m http.server 8888`. Then go to http://localhost:8888 in browser. Feel free to use any other port instead of 8888.
 
 ## How to subscribe on documentation changes? {#how-to-subscribe-on-documentation-changes}
 
