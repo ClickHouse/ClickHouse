@@ -96,7 +96,7 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
                       << (settings.hilite ? hilite_none : "")
                       << " ";
 
-        parameter->second->formatImpl(settings, state, frame);
+        parameter.second->formatImpl(settings, state, frame);
         first = false;
     }
     settings.ostr << ")";
