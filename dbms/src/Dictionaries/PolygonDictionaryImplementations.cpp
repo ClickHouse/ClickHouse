@@ -116,7 +116,7 @@ SmartPolygonDictionary::SmartPolygonDictionary(
         : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
 {
     buckets.reserve(polygons.size());
-    for (size_t i = 0; i < bucekts.size(); ++i)
+    for (size_t i = 0; i < buckets.size(); ++i)
     {
         buckets.emplace_back({polygons[i]});
     }
