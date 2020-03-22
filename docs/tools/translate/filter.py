@@ -30,7 +30,7 @@ def process_buffer(buffer, new_value, item=None):
             print('Failed to translate', str(e), file=sys.stderr)
             sys.exit(1)
 
-        debug('Translate', text, ' -> ', translated_text)
+        debug(f'Translate: "{text}" -> "{translated_text}"')
 
         if text and text[0].isupper() and not translated_text[0].isupper():
             translated_text = translated_text[0].upper() + translated_text[1:]
@@ -115,7 +115,6 @@ def translate_filter(key, value, _format, _):
                 admonition_value.pop(-1)
                 admonition_value += text
             else:
-                debug('>>>', )
                 text = admonition_value[-1].get('c')
                 if text:
                     text = translate(text[0].upper() + text[1:])
@@ -138,8 +137,8 @@ def translate_filter(key, value, _format, _):
         return cls(*value)
     elif key == 'Header':
         # TODO: title case header in en
-        value[1][0] = slugify.slugify(value[1][0], separator='-', word_boundary=True, save_order=True)
-        # TODO: title case header in en
+        if '_' not in value[1][0]:  # Preserve some manually specified anchors
+            value[1][0] = slugify.slugify(value[1][0], separator='-', word_boundary=True, save_order=True)
         value[2] = process_sentence(value[2])
         return cls(*value)
     elif key == 'SoftBreak':
