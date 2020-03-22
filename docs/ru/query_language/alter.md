@@ -1,4 +1,4 @@
-## ALTER {#query-language-queries-alter}
+## ALTER {#query_language_queries_alter}
 
 Запрос `ALTER` поддерживается только для таблиц типа `*MergeTree`, а также `Merge` и `Distributed`. Запрос имеет несколько вариантов.
 
@@ -23,7 +23,7 @@ ALTER TABLE [db].name [ON CLUSTER cluster] ADD|DROP|CLEAR|COMMENT|MODIFY COLUMN 
 
 Подробное описание для каждого действия приведено ниже.
 
-#### ADD COLUMN {#alter-add-column}
+#### ADD COLUMN {#alter_add-column}
 
 ``` sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
@@ -43,7 +43,7 @@ ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
 ALTER TABLE visits ADD COLUMN browser String AFTER user_id
 ```
 
-#### DROP COLUMN {#alter-drop-column}
+#### DROP COLUMN {#alter_drop-column}
 
 ``` sql
 DROP COLUMN [IF EXISTS] name
@@ -59,7 +59,7 @@ DROP COLUMN [IF EXISTS] name
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-#### CLEAR COLUMN {#alter-clear-column}
+#### CLEAR COLUMN {#alter_clear-column}
 
 ``` sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -75,7 +75,7 @@ CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-#### COMMENT COLUMN {#alter-comment-column}
+#### COMMENT COLUMN {#alter_comment-column}
 
 ``` sql
 COMMENT COLUMN [IF EXISTS] name 'Text comment'
@@ -93,7 +93,7 @@ COMMENT COLUMN [IF EXISTS] name 'Text comment'
 ALTER TABLE visits COMMENT COLUMN browser 'Столбец показывает, из каких браузеров пользователи заходили на сайт.'
 ```
 
-#### MODIFY COLUMN {#alter-modify-column}
+#### MODIFY COLUMN {#alter_modify-column}
 
 ``` sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
@@ -195,7 +195,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 
 Запрос на изменение ограничений для Replicated таблиц реплицируется, сохраняя новые метаданные в ZooKeeper и применяя изменения на всех репликах.
 
-### Манипуляции с партициями и кусками {#alter-manipulations-with-partitions}
+### Манипуляции с партициями и кусками {#alter_manipulations-with-partitions}
 
 Для работы с [партициями](../operations/table_engines/custom_partitioning_key.md) доступны следующие операции:
 
@@ -211,7 +211,7 @@ ALTER TABLE [db].name DROP CONSTRAINT constraint_name;
 -   [FETCH PARTITION](#alter_fetch-partition) – скачать партицию с другого сервера;
 -   [MOVE PARTITION\|PART](#alter_move-partition) – переместить партицию/кускок на другой диск или том.
 
-#### DETACH PARTITION {#alter-detach-partition}
+#### DETACH PARTITION {#alter_detach-partition}
 
 ``` sql
 ALTER TABLE table_name DETACH PARTITION partition_expr
@@ -231,7 +231,7 @@ ALTER TABLE visits DETACH PARTITION 201901
 
 Запрос реплицируется — данные будут перенесены в директорию `detached` и забыты на всех репликах. Обратите внимание, запрос может быть отправлен только на реплику-лидер. Чтобы узнать, является ли реплика лидером, выполните запрос `SELECT` к системной таблице [system.replicas](../operations/system_tables.md#system_tables-replicas). Либо можно выполнить запрос `DETACH` на всех репликах — тогда на всех репликах, кроме реплики-лидера, запрос вернет ошибку.
 
-#### DROP PARTITION {#alter-drop-partition}
+#### DROP PARTITION {#alter_drop-partition}
 
 ``` sql
 ALTER TABLE table_name DROP PARTITION partition_expr
@@ -243,7 +243,7 @@ ALTER TABLE table_name DROP PARTITION partition_expr
 
 Запрос реплицируется — данные будут удалены на всех репликах.
 
-#### DROP DETACHED PARTITION\|PART {#alter-drop-detached}
+#### DROP DETACHED PARTITION\|PART {#alter_drop-detached}
 
 ``` sql
 ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
@@ -252,7 +252,7 @@ ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
 Удаляет из `detached` кусок или все куски, принадлежащие партиции.
 Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
 
-#### ATTACH PARTITION\|PART {#alter-attach-partition}
+#### ATTACH PARTITION\|PART {#alter_attach-partition}
 
 ``` sql
 ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
@@ -271,7 +271,7 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 Это означает, что вы можете разместить данные в директории `detached` на одной реплике и с помощью запроса `ALTER ... ATTACH` добавить их в таблицу на всех репликах.
 
-#### ATTACH PARTITION FROM {#alter-attach-partition-from}
+#### ATTACH PARTITION FROM {#alter_attach-partition-from}
 
 ``` sql
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
@@ -286,7 +286,7 @@ ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
 
 Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
 
-#### REPLACE PARTITION {#alter-replace-partition}
+#### REPLACE PARTITION {#alter_replace-partition}
 
 ``` sql
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
@@ -301,7 +301,7 @@ ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
 
 Подробнее о том, как корректно задать имя партиции, см. в разделе [Как задавать имя партиции в запросах ALTER](#alter-how-to-specify-part-expr).
 
-#### MOVE PARTITION TO TABLE {#alter-move-to-table-partition}
+#### MOVE PARTITION TO TABLE {#alter_move_to_table-partition}
 
 ``` sql
 ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
@@ -314,7 +314,7 @@ ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
 -   Таблицы должны иметь одинаковую структуру.
 -   Для таблиц должен быть задан одинаковый ключ партиционирования.
 
-#### CLEAR COLUMN IN PARTITION {#alter-clear-column-partition}
+#### CLEAR COLUMN IN PARTITION {#alter_clear-column-partition}
 
 ``` sql
 ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
@@ -328,7 +328,7 @@ ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
-#### CLEAR INDEX IN PARTITION {#alter-clear-index-partition}
+#### CLEAR INDEX IN PARTITION {#alter_clear-index-partition}
 
 ``` sql
 ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
@@ -336,7 +336,7 @@ ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 
 Работает как `CLEAR COLUMN`, но сбрасывает индексы вместо данных в столбцах.
 
-#### FREEZE PARTITION {#alter-freeze-partition}
+#### FREEZE PARTITION {#alter_freeze-partition}
 
 ``` sql
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
@@ -375,7 +375,7 @@ ALTER TABLE table_name FREEZE [PARTITION partition_expr]
 
 Подробнее о резервном копировании и восстановлении данных читайте в разделе [Резервное копирование данных](../operations/backup.md).
 
-#### FETCH PARTITION {#alter-fetch-partition}
+#### FETCH PARTITION {#alter_fetch-partition}
 
 ``` sql
 ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
@@ -404,7 +404,7 @@ ALTER TABLE users ATTACH PARTITION 201902;
 
 Несмотря на то что запрос называется `ALTER TABLE`, он не изменяет структуру таблицы и не изменяет сразу доступные данные в таблице.
 
-#### MOVE PARTITION\|PART {#alter-move-partition}
+#### MOVE PARTITION\|PART {#alter_move-partition}
 
 Перемещает партицию или кусок данных на другой том или диск для таблиц с движком `MergeTree`. Смотрите [Хранение данных таблицы на нескольких блочных устройствах](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes).
 

@@ -1,4 +1,4 @@
-# MergeTree {#table-engines-mergetree}
+# MergeTree {#table_engines-mergetree}
 
 Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及该系列（`*MergeTree`）中的其他引擎。
 
@@ -25,7 +25,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
 !!! 注意 "注意"
     [Merge](merge.md) 引擎并不属于 `*MergeTree` 系列。
 
-## 建表 {#table-engine-mergetree-creating-a-table}
+## 建表 {#table_engine-mergetree-creating-a-table}
 
     CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     (
@@ -262,7 +262,7 @@ SELECT count() FROM table WHERE s < 'z'
 SELECT count() FROM table WHERE u64 * i32 == 10 AND u64 * length(s) >= 1234
 ```
 
-#### 索引的可用类型 {#table-engine-mergetree-data-skipping-indexes}
+#### 索引的可用类型 {#table_engine-mergetree-data_skipping-indexes}
 
 -   `minmax`
     存储指定表达式的极值（如果表达式是 `tuple` ，则存储 `tuple` 中每个元素的极值），这些信息用于跳过数据块，类似主键。
@@ -295,7 +295,7 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 对表的读操作是自动并行的。
 
-## 列和表的TTL {#table-engine-mergetree-ttl}
+## 列和表的TTL {#table_engine-mergetree-ttl}
 
 TTL可以设置值的生命周期，它既可以为整张表设置，也可以为每个列字段单独设置。如果`TTL`同时作用于表和字段，ClickHouse会使用先到期的那个。
 
@@ -387,8 +387,8 @@ ALTER TABLE example_table
 
 如果在合并的时候执行`SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在`SELECT`之前使用 [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) 查询。
 
-## Using Multiple Block Devices for Data Storage {#table-engine-mergetree-multiple-volumes}
+## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 
-### Configuration {#table-engine-mergetree-multiple-volumes-configure}
+### Configuration {#table_engine-mergetree-multiple-volumes-configure}
 
 [来源文章](https://clickhouse.tech/docs/en/operations/table_engines/mergetree/) <!--hide-->

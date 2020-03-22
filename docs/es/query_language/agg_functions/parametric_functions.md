@@ -1,4 +1,4 @@
-# Funciones agregadas paramétricas {#aggregate-functions-parametric}
+# Funciones agregadas paramétricas {#aggregate_functions_parametric}
 
 Algunas funciones agregadas pueden aceptar no solo columnas de argumentos (utilizadas para la compresión), sino un conjunto de parámetros: constantes para la inicialización. La sintaxis es de dos pares de corchetes en lugar de uno. El primero es para parámetros, y el segundo es para argumentos.
 

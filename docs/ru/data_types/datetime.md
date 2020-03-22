@@ -1,4 +1,4 @@
-# DateTime {#data-type-datetime}
+# DateTime {#data_type-datetime}
 
 Позволяет хранить момент времени, который может быть представлен как календарная дата и время.
 

@@ -72,7 +72,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-## Сворачивание (удаление) строк {#table-engines-versionedcollapsingmergetree}
+## Сворачивание (удаление) строк {#table_engines-versionedcollapsingmergetree}
 
 ### Данные {#dannye}
 
@@ -120,7 +120,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 2.  Длинные растущие массивы в столбцах снижают эффективность работы движка за счёт нагрузки на запись. Чем проще данные, тем выше эффективность.
 3.  `SELECT` результаты сильно зависят от согласованности истории изменений объекта. Будьте точны при подготовке данных для вставки. Вы можете получить непредсказуемые результаты с несогласованными данными, такими как отрицательные значения для неотрицательных метрик, таких как глубина сеанса.
 
-### Алгоритм {#table-engines-versionedcollapsingmergetree-algorithm}
+### Алгоритм {#table_engines-versionedcollapsingmergetree-algorithm}
 
 Когда ClickHouse объединяет куски данных, он удаляет каждую пару строк, которые имеют один и тот же первичный ключ и версию и разный `Sign`. Порядок строк не имеет значения.
 

@@ -1,4 +1,4 @@
-## ALTERAR {#query-language-queries-alter}
+## ALTERAR {#query_language_queries_alter}
 
 El `ALTER` consulta sólo se admite para `*MergeTree` mesas, así como `Merge`y`Distributed`. La consulta tiene varias variaciones.
 
@@ -23,7 +23,7 @@ Se admiten las siguientes acciones:
 
 Estas acciones se describen en detalle a continuación.
 
-#### AÑADIR COLUMNA {#alter-add-column}
+#### AÑADIR COLUMNA {#alter_add-column}
 
 ``` sql
 ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after]
@@ -43,7 +43,7 @@ Ejemplo:
 ALTER TABLE visits ADD COLUMN browser String AFTER user_id
 ```
 
-#### COLUMNA DE GOTA {#alter-drop-column}
+#### COLUMNA DE GOTA {#alter_drop-column}
 
 ``` sql
 DROP COLUMN [IF EXISTS] name
@@ -59,7 +59,7 @@ Ejemplo:
 ALTER TABLE visits DROP COLUMN browser
 ```
 
-#### Sistema abierto. {#alter-clear-column}
+#### Sistema abierto. {#alter_clear-column}
 
 ``` sql
 CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
@@ -75,7 +75,7 @@ Ejemplo:
 ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
 ```
 
-#### COLUMNA DE COMENTARIOS {#alter-comment-column}
+#### COLUMNA DE COMENTARIOS {#alter_comment-column}
 
 ``` sql
 COMMENT COLUMN [IF EXISTS] name 'comment'
@@ -93,7 +93,7 @@ Ejemplo:
 ALTER TABLE visits COMMENT COLUMN browser 'The table shows the browser used for accessing the site.'
 ```
 
-#### COLUMNA MODIFICAR {#alter-modify-column}
+#### COLUMNA MODIFICAR {#alter_modify-column}
 
 ``` sql
 MODIFY COLUMN [IF EXISTS] name [type] [default_expr] [TTL]
@@ -192,7 +192,7 @@ Comprobación de restricciones *no se ejecutará* en los datos existentes si se 
 
 Todos los cambios en las tablas replicadas se transmiten a ZooKeeper, por lo que se aplicarán en otras réplicas.
 
-### Manipulaciones con particiones y piezas {#alter-manipulations-with-partitions}
+### Manipulaciones con particiones y piezas {#alter_manipulations-with-partitions}
 
 Las siguientes operaciones con [partición](../operations/table_engines/custom_partitioning_key.md) están disponibles:
 
@@ -231,7 +231,7 @@ Después de ejecutar la consulta, puede hacer lo que quiera con los datos en el 
 
 Esta consulta se replica – mueve los datos a la `detached` directorio en todas las réplicas. Tenga en cuenta que solo puede ejecutar esta consulta en una réplica de líder. Para averiguar si una réplica es un líder, realice `SELECT` Consulta a la [sistema.Replica](../operations/system_tables.md#system_tables-replicas) tabla. Alternativamente, es más fácil hacer un `DETACH` consulta en todas las réplicas: todas las réplicas producen una excepción, excepto la réplica líder.
 
-#### PARTICIÓN DE CAÍDA {#alter-drop-partition}
+#### PARTICIÓN DE CAÍDA {#alter_drop-partition}
 
 ``` sql
 ALTER TABLE table_name DROP PARTITION partition_expr
@@ -243,7 +243,7 @@ Lea cómo configurar la expresión de partición en una sección [Cómo especifi
 
 La consulta se replica: elimina los datos de todas las réplicas.
 
-#### CAÍDA DE DESPRENDIMIENTO DE LA PARTICIÓN\|PARTE {#alter-drop-detached}
+#### CAÍDA DE DESPRENDIMIENTO DE LA PARTICIÓN\|PARTE {#alter_drop-detached}
 
 ``` sql
 ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
@@ -252,7 +252,7 @@ ALTER TABLE table_name DROP DETACHED PARTITION|PART partition_expr
 Quita la parte especificada o todas las partes de la partición especificada de `detached`.
 Más información sobre cómo establecer la expresión de partición en una sección [Cómo especificar la expresión de partición](#alter-how-to-specify-part-expr).
 
-#### ADJUNTA PARTICIÓN\|PARTE {#alter-attach-partition}
+#### ADJUNTA PARTICIÓN\|PARTE {#alter_attach-partition}
 
 ``` sql
 ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
@@ -271,7 +271,7 @@ Esta consulta se replica. El iniciador de réplica comprueba si hay datos en el 
 
 Entonces puedes poner datos en el `detached` en una réplica, y utilice el directorio `ALTER ... ATTACH` consulta para agregarlo a la tabla en todas las réplicas.
 
-#### ADJUNTA PARTICIÓN DE {#alter-attach-partition-from}
+#### ADJUNTA PARTICIÓN DE {#alter_attach-partition-from}
 
 ``` sql
 ALTER TABLE table2 ATTACH PARTITION partition_expr FROM table1
@@ -284,7 +284,7 @@ Para que la consulta se ejecute correctamente, se deben cumplir las siguientes c
 -   Ambas tablas deben tener la misma estructura.
 -   Ambas tablas deben tener la misma clave de partición.
 
-#### REEMPLAZAR LA PARTICIÓN {#alter-replace-partition}
+#### REEMPLAZAR LA PARTICIÓN {#alter_replace-partition}
 
 ``` sql
 ALTER TABLE table2 REPLACE PARTITION partition_expr FROM table1
@@ -297,7 +297,7 @@ Para que la consulta se ejecute correctamente, se deben cumplir las siguientes c
 -   Ambas tablas deben tener la misma estructura.
 -   Ambas tablas deben tener la misma clave de partición.
 
-#### MUEVA LA PARTICIÓN A LA MESA {#alter-move-to-table-partition}
+#### MUEVA LA PARTICIÓN A LA MESA {#alter_move_to_table-partition}
 
 ``` sql
 ALTER TABLE table_source MOVE PARTITION partition_expr TO TABLE table_dest
@@ -312,7 +312,7 @@ Para que la consulta se ejecute correctamente, se deben cumplir las siguientes c
 -   Ambas tablas deben ser de la misma familia de motores. (replicado o no replicado)
 -   Ambas tablas deben tener la misma política de almacenamiento.
 
-#### COLUMNA CLARA EN PARTICIPACIÓN {#alter-clear-column-partition}
+#### COLUMNA CLARA EN PARTICIPACIÓN {#alter_clear-column-partition}
 
 ``` sql
 ALTER TABLE table_name CLEAR COLUMN column_name IN PARTITION partition_expr
@@ -326,7 +326,7 @@ Ejemplo:
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
-#### CONGELAR PARTICIÓN {#alter-freeze-partition}
+#### CONGELAR PARTICIÓN {#alter_freeze-partition}
 
 ``` sql
 ALTER TABLE table_name FREEZE [PARTITION partition_expr]
@@ -365,7 +365,7 @@ La restauración desde una copia de seguridad no requiere detener el servidor.
 
 Para obtener más información sobre las copias de seguridad y la restauración de datos, consulte [Copia de seguridad de datos](../operations/backup.md) apartado.
 
-#### ÍNDICE CLARO EN PARTICIPACIÓN {#alter-clear-index-partition}
+#### ÍNDICE CLARO EN PARTICIPACIÓN {#alter_clear-index-partition}
 
 ``` sql
 ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
@@ -373,7 +373,7 @@ ALTER TABLE table_name CLEAR INDEX index_name IN PARTITION partition_expr
 
 La consulta funciona de forma similar a `CLEAR COLUMN`, pero restablece un índice en lugar de una columna de datos.
 
-#### PARTICIÓN FETCH {#alter-fetch-partition}
+#### PARTICIÓN FETCH {#alter_fetch-partition}
 
 ``` sql
 ALTER TABLE table_name FETCH PARTITION partition_expr FROM 'path-in-zookeeper'
@@ -402,7 +402,7 @@ Antes de descargar, el sistema verifica si la partición existe y la estructura 
 
 Aunque se llama a la consulta `ALTER TABLE`, no cambia la estructura de la tabla y no cambiar inmediatamente los datos disponibles en la tabla.
 
-#### PARTICIÓN DE MOVIMIENTO\|PARTE {#alter-move-partition}
+#### PARTICIÓN DE MOVIMIENTO\|PARTE {#alter_move-partition}
 
 Mueve particiones o partes de datos a otro volumen o disco para `MergeTree`-mesas de motor. Ver [Uso de varios dispositivos de bloque para el almacenamiento de datos](../operations/table_engines/mergetree.md#table_engine-mergetree-multiple-volumes).
 

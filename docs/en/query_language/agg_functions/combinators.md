@@ -1,4 +1,4 @@
-# Aggregate function combinators {#aggregate-functions-combinators}
+# Aggregate function combinators {#aggregate_functions_combinators}
 
 The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
 
@@ -32,11 +32,11 @@ To work with these states, use:
 -   [-Merge](#aggregate_functions_combinators_merge) combinator.
 -   [-MergeState](#aggregate_functions_combinators_mergestate) combinator.
 
-## -Merge {#aggregate-functions-combinators-merge}
+## -Merge {#aggregate_functions_combinators-merge}
 
 If you apply this combinator, the aggregate function takes the intermediate aggregation state as an argument, combines the states to finish aggregation, and returns the resulting value.
 
-## -MergeState {#aggregate-functions-combinators-mergestate}
+## -MergeState {#aggregate_functions_combinators-mergestate}
 
 Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it doesn’t return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
 

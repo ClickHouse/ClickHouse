@@ -4,7 +4,7 @@ Este motor pertenece a la familia de motores de registro. Consulte las propiedad
 
 Utilice este motor en escenarios en los que necesite escribir muchas tablas con una pequeña cantidad de datos (menos de 1 millón de filas).
 
-## Creación de una tabla {#table-engines-stripelog-creating-a-table}
+## Creación de una tabla {#table_engines-stripelog-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -17,7 +17,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Vea la descripción detallada del [CREAR TABLA](../../query_language/create.md#create-table-query) consulta.
 
-## Escribir los datos {#table-engines-stripelog-writing-the-data}
+## Escribir los datos {#table_engines-stripelog-writing-the-data}
 
 El `StripeLog` el motor almacena todas las columnas en un archivo. Para cada `INSERT` ClickHouse agrega el bloque de datos al final de un archivo de tabla, escribiendo columnas una por una.
 
@@ -28,11 +28,11 @@ Para cada tabla, ClickHouse escribe los archivos:
 
 El `StripeLog` el motor no soporta el `ALTER UPDATE` y `ALTER DELETE` operación.
 
-## Lectura de los datos {#table-engines-stripelog-reading-the-data}
+## Lectura de los datos {#table_engines-stripelog-reading-the-data}
 
 El archivo con marcas permite ClickHouse paralelizar la lectura de datos. Esto significa que un `SELECT` consulta devuelve filas en un orden impredecible. Descripción `ORDER BY` cláusula para ordenar filas.
 
-## Ejemplo de uso {#table-engines-stripelog-example-of-use}
+## Ejemplo de uso {#table_engines-stripelog-example-of-use}
 
 Creación de una tabla:
 

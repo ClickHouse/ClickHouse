@@ -17,7 +17,7 @@
 
 `any (только для group_by_overflow_mode)` - продолжить агрегацию по ключам, которые успели войти в набор, но не добавлять новые ключи в набор.
 
-## max\_memory\_usage {#settings-max-memory-usage}
+## max\_memory\_usage {#settings_max_memory_usage}
 
 Максимальный возможный объём оперативной памяти для выполнения запроса на одном сервере.
 
@@ -74,7 +74,7 @@
 Что делать, когда количество уникальных ключей при агрегации превысило ограничение: throw, break или any. По умолчанию: throw.
 Использование значения any позволяет выполнить GROUP BY приближённо. Качество такого приближённого вычисления сильно зависит от статистических свойств данных.
 
-## max\_bytes\_before\_external\_group\_by {#settings-max-bytes-before-external-group-by}
+## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
 Включает или отключает выполнение секций `GROUP BY` во внешней памяти. Смотрите [GROUP BY во внешней памяти](../../query_language/select.md#select-group-by-in-external-memory).
 
@@ -97,7 +97,7 @@
 
 Что делать, если количество строк, полученное перед сортировкой, превысило одно из ограничений: throw или break. По умолчанию: throw.
 
-## max\_result\_rows {#setting-max-result-rows}
+## max\_result\_rows {#setting-max_result_rows}
 
 Ограничение на количество строк результата. Проверяются также для подзапросов и на удалённых серверах при выполнении части распределённого запроса.
 
@@ -224,7 +224,7 @@ FORMAT Null;
 
 Что делать, когда количество данных превысило одно из ограничений: throw или break. По умолчанию: throw.
 
-## max\_rows\_in\_join {#settings-max-rows-in-join}
+## max\_rows\_in\_join {#settings-max_rows_in_join}
 
 Ограничивает количество строк в хэш-таблице, используемой при соединении таблиц.
 
@@ -241,7 +241,7 @@ FORMAT Null;
 
 Значение по умолчанию — 0.
 
-## max\_bytes\_in\_join {#settings-max-bytes-in-join}
+## max\_bytes\_in\_join {#settings-max_bytes_in_join}
 
 Ограничивает размер (в байтах) хэш-таблицы, используемой при объединении таблиц.
 
@@ -258,7 +258,7 @@ FORMAT Null;
 
 Значение по умолчанию — 0.
 
-## join\_overflow\_mode {#settings-join-overflow-mode}
+## join\_overflow\_mode {#settings-join_overflow_mode}
 
 Определяет, какое действие ClickHouse выполняет при достижении любого из следующих ограничений для `JOIN`:
 

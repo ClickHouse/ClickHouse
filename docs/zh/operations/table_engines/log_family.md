@@ -1,4 +1,4 @@
-# 日志引擎系列 {#table-engines-log-engine-family}
+# 日志引擎系列 {#table_engines-log-engine-family}
 
 这些引擎是为了需要写入许多小数据量（少于一百万行）的表的场景而开发的。
 
@@ -8,7 +8,7 @@
 -   [Log](log.md)
 -   [TinyLog](tinylog.md)
 
-## 共同属性 {#table-engines-log-engine-family-common-properties}
+## 共同属性 {#table_engines-log-engine-family-common-properties}
 
 引擎：
 
@@ -26,7 +26,7 @@
 
         如果某些事情破坏了写操作，例如服务器的异常关闭，你将会得到一张包含了损坏数据的表。
 
-## 差异 {#table-engines-log-engine-family-differences}
+## 差异 {#table_engines-log-engine-family-differences}
 
 `Log` 和 `StripeLog` 引擎支持：
 

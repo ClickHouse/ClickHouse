@@ -1,4 +1,4 @@
-# Permisos para consultas {#permissions-for-queries}
+# Permisos para consultas {#permissions_for_queries}
 
 Las consultas en ClickHouse se pueden dividir en varios tipos:
 
@@ -15,7 +15,7 @@ La siguiente configuración regula los permisos de usuario según el tipo de con
 
 `KILL QUERY` se puede realizar con cualquier configuración.
 
-## sólo lectura {#settings-readonly}
+## sólo lectura {#settings_readonly}
 
 Restringe los permisos para leer datos, escribir datos y cambiar las consultas de configuración.
 
@@ -36,7 +36,7 @@ de cambiar sólo ajustes específicos, para más detalles ver [restricciones en 
 
 Valor predeterminado: 0
 
-## Método de codificación de datos: {#settings-allow-ddl}
+## Método de codificación de datos: {#settings_allow_ddl}
 
 Permite o niega [DDL](https://en.wikipedia.org/wiki/Data_definition_language) consulta.
 

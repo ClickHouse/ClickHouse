@@ -1,4 +1,4 @@
-# Tipos de datos {#data-types}
+# Tipos de datos {#data_types}
 
 ClickHouse puede almacenar varios tipos de datos en celdas de tabla.
 

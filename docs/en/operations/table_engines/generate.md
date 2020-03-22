@@ -1,4 +1,4 @@
-# GenerateRandom {#table-engines-generate}
+# GenerateRandom {#table_engines-generate}
 
 The GenerateRandom table engine produces random data for given table schema.
 

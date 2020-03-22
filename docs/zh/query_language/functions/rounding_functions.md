@@ -16,7 +16,7 @@
 
 返回大于或等于’x’的最小舍入数。在其他方面，它与’floor’功能相同（见上文）。
 
-## round(x\[, N\]) {#rounding-functions-round}
+## round(x\[, N\]) {#rounding_functions-round}
 
 将值取整到指定的小数位数。
 

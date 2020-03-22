@@ -24,7 +24,7 @@ After enabling readonly mode, you can’t disable it in the current session.
 
 When using the GET method in the HTTP interface, ‘readonly = 1’ is set automatically. In other words, for queries that modify data, you can only use the POST method. You can send the query itself either in the POST body, or in the URL parameter.
 
-## max\_memory\_usage {#settings-max-memory-usage}
+## max\_memory\_usage {#settings_max_memory_usage}
 
 The maximum amount of RAM to use for running a query on a single server.
 

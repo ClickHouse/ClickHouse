@@ -1,4 +1,4 @@
-# Combinadores de funciones agregadas {#aggregate-functions-combinators}
+# Combinadores de funciones agregadas {#aggregate_functions_combinators}
 
 El nombre de una función agregada puede tener un sufijo anexado. Esto cambia la forma en que funciona la función de agregado.
 
@@ -32,11 +32,11 @@ Para trabajar con estos estados, use:
 -   [-Fusionar](#aggregate_functions_combinators_merge) combinador.
 -   [-MergeState](#aggregate_functions_combinators_mergestate) combinador.
 
-## -Fusionar {#aggregate-functions-combinators-merge}
+## -Fusionar {#aggregate_functions_combinators-merge}
 
 Si aplica este combinador, la función de agregado toma el estado de agregación intermedio como argumento, combina los estados para finalizar la agregación y devuelve el valor resultante.
 
-## -MergeState {#aggregate-functions-combinators-mergestate}
+## -MergeState {#aggregate_functions_combinators-mergestate}
 
 Combina los estados de agregación intermedios de la misma manera que el combinador -Merge. Sin embargo, no devuelve el valor resultante, sino un estado de agregación intermedio, similar al combinador -State.
 

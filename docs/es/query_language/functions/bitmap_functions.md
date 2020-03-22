@@ -8,7 +8,7 @@ RoaringBitmap se envuelve en una estructura de datos, mientras que el almacenami
 
 Para obtener más información sobre RoaringBitmap, consulte: [CRoaring](https://github.com/RoaringBitmap/CRoaring).
 
-## bitmapBuild {#bitmap-functions-bitmapbuild}
+## bitmapBuild {#bitmap_functions-bitmapbuild}
 
 Construya un mapa de bits a partir de una matriz de enteros sin signo.
 
@@ -120,7 +120,7 @@ Resultado:
 └───────────────────────────┘
 ```
 
-## bitmapContains {#bitmap-functions-bitmapcontains}
+## bitmapContains {#bitmap_functions-bitmapcontains}
 
 Comprueba si el mapa de bits contiene un elemento.
 

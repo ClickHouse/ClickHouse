@@ -17,7 +17,7 @@ Las diferentes versiones de cliente y servidor son compatibles entre sí, pero e
 
       ClickHouse client version is older than ClickHouse server. It may lack support for new features.
 
-## Uso {#cli-usage}
+## Uso {#cli_usage}
 
 El cliente se puede utilizar en modo interactivo y no interactivo (por lotes). Para utilizar el modo por lotes, especifique el ‘query’ parámetro, o enviar datos a ‘stdin’ (verifica que ‘stdin’ no es un terminal), o ambos. Similar a la interfaz HTTP, cuando se utiliza el ‘query’ parámetro y el envío de datos a ‘stdin’ la solicitud es una concatenación de la ‘query’ parámetro, un avance de línea y los datos en ‘stdin’. Esto es conveniente para grandes consultas INSERT.
 
@@ -90,7 +90,7 @@ Formatee una consulta como de costumbre, luego coloque los valores que desea pas
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
 ```
 
-## Configuración {#interfaces-cli-configuration}
+## Configuración {#interfaces_cli_configuration}
 
 Puede pasar parámetros a `clickhouse-client` (todos los parámetros tienen un valor predeterminado) usando:
 
@@ -120,7 +120,7 @@ Puede pasar parámetros a `clickhouse-client` (todos los parámetros tienen un v
 -   `--secure` – If specified, will connect to server over secure connection.
 -   `--param_<name>` — Value for a [consulta con parámetros](#cli-queries-with-parameters).
 
-### Archivos de configuración {#configuration-files}
+### Archivos de configuración {#configuration_files}
 
 `clickhouse-client` utiliza el primer archivo existente de los siguientes:
 

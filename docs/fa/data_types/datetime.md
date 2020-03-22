@@ -1,6 +1,6 @@
 <div markdown="1" markdown="1" dir="rtl">
 
-# DateTime {#data-type-datetime}
+# DateTime {#data_type-datetime}
 
 تاریخ با ساعت 4 بایت به صورت Unix timestamp ذخیره می کند (unsigned). به شما اجازه ی ذخیره سازی در محدوده ی تایپ Date را می دهد. حداقل مقدار در خروجی 0000-00-00 00:00:00 می باشد. زمان با دقت تا یک ثانیه ذخیره می شود.
 

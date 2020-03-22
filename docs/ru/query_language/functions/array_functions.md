@@ -12,7 +12,7 @@
 Тип результата - UInt8.
 Функция также работает для строк.
 
-## length {#array-functions-length}
+## length {#array_functions-length}
 
 Возвращает количество элементов в массиве.
 Тип результата - UInt64.
@@ -204,7 +204,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## arrayEnumerate(arr) {#array-functions-arrayenumerate}
+## arrayEnumerate(arr) {#array_functions-arrayenumerate}
 
 Возвращает массив \[1, 2, 3, …, length(arr)\]
 
@@ -468,7 +468,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 Элементы массива равные `NULL` обрабатываются как обычные значения.
 
-## arraySort(\[func,\] arr, …) {#array-functions-sort}
+## arraySort(\[func,\] arr, …) {#array_functions-sort}
 
 Возвращает массив `arr`, отсортированный в восходящем порядке. Если задана функция `func`, то порядок сортировки определяется результатом применения этой функции на элементы массива `arr`. Если `func` принимает несколько аргументов, то в функцию `arraySort` нужно передавать несколько массивов, которые будут соответствовать аргументам функции `func`. Подробные примеры рассмотрены в конце описания `arraySort`.
 
@@ -568,7 +568,7 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 !!! note "Примечание"
     Для улучшения эффективности сортировки применяется [преобразование Шварца](https://ru.wikipedia.org/wiki/%D0%9F%D1%80%D0%B5%D0%BE%D0%B1%D1%80%D0%B0%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5_%D0%A8%D0%B2%D0%B0%D1%80%D1%86%D0%B0).
 
-## arrayReverseSort(\[func,\] arr, …) {#array-functions-reverse-sort}
+## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
 Возвращает массив `arr`, отсортированный в нисходящем порядке. Если указана функция `func`, то массив `arr` сначала сортируется в порядке, который определяется функцией `func`, а затем отсортированный массив переворачивается. Если функция `func` принимает несколько аргументов, то в функцию `arrayReverseSort` необходимо передавать несколько массивов, которые будут соответствовать аргументам функции `func`. Подробные примеры рассмотрены в конце описания функции `arrayReverseSort`.
 
@@ -764,7 +764,7 @@ SELECT arrayDistinct([1, 2, 2, 3, 1])
 └────────────────────────────────┘
 ```
 
-## arrayEnumerateDense(arr) {#array-functions-arrayenumeratedense}
+## arrayEnumerateDense(arr) {#array_functions-arrayenumeratedense}
 
 Возвращает массив того же размера, что и исходный массив, с индексами исходного массива, указывающими, где каждый элемент впервые появляется в исходном массиве.
 
@@ -840,7 +840,7 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayReverse(arr) {#array-functions-arrayreverse}
+## arrayReverse(arr) {#array_functions-arrayreverse}
 
 Возвращает массив того же размера, что и исходный массив, содержащий элементы в обратном порядке.
 

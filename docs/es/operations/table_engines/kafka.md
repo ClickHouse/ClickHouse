@@ -8,7 +8,7 @@ Kafka te permite:
 -   Organice el almacenamiento tolerante a fallos.
 -   Secuencias de proceso a medida que estén disponibles.
 
-## Creación de una tabla {#table-engine-kafka-creating-a-table}
+## Creación de una tabla {#table_engine-kafka-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

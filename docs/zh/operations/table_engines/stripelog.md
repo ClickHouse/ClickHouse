@@ -1,10 +1,10 @@
-# StripeLog {#table-engines-stripelog}
+# StripeLog {#table_engines-stripelog}
 
 该引擎属于日志引擎系列。请在[日志引擎系列](log_family.md)文章中查看引擎的共同属性和差异。
 
 在你需要写入许多小数据量（小于一百万行）的表的场景下使用这个引擎。
 
-## 建表 {#table-engines-stripelog-creating-a-table}
+## 建表 {#table_engines-stripelog-creating-a-table}
 
     CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
     (
@@ -15,7 +15,7 @@
 
 查看[建表](../../query_language/create.md#create-table-query)请求的详细说明。
 
-## 写数据 {#table-engines-stripelog-writing-the-data}
+## 写数据 {#table_engines-stripelog-writing-the-data}
 
 `StripeLog` 引擎将所有列存储在一个文件中。对每一次 `Insert` 请求，ClickHouse 将数据块追加在表文件的末尾，逐列写入。
 
@@ -26,11 +26,11 @@ ClickHouse 为每张表写入以下文件：
 
 `StripeLog` 引擎不支持 `ALTER UPDATE` 和 `ALTER DELETE` 操作。
 
-## 读数据 {#table-engines-stripelog-reading-the-data}
+## 读数据 {#table_engines-stripelog-reading-the-data}
 
 带标记的文件使得 ClickHouse 可以并行的读取数据。这意味着 `SELECT` 请求返回行的顺序是不可预测的。使用 `ORDER BY` 子句对行进行排序。
 
-## 使用示例 {#table-engines-stripelog-example-of-use}
+## 使用示例 {#table_engines-stripelog-example-of-use}
 
 建表：
 

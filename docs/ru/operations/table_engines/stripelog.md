@@ -4,7 +4,7 @@
 
 Движок разработан для сценариев, когда необходимо записывать много таблиц с небольшим объёмом данных (менее 1 миллиона строк).
 
-## Создание таблицы {#table-engines-stripelog-creating-a-table}
+## Создание таблицы {#table_engines-stripelog-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -17,7 +17,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Смотрите подробное описание запроса [CREATE TABLE](../../query_language/create.md#create-table-query).
 
-## Запись данных {#table-engines-stripelog-writing-the-data}
+## Запись данных {#table_engines-stripelog-writing-the-data}
 
 Движок `StripeLog` хранит все столбцы в одном файле. При каждом запросе `INSERT`, ClickHouse добавляет блок данных в конец файла таблицы, записывая столбцы один за другим.
 
@@ -28,11 +28,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Движок `StripeLog` не поддерживает запросы `ALTER UPDATE` и `ALTER DELETE`.
 
-## Чтение данных {#table-engines-stripelog-reading-the-data}
+## Чтение данных {#table_engines-stripelog-reading-the-data}
 
 Файл с метками позволяет ClickHouse распараллеливать чтение данных. Это означает, что запрос `SELECT` возвращает строки в непредсказуемом порядке. Используйте секцию `ORDER BY` для сортировки строк.
 
-## Пример использования {#table-engines-stripelog-example-of-use}
+## Пример использования {#table_engines-stripelog-example-of-use}
 
 Создание таблицы:
 

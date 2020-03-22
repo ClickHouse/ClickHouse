@@ -1,4 +1,4 @@
-# Конфигурационные файлы {#configuration-files}
+# Конфигурационные файлы {#configuration_files}
 
 Основной конфигурационный файл сервера - `config.xml`. Он расположен в директории `/etc/clickhouse-server/`.
 

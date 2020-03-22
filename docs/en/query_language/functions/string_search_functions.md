@@ -259,7 +259,7 @@ Result:
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## multiSearchAllPositionsUTF8 {#multisearchallpositionsutf8}
+## multiSearchAllPositionsUTF8 {#multiSearchAllPositionsUTF8}
 
 See `multiSearchAllPositions`.
 

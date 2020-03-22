@@ -17,7 +17,7 @@ Different client and server versions are compatible with one another, but some f
 
       ClickHouse client version is older than ClickHouse server. It may lack support for new features.
 
-## Usage {#cli-usage}
+## Usage {#cli_usage}
 
 The client can be used in interactive and non-interactive (batch) mode. To use batch mode, specify the ‘query’ parameter, or send data to ‘stdin’ (it verifies that ‘stdin’ is not a terminal), or both. Similar to the HTTP interface, when using the ‘query’ parameter and sending data to ‘stdin’, the request is a concatenation of the ‘query’ parameter, a line feed, and the data in ‘stdin’. This is convenient for large INSERT queries.
 
@@ -90,7 +90,7 @@ Format a query as usual, then place the values that you want to pass from the ap
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
 ```
 
-## Configuring {#interfaces-cli-configuration}
+## Configuring {#interfaces_cli_configuration}
 
 You can pass parameters to `clickhouse-client` (all parameters have a default value) using:
 
@@ -120,7 +120,7 @@ You can pass parameters to `clickhouse-client` (all parameters have a default va
 -   `--secure` – If specified, will connect to server over secure connection.
 -   `--param_<name>` — Value for a [query with parameters](#cli-queries-with-parameters).
 
-### Configuration Files {#configuration-files}
+### Configuration Files {#configuration_files}
 
 `clickhouse-client` uses the first existing file of the following:
 

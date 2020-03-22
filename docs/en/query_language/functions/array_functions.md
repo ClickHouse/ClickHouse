@@ -12,7 +12,7 @@ Returns 0 for an empty array, or 1 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
-## length {#array-functions-length}
+## length {#array_functions-length}
 
 Returns the number of items in the array.
 The result type is UInt64.
@@ -208,7 +208,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## arrayEnumerate(arr) {#array-functions-arrayenumerate}
+## arrayEnumerate(arr) {#array_functions-arrayenumerate}
 
 Returns the array \[1, 2, 3, …, length (arr) \]
 
@@ -472,7 +472,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 Array elements set to `NULL` are handled as normal values.
 
-## arraySort(\[func,\] arr, …) {#array-functions-sort}
+## arraySort(\[func,\] arr, …) {#array_functions-sort}
 
 Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.
 
@@ -572,7 +572,7 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 !!! note "Note"
     To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
 
-## arrayReverseSort(\[func,\] arr, …) {#array-functions-reverse-sort}
+## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
@@ -770,7 +770,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-## arrayEnumerateDense(arr) {#array-functions-arrayenumeratedense}
+## arrayEnumerateDense(arr) {#array_functions-arrayenumeratedense}
 
 Returns an array of the same size as the source array, indicating where each element first appears in the source array.
 
@@ -846,7 +846,7 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayReverse(arr) {#array-functions-arrayreverse}
+## arrayReverse(arr) {#array_functions-arrayreverse}
 
 Returns an array of the same size as the original array containing the elements in reverse order.
 

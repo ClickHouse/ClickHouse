@@ -527,7 +527,7 @@ Result:
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## runningDifference(x) {#other-functions-runningdifference}
+## runningDifference(x) {#other_functions-runningdifference}
 
 Calculates the difference between successive row values ​​in the data block.
 Returns 0 for the first row and the difference from the previous row for each subsequent row.

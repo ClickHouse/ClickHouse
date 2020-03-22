@@ -111,7 +111,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-## format\_schema\_path {#server-settings-format-schema-path}
+## format\_schema\_path {#server_settings-format_schema_path}
 
 Путь к каталогу со схемами для входных данных. Например со схемами для формата [CapnProto](../../interfaces/formats.md#capnproto).
 
@@ -122,7 +122,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
   <format_schema_path>format_schemas/</format_schema_path>
 ```
 
-## graphite {#server-settings-graphite}
+## graphite {#server_settings-graphite}
 
 Отправка данных в [Graphite](https://github.com/graphite-project).
 
@@ -156,7 +156,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </graphite>
 ```
 
-## graphite\_rollup {#server-settings-graphite-rollup}
+## graphite\_rollup {#server_settings-graphite-rollup}
 
 Настройка прореживания данных для Graphite.
 
@@ -198,7 +198,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <https>0000</https>
 ```
 
-## http\_server\_default\_response {#server-settings-http-server-default-response}
+## http\_server\_default\_response {#server_settings-http_server_default_response}
 
 Страница, показываемая по умолчанию, при обращении к HTTP(s) серверу ClickHouse.
 Значение по умолчанию «Ok.» (с переводом строки на конце).
@@ -213,7 +213,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </http_server_default_response>
 ```
 
-## include\_from {#server-settings-include-from}
+## include\_from {#server_settings-include_from}
 
 Путь к файлу с подстановками.
 
@@ -278,7 +278,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <keep_alive_timeout>3</keep_alive_timeout>
 ```
 
-## listen\_host {#server-settings-listen-host}
+## listen\_host {#server_settings-listen_host}
 
 Ограничение по хостам, с которых может прийти запрос. Если необходимо, чтобы сервер отвечал всем, то надо указать `::`.
 
@@ -289,7 +289,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## logger {#server-settings-logger}
+## logger {#server_settings-logger}
 
 Настройки логирования.
 
@@ -414,7 +414,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
-## merge\_tree {#server-settings-merge-tree}
+## merge\_tree {#server_settings-merge_tree}
 
 Тонкая настройка таблиц семейства [MergeTree](../table_engines/mergetree.md).
 
@@ -428,7 +428,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </merge_tree>
 ```
 
-## openSSL {#server-settings-openssl}
+## openSSL {#server_settings-openssl}
 
 Настройки клиента/сервера SSL.
 
@@ -487,7 +487,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </openSSL>
 ```
 
-## part\_log {#server-settings-part-log}
+## part\_log {#server_settings-part-log}
 
 Логирование событий, связанных с данными типа [MergeTree](../table_engines/mergetree.md). Например, события добавления или мержа данных. Лог можно использовать для симуляции алгоритмов слияния, чтобы сравнивать их характеристики. Также, можно визуализировать процесс слияния.
 
@@ -511,7 +511,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </part_log>
 ```
 
-## path {#server-settings-path}
+## path {#server_settings-path}
 
 Путь к каталогу с данными.
 
@@ -524,7 +524,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <path>/var/lib/clickhouse/</path>
 ```
 
-## query\_log {#server-settings-query-log}
+## query\_log {#server_settings-query-log}
 
 Настройка логирования запросов, принятых с настройкой [log\_queries=1](../settings/settings.md).
 
@@ -550,7 +550,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </query_log>
 ```
 
-## query\_thread\_log {#server-settings-query-thread-log}
+## query\_thread\_log {#server_settings-query-thread-log}
 
 Настройка логирования потоков выполнения запросов, принятых с настройкой [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads).
 
@@ -576,7 +576,7 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 </query_thread_log>
 ```
 
-## trace\_log {#server-settings-trace-log}
+## trace\_log {#server_settings-trace_log}
 
 Settings for the [trace\_log](../system_tables.md#system_tables-trace_log) system table operation.
 
@@ -614,7 +614,7 @@ The default server configuration file `config.xml` contains the following settin
 
 -   [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## timezone {#server-settings-timezone}
+## timezone {#server_settings-timezone}
 
 Временная зона сервера.
 
@@ -628,7 +628,7 @@ The default server configuration file `config.xml` contains the following settin
 <timezone>Europe/Moscow</timezone>
 ```
 
-## tcp\_port {#server-settings-tcp-port}
+## tcp\_port {#server_settings-tcp_port}
 
 Порт для взаимодействия с клиентами по протоколу TCP.
 
@@ -638,7 +638,7 @@ The default server configuration file `config.xml` contains the following settin
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server-settings-tcp-port-secure}
+## tcp\_port\_secure {#server_settings-tcp_port-secure}
 
 TCP порт для защищённого обмена данными с клиентами. Используйте с настройкой [OpenSSL](#server_settings-openssl).
 
@@ -652,7 +652,7 @@ TCP порт для защищённого обмена данными с кли
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql\_port {#server-settings-mysql-port}
+## mysql\_port {#server_settings-mysql_port}
 
 Порт для взаимодействия с клиентами по протоколу MySQL.
 
@@ -675,7 +675,7 @@ TCP порт для защищённого обмена данными с кли
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
 ```
 
-## uncompressed\_cache\_size {#server-settings-uncompressed-cache-size}
+## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
 
 Размер кеша (в байтах) для несжатых данных, используемых движками таблиц семейства [MergeTree](../table_engines/mergetree.md).
 
@@ -689,7 +689,7 @@ TCP порт для защищённого обмена данными с кли
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user\_files\_path {#server-settings-user-files-path}
+## user\_files\_path {#server_settings-user_files_path}
 
 Каталог с пользовательскими файлами. Используется в табличной функции [file()](../../query_language/table_functions/file.md).
 
@@ -714,7 +714,7 @@ TCP порт для защищённого обмена данными с кли
 <users_config>users.xml</users_config>
 ```
 
-## zookeeper {#server-settings-zookeeper}
+## zookeeper {#server-settings_zookeeper}
 
 Содержит параметры, позволяющие ClickHouse взаимодействовать с кластером [ZooKeeper](http://zookeeper.apache.org/).
 
@@ -766,7 +766,7 @@ ClickHouse использует ZooKeeper для хранения метадан
 -   [Репликация](../../operations/table_engines/replication.md)
 -   [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
-## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use-minimalistic-part-header-in-zookeeper}
+## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
 Способ хранения заголовков кусков данных в ZooKeeper.
 
