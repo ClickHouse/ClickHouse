@@ -191,10 +191,9 @@ def build_single_page_version(lang, args, cfg):
                 if not args.skip_pdf:
                     single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
                     single_page_pdf = single_page_index_html.replace('index.html', f'clickhouse_{lang}.pdf')
-                    create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
+                    create_pdf_command = ['wkhtmltopdf', '--print-media-type', '--log-level', 'warn', single_page_index_html, single_page_pdf]
                     logging.info(' '.join(create_pdf_command))
-                    with open(os.devnull, 'w') as devnull:
-                        subprocess.check_call(' '.join(create_pdf_command), shell=True, stderr=devnull)
+                    subprocess.check_call(' '.join(create_pdf_command), shell=True)
 
                 if not args.version_prefix:  # maybe enable in future
                     with util.temp_dir() as test_dir:
