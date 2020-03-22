@@ -17,11 +17,11 @@ namespace ErrorCodes
 
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(const MergeTreeIndexMinMax & index_)
-    : IMergeTreeIndexGranule(), index(index_), hyperrectangle() {}
+    : index(index_) {}
 
 MergeTreeIndexGranuleMinMax::MergeTreeIndexGranuleMinMax(
     const MergeTreeIndexMinMax & index_, std::vector<Range> && hyperrectangle_)
-    : IMergeTreeIndexGranule(), index(index_), hyperrectangle(std::move(hyperrectangle_)) {}
+    : index(index_), hyperrectangle(std::move(hyperrectangle_)) {}
 
 void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 {
@@ -126,7 +126,7 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     const SelectQueryInfo &query,
     const Context &context,
     const MergeTreeIndexMinMax &index_)
-    : IMergeTreeIndexCondition(), index(index_), condition(query, context, index.columns, index.expr) {}
+    : index(index_), condition(query, context, index.columns, index.expr) {}
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
 {

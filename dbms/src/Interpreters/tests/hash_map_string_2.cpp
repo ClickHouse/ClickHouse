@@ -54,16 +54,16 @@ struct STRUCT : public StringRef {}; \
 namespace ZeroTraits \
 { \
     template <> \
-    inline bool check<STRUCT>(STRUCT x) { return 0 == x.size; } \
+    inline bool check<STRUCT>(STRUCT x) { return 0 == x.size; } /* NOLINT */ \
  \
     template <> \
-    inline void set<STRUCT>(STRUCT & x) { x.size = 0; } \
+    inline void set<STRUCT>(STRUCT & x) { x.size = 0; } /* NOLINT */ \
 } \
  \
 template <> \
 struct DefaultHash<STRUCT> \
 { \
-    size_t operator() (STRUCT x) const \
+    size_t operator() (STRUCT x) const /* NOLINT */ \
     { \
         return CityHash_v1_0_2::CityHash64(x.data, x.size);  \
     } \
@@ -568,10 +568,7 @@ inline bool operator==(StringRef_CompareAlwaysTrue, StringRef_CompareAlwaysTrue)
 
 inline bool operator==(StringRef_CompareAlmostAlwaysTrue lhs, StringRef_CompareAlmostAlwaysTrue rhs)
 {
-    if (lhs.size != rhs.size)
-        return false;
-
-    return true;
+    return lhs.size == rhs.size;
 }
 
 
@@ -589,9 +586,9 @@ void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
     typename Map::LookupResult it;
     bool inserted;
 
-    for (size_t i = 0, size = data.size(); i < size; ++i)
+    for (const auto & value : data)
     {
-        map.emplace(static_cast<const Key &>(data[i]), it, inserted);
+        map.emplace(static_cast<const Key &>(value), it, inserted);
         if (inserted)
             it->getMapped() = 0;
         ++it->getMapped();
@@ -617,8 +614,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = atoi(argv[1]);
-    size_t m = atoi(argv[2]);
+    size_t n = std::stol(argv[1]);
+    size_t m = std::stol(argv[2]);
 
     DB::Arena pool;
     std::vector<StringRef> data(n);

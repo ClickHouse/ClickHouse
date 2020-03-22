@@ -5,7 +5,7 @@
 #include <climits>
 #include <sstream>
 #include <AggregateFunctions/ReservoirSampler.h>
-#include <common/Types.h>
+#include <common/types.h>
 #include <Common/HashTable/Hash.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>

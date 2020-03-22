@@ -40,10 +40,12 @@ struct PartLogElement
     UInt64 bytes_uncompressed = 0;
     UInt64 rows_read = 0;
     UInt64 bytes_read_uncompressed = 0;
+    UInt64 peak_memory_usage = 0;
 
     /// Was the operation successful?
     UInt16 error = 0;
     String exception;
+
 
     static std::string name() { return "PartLog"; }
 

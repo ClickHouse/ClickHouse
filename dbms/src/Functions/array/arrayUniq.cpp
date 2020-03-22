@@ -41,7 +41,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (arguments.size() == 0)
+        if (arguments.empty())
             throw Exception("Number of arguments for function " + getName() + " doesn't match: passed "
                 + toString(arguments.size()) + ", should be at least 1.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
@@ -214,7 +214,7 @@ void FunctionArrayUniq::executeMethodImpl(
         for (ColumnArray::Offset j = prev_off; j < off; ++j)
         {
             if constexpr (has_null_map)
-            {
+            { // NOLINT
                 if ((*null_map)[j])
                 {
                     found_null = true;

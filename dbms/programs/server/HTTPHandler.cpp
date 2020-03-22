@@ -12,7 +12,7 @@
 #include <Core/ExternalTable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/config.h>
@@ -448,7 +448,7 @@ void HTTPHandler::processQuery(
             settings.readonly = 2;
     }
 
-    bool has_external_data = startsWith(request.getContentType().data(), "multipart/form-data");
+    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
     if (has_external_data)
     {

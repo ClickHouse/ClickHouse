@@ -27,7 +27,7 @@ public:
         return std::make_shared<FunctionGetScalar>(context);
     }
 
-    FunctionGetScalar(const Context & context_) : context(context_) {}
+    explicit FunctionGetScalar(const Context & context_) : context(context_) {}
 
     String getName() const override
     {

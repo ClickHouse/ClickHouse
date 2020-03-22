@@ -1,0 +1,112 @@
+body {
+    font-family: -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans","Helvetica Neue",Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol","Noto Color Emoji";
+}
+
+a:link, a:visited {
+    color: #f14600;
+    text-decoration: none;
+}
+
+a:hover, a:active {
+    text-decoration: underline;
+}
+
+#logo-icon {
+    width: 40px;
+}
+
+#logo-text {
+    width: 180px;
+    margin-left: 12px;
+}
+
+.bg-secondary-alt {
+    background: #444451;
+}
+
+.btn-outline-orange {
+    border-color: #f14600;
+    color: #f14600;
+}
+
+.btn-orange, .btn-outline-orange:hover {
+    background: #f14600;
+    color: #fff;
+}
+
+a.btn-outline-yellow {
+    border-color: #fc0;
+    color: #fc0;
+}
+
+.btn-yellow, .btn-outline-yellow:hover {
+    background: #fc0;
+    color: #000;
+}
+
+.btn-yellow:hover {
+    background: #ffe100;
+}
+
+.btn-yellow:hover, .btn-yellow:link, .btn-yellow:visited {
+    color: #000;
+}
+
+.btn:hover, .btn:active {
+    text-decoration: none;
+}
+
+.text-red {
+    color: #ff3939;
+}
+
+.text-orange {
+    color: #f14600;
+}
+
+.text-yellow {
+    color: #fc0;
+}
+
+.navbar {
+    border-bottom: 1px solid #efefef;
+}
+
+.navbar-light .navbar-nav .nav-link {
+    color: #000;
+}
+
+.navbar-light .navbar-nav .nav-link:hover {
+    color: #f14600;
+}
+
+.bg-number {
+    position: absolute;
+    font-size: 900%;
+    font-weight: bold;
+    color: rgba(241, 70, 0, 0.1);
+    line-height: 1;
+    margin-top: -1rem;
+}
+
+.dots-lb {
+    background: #fff url('/images/dots.svg') no-repeat 0 100%;
+}
+
+.dots-cb {
+    background: #fff url('/images/dots.svg') no-repeat 50% 100%;
+}
+
+.dots-rb {
+    background: #fff url('/images/dots.svg') no-repeat 100% 100%;
+}
+
+.dots-rhb {
+    background: #fff url('/images/dots.svg') no-repeat 75% 100%;
+}
+
+.dots-cc {
+    background: #fff url('/images/dots.svg') repeat-y 50% -17.5%;
+}
+
+{% include "css/highlight.css" %}

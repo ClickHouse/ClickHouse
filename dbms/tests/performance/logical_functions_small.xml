@@ -25,8 +25,8 @@
     <create_query>CREATE TABLE test_logical_functions._2_0_UInt8 (x1 UInt8, x2 UInt8) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE test_logical_functions._2_1_UInt8 (x1 UInt8, x2 UInt8) ENGINE = Memory</create_query>
 
-    <fill_query>INSERT INTO test_logical_functions._2_0_UInt8 SELECT materialize(0) AS x1, materialize(0) AS x2 FROM numbers(1000000000)</fill_query>
-    <fill_query>INSERT INTO test_logical_functions._2_1_UInt8 SELECT materialize(1) AS x1, materialize(1) AS x2 FROM numbers(1000000000)</fill_query>
+    <fill_query>INSERT INTO test_logical_functions._2_0_UInt8 SELECT materialize(0) AS x1, materialize(0) AS x2 FROM zeros(1000000000)</fill_query>
+    <fill_query>INSERT INTO test_logical_functions._2_1_UInt8 SELECT materialize(1) AS x1, materialize(1) AS x2 FROM zeros(1000000000)</fill_query>
 
     <query>SELECT count() FROM test_logical_functions._2_1_UInt8 WHERE NOT ignore(and(x1,x2))</query>
     <query>SELECT count() FROM test_logical_functions._2_0_UInt8 WHERE NOT ignore(and(x1,x2))</query>
@@ -34,20 +34,20 @@
     <query>SELECT count() FROM test_logical_functions._2_1_UInt8 WHERE NOT ignore(or(x1,x2))</query>
     <query>SELECT count() FROM test_logical_functions._2_1_UInt8 WHERE NOT ignore(xor(x1,x2))</query>
 
-    <query>SELECT count() FROM (SELECT toNullable(materialize(1)) AS x1, toNullable(materialize(1)) AS x2 FROM numbers(30000000)) WHERE NOT ignore(and(x1,x2))</query>
-    <query>SELECT count() FROM (SELECT toNullable(materialize(0)) AS x1, toNullable(materialize(0)) AS x2 FROM numbers(40000000)) WHERE NOT ignore(and(x1,x2))</query>
-    <query>SELECT count() FROM (SELECT toNullable(materialize(0)) AS x1, toNullable(materialize(0)) AS x2 FROM numbers(40000000)) WHERE NOT ignore(or(x1,x2))</query>
-    <query>SELECT count() FROM (SELECT toNullable(materialize(1)) AS x1, toNullable(materialize(1)) AS x2 FROM numbers(30000000)) WHERE NOT ignore(or(x1,x2))</query>
-    <query>SELECT count() FROM (SELECT toNullable(materialize(1)) AS x1, toNullable(materialize(1)) AS x2 FROM numbers(100000000)) WHERE NOT ignore(xor(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT toNullable(materialize(1)) AS x1, toNullable(materialize(1)) AS x2 FROM zeros(30000000)) WHERE NOT ignore(and(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT toNullable(materialize(0)) AS x1, toNullable(materialize(0)) AS x2 FROM zeros(40000000)) WHERE NOT ignore(and(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT toNullable(materialize(0)) AS x1, toNullable(materialize(0)) AS x2 FROM zeros(40000000)) WHERE NOT ignore(or(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT toNullable(materialize(1)) AS x1, toNullable(materialize(1)) AS x2 FROM zeros(30000000)) WHERE NOT ignore(or(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT toNullable(materialize(1)) AS x1, toNullable(materialize(1)) AS x2 FROM zeros(100000000)) WHERE NOT ignore(xor(x1,x2))</query>
 
     <!-- Check with bigger types: UInt16, UInt32, UInt64, Float64 -->
-    <query>SELECT count() FROM (SELECT materialize(toUInt16(1)) AS x1, materialize(toUInt32(1)) AS x2 FROM numbers(200000000)) WHERE NOT ignore(and(x1,x2))</query>
-    <query>SELECT count() FROM (SELECT materialize(toUInt32(1)) AS x1, materialize(toUInt64(1)) AS x2 FROM numbers(100000000)) WHERE NOT ignore(and(x1,x2))</query>
-    <query>SELECT count() FROM (SELECT materialize(toUInt64(1)) AS x1, materialize(0.1) AS x2 FROM numbers(100000000)) WHERE NOT ignore(and(x1,x2))</query>
-    <query>SELECT count() FROM (SELECT materialize(toUInt16(1)) AS x1, materialize(toUInt32(1)) AS x2 FROM numbers(200000000)) WHERE NOT ignore(or(x1,x2))</query>
-    <query>SELECT count() FROM (SELECT materialize(toUInt32(1)) AS x1, materialize(toUInt64(1)) AS x2 FROM numbers(100000000)) WHERE NOT ignore(or(x1,x2))</query>
-    <query>SELECT count() FROM (SELECT materialize(toUInt64(1)) AS x1, materialize(0.1) AS x2 FROM numbers(100000000)) WHERE NOT ignore(or(x1,x2))</query>
-    <query>SELECT count() FROM (SELECT materialize(toUInt64(1)) AS x1, materialize(toUInt64(1)) AS x2 FROM numbers(100000000)) WHERE NOT ignore(xor(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT materialize(toUInt16(1)) AS x1, materialize(toUInt32(1)) AS x2 FROM zeros(200000000)) WHERE NOT ignore(and(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT materialize(toUInt32(1)) AS x1, materialize(toUInt64(1)) AS x2 FROM zeros(100000000)) WHERE NOT ignore(and(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT materialize(toUInt64(1)) AS x1, materialize(0.1) AS x2 FROM zeros(100000000)) WHERE NOT ignore(and(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT materialize(toUInt16(1)) AS x1, materialize(toUInt32(1)) AS x2 FROM zeros(200000000)) WHERE NOT ignore(or(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT materialize(toUInt32(1)) AS x1, materialize(toUInt64(1)) AS x2 FROM zeros(100000000)) WHERE NOT ignore(or(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT materialize(toUInt64(1)) AS x1, materialize(0.1) AS x2 FROM zeros(100000000)) WHERE NOT ignore(or(x1,x2))</query>
+    <query>SELECT count() FROM (SELECT materialize(toUInt64(1)) AS x1, materialize(toUInt64(1)) AS x2 FROM zeros(100000000)) WHERE NOT ignore(xor(x1,x2))</query>
 
     <drop_query>DROP TABLE test_logical_functions._2_0_UInt8</drop_query>
     <drop_query>DROP TABLE test_logical_functions._2_1_UInt8</drop_query>

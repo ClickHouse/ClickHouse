@@ -144,7 +144,7 @@ public:
         /// The number of bytes read from disk.
         size_t numBytesRead() const { return num_bytes_read; }
         /// Filter you need to apply to newly-read columns in order to add them to block.
-        const ColumnUInt8 * getFilterOriginal() const { return filter_original; }
+        const ColumnUInt8 * getFilterOriginal() const { return filter_original ? filter_original : filter; }
         const ColumnUInt8 * getFilter() const { return filter; }
         ColumnPtr & getFilterHolder() { return filter_holder; }
 
@@ -213,7 +213,6 @@ private:
     ReadResult startReadingChain(size_t max_rows, MarkRanges & ranges);
     Columns continueReadingChain(ReadResult & result, size_t & num_rows);
     void executePrewhereActionsAndFilterColumns(ReadResult & result);
-    void filterColumns(Columns & columns, const IColumn::Filter & filter) const;
 
     IMergeTreeReader * merge_tree_reader = nullptr;
     const MergeTreeIndexGranularity * index_granularity = nullptr;

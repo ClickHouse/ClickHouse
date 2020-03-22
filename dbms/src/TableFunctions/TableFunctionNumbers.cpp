@@ -35,7 +35,7 @@ StoragePtr TableFunctionNumbers<multithreaded>::executeImpl(const ASTPtr & ast_f
 
         context.checkAccess(AccessType::numbers);
 
-        auto res = StorageSystemNumbers::create(table_name, multithreaded, length, offset, false);
+        auto res = StorageSystemNumbers::create(StorageID(getDatabaseName(), table_name), multithreaded, length, offset, false);
         res->startup();
         return res;
     }

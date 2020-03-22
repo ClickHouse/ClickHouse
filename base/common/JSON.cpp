@@ -215,7 +215,7 @@ JSON::ElementType JSON::getType() const
 
 void JSON::checkPos(Pos pos) const
 {
-    if (pos >= ptr_end)
+    if (pos >= ptr_end || ptr_begin == nullptr)
         throw JSONException("JSON: unexpected end of data.");
 }
 
@@ -341,7 +341,7 @@ JSON::Pos JSON::skipArray() const
     if (*pos == ']')
         return ++pos;
 
-    while (1)
+    while (true)
     {
         pos = JSON(pos, ptr_end, level + 1).skipElement();
 
@@ -373,7 +373,7 @@ JSON::Pos JSON::skipObject() const
     if (*pos == '}')
         return ++pos;
 
-    while (1)
+    while (true)
     {
         pos = JSON(pos, ptr_end, level + 1).skipNameValuePair();
 
@@ -776,7 +776,7 @@ JSON::iterator & JSON::iterator::operator++()
     return *this;
 }
 
-JSON::iterator JSON::iterator::operator++(int)
+JSON::iterator JSON::iterator::operator++(int) // NOLINT
 {
     iterator copy(*this);
     ++*this;

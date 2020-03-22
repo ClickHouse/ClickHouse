@@ -306,8 +306,8 @@ struct MultiMatchAnyImpl
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
         auto on_match = []([[maybe_unused]] unsigned int id,
-                           unsigned long long /* from */,
-                           unsigned long long /* to */,
+                           unsigned long long /* from */, // NOLINT
+                           unsigned long long /* to */, // NOLINT
                            unsigned int /* flags */,
                            void * context) -> int
         {
@@ -407,8 +407,8 @@ struct MultiMatchAllIndicesImpl
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
         auto on_match = [](unsigned int id,
-                           unsigned long long /* from */,
-                           unsigned long long /* to */,
+                           unsigned long long /* from */, // NOLINT
+                           unsigned long long /* to */, // NOLINT
                            unsigned int /* flags */,
                            void * context) -> int
         {
@@ -518,7 +518,7 @@ struct ReplaceRegexpImpl
     {
         Instructions instructions;
 
-        String now = "";
+        String now;
         for (size_t i = 0; i < s.size(); ++i)
         {
             if (s[i] == '\\' && i + 1 < s.size())
@@ -898,7 +898,7 @@ public:
         String needle = c1_const->getValue<String>();
         String replacement = c2_const->getValue<String>();
 
-        if (needle.size() == 0)
+        if (needle.empty())
             throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))

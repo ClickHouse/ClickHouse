@@ -97,8 +97,8 @@ public:
     /// If preprocessed_dir is empty - calculate from loaded_config.path + /preprocessed_configs/
     void savePreprocessedConfig(const LoadedConfig & loaded_config, std::string preprocessed_dir);
 
-    /// Set path of main config.xml . It will be cutted from all configs placed to preprocessed_configs/
-    void setConfigPath(const std::string & config_path);
+    /// Set path of main config.xml. It will be cutted from all configs placed to preprocessed_configs/
+    static void setConfigPath(const std::string & config_path);
 
 public:
     using Files = std::vector<std::string>;
@@ -127,11 +127,9 @@ private:
 private:
     using NodePtr = Poco::AutoPtr<Poco::XML::Node>;
 
-    void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_node, const Poco::XML::Node * with_node);
+    void mergeRecursive(XMLDocumentPtr config, Poco::XML::Node * config_root, const Poco::XML::Node * with_root);
 
     void merge(XMLDocumentPtr config, XMLDocumentPtr with);
-
-    std::string layerFromHost();
 
     void doIncludesRecursive(
             XMLDocumentPtr config,

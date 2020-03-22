@@ -5,7 +5,7 @@
 #include <emmintrin.h>
 #endif
 
-#include <common/Types.h>
+#include <common/types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 

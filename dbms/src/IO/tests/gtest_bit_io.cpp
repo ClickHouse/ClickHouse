@@ -27,12 +27,12 @@ const UInt64 BIT_PATTERN = 0b11101011'11101111'10111010'11101111'10101111'101110
 const uint8_t PRIMES[] = {2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61};
 
 template <typename T>
-std::string bin(const T & value, size_t bits = sizeof(T)*8)
+std::string bin(const T & value, size_t bits = sizeof(T) * 8)
 {
     static const uint8_t MAX_BITS = sizeof(T)*8;
     assert(bits <= MAX_BITS);
 
-    return std::bitset<sizeof(T) * 8>(static_cast<unsigned long long>(value))
+    return std::bitset<sizeof(T) * 8>(static_cast<uint64_t>(value))
             .to_string().substr(MAX_BITS - bits, bits);
 }
 
@@ -112,7 +112,7 @@ struct TestCaseParameter
     std::vector<std::pair<uint8_t, UInt64>> bits_and_vals;
     std::string expected_buffer_binary;
 
-    TestCaseParameter(std::vector<std::pair<uint8_t, UInt64>> vals, std::string binary = std::string{})
+    TestCaseParameter(std::vector<std::pair<uint8_t, UInt64>> vals, std::string binary = std::string{}) // NOLINT
         : bits_and_vals(std::move(vals)),
           expected_buffer_binary(binary)
     {}
@@ -150,7 +150,7 @@ TEST_P(BitIO, WriteAndRead)
         ReadBufferFromMemory read_buffer(data.data(), data.size());
 //        auto memory_read_buffer = memory_write_buffer.tryGetReadBuffer();
 
-        if (expected_buffer_binary != std::string{})
+        if (!expected_buffer_binary.empty())
         {
             const auto actual_buffer_binary = dumpContents(data, " ", " ");
             ASSERT_EQ(expected_buffer_binary, actual_buffer_binary);

@@ -56,7 +56,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
 static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & context)
 {
     MutableColumnPtr column = ColumnString::create();
-    for (const auto & db : context.getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
         column->insert(db.first);
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
@@ -117,7 +117,7 @@ protected:
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
                 database_name = databases->getDataAt(database_idx).toString();
-                database = context.tryGetDatabase(database_name);
+                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
                 if (!database)
                 {
@@ -136,7 +136,7 @@ protected:
                 {
                     Tables external_tables = context.getSessionContext().getExternalTables();
 
-                    for (auto table : external_tables)
+                    for (auto & table : external_tables)
                     {
                         size_t src_index = 0;
                         size_t res_index = 0;
@@ -273,7 +273,7 @@ protected:
                     Array dependencies_database_name_array;
                     if (columns_mask[src_index] || columns_mask[src_index + 1])
                     {
-                        const auto dependencies = context.getDependencies(StorageID(database_name, table_name));
+                        const auto dependencies = DatabaseCatalog::instance().getDependencies(StorageID(database_name, table_name));
 
                         dependencies_table_name_array.reserve(dependencies.size());
                         dependencies_database_name_array.reserve(dependencies.size());
