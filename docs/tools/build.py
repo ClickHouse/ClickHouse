@@ -141,12 +141,14 @@ def build_for_lang(lang, args):
         if not args.skip_single_page:
             build_single_page_version(lang, args, cfg)
 
+    logging.info(f'Finished building {lang} docs')
+
     except exceptions.ConfigurationError as e:
         raise SystemExit('\n' + str(e))
 
 
 def build_single_page_version(lang, args, cfg):
-    logging.info('Building single page version for ' + lang)
+    logging.info(f'Building single page version for {lang}')
     os.environ['SINGLE_PAGE'] = '1'
 
     with util.autoremoved_file(os.path.join(args.docs_dir, lang, 'single.md')) as single_md:
@@ -212,6 +214,7 @@ def build_single_page_version(lang, args, cfg):
                             shutil.copytree(test_dir, args.save_raw_single_page)
 
                         test.test_single_page(os.path.join(test_dir, 'single', 'index.html'), lang)
+    logging.info(f'Finished building single page version for {lang}')
 
 
 def write_redirect_html(out_path, to_url):
