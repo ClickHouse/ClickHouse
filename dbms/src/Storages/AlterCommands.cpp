@@ -188,11 +188,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT && !command_ast->partition)
+    else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT)
     {
-        if (command_ast->clear_column)
-            throw Exception(R"("ALTER TABLE table DROP CONSTRAINT constraint_name" queries are not supported yet. Use "DROP CONSTRAINT constraint_name IN PARTITION".)", ErrorCodes::NOT_IMPLEMENTED);
-
         AlterCommand command;
         command.ast = command_ast->clone();
         command.if_exists = command_ast->if_exists;
