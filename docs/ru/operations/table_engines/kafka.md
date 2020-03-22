@@ -8,7 +8,7 @@ Kafka позволяет:
 -   Организовать отказоустойчивое хранилище.
 -   Обрабатывать потоки по мере их появления.
 
-## Создание таблицы {#table-engine-kafka-creating-a-table}
+## Создание таблицы {#table_engine-kafka-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]

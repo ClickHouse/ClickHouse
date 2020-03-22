@@ -108,11 +108,11 @@ Hay funciones regulares y agregadas (ver la sección “Aggregate functions”).
 Los operadores se convierten a sus funciones correspondientes durante el análisis de consultas, teniendo en cuenta su prioridad y asociatividad.
 Por ejemplo, la expresión `1 + 2 * 3 + 4` se transforma a `plus(plus(1, multiply(2, 3)), 4)`.
 
-## Tipos de datos y motores de tabla de base de datos {#data-types-and-database-table-engines}
+## Tipos de datos y motores de tabla de base de datos {#data_types-and-database-table-engines}
 
 Tipos de datos y motores de tablas en el `CREATE` las consultas se escriben de la misma manera que los identificadores o funciones. En otras palabras, pueden o no contener una lista de argumentos entre corchetes. Para obtener más información, consulte las secciones “Data types,” “Table engines,” y “CREATE”.
 
-## Alias de expresión {#syntax-expression-aliases}
+## Alias de expresión {#syntax-expression_aliases}
 
 Un alias es un nombre definido por el usuario para una expresión en una consulta.
 

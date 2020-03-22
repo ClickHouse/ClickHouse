@@ -312,7 +312,7 @@ This function accepts a number or date or date with time, and returns a string c
 
 This function accepts a number or date or date with time, and returns a FixedString containing bytes representing the corresponding value in host order (little endian). Null bytes are dropped from the end. For example, a UInt32 type value of 255 is a FixedString that is one byte long.
 
-## CAST(x, t) {#type-conversion-function-cast}
+## CAST(x, t) {#type_conversion_function-cast}
 
 Converts ‘x’ to the ‘t’ data type. The syntax CAST(x AS t) is also supported.
 
@@ -402,7 +402,7 @@ SELECT
 └───────────────────────────┴──────────────────────────────┘
 ```
 
-## parseDateTimeBestEffort {#type-conversion-functions-parsedatetimebesteffort}
+## parseDateTimeBestEffort {#type_conversion_functions-parsedatetimebesteffort}
 
 Parse a number type argument to a Date or DateTime type.
 different from toDate and toDateTime, parseDateTimeBestEffort can progress more complex date format.

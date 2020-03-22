@@ -108,11 +108,11 @@ There are regular and aggregate functions (see the section “Aggregate function
 Operators are converted to their corresponding functions during query parsing, taking their priority and associativity into account.
 For example, the expression `1 + 2 * 3 + 4` is transformed to `plus(plus(1, multiply(2, 3)), 4)`.
 
-## Data Types and Database Table Engines {#data-types-and-database-table-engines}
+## Data Types and Database Table Engines {#data_types-and-database-table-engines}
 
 Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an arguments list in brackets. For more information, see the sections “Data types,” “Table engines,” and “CREATE”.
 
-## Expression Aliases {#syntax-expression-aliases}
+## Expression Aliases {#syntax-expression_aliases}
 
 An alias is a user-defined name for an expression in a query.
 

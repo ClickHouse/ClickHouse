@@ -85,7 +85,7 @@ Los perfiles de configuración se encuentran en el archivo especificado en el pa
 <default_profile>default</default_profile>
 ```
 
-## Diccionarios\_config {#server-settings-dictionaries-config}
+## Diccionarios\_config {#server_settings-dictionaries_config}
 
 La ruta de acceso al archivo de configuración para diccionarios externos.
 
@@ -102,7 +102,7 @@ Ver también “[Diccionarios externos](../../query_language/dicts/external_dict
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## Diccionarios\_lazy\_load {#server-settings-dictionaries-lazy-load}
+## Diccionarios\_lazy\_load {#server_settings-dictionaries_lazy_load}
 
 La carga perezosa de los diccionarios.
 
@@ -118,7 +118,7 @@ El valor predeterminado es `true`.
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-## format\_schema\_path {#server-settings-format-schema-path}
+## format\_schema\_path {#server_settings-format_schema_path}
 
 La ruta de acceso al directorio con los esquemas para los datos de entrada, como los esquemas [CapnProto](../../interfaces/formats.md#capnproto) formato.
 
@@ -129,7 +129,7 @@ La ruta de acceso al directorio con los esquemas para los datos de entrada, como
   <format_schema_path>format_schemas/</format_schema_path>
 ```
 
-## Grafito {#server-settings-graphite}
+## Grafito {#server_settings-graphite}
 
 Envío de datos a [Grafito](https://github.com/graphite-project).
 
@@ -163,7 +163,7 @@ Puede configurar múltiples `<graphite>` clausula. Por ejemplo, puede usar esto 
 </graphite>
 ```
 
-## graphite\_rollup {#server-settings-graphite-rollup}
+## graphite\_rollup {#server_settings-graphite-rollup}
 
 Ajustes para reducir los datos de grafito.
 
@@ -205,7 +205,7 @@ Si `http_port` se especifica, la configuración de OpenSSL se ignora incluso si 
 <https>0000</https>
 ```
 
-## http\_server\_default\_response {#server-settings-http-server-default-response}
+## http\_server\_default\_response {#server_settings-http_server_default_response}
 
 La página que se muestra de forma predeterminada al acceder al servidor HTTP de ClickHouse.
 El valor predeterminado es “Ok.” (con un avance de línea al final)
@@ -220,7 +220,7 @@ Abrir `https://tabix.io/` al acceder `http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-## include\_from {#server-settings-include-from}
+## include\_from {#server_settings-include_from}
 
 La ruta al archivo con sustituciones.
 
@@ -285,7 +285,7 @@ El número de segundos que ClickHouse espera las solicitudes entrantes antes de 
 <keep_alive_timeout>3</keep_alive_timeout>
 ```
 
-## listen\_host {#server-settings-listen-host}
+## listen\_host {#server_settings-listen_host}
 
 Restricción en hosts de los que pueden provenir las solicitudes. Si desea que el servidor responda a todos ellos, especifique `::`.
 
@@ -296,7 +296,7 @@ Ejemplos:
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## registrador {#server-settings-logger}
+## registrador {#server_settings-logger}
 
 Configuración de registro.
 
@@ -421,7 +421,7 @@ El valor 0 significa que puede eliminar todas las tablas sin restricciones.
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
-## merge\_tree {#server-settings-merge-tree}
+## merge\_tree {#server_settings-merge_tree}
 
 Ajuste fino para tablas en el [Método de codificación de datos:](../table_engines/mergetree.md).
 
@@ -435,7 +435,7 @@ Para obtener más información, vea MergeTreeSettings.h archivo de encabezado.
 </merge_tree>
 ```
 
-## openSSL {#server-settings-openssl}
+## openSSL {#server_settings-openssl}
 
 Configuración cliente/servidor SSL.
 
@@ -494,7 +494,7 @@ Claves para la configuración del servidor/cliente:
 </openSSL>
 ```
 
-## part\_log {#server-settings-part-log}
+## part\_log {#server_settings-part-log}
 
 Registro de eventos asociados con [Método de codificación de datos:](../table_engines/mergetree.md). Por ejemplo, agregar o fusionar datos. Puede utilizar el registro para simular algoritmos de combinación y comparar sus características. Puede visualizar el proceso de fusión.
 
@@ -518,7 +518,7 @@ Utilice los siguientes parámetros para configurar el registro:
 </part_log>
 ```
 
-## camino {#server-settings-path}
+## camino {#server_settings-path}
 
 La ruta de acceso al directorio que contiene los datos.
 
@@ -531,7 +531,7 @@ La ruta de acceso al directorio que contiene los datos.
 <path>/var/lib/clickhouse/</path>
 ```
 
-## query\_log {#server-settings-query-log}
+## query\_log {#server_settings-query-log}
 
 Configuración de las consultas de registro recibidas con [log\_queries=1](../settings/settings.md) configuración.
 
@@ -557,7 +557,7 @@ Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de c
 </query_log>
 ```
 
-## Sistema abierto. {#server-settings-query-thread-log}
+## Sistema abierto. {#server_settings-query-thread-log}
 
 Configuración de subprocesos de registro de consultas recibidas con [Log\_query\_threads = 1](../settings/settings.md#settings-log-query-threads) configuración.
 
@@ -583,7 +583,7 @@ Si la tabla no existe, ClickHouse la creará. Si la estructura del registro de s
 </query_thread_log>
 ```
 
-## trace\_log {#server-settings-trace-log}
+## trace\_log {#server_settings-trace_log}
 
 Ajustes para el [trace\_log](../system_tables.md#system_tables-trace_log) operación de la tabla del sistema.
 
@@ -652,7 +652,7 @@ Para el valor de la `incl` atributo, consulte la sección “[Archivos de config
 
 -   [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## Zona horaria {#server-settings-timezone}
+## Zona horaria {#server_settings-timezone}
 
 La zona horaria del servidor.
 
@@ -666,7 +666,7 @@ La zona horaria es necesaria para las conversiones entre los formatos String y D
 <timezone>Europe/Moscow</timezone>
 ```
 
-## Tcp\_port {#server-settings-tcp-port}
+## Tcp\_port {#server_settings-tcp_port}
 
 Puerto para comunicarse con clientes a través del protocolo TCP.
 
@@ -676,7 +676,7 @@ Puerto para comunicarse con clientes a través del protocolo TCP.
 <tcp_port>9000</tcp_port>
 ```
 
-## Tcp\_port\_secure {#server-settings-tcp-port-secure}
+## Tcp\_port\_secure {#server_settings-tcp_port-secure}
 
 Puerto TCP para una comunicación segura con los clientes. Úselo con [OpenSSL](#server_settings-openssl) configuración.
 
@@ -690,7 +690,7 @@ Entero positivo.
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql\_port {#server-settings-mysql-port}
+## mysql\_port {#server_settings-mysql_port}
 
 Puerto para comunicarse con clientes a través del protocolo MySQL.
 
@@ -704,7 +704,7 @@ Ejemplo
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp\_path {#server-settings-tmp-path}
+## tmp\_path {#server-settings-tmp_path}
 
 Ruta de acceso a datos temporales para procesar consultas grandes.
 
@@ -728,7 +728,7 @@ Si no se establece [`tmp_path`](#server-settings-tmp_path) se utiliza, de lo con
 - `max_data_part_size_bytes` se ignora
 - debe tener exactamente un volumen en esa política
 
-## Uncompressed\_cache\_size {#server-settings-uncompressed-cache-size}
+## Uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
 
 Tamaño de la memoria caché (en bytes) para los datos sin comprimir utilizados por los motores de [Método de codificación de datos:](../table_engines/mergetree.md).
 
@@ -742,7 +742,7 @@ La caché sin comprimir es ventajosa para consultas muy cortas en casos individu
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user\_files\_path {#server-settings-user-files-path}
+## user\_files\_path {#server_settings-user_files_path}
 
 El directorio con archivos de usuario. Utilizado en la función de tabla [file()](../../query_language/table_functions/file.md).
 
@@ -767,7 +767,7 @@ Ruta de acceso al archivo que contiene:
 <users_config>users.xml</users_config>
 ```
 
-## Zookeeper {#server-settings-zookeeper}
+## Zookeeper {#server-settings_zookeeper}
 
 Contiene la configuración que permite a ClickHouse interactuar con [ZooKeeper](http://zookeeper.apache.org/) Cluster.
 
@@ -820,7 +820,7 @@ Esta sección contiene los siguientes parámetros:
 -   [Replicación](../../operations/table_engines/replication.md)
 -   [Guía del programador ZooKeeper](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
-## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use-minimalistic-part-header-in-zookeeper}
+## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
 Método de almacenamiento para encabezados de parte de datos en ZooKeeper.
 

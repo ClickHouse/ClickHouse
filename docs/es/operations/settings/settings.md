@@ -44,7 +44,7 @@ Si `enable_optimize_predicate_expression = 1`, entonces el tiempo de ejecución 
 
 Si `enable_optimize_predicate_expression = 0`, entonces el tiempo de ejecución de la segunda consulta es mucho más largo, porque el `WHERE` cláusula se aplica a todos los datos después de que finalice la subconsulta.
 
-## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback-to-stale-replicas-for-distributed-queries}
+## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
 Fuerza una consulta a una réplica obsoleta si los datos actualizados no están disponibles. Ver [Replicación](../table_engines/replication.md).
 
@@ -54,7 +54,7 @@ Se utiliza al realizar `SELECT` desde una tabla distribuida que apunta a tablas 
 
 De forma predeterminada, 1 (habilitado).
 
-## Fecha de nacimiento {#settings-force-index-by-date}
+## Fecha de nacimiento {#settings-force_index_by_date}
 
 Deshabilita la ejecución de consultas si el índice no se puede usar por fecha.
 
@@ -80,7 +80,7 @@ Habilita o deshabilita [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/f
 
 Tiene sentido desactivarlo si el servidor tiene millones de pequeñas tablas que se crean y destruyen constantemente.
 
-## enable\_http\_compression {#settings-enable-http-compression}
+## enable\_http\_compression {#settings-enable_http_compression}
 
 Habilita o deshabilita la compresión de datos en la respuesta a una solicitud HTTP.
 
@@ -93,7 +93,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## http\_zlib\_compression\_level {#settings-http-zlib-compression-level}
+## http\_zlib\_compression\_level {#settings-http_zlib_compression_level}
 
 Establece el nivel de compresión de datos en la respuesta a una solicitud HTTP si [enable\_http\_compression = 1](#settings-enable_http_compression).
 
@@ -101,7 +101,7 @@ Valores posibles: Números del 1 al 9.
 
 Valor predeterminado: 3.
 
-## http\_native\_compression\_disable\_checksumming\_on\_decompress {#settings-http-native-compression-disable-checksumming-on-decompress}
+## http\_native\_compression\_disable\_checksumming\_on\_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
 
 Habilita o deshabilita la verificación de suma de comprobación al descomprimir los datos HTTP POST del cliente. Se usa solo para el formato de compresión nativa ClickHouse (no se usa con `gzip` o `deflate`).
 
@@ -114,7 +114,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## send\_progress\_in\_http\_headers {#settings-send-progress-in-http-headers}
+## send\_progress\_in\_http\_headers {#settings-send_progress_in_http_headers}
 
 Habilita o deshabilita `X-ClickHouse-Progress` Encabezados de respuesta HTTP en `clickhouse-server` respuesta.
 
@@ -127,7 +127,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## Nombre de la red inalámbrica (SSID): {#setting-max-http-get-redirects}
+## Nombre de la red inalámbrica (SSID): {#setting-max_http_get_redirects}
 
 Limita el número máximo de saltos de redirección HTTP GET para [URL](../table_engines/url.md)-mesas de motor. La configuración se aplica a ambos tipos de tablas: las creadas por [CREAR TABLA](../../query_language/create/#create-table-query) Consulta y por el [URL](../../query_language/table_functions/url.md) función de la tabla.
 
@@ -138,7 +138,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## Entrada\_format\_allow\_errors\_num {#settings-input-format-allow-errors-num}
+## Entrada\_format\_allow\_errors\_num {#settings-input_format_allow_errors_num}
 
 Establece el número máximo de errores aceptables al leer desde formatos de texto (CSV, TSV, etc.).
 
@@ -150,7 +150,7 @@ Si se produjo un error al leer filas, pero el contador de errores sigue siendo m
 
 Si ambos `input_format_allow_errors_num` y `input_format_allow_errors_ratio` se exceden, ClickHouse lanza una excepción.
 
-## Entrada\_format\_allow\_errors\_ratio {#settings-input-format-allow-errors-ratio}
+## Entrada\_format\_allow\_errors\_ratio {#settings-input_format_allow_errors_ratio}
 
 Establece el porcentaje máximo de errores permitidos al leer desde formatos de texto (CSV, TSV, etc.).
 El porcentaje de errores se establece como un número de punto flotante entre 0 y 1.
@@ -163,7 +163,7 @@ Si se produjo un error al leer filas, pero el contador de errores sigue siendo m
 
 Si ambos `input_format_allow_errors_num` y `input_format_allow_errors_ratio` se exceden, ClickHouse lanza una excepción.
 
-## input\_format\_values\_interpret\_expressions {#settings-input-format-values-interpret-expressions}
+## input\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
 
 Habilita o deshabilita el analizador SQL completo si el analizador de flujo rápido no puede analizar los datos. Esta configuración sólo se utiliza para [Valor](../../interfaces/formats.md#data-format-values) formato en la inserción de datos. Para obtener más información sobre el análisis de sintaxis, consulte [Sintaxis](../../query_language/syntax.md) apartado.
 
@@ -213,7 +213,7 @@ INSERT INTO datetime_t SELECT now()
 Ok.
 ```
 
-## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input-format-values-deduce-templates-of-expressions}
+## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
 Habilita o deshabilita la deducción de plantilla para expresiones SQL en [Valor](../../interfaces/formats.md#data-format-values) formato. Permite analizar e interpretar expresiones en `Values` mucho más rápido si las expresiones en filas consecutivas tienen la misma estructura. ClickHouse intentará deducir la plantilla de una expresión, analizar las siguientes filas utilizando esta plantilla y evaluar la expresión en un lote de filas analizadas correctamente. Para la siguiente consulta:
 
@@ -241,7 +241,7 @@ Cuando esta configuración está habilitada, ClickHouse comprobará el tipo real
 Cuando está deshabilitado, ClickHouse puede usar un tipo más general para algunos literales (por ejemplo, `Float64` o `Int64` es lugar de `UInt64` para `42`), pero puede causar problemas de desbordamiento y precisión.
 Habilitado de forma predeterminada.
 
-## Entrada\_format\_defaults\_for\_omitted\_fields {#session-settings-input-format-defaults-for-omitted-fields}
+## Entrada\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
 Al realizar `INSERT` consultas, reemplace los valores de columna de entrada omitidos con valores predeterminados de las columnas respectivas. Esta opción sólo se aplica a [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) y [TabSeparated](../../interfaces/formats.md#tabseparated) formato.
 
@@ -285,7 +285,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## Entrada\_format\_import\_nested\_json {#settings-input-format-import-nested-json}
+## Entrada\_format\_import\_nested\_json {#settings-input_format_import_nested_json}
 
 Habilita o deshabilita la inserción de datos JSON con objetos anidados.
 
@@ -322,7 +322,7 @@ Valores posibles:
 
 Valor predeterminado: 1.
 
-## Date\_time\_input\_format {#settings-date-time-input-format}
+## Date\_time\_input\_format {#settings-date_time_input_format}
 
 Permite elegir un analizador de la representación de texto de fecha y hora.
 
@@ -345,7 +345,7 @@ Ver también:
 -   [Tipo de datos DateTime.](../../data_types/datetime.md)
 -   [Funciones para trabajar con fechas y horas.](../../query_language/functions/date_time_functions.md)
 
-## Por favor, introduzca su dirección de correo electrónico {#settings-join-default-strictness}
+## Por favor, introduzca su dirección de correo electrónico {#settings-join_default_strictness}
 
 Establece el rigor predeterminado para [Cláusulas JOIN](../../query_language/select.md#select-join).
 
@@ -358,7 +358,7 @@ Valores posibles:
 
 Valor predeterminado: `ALL`.
 
-## join\_any\_take\_last\_row {#settings-join-any-take-last-row}
+## join\_any\_take\_last\_row {#settings-join_any_take_last_row}
 
 Cambia el comportamiento de las operaciones de unión con `ANY` rigor.
 
@@ -378,7 +378,7 @@ Ver también:
 -   [Unirse al motor de tabla](../table_engines/join.md)
 -   [Por favor, introduzca su dirección de correo electrónico](#settings-join_default_strictness)
 
-## Sistema abierto. {#join-use-nulls}
+## Sistema abierto. {#join_use_nulls}
 
 Establece el tipo de [UNIR](../../query_language/select.md) comportamiento. Al fusionar tablas, pueden aparecer celdas vacías. ClickHouse los rellena de manera diferente según esta configuración.
 
@@ -389,7 +389,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## max\_block\_size {#setting-max-block-size}
+## max\_block\_size {#setting-max_block_size}
 
 En ClickHouse, los datos se procesan mediante bloques (conjuntos de partes de columna). Los ciclos de procesamiento interno para un solo bloque son lo suficientemente eficientes, pero hay gastos notables en cada bloque. El `max_block_size` set es una recomendación para el tamaño del bloque (en un recuento de filas) para cargar desde las tablas. El tamaño del bloque no debe ser demasiado pequeño, por lo que los gastos en cada bloque aún se notan, pero no demasiado grande para que la consulta con LIMIT que se complete después del primer bloque se procese rápidamente. El objetivo es evitar consumir demasiada memoria al extraer un gran número de columnas en múltiples subprocesos y preservar al menos alguna localidad de caché.
 
@@ -514,7 +514,7 @@ Ejemplo:
 log_query_threads=1
 ```
 
-## Max\_insert\_block\_size {#settings-max-insert-block-size}
+## Max\_insert\_block\_size {#settings-max_insert_block_size}
 
 El tamaño de los bloques a formar para su inserción en una tabla.
 Esta configuración solo se aplica en los casos en que el servidor forma los bloques.
@@ -526,7 +526,7 @@ Valor predeterminado: 1.048.576.
 
 El valor predeterminado es ligeramente más que `max_block_size`. La razón de esto se debe a que ciertos motores de mesa (`*MergeTree`) formar una parte de datos en el disco para cada bloque insertado, que es una entidad bastante grande. Similar, `*MergeTree` las tablas ordenan los datos durante la inserción y un tamaño de bloque lo suficientemente grande permiten clasificar más datos en la RAM.
 
-## max\_replica\_delay\_for\_distributed\_queries {#settings-max-replica-delay-for-distributed-queries}
+## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
 Deshabilita las réplicas rezagadas para consultas distribuidas. Ver [Replicación](../../operations/table_engines/replication.md).
 
@@ -536,7 +536,7 @@ Valor predeterminado: 300.
 
 Se utiliza al realizar `SELECT` desde una tabla distribuida que apunta a tablas replicadas.
 
-## max\_threads {#settings-max-threads}
+## max\_threads {#settings-max_threads}
 
 El número máximo de subprocesos de procesamiento de consultas, excluyendo subprocesos para recuperar datos de servidores ‘max\_distributed\_connections’ parámetro).
 
@@ -585,7 +585,7 @@ Estamos escribiendo una columna URL con el tipo String (tamaño promedio de 60 b
 
 Por lo general, no hay ninguna razón para cambiar esta configuración.
 
-## max\_query\_size {#settings-max-query-size}
+## max\_query\_size {#settings-max_query_size}
 
 La parte máxima de una consulta que se puede llevar a la RAM para analizar con el analizador SQL.
 La consulta INSERT también contiene datos para INSERT que es procesado por un analizador de secuencias independiente (que consume O(1) RAM), que no está incluido en esta restricción.
@@ -648,7 +648,7 @@ Valor predeterminado: 3.
 Ya sea para contar valores extremos (los mínimos y máximos en columnas de un resultado de consulta). Acepta 0 o 1. De forma predeterminada, 0 (deshabilitado).
 Para obtener más información, consulte la sección “Extreme values”.
 
-## Use\_uncompressed\_cache {#setting-use-uncompressed-cache}
+## Use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
 Si se debe usar una memoria caché de bloques sin comprimir. Acepta 0 o 1. De forma predeterminada, 0 (deshabilitado).
 El uso de la memoria caché sin comprimir (solo para tablas de la familia MergeTree) puede reducir significativamente la latencia y aumentar el rendimiento cuando se trabaja con un gran número de consultas cortas. Habilite esta configuración para los usuarios que envían solicitudes cortas frecuentes. También preste atención al [Uncompressed\_cache\_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) parámetro de configuración (solo establecido en el archivo de configuración): el tamaño de los bloques de caché sin comprimir. De forma predeterminada, es 8 GiB. La memoria caché sin comprimir se rellena según sea necesario y los datos menos utilizados se eliminan automáticamente.
@@ -674,7 +674,7 @@ El valor predeterminado es 7500.
 
 Cuanto menor sea el valor, más a menudo los datos se vacían en la tabla. Establecer el valor demasiado bajo conduce a un rendimiento deficiente.
 
-## load\_balancing {#settings-load-balancing}
+## load\_balancing {#settings-load_balancing}
 
 Especifica el algoritmo de selección de réplicas que se utiliza para el procesamiento de consultas distribuidas.
 
@@ -685,7 +685,7 @@ ClickHouse admite los siguientes algoritmos para elegir réplicas:
 -   [En orden](#load_balancing-in_order)
 -   [Primero o aleatorio](#load_balancing-first_or_random)
 
-### Aleatorio (por defecto) {#load-balancing-random}
+### Aleatorio (por defecto) {#load_balancing-random}
 
 ``` sql
 load_balancing = random
@@ -694,7 +694,7 @@ load_balancing = random
 El número de errores se cuenta para cada réplica. La consulta se envía a la réplica con el menor número de errores, y si hay varios de estos, a cualquiera de ellos.
 Desventajas: La proximidad del servidor no se tiene en cuenta; si las réplicas tienen datos diferentes, también obtendrá datos diferentes.
 
-### Nombre de host más cercano {#load-balancing-nearest-hostname}
+### Nombre de host más cercano {#load_balancing-nearest_hostname}
 
 ``` sql
 load_balancing = nearest_hostname
@@ -708,7 +708,7 @@ Este método puede parecer primitivo, pero no requiere datos externos sobre la t
 Por lo tanto, si hay réplicas equivalentes, se prefiere la más cercana por nombre.
 También podemos suponer que al enviar una consulta al mismo servidor, en ausencia de fallas, una consulta distribuida también irá a los mismos servidores. Por lo tanto, incluso si se colocan datos diferentes en las réplicas, la consulta devolverá principalmente los mismos resultados.
 
-### En orden {#load-balancing-in-order}
+### En orden {#load_balancing-in_order}
 
 ``` sql
 load_balancing = in_order
@@ -717,7 +717,7 @@ load_balancing = in_order
 Se accede a las réplicas con el mismo número de errores en el mismo orden en que se especifican en la configuración.
 Este método es apropiado cuando se sabe exactamente qué réplica es preferible.
 
-### Primero o aleatorio {#load-balancing-first-or-random}
+### Primero o aleatorio {#load_balancing-first_or_random}
 
 ``` sql
 load_balancing = first_or_random
@@ -751,7 +751,7 @@ Vea la sección “WITH TOTALS modifier”.
 El umbral para `totals_mode = 'auto'`.
 Vea la sección “WITH TOTALS modifier”.
 
-## max\_parallel\_replicas {#settings-max-parallel-replicas}
+## max\_parallel\_replicas {#settings-max_parallel_replicas}
 
 El número máximo de réplicas para cada fragmento al ejecutar una consulta.
 Para obtener coherencia (para obtener diferentes partes de la misma división de datos), esta opción solo funciona cuando se establece la clave de muestreo.
@@ -773,15 +773,15 @@ Si el valor es 1 o más, la compilación se produce de forma asíncrona en un su
 Se requiere código compilado para cada combinación diferente de funciones agregadas utilizadas en la consulta y el tipo de claves en la cláusula GROUP BY.
 Los resultados de la compilación se guardan en el directorio de compilación en forma de archivos .so. No hay ninguna restricción en el número de resultados de compilación, ya que no utilizan mucho espacio. Los resultados anteriores se usarán después de reiniciar el servidor, excepto en el caso de una actualización del servidor; en este caso, se eliminan los resultados anteriores.
 
-## output\_format\_json\_quote\_64bit\_integers {#session-settings-output-format-json-quote-64bit-integers}
+## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 Si el valor es true, los enteros aparecen entre comillas cuando se usan los formatos JSON\* Int64 y UInt64 (por compatibilidad con la mayoría de las implementaciones de JavaScript); de lo contrario, los enteros se generan sin las comillas.
 
-## Formato\_csv\_delimiter {#settings-format-csv-delimiter}
+## Formato\_csv\_delimiter {#settings-format_csv_delimiter}
 
 El carácter interpretado como un delimitador en los datos CSV. De forma predeterminada, el delimitador es `,`.
 
-## input\_format\_csv\_unquoted\_null\_literal\_as\_null {#settings-input-format-csv-unquoted-null-literal-as-null}
+## input\_format\_csv\_unquoted\_null\_literal\_as\_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 Para el formato de entrada CSV, habilita o deshabilita el análisis de `NULL` como literal (sinónimo de `\N`).
 
@@ -793,7 +793,7 @@ Utilice el separador de línea de estilo DOS / Windows (CRLF) en CSV en lugar de
 
 Utilice el separador de línea de estilo DOC / Windows (CRLF) en TSV en lugar del estilo Unix (LF).
 
-## insert\_quorum {#settings-insert-quorum}
+## insert\_quorum {#settings-insert_quorum}
 
 Habilita las escrituras de quórum.
 
@@ -820,7 +820,7 @@ Ver también:
 -   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert-quorum-timeout}
+## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
 
 Escribir en tiempo de espera de quórum en segundos. Si el tiempo de espera ha pasado y aún no se ha realizado ninguna escritura, ClickHouse generará una excepción y el cliente debe repetir la consulta para escribir el mismo bloque en la misma réplica o en cualquier otra réplica.
 
@@ -831,7 +831,7 @@ Ver también:
 -   [insert\_quorum](#settings-insert_quorum)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## select\_sequential\_consistency {#settings-select-sequential-consistency}
+## select\_sequential\_consistency {#settings-select_sequential_consistency}
 
 Habilita o deshabilita la coherencia secuencial para `SELECT` Consulta:
 
@@ -926,7 +926,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## count\_distinct\_implementation {#settings-count-distinct-implementation}
+## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
 Especifica cuál de las `uniq*` se deben utilizar para realizar el [COUNT(DISTINCT …)](../../query_language/agg_functions/reference.md#agg_function-count) construcción.
 
@@ -940,7 +940,7 @@ Valores posibles:
 
 Valor predeterminado: `uniqExact`.
 
-## skip\_unavailable\_shards {#settings-skip-unavailable-shards}
+## skip\_unavailable\_shards {#settings-skip_unavailable_shards}
 
 Habilita o deshabilita la omisión silenciosa de fragmentos no disponibles.
 
@@ -970,7 +970,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## Optize\_skip\_unused\_shards {#settings-optimize-skip-unused-shards}
+## Optize\_skip\_unused\_shards {#settings-optimize_skip_unused_shards}
 
 Habilita o deshabilita la omisión de fragmentos no utilizados para las consultas SELECT que tienen la condición de clave de fragmentación en PREWHERE / WHERE (supone que los datos se distribuyen mediante clave de fragmentación, de lo contrario no hacer nada).
 
@@ -988,7 +988,7 @@ Valores posibles:
 
 Valor predeterminado: 0
 
-## Optize\_throw\_if\_noop {#setting-optimize-throw-if-noop}
+## Optize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
 Habilita o deshabilita el lanzamiento de una excepción [OPTIMIZAR](../../query_language/misc.md#misc_operations-optimize) la consulta no realizó una fusión.
 
@@ -1001,7 +1001,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## distributed\_replica\_error\_half\_life {#settings-distributed-replica-error-half-life}
+## distributed\_replica\_error\_half\_life {#settings-distributed_replica_error_half_life}
 
 -   Tipo: segundos
 -   Valor predeterminado: 60 segundos
@@ -1013,7 +1013,7 @@ Ver también:
 -   [Motor de tabla distribuido](../../operations/table_engines/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 
-## distributed\_replica\_error\_cap {#settings-distributed-replica-error-cap}
+## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
 
 -   Tipo: unsigned int
 -   Valor predeterminado: 1000
@@ -1025,7 +1025,7 @@ Ver también:
 -   [Motor de tabla distribuido](../../operations/table_engines/distributed.md)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
-## Distributed\_directory\_monitor\_sleep\_time\_ms {#distributed-directory-monitor-sleep-time-ms}
+## Distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
 
 Intervalo base para el [Distribuido](../table_engines/distributed.md) motor de tabla para enviar datos. El intervalo real crece exponencialmente en caso de errores.
 
@@ -1035,7 +1035,7 @@ Valores posibles:
 
 Valor predeterminado: 100 milisegundos.
 
-## Distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed-directory-monitor-max-sleep-time-ms}
+## Distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
 Intervalo máximo para el [Distribuido](../table_engines/distributed.md) motor de tabla para enviar datos. Limita el crecimiento exponencial del intervalo establecido en el [Distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) configuración.
 
@@ -1045,7 +1045,7 @@ Valores posibles:
 
 Valor predeterminado: 30000 milisegundos (30 segundos).
 
-## distributed\_directory\_monitor\_batch\_inserts {#distributed-directory-monitor-batch-inserts}
+## distributed\_directory\_monitor\_batch\_inserts {#distributed_directory_monitor_batch_inserts}
 
 Habilita/deshabilita el envío de datos insertados en lotes.
 
@@ -1073,7 +1073,7 @@ Los valores más bajos significan mayor prioridad. Hilos con bajo `nice` Los val
 
 Valor predeterminado: 0.
 
-## query\_profiler\_real\_time\_period\_ns {#query-profiler-real-time-period-ns}
+## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
 
 Establece el período para un temporizador de reloj real del [perfilador de consultas](../../operations/performance/sampling_query_profiler.md). El temporizador de reloj real cuenta el tiempo del reloj de pared.
 
@@ -1096,7 +1096,7 @@ Ver también:
 
 -   Tabla del sistema [trace\_log](../system_tables.md#system_tables-trace_log)
 
-## Los resultados de la prueba {#query-profiler-cpu-time-period-ns}
+## Los resultados de la prueba {#query_profiler_cpu_time_period_ns}
 
 Establece el período para un temporizador de reloj de CPU [perfilador de consultas](../../operations/performance/sampling_query_profiler.md). Este temporizador solo cuenta el tiempo de CPU.
 
@@ -1119,7 +1119,7 @@ Ver también:
 
 -   Tabla del sistema [trace\_log](../system_tables.md#system_tables-trace_log)
 
-## allow\_introspection\_functions {#settings-allow-introspection-functions}
+## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
 Habilita deshabilita [funciones de introspecciones](../../query_language/functions/introspection.md) para la creación de perfiles de consultas.
 
@@ -1149,7 +1149,7 @@ Habilitar el análisis paralelo de los formatos de datos para preservar el orden
 
 El tamaño mínimo de fragmento en bytes, que cada subproceso analizará en paralelo.
 
-## Sistema abierto. {#settings-output-format-avro-codec}
+## Sistema abierto. {#settings-output_format_avro_codec}
 
 Establece el códec de compresión utilizado para el archivo Avro de salida.
 
@@ -1163,7 +1163,7 @@ Valores posibles:
 
 Valor predeterminado: `snappy` (si está disponible) o `deflate`.
 
-## Sistema abierto. {#settings-output-format-avro-sync-interval}
+## Sistema abierto. {#settings-output_format_avro_sync_interval}
 
 Establece el tamaño mínimo de datos (en bytes) entre los marcadores de sincronización para el archivo Avro de salida.
 
@@ -1173,7 +1173,7 @@ Valores posibles: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Valor predeterminado: 32768 (32 KiB)
 
-## Todos los derechos reservados. {#settings-format-avro-schema-registry-url}
+## Todos los derechos reservados. {#settings-format_avro_schema_registry_url}
 
 Establece la URL del Registro de esquemas confluentes para usar con [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) Formato
 

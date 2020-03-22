@@ -171,7 +171,7 @@ KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = '
 
 Данные, уже изменённые мутацией, остаются в таблице (отката на старую версию данных не происходит).
 
-## OPTIMIZE {#misc-operations-optimize}
+## OPTIMIZE {#misc_operations-optimize}
 
 ``` sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE]
@@ -189,7 +189,7 @@ OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION I
 !!! warning "Внимание"
     Запрос `OPTIMIZE` не может устранить причину появления ошибки «Too many parts».
 
-## RENAME {#misc-operations-rename}
+## RENAME {#misc_operations-rename}
 
 Переименовывает одну или несколько таблиц.
 

@@ -20,7 +20,7 @@ Devuelve el número redondo más pequeño que es mayor o igual que `x`. En todos
 
 Devuelve el número redondo con el valor absoluto más grande que tiene un valor absoluto menor o igual que `x`‘s. In every other way, it is the same as the ’floor’ función (véase más arriba).
 
-## Ronda (x\[, N\]) {#rounding-functions-round}
+## Ronda (x\[, N\]) {#rounding_functions-round}
 
 Redondea un valor a un número especificado de decimales.
 

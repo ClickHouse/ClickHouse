@@ -1,6 +1,6 @@
 # Функции для битмапов {#funktsii-dlia-bitmapov}
 
-## bitmapBuild {#bitmap-functions-bitmapbuild}
+## bitmapBuild {#bitmap_functions-bitmapbuild}
 
 Создаёт битовый массив из массива целочисленных значений.
 
@@ -86,7 +86,7 @@ SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([0,1,2,3,4,5,6,7,8,9,10,11,12
 └───────────────────────────┘
 ```
 
-## bitmapContains {#bitmap-functions-bitmapcontains}
+## bitmapContains {#bitmap_functions-bitmapcontains}
 
 Проверяет вхождение элемента в битовый массив.
 

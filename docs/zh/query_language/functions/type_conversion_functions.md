@@ -96,7 +96,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 此函数接受数字、Date或DateTime，并返回包含表示主机顺序（小端）的相应值的字节的FixedString。从末尾删除空字节。例如，UInt32类型值255是一个长度为一个字节的FixedString。
 
-## CAST(x, t) {#type-conversion-function-cast}
+## CAST(x, t) {#type_conversion_function-cast}
 
 将‘x’转换为‘t’数据类型。还支持语法CAST（x AS t）
 
@@ -152,7 +152,7 @@ SELECT
     │                2019-01-08 │                   2019-01-08 │
     └───────────────────────────┴──────────────────────────────┘
 
-## parseDateTimeBestEffort {#type-conversion-functions-parsedatetimebesteffort}
+## parseDateTimeBestEffort {#type_conversion_functions-parsedatetimebesteffort}
 
 将数字类型参数解析为Date或DateTime类型。
 与toDate和toDateTime不同，parseDateTimeBestEffort可以进行更复杂的日期格式。

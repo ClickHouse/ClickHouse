@@ -98,7 +98,7 @@ LAYOUT(FLAT())
 LAYOUT(HASHED())
 ```
 
-### sparse\_hashed {#dicts-external-dicts-dict-layout-sparse-hashed}
+### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Аналогичен `hashed`, но при этом занимает меньше места в памяти и генерирует более высокую загрузку CPU.
 

@@ -12,7 +12,7 @@
 结果类型是UInt8。
 该函数也适用于字符串。
 
-## length {#array-functions-length}
+## length {#array_functions-length}
 
 返回数组中的元素个数。
 结果类型是UInt64。
@@ -186,7 +186,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
     │                                    2 │
     └──────────────────────────────────────┘
 
-## arrayEnumerate(arr) {#array-functions-arrayenumerate}
+## arrayEnumerate(arr) {#array_functions-arrayenumerate}
 
 返回 Array \[1, 2, 3, …, length (arr) \]
 
@@ -413,7 +413,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 设置为«NULL»的数组元素作为普通的数组元素值处理。
 
-## arraySort(\[func,\] arr, …) {#array-functions-reverse-sort}
+## arraySort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
 以升序对`arr`数组的元素进行排序。如果指定了`func`函数，则排序顺序由`func`函数的调用结果决定。如果`func`接受多个参数，那么`arraySort`函数也将解析与`func`函数参数相同数量的数组参数。更详细的示例在`arraySort`的末尾。
 
@@ -503,7 +503,7 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 !!! 注意 "注意"
     为了提高排序效率， 使用了[Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform)。
 
-## arrayReverseSort(\[func,\] arr, …) {#array-functions-reverse-sort}
+## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
 以降序对`arr`数组的元素进行排序。如果指定了`func`函数，则排序顺序由`func`函数的调用结果决定。如果`func`接受多个参数，那么`arrayReverseSort`函数也将解析与`func`函数参数相同数量的数组作为参数。更详细的示例在`arrayReverseSort`的末尾。
 

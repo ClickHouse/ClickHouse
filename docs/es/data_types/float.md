@@ -29,7 +29,7 @@ SELECT 1 - 0.9
 -   Los cálculos de puntos flotantes pueden dar como resultado números como el infinito (`Inf`) y “not-a-number” (`NaN`). Esto debe tenerse en cuenta al procesar los resultados de los cálculos.
 -   Al analizar números de punto flotante a partir de texto, el resultado puede no ser el número representable por máquina más cercano.
 
-## NaN y Inf {#data-type-float-nan-inf}
+## NaN y Inf {#data_type-float-nan-inf}
 
 A diferencia de SQL estándar, ClickHouse admite las siguientes categorías de números de punto flotante:
 

@@ -1,4 +1,4 @@
-# Configuration Files {#configuration-files}
+# Configuration Files {#configuration_files}
 
 The main server config file is `config.xml`. It resides in the `/etc/clickhouse-server/` directory.
 

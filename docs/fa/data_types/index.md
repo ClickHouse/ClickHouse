@@ -1,6 +1,6 @@
 <div markdown="1" markdown="1" dir="rtl">
 
-# Data types {#data-types}
+# Data types {#data_types}
 
 ClickHouse قابلیت ذخیره سازی انواع type های مختلف برای ذخیره داده ها در جداول را دارا می باشد.
 

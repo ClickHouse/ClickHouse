@@ -1,4 +1,4 @@
-# Motores de mesa {#table-engines}
+# Motores de mesa {#table_engines}
 
 El motor de tabla (tipo de tabla) determina:
 
@@ -64,7 +64,7 @@ Motores en la familia:
 -   [Memoria](memory.md)
 -   [Búfer](buffer.md)
 
-## Columnas virtuales {#table-engines-virtual-columns}
+## Columnas virtuales {#table_engines-virtual-columns}
 
 La columna virtual es un atributo de motor de tabla integral que se define en el código fuente del motor.
 

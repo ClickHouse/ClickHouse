@@ -1,4 +1,4 @@
-# GenerateRandom {#table-engines-generate}
+# GenerateRandom {#table_engines-generate}
 
 El motor de tabla GenerateRandom produce datos aleatorios para el esquema de tabla determinado.
 

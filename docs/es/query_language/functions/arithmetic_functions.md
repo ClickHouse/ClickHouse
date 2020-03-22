@@ -63,7 +63,7 @@ Difiere de ‘modulo’ en que devuelve cero cuando el divisor es cero.
 
 Calcula un número con el signo inverso. El resultado siempre está firmado.
 
-## abs (a) {#arithm-func-abs}
+## abs (a) {#arithm_func-abs}
 
 Calcula el valor absoluto del número (a). Es decir, si un \< 0, devuelve -a. Para los tipos sin signo no hace nada. Para los tipos de enteros con signo, devuelve un número sin signo.
 

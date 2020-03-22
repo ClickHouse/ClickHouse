@@ -42,7 +42,7 @@ Tipos de fuentes (`source_type`):
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
 
-## Archivo Local {#dicts-external-dicts-dict-sources-local-file}
+## Archivo Local {#dicts-external_dicts_dict_sources-local_file}
 
 Ejemplo de configuración:
 
@@ -66,7 +66,7 @@ Configuración de campos:
 -   `path` – The absolute path to the file.
 -   `format` – The file format. All the formats described in “[Formato](../../interfaces/formats.md#formats)” son compatibles.
 
-## Archivo ejecutable {#dicts-external-dicts-dict-sources-executable}
+## Archivo ejecutable {#dicts-external_dicts_dict_sources-executable}
 
 Trabajar con archivos ejecutables depende de [cómo se almacena el diccionario en la memoria](external_dicts_dict_layout.md). Si el diccionario se almacena usando `cache` y `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
 
@@ -92,7 +92,7 @@ Configuración de campos:
 -   `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
 -   `format` – The file format. All the formats described in “[Formato](../../interfaces/formats.md#formats)” son compatibles.
 
-## HTTP(s)) {#dicts-external-dicts-dict-sources-http}
+## HTTP(s)) {#dicts-external_dicts_dict_sources-http}
 
 Trabajar con un servidor HTTP depende de [cómo se almacena el diccionario en la memoria](external_dicts_dict_layout.md). Si el diccionario se almacena usando `cache` y `complex_key_cache`, ClickHouse solicita las claves necesarias enviando una solicitud a través del `POST` método.
 
@@ -142,7 +142,7 @@ Configuración de campos:
     -   `name` – Identifiant name used for the header send on the request.
     -   `value` – Value set for a specific identifiant name.
 
-## ODBC {#dicts-external-dicts-dict-sources-odbc}
+## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
 Puede utilizar este método para conectar cualquier base de datos que tenga un controlador ODBC.
 
@@ -386,7 +386,7 @@ LIFETIME(MIN 300 MAX 360)
 
 ## DBMS {#dbms}
 
-### MySQL {#dicts-external-dicts-dict-sources-mysql}
+### MySQL {#dicts-external_dicts_dict_sources-mysql}
 
 Ejemplo de configuración:
 
@@ -483,7 +483,7 @@ SOURCE(MYSQL(
 ))
 ```
 
-### Haga clic en Casa {#dicts-external-dicts-dict-sources-clickhouse}
+### Haga clic en Casa {#dicts-external_dicts_dict_sources-clickhouse}
 
 Ejemplo de configuración:
 
@@ -526,7 +526,7 @@ Configuración de campos:
 -   `where` – The selection criteria. May be omitted.
 -   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Actualización de diccionarios](external_dicts_dict_lifetime.md).
 
-### MongoDB {#dicts-external-dicts-dict-sources-mongodb}
+### MongoDB {#dicts-external_dicts_dict_sources-mongodb}
 
 Ejemplo de configuración:
 
@@ -565,7 +565,7 @@ Configuración de campos:
 -   `db` – Name of the database.
 -   `collection` – Name of the collection.
 
-### Redis {#dicts-external-dicts-dict-sources-redis}
+### Redis {#dicts-external_dicts_dict_sources-redis}
 
 Ejemplo de configuración:
 

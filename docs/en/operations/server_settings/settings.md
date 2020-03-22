@@ -85,7 +85,7 @@ Settings profiles are located in the file specified in the parameter `user_confi
 <default_profile>default</default_profile>
 ```
 
-## dictionaries\_config {#server-settings-dictionaries-config}
+## dictionaries\_config {#server_settings-dictionaries_config}
 
 The path to the config file for external dictionaries.
 
@@ -102,7 +102,7 @@ See also “[External dictionaries](../../query_language/dicts/external_dicts.md
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
 ```
 
-## dictionaries\_lazy\_load {#server-settings-dictionaries-lazy-load}
+## dictionaries\_lazy\_load {#server_settings-dictionaries_lazy_load}
 
 Lazy loading of dictionaries.
 
@@ -118,7 +118,7 @@ The default is `true`.
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
 ```
 
-## format\_schema\_path {#server-settings-format-schema-path}
+## format\_schema\_path {#server_settings-format_schema_path}
 
 The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
 
@@ -129,7 +129,7 @@ The path to the directory with the schemes for the input data, such as schemas f
   <format_schema_path>format_schemas/</format_schema_path>
 ```
 
-## graphite {#server-settings-graphite}
+## graphite {#server_settings-graphite}
 
 Sending data to [Graphite](https://github.com/graphite-project).
 
@@ -163,7 +163,7 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 </graphite>
 ```
 
-## graphite\_rollup {#server-settings-graphite-rollup}
+## graphite\_rollup {#server_settings-graphite-rollup}
 
 Settings for thinning data for Graphite.
 
@@ -205,7 +205,7 @@ If `http_port` is specified, the OpenSSL configuration is ignored even if it is 
 <https>0000</https>
 ```
 
-## http\_server\_default\_response {#server-settings-http-server-default-response}
+## http\_server\_default\_response {#server_settings-http_server_default_response}
 
 The page that is shown by default when you access the ClickHouse HTTP(s) server.
 The default value is “Ok.” (with a line feed at the end)
@@ -220,7 +220,7 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-## include\_from {#server-settings-include-from}
+## include\_from {#server_settings-include_from}
 
 The path to the file with substitutions.
 
@@ -285,7 +285,7 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 <keep_alive_timeout>3</keep_alive_timeout>
 ```
 
-## listen\_host {#server-settings-listen-host}
+## listen\_host {#server_settings-listen_host}
 
 Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
 
@@ -296,7 +296,7 @@ Examples:
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## logger {#server-settings-logger}
+## logger {#server_settings-logger}
 
 Logging settings.
 
@@ -421,7 +421,7 @@ The value 0 means that you can delete all tables without any restrictions.
 <max_table_size_to_drop>0</max_table_size_to_drop>
 ```
 
-## merge\_tree {#server-settings-merge-tree}
+## merge\_tree {#server_settings-merge_tree}
 
 Fine tuning for tables in the [MergeTree](../table_engines/mergetree.md).
 
@@ -435,7 +435,7 @@ For more information, see the MergeTreeSettings.h header file.
 </merge_tree>
 ```
 
-## openSSL {#server-settings-openssl}
+## openSSL {#server_settings-openssl}
 
 SSL client/server configuration.
 
@@ -494,7 +494,7 @@ Keys for server/client settings:
 </openSSL>
 ```
 
-## part\_log {#server-settings-part-log}
+## part\_log {#server_settings-part-log}
 
 Logging events that are associated with [MergeTree](../table_engines/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
 
@@ -518,7 +518,7 @@ Use the following parameters to configure logging:
 </part_log>
 ```
 
-## path {#server-settings-path}
+## path {#server_settings-path}
 
 The path to the directory containing data.
 
@@ -531,7 +531,7 @@ The path to the directory containing data.
 <path>/var/lib/clickhouse/</path>
 ```
 
-## query\_log {#server-settings-query-log}
+## query\_log {#server_settings-query-log}
 
 Setting for logging queries received with the [log\_queries=1](../settings/settings.md) setting.
 
@@ -557,7 +557,7 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 </query_log>
 ```
 
-## query\_thread\_log {#server-settings-query-thread-log}
+## query\_thread\_log {#server_settings-query-thread-log}
 
 Setting for logging threads of queries received with the [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads) setting.
 
@@ -583,7 +583,7 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 </query_thread_log>
 ```
 
-## trace\_log {#server-settings-trace-log}
+## trace\_log {#server_settings-trace_log}
 
 Settings for the [trace\_log](../system_tables.md#system_tables-trace_log) system table operation.
 
@@ -652,7 +652,7 @@ For the value of the `incl` attribute, see the section “[Configuration files](
 
 -   [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## timezone {#server-settings-timezone}
+## timezone {#server_settings-timezone}
 
 The server’s time zone.
 
@@ -666,7 +666,7 @@ The time zone is necessary for conversions between String and DateTime formats w
 <timezone>Europe/Moscow</timezone>
 ```
 
-## tcp\_port {#server-settings-tcp-port}
+## tcp\_port {#server_settings-tcp_port}
 
 Port for communicating with clients over the TCP protocol.
 
@@ -676,7 +676,7 @@ Port for communicating with clients over the TCP protocol.
 <tcp_port>9000</tcp_port>
 ```
 
-## tcp\_port\_secure {#server-settings-tcp-port-secure}
+## tcp\_port\_secure {#server_settings-tcp_port-secure}
 
 TCP port for secure communication with clients. Use it with [OpenSSL](#server_settings-openssl) settings.
 
@@ -690,7 +690,7 @@ Positive integer.
 <tcp_port_secure>9440</tcp_port_secure>
 ```
 
-## mysql\_port {#server-settings-mysql-port}
+## mysql\_port {#server_settings-mysql_port}
 
 Port for communicating with clients over MySQL protocol.
 
@@ -704,7 +704,7 @@ Example
 <mysql_port>9004</mysql_port>
 ```
 
-## tmp\_path {#server-settings-tmp-path}
+## tmp\_path {#server-settings-tmp_path}
 
 Path to temporary data for processing large queries.
 
@@ -728,7 +728,7 @@ If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is igno
 - `max_data_part_size_bytes` is ignored
 - you must have exactly one volume in that policy
 
-## uncompressed\_cache\_size {#server-settings-uncompressed-cache-size}
+## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
 
 Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../table_engines/mergetree.md).
 
@@ -742,7 +742,7 @@ The uncompressed cache is advantageous for very short queries in individual case
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
 ```
 
-## user\_files\_path {#server-settings-user-files-path}
+## user\_files\_path {#server_settings-user_files_path}
 
 The directory with user files. Used in the table function [file()](../../query_language/table_functions/file.md).
 
@@ -767,7 +767,7 @@ Path to the file that contains:
 <users_config>users.xml</users_config>
 ```
 
-## zookeeper {#server-settings-zookeeper}
+## zookeeper {#server-settings_zookeeper}
 
 Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
 
@@ -820,7 +820,7 @@ This section contains the following parameters:
 -   [Replication](../../operations/table_engines/replication.md)
 -   [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
-## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use-minimalistic-part-header-in-zookeeper}
+## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
 Storage method for data part headers in ZooKeeper.
 

@@ -43,7 +43,7 @@ Puede insertar datos por separado de la consulta mediante el cliente de línea d
 
 Si la tabla tiene [limitación](create.md#constraints), sus expresiones se verificarán para cada fila de datos insertados. Si alguna de esas restricciones no se satisface, el servidor generará una excepción que contenga el nombre y la expresión de la restricción, la consulta se detendrá.
 
-### Insertar los resultados de `SELECT` {#insert-query-insert-select}
+### Insertar los resultados de `SELECT` {#insert_query_insert-select}
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...

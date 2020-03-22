@@ -1,4 +1,4 @@
-# CollapsingMergeTree {#table-engine-collapsingmergetree}
+# CollapsingMergeTree {#table_engine-collapsingmergetree}
 
 Движок наследует функциональность от [MergeTree](mergetree.md) и добавляет в алгоритм слияния кусков данных логику сворачивания (удаления) строк.
 
@@ -57,7 +57,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-## Сворачивание (удаление) строк {#table-engine-collapsingmergetree-collapsing}
+## Сворачивание (удаление) строк {#table_engine-collapsingmergetree-collapsing}
 
 ### Данные {#dannye}
 
@@ -105,7 +105,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 2.  Длинные растущие массивы в Столбцах снижают эффективность работы движка за счёт нагрузки на запись. Чем проще данные, тем выше эффективность.
 3.  Результаты запроса `SELECT` сильно зависят от согласованности истории изменений объекта. Будьте точны при подготовке данных для вставки. Можно получить непредсказуемые результаты для несогласованных данных, например отрицательные значения для неотрицательных метрик, таких как глубина сеанса.
 
-### Алгоритм {#table-engine-collapsingmergetree-collapsing-algorithm}
+### Алгоритм {#table_engine-collapsingmergetree-collapsing-algorithm}
 
 Во время объединения кусков данных, каждая группа последовательных строк с одинаковым сортировочным ключом (`ORDER BY`) уменьшается до не более чем двух строк, одна из которых имеет `Sign = 1` (строка состояния), а другая строка с `Sign = -1` (строка отмены состояния). Другими словами, записи сворачиваются.
 

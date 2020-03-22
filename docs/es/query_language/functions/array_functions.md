@@ -12,7 +12,7 @@ Devuelve 0 para una matriz vacía, o 1 para una matriz no vacía.
 El tipo de resultado es UInt8.
 La función también funciona para cadenas.
 
-## longitud {#array-functions-length}
+## longitud {#array_functions-length}
 
 Devuelve el número de elementos de la matriz.
 El tipo de resultado es UInt64.
@@ -208,7 +208,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## Información detallada) {#array-functions-arrayenumerate}
+## Información detallada) {#array_functions-arrayenumerate}
 
 Returns the array \[1, 2, 3, …, length (arr) \]
 
@@ -472,7 +472,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 Elementos de matriz establecidos en `NULL` se manejan como valores normales.
 
-## arraySort(\[func,\] arr, …) {#array-functions-sort}
+## arraySort(\[func,\] arr, …) {#array_functions-sort}
 
 Ordena los elementos del `arr` matriz en orden ascendente. Si el `func` se especifica la función, el orden de clasificación está determinado por el resultado `func` función aplicada a los elementos de la matriz. Si `func` acepta múltiples argumentos, el `arraySort` función se pasa varias matrices que los argumentos de `func` corresponderá a. Los ejemplos detallados se muestran al final de `arraySort` descripci.
 
@@ -572,7 +572,7 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 !!! note "Nota"
     Para mejorar la eficiencia de clasificación, el [Transformación de Schwartzian](https://en.wikipedia.org/wiki/Schwartzian_transform) se utiliza.
 
-## arrayReverseSort(\[func,\] arr, …) {#array-functions-reverse-sort}
+## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
 Ordena los elementos del `arr` matriz en orden descendente. Si el `func` se especifica la función, `arr` se ordena de acuerdo con el resultado de la `func` función aplicada a los elementos de la matriz, y luego la matriz ordenada se invierte. Si `func` acepta múltiples argumentos, el `arrayReverseSort` función se pasa varias matrices que los argumentos de `func` corresponderá a. Los ejemplos detallados se muestran al final de `arrayReverseSort` descripci.
 
@@ -770,7 +770,7 @@ Resultado:
 └────────────────────────────────┘
 ```
 
-## Aquí hay algunas opciones) {#array-functions-arrayenumeratedense}
+## Aquí hay algunas opciones) {#array_functions-arrayenumeratedense}
 
 Devuelve una matriz del mismo tamaño que la matriz de origen, lo que indica dónde aparece cada elemento por primera vez en la matriz de origen.
 
@@ -846,7 +846,7 @@ SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayReverse (arr) {#array-functions-arrayreverse}
+## arrayReverse (arr) {#array_functions-arrayreverse}
 
 Devuelve una matriz del mismo tamaño que la matriz original que contiene los elementos en orden inverso.
 

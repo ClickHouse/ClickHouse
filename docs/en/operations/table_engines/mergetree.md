@@ -1,4 +1,4 @@
-# MergeTree {#table-engines-mergetree}
+# MergeTree {#table_engines-mergetree}
 
 The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHouse table engines.
 
@@ -25,7 +25,7 @@ Main features:
 !!! info "Info"
     The [Merge](merge.md) engine does not belong to the `*MergeTree` family.
 
-## Creating a Table {#table-engine-mergetree-creating-a-table}
+## Creating a Table {#table_engine-mergetree-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -244,7 +244,7 @@ ClickHouse cannot use an index if the values of the primary key in the query par
 
 ClickHouse uses this logic not only for days of the month sequences, but for any primary key that represents a partially-monotonic sequence.
 
-### Data Skipping Indexes (Experimental) {#table-engine-mergetree-data-skipping-indexes}
+### Data Skipping Indexes (Experimental) {#table_engine-mergetree-data_skipping-indexes}
 
 The index declaration is in the columns section of the `CREATE` query.
 
@@ -365,7 +365,7 @@ For concurrent table access, we use multi-versioning. In other words, when a tab
 
 Reading from a table is automatically parallelized.
 
-## TTL for Columns and Tables {#table-engine-mergetree-ttl}
+## TTL for Columns and Tables {#table_engine-mergetree-ttl}
 
 Determines the lifetime of values.
 
@@ -475,7 +475,7 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/mergetree/) <!--hide-->
 
-## Using Multiple Block Devices for Data Storage {#table-engine-mergetree-multiple-volumes}
+## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 
 ### Introduction {#introduction}
 
@@ -492,7 +492,7 @@ Data part is the minimum movable unit for `MergeTree`-engine tables. The data be
 
 The names given to the described entities can be found in the system tables, [system.storage\_policies](../system_tables.md#system_tables-storage_policies) and [system.disks](../system_tables.md#system_tables-disks). To apply one of the configured storage policies for a table, use the `storage_policy` setting of `MergeTree`-engine family tables.
 
-### Configuration {#table-engine-mergetree-multiple-volumes-configure}
+### Configuration {#table_engine-mergetree-multiple-volumes-configure}
 
 Disks, volumes and storage policies should be declared inside the `<storage_configuration>` tag either in the main file `config.xml` or in a distinct file in the `config.d` directory.
 

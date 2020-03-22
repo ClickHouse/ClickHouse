@@ -23,7 +23,7 @@ No se puede omitir una función lambda para las siguientes funciones:
 -   [arrayFirst](#higher_order_functions-array-first)
 -   [arrayFirstIndex](#higher_order_functions-array-first-index)
 
-### ¿Cómo puedo hacerlo?, …) {#higher-order-functions-array-map}
+### ¿Cómo puedo hacerlo?, …) {#higher_order_functions-array-map}
 
 Devuelve una matriz obtenida de la aplicación original `func` función a cada elemento en el `arr` matriz.
 
@@ -53,7 +53,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 
 Tenga en cuenta que el primer argumento (función lambda) no se puede omitir en el `arrayMap` función.
 
-### ¿Cómo puedo hacerlo?, …) {#higher-order-functions-array-filter}
+### ¿Cómo puedo hacerlo?, …) {#higher_order_functions-array-filter}
 
 Devuelve una matriz que contiene sólo los elementos en `arr1` para los cuales `func` devuelve algo distinto de 0.
 
@@ -86,7 +86,7 @@ SELECT
 
 Tenga en cuenta que el primer argumento (función lambda) no se puede omitir en el `arrayFilter` función.
 
-### ¿Cómo puedo hacerlo?, …) {#higher-order-functions-array-fill}
+### ¿Cómo puedo hacerlo?, …) {#higher_order_functions-array-fill}
 
 Escanear a través de `arr1` desde el primer elemento hasta el último elemento y reemplazar `arr1[i]` por `arr1[i - 1]` si `func` devuelve 0. El primer elemento de `arr1` no será reemplazado.
 
@@ -104,7 +104,7 @@ SELECT arrayFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 6, 14, 
 
 Tenga en cuenta que el primer argumento (función lambda) no se puede omitir en el `arrayFill` función.
 
-### ¿Cómo puedo hacerlo?, …) {#higher-order-functions-array-reverse-fill}
+### ¿Cómo puedo hacerlo?, …) {#higher_order_functions-array-reverse-fill}
 
 Escanear a través de `arr1` del último elemento al primer elemento y reemplace `arr1[i]` por `arr1[i + 1]` si `func` devuelve 0. El último elemento de `arr1` no será reemplazado.
 
@@ -122,7 +122,7 @@ SELECT arrayReverseFill(x -> not isNull(x), [1, null, 3, 11, 12, null, null, 5, 
 
 Tenga en cuenta que el primer argumento (función lambda) no se puede omitir en el `arrayReverseFill` función.
 
-### ¿Cómo puedo hacerlo?, …) {#higher-order-functions-array-split}
+### ¿Cómo puedo hacerlo?, …) {#higher_order_functions-array-split}
 
 Dividir `arr1` en múltiples matrices. Cuando `func` devuelve algo distinto de 0, la matriz se dividirá en el lado izquierdo del elemento. La matriz no se dividirá antes del primer elemento.
 
@@ -140,7 +140,7 @@ SELECT arraySplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 
 Tenga en cuenta que el primer argumento (función lambda) no se puede omitir en el `arraySplit` función.
 
-### ¿Cómo puedo hacerlo?, …) {#higher-order-functions-array-reverse-split}
+### ¿Cómo puedo hacerlo?, …) {#higher_order_functions-array-reverse-split}
 
 Dividir `arr1` en múltiples matrices. Cuando `func` devuelve algo distinto de 0, la matriz se dividirá en el lado derecho del elemento. La matriz no se dividirá después del último elemento.
 
@@ -158,7 +158,7 @@ SELECT arrayReverseSplit((x, y) -> y, [1, 2, 3, 4, 5], [1, 0, 0, 1, 0]) AS res
 
 Tenga en cuenta que el primer argumento (función lambda) no se puede omitir en el `arraySplit` función.
 
-### ¿Cómo puedo hacerlo?, …) {#higher-order-functions-array-count}
+### ¿Cómo puedo hacerlo?, …) {#higher_order_functions-array-count}
 
 Devuelve el número de elementos de la matriz arr para los cuales func devuelve algo distinto de 0. Si ‘func’ no se especifica, devuelve el número de elementos distintos de cero en la matriz.
 
@@ -174,13 +174,13 @@ Devuelve 1 si ‘func’ devuelve algo distinto de 0 para todos los elementos en
 
 Devuelve la suma de la ‘func’ valor. Si se omite la función, simplemente devuelve la suma de los elementos de la matriz.
 
-### ¿Cómo puedo hacerlo?, …) {#higher-order-functions-array-first}
+### ¿Cómo puedo hacerlo?, …) {#higher_order_functions-array-first}
 
 Devuelve el primer elemento en el ‘arr1’ matriz para la cual ‘func’ devuelve algo distinto de 0.
 
 Tenga en cuenta que el primer argumento (función lambda) no se puede omitir en el `arrayFirst` función.
 
-### ¿Cómo puedo hacerlo?, …) {#higher-order-functions-array-first-index}
+### ¿Cómo puedo hacerlo?, …) {#higher_order_functions-array-first-index}
 
 Devuelve el índice del primer elemento ‘arr1’ matriz para la cual ‘func’ devuelve algo distinto de 0.
 

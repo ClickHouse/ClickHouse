@@ -1,4 +1,4 @@
-# HDFS {#table-engines-hdfs}
+# HDFS {#table_engines-hdfs}
 
 Este motor proporciona integración con [Acerca de nosotros](https://en.wikipedia.org/wiki/Apache_Hadoop) permitiendo gestionar datos sobre [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)a través de ClickHouse. Este motor es similar
 Angeles [File](file.md) y [URL](url.md) motores, pero proporciona características específicas de Hadoop.

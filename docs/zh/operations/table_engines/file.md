@@ -1,4 +1,4 @@
-# File(InputFormat) {#table-engines-file}
+# File(InputFormat) {#table_engines-file}
 
 数据源是以 Clickhouse 支持的一种输入格式（TabSeparated，Native等）存储数据的文件。
 

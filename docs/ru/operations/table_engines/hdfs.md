@@ -1,4 +1,4 @@
-# HDFS {#table-engines-hdfs}
+# HDFS {#table_engines-hdfs}
 
 Управляет данными в HDFS. Данный движок похож на движки [File](file.md) и [URL](url.md).
 

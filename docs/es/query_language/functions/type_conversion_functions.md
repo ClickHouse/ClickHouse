@@ -312,7 +312,7 @@ Esta función acepta un número o fecha o fecha con hora, y devuelve una cadena 
 
 Esta función acepta un número o fecha o fecha con hora, y devuelve un FixedString que contiene bytes que representan el valor correspondiente en orden de host (little endian). Los bytes nulos se eliminan desde el final. Por ejemplo, un valor de tipo UInt32 de 255 es un FixedString que tiene un byte de longitud.
 
-## CAST(x, t) {#type-conversion-function-cast}
+## CAST(x, t) {#type_conversion_function-cast}
 
 Convertir ‘x’ Angeles ‘t’ tipo de datos. La sintaxis CAST(x AS t) también es compatible.
 
@@ -402,7 +402,7 @@ SELECT
 └───────────────────────────┴──────────────────────────────┘
 ```
 
-## parseDateTimeBestEffort {#type-conversion-functions-parsedatetimebesteffort}
+## parseDateTimeBestEffort {#type_conversion_functions-parsedatetimebesteffort}
 
 Analice un argumento de tipo numérico a un tipo Date o DateTime.
 diferente de toDate y toDateTime, parseDateTimeBestEffort puede progresar en un formato de fecha más complejo.

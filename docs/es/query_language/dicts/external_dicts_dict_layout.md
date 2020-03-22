@@ -78,7 +78,7 @@ o
 LAYOUT(FLAT())
 ```
 
-### Hashed {#dicts-external-dicts-dict-layout-hashed}
+### Hashed {#dicts-external_dicts_dict_layout-hashed}
 
 El diccionario está completamente almacenado en la memoria en forma de una tabla hash. El diccionario puede contener cualquier número de elementos con cualquier identificador En la práctica, el número de claves puede alcanzar decenas de millones de elementos.
 
@@ -98,7 +98,7 @@ o
 LAYOUT(HASHED())
 ```
 
-### Sistema abierto. {#dicts-external-dicts-dict-layout-sparse-hashed}
+### Sistema abierto. {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Similar a `hashed`, pero usa menos memoria a favor más uso de CPU.
 

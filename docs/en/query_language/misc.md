@@ -176,7 +176,7 @@ The query is useful when a mutation is stuck and cannot finish (e.g. if some fu
 
 Changes already made by the mutation are not rolled back.
 
-## OPTIMIZE {#misc-operations-optimize}
+## OPTIMIZE {#misc_operations-optimize}
 
 ``` sql
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE]
@@ -196,7 +196,7 @@ When `OPTIMIZE` is used with the [ReplicatedMergeTree](../operations/table_engin
 !!! warning "Warning"
     `OPTIMIZE` can’t fix the “Too many parts” error.
 
-## RENAME {#misc-operations-rename}
+## RENAME {#misc_operations-rename}
 
 Renames one or more tables.
 

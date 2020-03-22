@@ -1,4 +1,4 @@
-# DateTime {#data-type-datetime}
+# DateTime {#data_type-datetime}
 
 Allows to store an instant in time, that can be expressed as a calendar date and a time of a day.
 

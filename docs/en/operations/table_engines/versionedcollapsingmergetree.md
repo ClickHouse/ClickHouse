@@ -72,7 +72,7 @@ All of the parameters except `sign` and `version` have the same meaning as in `M
 
 </details>
 
-## Collapsing {#table-engines-versionedcollapsingmergetree}
+## Collapsing {#table_engines-versionedcollapsingmergetree}
 
 ### Data {#data}
 
@@ -120,7 +120,7 @@ To find out why we need two rows for each change, see [Algorithm](#table_engines
 2.  Long growing arrays in columns reduce the efficiency of the engine due to the load for writing. The more straightforward the data, the better the efficiency.
 3.  `SELECT` results depend strongly on the consistency of the history of object changes. Be accurate when preparing data for inserting. You can get unpredictable results with inconsistent data, such as negative values for non-negative metrics like session depth.
 
-### Algorithm {#table-engines-versionedcollapsingmergetree-algorithm}
+### Algorithm {#table_engines-versionedcollapsingmergetree-algorithm}
 
 When ClickHouse merges data parts, it deletes each pair of rows that have the same primary key and version and different `Sign`. The order of rows does not matter.
 
