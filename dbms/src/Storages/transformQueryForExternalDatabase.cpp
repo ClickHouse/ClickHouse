@@ -26,7 +26,8 @@ namespace ErrorCodes
 namespace
 {
 
-class ReplacingConstantExpressionsMatcher
+/// Everything except numbers is put as string literal.
+class ReplacingConstantExpressionsMatcherNumOrStr
 {
 public:
     using Data = Block;
@@ -75,7 +76,7 @@ void replaceConstantExpressions(ASTPtr & node, const Context & context, const Na
     auto syntax_result = SyntaxAnalyzer(context).analyze(node, all_columns);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
-    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
+    InDepthNodeVisitor<ReplacingConstantExpressionsMatcherNumOrStr, true> visitor(block_with_constants);
     visitor.visit(node);
 }
 
