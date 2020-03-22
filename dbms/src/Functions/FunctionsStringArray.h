@@ -20,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
@@ -213,9 +214,6 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
 
         sep = col->getValue<String>();
-
-        if (sep.empty())
-            throw Exception("Illegal separator for function " + getName() + ". Must be not empty.", ErrorCodes::BAD_ARGUMENTS);
     }
 
     /// Returns the position of the argument that is the column of strings
@@ -234,19 +232,32 @@ public:
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        if (!pos)
-            return false;
-
-        token_begin = pos;
-        pos = reinterpret_cast<Pos>(memmem(pos, end - pos, sep.data(), sep.size()));
-
-        if (pos)
+        if (sep.empty())
         {
+            if (pos == end)
+                return false;
+
+            token_begin = pos;
+            pos += 1;
             token_end = pos;
-            pos += sep.size();
         }
         else
-            token_end = end;
+        {
+            if (!pos)
+                return false;
+
+            token_begin = pos;
+
+            pos = reinterpret_cast<Pos>(memmem(pos, end - pos, sep.data(), sep.size()));
+
+            if (pos)
+            {
+                token_end = pos;
+                pos += sep.size();
+            }
+            else
+                token_end = end;
+        }
 
         return true;
     }

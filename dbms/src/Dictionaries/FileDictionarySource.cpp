@@ -14,6 +14,7 @@ static const UInt64 max_block_size = 8192;
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
 }
 
@@ -47,6 +48,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 
 BlockInputStreamPtr FileDictionarySource::loadAll()
 {
+    LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll " + toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
     auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
     last_modification = getLastModification();

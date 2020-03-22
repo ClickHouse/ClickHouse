@@ -38,7 +38,7 @@ using ASTPtr = std::shared_ptr<IAST>;
 using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
 using MergeableBlocksPtr = std::shared_ptr<MergeableBlocks>;
 
-class StorageLiveView : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
+class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageLiveView>;
 friend class LiveViewBlockInputStream;
@@ -48,12 +48,12 @@ friend class LiveViewBlockOutputStream;
 public:
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
-    StorageID getSelectTableID() const { return select_table_id; }
-    StorageID getBlocksStorageID() const
+    bool isView() const override { return true; }
+    String getBlocksTableName() const
     {
-        return StorageID("", getStorageID().table_name + "_blocks");
+        return getStorageID().table_name + "_blocks";
     }
-    StoragePtr getParentStorage() const { return parent_storage; }
+    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id); }
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
@@ -65,12 +65,7 @@ public:
             return inner_subquery->clone();
         return nullptr;
     }
-    ASTPtr getInnerBlocksQuery() const
-    {
-        if (inner_blocks_query)
-            return inner_blocks_query->clone();
-        return nullptr;
-    }
+    ASTPtr getInnerBlocksQuery();
 
     /// It is passed inside the query and solved at its level.
     bool supportsSampling() const override { return true; }
@@ -130,7 +125,7 @@ public:
 
     void refresh(const Context & context);
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -152,7 +147,7 @@ public:
     /// Collect mergeable blocks and their sample. Must be called holding mutex
     MergeableBlocksPtr collectMergeableBlocks(const Context & context);
     /// Complete query using input streams from mergeable blocks
-    BlockInputStreamPtr completeQuery(BlockInputStreams from);
+    BlockInputStreamPtr completeQuery(Pipes pipes);
 
     void setMergeableBlocks(MergeableBlocksPtr blocks) { mergeable_blocks = blocks; }
     std::shared_ptr<bool> getActivePtr() { return active_ptr; }
@@ -163,7 +158,7 @@ public:
     Block getHeader() const;
 
     /// convert blocks to input streams
-    static BlockInputStreams blocksToInputStreams(BlocksPtrs blocks, Block & sample_block);
+    static Pipes blocksToPipes(BlocksPtrs blocks, Block & sample_block);
 
     static void writeIntoLiveView(
         StorageLiveView & live_view,
@@ -177,10 +172,9 @@ private:
     ASTPtr inner_blocks_query; /// query over the mergeable blocks to produce final result
     Context & global_context;
     std::unique_ptr<Context> live_view_context;
-    StoragePtr parent_storage;
 
     bool is_temporary = false;
-    /// Mutex to protect access to sample block
+    /// Mutex to protect access to sample block and inner_blocks_query
     mutable std::mutex sample_block_lock;
     mutable Block sample_block;
 

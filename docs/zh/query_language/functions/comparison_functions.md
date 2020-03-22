@@ -1,13 +1,13 @@
-# 比较函数
+# 比较函数 {#bi-jiao-han-shu}
 
 比较函数始终返回0或1（UInt8）。
 
 可以比较以下类型：
 
- - Numbers
- - String 和 FixedString
- - Date
- - DateTime
+-   Numbers
+-   String 和 FixedString
+-   Date
+-   DateTime
 
 以上每个组内的类型均可互相比较，但是对于不同组的类型间不能够进行比较。
 
@@ -17,17 +17,16 @@
 
 注意。直到1.1.54134版本，有符号和无符号数字的比较方式与C++相同。换句话说，在SELECT 9223372036854775807 ＆gt; -1 等情况下，您可能会得到错误的结果。 此行为在版本1.1.54134中已更改，现在在数学上是正确的。
 
-## equals, a = b and a == b operator
+## equals, a = b and a == b operator {#equals-a-b-and-a-b-operator}
 
-## notEquals, a ! operator= b and a `<>` b
+## notEquals, a ! operator= b and a `<>` b {#notequals-a-operator-b-and-a-b}
 
-## less, `< operator`
+## less, `< operator` {#less-operator}
 
-## greater, `> operator`
+## greater, `> operator` {#greater-operator}
 
-## lessOrEquals, `<= operator`
+## lessOrEquals, `<= operator` {#lessorequals-operator}
 
-## greaterOrEquals, `>= operator`
+## greaterOrEquals, `>= operator` {#greaterorequals-operator}
 
-
-[来源文章](https://clickhouse.yandex/docs/en/query_language/functions/comparison_functions/) <!--hide-->
+[来源文章](https://clickhouse.tech/docs/en/query_language/functions/comparison_functions/) <!--hide-->

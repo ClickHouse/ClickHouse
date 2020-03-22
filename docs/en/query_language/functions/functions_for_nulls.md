@@ -1,27 +1,27 @@
-# Functions for working with Nullable aggregates
+# Functions for working with Nullable aggregates {#functions-for-working-with-nullable-aggregates}
 
-## isNull
+## isNull {#isnull}
 
 Checks whether the argument is [NULL](../syntax.md#null).
 
-```sql
+``` sql
 isNull(x)
 ```
 
 **Parameters**
 
-- `x` — A value with a non-compound data type.
+-   `x` — A value with a non-compound data type.
 
 **Returned value**
 
-- `1` if `x` is `NULL`.
-- `0` if `x` is not `NULL`.
+-   `1` if `x` is `NULL`.
+-   `0` if `x` is not `NULL`.
 
 **Example**
 
 Input table
 
-```text
+``` text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -30,38 +30,38 @@ Input table
 
 Query
 
-```sql
+``` sql
 SELECT x FROM t_null WHERE isNull(y)
 ```
-```text
+
+``` text
 ┌─x─┐
 │ 1 │
 └───┘
-
 ```
 
-## isNotNull
+## isNotNull {#isnotnull}
 
 Checks whether the argument is [NULL](../syntax.md#null).
 
-```sql
+``` sql
 isNotNull(x)
 ```
 
 **Parameters:**
 
-- `x` — A value with a non-compound data type.
+-   `x` — A value with a non-compound data type.
 
 **Returned value**
 
-- `0` if `x` is `NULL`.
-- `1` if `x` is not `NULL`.
+-   `0` if `x` is `NULL`.
+-   `1` if `x` is not `NULL`.
 
 **Example**
 
 Input table
 
-```text
+``` text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -70,38 +70,38 @@ Input table
 
 Query
 
-```sql
+``` sql
 SELECT x FROM t_null WHERE isNotNull(y)
 ```
-```text
+
+``` text
 ┌─x─┐
 │ 2 │
 └───┘
-
 ```
 
-## coalesce
+## coalesce {#coalesce}
 
 Checks from left to right whether `NULL` arguments were passed and returns the first non-`NULL` argument.
 
-```sql
+``` sql
 coalesce(x,...)
 ```
 
 **Parameters:**
 
-- Any number of parameters of a non-compound type. All parameters must be compatible by data type.
+-   Any number of parameters of a non-compound type. All parameters must be compatible by data type.
 
 **Returned values**
 
-- The first non-`NULL` argument.
-- `NULL`, if all arguments are `NULL`.
+-   The first non-`NULL` argument.
+-   `NULL`, if all arguments are `NULL`.
 
 **Example**
 
 Consider a list of contacts that may specify multiple ways to contact a customer.
 
-```text
+``` text
 ┌─name─────┬─mail─┬─phone─────┬──icq─┐
 │ client 1 │ ᴺᵁᴸᴸ │ 123-45-67 │  123 │
 │ client 2 │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ      │ ᴺᵁᴸᴸ │
@@ -112,60 +112,62 @@ The `mail` and `phone` fields are of type String, but the `icq` field is `UInt32
 
 Get the first available contact method for the customer from the contact list:
 
-```sql
+``` sql
 SELECT coalesce(mail, phone, CAST(icq,'Nullable(String)')) FROM aBook
 ```
-```text
+
+``` text
 ┌─name─────┬─coalesce(mail, phone, CAST(icq, 'Nullable(String)'))─┐
 │ client 1 │ 123-45-67                                            │
 │ client 2 │ ᴺᵁᴸᴸ                                                 │
 └──────────┴──────────────────────────────────────────────────────┘
-
 ```
 
-## ifNull
+## ifNull {#ifnull}
 
 Returns an alternative value if the main argument is `NULL`.
 
-```sql
+``` sql
 ifNull(x,alt)
 ```
 
 **Parameters:**
 
-- `x` — The value to check for `NULL`.
-- `alt` — The value that the function returns if `x` is `NULL`.
+-   `x` — The value to check for `NULL`.
+-   `alt` — The value that the function returns if `x` is `NULL`.
 
 **Returned values**
 
-- The value `x`, if `x` is not `NULL`.
-- The value `alt`, if `x` is `NULL`.
+-   The value `x`, if `x` is not `NULL`.
+-   The value `alt`, if `x` is `NULL`.
 
 **Example**
 
-```sql
+``` sql
 SELECT ifNull('a', 'b')
 ```
-```text
+
+``` text
 ┌─ifNull('a', 'b')─┐
 │ a                │
 └──────────────────┘
 ```
 
-```sql
+``` sql
 SELECT ifNull(NULL, 'b')
 ```
-```text
+
+``` text
 ┌─ifNull(NULL, 'b')─┐
 │ b                 │
 └───────────────────┘
 ```
 
-## nullIf
+## nullIf {#nullif}
 
 Returns `NULL` if the arguments are equal.
 
-```sql
+``` sql
 nullIf(x, y)
 ```
 
@@ -175,60 +177,63 @@ nullIf(x, y)
 
 **Returned values**
 
-- `NULL`, if the arguments are equal.
-- The `x` value, if the arguments are not equal.
+-   `NULL`, if the arguments are equal.
+-   The `x` value, if the arguments are not equal.
 
 **Example**
 
-```sql
+``` sql
 SELECT nullIf(1, 1)
 ```
-```text
+
+``` text
 ┌─nullIf(1, 1)─┐
 │         ᴺᵁᴸᴸ │
 └──────────────┘
 ```
 
-```sql
+``` sql
 SELECT nullIf(1, 2)
 ```
-```text
+
+``` text
 ┌─nullIf(1, 2)─┐
 │            1 │
 └──────────────┘
 ```
 
-## assumeNotNull
+## assumeNotNull {#assumenotnull}
 
 Results in a value of type [Nullable](../../data_types/nullable.md) for a non- `Nullable`, if the value is not `NULL`.
 
-```sql
+``` sql
 assumeNotNull(x)
 ```
 
 **Parameters:**
 
-- `x` — The original value.
+-   `x` — The original value.
 
 **Returned values**
 
-- The original value from the non-`Nullable` type, if it is not `NULL`.
-- The default value for the non-`Nullable` type if the original value was `NULL`.
+-   The original value from the non-`Nullable` type, if it is not `NULL`.
+-   The default value for the non-`Nullable` type if the original value was `NULL`.
 
 **Example**
 
 Consider the `t_null` table.
 
-```sql
+``` sql
 SHOW CREATE TABLE t_null
 ```
-```text
+
+``` text
 ┌─statement─────────────────────────────────────────────────────────────────┐
 │ CREATE TABLE default.t_null ( x Int8,  y Nullable(Int8)) ENGINE = TinyLog │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
-```text
+``` text
 ┌─x─┬────y─┐
 │ 1 │ ᴺᵁᴸᴸ │
 │ 2 │    3 │
@@ -237,60 +242,64 @@ SHOW CREATE TABLE t_null
 
 Apply the `assumeNotNull` function to the `y` column.
 
-```sql
+``` sql
 SELECT assumeNotNull(y) FROM t_null
 ```
-```text
+
+``` text
 ┌─assumeNotNull(y)─┐
 │                0 │
 │                3 │
 └──────────────────┘
 ```
 
-```sql
+``` sql
 SELECT toTypeName(assumeNotNull(y)) FROM t_null
 ```
-```text
+
+``` text
 ┌─toTypeName(assumeNotNull(y))─┐
 │ Int8                         │
 │ Int8                         │
 └──────────────────────────────┘
 ```
 
-## toNullable
+## toNullable {#tonullable}
 
 Converts the argument type to `Nullable`.
 
-```sql
+``` sql
 toNullable(x)
 ```
 
 **Parameters:**
 
-- `x` — The value of any non-compound type.
+-   `x` — The value of any non-compound type.
 
 **Returned value**
 
-- The input value with a `Nullable` type.
+-   The input value with a `Nullable` type.
 
 **Example**
 
-```sql
+``` sql
 SELECT toTypeName(10)
 ```
-```text
+
+``` text
 ┌─toTypeName(10)─┐
 │ UInt8          │
 └────────────────┘
 ```
-```sql
+
+``` sql
 SELECT toTypeName(toNullable(10))
 ```
-```text
+
+``` text
 ┌─toTypeName(toNullable(10))─┐
 │ Nullable(UInt8)            │
 └────────────────────────────┘
 ```
 
-
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/functions_for_nulls/) <!--hide-->

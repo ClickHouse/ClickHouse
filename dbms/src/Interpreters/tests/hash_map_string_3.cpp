@@ -57,10 +57,10 @@ struct STRUCT : public StringRef {}; \
 namespace ZeroTraits \
 { \
     template <> \
-    inline bool check<STRUCT>(STRUCT x) { return nullptr == x.data; } \
+    inline bool check<STRUCT>(STRUCT x) { return nullptr == x.data; } /* NOLINT */ \
  \
     template <> \
-    inline void set<STRUCT>(STRUCT & x) { x.data = nullptr; } \
+    inline void set<STRUCT>(STRUCT & x) { x.data = nullptr; } /* NOLINT */ \
 } \
  \
 template <> \
@@ -438,9 +438,9 @@ void NO_INLINE bench(const std::vector<StringRef> & data, const char * name)
     typename Map::LookupResult it;
     bool inserted;
 
-    for (size_t i = 0, size = data.size(); i < size; ++i)
+    for (const auto & value : data)
     {
-        map.emplace(static_cast<const Key &>(data[i]), it, inserted);
+        map.emplace(static_cast<const Key &>(value), it, inserted);
         if (inserted)
             it->getMapped() = 0;
         ++it->getMapped();
@@ -466,8 +466,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = atoi(argv[1]);
-    size_t m = atoi(argv[2]);
+    size_t n = std::stol(argv[1]);
+    size_t m = std::stol(argv[2]);
 
     DB::Arena pool;
     std::vector<StringRef> data(n);

@@ -104,6 +104,10 @@
 [submodule "contrib/sparsehash-c11"]
 	path = contrib/sparsehash-c11
 	url = https://github.com/sparsehash/sparsehash-c11.git
+[submodule "contrib/grpc"]
+	path = contrib/grpc
+	url = https://github.com/ClickHouse-Extras/grpc.git
+	branch = v1.25.0
 [submodule "contrib/aws"]
 	path = contrib/aws
 	url = https://github.com/aws/aws-sdk-cpp.git
@@ -136,10 +140,14 @@
 	url = https://github.com/ClickHouse-Extras/libc-headers.git
 [submodule "contrib/replxx"]
 	path = contrib/replxx
-	url = https://github.com/AmokHuginnsson/replxx.git
+	url = https://github.com/ClickHouse-Extras/replxx.git
 [submodule "contrib/ryu"]
 	path = contrib/ryu
 	url = https://github.com/ClickHouse-Extras/ryu.git
-[submodule "contrib/rocksdb"]
-	path = contrib/rocksdb
-	url = https://github.com/facebook/rocksdb.git
+[submodule "contrib/avro"]
+	path = contrib/avro
+	url = https://github.com/ClickHouse-Extras/avro.git
+	ignore = untracked
+[submodule "website/images/feathericons"]
+	path = website/images/feathericons
+	url = https://github.com/feathericons/feather

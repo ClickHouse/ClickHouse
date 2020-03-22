@@ -5,33 +5,61 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_PACKET_FROM_SERVER;
+    extern const int DEADLOCK_AVOIDED;
+}
 
 void Suggest::load(const ConnectionParameters & connection_parameters, size_t suggestion_limit)
 {
     loading_thread = std::thread([connection_parameters, suggestion_limit, this]
     {
-        try
+        for (size_t retry = 0; retry < 10; ++retry)
         {
-            Connection connection(
-                connection_parameters.host,
-                connection_parameters.port,
-                connection_parameters.default_database,
-                connection_parameters.user,
-                connection_parameters.password,
-                "client",
-                connection_parameters.compression,
-                connection_parameters.security);
+            try
+            {
+                Connection connection(
+                    connection_parameters.host,
+                    connection_parameters.port,
+                    connection_parameters.default_database,
+                    connection_parameters.user,
+                    connection_parameters.password,
+                    "client",
+                    connection_parameters.compression,
+                    connection_parameters.security);
 
-            loadImpl(connection, connection_parameters.timeouts, suggestion_limit);
-        }
-        catch (...)
-        {
-            std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+                loadImpl(connection, connection_parameters.timeouts, suggestion_limit);
+            }
+            catch (const Exception & e)
+            {
+                /// Retry when the server said "Client should retry".
+                if (e.code() == ErrorCodes::DEADLOCK_AVOIDED)
+                    continue;
+
+                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+            }
+            catch (...)
+            {
+                std::cerr << "Cannot load data for command line suggestions: " << getCurrentExceptionMessage(false, true) << "\n";
+            }
+
+            break;
         }
 
         /// Note that keyword suggestions are available even if we cannot load data from server.
 
         std::sort(words.begin(), words.end());
+        words_no_case = words;
+        std::sort(words_no_case.begin(), words_no_case.end(), [](const std::string & str1, const std::string & str2)
+        {
+            return std::lexicographical_compare(begin(str1), end(str1), begin(str2), end(str2), [](const char char1, const char char2)
+            {
+                return std::tolower(char1) < std::tolower(char2);
+            });
+        });
+
         ready = true;
     });
 }
@@ -64,6 +92,8 @@ void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeo
         "SELECT name FROM system.table_functions"
         " UNION ALL "
         "SELECT name FROM system.data_type_families"
+        " UNION ALL "
+        "SELECT name FROM system.merge_tree_settings"
         " UNION ALL "
         "SELECT name FROM system.settings"
         " UNION ALL "

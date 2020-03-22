@@ -6,6 +6,7 @@ nav:
   - ' ویژگی های از ClickHouse که می تواند معایبی باشد': 'introduction/features_considered_disadvantages.md'
   - 'ﯽﯾﺍﺭﺎﮐ': 'introduction/performance.md'
   - 'ﺦﯾﺭﺎﺗ': 'introduction/history.md'
+  - 'Adopters': 'introduction/adopters.md'
 
 - 'Getting started':
   - 'hidden': 'getting_started/index.md'
@@ -25,6 +26,7 @@ nav:
   - ' کلاینت Command-line': 'interfaces/cli.md'
   - 'Native interface (TCP)': 'interfaces/tcp.md'
   - 'HTTP interface': 'interfaces/http.md'
+  - 'MySQL Interface': 'interfaces/mysql.md'
   - ' فرمت های Input و Output': 'interfaces/formats.md'
   - ' درایور JDBC': 'interfaces/jdbc.md'
   - ' درایور ODBC': 'interfaces/odbc.md'
@@ -46,6 +48,7 @@ nav:
   - 'UUID': 'data_types/uuid.md'
   - 'Date': 'data_types/date.md'
   - 'DateTime': 'data_types/datetime.md'
+  - 'DateTime64': 'data_types/datetime64.md'
   - 'Enum': 'data_types/enum.md'
   - 'Array(T)': 'data_types/array.md'
   - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
@@ -59,7 +62,7 @@ nav:
     - 'Expression': 'data_types/special_data_types/expression.md'
     - 'Set': 'data_types/special_data_types/set.md'
     - 'Nothing': 'data_types/special_data_types/nothing.md'
-    - 'Interval': 'data_types/special_data_types/interval.md'    
+    - 'Interval': 'data_types/special_data_types/interval.md'
   - 'Domains':
     - 'Overview': 'data_types/domains/overview.md'
     - 'IPv4': 'data_types/domains/ipv4.md'
@@ -107,6 +110,7 @@ nav:
     - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
+    - 'GenerateRandom': 'operations/table_engines/generate.md'
 
 - 'SQL Reference':
   - 'hidden': 'query_language/index.md'
@@ -167,7 +171,8 @@ nav:
     - 'jdbc': 'query_language/table_functions/jdbc.md'
     - 'odbc': 'query_language/table_functions/odbc.md'
     - 'hdfs': 'query_language/table_functions/hdfs.md'
-    - 'input': 'query_language/table_functions/input.md'   
+    - 'input': 'query_language/table_functions/input.md'
+    - 'generateRandom': 'query_language/table_functions/generate.md'
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External Dictionaries':
@@ -177,9 +182,14 @@ nav:
       - 'Dictionary Updates': 'query_language/dicts/external_dicts_dict_lifetime.md'
       - 'Sources of External Dictionaries': 'query_language/dicts/external_dicts_dict_sources.md'
       - 'Dictionary Key and Fields': 'query_language/dicts/external_dicts_dict_structure.md'
+      - 'Hierarchical dictionaries': 'query_language/dicts/external_dicts_dict_hierarchical.md'
     - 'Internal Dictionaries': 'query_language/dicts/internal_dicts.md'
     - 'Operators': 'query_language/operators.md'
     - 'General Syntax': 'query_language/syntax.md'
+
+- 'Guides':
+  - 'Overview': 'guides/index.md'
+  - 'Applying CatBoost Models': 'guides/apply_catboost_model.md'
 
 - 'Operations':
   - 'Introduction': 'operations/index.md'
@@ -193,6 +203,8 @@ nav:
   - 'Configuration Files': 'operations/configuration_files.md'
   - 'Quotas': 'operations/quotas.md'
   - 'System Tables': 'operations/system_tables.md'
+  - 'Optimizing Performance':
+    - 'Query Profiling': 'operations/performance/sampling_query_profiler.md'
   - 'Testing Hardware': 'operations/performance_test.md'
   - 'Server Configuration Parameters':
     - 'Introduction': 'operations/server_settings/index.md'
@@ -210,21 +222,28 @@ nav:
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
     - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
-    
+
 - 'F.A.Q.':
   - 'General Questions': 'faq/general.md'
 
 - 'Development':
   - 'hidden': 'development/index.md'
+  - 'The Beginner ClickHouse Developer Instruction': 'development/developer_instruction.md'
   - 'Overview of ClickHouse Architecture': 'development/architecture.md'
+  - 'Browse ClickHouse Source Code': 'development/browse_code.md'
   - 'How to Build ClickHouse on Linux': 'development/build.md'
   - 'How to Build ClickHouse on Mac OS X': 'development/build_osx.md'
+  - 'How to Build ClickHouse on Linux for Mac OS X': 'development/build_cross_osx.md'
+  - 'How to Build ClickHouse on Linux for AARCH64 (ARM64)': 'development/build_cross_arm.md'
   - 'How to Write C++ code': 'development/style.md'
   - 'How to Run ClickHouse Tests': 'development/tests.md'
-  - 'The Beginner ClickHouse Developer Instruction': 'development/developer_instruction.md'
   - 'Third-Party Libraries Used': 'development/contrib.md'
 
 - 'What''s New':
   - 'Roadmap': 'roadmap.md'
-  - 'Changelog': 'changelog.md'
+  - 'Changelog':
+    - '2020': 'changelog/index.md'
+    - '2019': 'changelog/2019.md'
+    - '2018': 'changelog/2018.md'
+    - '2017': 'changelog/2017.md'
   - 'Security Changelog': 'security_changelog.md'

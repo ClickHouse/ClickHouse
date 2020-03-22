@@ -78,6 +78,8 @@ struct ExtractParamImpl
 {
     using ResultType = typename ParamExtractor::ResultType;
 
+    static constexpr bool use_default_implementation_for_constants = true;
+
     /// It is assumed that `res` is the correct size and initialized with zeros.
     static void vector_constant(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
         std::string needle,
@@ -117,19 +119,6 @@ struct ExtractParamImpl
 
         if (res.size() > i)
             memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
-    }
-
-    static void constant_constant(const std::string & data, std::string needle, ResultType & res)
-    {
-        needle = "\"" + needle + "\":";
-        size_t pos = data.find(needle);
-        if (pos == std::string::npos)
-            res = 0;
-        else
-            res = ParamExtractor::extract(
-                reinterpret_cast<const UInt8 *>(data.data() + pos + needle.size()),
-                reinterpret_cast<const UInt8 *>(data.data() + data.size())
-            );
     }
 
     template <typename... Args> static void vector_vector(Args &&...)

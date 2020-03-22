@@ -22,12 +22,14 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_databases("DATABASES");
     ParserKeyword s_dictionaries("DICTIONARIES");
     ParserKeyword s_from("FROM");
+    ParserKeyword s_in("IN");
     ParserKeyword s_not("NOT");
     ParserKeyword s_like("LIKE");
+    ParserKeyword s_where("WHERE");
     ParserKeyword s_limit("LIMIT");
     ParserStringLiteral like_p;
     ParserIdentifier name_p;
-    ParserExpressionWithOptionalAlias limit_p(false);
+    ParserExpressionWithOptionalAlias exp_elem(false);
 
     ASTPtr like;
     ASTPtr database;
@@ -54,7 +56,7 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
                 return false;
         }
 
-        if (s_from.ignore(pos, expected))
+        if (s_from.ignore(pos, expected) || s_in.ignore(pos, expected))
         {
             if (!name_p.parse(pos, database, expected))
                 return false;
@@ -70,10 +72,15 @@ bool ParserShowTablesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         }
         else if (query->not_like)
             return false;
+        else if (s_where.ignore(pos, expected))
+        {
+            if (!exp_elem.parse(pos, query->where_expression, expected))
+                return false;
+        }
 
         if (s_limit.ignore(pos, expected))
         {
-            if (!limit_p.parse(pos, query->limit_length, expected))
+            if (!exp_elem.parse(pos, query->limit_length, expected))
                 return false;
         }
     }

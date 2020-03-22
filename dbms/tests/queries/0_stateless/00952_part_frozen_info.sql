@@ -3,7 +3,7 @@ CREATE TABLE part_info (t DateTime) ENGINE = MergeTree PARTITION BY toDate(t) OR
 INSERT INTO part_info VALUES (toDateTime('1970-10-01 00:00:01')), (toDateTime('1970-10-02 00:00:01')), (toDateTime('1970-10-03 00:00:01'));
 SELECT name, is_frozen FROM system.parts WHERE `database` = currentDatabase() AND `table` = 'part_info';
 SELECT 'freeze one';
-ALTER TABLE part_info FREEZE PARTITION toDate('1970-10-02');
+ALTER TABLE part_info FREEZE PARTITION '1970-10-02';
 SELECT name, is_frozen FROM system.parts WHERE `database` = currentDatabase() AND `table` = 'part_info';
 SELECT 'freeze all';
 ALTER TABLE part_info FREEZE;

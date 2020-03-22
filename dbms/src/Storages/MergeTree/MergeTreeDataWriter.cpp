@@ -76,7 +76,7 @@ void buildScatterSelector(
 
 /// Computes ttls and updates ttl infos
 void updateTTL(const MergeTreeData::TTLEntry & ttl_entry,
-    MergeTreeDataPart::TTLInfos & ttl_infos,
+    IMergeTreeDataPart::TTLInfos & ttl_infos,
     DB::MergeTreeDataPartTTLInfo & ttl_info,
     Block & block, bool update_part_min_max_ttls)
 {
@@ -196,7 +196,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// This will generate unique name in scope of current server process.
     Int64 temp_index = data.insert_increment.get();
 
-    MergeTreeDataPart::MinMaxIndex minmax_idx;
+    IMergeTreeDataPart::MinMaxIndex minmax_idx;
     minmax_idx.update(block, data.minmax_idx_columns);
 
     MergeTreePartition partition(std::move(block_with_partition.partition));
@@ -205,8 +205,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     String part_name;
     if (data.format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
-        DayNum min_date(minmax_idx.parallelogram[data.minmax_idx_date_column_pos].left.get<UInt64>());
-        DayNum max_date(minmax_idx.parallelogram[data.minmax_idx_date_column_pos].right.get<UInt64>());
+        DayNum min_date(minmax_idx.hyperrectangle[data.minmax_idx_date_column_pos].left.get<UInt64>());
+        DayNum max_date(minmax_idx.hyperrectangle[data.minmax_idx_date_column_pos].right.get<UInt64>());
 
         const auto & date_lut = DateLUT::instance();
 
@@ -224,31 +224,35 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     /// Size of part would not be greater than block.bytes() + epsilon
     size_t expected_size = block.bytes();
 
-    DB::MergeTreeDataPart::TTLInfos move_ttl_infos;
+    DB::IMergeTreeDataPart::TTLInfos move_ttl_infos;
     for (const auto & ttl_entry : data.move_ttl_entries)
         updateTTL(ttl_entry, move_ttl_infos, move_ttl_infos.moves_ttl[ttl_entry.result_column], block, false);
 
+    NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
     ReservationPtr reservation = data.reserveSpacePreferringTTLRules(expected_size, move_ttl_infos, time(nullptr));
 
-    MergeTreeData::MutableDataPartPtr new_data_part =
-        std::make_shared<MergeTreeData::DataPart>(data, reservation->getDisk(), part_name, new_part_info);
+    auto new_data_part = data.createPart(
+        part_name,
+        data.choosePartType(expected_size, block.rows()),
+        new_part_info,
+        reservation->getDisk(),
+        TMP_PREFIX + part_name);
 
+    new_data_part->setColumns(columns);
     new_data_part->partition = std::move(partition);
     new_data_part->minmax_idx = std::move(minmax_idx);
-    new_data_part->relative_path = TMP_PREFIX + part_name;
     new_data_part->is_temp = true;
 
     /// The name could be non-unique in case of stale files from previous runs.
-    String full_path = new_data_part->getFullPath();
-    Poco::File dir(full_path);
+    String full_path = new_data_part->getFullRelativePath();
 
-    if (dir.exists())
+    if (new_data_part->disk->exists(full_path))
     {
-        LOG_WARNING(log, "Removing old temporary directory " + full_path);
-        dir.remove(true);
+        LOG_WARNING(log, "Removing old temporary directory " + fullPath(new_data_part->disk, full_path));
+        new_data_part->disk->removeRecursive(full_path);
     }
 
-    dir.createDirectories();
+    new_data_part->disk->createDirectories(full_path);
 
     /// If we need to calculate some columns to sort.
     if (data.hasSortingKey() || data.hasSkipIndices())
@@ -278,8 +282,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
             ProfileEvents::increment(ProfileEvents::MergeTreeDataWriterBlocksAlreadySorted);
     }
 
-    if (data.hasTableTTL())
-        updateTTL(data.ttl_table_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
+    if (data.hasRowsTTL())
+        updateTTL(data.rows_ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.table_ttl, block, true);
 
     for (const auto & [name, ttl_entry] : data.column_ttl_entries_by_name)
         updateTTL(ttl_entry, new_data_part->ttl_infos, new_data_part->ttl_infos.columns_ttl[name], block, true);
@@ -290,8 +294,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
-    NamesAndTypesList columns = data.getColumns().getAllPhysical().filter(block.getNames());
-    MergedBlockOutputStream out(data, new_data_part->getFullPath(), columns, compression_codec);
+    MergedBlockOutputStream out(new_data_part, columns, compression_codec);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);

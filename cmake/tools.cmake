@@ -32,25 +32,27 @@ else ()
     find_program (GOLD_PATH NAMES "ld.gold" "gold")
 endif ()
 
-# We prefer LLD linker over Gold or BFD.
-if (NOT LINKER_NAME)
-    if (LLD_PATH)
-        if (COMPILER_GCC)
-            # GCC driver requires one of supported linker names like "lld".
-            set (LINKER_NAME "lld")
-        else ()
-            # Clang driver simply allows full linker path.
-            set (LINKER_NAME ${LLD_PATH})
+if (OS_LINUX)
+    # We prefer LLD linker over Gold or BFD on Linux.
+    if (NOT LINKER_NAME)
+        if (LLD_PATH)
+            if (COMPILER_GCC)
+                # GCC driver requires one of supported linker names like "lld".
+                set (LINKER_NAME "lld")
+            else ()
+                # Clang driver simply allows full linker path.
+                set (LINKER_NAME ${LLD_PATH})
+            endif ()
         endif ()
     endif ()
-endif ()
 
-if (NOT LINKER_NAME)
-    if (GOLD_PATH)
-        if (COMPILER_GCC)
-            set (LINKER_NAME "gold")
-        else ()
-            set (LINKER_NAME ${GOLD_PATH})
+    if (NOT LINKER_NAME)
+        if (GOLD_PATH)
+            if (COMPILER_GCC)
+                set (LINKER_NAME "gold")
+            else ()
+                set (LINKER_NAME ${GOLD_PATH})
+            endif ()
         endif ()
     endif ()
 endif ()

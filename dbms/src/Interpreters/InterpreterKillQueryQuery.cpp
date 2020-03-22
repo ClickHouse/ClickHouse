@@ -6,6 +6,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/CancellationCode.h>
+#include <Access/AccessRightsContext.h>
 #include <Columns/ColumnString.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeString.h>
@@ -13,6 +14,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/IStorage.h>
+#include <Common/quoteString.h>
 #include <thread>
 #include <iostream>
 #include <cstddef>
@@ -23,9 +25,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int READONLY;
     extern const int LOGICAL_ERROR;
-    extern const int CANNOT_KILL;
+    extern const int ACCESS_DENIED;
 }
 
 
@@ -78,27 +79,34 @@ static QueryDescriptors extractQueriesExceptMeAndCheckAccess(const Block & proce
     const ColumnString & query_id_col = typeid_cast<const ColumnString &>(*processes_block.getByName("query_id").column);
     const ColumnString & user_col = typeid_cast<const ColumnString &>(*processes_block.getByName("user").column);
     const ClientInfo & my_client = context.getProcessListElement()->getClientInfo();
+    std::optional<bool> can_kill_query_started_by_another_user;
+    String query_user;
 
     for (size_t i = 0; i < num_processes; ++i)
     {
-        auto query_id = query_id_col.getDataAt(i).toString();
-        auto user = user_col.getDataAt(i).toString();
-
-        if (my_client.current_query_id == query_id && my_client.current_user == user)
+        if ((my_client.current_query_id == query_id_col.getDataAt(i).toString())
+            && (my_client.current_user == user_col.getDataAt(i).toString()))
             continue;
 
-        if (context.getSettingsRef().readonly && my_client.current_user != user)
+        auto query_id = query_id_col.getDataAt(i).toString();
+        query_user = user_col.getDataAt(i).toString();
+
+        if (my_client.current_user != query_user)
         {
-            throw Exception("Readonly user " + my_client.current_user + " attempts to kill query created by " + user,
-                    ErrorCodes::READONLY);
+            if (!can_kill_query_started_by_another_user)
+                can_kill_query_started_by_another_user = context.getAccessRights()->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), AccessType::KILL_QUERY);
+            if (!can_kill_query_started_by_another_user.value())
+                continue;
         }
 
-        res.emplace_back(std::move(query_id), std::move(user), i, false);
+        res.emplace_back(std::move(query_id), std::move(query_user), i, false);
     }
+
+    if (res.empty() && !query_user.empty()) // NOLINT
+        throw Exception("User " + my_client.current_user + " attempts to kill query created by " + query_user, ErrorCodes::ACCESS_DENIED);
 
     return res;
 }
-
 
 
 class SyncKillQueryInputStream : public IBlockInputStream
@@ -175,7 +183,7 @@ BlockIO InterpreterKillQueryQuery::execute()
     const auto & query = query_ptr->as<ASTKillQueryQuery &>();
 
     if (!query.cluster.empty())
-        return executeDDLQueryOnCluster(query_ptr, context, {"system"});
+        return executeDDLQueryOnCluster(query_ptr, context, getRequiredAccessForDDLOnCluster());
 
     BlockIO res_io;
     switch (query.type)
@@ -195,7 +203,6 @@ BlockIO InterpreterKillQueryQuery::execute()
         if (!query.sync || query.test)
         {
             MutableColumns res_columns = header.cloneEmptyColumns();
-
             for (const auto & query_desc : queries_to_stop)
             {
                 auto code = (query.test) ? CancellationCode::Unknown : process_list.sendCancelToQuery(query_desc.query_id, query_desc.user, true);
@@ -214,9 +221,6 @@ BlockIO InterpreterKillQueryQuery::execute()
     }
     case ASTKillQueryQuery::Type::Mutation:
     {
-        if (context.getSettingsRef().readonly)
-            throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
-
         Block mutations_block = getSelectResult("database, table, mutation_id", "system.mutations");
         if (!mutations_block)
             return res_io;
@@ -229,25 +233,34 @@ BlockIO InterpreterKillQueryQuery::execute()
         header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
 
         MutableColumns res_columns = header.cloneEmptyColumns();
+        auto table_id = StorageID::createEmpty();
 
         for (size_t i = 0; i < mutations_block.rows(); ++i)
         {
-            auto database_name = database_col.getDataAt(i).toString();
-            auto table_name = table_col.getDataAt(i).toString();
+            table_id = StorageID{database_col.getDataAt(i).toString(), table_col.getDataAt(i).toString()};
             auto mutation_id = mutation_id_col.getDataAt(i).toString();
 
             CancellationCode code = CancellationCode::Unknown;
             if (!query.test)
             {
-                auto storage = context.tryGetTable(database_name, table_name);
+                auto storage = DatabaseCatalog::instance().tryGetTable(table_id);
                 if (!storage)
                     code = CancellationCode::NotFound;
                 else
+                {
+                    if (!context.getAccessRights()->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), AccessType::KILL_MUTATION, table_id.database_name, table_id.table_name))
+                        continue;
                     code = storage->killMutation(mutation_id);
+                }
             }
 
             insertResultRow(i, code, mutations_block, header, res_columns);
         }
+
+        if (res_columns[0]->empty() && table_id)
+            throw Exception(
+                "Not allowed to kill mutation on " + table_id.getNameForLogs(),
+                ErrorCodes::ACCESS_DENIED);
 
         res_io.in = std::make_shared<OneBlockInputStream>(header.cloneWithColumns(std::move(res_columns)));
 
@@ -265,13 +278,25 @@ Block InterpreterKillQueryQuery::getSelectResult(const String & columns, const S
     if (where_expression)
         select_query += " WHERE " + queryToString(where_expression);
 
-    BlockIO block_io = executeQuery(select_query, context, true, QueryProcessingStage::Complete, false, false);
+    BlockIO block_io = executeQuery(select_query, context.getGlobalContext(), true, QueryProcessingStage::Complete, false, false);
     Block res = block_io.in->read();
 
     if (res && block_io.in->read())
         throw Exception("Expected one block from input stream", ErrorCodes::LOGICAL_ERROR);
 
     return res;
+}
+
+
+AccessRightsElements InterpreterKillQueryQuery::getRequiredAccessForDDLOnCluster() const
+{
+    const auto & query = query_ptr->as<ASTKillQueryQuery &>();
+    AccessRightsElements required_access;
+    if (query.type == ASTKillQueryQuery::Type::Query)
+        required_access.emplace_back(AccessType::KILL_QUERY);
+    else if (query.type == ASTKillQueryQuery::Type::Mutation)
+        required_access.emplace_back(AccessType::KILL_MUTATION);
+    return required_access;
 }
 
 }

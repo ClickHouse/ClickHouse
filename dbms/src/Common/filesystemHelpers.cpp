@@ -22,10 +22,10 @@ bool enoughSpaceInDirectory(const std::string & path [[maybe_unused]], size_t da
 {
 #if POCO_VERSION >= 0x01090000
     auto free_space = Poco::File(path).freeSpace();
-    if (data_size > free_space)
-        return false;
-#endif
+    return data_size <= free_space;
+#else
     return true;
+#endif
 }
 
 std::unique_ptr<TemporaryFile> createTemporaryFile(const std::string & path)

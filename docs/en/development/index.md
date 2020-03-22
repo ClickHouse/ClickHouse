@@ -1,4 +1,3 @@
-# ClickHouse Development
+# ClickHouse Development {#clickhouse-development}
 
-
-[Original article](https://clickhouse.yandex/docs/en/development/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/development/) <!--hide-->

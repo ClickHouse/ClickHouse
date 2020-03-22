@@ -9,9 +9,8 @@
 #include <capnp/serialize.h>
 #include <capnp/dynamic.h>
 #include <capnp/common.h>
-#include <boost/algorithm/string.hpp>
-#include <boost/range/join.hpp>
 #include <common/logger_useful.h>
+#include <common/find_symbols.h>
 
 
 namespace DB
@@ -20,7 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
-    extern const int BAD_ARGUMENTS;
     extern const int THERE_IS_NO_COLUMN;
     extern const int LOGICAL_ERROR;
 }
@@ -34,7 +32,7 @@ static CapnProtoRowInputFormat::NestedField split(const Block & header, size_t i
     if (!name.empty() && name[0] == '.')
         name.erase(0, 1);
 
-    boost::split(field.tokens, name, boost::is_any_of("._"));
+    splitInto<'.', '_'>(field.tokens, name);
     return field;
 }
 

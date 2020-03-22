@@ -14,7 +14,6 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeCleanupThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeRestartingThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartCheckThread.h>
-#include <Storages/MergeTree/ReplicatedMergeTreeAlterThread.h>
 #include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <Storages/MergeTree/EphemeralLockInZooKeeper.h>
 #include <Storages/MergeTree/BackgroundProcessingPool.h>
@@ -36,7 +35,7 @@ namespace DB
 /** The engine that uses the merge tree (see MergeTreeData) and replicated through ZooKeeper.
   *
   * ZooKeeper is used for the following things:
-  * - the structure of the table (/ metadata, /columns)
+  * - the structure of the table (/metadata, /columns)
   * - action log with data (/log/log-...,/replicas/replica_name/queue/queue-...);
   * - a replica list (/replicas), and replica activity tag (/replicas/replica_name/is_active), replica addresses (/replicas/replica_name/host);
   * - select the leader replica (/leader_election) - this is the replica that assigns the merge;
@@ -74,7 +73,7 @@ namespace DB
   * as the time will take the time of creation the appropriate part on any of the replicas.
   */
 
-class StorageReplicatedMergeTree : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public MergeTreeData
+class StorageReplicatedMergeTree final : public ext::shared_ptr_helper<StorageReplicatedMergeTree>, public MergeTreeData
 {
     friend struct ext::shared_ptr_helper<StorageReplicatedMergeTree>;
 public:
@@ -84,18 +83,17 @@ public:
 
     std::string getName() const override { return "Replicated" + merging_params.getModeName() + "MergeTree"; }
 
+    bool supportsParallelInsert() const override { return true; }
     bool supportsReplication() const override { return true; }
     bool supportsDeduplication() const override { return true; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    bool supportProcessorsPipeline() const override { return true; }
 
     std::optional<UInt64> totalRows() const override;
 
@@ -108,6 +106,7 @@ public:
     void alterPartition(const ASTPtr & query, const PartitionCommands & commands, const Context & query_context) override;
 
     void mutate(const MutationCommands & commands, const Context & context) override;
+    void waitMutation(const String & znode_name, size_t mutations_sync) const;
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const override;
     CancellationCode killMutation(const String & mutation_id) override;
 
@@ -149,6 +148,8 @@ public:
         UInt64 absolute_delay;
         UInt8 total_replicas;
         UInt8 active_replicas;
+        /// If the error has happened fetching the info from ZooKeeper, this field will be set.
+        String zookeeper_exception;
     };
 
     /// Get the status of the table. If with_zk_fields = false - do not fill in the fields that require queries to ZK.
@@ -175,6 +176,8 @@ public:
 
     /// Checks ability to use granularity
     bool canUseAdaptiveGranularity() const override;
+
+    int getMetadataVersion() const { return metadata_version; }
 
 private:
 
@@ -215,17 +218,6 @@ private:
       */
     zkutil::EphemeralNodeHolderPtr replica_is_active_node;
 
-    /** Version of the /columns node in ZooKeeper corresponding to the current data.columns.
-      * Read and modify along with the data.columns - under TableStructureLock.
-      */
-    int columns_version = -1;
-
-    /// Version of the /metadata node in ZooKeeper.
-    int metadata_version = -1;
-
-    /// Used to delay setting table structure till startup() in case of an offline ALTER.
-    std::function<void()> set_table_structure_at_startup;
-
     /** Is this replica "leading". The leader replica selects the parts to merge.
       */
     std::atomic<bool> is_leader {false};
@@ -259,6 +251,7 @@ private:
     /// Limiting parallel fetches per one table
     std::atomic_uint current_table_fetches {0};
 
+    int metadata_version = 0;
     /// Threads.
 
     /// A task that keeps track of the updates in the logs of all replicas and loads them into the queue.
@@ -285,9 +278,6 @@ private:
     /// A thread that removes old parts, log entries, and blocks.
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
-    /// A thread monitoring changes to the column list in ZooKeeper and updating the parts in accordance with these changes.
-    ReplicatedMergeTreeAlterThread alter_thread;
-
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
 
@@ -312,11 +302,7 @@ private:
       */
     void createNewZooKeeperNodes();
 
-    /** Verify that the list of columns and table settings match those specified in ZK (/metadata).
-      * If not, throw an exception.
-      * Must be called before startup().
-      */
-    void checkTableStructure(bool skip_sanity_checks, bool allow_alter);
+    void checkTableStructure(const String & zookeeper_prefix);
 
     /// A part of ALTER: apply metadata changes only (data parts are altered separately).
     /// Must be called under IStorage::lockStructureForAlter() lock.
@@ -348,11 +334,6 @@ private:
 
     void getCommitPartOps(Coordination::Requests & ops, MutableDataPartPtr & part, const String & block_id_path = "") const;
 
-    /// Updates info about part columns and checksums in ZooKeeper and commits transaction if successful.
-    void updatePartHeaderInZooKeeperAndCommit(
-        const zkutil::ZooKeeperPtr & zookeeper,
-        AlterDataPartTransaction & transaction);
-
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
     void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children);
@@ -380,12 +361,21 @@ private:
     /// Do the merge or recommend to make the fetch instead of the merge
     bool tryExecuteMerge(const LogEntry & entry);
 
+    /// Execute alter of table metadata. Set replica/metdata and replica/columns
+    /// nodes in zookeeper and also changes in memory metadata.
+    /// New metadata and columns values stored in entry.
+    bool executeMetadataAlter(const LogEntry & entry);
+
+    /// Execute MUTATE_PART entry. Part name and mutation commands
+    /// stored in entry. This function relies on MergerMutator class.
     bool tryExecutePartMutation(const LogEntry & entry);
 
 
+    /// Fetch part from other replica (inserted or merged/mutated)
+    /// NOTE: Attention! First of all tries to find covering part on other replica
+    /// and set it into entry.actual_new_part_name. After that tries to fetch this new covering part.
+    /// If fetch was not successful, clears entry.actual_new_part_name.
     bool executeFetch(LogEntry & entry);
-
-    void executeClearColumnOrIndexInPartition(const LogEntry & entry);
 
     bool executeReplaceRange(const LogEntry & entry);
 
@@ -437,11 +427,12 @@ private:
         zkutil::ZooKeeperPtr & zookeeper,
         const DataPartsVector & parts,
         const String & merged_name,
+        const MergeTreeDataPartType & merged_part_type,
         bool deduplicate,
         bool force_ttl,
         ReplicatedMergeTreeLogEntryData * out_log_entry = nullptr);
 
-    bool createLogEntryToMutatePart(const MergeTreeDataPart & part, Int64 mutation_version);
+    bool createLogEntryToMutatePart(const IMergeTreeDataPart & part, Int64 mutation_version, int alter_version);
 
     /// Exchange parts.
 
@@ -484,7 +475,7 @@ private:
       * Because it effectively waits for other thread that usually has to also acquire a lock to proceed and this yields deadlock.
       * TODO: There are wrong usages of this method that are not fixed yet.
       */
-    void waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
+    Strings waitForAllReplicasToProcessLogEntry(const ReplicatedMergeTreeLogEntryData & entry, bool wait_for_non_active = true);
 
     /** Wait until the specified replica executes the specified action from the log.
       * NOTE: See comment about locks above.
@@ -520,11 +511,10 @@ private:
     std::optional<Cluster::Address> findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const;
 
     // Partition helpers
-    void clearColumnOrIndexInPartition(const ASTPtr & partition, LogEntry && entry, const Context & query_context);
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);
-    void movePartitionToTable(const StoragePtr & source_table, const ASTPtr & partition, const Context & query_context);
+    void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context);
     void fetchPartition(const ASTPtr & partition, const String & from, const Context & query_context);
 
     /// Check granularity of already existing replicated table in zookeeper if it exists
@@ -534,6 +524,8 @@ private:
     /// Wait for timeout seconds mutation is finished on replicas
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
+
+    StorageInMemoryMetadata getMetadataFromSharedZookeeper(const String & metadata_str, const String & columns_str) const;
 
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
@@ -553,6 +545,40 @@ protected:
 };
 
 
-extern const int MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER;
+/** There are three places for each part, where it should be
+  * 1. In the RAM, data_parts, all_data_parts.
+  * 2. In the filesystem (FS), the directory with the data of the table.
+  * 3. in ZooKeeper (ZK).
+  *
+  * When adding a part, it must be added immediately to these three places.
+  * This is done like this
+  * - [FS] first write the part into a temporary directory on the filesystem;
+  * - [FS] rename the temporary part to the result on the filesystem;
+  * - [RAM] immediately afterwards add it to the `data_parts`, and remove from `data_parts` any parts covered by this one;
+  * - [RAM] also set the `Transaction` object, which in case of an exception (in next point),
+  *   rolls back the changes in `data_parts` (from the previous point) back;
+  * - [ZK] then send a transaction (multi) to add a part to ZooKeeper (and some more actions);
+  * - [FS, ZK] by the way, removing the covered (old) parts from filesystem, from ZooKeeper and from `all_data_parts`
+  *   is delayed, after a few minutes.
+  *
+  * There is no atomicity here.
+  * It could be possible to achieve atomicity using undo/redo logs and a flag in `DataPart` when it is completely ready.
+  * But it would be inconvenient - I would have to write undo/redo logs for each `Part` in ZK, and this would increase already large number of interactions.
+  *
+  * Instead, we are forced to work in a situation where at any time
+  *  (from another thread, or after server restart), there may be an unfinished transaction.
+  *  (note - for this the part should be in RAM)
+  * From these cases the most frequent one is when the part is already in the data_parts, but it's not yet in ZooKeeper.
+  * This case must be distinguished from the case where such a situation is achieved due to some kind of damage to the state.
+  *
+  * Do this with the threshold for the time.
+  * If the part is young enough, its lack in ZooKeeper will be perceived optimistically - as if it just did not have time to be added there
+  *  - as if the transaction has not yet been executed, but will soon be executed.
+  * And if the part is old, its absence in ZooKeeper will be perceived as an unfinished transaction that needs to be rolled back.
+  *
+  * PS. Perhaps it would be better to add a flag to the DataPart that a part is inserted into ZK.
+  * But here it's too easy to get confused with the consistency of this flag.
+  */
+#define MAX_AGE_OF_LOCAL_PART_THAT_WASNT_ADDED_TO_ZOOKEEPER (5 * 60)
 
 }

@@ -3,6 +3,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/SelectQueryInfo.h>
 #include <mutex>
 
@@ -81,7 +82,7 @@ public:
     void profileFeedback(const ReadBufferFromFileBase::ProfileInfo info);
 
     /// This method tells which mark ranges we have to read if we start from @from mark range
-    MarkRanges getRestMarks(const MergeTreeDataPart & part, const MarkRange & from) const;
+    MarkRanges getRestMarks(const IMergeTreeDataPart & part, const MarkRange & from) const;
 
     Block getHeader() const;
 
@@ -93,7 +94,6 @@ private:
         const size_t threads, const size_t sum_marks, std::vector<size_t> per_part_sum_marks,
         RangesInDataParts & parts, const size_t min_marks_for_concurrent_read);
 
-    std::vector<std::shared_lock<std::shared_mutex>> per_part_columns_lock;
     const MergeTreeData & data;
     Names column_names;
     bool do_not_steal_tasks;

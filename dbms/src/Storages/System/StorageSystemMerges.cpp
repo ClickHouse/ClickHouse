@@ -1,6 +1,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/System/StorageSystemMerges.h>
+#include <Access/AccessRightsContext.h>
 
 
 namespace DB
@@ -28,39 +29,42 @@ NamesAndTypesList StorageSystemMerges::getNamesAndTypes()
         {"rows_written", std::make_shared<DataTypeUInt64>()},
         {"columns_written", std::make_shared<DataTypeUInt64>()},
         {"memory_usage", std::make_shared<DataTypeUInt64>()},
-        {"thread_number", std::make_shared<DataTypeUInt64>()},
+        {"thread_id", std::make_shared<DataTypeUInt64>()},
     };
 }
 
 
 void StorageSystemMerges::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
+    const auto access_rights = context.getAccessRights();
+    const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW);
+
     for (const auto & merge : context.getMergeList().get())
     {
-        if (context.hasDatabaseAccessRights(merge.database))
-        {
-            size_t i = 0;
-            res_columns[i++]->insert(merge.database);
-            res_columns[i++]->insert(merge.table);
-            res_columns[i++]->insert(merge.elapsed);
-            res_columns[i++]->insert(merge.progress);
-            res_columns[i++]->insert(merge.num_parts);
-            res_columns[i++]->insert(merge.source_part_names);
-            res_columns[i++]->insert(merge.result_part_name);
-            res_columns[i++]->insert(merge.source_part_paths);
-            res_columns[i++]->insert(merge.result_part_path);
-            res_columns[i++]->insert(merge.partition_id);
-            res_columns[i++]->insert(merge.is_mutation);
-            res_columns[i++]->insert(merge.total_size_bytes_compressed);
-            res_columns[i++]->insert(merge.total_size_marks);
-            res_columns[i++]->insert(merge.bytes_read_uncompressed);
-            res_columns[i++]->insert(merge.rows_read);
-            res_columns[i++]->insert(merge.bytes_written_uncompressed);
-            res_columns[i++]->insert(merge.rows_written);
-            res_columns[i++]->insert(merge.columns_written);
-            res_columns[i++]->insert(merge.memory_usage);
-            res_columns[i++]->insert(merge.thread_number);
-        }
+        if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, merge.database, merge.table))
+            continue;
+
+        size_t i = 0;
+        res_columns[i++]->insert(merge.database);
+        res_columns[i++]->insert(merge.table);
+        res_columns[i++]->insert(merge.elapsed);
+        res_columns[i++]->insert(merge.progress);
+        res_columns[i++]->insert(merge.num_parts);
+        res_columns[i++]->insert(merge.source_part_names);
+        res_columns[i++]->insert(merge.result_part_name);
+        res_columns[i++]->insert(merge.source_part_paths);
+        res_columns[i++]->insert(merge.result_part_path);
+        res_columns[i++]->insert(merge.partition_id);
+        res_columns[i++]->insert(merge.is_mutation);
+        res_columns[i++]->insert(merge.total_size_bytes_compressed);
+        res_columns[i++]->insert(merge.total_size_marks);
+        res_columns[i++]->insert(merge.bytes_read_uncompressed);
+        res_columns[i++]->insert(merge.rows_read);
+        res_columns[i++]->insert(merge.bytes_written_uncompressed);
+        res_columns[i++]->insert(merge.rows_written);
+        res_columns[i++]->insert(merge.columns_written);
+        res_columns[i++]->insert(merge.memory_usage);
+        res_columns[i++]->insert(merge.thread_id);
     }
 }
 

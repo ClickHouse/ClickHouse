@@ -27,6 +27,8 @@
 #include <Processors/Transforms/MergingAggregatedTransform.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
+#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/DiskLocal.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/AutoPtr.h>
 #include <Common/CurrentThread.h>
@@ -35,6 +37,10 @@
 
 using namespace DB;
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class NumbersSource : public ISource
 {
@@ -187,6 +193,8 @@ try
     auto & factory = AggregateFunctionFactory::instance();
 
     auto cur_path = Poco::Path().absolute().toString();
+    auto disk = std::make_shared<DiskLocal>("tmp", cur_path, 0);
+    auto tmp_volume = std::make_shared<Volume>("tmp", std::vector<DiskPtr>{disk}, 0);
 
     auto execute_one_stream = [&](String msg, size_t num_threads, bool two_level, bool external)
     {
@@ -228,7 +236,7 @@ try
                 group_by_two_level_threshold_bytes,
                 max_bytes_before_external_group_by,
                 false, /// empty_result_for_aggregation_by_empty_set
-                cur_path, /// tmp_path
+                tmp_volume,
                 1, /// max_threads
                 0
             );
@@ -301,7 +309,7 @@ try
                 group_by_two_level_threshold_bytes,
                 max_bytes_before_external_group_by,
                 false, /// empty_result_for_aggregation_by_empty_set
-                cur_path, /// tmp_path
+                tmp_volume,
                 1, /// max_threads
                 0
         );

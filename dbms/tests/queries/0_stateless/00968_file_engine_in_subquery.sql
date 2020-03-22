@@ -7,3 +7,6 @@ INSERT INTO tableFile_00968 SELECT number FROM system.numbers LIMIT 10;
 INSERT INTO tableMergeTree_00968 SELECT number FROM system.numbers LIMIT 100;
 
 SELECT id FROM tableMergeTree_00968 WHERE id IN (SELECT number FROM tableFile_00968) ORDER BY id;
+
+DROP TABLE tableFile_00968;
+DROP TABLE tableMergeTree_00968;

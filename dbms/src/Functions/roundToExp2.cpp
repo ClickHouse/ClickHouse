@@ -49,6 +49,7 @@ template <typename T>
 struct RoundToExp2Impl
 {
     using ResultType = T;
+    static constexpr const bool allow_fixed_string = false;
 
     static inline T apply(T x)
     {

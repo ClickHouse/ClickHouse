@@ -55,15 +55,6 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
 
     ttl_table = formattedAST(data.ttl_table_ast);
 
-    std::ostringstream ttl_move_stream;
-    for (const auto & ttl_entry : data.move_ttl_entries)
-    {
-        if (ttl_move_stream.tellp() > 0)
-            ttl_move_stream << ", ";
-        ttl_move_stream << formattedAST(ttl_entry.entry_ast);
-    }
-    ttl_move = ttl_move_stream.str();
-
     skip_indices = data.getIndices().toString();
     if (data.canUseAdaptiveGranularity())
         index_granularity_bytes = data_settings->index_granularity_bytes;
@@ -94,9 +85,6 @@ void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
 
     if (!ttl_table.empty())
         out << "ttl: " << ttl_table << "\n";
-
-    if (!ttl_move.empty())
-        out << "move ttl: " << ttl_move << "\n";
 
     if (!skip_indices.empty())
         out << "indices: " << skip_indices << "\n";
@@ -139,9 +127,6 @@ void ReplicatedMergeTreeTableMetadata::read(ReadBuffer & in)
     if (checkString("ttl: ", in))
         in >> ttl_table >> "\n";
 
-    if (checkString("move ttl: ", in))
-        in >> ttl_move >> "\n";
-
     if (checkString("indices: ", in))
         in >> skip_indices >> "\n";
 
@@ -165,11 +150,9 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parse(const S
     return metadata;
 }
 
-ReplicatedMergeTreeTableMetadata::Diff
-ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk, bool allow_alter) const
-{
-    Diff diff;
 
+void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(const ReplicatedMergeTreeTableMetadata & from_zk) const
+{
     if (data_format_version < MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
     {
         if (date_column != from_zk.date_column)
@@ -178,10 +161,12 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
                 ErrorCodes::METADATA_MISMATCH);
     }
     else if (!from_zk.date_column.empty())
+    {
         throw Exception(
             "Existing table metadata in ZooKeeper differs in date index column."
             " Stored in ZooKeeper: " + from_zk.date_column + ", local is custom-partitioned.",
             ErrorCodes::METADATA_MISMATCH);
+    }
 
     if (sampling_expression != from_zk.sampling_expression)
         throw Exception("Existing table metadata in ZooKeeper differs in sample expression."
@@ -223,78 +208,46 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
             " Stored in ZooKeeper: " + from_zk.partition_key + ", local: " + partition_key,
             ErrorCodes::METADATA_MISMATCH);
 
+}
+
+void ReplicatedMergeTreeTableMetadata::checkEquals(const ReplicatedMergeTreeTableMetadata & from_zk) const
+{
+
+    checkImmutableFieldsEquals(from_zk);
+
     if (sorting_key != from_zk.sorting_key)
     {
-        if (allow_alter)
-        {
-            diff.sorting_key_changed = true;
-            diff.new_sorting_key = from_zk.sorting_key;
-        }
-        else
-            throw Exception(
-                "Existing table metadata in ZooKeeper differs in sorting key expression."
-                " Stored in ZooKeeper: " + from_zk.sorting_key + ", local: " + sorting_key,
-                ErrorCodes::METADATA_MISMATCH);
+        throw Exception(
+            "Existing table metadata in ZooKeeper differs in sorting key expression."
+            " Stored in ZooKeeper: " + from_zk.sorting_key + ", local: " + sorting_key,
+            ErrorCodes::METADATA_MISMATCH);
     }
 
     if (ttl_table != from_zk.ttl_table)
     {
-        if (allow_alter)
-        {
-            diff.ttl_table_changed = true;
-            diff.new_ttl_table = from_zk.ttl_table;
-        }
-        else
-            throw Exception(
-                    "Existing table metadata in ZooKeeper differs in TTL."
-                    " Stored in ZooKeeper: " + from_zk.ttl_table +
-                    ", local: " + ttl_table,
-                    ErrorCodes::METADATA_MISMATCH);
-    }
-
-    if (ttl_move != from_zk.ttl_move)
-    {
-        if (allow_alter)
-        {
-            diff.ttl_move_changed = true;
-            diff.new_ttl_move = from_zk.ttl_move;
-        }
-        else
-            throw Exception(
-                    "Existing table metadata in ZooKeeper differs in move TTL."
-                    " Stored in ZooKeeper: " + from_zk.ttl_move +
-                    ", local: " + ttl_move,
-                    ErrorCodes::METADATA_MISMATCH);
+        throw Exception(
+                "Existing table metadata in ZooKeeper differs in TTL."
+                " Stored in ZooKeeper: " + from_zk.ttl_table +
+                ", local: " + ttl_table,
+                ErrorCodes::METADATA_MISMATCH);
     }
 
     if (skip_indices != from_zk.skip_indices)
     {
-        if (allow_alter)
-        {
-            diff.skip_indices_changed = true;
-            diff.new_skip_indices = from_zk.skip_indices;
-        }
-        else
-            throw Exception(
-                    "Existing table metadata in ZooKeeper differs in skip indexes."
-                    " Stored in ZooKeeper: " + from_zk.skip_indices +
-                    ", local: " + skip_indices,
-                    ErrorCodes::METADATA_MISMATCH);
+        throw Exception(
+                "Existing table metadata in ZooKeeper differs in skip indexes."
+                " Stored in ZooKeeper: " + from_zk.skip_indices +
+                ", local: " + skip_indices,
+                ErrorCodes::METADATA_MISMATCH);
     }
 
     if (constraints != from_zk.constraints)
     {
-        if (allow_alter)
-        {
-            diff.constraints_changed = true;
-            diff.new_constraints = from_zk.constraints;
-        }
-        else
-            throw Exception(
-                    "Existing table metadata in ZooKeeper differs in constraints."
-                    " Stored in ZooKeeper: " + from_zk.constraints +
-                    ", local: " + constraints,
-                    ErrorCodes::METADATA_MISMATCH);
+        throw Exception(
+                "Existing table metadata in ZooKeeper differs in constraints."
+                " Stored in ZooKeeper: " + from_zk.constraints +
+                ", local: " + constraints,
+                       ErrorCodes::METADATA_MISMATCH);
     }
 
     if (from_zk.index_granularity_bytes_found_in_zk && index_granularity_bytes != from_zk.index_granularity_bytes)
@@ -302,6 +255,39 @@ ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTabl
             " Stored in ZooKeeper: " + DB::toString(from_zk.index_granularity_bytes) +
             ", local: " + DB::toString(index_granularity_bytes),
             ErrorCodes::METADATA_MISMATCH);
+}
+
+ReplicatedMergeTreeTableMetadata::Diff
+ReplicatedMergeTreeTableMetadata::checkAndFindDiff(const ReplicatedMergeTreeTableMetadata & from_zk) const
+{
+
+    checkImmutableFieldsEquals(from_zk);
+
+    Diff diff;
+
+    if (sorting_key != from_zk.sorting_key)
+    {
+        diff.sorting_key_changed = true;
+        diff.new_sorting_key = from_zk.sorting_key;
+    }
+
+    if (ttl_table != from_zk.ttl_table)
+    {
+        diff.ttl_table_changed = true;
+        diff.new_ttl_table = from_zk.ttl_table;
+    }
+
+    if (skip_indices != from_zk.skip_indices)
+    {
+        diff.skip_indices_changed = true;
+        diff.new_skip_indices = from_zk.skip_indices;
+    }
+
+    if (constraints != from_zk.constraints)
+    {
+        diff.constraints_changed = true;
+        diff.new_constraints = from_zk.constraints;
+    }
 
     return diff;
 }

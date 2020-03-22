@@ -390,7 +390,7 @@ namespace ErrorCodes
     extern const int ALL_REPLICAS_LOST = 415;
     extern const int REPLICA_STATUS_CHANGED = 416;
     extern const int EXPECTED_ALL_OR_ANY = 417;
-    extern const int UNKNOWN_JOIN_STRICTNESS = 418;
+    extern const int UNKNOWN_JOIN = 418;
     extern const int MULTIPLE_ASSIGNMENTS_TO_COLUMN = 419;
     extern const int CANNOT_UPDATE_COLUMN = 420;
     extern const int CANNOT_ADD_DIFFERENT_AGGREGATE_STATES = 421;
@@ -467,9 +467,9 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_NOT_FOUND = 492;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS = 493;
     extern const int ACCESS_ENTITY_FOUND_DUPLICATES = 494;
-    extern const int ACCESS_ENTITY_STORAGE_READONLY = 495;
+    extern const int ACCESS_STORAGE_READONLY = 495;
     extern const int QUOTA_REQUIRES_CLIENT_KEY = 496;
-    extern const int NOT_ENOUGH_PRIVILEGES = 497;
+    extern const int ACCESS_DENIED = 497;
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED = 498;
     extern const int S3_ERROR = 499;
     extern const int CANNOT_CREATE_DATABASE = 501;
@@ -478,6 +478,17 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS = 504;
     extern const int CANNOT_DELETE_DIRECTORY = 505;
     extern const int UNEXPECTED_ERROR_CODE = 506;
+    extern const int UNABLE_TO_SKIP_UNUSED_SHARDS = 507;
+    extern const int UNKNOWN_ACCESS_TYPE = 508;
+    extern const int INVALID_GRANT = 509;
+    extern const int CACHE_DICTIONARY_UPDATE_FAIL = 510;
+    extern const int UNKNOWN_ROLE = 511;
+    extern const int SET_NON_GRANTED_ROLE = 512;
+    extern const int UNKNOWN_PART_TYPE = 513;
+    extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND = 514;
+    extern const int INCORRECT_ACCESS_ENTITY_DEFINITION = 515;
+    extern const int AUTHENTICATION_FAILED = 516;
+    extern const int CANNOT_ASSIGN_ALTER = 517;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

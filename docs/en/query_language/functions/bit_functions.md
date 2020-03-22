@@ -1,39 +1,39 @@
-# Bit functions
+# Bit functions {#bit-functions}
 
 Bit functions work for any pair of types from UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, or Float64.
 
 The result type is an integer with bits equal to the maximum bits of its arguments. If at least one of the arguments is signed, the result is a signed number. If an argument is a floating-point number, it is cast to Int64.
 
-## bitAnd(a, b)
+## bitAnd(a, b) {#bitanda-b}
 
-## bitOr(a, b)
+## bitOr(a, b) {#bitora-b}
 
-## bitXor(a, b)
+## bitXor(a, b) {#bitxora-b}
 
-## bitNot(a)
+## bitNot(a) {#bitnota}
 
-## bitShiftLeft(a, b)
+## bitShiftLeft(a, b) {#bitshiftlefta-b}
 
-## bitShiftRight(a, b)
+## bitShiftRight(a, b) {#bitshiftrighta-b}
 
-## bitRotateLeft(a, b)
+## bitRotateLeft(a, b) {#bitrotatelefta-b}
 
-## bitRotateRight(a, b)
+## bitRotateRight(a, b) {#bitrotaterighta-b}
 
 ## bitTest {#bittest}
 
 Takes any integer and converts it into [binary form](https://en.wikipedia.org/wiki/Binary_number), returns the value of a bit at specified position. The countdown starts from 0 from the right to the left.
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 SELECT bitTest(number, index)
 ```
 
 **Parameters**
 
-- `number` – integer number.
-- `index` – position of bit. 
+-   `number` – integer number.
+-   `index` – position of bit.
 
 **Returned values**
 
@@ -47,13 +47,13 @@ For example, the number 43 in base-2 (binary) numeral system is 101011.
 
 Query:
 
-```sql
+``` sql
 SELECT bitTest(43, 1)
 ```
 
 Result:
 
-```text
+``` text
 ┌─bitTest(43, 1)─┐
 │              1 │
 └────────────────┘
@@ -63,13 +63,13 @@ Another example:
 
 Query:
 
-```sql
+``` sql
 SELECT bitTest(43, 2)
 ```
 
 Result:
 
-```text
+``` text
 ┌─bitTest(43, 2)─┐
 │              0 │
 └────────────────┘
@@ -82,20 +82,23 @@ Returns result of [logical conjuction](https://en.wikipedia.org/wiki/Logical_con
 The conjuction for bitwise operations:
 
 0 AND 0 = 0
+
 0 AND 1 = 0
+
 1 AND 0 = 0
+
 1 AND 1 = 1
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 ```
 
-**Parameters** 
+**Parameters**
 
-- `number` – integer number.
-- `index1`, `index2`, `index3`, `index4` – positions of bit. For example, for set of positions (`index1`, `index2`, `index3`, `index4`) is true if and only if all of its positions are true (`index1` ⋀ `index2`, ⋀ `index3` ⋀ `index4`).
+-   `number` – integer number.
+-   `index1`, `index2`, `index3`, `index4` – positions of bit. For example, for set of positions (`index1`, `index2`, `index3`, `index4`) is true if and only if all of its positions are true (`index1` ⋀ `index2`, ⋀ `index3` ⋀ `index4`).
 
 **Returned values**
 
@@ -109,13 +112,13 @@ For example, the number 43 in base-2 (binary) numeral system is 101011.
 
 Query:
 
-```sql
+``` sql
 SELECT bitTestAll(43, 0, 1, 3, 5)
 ```
 
 Result:
 
-```text
+``` text
 ┌─bitTestAll(43, 0, 1, 3, 5)─┐
 │                          1 │
 └────────────────────────────┘
@@ -125,13 +128,13 @@ Another example:
 
 Query:
 
-```sql
+``` sql
 SELECT bitTestAll(43, 0, 1, 3, 5, 2)
 ```
 
 Result:
 
-```text
+``` text
 ┌─bitTestAll(43, 0, 1, 3, 5, 2)─┐
 │                             0 │
 └───────────────────────────────┘
@@ -144,20 +147,23 @@ Returns result of [logical disjunction](https://en.wikipedia.org/wiki/Logical_di
 The disjunction for bitwise operations:
 
 0 OR 0 = 0
+
 0 OR 1 = 1
+
 1 OR 0 = 1
+
 1 OR 1 = 1
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 ```
 
-**Parameters** 
+**Parameters**
 
-- `number` – integer number.
-- `index1`, `index2`, `index3`, `index4` – positions of bit.
+-   `number` – integer number.
+-   `index1`, `index2`, `index3`, `index4` – positions of bit.
 
 **Returned values**
 
@@ -171,13 +177,13 @@ For example, the number 43 in base-2 (binary) numeral system is 101011.
 
 Query:
 
-```sql
+``` sql
 SELECT bitTestAny(43, 0, 2)
 ```
 
 Result:
 
-```text
+``` text
 ┌─bitTestAny(43, 0, 2)─┐
 │                    1 │
 └──────────────────────┘
@@ -187,16 +193,16 @@ Another example:
 
 Query:
 
-```sql
+``` sql
 SELECT bitTestAny(43, 4, 2)
 ```
 
 Result:
 
-```text
+``` text
 ┌─bitTestAny(43, 4, 2)─┐
 │                    0 │
 └──────────────────────┘
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/functions/bit_functions/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/functions/bit_functions/) <!--hide-->

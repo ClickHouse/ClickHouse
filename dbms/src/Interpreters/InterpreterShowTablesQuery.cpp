@@ -2,6 +2,7 @@
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Common/typeid_cast.h>
@@ -35,13 +36,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary && !query.from.empty())
         throw Exception("The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`", ErrorCodes::SYNTAX_ERROR);
 
-    String database = query.from.empty() ? context.getCurrentDatabase() : query.from;
-
-    /** The parameter check_database_access_rights is reset when the SHOW TABLES query is processed,
-      * So that all clients can see a list of all databases and tables in them regardless of their access rights
-      * to these databases.
-      */
-    context.assertDatabaseExists(database, false);
+    String database = context.resolveDatabase(query.from);
+    DatabaseCatalog::instance().assertDatabaseExists(database);
 
     std::stringstream rewritten_query;
     rewritten_query << "SELECT name FROM system.";
@@ -64,6 +60,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
 
     if (!query.like.empty())
         rewritten_query << " AND name " << (query.not_like ? "NOT " : "") << "LIKE " << std::quoted(query.like, '\'');
+    else if (query.where_expression)
+        rewritten_query << " AND (" << query.where_expression << ")";
 
     if (query.limit_length)
         rewritten_query << " LIMIT " << query.limit_length;

@@ -54,6 +54,8 @@ void CSVRowOutputFormat::writeFieldDelimiter()
 
 void CSVRowOutputFormat::writeRowEndDelimiter()
 {
+    if (format_settings.csv.crlf_end_of_line)
+        writeChar('\r', out);
     writeChar('\n', out);
 }
 
@@ -66,7 +68,6 @@ void CSVRowOutputFormat::writeBeforeExtremes()
 {
     writeChar('\n', out);
 }
-
 
 
 void registerOutputFormatProcessorCSV(FormatFactory & factory)

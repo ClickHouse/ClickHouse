@@ -137,7 +137,7 @@ struct SymbolResolver : public llvm::orc::SymbolResolver
 {
     llvm::LegacyJITSymbolResolver & impl;
 
-    SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
+    explicit SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
 
     llvm::orc::SymbolNameSet getResponsibilitySet(const llvm::orc::SymbolNameSet & symbols) final
     {
@@ -152,7 +152,7 @@ struct SymbolResolver : public llvm::orc::SymbolResolver
             bool has_resolved = false;
             impl.lookup({*symbol}, [&](llvm::Expected<llvm::JITSymbolResolver::LookupResult> resolved)
             {
-                if (resolved && resolved->size())
+                if (resolved && !resolved->empty())
                 {
                     query->notifySymbolMetRequiredState(symbol, resolved->begin()->second);
                     has_resolved = true;
@@ -198,7 +198,7 @@ struct LLVMContext
     /// returns used memory
     void compileAllFunctionsToNativeCode()
     {
-        if (!module->size())
+        if (module->empty())
             return;
         llvm::PassManagerBuilder pass_manager_builder;
         llvm::legacy::PassManager mpm;
@@ -247,10 +247,11 @@ struct LLVMContext
 };
 
 
-template <typename... Ts, typename F>
-static bool castToEither(IColumn * column, F && f)
+template <typename... Ts>
+static bool castToEitherWithNullable(IColumn * column)
 {
-    return ((typeid_cast<Ts *>(column) ? f(*typeid_cast<Ts *>(column)) : false) || ...);
+    return ((typeid_cast<Ts *>(column)
+            || (typeid_cast<ColumnNullable *>(column) && typeid_cast<Ts *>(&(typeid_cast<ColumnNullable *>(column)->getNestedColumn())))) || ...);
 }
 
 class LLVMExecutableFunction : public IExecutableFunctionImpl
@@ -280,12 +281,12 @@ public:
 
         if (block_size)
         {
-            if (!castToEither<
+            if (!castToEitherWithNullable<
                 ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
                 ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
-                ColumnFloat32, ColumnFloat64>(col_res.get(), [block_size](auto & col) { col.getData().resize(block_size); return true; }))
+                ColumnFloat32, ColumnFloat64>(col_res.get()))
                 throw Exception("Unexpected column in LLVMExecutableFunction: " + col_res->getName(), ErrorCodes::LOGICAL_ERROR);
-
+            col_res = col_res->cloneResized(block_size);
             std::vector<ColumnData> columns(arguments.size() + 1);
             for (size_t i = 0; i < arguments.size(); ++i)
             {
@@ -345,7 +346,7 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
         }
     }
     ValuePlaceholders arguments(arg_types.size());
-    for (size_t i = 0; i < arguments.size(); ++i)
+    for (size_t i = 0; i < arguments.size(); ++i) // NOLINT
     {
         arguments[i] = [&b, &col = columns[i], &type = arg_types[i]]() -> llvm::Value *
         {
@@ -698,10 +699,10 @@ void compileFunctions(
             fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
     }
 
-    for (size_t i = 0; i < actions.size(); ++i)
+    for (auto & action : actions)
     {
-        if (actions[i].type == ExpressionAction::APPLY_FUNCTION && actions[i].is_function_compiled)
-            actions[i].function = actions[i].function_base->prepare({}, {}, 0); /// Arguments are not used for LLVMFunction.
+        if (action.type == ExpressionAction::APPLY_FUNCTION && action.is_function_compiled)
+            action.function = action.function_base->prepare({}, {}, 0); /// Arguments are not used for LLVMFunction.
     }
 }
 

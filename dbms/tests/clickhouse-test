@@ -76,8 +76,8 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     total_time = (datetime.now() - start_time).total_seconds()
 
     # Normalize randomized database names in stdout, stderr files.
-    os.system("sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stdout_file))
-    os.system("sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stderr_file))
+    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stdout_file))
+    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stderr_file))
 
     stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
     stdout = unicode(stdout, errors='replace', encoding='utf-8')
@@ -99,7 +99,7 @@ def get_processlist(client_cmd):
 
 
 def get_stacktraces(server_pid):
-    cmd = "gdb -q -ex 'set pagination off' -ex 'backtrace' -ex 'thread apply all backtrace' -ex 'detach' -ex 'quit' --pid {} 2>/dev/null".format(server_pid)
+    cmd = "gdb -batch -ex 'thread apply all backtrace' -p {}".format(server_pid)
     try:
         return subprocess.check_output(cmd, shell=True)
     except Exception as ex:
@@ -107,12 +107,11 @@ def get_stacktraces(server_pid):
 
 
 def get_server_pid(server_tcp_port):
-    cmd = "lsof -i tcp:{port} | fgrep 'TCP *:{port} (LISTEN)'".format(port=server_tcp_port)
+    cmd = "lsof -i tcp:{port} -s tcp:LISTEN -Fp | awk '/^p[0-9]+$/{{print substr($0, 2)}}'".format(port=server_tcp_port)
     try:
         output = subprocess.check_output(cmd, shell=True)
         if output:
-            columns = output.strip().split(' ')
-            return int(columns[1])
+            return int(output[1:])
         else:
             return None # server dead
     except Exception as ex:
@@ -453,12 +452,22 @@ def main(args):
     if args.hung_check:
         processlist = get_processlist(args.client_with_database)
         if processlist:
-            server_pid = get_server_pid(os.getenv("CLICKHOUSE_PORT_TCP", '9000'))
             print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
             print(processlist)
+
+            clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
+            server_pid = get_server_pid(clickhouse_tcp_port)
             if server_pid:
-                print("\nStacktraces of all threads:")
+                print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
+                print("\nCollecting stacktraces from all running threads:")
                 print(get_stacktraces(server_pid))
+            else:
+                print(
+                    colored(
+                        "\nUnable to locate ClickHouse server process listening at TCP port {}. "
+                        "It must have crashed or exited prematurely!".format(clickhouse_tcp_port),
+                        args, "red", attrs=["bold"]))
+
             exit_code = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
@@ -514,7 +523,7 @@ if __name__ == '__main__':
     parser.add_argument('test', nargs='*', help='Optional test case name regex')
     parser.add_argument('-d', '--disabled', action='store_true', default=False, help='Also run disabled tests')
     parser.add_argument('--stop', action='store_true', default=None, dest='stop', help='Stop on network errors')
-    parser.add_argument('--order', default='desc', help='Run order (asc, desc, random)')
+    parser.add_argument('--order', default='desc', choices=['asc', 'desc', 'random'], help='Run order')
     parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
     parser.add_argument('--hung-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)

@@ -2,13 +2,13 @@
 
 Движок предназначен для прореживания и агрегирования/усреднения (rollup) данных [Graphite](http://graphite.readthedocs.io/en/latest/index.html). Он может быть интересен разработчикам, которые хотят использовать ClickHouse как хранилище данных для Graphite.
 
-Если rollup не требуется, то для хранения данных Graphite можно использовать любой движок таблиц ClickHouse, в противном случае используйте `GraphiteMergeTree`. Движок уменьшает объем хранения и повышает эффективность запросов от Graphite.
+Если rollup не требуется, то для хранения данных Graphite можно использовать любой движок таблиц ClickHouse, в противном случае используйте `GraphiteMergeTree`. Движок уменьшает объём хранения и повышает эффективность запросов от Graphite.
 
 Движок наследует свойства от [MergeTree](mergetree.md).
 
 ## Создание таблицы {#creating-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     Path String,
@@ -27,32 +27,34 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 В таблице должны быть столбцы для следующих данных:
 
-- Название метрики (сенсора Graphite). Тип данных: `String`.
+-   Название метрики (сенсора Graphite). Тип данных: `String`.
 
-- Время измерения метрики. Тип данных `DateTime`.
+-   Время измерения метрики. Тип данных `DateTime`.
 
-- Значение метрики. Тип данных: любой числовой.
+-   Значение метрики. Тип данных: любой числовой.
 
-- Версия метрики. Тип данных: любой числовой.
+-   Версия метрики. Тип данных: любой числовой.
 
-    ClickHouse сохраняет строки с последней версией или последнюю записанную строку, если версии совпадают. Другие строки удаляются при слиянии кусков данных.
+        ClickHouse сохраняет строки с последней версией или последнюю записанную строку, если версии совпадают. Другие строки удаляются при слиянии кусков данных.
 
 Имена этих столбцов должны быть заданы в конфигурации rollup.
 
 **Параметры GraphiteMergeTree**
 
-- `config_section` — имя раздела в конфигурационном файле, в котором находятся правила rollup.
+-   `config_section` — имя раздела в конфигурационном файле, в котором находятся правила rollup.
 
 **Секции запроса**
 
 При создании таблицы `GraphiteMergeTree` используются те же [секции](mergetree.md#table_engine-mergetree-creating-a-table) запроса, что и при создании таблицы `MergeTree`.
 
-<details markdown="1"><summary>Устаревший способ создания таблицы</summary>
+<details markdown="1">
 
-!!! attention
+<summary>Устаревший способ создания таблицы</summary>
+
+!!! attention "Attention"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     EventDate Date,
@@ -66,33 +68,33 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Все параметры, кроме `config_section` имеют то же значение, что в `MergeTree`.
 
-- `config_section` — имя раздела в конфигурационном файле, в котором находятся правила rollup.
+-   `config_section` — имя раздела в конфигурационном файле, в котором находятся правила rollup.
 
 </details>
 
 ## Конфигурация rollup {#rollup-configuration}
 
-Настройки прореживания данных задаются параметром [graphite_rollup](../server_settings/settings.md#server_settings-graphite_rollup) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
+Настройки прореживания данных задаются параметром [graphite\_rollup](../server_settings/settings.md#server_settings-graphite_rollup) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
 
 Структура конфигурации rollup:
 
-```text
+``` text
 required-columns
 patterns
 ```
 
 ### Требуемые столбцы (required-columns) {#required-columns}
 
-- `path_column_name` — столбец, в котором хранится название метрики (сенсор Graphite). Значение по умолчанию: `Path`.
-- `time_column_name` — столбец, в котором хранится время измерения метрики. Значение по умолчанию: `Time`.
-- `value_column_name` — столбец со значением метрики в момент времени, установленный в `time_column_name`. Значение по умолчанию: `Value`.
-- `version_column_name` — столбец, в котором хранится версия метрики. Значение по умолчанию: `Timestamp`.
+-   `path_column_name` — столбец, в котором хранится название метрики (сенсор Graphite). Значение по умолчанию: `Path`.
+-   `time_column_name` — столбец, в котором хранится время измерения метрики. Значение по умолчанию: `Time`.
+-   `value_column_name` — столбец со значением метрики в момент времени, установленный в `time_column_name`. Значение по умолчанию: `Value`.
+-   `version_column_name` — столбец, в котором хранится версия метрики. Значение по умолчанию: `Timestamp`.
 
 ### Правила (patterns) {#patterns}
 
 Структура раздела `patterns`:
 
-```text
+``` text
 pattern
     regexp
     function
@@ -116,22 +118,22 @@ default
 !!! warning "Внимание"
     Правила должны быть строго упорядочены:
 
-    1. Правила без `function` или `retention`.
-    1. Правила одновремено содержащие `function` и `retention`.
-    1. Правило `default`.
+      1. Правила без `function` или `retention`.
+      1. Правила одновремено содержащие `function` и `retention`.
+      1. Правило `default`.
 
 При обработке строки ClickHouse проверяет правила в разделе `pattern`. Каждый `pattern` (включая `default`) может содержать параметр агрегации `function`, параметр `retention`, или оба параметра одновременно. Если имя метрики соответствует шаблону `regexp`, то применяются правила `pattern`, в противном случае правило `default`.
 
 Поля для разделов `pattern` и `default`:
 
-- `regexp` – шаблон имени метрики.
-- `age` – минимальный возраст данных в секундах.
-- `precision` – точность определения возраста данных в секундах. Должен быть делителем для 86400 (количество секунд в сутках).
-- `function` – имя агрегирующей функции, которую следует применить к данным, чей возраст оказался в интервале `[age, age + precision]`.
+-   `regexp` – шаблон имени метрики.
+-   `age` – минимальный возраст данных в секундах.
+-   `precision` – точность определения возраста данных в секундах. Должен быть делителем для 86400 (количество секунд в сутках).
+-   `function` – имя агрегирующей функции, которую следует применить к данным, чей возраст оказался в интервале `[age, age + precision]`.
 
 ### Пример конфигурации {#configuration-example}
 
-```xml
+``` xml
 <graphite_rollup>
     <version_column_name>Version</version_column_name>
     <pattern>
@@ -164,4 +166,4 @@ default
 </graphite_rollup>
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/graphitemergetree/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/graphitemergetree/) <!--hide-->

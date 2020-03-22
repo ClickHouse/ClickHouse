@@ -32,7 +32,6 @@ void ASTDictionaryRange::formatImpl(const FormatSettings & settings,
 }
 
 
-
 ASTPtr ASTDictionaryLifetime::clone() const
 {
     auto res = std::make_shared<ASTDictionaryLifetime>(*this);
@@ -77,7 +76,7 @@ ASTPtr ASTDictionaryLayout::clone() const
 
 void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
                                      FormatState & state,
-                                     FormatStateStacked expected) const
+                                     FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "")
                   << "LAYOUT"
@@ -97,8 +96,7 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
                       << (settings.hilite ? hilite_none : "")
                       << " ";
 
-        parameter.second->formatImpl(settings, state, expected);
-
+        parameter->second->formatImpl(settings, state, frame);
         first = false;
     }
     settings.ostr << ")";

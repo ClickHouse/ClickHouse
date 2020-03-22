@@ -1,6 +1,8 @@
 #include <Columns/ColumnsNumber.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <Disks/DiskSpaceMonitor.h>
+#include <Disks/DiskLocal.h>
 
 #include <Processors/IProcessor.h>
 #include <Processors/ISource.h>
@@ -23,8 +25,13 @@
 #include <Poco/AutoPtr.h>
 
 
-using namespace DB;
+namespace DB
+{
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class NumbersSource : public ISource
 {
@@ -109,6 +116,11 @@ struct measure
     }
 };
 
+}
+
+
+using namespace DB;
+
 int main(int, char **)
 try
 {
@@ -116,7 +128,10 @@ try
     Logger::root().setChannel(channel);
     Logger::root().setLevel("trace");
 
-    auto execute_chain = [](
+    auto disk = std::make_shared<DiskLocal>("tmp", ".", 0);
+    auto tmp_volume = std::make_shared<Volume>("tmp", std::vector<DiskPtr>{disk}, 0);
+
+    auto execute_chain = [tmp_volume](
         String msg,
         UInt64 source_block_size,
         UInt64 blocks_count,
@@ -133,7 +148,9 @@ try
         SortDescription description = {{0, 1, 1}};
         auto transform = std::make_shared<MergeSortingTransform>(
                 source->getPort().getHeader(), description,
-                max_merged_block_size, limit, max_bytes_before_remerge, max_bytes_before_external_sort, ".", 0);
+                max_merged_block_size, limit,
+                max_bytes_before_remerge, max_bytes_before_external_sort,
+                tmp_volume, 0);
         auto sink = std::make_shared<CheckSortedSink>();
 
         connect(source->getPort(), transform->getInputs().front());

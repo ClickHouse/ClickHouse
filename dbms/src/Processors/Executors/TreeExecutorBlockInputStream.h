@@ -1,6 +1,7 @@
 #pragma once
 #include <DataStreams/IBlockInputStream.h>
 #include <Processors/Pipe.h>
+#include <Processors/RowsBeforeLimitCounter.h>
 
 namespace DB
 {
@@ -18,12 +19,23 @@ public:
     ///  * processors form a tree
     ///  * all processors are attainable from root
     ///  * there is no other connected processors
-    explicit TreeExecutorBlockInputStream(Pipe pipe) : output_port(pipe.getPort()), processors(std::move(pipe).detachProcessors())
+    explicit TreeExecutorBlockInputStream(Pipe pipe) : output_port(pipe.getPort())
     {
+        for (auto & table_lock : pipe.getTableLocks())
+            addTableLock(table_lock);
+
+        for (auto & storage : pipe.getStorageHolders())
+            storage_holders.emplace_back(storage);
+
+        for (auto & context : pipe.getContexts())
+            interpreter_context.emplace_back(context);
+
+        totals_port = pipe.getTotalsPort();
+        processors = std::move(pipe).detachProcessors();
         init();
     }
 
-    String getName() const override { return root->getName(); }
+    String getName() const override { return "TreeExecutor"; }
     Block getHeader() const override { return root->getOutputs().front().getHeader(); }
 
     /// This methods does not affect TreeExecutor as IBlockInputStream itself.
@@ -31,7 +43,7 @@ public:
     void setProgressCallback(const ProgressCallback & callback) final;
     void setProcessListElement(QueryStatus * elem) final;
     void setLimits(const LocalLimits & limits_) final;
-    void setQuota(const std::shared_ptr<QuotaContext> & quota_) final;
+    void setQuota(const QuotaContextPtr & quota_) final;
     void addTotalRowsApprox(size_t value) final;
 
 protected:
@@ -39,16 +51,27 @@ protected:
 
 private:
     OutputPort & output_port;
+    OutputPort * totals_port = nullptr;
     Processors processors;
     IProcessor * root = nullptr;
     std::unique_ptr<InputPort> input_port;
+    std::unique_ptr<InputPort> input_totals_port;
+    RowsBeforeLimitCounterPtr rows_before_limit_at_least;
 
     /// Remember sources that support progress.
     std::vector<ISourceWithProgress *> sources_with_progress;
 
+    QueryStatus * process_list_element = nullptr;
+
     void init();
     /// Execute tree step-by-step until root returns next chunk or execution is finished.
-    void execute();
+    void execute(bool on_totals);
+
+    void initRowsBeforeLimit();
+
+    /// Moved from pipe.
+    std::vector<std::shared_ptr<Context>> interpreter_context;
+    std::vector<StoragePtr> storage_holders;
 };
 
 }

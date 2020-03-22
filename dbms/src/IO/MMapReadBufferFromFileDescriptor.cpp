@@ -100,12 +100,12 @@ int MMapReadBufferFromFileDescriptor::getFD() const
     return fd;
 }
 
-off_t MMapReadBufferFromFileDescriptor::getPositionInFile()
+off_t MMapReadBufferFromFileDescriptor::getPosition()
 {
     return count();
 }
 
-off_t MMapReadBufferFromFileDescriptor::doSeek(off_t offset, int whence)
+off_t MMapReadBufferFromFileDescriptor::seek(off_t offset, int whence)
 {
     off_t new_pos;
     if (whence == SEEK_SET)

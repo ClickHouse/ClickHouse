@@ -77,6 +77,8 @@ protected:
 
     const BlockMissingValues & getMissingValues() const override { return block_missing_values; }
 
+    size_t getTotalRows() const { return total_rows; }
+
 private:
     Params params;
 
