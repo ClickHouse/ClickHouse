@@ -39,7 +39,7 @@ private:
     static inline unsigned int hash(const char * str, size_t len);
 
 public:
-    static const char * is_valid(const char * str, size_t len);
+    static const char * isValid(const char * str, size_t len);
 };
 
 inline unsigned int tldLookupHash::hash(const char * str, size_t len)
@@ -105,7 +105,7 @@ inline unsigned int tldLookupHash::hash(const char * str, size_t len)
     return hval + asso_values[static_cast<unsigned char>(str[len - 1])];
 }
 
-const char * tldLookupHash::is_valid(const char * str, size_t len)
+const char * tldLookupHash::isValid(const char * str, size_t len)
 {
     static const char * const wordlist[]
         = {"",
