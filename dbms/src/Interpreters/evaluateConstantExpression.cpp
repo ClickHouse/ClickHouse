@@ -116,8 +116,10 @@ namespace
             if (name == identifier->name)
             {
                 ColumnWithTypeAndName column;
-                // FIXME: what to do if field is not convertable?
-                column.column = type->createColumnConst(1, convertFieldToType(literal->value, *type));
+                Field value = convertFieldToType(literal->value, *type);
+                if (!literal->value.isNull() && value.isNull())
+                    return {};
+                column.column = type->createColumnConst(1, value);
                 column.name = name;
                 column.type = type;
                 return {{std::move(column)}};
