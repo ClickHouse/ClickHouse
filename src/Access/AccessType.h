@@ -11,135 +11,142 @@ namespace DB
 /// Represents an access type which can be granted on databases, tables, columns, etc.
 enum class AccessType
 {
-    NONE,  /// no access
-    ALL,   /// full access
+/// Macro M should be defined as M(name, aliases, node_type, parent_group_name)
+/// where name is identifier with underscores (instead of spaces);
+/// aliases is a string containing comma-separated list;
+/// node_type either specifies access type's level (GLOBAL/DATABASE/TABLE/DICTIONARY/VIEW/COLUMNS),
+/// or specifies that the access type is a GROUP of other access types;
+/// parent_group_name is the name of the group containing this access type (or NONE if there is no such group).
+#define APPLY_FOR_ACCESS_TYPES(M) \
+    M(SHOW_DATABASES, "", DATABASE, SHOW) /* allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>*/\
+    M(SHOW_TABLES, "", TABLE, SHOW) /* allows to execute SHOW TABLES, EXISTS <table>, CHECK <table> */\
+    M(SHOW_COLUMNS, "", COLUMN, SHOW) /* allows to execute SHOW CREATE TABLE, DESCRIBE */\
+    M(SHOW_DICTIONARIES, "", DICTIONARY, SHOW) /* allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary> */\
+    M(SHOW, "", GROUP, ALL) /* allows to execute SHOW, USE, EXISTS, CHECK, DESCRIBE */\
+    \
+    M(SELECT, "", COLUMN, ALL) \
+    M(INSERT, "", COLUMN, ALL) \
+    M(UPDATE, "ALTER UPDATE", COLUMN, ALTER_TABLE) /* allows to execute ALTER UPDATE */\
+    M(DELETE, "ALTER DELETE", COLUMN, ALTER_TABLE) /* allows to execute ALTER DELETE */\
+    \
+    M(ADD_COLUMN, "ALTER ADD COLUMN", COLUMN, ALTER_COLUMN) \
+    M(MODIFY_COLUMN, "ALTER MODIFY COLUMN", COLUMN, ALTER_COLUMN) \
+    M(DROP_COLUMN, "ALTER DROP COLUMN", COLUMN, ALTER_COLUMN) \
+    M(COMMENT_COLUMN, "ALTER COMMENT COLUMN", COLUMN, ALTER_COLUMN) \
+    M(CLEAR_COLUMN, "ALTER CLEAR COLUMN", COLUMN, ALTER_COLUMN) \
+    M(RENAME_COLUMN, "ALTER RENAME COLUMN", COLUMN, ALTER_COLUMN) \
+    M(ALTER_COLUMN, "", GROUP, ALTER_TABLE) /* allow to execute ALTER {ADD|DROP|MODIFY...} COLUMN */\
+    \
+    M(ALTER_ORDER_BY, "MODIFY ORDER BY, ALTER MODIFY ORDER BY", TABLE, INDEX) \
+    M(ADD_INDEX, "ALTER ADD INDEX", TABLE, INDEX) \
+    M(DROP_INDEX, "ALTER DROP INDEX", TABLE, INDEX) \
+    M(MATERIALIZE_INDEX, "ALTER MATERIALIZE INDEX", TABLE, INDEX) \
+    M(CLEAR_INDEX, "ALTER CLEAR INDEX", TABLE, INDEX) \
+    M(INDEX, "ALTER INDEX", GROUP, ALTER_TABLE) /* allows to execute ALTER ORDER BY or ALTER {ADD|DROP...} INDEX */\
+    \
+    M(ADD_CONSTRAINT, "ALTER ADD CONSTRAINT", TABLE, CONSTRAINT) \
+    M(DROP_CONSTRAINT, "ALTER DROP CONSTRAINT", TABLE, CONSTRAINT) \
+    M(CONSTRAINT, "ALTER CONSTRAINT", GROUP, ALTER_TABLE) /* allows to execute ALTER {ADD|DROP} CONSTRAINT */\
+    \
+    M(MODIFY_TTL, "ALTER MODIFY TTL", TABLE, ALTER_TABLE) /* allows to execute ALTER MODIFY TTL */\
+    M(MATERIALIZE_TTL, "ALTER MATERIALIZE TTL", TABLE, ALTER_TABLE) /* allows to execute ALTER MATERIALIZE TTL */\
+    M(MODIFY_SETTING, "ALTER MODIFY SETTING", TABLE, ALTER_TABLE) /* allows to execute ALTER MODIFY SETTING */\
+    M(MOVE_PARTITION, "ALTER MOVE PARTITION, MOVE PART, ALTER MOVE PART", TABLE, ALTER_TABLE) \
+    M(FETCH_PARTITION, "ALTER FETCH PARTITION", TABLE, ALTER_TABLE) \
+    M(FREEZE_PARTITION, "ALTER FREEZE PARTITION", TABLE, ALTER_TABLE) \
+    \
+    M(ALTER_TABLE, "", GROUP, ALTER) \
+    \
+    M(REFRESH_VIEW, "ALTER LIVE VIEW REFRESH", VIEW, ALTER_VIEW) \
+    M(MODIFY_VIEW_QUERY, "ALTER TABLE MODIFY QUERY", VIEW, ALTER_VIEW) \
+    M(ALTER_VIEW, "", GROUP, ALTER) /* allows to execute ALTER LIVE VIEW REFRESH, ALTER TABLE MODIFY QUERY */\
+    \
+    M(ALTER, "", GROUP, ALL) /* allows to execute ALTER {TABLE|LIVE VIEW} */\
+    \
+    M(CREATE_DATABASE, "", DATABASE, CREATE) /* allows to execute {CREATE|ATTACH} DATABASE */\
+    M(CREATE_TABLE, "", TABLE, CREATE) /* allows to execute {CREATE|ATTACH} {TABLE|VIEW} */\
+    M(CREATE_VIEW, "", VIEW, CREATE) /* allows to execute {CREATE|ATTACH} VIEW */\
+    M(CREATE_DICTIONARY, "", DICTIONARY, CREATE) /* allows to execute {CREATE|ATTACH} DICTIONARY */\
+    M(CREATE_TEMPORARY_TABLE, "", GLOBAL, CREATE) /* allows to create and manipulate temporary tables */ \
+    M(CREATE, "", GROUP, ALL) /* allows to execute {CREATE|ATTACH} */ \
+    \
+    M(DROP_DATABASE, "", DATABASE, DROP) /* allows to execute {DROP|DETACH} DATABASE */\
+    M(DROP_TABLE, "", TABLE, DROP) /* allows to execute {DROP|DETACH} TABLE */\
+    M(DROP_VIEW, "", VIEW, DROP) /* allows to execute {DROP|DETACH} TABLE for views */\
+    M(DROP_DICTIONARY, "", DICTIONARY, DROP) /* allows to execute {DROP|DETACH} DICTIONARY */\
+    M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
+    \
+    M(TRUNCATE_VIEW, "", VIEW, TRUNCATE) \
+    M(TRUNCATE_TABLE, "", TABLE, TRUNCATE) \
+    M(TRUNCATE, "", GROUP, ALL) \
+    M(OPTIMIZE, "OPTIMIZE TABLE", TABLE, ALL) \
+    \
+    M(KILL_QUERY, "", GLOBAL, ALL) /* allows to kill a query started by another user (anyone can kill his own queries) */\
+    \
+    M(CREATE_USER, "", GLOBAL, ALL) \
+    M(ALTER_USER, "", GLOBAL, ALL) \
+    M(DROP_USER, "", GLOBAL, ALL) \
+    M(CREATE_ROLE, "", GLOBAL, ALL) \
+    M(ALTER_ROLE, "", GLOBAL, ALL) \
+    M(DROP_ROLE, "", GLOBAL, ALL) \
+    M(ROLE_ADMIN, "", GLOBAL, ALL) /* allows to grant and revoke the roles which are not granted to the current user with admin option */\
+    M(CREATE_POLICY, "CREATE ROW POLICY", GLOBAL, ALL) \
+    M(ALTER_POLICY, "ALTER ROW POLICY", GLOBAL, ALL) \
+    M(DROP_POLICY, "DROP ROW POLICY", GLOBAL, ALL) \
+    M(CREATE_QUOTA, "", GLOBAL, ALL) \
+    M(ALTER_QUOTA, "", GLOBAL, ALL) \
+    M(DROP_QUOTA, "", GLOBAL, ALL) \
+    M(CREATE_SETTINGS_PROFILE, "CREATE PROFILE", GLOBAL, ALL) \
+    M(ALTER_SETTINGS_PROFILE, "ALTER PROFILE", GLOBAL, ALL) \
+    M(DROP_SETTINGS_PROFILE, "DROP PROFILE", GLOBAL, ALL) \
+    \
+    M(SHUTDOWN, "SYSTEM SHUTDOWN, SYSTEM KILL", GLOBAL, SYSTEM) \
+    M(DROP_CACHE, "SYSTEM DROP CACHE, DROP DNS CACHE, SYSTEM DROP DNS CACHE, DROP MARK CACHE, SYSTEM DROP MARK CACHE, DROP UNCOMPRESSED CACHE, SYSTEM DROP UNCOMPRESSED CACHE, DROP COMPILED EXPRESSION CACHE, SYSTEM DROP COMPILED EXPRESSION CACHE", GLOBAL, SYSTEM) \
+    M(RELOAD_CONFIG, "SYSTEM RELOAD CONFIG", GLOBAL, SYSTEM) \
+    M(RELOAD_DICTIONARY, "SYSTEM RELOAD DICTIONARY, RELOAD DICTIONARIES, SYSTEM RELOAD DICTIONARIES, RELOAD EMBEDDED DICTIONARIES, SYSTEM RELOAD EMBEDDED DICTIONARIES", GLOBAL, SYSTEM) \
+    M(STOP_MERGES, "SYSTEM STOP MERGES, START MERGES, SYSTEM START MERGES", TABLE, SYSTEM) \
+    M(STOP_TTL_MERGES, "SYSTEM STOP TTL MERGES, START TTL MERGES, SYSTEM START TTL MERGES", TABLE, SYSTEM) \
+    M(STOP_FETCHES, "SYSTEM STOP FETCHES, START FETCHES, SYSTEM START FETCHES", TABLE, SYSTEM) \
+    M(STOP_MOVES, "SYSTEM STOP MOVES, START MOVES, SYSTEM START MOVES", TABLE, SYSTEM) \
+    M(STOP_DISTRIBUTED_SENDS, "SYSTEM STOP DISTRIBUTED SENDS, START DISTRIBUTED SENDS, SYSTEM START DISTRIBUTED SENDS", TABLE, SYSTEM) \
+    M(STOP_REPLICATED_SENDS, "SYSTEM STOP REPLICATED SENDS, START REPLICATED SENDS, SYSTEM START REPLICATED SENDS", TABLE, SYSTEM) \
+    M(STOP_REPLICATION_QUEUES, "SYSTEM STOP REPLICATION QUEUES, START REPLICATION QUEUES, SYSTEM START REPLICATION QUEUES", TABLE, SYSTEM) \
+    M(SYNC_REPLICA, "SYSTEM SYNC REPLICA", TABLE, SYSTEM) \
+    M(RESTART_REPLICA, "SYSTEM RESTART REPLICA", TABLE, SYSTEM) \
+    M(FLUSH_DISTRIBUTED, "SYSTEM FLUSH DISTRIBUTED", TABLE, SYSTEM) \
+    M(FLUSH_LOGS, "SYSTEM FLUSH LOGS", GLOBAL, SYSTEM) \
+    M(SYSTEM, "", GROUP, ALL) /* allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...} */ \
+    \
+    M(dictGet, "dictHas, dictGetHierarchy, dictIsIn", DICTIONARY, ALL) /* allows to execute functions dictGet(), dictHas(), dictGetHierarchy(), dictIsIn() */\
+    \
+    M(addressToLine, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToLine() */\
+    M(addressToSymbol, "", GLOBAL, INTROSPECTION) /* allows to execute function addressToSymbol() */\
+    M(demangle, "", GLOBAL, INTROSPECTION) /* allows to execute function demangle() */\
+    M(INTROSPECTION, "INTROSPECTION FUNCTIONS", GROUP, ALL) /* allows to execute functions addressToLine(), addressToSymbol(), demangle()*/\
+    \
+    M(file, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(url, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(input, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(values, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(numbers, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(zeros, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(merge, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(remote, "remoteSecure, cluster", GLOBAL, TABLE_FUNCTIONS) \
+    M(mysql, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(odbc, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(jdbc, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(hdfs, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(s3, "", GLOBAL, TABLE_FUNCTIONS) \
+    M(TABLE_FUNCTIONS, "", GROUP, ALL) \
+    \
+    M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
+    M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
 
-    SHOW_DATABASES,    /// allows to execute SHOW DATABASES, SHOW CREATE DATABASE, USE <database>
-    SHOW_TABLES,       /// allows to execute SHOW TABLES, EXISTS <table>, CHECK <table>
-    SHOW_COLUMNS,      /// allows to execute SHOW CREATE TABLE, DESCRIBE
-    SHOW_DICTIONARIES, /// allows to execute SHOW DICTIONARIES, SHOW CREATE DICTIONARY, EXISTS <dictionary>
-    SHOW,              /// allows to execute SHOW, USE, EXISTS, CHECK, DESCRIBE
+#define DECLARE_ACCESS_TYPE_ENUM_CONST(name, aliases, node_type, parent_group_name) \
+    name,
 
-    SELECT,
-    INSERT,
-    UPDATE,  /// allows to execute ALTER UPDATE
-    DELETE,  /// allows to execute ALTER DELETE
-
-    ADD_COLUMN,
-    DROP_COLUMN,
-    MODIFY_COLUMN,
-    COMMENT_COLUMN,
-    CLEAR_COLUMN,
-    RENAME_COLUMN,
-    ALTER_COLUMN,       /// allow to execute ALTER {ADD|DROP|MODIFY...} COLUMN
-
-    ALTER_ORDER_BY,
-    ADD_INDEX,
-    DROP_INDEX,
-    MATERIALIZE_INDEX,
-    CLEAR_INDEX,
-    INDEX,              /// allows to execute ALTER ORDER BY or ALTER {ADD|DROP...} INDEX
-
-    ADD_CONSTRAINT,
-    DROP_CONSTRAINT,
-    ALTER_CONSTRAINT,   /// allows to execute ALTER {ADD|DROP} CONSTRAINT
-
-    MODIFY_TTL,          /// allows to execute ALTER MODIFY TTL
-    MATERIALIZE_TTL,     /// allows to execute ALTER MATERIALIZE TTL
-    MODIFY_SETTING,      /// allows to execute ALTER MODIFY SETTING
-
-    MOVE_PARTITION,
-    FETCH_PARTITION,
-    FREEZE_PARTITION,
-
-    ALTER_TABLE,        /// allows to execute ALTER TABLE ...
-
-    REFRESH_VIEW,       /// allows to execute ALTER LIVE VIEW REFRESH
-    MODIFY_VIEW_QUERY,  /// allows to execute ALTER TABLE MODIFY QUERY
-    ALTER_VIEW,         /// allows to execute ALTER LIVE VIEW REFRESH, ALTER TABLE MODIFY QUERY
-
-    ALTER,              /// allows to execute ALTER {TABLE|LIVE VIEW} ...
-
-    CREATE_DATABASE,        /// allows to execute {CREATE|ATTACH} DATABASE
-    CREATE_TABLE,           /// allows to execute {CREATE|ATTACH} TABLE
-    CREATE_VIEW,            /// allows to execute {CREATE|ATTACH} VIEW
-    CREATE_DICTIONARY,      /// allows to execute {CREATE|ATTACH} DICTIONARY
-    CREATE_TEMPORARY_TABLE, /// allows to create and manipulate temporary tables and views.
-    CREATE,                 /// allows to execute {CREATE|ATTACH} [TEMPORARY] {DATABASE|TABLE|VIEW|DICTIONARY}
-
-    DROP_DATABASE,
-    DROP_TABLE,
-    DROP_VIEW,
-    DROP_DICTIONARY,
-    DROP,               /// allows to execute DROP {DATABASE|TABLE|VIEW|DICTIONARY}
-
-    TRUNCATE_TABLE,
-    TRUNCATE_VIEW,
-    TRUNCATE,           /// allows to execute TRUNCATE {TABLE|VIEW}
-
-    OPTIMIZE,           /// allows to execute OPTIMIZE TABLE
-
-    KILL_QUERY,         /// allows to kill a query started by another user (anyone can kill his own queries)
-
-    CREATE_USER,
-    ALTER_USER,
-    DROP_USER,
-    CREATE_ROLE,
-    ALTER_ROLE,
-    DROP_ROLE,
-    CREATE_POLICY,
-    ALTER_POLICY,
-    DROP_POLICY,
-    CREATE_QUOTA,
-    ALTER_QUOTA,
-    DROP_QUOTA,
-    CREATE_SETTINGS_PROFILE,
-    ALTER_SETTINGS_PROFILE,
-    DROP_SETTINGS_PROFILE,
-
-    ROLE_ADMIN,         /// allows to grant and revoke any roles.
-
-    SHUTDOWN,
-    DROP_CACHE,
-    RELOAD_CONFIG,
-    RELOAD_DICTIONARY,
-    STOP_MERGES,
-    STOP_TTL_MERGES,
-    STOP_FETCHES,
-    STOP_MOVES,
-    STOP_DISTRIBUTED_SENDS,
-    STOP_REPLICATED_SENDS,
-    STOP_REPLICATION_QUEUES,
-    SYNC_REPLICA,
-    RESTART_REPLICA,
-    FLUSH_DISTRIBUTED,
-    FLUSH_LOGS,
-    SYSTEM,                  /// allows to execute SYSTEM {SHUTDOWN|RELOAD CONFIG|...}
-
-    dictGet,                 /// allows to execute functions dictGet, dictHas, dictGetHierarchy, dictIsIn
-    dictHas,                 /// allows to execute functions dictGet, dictHas, dictGetHierarchy, dictIsIn
-    dictGetHierarchy,        /// allows to execute functions dictGet, dictHas, dictGetHierarchy, dictIsIn
-    dictIsIn,                /// allows to execute functions dictGet, dictHas, dictGetHierarchy, dictIsIn
-
-    addressToLine,           /// allows to execute function addressToLine
-    addressToSymbol,         /// allows to execute function addressToSymbol
-    demangle,                /// allows to execute function demangle
-    INTROSPECTION,           /// allows to execute functions addressToLine, addressToSymbol, demangle
-
-    file,
-    url,
-    input,
-    values,
-    numbers,
-    zeros,
-    merge,
-    remote,
-    mysql,
-    odbc,
-    jdbc,
-    hdfs,
-    s3,
-    TABLE_FUNCTIONS,  /// allows to execute any table function
+    APPLY_FOR_ACCESS_TYPES(DECLARE_ACCESS_TYPE_ENUM_CONST)
+#undef DECLARE_ACCESS_TYPE_ENUM_CONST
 };
 
 constexpr size_t MAX_ACCESS_TYPE = static_cast<size_t>(AccessType::TABLE_FUNCTIONS) + 1;
@@ -165,153 +172,26 @@ namespace impl
         }
 
     private:
-        void addToMapping(AccessType type, const std::string_view & str)
+        AccessTypeToKeywordConverter()
+        {
+#define INSERT_ACCESS_TYPE_KEYWORD_PAIR_TO_MAPPING(name, aliases, node_type, parent_group_name) \
+            insertToMapping(AccessType::name, #name);
+
+            APPLY_FOR_ACCESS_TYPES(INSERT_ACCESS_TYPE_KEYWORD_PAIR_TO_MAPPING)
+
+#undef INSERT_ACCESS_TYPE_KEYWORD_PAIR_TO_MAPPING
+        }
+
+        void insertToMapping(AccessType type, const std::string_view & str)
         {
             String str2{str};
             boost::replace_all(str2, "_", " ");
-            if (islower(str2[0]))
-                str2 += "()";
-            access_type_to_keyword_mapping[static_cast<size_t>(type)] = str2;
+            size_t index = static_cast<size_t>(type);
+            access_type_to_keyword_mapping.resize(std::max(index + 1, access_type_to_keyword_mapping.size()));
+            access_type_to_keyword_mapping[index] = str2;
         }
 
-        AccessTypeToKeywordConverter()
-        {
-#define ACCESS_TYPE_TO_KEYWORD_CASE(type) \
-            addToMapping(AccessType::type, #type)
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(NONE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALL);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(SHOW_DATABASES);
-            ACCESS_TYPE_TO_KEYWORD_CASE(SHOW_TABLES);
-            ACCESS_TYPE_TO_KEYWORD_CASE(SHOW_COLUMNS);
-            ACCESS_TYPE_TO_KEYWORD_CASE(SHOW_DICTIONARIES);
-            ACCESS_TYPE_TO_KEYWORD_CASE(SHOW);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(SELECT);
-            ACCESS_TYPE_TO_KEYWORD_CASE(INSERT);
-            ACCESS_TYPE_TO_KEYWORD_CASE(UPDATE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DELETE);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(ADD_COLUMN);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_COLUMN);
-            ACCESS_TYPE_TO_KEYWORD_CASE(MODIFY_COLUMN);
-            ACCESS_TYPE_TO_KEYWORD_CASE(COMMENT_COLUMN);
-            ACCESS_TYPE_TO_KEYWORD_CASE(CLEAR_COLUMN);
-            ACCESS_TYPE_TO_KEYWORD_CASE(RENAME_COLUMN);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_COLUMN);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_ORDER_BY);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ADD_INDEX);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_INDEX);
-            ACCESS_TYPE_TO_KEYWORD_CASE(MATERIALIZE_INDEX);
-            ACCESS_TYPE_TO_KEYWORD_CASE(CLEAR_INDEX);
-            ACCESS_TYPE_TO_KEYWORD_CASE(INDEX);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(ADD_CONSTRAINT);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_CONSTRAINT);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_CONSTRAINT);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(MODIFY_TTL);
-            ACCESS_TYPE_TO_KEYWORD_CASE(MATERIALIZE_TTL);
-            ACCESS_TYPE_TO_KEYWORD_CASE(MODIFY_SETTING);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(MOVE_PARTITION);
-            ACCESS_TYPE_TO_KEYWORD_CASE(FETCH_PARTITION);
-            ACCESS_TYPE_TO_KEYWORD_CASE(FREEZE_PARTITION);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_TABLE);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(REFRESH_VIEW);
-            ACCESS_TYPE_TO_KEYWORD_CASE(MODIFY_VIEW_QUERY);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_VIEW);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALTER);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_DATABASE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_TABLE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_VIEW);
-            ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_DICTIONARY);
-            ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_TEMPORARY_TABLE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(CREATE);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_DATABASE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_TABLE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_VIEW);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_DICTIONARY);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(TRUNCATE_TABLE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(TRUNCATE_VIEW);
-            ACCESS_TYPE_TO_KEYWORD_CASE(TRUNCATE);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(OPTIMIZE);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(KILL_QUERY);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_USER);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_USER);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_USER);
-            ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_ROLE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_ROLE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_ROLE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_POLICY);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_POLICY);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_POLICY);
-            ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_QUOTA);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_QUOTA);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_QUOTA);
-            ACCESS_TYPE_TO_KEYWORD_CASE(CREATE_SETTINGS_PROFILE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ALTER_SETTINGS_PROFILE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_SETTINGS_PROFILE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(ROLE_ADMIN);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(SHUTDOWN);
-            ACCESS_TYPE_TO_KEYWORD_CASE(DROP_CACHE);
-            ACCESS_TYPE_TO_KEYWORD_CASE(RELOAD_CONFIG);
-            ACCESS_TYPE_TO_KEYWORD_CASE(RELOAD_DICTIONARY);
-            ACCESS_TYPE_TO_KEYWORD_CASE(STOP_MERGES);
-            ACCESS_TYPE_TO_KEYWORD_CASE(STOP_TTL_MERGES);
-            ACCESS_TYPE_TO_KEYWORD_CASE(STOP_FETCHES);
-            ACCESS_TYPE_TO_KEYWORD_CASE(STOP_MOVES);
-            ACCESS_TYPE_TO_KEYWORD_CASE(STOP_DISTRIBUTED_SENDS);
-            ACCESS_TYPE_TO_KEYWORD_CASE(STOP_REPLICATED_SENDS);
-            ACCESS_TYPE_TO_KEYWORD_CASE(STOP_REPLICATION_QUEUES);
-            ACCESS_TYPE_TO_KEYWORD_CASE(SYNC_REPLICA);
-            ACCESS_TYPE_TO_KEYWORD_CASE(RESTART_REPLICA);
-            ACCESS_TYPE_TO_KEYWORD_CASE(FLUSH_DISTRIBUTED);
-            ACCESS_TYPE_TO_KEYWORD_CASE(FLUSH_LOGS);
-            ACCESS_TYPE_TO_KEYWORD_CASE(SYSTEM);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(dictGet);
-            ACCESS_TYPE_TO_KEYWORD_CASE(dictHas);
-            ACCESS_TYPE_TO_KEYWORD_CASE(dictGetHierarchy);
-            ACCESS_TYPE_TO_KEYWORD_CASE(dictIsIn);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(addressToLine);
-            ACCESS_TYPE_TO_KEYWORD_CASE(addressToSymbol);
-            ACCESS_TYPE_TO_KEYWORD_CASE(demangle);
-            ACCESS_TYPE_TO_KEYWORD_CASE(INTROSPECTION);
-
-            ACCESS_TYPE_TO_KEYWORD_CASE(file);
-            ACCESS_TYPE_TO_KEYWORD_CASE(url);
-            ACCESS_TYPE_TO_KEYWORD_CASE(input);
-            ACCESS_TYPE_TO_KEYWORD_CASE(values);
-            ACCESS_TYPE_TO_KEYWORD_CASE(numbers);
-            ACCESS_TYPE_TO_KEYWORD_CASE(zeros);
-            ACCESS_TYPE_TO_KEYWORD_CASE(merge);
-            ACCESS_TYPE_TO_KEYWORD_CASE(remote);
-            ACCESS_TYPE_TO_KEYWORD_CASE(mysql);
-            ACCESS_TYPE_TO_KEYWORD_CASE(odbc);
-            ACCESS_TYPE_TO_KEYWORD_CASE(jdbc);
-            ACCESS_TYPE_TO_KEYWORD_CASE(hdfs);
-            ACCESS_TYPE_TO_KEYWORD_CASE(s3);
-            ACCESS_TYPE_TO_KEYWORD_CASE(TABLE_FUNCTIONS);
-
-#undef ACCESS_TYPE_TO_KEYWORD_CASE
-        }
-
-        std::array<String, MAX_ACCESS_TYPE> access_type_to_keyword_mapping;
+        Strings access_type_to_keyword_mapping;
     };
 }
 

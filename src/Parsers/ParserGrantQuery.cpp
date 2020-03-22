@@ -17,15 +17,6 @@ namespace ErrorCodes
 
 namespace
 {
-    bool parseRoundBrackets(IParser::Pos & pos, Expected & expected)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            return ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected)
-                && ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected);
-        });
-    }
-
     bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & access_flags)
     {
         static constexpr auto is_one_of_access_type_words = [](IParser::Pos & pos_)
@@ -63,7 +54,6 @@ namespace
                 return false;
             }
 
-            parseRoundBrackets(pos, expected);
             return true;
         });
     }
