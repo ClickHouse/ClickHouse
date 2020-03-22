@@ -1,5 +1,5 @@
 #include <Processors/Transforms/LimitsCheckingTransform.h>
-#include <Access/QuotaContext.h>
+#include <Access/EnabledQuota.h>
 
 namespace DB
 {

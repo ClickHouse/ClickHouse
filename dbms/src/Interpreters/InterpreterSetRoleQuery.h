@@ -7,7 +7,7 @@
 namespace DB
 {
 class ASTSetRoleQuery;
-struct GenericRoleSet;
+struct ExtendedRoleSet;
 struct User;
 
 
@@ -18,7 +18,7 @@ public:
 
     BlockIO execute() override;
 
-    static void updateUserSetDefaultRoles(User & user, const GenericRoleSet & roles_from_query);
+    static void updateUserSetDefaultRoles(User & user, const ExtendedRoleSet & roles_from_query);
 
 private:
     void setRole(const ASTSetRoleQuery & query);

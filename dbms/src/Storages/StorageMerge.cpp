@@ -186,7 +186,7 @@ Pipes StorageMerge::read(
       * since there is no certainty that it works when one of table is MergeTree and other is not.
       */
     auto modified_context = std::make_shared<Context>(context);
-    modified_context->getSettingsRef().optimize_move_to_prewhere = false;
+    modified_context->setSetting("optimize_move_to_prewhere", false);
 
     /// What will be result structure depending on query processed stage in source tables?
     Block header = getQueryHeader(column_names, query_info, context, processed_stage);
@@ -300,8 +300,8 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
         modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, table_name);
 
         /// Maximum permissible parallelism is streams_num
-        modified_context->getSettingsRef().max_threads = UInt64(streams_num);
-        modified_context->getSettingsRef().max_streams_to_max_threads_ratio = 1;
+        modified_context->setSetting("max_threads", streams_num);
+        modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
         InterpreterSelectQuery interpreter{modified_query_info.query, *modified_context, SelectQueryOptions(processed_stage)};
 
