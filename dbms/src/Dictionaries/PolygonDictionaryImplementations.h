@@ -3,6 +3,8 @@
 #include "PolygonDictionary.h"
 #include "PolygonDictionaryUtils.h"
 
+#include <vector>
+
 namespace DB
 {
 
@@ -74,7 +76,8 @@ public:
 private:
     bool find(const Point & point, size_t & id) const override;
 
-    BucketsPolygonIndex buckets_idx;
+    std::vector<BucketsPolygonIndex> buckets;
 };
 
 }
+
