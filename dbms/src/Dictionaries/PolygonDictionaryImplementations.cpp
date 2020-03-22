@@ -113,9 +113,13 @@ SmartPolygonDictionary::SmartPolygonDictionary(
         const DictionaryLifetime dict_lifetime_,
         InputType input_type_,
         PointType point_type_)
-        : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
-          buckets_idx(this->polygons)
+        : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
 {
+    buckets.reserve(polygons.size())
+    for (size_t i = 0; i < bucekts.size(); ++i)
+    {
+        buckets.emplace_back({polygons[i]});
+    }
 }
 
 std::shared_ptr<const IExternalLoadable> SmartPolygonDictionary::clone() const
@@ -132,7 +136,23 @@ std::shared_ptr<const IExternalLoadable> SmartPolygonDictionary::clone() const
 
 bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
 {
-    return this->buckets_idx.find(point, id);
+    bool found = false;
+    double area = 0;
+    for (size_t i = 0; i < polygons.size(); ++i)
+    {
+        size_t unused;
+        if (buckets[i].find(point, unused))
+        {
+            double new_area = areas[i];
+            if (!found || new_area < area)
+            {
+                found = true;
+                id = i;
+                area = new_area;
+            }
+        }
+    }
+    return found;
 }
 
 template <class PolygonDictionary>
