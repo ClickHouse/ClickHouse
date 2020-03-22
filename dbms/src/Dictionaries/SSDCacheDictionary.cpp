@@ -254,8 +254,22 @@ size_t CachePartition::appendBlock(
 
         bool flushed = false;
 
+        if (sizeof(UInt64) > write_buffer->available())
+        {
+            write_buffer.reset();
+            if (++current_memory_block_id == write_buffer_size)
+                flush();
+            flushed = true;
+        }
+        else
+        {
+            writeBinary(ids[index], *write_buffer);
+        }
+
         for (const auto & attribute : new_attributes)
         {
+            if (flushed)
+                break;
             // TODO:: переделать через столбцы + getDataAt
             switch (attribute.type)
             {
@@ -422,7 +436,7 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
 {
     auto set_value = [&](const size_t index, ReadBuffer & buf)
     {
-        ignoreFromBufferToIndex(attribute_index, buf);
+        ignoreFromBufferToAttributeIndex(attribute_index, buf);
         readBinary(out[index], buf);
     };
 
@@ -440,7 +454,7 @@ void CachePartition::getString(const size_t attribute_index, const PaddedPODArra
 {
     auto set_value = [&](const size_t index, ReadBuffer & buf)
     {
-        ignoreFromBufferToIndex(attribute_index, buf);
+        ignoreFromBufferToAttributeIndex(attribute_index, buf);
         size_t size = 0;
         readVarUInt(size, buf);
         char * string_ptr = arena.alloc(size);
@@ -618,8 +632,9 @@ void CachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, 
     }
 }
 
-void CachePartition::ignoreFromBufferToIndex(const size_t attribute_index, ReadBuffer & buf) const
+void CachePartition::ignoreFromBufferToAttributeIndex(const size_t attribute_index, ReadBuffer & buf) const
 {
+    buf.ignore(sizeof(UInt64));
     for (size_t i = 0; i < attribute_index; ++i)
     {
         switch (attributes_structure[i])
