@@ -65,7 +65,7 @@ GridPolygonDictionary::GridPolygonDictionary(
         InputType input_type_,
         PointType point_type_):
         IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
-        grid(kMinIntersections, kMaxDepth,polygons)
+        grid(kMinIntersections, kMaxDepth, polygons)
 {
     std::vector<size_t> order(polygons.size());
     std::iota(order.begin(), order.end(), 0);
@@ -116,8 +116,16 @@ SmartPolygonDictionary::SmartPolygonDictionary(
         const DictionaryLifetime dict_lifetime_,
         InputType input_type_,
         PointType point_type_)
-        : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
+        : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_),
+          grid(kMinIntersections, kMaxDepth, polygons)
 {
+    std::vector<size_t> order(polygons.size());
+    std::iota(order.begin(), order.end(), 0);
+    std::sort(order.begin(), order.end(), [&](auto lhs, auto rhs)
+    {
+        return areas[lhs] < areas[rhs];
+    });
+    grid.init(order);
     auto log = &Logger::get("BucketsPolygonIndex");
     buckets.reserve(polygons.size());
     for (size_t i = 0; i < polygons.size(); ++i)
@@ -141,6 +149,7 @@ std::shared_ptr<const IExternalLoadable> SmartPolygonDictionary::clone() const
 
 bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
 {
+    /*
     bool found = false;
     double area = 0;
     for (size_t i = 0; i < polygons.size(); ++i)
@@ -154,6 +163,24 @@ bool SmartPolygonDictionary::find(const Point & point, size_t & id) const
                 found = true;
                 id = i;
                 area = new_area;
+            }
+        }
+    }
+    return found;
+    */
+    bool found = false;
+    auto cell = grid.find(point.get<0>(), point.get<1>());
+    if (cell)
+    {
+        for (size_t i = 0; i < (cell->polygon_ids).size(); ++i)
+        {
+            const auto & candidate = (cell->polygon_ids)[i];
+            size_t unused = 0;
+            if ((cell->is_covered_by)[i] || buckets[candidate].find(point, unused))
+            {
+                found = true;
+                id = candidate;
+                break;
             }
         }
     }
