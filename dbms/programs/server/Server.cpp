@@ -25,7 +25,11 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include "config_core.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #include <common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -58,19 +62,23 @@
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
-#include "Common/config_version.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include "Common/config_version.h"
+#endif
+
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
 #if defined(OS_LINUX)
-#include <Common/hasLinuxCapability.h>
-#include <sys/mman.h>
+#    include <Common/hasLinuxCapability.h>
+#    include <sys/mman.h>
 #endif
 
 #if USE_POCO_NETSSL
-#include <Poco/Net/Context.h>
-#include <Poco/Net/SecureServerSocket.h>
+#    include <Poco/Net/Context.h>
+#    include <Poco/Net/SecureServerSocket.h>
 #endif
 
 namespace CurrentMetrics

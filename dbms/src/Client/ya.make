@@ -5,8 +5,7 @@ PEERDIR(
 )
 
 SRCS(
-    DiskSpaceMonitor.cpp
-    registerDisks.cpp
+    TimeoutSetter.cpp
 )
 
 END()

@@ -22,10 +22,14 @@
 #include <Poco/Net/StreamSocket.h>
 #include <Poco/RandomStream.h>
 #include <Poco/SHA1Engine.h>
-#include "config_core.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_SSL
-#include <openssl/pem.h>
-#include <openssl/rsa.h>
+#    include <openssl/pem.h>
+#    include <openssl/rsa.h>
 #endif
 
 /// Implementation of MySQL wire protocol.

@@ -118,7 +118,10 @@ struct AggregateFunctionUniqUpToData<String> : AggregateFunctionUniqUpToData<UIn
     {
         /// Keep in mind that calculations are approximate.
         StringRef value = column.getDataAt(row_num);
-        insert(CityHash_v1_0_2::CityHash64(value.data, value.size), threshold);
+#if !defined(ARCADIA_BUILD)
+        using namespace CityHash_v1_0_2;
+#endif
+        insert(CityHash64(value.data, value.size), threshold);
     }
 };
 

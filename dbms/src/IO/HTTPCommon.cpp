@@ -1,6 +1,9 @@
 #include <IO/HTTPCommon.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #include <Common/DNSResolver.h>
 #include <Common/Exception.h>
 #include <Common/PoolBase.h>
@@ -10,13 +13,13 @@
 #include <Poco/Version.h>
 
 #if USE_POCO_NETSSL
-#include <Poco/Net/AcceptCertificateHandler.h>
-#include <Poco/Net/Context.h>
-#include <Poco/Net/HTTPSClientSession.h>
-#include <Poco/Net/InvalidCertificateHandler.h>
-#include <Poco/Net/PrivateKeyPassphraseHandler.h>
-#include <Poco/Net/RejectCertificateHandler.h>
-#include <Poco/Net/SSLManager.h>
+#    include <Poco/Net/AcceptCertificateHandler.h>
+#    include <Poco/Net/Context.h>
+#    include <Poco/Net/HTTPSClientSession.h>
+#    include <Poco/Net/InvalidCertificateHandler.h>
+#    include <Poco/Net/PrivateKeyPassphraseHandler.h>
+#    include <Poco/Net/RejectCertificateHandler.h>
+#    include <Poco/Net/SSLManager.h>
 #endif
 
 #include <Poco/Net/HTTPServerResponse.h>

@@ -12,6 +12,7 @@ ADDINCL(
 
 PEERDIR(
     contrib/libs/cctz/src
+    contrib/libs/cxxsupp/libcxx-filesystem
     contrib/libs/poco/Net
     contrib/libs/poco/Util
     contrib/restricted/boost

@@ -9,7 +9,7 @@
 class SimpleRng64 : public TCommonRNG<uint64_t, SimpleRng64>
 {
 public:
-    explicit SimpleRng64(uint64_t seed);
+    explicit SimpleRng64(uint64_t seed) { SetRandomSeed(seed); }
     inline uint64_t GenRand() const { return RandomNumber<uint64_t>(); }
 };
 

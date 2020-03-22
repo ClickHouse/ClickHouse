@@ -148,7 +148,10 @@ public:
         else
         {
             StringRef value = columns[0]->getDataAt(row_num);
-            this->data(place).set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
+#if !defined(ARCADIA_BUILD)
+            using namespace CityHash_v1_0_2;
+#endif
+            this->data(place).set.insert(CityHash64(value.data, value.size));
         }
     }
 

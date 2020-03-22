@@ -7,7 +7,11 @@
 #include <Interpreters/Context.h>
 #include <Common/SipHash.h>
 #include <Common/UInt128.h>
-#include "config_core.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #include <unordered_map>
 #include <unordered_set>
 #include <Parsers/ASTTablesInSelectQuery.h>

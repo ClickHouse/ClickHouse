@@ -1,6 +1,9 @@
 #pragma once
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #include <Core/Block.h>
 
 #if USE_POCO_REDIS

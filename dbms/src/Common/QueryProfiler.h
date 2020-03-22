@@ -1,7 +1,11 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Common/config.h> // for USE_UNWIND
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h> // for USE_UNWIND
+#endif
+
 #include <signal.h>
 #include <time.h>
 

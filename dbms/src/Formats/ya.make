@@ -2,11 +2,10 @@ LIBRARY()
 
 PEERDIR(
     clickhouse/dbms/src/Common
+    contrib/libs/protobuf_std
 )
 
 SRCS(
-    DiskSpaceMonitor.cpp
-    registerDisks.cpp
 )
 
 END()

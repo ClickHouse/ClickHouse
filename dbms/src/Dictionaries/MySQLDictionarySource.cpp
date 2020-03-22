@@ -2,7 +2,6 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
-#include "config_core.h"
 #include "registerDictionaries.h"
 
 namespace DB

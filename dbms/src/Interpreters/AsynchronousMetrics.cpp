@@ -5,7 +5,11 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
-#include "config_core.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -13,12 +17,8 @@
 #include <Databases/IDatabase.h>
 #include <chrono>
 
-#if __has_include(<common/config_common.h>)
-#include <common/config_common.h>
-#endif
-
 #if USE_JEMALLOC
-    #include <jemalloc/jemalloc.h>
+#    include <jemalloc/jemalloc.h>
 #endif
 
 
@@ -216,7 +216,7 @@ void AsynchronousMetrics::update()
         set("NumberOfTables", total_number_of_tables);
     }
 
-#if USE_JEMALLOC
+#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
     {
     #define FOR_EACH_METRIC(M) \
         M("allocated", size_t) \

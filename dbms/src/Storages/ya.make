@@ -6,8 +6,10 @@ PEERDIR(
 )
 
 SRCS(
+    ColumnsDescription.cpp
     IStorage.cpp
     registerStorages.cpp
+    StorageReplicatedMergeTree.cpp
     System/attachSystemTables.cpp
 )
 

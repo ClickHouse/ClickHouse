@@ -1,9 +1,11 @@
 #include "UseSSL.h"
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_POCO_NETSSL
-#include <Poco/Net/SSLManager.h>
+#    include <Poco/Net/SSLManager.h>
 #endif
 
 namespace DB

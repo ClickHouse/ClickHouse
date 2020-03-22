@@ -4,7 +4,9 @@
 #include <Common/UInt128.h>
 #include <common/DayNum.h>
 
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
 
 #include <memory>
 

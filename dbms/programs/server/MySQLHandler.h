@@ -1,5 +1,9 @@
 #pragma once
-#include <Common/config.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #include <Poco/Net/TCPServerConnection.h>
 #include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
@@ -7,7 +11,7 @@
 #include "IServer.h"
 
 #if USE_POCO_NETSSL
-#include <Poco/Net/SecureStreamSocket.h>
+#    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
 namespace CurrentMetrics

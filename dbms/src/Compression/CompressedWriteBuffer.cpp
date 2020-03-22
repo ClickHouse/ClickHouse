@@ -16,7 +16,11 @@ namespace ErrorCodes
 {
 }
 
-static constexpr auto CHECKSUM_SIZE{sizeof(CityHash_v1_0_2::uint128)};
+#if !defined(ARCADIA_BUILD)
+using namespace CityHash_v1_0_2;
+#endif
+
+static constexpr auto CHECKSUM_SIZE{sizeof(uint128)};
 
 void CompressedWriteBuffer::nextImpl()
 {
@@ -28,7 +32,7 @@ void CompressedWriteBuffer::nextImpl()
     compressed_buffer.resize(compressed_reserve_size);
     UInt32 compressed_size = codec->compress(working_buffer.begin(), decompressed_size, compressed_buffer.data());
 
-    CityHash_v1_0_2::uint128 checksum = CityHash_v1_0_2::CityHash128(compressed_buffer.data(), compressed_size);
+    uint128 checksum = CityHash128(compressed_buffer.data(), compressed_size);
     out.write(reinterpret_cast<const char *>(&checksum), CHECKSUM_SIZE);
     out.write(compressed_buffer.data(), compressed_size);
 }

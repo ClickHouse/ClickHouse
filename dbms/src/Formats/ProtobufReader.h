@@ -5,7 +5,10 @@
 #include <Common/UInt128.h>
 #include <Core/UUID.h>
 
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
+
 #if USE_PROTOBUF
 
 #include <boost/noncopyable.hpp>

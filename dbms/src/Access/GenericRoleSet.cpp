@@ -251,44 +251,44 @@ void GenericRoleSet::add(const boost::container::flat_set<UUID> & ids_)
 
 bool GenericRoleSet::match(const UUID & id) const
 {
-    return (all || ids.contains(id)) && !except_ids.contains(id);
+    return (all || ids.find(id) != ids.end()) && except_ids.find(id) == except_ids.end();
 }
 
 
 bool GenericRoleSet::match(const UUID & user_id, const std::vector<UUID> & enabled_roles) const
 {
-    if (!all && !ids.contains(user_id))
+    if (!all && ids.find(user_id) == ids.end())
     {
         bool found_enabled_role = std::any_of(
-            enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return ids.contains(enabled_role); });
+            enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return ids.find(enabled_role) != ids.end(); });
         if (!found_enabled_role)
             return false;
     }
 
-    if (except_ids.contains(user_id))
+    if (except_ids.find(user_id) != except_ids.end())
         return false;
 
     bool in_except_list = std::any_of(
-        enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return except_ids.contains(enabled_role); });
+        enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return except_ids.find(enabled_role) != except_ids.end(); });
     return !in_except_list;
 }
 
 
 bool GenericRoleSet::match(const UUID & user_id, const boost::container::flat_set<UUID> & enabled_roles) const
 {
-    if (!all && !ids.contains(user_id))
+    if (!all && ids.find(user_id) == ids.end())
     {
         bool found_enabled_role = std::any_of(
-            enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return ids.contains(enabled_role); });
+            enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return ids.find(enabled_role) != ids.end(); });
         if (!found_enabled_role)
             return false;
     }
 
-    if (except_ids.contains(user_id))
+    if (except_ids.find(user_id) != except_ids.end())
         return false;
 
     bool in_except_list = std::any_of(
-        enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return except_ids.contains(enabled_role); });
+        enabled_roles.begin(), enabled_roles.end(), [this](const UUID & enabled_role) { return except_ids.find(enabled_role) != except_ids.end(); });
     return !in_except_list;
 }
 

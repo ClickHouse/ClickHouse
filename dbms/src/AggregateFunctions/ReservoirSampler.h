@@ -1,17 +1,24 @@
 #pragma once
 
-#include <limits>
-#include <algorithm>
-#include <climits>
-#include <sstream>
 #include <common/types.h>
+
+#include <Common/NaNUtils.h>
+#include <Common/PODArray.h>
+
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
-#include <Common/PODArray.h>
-#include <Common/NaNUtils.h>
+
+#if defined(ARCADIA_BUILD)
+#    include <util/random/fast.h>
+#endif
+
 #include <Poco/Exception.h>
-#include <pcg_random.hpp>
+
+#include <algorithm>
+#include <climits>
+#include <limits>
+#include <sstream>
 
 
 /// Implementing the Reservoir Sampling algorithm. Incrementally selects from the added objects a random subset of the sample_count size.
@@ -52,18 +59,18 @@ template <typename T, ReservoirSamplerOnEmpty::Enum OnEmpty = ReservoirSamplerOn
 class ReservoirSampler
 {
 public:
-    ReservoirSampler(size_t sample_count_ = DEFAULT_SAMPLE_COUNT)
-        : sample_count(sample_count_)
-    {
-        rng.seed(123456);
-    }
+    ReservoirSampler(size_t sample_count_ = DEFAULT_SAMPLE_COUNT) : sample_count(sample_count_), rng(123456) { }
 
     void clear()
     {
         samples.clear();
         sorted = false;
         total_values = 0;
+#if defined(ARCADIA_BUILD)
+        /// TODO: implement the method to reset seed for single RNG.
+#else
         rng.seed(123456);
+#endif
     }
 
     void insert(const T & v)
@@ -171,7 +178,10 @@ public:
         std::string rng_string;
         DB::readStringBinary(rng_string, buf);
         std::istringstream rng_stream(rng_string);
+#if !defined(ARCADIA_BUILD)
+        /// TODO: fix util/random to support this statement
         rng_stream >> rng;
+#endif
 
         for (size_t i = 0; i < samples.size(); ++i)
             DB::readBinary(samples[i], buf);
@@ -185,7 +195,10 @@ public:
         DB::writeIntBinary<size_t>(total_values, buf);
 
         std::ostringstream rng_stream;
+#if !defined(ARCADIA_BUILD)
+        /// TODO: fix util/random to support this statement
         rng_stream << rng;
+#endif
         DB::writeStringBinary(rng_stream.str(), buf);
 
         for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
@@ -202,7 +215,12 @@ private:
     size_t sample_count;
     size_t total_values = 0;
     Array samples;
+#if defined(ARCADIA_BUILD)
+    TReallyFastRng32 rng;
+#else
     pcg32_fast rng;
+#endif
+
     bool sorted = false;
 
 

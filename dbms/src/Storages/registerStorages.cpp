@@ -1,7 +1,10 @@
-#include <Common/config.h>
-#include "config_core.h"
-
 #include <Storages/registerStorages.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#    include "config_core.h"
+#endif
+
 #include <Storages/StorageFactory.h>
 
 

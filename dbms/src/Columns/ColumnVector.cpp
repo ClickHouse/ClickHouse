@@ -14,10 +14,13 @@
 #include <Columns/ColumnsCommon.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <ext/bit_cast.h>
-#include <pdqsort.h>
 
-#ifdef __SSE2__
-    #include <emmintrin.h>
+#if !defined(ARCADIA_BUILD)
+#    include <pdqsort.h>
+#endif
+
+#if defined(__SSE2__)
+#    include <emmintrin.h>
 #endif
 
 namespace DB
@@ -176,10 +179,14 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
         for (size_t i = 0; i < s; ++i)
             res[i] = i;
 
+#if !defined(ARCADIA_BUILD)
         if (reverse)
             pdqsort(res.begin(), res.end(), greater(*this, nan_direction_hint));
         else
             pdqsort(res.begin(), res.end(), less(*this, nan_direction_hint));
+#else
+        /// TODO: implement this
+#endif
     }
 }
 

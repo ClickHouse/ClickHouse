@@ -2,7 +2,10 @@
 
 #include <memory>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #include <Core/Names.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>

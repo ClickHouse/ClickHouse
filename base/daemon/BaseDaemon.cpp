@@ -225,7 +225,11 @@ public:
 
                 /// This allows to receive more signals if failure happens inside onFault function.
                 /// Example: segfault while symbolizing stack trace.
+#if __cplusplus <= 201703L
                 std::thread([=] { onFault(sig, info, context, stack_trace, thread_num, query_id); }).detach();
+#else
+                std::thread([=, this] { onFault(sig, info, context, stack_trace, thread_num, query_id); }).detach();
+#endif
             }
         }
     }

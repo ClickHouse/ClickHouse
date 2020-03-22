@@ -3,7 +3,11 @@
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
-#include <Common/config.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #include <Common/MemorySanitizer.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>

@@ -2,17 +2,10 @@
 
 #include <string.h>
 
-#ifdef NDEBUG
-    #define ALLOCATOR_ASLR 0
-#else
-    #define ALLOCATOR_ASLR 1
-#endif
-
-#include <pcg_random.hpp>
 #include <Common/thread_local_rng.h>
 
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <malloc.h>
+#if !defined(OS_DARWIN) && !defined(OS_FREEBSD)
+#    include <malloc.h>
 #endif
 
 #include <cstdlib>
@@ -20,9 +13,9 @@
 #include <sys/mman.h>
 
 #include <Core/Defines.h>
-#ifdef THREAD_SANITIZER
-    /// Thread sanitizer does not intercept mremap. The usage of mremap will lead to false positives.
-    #define DISABLE_MREMAP 1
+#if defined(THREAD_SANITIZER)
+/// Thread sanitizer does not intercept mremap. The usage of mremap will lead to false positives.
+#    define DISABLE_MREMAP 1
 #endif
 #include <common/mremap.h>
 
@@ -34,8 +27,8 @@
 
 
 /// Required for older Darwin builds, that lack definition of MAP_ANONYMOUS
-#ifndef MAP_ANONYMOUS
-#define MAP_ANONYMOUS MAP_ANON
+#if !defined(MAP_ANONYMOUS)
+#    define MAP_ANONYMOUS MAP_ANON
 #endif
 
 /**
@@ -56,7 +49,7 @@
   * third-party applications which may already use own allocator doing mmaps
   * in the implementation of alloc/realloc.
   */
-#ifdef NDEBUG
+#if defined(NDEBUG)
     __attribute__((__weak__)) extern const size_t MMAP_THRESHOLD = 64 * (1ULL << 20);
 #else
     /**
@@ -250,7 +243,7 @@ private:
         }
     }
 
-#ifndef NDEBUG
+#if !defined(NDEBUG)
     /// In debug builds, request mmap() at random addresses (a kind of ASLR), to
     /// reproduce more memory stomping bugs. Note that Linux doesn't do it by
     /// default. This may lead to worse TLB performance.
@@ -265,15 +258,6 @@ private:
     }
 #endif
 };
-
-/** When using AllocatorWithStackMemory, located on the stack,
-  *  GCC 4.9 mistakenly assumes that we can call `free` from a pointer to the stack.
-  * In fact, the combination of conditions inside AllocatorWithStackMemory does not allow this.
-  */
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
-#endif
 
 /** Allocator with optimization to place small memory ranges in automatic memory.
   */
@@ -332,8 +316,3 @@ protected:
         return N;
     }
 };
-
-
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif

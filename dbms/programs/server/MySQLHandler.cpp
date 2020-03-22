@@ -1,10 +1,16 @@
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #include "MySQLHandler.h"
 #include <limits>
 #include <ext/scope_guard.h>
 #include <Columns/ColumnVector.h>
-#include <Common/config_version.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
+
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Core/MySQLProtocol.h>
@@ -18,10 +24,10 @@
 #include <boost/algorithm/string/replace.hpp>
 
 #if USE_POCO_NETSSL
-#include <Poco/Net/SecureStreamSocket.h>
-#include <Poco/Net/SSLManager.h>
-#include <Poco/Crypto/CipherFactory.h>
-#include <Poco/Crypto/RSAKey.h>
+#    include <Poco/Net/SecureStreamSocket.h>
+#    include <Poco/Net/SSLManager.h>
+#    include <Poco/Crypto/CipherFactory.h>
+#    include <Poco/Crypto/RSAKey.h>
 #endif
 
 namespace DB

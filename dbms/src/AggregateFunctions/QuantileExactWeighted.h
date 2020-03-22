@@ -24,7 +24,10 @@ struct QuantileExactWeighted
     {
         size_t operator()(Int128 x) const
         {
-            return CityHash_v1_0_2::Hash128to64({x >> 64, x & 0xffffffffffffffffll});
+#if !defined(ARCADIA_BUILD)
+            using namespace CityHash_v1_0_2;
+#endif
+            return Hash128to64({x >> 64, x & 0xffffffffffffffffll});
         }
     };
 

@@ -1,14 +1,15 @@
 #pragma once
 
-#include <tuple>
-#include <sstream>
-#include <iomanip>
-#include <city.h>
-
 #include <Core/Types.h>
 
-#ifdef __SSE4_2__
-#include <nmmintrin.h>
+#include <city.h>
+
+#include <iomanip>
+#include <sstream>
+#include <tuple>
+
+#if defined(__SSE4_2__)
+#    include <nmmintrin.h>
 #endif
 
 
@@ -18,12 +19,6 @@ namespace DB
 /// For aggregation by SipHash, UUID type or concatenation of several fields.
 struct UInt128
 {
-/// Suppress gcc7 warnings: 'prev_key.DB::UInt128::low' may be used uninitialized in this function
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
     /// This naming assumes little endian.
     UInt64 low;
     UInt64 high;
@@ -57,10 +52,6 @@ struct UInt128
 
     template <typename T> explicit operator T() const { return static_cast<T>(low); }
 
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
-
     UInt128 & operator= (const UInt64 rhs) { low = rhs; high = 0; return *this; }
 };
 
@@ -79,11 +70,14 @@ struct UInt128Hash
 {
     size_t operator()(UInt128 x) const
     {
-        return CityHash_v1_0_2::Hash128to64({x.low, x.high});
+#if !defined(ARCADIA_BUILD)
+        using namespace CityHash_v1_0_2;
+#endif
+        return Hash128to64({x.low, x.high});
     }
 };
 
-#ifdef __SSE4_2__
+#if defined(__SSE4_2__)
 
 struct UInt128HashCRC32
 {
@@ -113,13 +107,6 @@ struct UInt128TrivialHash
   */
 struct UInt256
 {
-
-/// Suppress gcc7 warnings: 'prev_key.DB::UInt256::a' may be used uninitialized in this function
-#if !__clang__
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#endif
-
     UInt64 a;
     UInt64 b;
     UInt64 c;
@@ -144,10 +131,6 @@ struct UInt256
     bool operator== (const UInt64 rhs) const { return a == rhs && b == 0 && c == 0 && d == 0; }
     bool operator!= (const UInt64 rhs) const { return !operator==(rhs); }
 
-#if !__clang__
-#pragma GCC diagnostic pop
-#endif
-
     UInt256 & operator= (const UInt64 rhs) { a = rhs; b = 0; c = 0; d = 0; return *this; }
 };
 
@@ -155,12 +138,15 @@ struct UInt256Hash
 {
     size_t operator()(UInt256 x) const
     {
-        /// NOTE suboptimal
-        return CityHash_v1_0_2::Hash128to64({CityHash_v1_0_2::Hash128to64({x.a, x.b}), CityHash_v1_0_2::Hash128to64({x.c, x.d})});
+#if !defined(ARCADIA_BUILD)
+        using namespace CityHash_v1_0_2;
+#endif
+        /// NOTE: suboptimal
+        return Hash128to64({Hash128to64({x.a, x.b}), Hash128to64({x.c, x.d})});
     }
 };
 
-#ifdef __SSE4_2__
+#if defined(__SSE4_2__)
 
 struct UInt256HashCRC32
 {
@@ -208,11 +194,15 @@ template <> struct is_arithmetic<DB::UInt128>
 /// Overload hash for type casting
 namespace std
 {
+
 template <> struct hash<DB::UInt128>
 {
     size_t operator()(const DB::UInt128 & u) const
     {
-        return CityHash_v1_0_2::Hash128to64({u.low, u.high});
+#if !defined(ARCADIA_BUILD)
+        using namespace CityHash_v1_0_2;
+#endif
+        return Hash128to64({u.low, u.high});
     }
 };
 

@@ -1,9 +1,13 @@
 #pragma once
-#include <Common/config.h>
-#include "config_core.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#    include "config_core.h"
+#endif
 
 namespace DB
 {
+
 class TableFunctionFactory;
 void registerTableFunctionMerge(TableFunctionFactory & factory);
 void registerTableFunctionRemote(TableFunctionFactory & factory);

@@ -1,7 +1,20 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
+
 namespace ClickHouseRevision
 {
-    unsigned get();
-    unsigned getVersionInteger();
+
+inline unsigned get()
+{
+    return VERSION_REVISION;
+}
+
+inline unsigned getVersionInteger()
+{
+    return VERSION_INTEGER;
+}
+
 }

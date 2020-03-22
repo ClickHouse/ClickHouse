@@ -1,17 +1,23 @@
 LIBRARY(dbms)
 
 PEERDIR(
-    src/Access
-    src/AggregateFunctions
-    src/Compression
-    src/DataStreams
-    src/Dictionaries
-    src/Disks
-    src/Functions
-    src/Interpreters
-    src/IO
-    src/Storages
-    src/TableFunctions
+    clickhouse/dbms/src/Access
+    clickhouse/dbms/src/AggregateFunctions
+    clickhouse/dbms/src/Client
+    clickhouse/dbms/src/Columns
+    clickhouse/dbms/src/Compression
+    clickhouse/dbms/src/Core
+    clickhouse/dbms/src/DataStreams
+    clickhouse/dbms/src/DataTypes
+    clickhouse/dbms/src/Dictionaries
+    clickhouse/dbms/src/Disks
+    clickhouse/dbms/src/Functions
+    clickhouse/dbms/src/Interpreters
+    clickhouse/dbms/src/IO
+    clickhouse/dbms/src/Parsers
+    clickhouse/dbms/src/Processors
+    clickhouse/dbms/src/Storages
+    clickhouse/dbms/src/TableFunctions
 )
 
 END()

@@ -2,7 +2,10 @@
 
 #include <Core/Block.h>
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_MYSQL
 
 #    include <common/LocalDateTime.h>
