@@ -988,6 +988,17 @@ Possible values:
 
 Default value: 0
 
+## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
+
+Reset [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) for nested `Distributed` table
+
+Possible values:
+
+-   1 — Enabled.
+-   0 — Disabled.
+
+Default value: 0.
+
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
 Enables or disables throwing an exception if an [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query didn’t perform a merge.
