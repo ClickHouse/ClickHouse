@@ -304,7 +304,7 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 Estas funciones aceptan una cadena e interpretan los bytes colocados al principio de la cadena como un número en orden de host (little endian). Si la cadena no es lo suficientemente larga, las funciones funcionan como si la cadena estuviera rellenada con el número necesario de bytes nulos. Si la cadena es más larga de lo necesario, se ignoran los bytes adicionales. Una fecha se interpreta como el número de días desde el comienzo de la época Unix, y una fecha con hora se interpreta como el número de segundos desde el comienzo de la época Unix.
 
-## reinterpretAsString {#type-conversion-functions-reinterpretasstring}
+## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
 
 Esta función acepta un número o fecha o fecha con hora, y devuelve una cadena que contiene bytes que representan el valor correspondiente en orden de host (little endian). Los bytes nulos se eliminan desde el final. Por ejemplo, un valor de tipo UInt32 de 255 es una cadena que tiene un byte de longitud.
 
