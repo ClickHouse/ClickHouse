@@ -1,8 +1,11 @@
 #include "PolygonDictionaryImplementations.h"
 #include "DictionaryFactory.h"
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
+
+#include <common/logger_useful.h>
 
 #include <numeric>
 
@@ -115,10 +118,12 @@ SmartPolygonDictionary::SmartPolygonDictionary(
         PointType point_type_)
         : IPolygonDictionary(database_, name_, dict_struct_, std::move(source_ptr_), dict_lifetime_, input_type_, point_type_)
 {
+    auto log = &Logger::get("BucketsPolygonIndex");
     buckets.reserve(polygons.size());
     for (size_t i = 0; i < polygons.size(); ++i)
     {
         buckets.emplace_back(std::vector<Polygon>{polygons[i]});
+        LOG_TRACE(log, "Finished polygon" << i);
     }
 }
 
