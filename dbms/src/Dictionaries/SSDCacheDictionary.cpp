@@ -235,7 +235,7 @@ size_t CachePartition::appendBlock(
     auto & ids_buffer = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
 
     if (!memory)
-        memory.emplace(block_size, BUFFER_ALIGNMENT);
+        memory.emplace(block_size * write_buffer_size, BUFFER_ALIGNMENT);
     if (!write_buffer)
     {
         write_buffer.emplace(memory->data() + current_memory_block_id * block_size, block_size);
