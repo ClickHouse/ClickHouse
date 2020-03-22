@@ -52,7 +52,7 @@ def build_for_lang(lang, args):
 
     try:
         theme_cfg = {
-            'name': 'mkdocs',
+            'name': None,
             'custom_dir': os.path.join(os.path.dirname(__file__), args.theme_dir),
             'language': lang,
             'direction': 'rtl' if lang == 'fa' else 'ltr',
