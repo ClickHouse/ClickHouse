@@ -55,7 +55,7 @@ private:
 
     GridRoot grid;
     static constexpr size_t kMinIntersections = 1;
-    static constexpr size_t kMaxDepth = 7;
+    static constexpr size_t kMaxDepth = 10;
 };
 
 /** Smart implementation of the polygon dictionary. Uses BucketsPolygonIndex. */
