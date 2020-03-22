@@ -42,17 +42,17 @@ markdown.extensions.ClickHouseMarkdown = ClickHouseMarkdown
 
 
 def build_for_lang(lang, args):
-    logging.info('Building %s docs' % lang)
+    logging.info(f'Building {lang} docs')
     os.environ['SINGLE_PAGE'] = '0'
 
-    config_path = os.path.join(args.docs_dir, 'toc_%s.yml' % lang)
+    config_path = os.path.join(args.docs_dir, f'toc_{lang}.yml')
     if args.is_stable_release and not os.path.exists(config_path):
-        logging.warn('Skipping %s docs, because %s does not exist' % (lang, config_path))
+        logging.warning(f'Skipping {lang} docs, because {config} does not exist')
         return
 
     try:
         theme_cfg = {
-            'name': 'mkdocs',
+            'name': None,
             'custom_dir': os.path.join(os.path.dirname(__file__), args.theme_dir),
             'language': lang,
             'direction': 'rtl' if lang == 'fa' else 'ltr',
@@ -97,7 +97,7 @@ def build_for_lang(lang, args):
         cfg = config.load_config(
             config_file=config_path,
             site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
-            site_url='https://clickhouse.yandex/docs/%s/' % lang,
+            site_url=f'https://clickhouse.yandex/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=site_dir,
             strict=not args.version_prefix,
@@ -106,8 +106,8 @@ def build_for_lang(lang, args):
             use_directory_urls=True,
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
-            edit_uri='edit/master/docs/%s' % lang,
-            extra_css=['assets/stylesheets/custom.css?%s' % args.rev_short],
+            edit_uri=f'edit/master/docs/{lang}',
+            extra_css=[f'assets/stylesheets/custom.css?{args.rev_short}'],
             markdown_extensions=[
                 'mdx_clickhouse',
                 'admonition',
@@ -190,9 +190,9 @@ def build_single_page_version(lang, args, cfg):
 
                 if not args.skip_pdf:
                     single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
-                    single_page_pdf = single_page_index_html.replace('index.html', 'clickhouse_%s.pdf' % lang)
+                    single_page_pdf = single_page_index_html.replace('index.html', f'clickhouse_{lang}.pdf')
                     create_pdf_command = ['wkhtmltopdf', '--print-media-type', single_page_index_html, single_page_pdf]
-                    logging.debug(' '.join(create_pdf_command))
+                    logging.info(' '.join(create_pdf_command))
                     with open(os.devnull, 'w') as devnull:
                         subprocess.check_call(' '.join(create_pdf_command), shell=True, stderr=devnull)
 
@@ -242,7 +242,8 @@ def build_redirect_html(args, from_path, to_path):
         except OSError:
             pass
         version_prefix = args.version_prefix + '/' if args.version_prefix else '/'
-        to_url = '/docs%s%s/%s' % (version_prefix, lang, to_path.replace('.md', '/'))
+        target_path = to_path.replace('.md', '/')
+        to_url = f'/docs{version_prefix}{lang}/{target_path}'
         to_url = to_url.strip()
         write_redirect_html(out_path, to_url)
 
@@ -336,7 +337,7 @@ if __name__ == '__main__':
     args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
     args.rev = subprocess.check_output('git rev-parse HEAD', shell=True).decode('utf-8').strip()
     args.rev_short = subprocess.check_output('git rev-parse --short HEAD', shell=True).decode('utf-8').strip()
-    args.rev_url = 'https://github.com/ClickHouse/ClickHouse/commit/%s' % args.rev
+    args.rev_url = f'https://github.com/ClickHouse/ClickHouse/commit/{args.rev}'
     args.events = get_events(args)
 
     from build import build
