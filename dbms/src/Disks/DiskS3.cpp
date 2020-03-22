@@ -212,7 +212,7 @@ namespace
             for (size_t i = 0; i < metadata.s3_objects.size(); ++i)
             {
                 current_buf_idx = i;
-                auto & [path, size] = metadata.s3_objects[i];
+                const auto & [path, size] = metadata.s3_objects[i];
                 if (size > offset)
                 {
                     auto buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, path, buf_size);
@@ -243,7 +243,7 @@ namespace
                 return false;
 
             ++current_buf_idx;
-            auto & path = metadata.s3_objects[current_buf_idx].first;
+            const auto & path = metadata.s3_objects[current_buf_idx].first;
             current_buf = std::make_unique<ReadBufferFromS3>(client_ptr, bucket, path, buf_size);
             current_buf->next();
             working_buffer = current_buf->buffer();
@@ -576,6 +576,8 @@ void DiskS3::remove(const String & path)
             file.remove();
         }
     }
+    else
+        file.remove();
 }
 
 void DiskS3::removeRecursive(const String & path)
