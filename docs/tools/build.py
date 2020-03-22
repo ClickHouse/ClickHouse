@@ -140,8 +140,8 @@ def build_for_lang(lang, args):
 
         if not args.skip_single_page:
             build_single_page_version(lang, args, cfg)
-
-    logging.info(f'Finished building {lang} docs')
+        
+        logging.info(f'Finished building {lang} docs')
 
     except exceptions.ConfigurationError as e:
         raise SystemExit('\n' + str(e))
