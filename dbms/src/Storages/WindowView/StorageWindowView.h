@@ -59,7 +59,7 @@ private:
 
     Context & global_context;
     bool is_proctime{true};
-    bool is_time_column_now;
+    bool is_time_column_func_now;
     bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
     mutable Block sample_block;
@@ -95,6 +95,7 @@ private:
     Int64 watermark_num_units = 0;
     Int64 lateness_num_units = 0;
     String window_column_name;
+    String window_column_alias;
     String timestamp_column_name;
 
     StorageID select_table_id = StorageID::createEmpty();
