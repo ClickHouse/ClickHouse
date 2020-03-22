@@ -15,7 +15,6 @@
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
-#include <common/config_common.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <common/coverage.h>
@@ -248,7 +247,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     const auto memory_amount = getMemoryAmount();
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     if (executable_path.empty())
         executable_path = "/usr/bin/clickhouse";    /// It is used for information messages.

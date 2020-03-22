@@ -1,7 +1,7 @@
 #pragma once
 
 #include "StringRef.h"
-#include "Types.h"
+#include "types.h"
 
 #include <Poco/Exception.h>
 

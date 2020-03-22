@@ -1,8 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Common/config.h>
-#include <common/config_common.h>
+#include <Common/config.h> // for USE_UNWIND
 #include <signal.h>
 #include <time.h>
 

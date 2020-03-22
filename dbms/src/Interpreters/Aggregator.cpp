@@ -25,7 +25,6 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <common/demangle.h>
-#include <common/config_common.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <Disks/DiskSpaceMonitor.h>
@@ -80,16 +79,16 @@ void AggregatedDataVariants::convertToTwoLevel()
 
     switch (type)
     {
-    #define M(NAME) \
-        case Type::NAME: \
-            NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*(NAME)); \
-            (NAME).reset(); \
-            type = Type::NAME ## _two_level; \
-            break;
+#define M(NAME) \
+    case Type::NAME: \
+        NAME##_two_level = std::make_unique<decltype(NAME##_two_level)::element_type>(*(NAME)); \
+        (NAME).reset(); \
+        type = Type::NAME##_two_level; \
+        break;
 
         APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
 
-    #undef M
+#undef M
 
         default:
             throw Exception("Wrong data variant passed.", ErrorCodes::LOGICAL_ERROR);
@@ -644,14 +643,21 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         /// This is where data is written that does not fit in `max_rows_to_group_by` with `group_by_overflow_mode = any`.
         AggregateDataPtr overflow_row_ptr = params.overflow_row ? result.without_key : nullptr;
 
-        #define M(NAME, IS_TWO_LEVEL) \
-            else if (result.type == AggregatedDataVariants::Type::NAME) \
-                executeImpl(*result.NAME, result.aggregates_pool, num_rows, key_columns, aggregate_functions_instructions.data(), \
-                    no_more_keys, overflow_row_ptr);
+#define M(NAME, IS_TWO_LEVEL) \
+    else if (result.type == AggregatedDataVariants::Type::NAME) executeImpl( \
+        *result.NAME, \
+        result.aggregates_pool, \
+        num_rows, \
+        key_columns, \
+        aggregate_functions_instructions.data(), \
+        no_more_keys, \
+        overflow_row_ptr);
 
-        if (false) {} // NOLINT
+        if (false)
+        {
+        } // NOLINT
         APPLY_FOR_AGGREGATED_VARIANTS(M)
-        #undef M
+#undef M
     }
 
     size_t result_size = result.sizeWithoutOverflowRow();
@@ -717,7 +723,9 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
         writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out);
 
-    if (false) {} // NOLINT
+    if (false)
+    {
+    } // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else

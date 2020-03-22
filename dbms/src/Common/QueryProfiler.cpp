@@ -6,7 +6,6 @@
 #include <Common/TraceCollector.h>
 #include <Common/thread_local_rng.h>
 #include <common/StringRef.h>
-#include <common/config_common.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
 
@@ -110,7 +109,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
 
-#   if defined(__FreeBSD__)
+#    if defined(OS_FREEBSD)
         sev._sigev_un._threadid = thread_id;
 #   else
         sev._sigev_un._tid = thread_id;

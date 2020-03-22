@@ -13,7 +13,7 @@ size_t StringRefHash64::operator()(StringRef x) const
 
 #if defined(__SSE4_2__)
 
-inline UInt64 hashLen16(UInt64 u, UInt64 v)
+UInt64 hashLen16(UInt64 u, UInt64 v)
 {
     return Hash128to64(uint128(u, v));
 }
