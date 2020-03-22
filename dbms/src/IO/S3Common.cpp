@@ -36,7 +36,7 @@ public:
 
     Aws::Utils::Logging::LogLevel GetLogLevel() const final { return Aws::Utils::Logging::LogLevel::Trace; }
 
-    void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final
+    void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
     {
         auto & [level, prio] = convertLogLevel(log_level);
         LOG_SIMPLE(log, std::string(tag) + ": " + format_str, level, prio);
@@ -84,7 +84,7 @@ namespace S3
         return ret;
     }
 
-    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create(
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         const String & endpoint,
         const String & access_key_id,
         const String & secret_access_key)
@@ -93,11 +93,10 @@ namespace S3
         if (!endpoint.empty())
             cfg.endpointOverride = endpoint;
 
-        auto cred_provider = std::make_shared<Aws::Auth::SimpleAWSCredentialsProvider>(access_key_id,
-                secret_access_key);
+        Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
 
         return std::make_shared<Aws::S3::S3Client>(
-                std::move(cred_provider), // Credentials provider.
+                credentials, // Aws credentials.
                 std::move(cfg), // Client configuration.
                 Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never, // Sign policy.
                 endpoint.empty() // Use virtual addressing only if endpoint is not specified.
@@ -105,7 +104,7 @@ namespace S3
     }
 
 
-    URI::URI(Poco::URI & uri_)
+    URI::URI(const Poco::URI & uri_)
     {
         static const std::regex BUCKET_KEY_PATTERN("([^/]+)/(.*)");
 

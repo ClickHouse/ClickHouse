@@ -8,13 +8,13 @@
 #include <Storages/System/StorageSystemReplicationQueue.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Access/AccessRightsContext.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
 
 
 namespace DB
 {
-
 
 
 NamesAndTypesList StorageSystemReplicationQueue::getNamesAndTypes()
@@ -48,18 +48,25 @@ NamesAndTypesList StorageSystemReplicationQueue::getNamesAndTypes()
 
 void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const
 {
+    const auto access_rights = context.getAccessRights();
+    const bool check_access_for_databases = !access_rights->isGranted(AccessType::SHOW);
+
     std::map<String, std::map<String, StoragePtr>> replicated_tables;
-    for (const auto & db : context.getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
     {
         /// Lazy database can not contain replicated tables
         if (db.second->getEngineName() == "Lazy")
             continue;
 
-        if (context.hasDatabaseAccessRights(db.first))
+        const bool check_access_for_tables = check_access_for_databases && !access_rights->isGranted(AccessType::SHOW, db.first);
+
+        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
-                if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
-                    replicated_tables[db.first][iterator->name()] = iterator->table();
+            if (!dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
+                continue;
+            if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, db.first, iterator->name()))
+                continue;
+            replicated_tables[db.first][iterator->name()] = iterator->table();
         }
     }
 

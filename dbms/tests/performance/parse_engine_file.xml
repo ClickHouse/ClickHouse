@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
     
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}) AS test.hits</create_query>
 
@@ -34,6 +33,7 @@
                 <value>TSKV</value>
                 <value>RowBinary</value>
                 <value>Native</value>
+                <value>Avro</value>
             </values>
         </substitution>
     </substitutions>

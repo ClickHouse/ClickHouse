@@ -1,20 +1,20 @@
-# Битовые функции
+# Битовые функции {#bitovye-funktsii}
 
 Битовые функции работают для любой пары типов из UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32, Float64.
 
 Тип результата - целое число, битность которого равна максимальной битности аргументов. Если хотя бы один аргумент знаковый, то результат - знаковое число. Если аргумент - число с плавающей запятой - оно приводится к Int64.
 
-## bitAnd(a, b)
+## bitAnd(a, b) {#bitanda-b}
 
-## bitOr(a, b)
+## bitOr(a, b) {#bitora-b}
 
-## bitXor(a, b)
+## bitXor(a, b) {#bitxora-b}
 
-## bitNot(a)
+## bitNot(a) {#bitnota}
 
-## bitShiftLeft(a, b)
+## bitShiftLeft(a, b) {#bitshiftlefta-b}
 
-## bitShiftRight(a, b)
+## bitShiftRight(a, b) {#bitshiftrighta-b}
 
 ## bitTest {#bittest}
 
@@ -22,14 +22,14 @@
 
 **Синтаксис**
 
-```sql
+``` sql
 SELECT bitTest(number, index)
 ```
 
 **Параметры**
 
-- `number` – целое число.
-- `index` – position of bit. 
+-   `number` – целое число.
+-   `index` – position of bit.
 
 **Возвращаемое значение**
 
@@ -43,13 +43,13 @@ SELECT bitTest(number, index)
 
 Запрос:
 
-```sql
+``` sql
 SELECT bitTest(43, 1)
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─bitTest(43, 1)─┐
 │              1 │
 └────────────────┘
@@ -59,13 +59,13 @@ SELECT bitTest(43, 1)
 
 Запрос:
 
-```sql
+``` sql
 SELECT bitTest(43, 2)
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─bitTest(43, 2)─┐
 │              0 │
 └────────────────┘
@@ -82,16 +82,16 @@ SELECT bitTest(43, 2)
 1 AND 0 = 0
 1 AND 1 = 1
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 ```
 
-**Параметры** 
+**Параметры**
 
-- `number` – целое число.
-- `index1`, `index2`, `index3`, `index4` – позиция бита. Например, конъюнкция для набора позиций `index1`, `index2`, `index3`, `index4` является истинной, если все его позиции истинны `index1` ⋀ `index2` ⋀ `index3` ⋀ `index4`.
+-   `number` – целое число.
+-   `index1`, `index2`, `index3`, `index4` – позиция бита. Например, конъюнкция для набора позиций `index1`, `index2`, `index3`, `index4` является истинной, если все его позиции истинны `index1` ⋀ `index2` ⋀ `index3` ⋀ `index4`.
 
 **Возвращаемое значение**
 
@@ -105,13 +105,13 @@ SELECT bitTestAll(number, index1, index2, index3, index4, ...)
 
 Запрос:
 
-```sql
+``` sql
 SELECT bitTestAll(43, 0, 1, 3, 5)
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─bitTestAll(43, 0, 1, 3, 5)─┐
 │                          1 │
 └────────────────────────────┘
@@ -121,13 +121,13 @@ SELECT bitTestAll(43, 0, 1, 3, 5)
 
 Запрос:
 
-```sql
+``` sql
 SELECT bitTestAll(43, 0, 1, 3, 5, 2)
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─bitTestAll(43, 0, 1, 3, 5, 2)─┐
 │                             0 │
 └───────────────────────────────┘
@@ -144,16 +144,16 @@ SELECT bitTestAll(43, 0, 1, 3, 5, 2)
 1 OR 0 = 1
 1 OR 1 = 1
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 ```
 
-**Параметры** 
+**Параметры**
 
-- `number` – целое число.
-- `index1`, `index2`, `index3`, `index4` – позиции бита.
+-   `number` – целое число.
+-   `index1`, `index2`, `index3`, `index4` – позиции бита.
 
 **Возвращаемое значение**
 
@@ -167,13 +167,13 @@ SELECT bitTestAny(number, index1, index2, index3, index4, ...)
 
 Запрос:
 
-```sql
+``` sql
 SELECT bitTestAny(43, 0, 2)
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─bitTestAny(43, 0, 2)─┐
 │                    1 │
 └──────────────────────┘
@@ -183,16 +183,16 @@ SELECT bitTestAny(43, 0, 2)
 
 Запрос:
 
-```sql
+``` sql
 SELECT bitTestAny(43, 4, 2)
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─bitTestAny(43, 4, 2)─┐
 │                    0 │
 └──────────────────────┘
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/functions/bit_functions/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/bit_functions/) <!--hide-->

@@ -48,13 +48,13 @@ struct PartialSortingLess
 
     bool operator() (size_t a, size_t b) const
     {
-        for (ColumnsWithSortDescriptions::const_iterator it = columns.begin(); it != columns.end(); ++it)
+        for (const auto & elem : columns)
         {
             int res;
-            if (it->column_const)
+            if (elem.column_const)
                 res = 0;
             else
-                res = it->description.direction * it->column->compareAt(a, b, *it->column, it->description.nulls_direction);
+                res = elem.description.direction * elem.column->compareAt(a, b, *elem.column, elem.description.nulls_direction);
             if (res < 0)
                 return true;
             else if (res > 0)
@@ -76,22 +76,22 @@ struct PartialSortingLessWithCollation
 
     bool operator() (size_t a, size_t b) const
     {
-        for (ColumnsWithSortDescriptions::const_iterator it = columns.begin(); it != columns.end(); ++it)
+        for (const auto & elem : columns)
         {
             int res;
 
-            if (it->column_const)
+            if (elem.column_const)
             {
                 res = 0;
             }
-            else if (isCollationRequired(it->description))
+            else if (isCollationRequired(elem.description))
             {
-                const ColumnString & column_string = assert_cast<const ColumnString &>(*it->column);
-                res = column_string.compareAtWithCollation(a, b, *it->column, *it->description.collator);
+                const ColumnString & column_string = assert_cast<const ColumnString &>(*elem.column);
+                res = column_string.compareAtWithCollation(a, b, *elem.column, *elem.description.collator);
             }
             else
-                res = it->column->compareAt(a, b, *it->column, it->description.nulls_direction);
-            res *= it->description.direction;
+                res = elem.column->compareAt(a, b, *elem.column, elem.description.nulls_direction);
+            res *= elem.description.direction;
             if (res < 0)
                 return true;
             else if (res > 0)
@@ -141,8 +141,6 @@ void sortBlock(Block & block, const SortDescription & description, UInt64 limit)
         {
             if (!is_column_const)
                 block.getByPosition(i).column = block.getByPosition(i).column->permute(perm, limit);
-            else if (limit != 0) // LIMIT exists
-                block.getByPosition(i).column = block.getByPosition(i).column->cut(0, limit);
         }
     }
     else

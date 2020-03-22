@@ -64,9 +64,8 @@ struct QueryStatusInfo
     ClientInfo client_info;
     bool is_cancelled;
 
-    /// Optional fields, filled by request
-    std::vector<UInt32> thread_numbers;
-    std::vector<UInt32> os_thread_ids;
+    /// Optional fields, filled by query
+    std::vector<UInt64> thread_ids;
     std::shared_ptr<ProfileEvents::Counters> profile_counters;
     std::shared_ptr<Settings> query_settings;
 };
@@ -198,6 +197,17 @@ public:
 };
 
 
+/// Information of process list for user.
+struct ProcessListForUserInfo
+{
+    Int64 memory_usage;
+    Int64 peak_memory_usage;
+
+    // Optional field, filled by request.
+    std::shared_ptr<ProfileEvents::Counters> profile_counters;
+};
+
+
 /// Data about queries for one user.
 struct ProcessListForUser
 {
@@ -213,6 +223,8 @@ struct ProcessListForUser
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
+
+    ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
     /// Clears MemoryTracker for the user.
     /// Sometimes it is important to reset the MemoryTracker, because it may accumulate skew
@@ -262,6 +274,8 @@ public:
     /// list, for iterators not to invalidate. NOTE: could replace with cyclic buffer, but not worth.
     using Container = std::list<Element>;
     using Info = std::vector<QueryStatusInfo>;
+    using UserInfo = std::unordered_map<String, ProcessListForUserInfo>;
+
     /// User -> queries
     using UserToQueries = std::unordered_map<String, ProcessListForUser>;
 
@@ -307,6 +321,9 @@ public:
 
     /// Get current state of process list.
     Info getInfo(bool get_thread_list = false, bool get_profile_events = false, bool get_settings = false) const;
+
+    /// Get current state of process list per user.
+    UserInfo getUserInfo(bool get_profile_events = false) const;
 
     void setMaxSize(size_t max_size_)
     {

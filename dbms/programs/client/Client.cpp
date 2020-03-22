@@ -2,6 +2,14 @@
 #include "ConnectionParameters.h"
 #include "Suggest.h"
 
+#if USE_REPLXX
+#   include <common/ReplxxLineReader.h>
+#elif USE_READLINE
+#   include <common/ReadlineLineReader.h>
+#else
+#   include <common/LineReader.h>
+#endif
+
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -19,7 +27,6 @@
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
 #include <common/find_symbols.h>
-#include <common/config_common.h>
 #include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
@@ -94,21 +101,18 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_READ_HISTORY;
-    extern const int CANNOT_APPEND_HISTORY;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
-    extern const int CANNOT_SET_SIGNAL_HANDLER;
-    extern const int SYSTEM_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;
+    extern const int DEADLOCK_AVOIDED;
 }
 
 
 class Client : public Poco::Util::Application
 {
 public:
-    Client() {}
+    Client() = default;
 
 private:
     using StringSet = std::unordered_set<String>;
@@ -122,10 +126,12 @@ private:
     };
     bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
+    bool send_logs    = false;           /// send_logs_level passed, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
-    bool stdin_is_not_tty = false;       /// stdin is not a terminal.
+    bool stdin_is_a_tty = false;         /// stdin is a terminal.
+    bool stdout_is_a_tty = false;        /// stdout is a terminal.
 
     uint16_t terminal_width = 0;         /// Terminal width is needed to render progress bar.
 
@@ -205,7 +211,7 @@ private:
 
     ConnectionParameters connection_parameters;
 
-    void initialize(Poco::Util::Application & self)
+    void initialize(Poco::Util::Application & self) override
     {
         Poco::Util::Application::initialize(self);
 
@@ -215,7 +221,6 @@ private:
 
         configReadClient(config(), home_path);
 
-        context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
         context.setQueryParameters(query_parameters);
 
@@ -233,7 +238,7 @@ private:
     }
 
 
-    int main(const std::vector<std::string> & /*args*/)
+    int main(const std::vector<std::string> & /*args*/) override
     {
         try
         {
@@ -276,7 +281,7 @@ private:
     }
 
     /// Should we celebrate a bit?
-    bool isNewYearMode()
+    static bool isNewYearMode()
     {
         time_t current_time = time(nullptr);
 
@@ -289,7 +294,7 @@ private:
             || (now.month() == 1 && now.day() <= 5);
     }
 
-    bool isChineseNewYearMode(const String & local_tz)
+    static bool isChineseNewYearMode(const String & local_tz)
     {
         /// Days of Dec. 20 in Chinese calendar starting from year 2019 to year 2105
         static constexpr UInt16 chineseNewYearIndicators[]
@@ -298,7 +303,6 @@ private:
                31446, 31800, 32155, 32539, 32894, 33248, 33632, 33986, 34369, 34724, 35078, 35462, 35817, 36171, 36555, 36909, 37293, 37647,
                38002, 38386, 38740, 39095, 39479, 39833, 40187, 40571, 40925, 41309, 41664, 42018, 42402, 42757, 43111, 43495, 43849, 44233,
                44587, 44942, 45326, 45680, 46035, 46418, 46772, 47126, 47510, 47865, 48249, 48604, 48958, 49342};
-        static constexpr size_t N = sizeof(chineseNewYearIndicators) / sizeof(chineseNewYearIndicators[0]);
 
         /// All time zone names are acquired from https://www.iana.org/time-zones
         static constexpr const char * chineseNewYearTimeZoneIndicators[] = {
@@ -348,10 +352,8 @@ private:
             return false;
 
         auto days = DateLUT::instance().toDayNum(current_time).toUnderType();
-        for (auto i = 0ul; i < N; ++i)
+        for (auto d : chineseNewYearIndicators)
         {
-            auto d = chineseNewYearIndicators[i];
-
             /// Let's celebrate until Lantern Festival
             if (d <= days && d + 25u >= days)
                 return true;
@@ -373,7 +375,7 @@ private:
         ///   The value of the option is used as the text of query (or of multiple queries).
         ///   If stdin is not a terminal, INSERT data for the first query is read from it.
         /// - stdin is not a terminal. In this case queries are read from it.
-        if (stdin_is_not_tty || config().has("query"))
+        if (!stdin_is_a_tty || config().has("query"))
             is_interactive = false;
 
         std::cout << std::fixed << std::setprecision(3);
@@ -478,8 +480,10 @@ private:
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
+            {
                 /// Load suggestion data from the server.
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
+            }
 
             /// Load command history if present.
             if (config().has("history_file"))
@@ -496,13 +500,32 @@ private:
             if (!history_file.empty() && !Poco::File(history_file).exists())
                 Poco::File(history_file).createFile();
 
-            LineReader lr(&Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+#if USE_REPLXX
+            ReplxxLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+#elif USE_READLINE
+            ReadlineLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+#else
+            LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);
+#endif
+
+            /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
+            ///  disabled, so that we are able to paste and execute multiline queries in a whole
+            ///  instead of erroring out, while be less intrusive.
+            if (config().has("multiquery") && !config().has("multiline"))
+                lr.enableBracketedPaste();
 
             do
             {
                 auto input = lr.readLine(prompt(), ":-] ");
                 if (input.empty())
                     break;
+
+                has_vertical_output_suffix = false;
+                if (input.ends_with("\\G"))
+                {
+                    input.resize(input.size() - 2);
+                    has_vertical_output_suffix = true;
+                }
 
                 try
                 {
@@ -617,7 +640,7 @@ private:
     }
 
 
-    inline const String prompt() const
+    inline String prompt() const
     {
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
     }
@@ -792,6 +815,8 @@ private:
 
             connection->forceConnected(connection_parameters.timeouts);
 
+            send_logs = context.getSettingsRef().send_logs_level != LogsLevel::none;
+
             ASTPtr input_function;
             if (insert && insert->select)
                 insert->tryFindInputFunction(input_function);
@@ -858,7 +883,7 @@ private:
         if (!select && !external_tables.empty())
             throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
 
-        std::vector<ExternalTableData> data;
+        std::vector<ExternalTableDataPtr> data;
         for (auto & table : external_tables)
             data.emplace_back(table.getData(context));
 
@@ -879,9 +904,34 @@ private:
             query = serializeAST(*parsed_query);
         }
 
-        connection->sendQuery(connection_parameters.timeouts, query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
-        sendExternalTables();
-        receiveResult();
+        static constexpr size_t max_retries = 10;
+        for (size_t retry = 0; retry < max_retries; ++retry)
+        {
+            try
+            {
+                connection->sendQuery(
+                    connection_parameters.timeouts,
+                    query,
+                    query_id,
+                    QueryProcessingStage::Complete,
+                    &context.getSettingsRef(),
+                    nullptr,
+                    true);
+
+                sendExternalTables();
+                receiveResult();
+
+                break;
+            }
+            catch (const Exception & e)
+            {
+                /// Retry when the server said "Client should retry" and no rows has been received yet.
+                if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && retry + 1 < max_retries)
+                    continue;
+
+                throw;
+            }
+        }
     }
 
 
@@ -894,7 +944,7 @@ private:
             ? query.substr(0, parsed_insert_query.data - query.data())
             : query;
 
-        if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
+        if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
         connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
@@ -1316,7 +1366,7 @@ private:
                 }
             }
 
-            logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb);
+            logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb, stdout_is_a_tty);
             logs_out_stream->writePrefix();
         }
     }
@@ -1385,7 +1435,8 @@ private:
     void clearProgress()
     {
         written_progress_chars = 0;
-        std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+        if (!send_logs)
+            std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
     }
 
 
@@ -1410,10 +1461,13 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        if (written_progress_chars)
-            message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
-        else
-            message << SAVE_CURSOR_POSITION;
+        if (!send_logs)
+        {
+            if (written_progress_chars)
+                message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+            else
+                message << SAVE_CURSOR_POSITION;
+        }
 
         message << DISABLE_LINE_WRAPPING;
 
@@ -1468,6 +1522,9 @@ private:
         }
 
         message << ENABLE_LINE_WRAPPING;
+        if (send_logs)
+            message << '\n';
+
         ++increment;
 
         message.next();
@@ -1535,7 +1592,7 @@ private:
             std::cout << "Ok." << std::endl;
     }
 
-    void showClientVersion()
+    static void showClientVersion()
     {
         std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
@@ -1627,9 +1684,10 @@ public:
             }
         }
 
-        stdin_is_not_tty = !isatty(STDIN_FILENO);
+        stdin_is_a_tty = isatty(STDIN_FILENO);
+        stdout_is_a_tty = isatty(STDOUT_FILENO);
 
-        if (!stdin_is_not_tty)
+        if (stdin_is_a_tty)
             terminal_width = getTerminalWidth();
 
         namespace po = boost::program_options;
@@ -1678,6 +1736,7 @@ public:
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
 
+        context.makeGlobalContext();
         context.getSettingsRef().addProgramOptions(main_description);
 
         /// Commandline options related to external tables.

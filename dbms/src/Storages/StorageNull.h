@@ -6,6 +6,8 @@
 #include <Storages/IStorage.h>
 #include <DataStreams/NullBlockInputStream.h>
 #include <DataStreams/NullBlockOutputStream.h>
+#include <Processors/Sources/NullSource.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -14,13 +16,13 @@ namespace DB
 /** When writing, does nothing.
   * When reading, returns nothing.
   */
-class StorageNull : public ext::shared_ptr_helper<StorageNull>, public IStorage
+class StorageNull final : public ext::shared_ptr_helper<StorageNull>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageNull>;
 public:
     std::string getName() const override { return "Null"; }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo &,
         const Context & /*context*/,
@@ -28,7 +30,9 @@ public:
         size_t,
         unsigned) override
     {
-        return { std::make_shared<NullBlockInputStream>(getSampleBlockForColumns(column_names)) };
+        Pipes pipes;
+        pipes.emplace_back(std::make_shared<NullSource>(getSampleBlockForColumns(column_names)));
+        return pipes;
     }
 
     BlockOutputStreamPtr write(const ASTPtr &, const Context &) override

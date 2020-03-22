@@ -9,7 +9,7 @@ namespace
 {
 using namespace DB;
 
-static String serializeToString(const DataTypeCustomSimpleTextSerialization & domain, const IColumn & column, size_t row_num, const FormatSettings & settings)
+String serializeToString(const DataTypeCustomSimpleTextSerialization & domain, const IColumn & column, size_t row_num, const FormatSettings & settings)
 {
     WriteBufferFromOwnString buffer;
     domain.serializeText(column, row_num, buffer, settings);
@@ -17,7 +17,7 @@ static String serializeToString(const DataTypeCustomSimpleTextSerialization & do
     return buffer.str();
 }
 
-static void deserializeFromString(const DataTypeCustomSimpleTextSerialization & domain, IColumn & column, const String & s, const FormatSettings & settings)
+void deserializeFromString(const DataTypeCustomSimpleTextSerialization & domain, IColumn & column, const String & s, const FormatSettings & settings)
 {
     ReadBufferFromString istr(s);
     domain.deserializeText(column, istr, settings);
@@ -27,10 +27,6 @@ static void deserializeFromString(const DataTypeCustomSimpleTextSerialization & 
 
 namespace DB
 {
-
-DataTypeCustomSimpleTextSerialization::~DataTypeCustomSimpleTextSerialization()
-{
-}
 
 void DataTypeCustomSimpleTextSerialization::deserializeWholeText(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {

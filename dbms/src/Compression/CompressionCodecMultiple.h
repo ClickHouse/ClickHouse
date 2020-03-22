@@ -11,7 +11,7 @@ public:
     CompressionCodecMultiple() = default;
     explicit CompressionCodecMultiple(Codecs codecs_);
 
-    UInt8 getMethodByte() const override;
+    uint8_t getMethodByte() const override;
 
     String getCodecDesc() const override;
 
@@ -22,7 +22,7 @@ public:
 protected:
     UInt32 doCompressData(const char * source, UInt32 source_size, char * dest) const override;
 
-    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const override;
+    void doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 decompressed_size) const override;
 
 private:
     Codecs codecs;

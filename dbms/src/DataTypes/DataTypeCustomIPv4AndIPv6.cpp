@@ -13,7 +13,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
-    extern const int UNSUPPORTED_METHOD;
     extern const int CANNOT_PARSE_DOMAIN_VALUE_FROM_STRING;
 }
 
@@ -102,16 +101,16 @@ public:
 
 void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory)
 {
-    factory.registerSimpleDataTypeCustom("IPv4", [&](const String & /*type_name*/)
+    factory.registerSimpleDataTypeCustom("IPv4", []
     {
         return std::make_pair(DataTypeFactory::instance().get("UInt32"),
             std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>("IPv4"), std::make_unique<DataTypeCustomIPv4Serialization>()));
     });
 
-    factory.registerSimpleDataTypeCustom("IPv6", [&](const String & /*type_name*/)
+    factory.registerSimpleDataTypeCustom("IPv6", []
     {
         return std::make_pair(DataTypeFactory::instance().get("FixedString(16)"),
-            std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>("IPv6"), std::make_unique<DataTypeCustomIPv6Serialization>()));
+                              std::make_unique<DataTypeCustomDesc>(std::make_unique<DataTypeCustomFixedName>("IPv6"), std::make_unique<DataTypeCustomIPv6Serialization>()));
     });
 }
 

@@ -1,5 +1,7 @@
 #include <Client/MultiplexedConnections.h>
 #include <IO/ConnectionTimeouts.h>
+#include <Common/thread_local_rng.h>
+
 
 namespace DB
 {
@@ -36,14 +38,13 @@ MultiplexedConnections::MultiplexedConnections(
         return;
 
     replica_states.reserve(connections.size());
-    for (size_t i = 0; i < connections.size(); ++i)
+    for (auto & connection : connections)
     {
-        Connection * connection = &(*connections[i]);
         connection->setThrottler(throttler);
 
         ReplicaState replica_state;
-        replica_state.pool_entry = std::move(connections[i]);
-        replica_state.connection = connection;
+        replica_state.connection = &*connection;
+        replica_state.pool_entry = std::move(connection);
 
         replica_states.push_back(std::move(replica_state));
     }
@@ -225,7 +226,7 @@ std::string MultiplexedConnections::dumpAddressesUnlocked() const
     for (const ReplicaState & state : replica_states)
     {
         const Connection * connection = state.connection;
-        if (connection != nullptr)
+        if (connection)
         {
             os << (is_first ? "" : "; ") << connection->getDescription();
             is_first = false;
@@ -309,10 +310,10 @@ MultiplexedConnections::ReplicaState & MultiplexedConnections::getReplicaForRead
             throw Exception("Timeout exceeded while reading from " + dumpAddressesUnlocked(), ErrorCodes::TIMEOUT_EXCEEDED);
     }
 
-    /// TODO Absolutely wrong code: read_list could be empty; rand() is not thread safe and has low quality; motivation of rand is unclear.
+    /// TODO Absolutely wrong code: read_list could be empty; motivation of rand is unclear.
     /// This code path is disabled by default.
 
-    auto & socket = read_list[rand() % read_list.size()];
+    auto & socket = read_list[thread_local_rng() % read_list.size()];
     if (fd_to_replica_state_idx.empty())
     {
         fd_to_replica_state_idx.reserve(replica_states.size());

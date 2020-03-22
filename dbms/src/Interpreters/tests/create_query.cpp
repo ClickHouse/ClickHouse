@@ -83,7 +83,7 @@ try
 
     context.setPath("./");
     auto database = std::make_shared<DatabaseOrdinary>("test", "./metadata/test/", context);
-    context.addDatabase("test", database);
+    DatabaseCatalog::instance().attachDatabase("test", database);
     database->loadStoredObjects(context, false);
     context.setCurrentDatabase("test");
 

@@ -13,12 +13,18 @@
 /build_*
 /build-*
 /docs/build
+/docs/publish
 /docs/edit
+/docs/website
+/docs/venv/
 /docs/tools/venv/
-/docs/en/development/build/
-/docs/ru/development/build/
+/docs/tools/translate/venv/
+/docs/tools/translate/output.md
 /docs/en/single.md
 /docs/ru/single.md
+/docs/zh/single.md
+/docs/ja/single.md
+/docs/fa/single.md
 
 # callgrind files
 callgrind.out.*

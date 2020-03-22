@@ -3,6 +3,7 @@
 #include <Core/BackgroundSchedulePool.h>
 #include <Storages/IStorage.h>
 #include <Storages/Kafka/Buffer_fwd.h>
+#include <Interpreters/Context.h>
 
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
@@ -23,7 +24,7 @@ namespace DB
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorage
+class StorageKafka final : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageKafka>;
 public:
@@ -35,7 +36,7 @@ public:
     void startup() override;
     void shutdown() override;
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -47,13 +48,11 @@ public:
         const ASTPtr & query,
         const Context & context) override;
 
-    void updateDependencies() override;
-
     void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();
     ConsumerBufferPtr popReadBuffer(std::chrono::milliseconds timeout);
 
-    ProducerBufferPtr createWriteBuffer();
+    ProducerBufferPtr createWriteBuffer(const Block & header);
 
     const auto & getTopics() const { return topics; }
     const auto & getFormatName() const { return format_name; }

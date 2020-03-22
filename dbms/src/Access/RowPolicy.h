@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
+#include <Access/GenericRoleSet.h>
 
 
 namespace DB
@@ -65,10 +66,8 @@ struct RowPolicy : public IAccessEntity
     bool equal(const IAccessEntity & other) const override;
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<RowPolicy>(); }
 
-    /// Which roles or users should use this quota.
-    Strings roles;
-    bool all_roles = false;
-    Strings except_roles;
+    /// Which roles or users should use this row policy.
+    GenericRoleSet roles;
 
 private:
     String database;

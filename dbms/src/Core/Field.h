@@ -157,6 +157,7 @@ private:
 template <> struct NearestFieldTypeImpl<char> { using Type = std::conditional_t<is_signed_v<char>, Int64, UInt64>; };
 template <> struct NearestFieldTypeImpl<signed char> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned char> { using Type = UInt64; };
+template <> struct NearestFieldTypeImpl<char8_t> { using Type = UInt64; };
 
 template <> struct NearestFieldTypeImpl<UInt16> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
@@ -293,24 +294,15 @@ public:
     Field(T && rhs, std::enable_if_t<!std::is_same_v<std::decay_t<T>, Field>, void *> = nullptr);
 
     /// Create a string inplace.
-    Field(const char * data, size_t size)
-    {
-        create(data, size);
-    }
-
-    Field(const unsigned char * data, size_t size)
+    template <typename CharT>
+    Field(const CharT * data, size_t size)
     {
         create(data, size);
     }
 
     /// NOTE In case when field already has string type, more direct assign is possible.
-    void assignString(const char * data, size_t size)
-    {
-        destroy();
-        create(data, size);
-    }
-
-    void assignString(const unsigned char * data, size_t size)
+    template <typename CharT>
+    void assignString(const CharT * data, size_t size)
     {
         destroy();
         create(data, size);
@@ -617,16 +609,11 @@ private:
         dispatch([this] (auto & value) { assignConcrete(std::move(value)); }, x);
     }
 
-
-    void create(const char * data, size_t size)
+    template <typename CharT>
+    std::enable_if_t<sizeof(CharT) == 1> create(const CharT * data, size_t size)
     {
-        new (&storage) String(data, size);
+        new (&storage) String(reinterpret_cast<const char *>(data), size);
         which = Types::String;
-    }
-
-    void create(const unsigned char * data, size_t size)
-    {
-        create(reinterpret_cast<const char *>(data), size);
     }
 
     ALWAYS_INLINE void destroy()

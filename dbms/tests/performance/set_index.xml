@@ -1,0 +1,20 @@
+<test>
+
+    <create_query>CREATE TABLE test_in (`a` UInt32) ENGINE = MergeTree() ORDER BY a</create_query>
+    <fill_query>INSERT INTO test_in SELECT number FROM numbers(500000000)</fill_query>
+
+    <stop_conditions>
+        <all_of>
+            <total_time_ms>8000</total_time_ms>
+        </all_of>
+        <any_of>
+            <min_time_not_changing_for_ms>7000</min_time_not_changing_for_ms>
+            <total_time_ms>20000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+
+    <query>SELECT count() FROM test_in WHERE a IN (SELECT rand(1) FROM zeros(100000)) SETTINGS max_rows_to_read = 1, read_overflow_mode = 'break'</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_in</drop_query>
+</test>

@@ -4,7 +4,7 @@ set(CLICKHOUSE_CLIENT_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Suggest.cpp
 )
 
-set(CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_common_config clickhouse_functions clickhouse_aggregate_functions clickhouse_common_io clickhouse_parsers string_utils ${LINE_EDITING_LIBS} ${Boost_PROGRAM_OPTIONS_LIBRARY})
+set(CLICKHOUSE_CLIENT_LINK PRIVATE clickhouse_common_config clickhouse_functions clickhouse_aggregate_functions clickhouse_common_io clickhouse_parsers string_utils ${Boost_PROGRAM_OPTIONS_LIBRARY})
 
 include(CheckSymbolExists)
 check_symbol_exists(readpassphrase readpassphrase.h HAVE_READPASSPHRASE)

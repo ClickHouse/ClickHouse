@@ -1,4 +1,4 @@
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 # Data types {#data_types}
 
@@ -8,4 +8,4 @@ ClickHouse قابلیت ذخیره سازی انواع type های مختلف ب
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/data_types/) <!--hide-->

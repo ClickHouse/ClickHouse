@@ -37,6 +37,12 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
   */
 ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, const Context & context);
 
+/** The same as evaluateConstantExpressionOrIdentifierAsLiteral(...),
+ *  but if result is an empty string, replace it with current database name
+ *  or default database name.
+ */
+ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Context & context);
+
 /** Try to fold condition to countable set of constant values.
   * @param condition a condition that we try to fold.
   * @param target_expr expression evaluated over a set of constants.
@@ -44,6 +50,6 @@ ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, cons
   *         or empty blocks if condition is always false,
   *         or nothing if condition can't be folded to a set of constants.
   */
-std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & condition, const ExpressionActionsPtr & target_expr);
+std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & node, const ExpressionActionsPtr & target_expr);
 
 }

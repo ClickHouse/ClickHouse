@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Columns/IColumn.h>
 #include <DataStreams/IBlockStream_fwd.h>
 #include <IO/BufferWithOwnMemory.h>
 
@@ -8,7 +9,6 @@
 #include <memory>
 #include <unordered_map>
 #include <boost/noncopyable.hpp>
-
 
 namespace DB
 {
@@ -53,7 +53,9 @@ public:
 
     /// This callback allows to perform some additional actions after writing a single row.
     /// It's initial purpose was to flush Kafka message for each row.
-    using WriteCallback = std::function<void()>;
+    using WriteCallback = std::function<void(
+        const Columns & columns,
+        size_t row)>;
 
 private:
     using InputCreator = std::function<BlockInputStreamPtr(
@@ -166,6 +168,8 @@ void registerInputFormatProcessorORC(FormatFactory & factory);
 void registerOutputFormatProcessorParquet(FormatFactory & factory);
 void registerInputFormatProcessorProtobuf(FormatFactory & factory);
 void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
+void registerInputFormatProcessorAvro(FormatFactory & factory);
+void registerOutputFormatProcessorAvro(FormatFactory & factory);
 void registerInputFormatProcessorTemplate(FormatFactory & factory);
 void registerOutputFormatProcessorTemplate(FormatFactory &factory);
 

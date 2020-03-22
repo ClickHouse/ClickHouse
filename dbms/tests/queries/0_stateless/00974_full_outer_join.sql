@@ -18,3 +18,4 @@ ALL FULL OUTER JOIN
     FROM numbers(5)
     GROUP BY dt
 ) AS q1 ON q0.dt = q1.dt
+ORDER BY q1.cnt2;

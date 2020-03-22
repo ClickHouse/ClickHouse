@@ -39,6 +39,8 @@ limitations under the License. */
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Access/AccessFlags.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -122,30 +124,30 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(const Context & conte
     return new_mergeable_blocks;
 }
 
-BlockInputStreams StorageLiveView::blocksToInputStreams(BlocksPtrs blocks, Block & sample_block)
+Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 {
-    BlockInputStreams streams;
+    Pipes pipes;
     for (auto & blocks_ : *blocks)
-    {
-        BlockInputStreamPtr stream = std::make_shared<BlocksBlockInputStream>(std::make_shared<BlocksPtr>(blocks_), sample_block);
-        streams.push_back(std::move(stream));
-    }
-    return streams;
+        pipes.emplace_back(std::make_shared<BlocksSource>(std::make_shared<BlocksPtr>(blocks_), sample_block));
+
+    return pipes;
 }
 
 /// Complete query using input streams from mergeable blocks
-BlockInputStreamPtr StorageLiveView::completeQuery(BlockInputStreams from)
+BlockInputStreamPtr StorageLiveView::completeQuery(Pipes pipes)
 {
+    //FIXME it's dangerous to create Context on stack
     auto block_context = std::make_unique<Context>(global_context);
     block_context->makeQueryContext();
 
-    auto blocks_storage_id = getBlocksStorageID();
-    auto blocks_storage = StorageBlocks::createStorage(blocks_storage_id, parent_storage->getColumns(),
-        std::move(from), QueryProcessingStage::WithMergeableState);
+    auto creator = [&](const StorageID & blocks_id_global)
+    {
+        return StorageBlocks::createStorage(blocks_id_global, getParentStorage()->getColumns(),
+                                            std::move(pipes), QueryProcessingStage::WithMergeableState);
+    };
+    block_context->addExternalTable(getBlocksTableName(), TemporaryTableHolder(global_context, creator));
 
-    block_context->addExternalTable(blocks_storage_id.table_name, blocks_storage);
-
-    InterpreterSelectQuery select(inner_blocks_query->clone(), *block_context, StoragePtr(), SelectQueryOptions(QueryProcessingStage::Complete));
+    InterpreterSelectQuery select(getInnerBlocksQuery(), *block_context, StoragePtr(), SelectQueryOptions(QueryProcessingStage::Complete));
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
 
     /// Squashing is needed here because the view query can generate a lot of blocks
@@ -178,7 +180,7 @@ void StorageLiveView::writeIntoLiveView(
     }
 
     bool is_block_processed = false;
-    BlockInputStreams from;
+    Pipes from;
     MergeableBlocksPtr mergeable_blocks;
     BlocksPtr new_mergeable_blocks = std::make_shared<Blocks>();
 
@@ -190,12 +192,10 @@ void StorageLiveView::writeIntoLiveView(
         {
             mergeable_blocks = live_view.collectMergeableBlocks(context);
             live_view.setMergeableBlocks(mergeable_blocks);
-            from = live_view.blocksToInputStreams(mergeable_blocks->blocks, mergeable_blocks->sample_block);
+            from = live_view.blocksToPipes(mergeable_blocks->blocks, mergeable_blocks->sample_block);
             is_block_processed = true;
         }
     }
-
-    auto blocks_storage_id = live_view.getBlocksStorageID();
 
     if (!is_block_processed)
     {
@@ -204,12 +204,17 @@ void StorageLiveView::writeIntoLiveView(
         if (live_view.getInnerSubQuery())
             mergeable_query = live_view.getInnerSubQuery();
 
-        BlockInputStreams streams = {std::make_shared<OneBlockInputStream>(block)};
+        Pipes pipes;
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(block.cloneEmpty(), Chunk(block.getColumns(), block.rows())));
 
-        auto blocks_storage = StorageBlocks::createStorage(blocks_storage_id,
-            live_view.getParentStorage()->getColumns(), std::move(streams), QueryProcessingStage::FetchColumns);
+        auto creator = [&](const StorageID & blocks_id_global)
+        {
+            return StorageBlocks::createStorage(blocks_id_global, live_view.getParentStorage()->getColumns(),
+                                                std::move(pipes), QueryProcessingStage::FetchColumns);
+        };
+        TemporaryTableHolder blocks_storage(context, creator);
 
-        InterpreterSelectQuery select_block(mergeable_query, context, blocks_storage,
+        InterpreterSelectQuery select_block(mergeable_query, context, blocks_storage.getTable(),
             QueryProcessingStage::WithMergeableState);
 
         auto data_mergeable_stream = std::make_shared<MaterializingBlockInputStream>(
@@ -226,11 +231,11 @@ void StorageLiveView::writeIntoLiveView(
 
             mergeable_blocks = live_view.getMergeableBlocks();
             mergeable_blocks->blocks->push_back(new_mergeable_blocks);
-            from = live_view.blocksToInputStreams(mergeable_blocks->blocks, mergeable_blocks->sample_block);
+            from = live_view.blocksToPipes(mergeable_blocks->blocks, mergeable_blocks->sample_block);
         }
     }
 
-    BlockInputStreamPtr data = live_view.completeQuery(from);
+    BlockInputStreamPtr data = live_view.completeQuery(std::move(from));
     copyData(*data, *output);
 }
 
@@ -255,18 +260,17 @@ StorageLiveView::StorageLiveView(
         throw Exception("UNION is not supported for LIVE VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW);
 
     inner_query = query.select->list_of_selects->children.at(0);
-    inner_blocks_query = inner_query->clone();
 
-    InterpreterSelectQuery(inner_blocks_query, *live_view_context, SelectQueryOptions().modify().analyze());
+    auto inner_query_tmp = inner_query->clone();
+    select_table_id = extractDependentTable(inner_query_tmp, global_context, table_id_.table_name, inner_subquery);
 
-    select_table_id = extractDependentTable(inner_blocks_query, global_context, table_id_.table_name, inner_subquery);
+    DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
-    global_context.addDependency(select_table_id, table_id_);
-
-    parent_storage = local_context.getTable(select_table_id);
-
-    is_temporary = query.temporary;
-    temporary_live_view_timeout = local_context.getSettingsRef().temporary_live_view_timeout.totalSeconds();
+    if (query.live_view_timeout)
+    {
+        is_temporary = true;
+        temporary_live_view_timeout = *query.live_view_timeout;
+    }
 
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
@@ -310,6 +314,22 @@ Block StorageLiveView::getHeader() const
     return sample_block;
 }
 
+ASTPtr StorageLiveView::getInnerBlocksQuery()
+{
+    std::lock_guard lock(sample_block_lock);
+    if (!inner_blocks_query)
+    {
+        inner_blocks_query = inner_query->clone();
+        /// Rewrite inner query with right aliases for JOIN.
+        /// It cannot be done in constructor or startup() because InterpreterSelectQuery may access table,
+        /// which is not loaded yet during server startup, so we do it lazily
+        InterpreterSelectQuery(inner_blocks_query, *live_view_context, SelectQueryOptions().modify().analyze()); // NOLINT
+        auto table_id = getStorageID();
+        extractDependentTable(inner_blocks_query, global_context, table_id.table_name, inner_subquery);
+    }
+    return inner_blocks_query->clone();
+}
+
 bool StorageLiveView::getNewBlocks()
 {
     SipHash hash;
@@ -318,8 +338,8 @@ bool StorageLiveView::getNewBlocks()
     BlocksMetadataPtr new_blocks_metadata = std::make_shared<BlocksMetadata>();
 
     mergeable_blocks = collectMergeableBlocks(*live_view_context);
-    BlockInputStreams from = blocksToInputStreams(mergeable_blocks->blocks, mergeable_blocks->sample_block);
-    BlockInputStreamPtr data = completeQuery({from});
+    Pipes from = blocksToPipes(mergeable_blocks->blocks, mergeable_blocks->sample_block);
+    BlockInputStreamPtr data = completeQuery(std::move(from));
 
     while (Block block = data->read())
     {
@@ -359,7 +379,7 @@ bool StorageLiveView::getNewBlocks()
 void StorageLiveView::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    Dependencies dependencies = global_context.getDependencies(table_id);
+    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
     if (!dependencies.empty())
     {
         StorageID dependent_table_id = dependencies.front();
@@ -376,7 +396,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
 
     auto table_id = storage->getStorageID();
     {
-        while (1)
+        while (true)
         {
             std::unique_lock lock(storage->no_users_thread_wakeup_mutex);
             if (!storage->no_users_thread_condition.wait_for(lock, std::chrono::seconds(timeout), [&] { return storage->no_users_thread_wakeup; }))
@@ -386,7 +406,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
                     return;
                 if (storage->hasUsers())
                     return;
-                if (!storage->global_context.getDependencies(table_id).empty())
+                if (!DatabaseCatalog::instance().getDependencies(table_id).empty())
                     continue;
                 drop_table = true;
             }
@@ -396,7 +416,7 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
 
     if (drop_table)
     {
-        if (storage->global_context.tryGetTable(table_id))
+        if (DatabaseCatalog::instance().tryGetTable(table_id))
         {
             try
             {
@@ -458,6 +478,7 @@ void StorageLiveView::startup()
 
 void StorageLiveView::shutdown()
 {
+    DatabaseCatalog::instance().removeDependency(select_table_id, getStorageID());
     bool expected = false;
     if (!shutdown_called.compare_exchange_strong(expected, true))
         return;
@@ -489,7 +510,7 @@ StorageLiveView::~StorageLiveView()
 void StorageLiveView::drop(TableStructureWriteLockHolder &)
 {
     auto table_id = getStorageID();
-    global_context.removeDependency(select_table_id, table_id);
+    DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
 
     std::lock_guard lock(mutex);
     is_dropped = true;
@@ -506,7 +527,7 @@ void StorageLiveView::refresh(const Context & context)
     }
 }
 
-BlockInputStreams StorageLiveView::read(
+Pipes StorageLiveView::read(
     const Names & /*column_names*/,
     const SelectQueryInfo & /*query_info*/,
     const Context & /*context*/,
@@ -514,7 +535,7 @@ BlockInputStreams StorageLiveView::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    std::shared_ptr<BlocksBlockInputStream> stream;
+    Pipes pipes;
     {
         std::lock_guard lock(mutex);
         if (!(*blocks_ptr))
@@ -522,9 +543,9 @@ BlockInputStreams StorageLiveView::read(
             if (getNewBlocks())
                 condition.notify_all();
         }
-        stream = std::make_shared<BlocksBlockInputStream>(blocks_ptr, getHeader());
+        pipes.emplace_back(std::make_shared<BlocksSource>(blocks_ptr, getHeader()));
     }
-    return { stream };
+    return pipes;
 }
 
 BlockInputStreams StorageLiveView::watch(
@@ -552,7 +573,7 @@ BlockInputStreams StorageLiveView::watch(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
-            context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
+            temporary_live_view_timeout);
 
         {
             std::lock_guard no_users_thread_lock(no_users_thread_mutex);
@@ -583,7 +604,7 @@ BlockInputStreams StorageLiveView::watch(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
-            context.getSettingsRef().temporary_live_view_timeout.totalSeconds());
+            temporary_live_view_timeout);
 
         {
             std::lock_guard no_users_thread_lock(no_users_thread_mutex);

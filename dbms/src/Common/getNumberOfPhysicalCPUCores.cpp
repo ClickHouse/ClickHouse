@@ -5,11 +5,9 @@
 #if USE_CPUID
 #   include <libcpuid/libcpuid.h>
 #   include <Common/Exception.h>
-    namespace DB { namespace ErrorCodes { extern const int CPUID_ERROR; }}
 #elif USE_CPUINFO
 #   include <cpuinfo.h>
 #endif
-
 
 
 unsigned getNumberOfPhysicalCPUCores()

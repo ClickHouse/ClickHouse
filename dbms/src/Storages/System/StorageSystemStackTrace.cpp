@@ -14,7 +14,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <IO/ReadHelpers.h>
 #include <Common/PipeFDs.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 
 
 namespace DB
@@ -37,10 +37,9 @@ namespace
 
     int sequence_num = 0;    /// For messages sent via pipe.
 
-    UInt32 thread_number{0};
     std::optional<StackTrace> stack_trace;
 
-    static constexpr size_t max_query_id_size = 128;
+    constexpr size_t max_query_id_size = 128;
     char query_id_data[max_query_id_size];
     size_t query_id_size = 0;
 
@@ -48,6 +47,8 @@ namespace
 
     void signalHandler(int, siginfo_t * info, void * context)
     {
+        auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
         /// In case malicious user is sending signals manually (for unknown reason).
         /// If we don't check - it may break our synchronization.
         if (info->si_pid != expected_pid)
@@ -60,17 +61,19 @@ namespace
         /// All these methods are signal-safe.
         const ucontext_t signal_context = *reinterpret_cast<ucontext_t *>(context);
         stack_trace.emplace(signal_context);
-        thread_number = getThreadNumber();
 
         StringRef query_id = CurrentThread::getQueryId();
         query_id_size = std::min(query_id.size, max_query_id_size);
-        memcpy(query_id_data, query_id.data, query_id_size);
+        if (query_id.data && query_id.size)
+            memcpy(query_id_data, query_id.data, query_id_size);
 
         int notification_num = info->si_value.sival_int;
         ssize_t res = ::write(notification_pipe.fds_rw[1], &notification_num, sizeof(notification_num));
 
         /// We cannot do anything if write failed.
         (void)res;
+
+        errno = saved_errno;
     }
 
     /// Wait for data in pipe and read it.
@@ -148,7 +151,7 @@ NamesAndTypesList StorageSystemStackTrace::getNamesAndTypes()
 {
     return
     {
-        { "thread_number", std::make_shared<DataTypeUInt32>() },
+        { "thread_id", std::make_shared<DataTypeUInt64>() },
         { "query_id", std::make_shared<DataTypeString>() },
         { "trace", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>()) }
     };
@@ -197,7 +200,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
                 arr.emplace_back(reinterpret_cast<intptr_t>(stack_trace->getFrames()[i]));
 
-            res_columns[0]->insert(thread_number);
+            res_columns[0]->insert(tid);
             res_columns[1]->insertData(query_id_data, query_id_size);
             res_columns[2]->insert(arr);
         }
@@ -205,7 +208,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
         {
             /// Cannot obtain a stack trace. But create a record in result nevertheless.
 
-            res_columns[0]->insert(tid);    /// TODO Replace all thread numbers to OS thread numbers.
+            res_columns[0]->insert(tid);
             res_columns[1]->insertDefault();
             res_columns[2]->insertDefault();
         }

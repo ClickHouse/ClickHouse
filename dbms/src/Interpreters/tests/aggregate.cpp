@@ -20,7 +20,7 @@ int main(int argc, char ** argv)
 
     try
     {
-        size_t n = argc == 2 ? atoi(argv[1]) : 10;
+        size_t n = argc == 2 ? std::stol(argv[1]) : 10;
 
         Block block;
 
@@ -79,7 +79,7 @@ int main(int argc, char ** argv)
 
         Aggregator::Params params(
             stream->getHeader(), {0, 1}, aggregate_descriptions,
-            false, 0, OverflowMode::THROW, 0, 0, 0, false, "", 1, 0);
+            false, 0, OverflowMode::THROW, 0, 0, 0, false, nullptr, 1, 0);
 
         Aggregator aggregator(params);
 
