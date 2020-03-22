@@ -151,7 +151,7 @@ std::vector<Float64> BucketsPolygonIndex::uniqueX(const std::vector<Polygon> & p
     std::sort(all_x.begin(), all_x.end());
     all_x.erase(std::unique(all_x.begin(), all_x.end()), all_x.end());
 
-    // LOG_TRACE(log, "Found " << all_x.size() << " unique x coordinates");
+    LOG_TRACE(log, "Found " << all_x.size() << " unique x coordinates");
 
     return all_x;
 }
