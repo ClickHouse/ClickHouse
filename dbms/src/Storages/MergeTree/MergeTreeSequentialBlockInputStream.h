@@ -46,9 +46,6 @@ private:
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
 
-    /// Forbids to change columns list of the part during reading
-    std::shared_lock<std::shared_mutex> part_columns_lock;
-
     /// Columns we have to read (each Block from read will contain them)
     Names columns_to_read;
 
