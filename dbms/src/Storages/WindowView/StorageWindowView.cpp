@@ -111,7 +111,7 @@ namespace
         }
     };
 
-    struct ReplaceFuncNowVisitorData 
+    struct ReplaceFuncNowVisitorData
     {
         using TypeToVisit = ASTFunction;
 
@@ -303,7 +303,7 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
 void StorageWindowView::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    Dependencies dependencies = global_context.getDependencies(table_id);
+    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
     if (!dependencies.empty())
     {
         StorageID dependent_table_id = dependencies.front();
@@ -313,7 +313,7 @@ void StorageWindowView::checkTableCanBeDropped() const
 
 static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id)
 {
-    if (global_context.tryGetTable(target_table_id))
+    if (DatabaseCatalog::instance().tryGetTable(target_table_id))
     {
         auto drop_query = std::make_shared<ASTDropQuery>();
         drop_query->database = target_table_id.database_name;
@@ -328,7 +328,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
 void StorageWindowView::drop(TableStructureWriteLockHolder &)
 {
     auto table_id = getStorageID();
-    global_context.removeDependency(select_table_id, table_id);
+    DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
 
     if (!inner_table_id.empty())
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, inner_table_id);
@@ -804,7 +804,7 @@ StorageWindowView::StorageWindowView(
         select_table_name = "one";
     }
 
-    global_context.addDependency(select_table_id, table_id_);
+    DatabaseCatalog::instance().addDependency(select_table_id, table_id_);
 
     if (!query.to_table.empty())
         target_table_id = StorageID(query.to_database, query.to_table);
@@ -887,7 +887,7 @@ StorageWindowView::StorageWindowView(
             InterpreterCreateQuery create_interpreter(manual_create_query, local_context);
             create_interpreter.setInternal(true);
             create_interpreter.execute();
-            inner_storage = global_context.getTable(manual_create_query->database, manual_create_query->table);
+            inner_storage = DatabaseCatalog::instance().getTable(StorageID(manual_create_query->database, manual_create_query->table));
             inner_table_id = inner_storage->getStorageID();
         }
         fetch_column_query = generateFetchColumnsQuery(inner_table_id);
@@ -1114,7 +1114,7 @@ Block & StorageWindowView::getHeader() const
 StoragePtr StorageWindowView::getParentStorage() const
 {
     if (parent_storage == nullptr)
-        parent_storage = global_context.getTable(select_table_id);
+        parent_storage = DatabaseCatalog::instance().getTable(select_table_id);
     return parent_storage;
 }
 
@@ -1128,14 +1128,14 @@ Block & StorageWindowView::getMergeableHeader() const
 StoragePtr & StorageWindowView::getInnerStorage() const
 {
     if (inner_storage == nullptr && !inner_table_id.empty())
-        inner_storage = global_context.getTable(inner_table_id);
+        inner_storage = DatabaseCatalog::instance().getTable(inner_table_id);
     return inner_storage;
 }
 
 StoragePtr & StorageWindowView::getTargetStorage() const
 {
     if (target_storage == nullptr && !target_table_id.empty())
-        target_storage = global_context.getTable(target_table_id);
+        target_storage = DatabaseCatalog::instance().getTable(target_table_id);
     return target_storage;
 }
 
@@ -1177,7 +1177,7 @@ BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 waterma
         "____filter", true));
 
     auto proxy_storage = std::make_shared<WindowViewProxyStorage>(
-        StorageID("", "WindowViewProxyStorage"), getParentStorage()->getColumns(), std::move(pipes), QueryProcessingStage::WithMergeableState);
+        StorageID(global_context.getCurrentDatabase(), "WindowViewProxyStorage"), getParentStorage()->getColumns(), std::move(pipes), QueryProcessingStage::WithMergeableState);
 
     InterpreterSelectQuery select(getFinalQuery(), global_context, proxy_storage, QueryProcessingStage::Complete);
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);

@@ -33,8 +33,8 @@ namespace DataPartsExchange
 
 namespace
 {
-static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
-static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
 
 
 std::string getEndpointId(const std::string & node_id)
@@ -88,8 +88,6 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         auto storage_lock = data.lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
         MergeTreeData::DataPartPtr part = findPart(part_name);
-
-        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
 
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 

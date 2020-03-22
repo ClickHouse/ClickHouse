@@ -18,7 +18,7 @@ namespace DB
 class StorageFileBlockInputStream;
 class StorageFileBlockOutputStream;
 
-class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
+class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageFile>;
 public:
@@ -60,7 +60,7 @@ protected:
     StorageFile(int table_fd_, CommonArguments args);
 
     /// From user's file
-    StorageFile(const std::string & table_path_, const std::string & user_files_absolute_path, CommonArguments args);
+    StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args);
 
     /// From table in database
     StorageFile(const std::string & relative_table_dir_path, CommonArguments args);

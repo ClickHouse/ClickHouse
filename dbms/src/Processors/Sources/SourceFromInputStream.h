@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/RowsBeforeLimitCounter.h>
 
 namespace DB
 {
@@ -23,6 +24,8 @@ public:
 
     void addTotalsPort();
 
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
+
     /// Implementation for methods from ISourceWithProgress.
     void setLimits(const LocalLimits & limits_) final { stream->setLimits(limits_); }
     void setQuota(const QuotaContextPtr & quota_) final { stream->setQuota(quota_); }
@@ -37,6 +40,8 @@ private:
     bool has_aggregate_functions = false;
     bool force_add_aggregating_info = false;
     BlockInputStreamPtr stream;
+
+    RowsBeforeLimitCounterPtr rows_before_limit;
 
     Chunk totals;
     bool has_totals_port = false;

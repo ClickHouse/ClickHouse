@@ -211,7 +211,7 @@ class PrintSink : public ISink
 public:
     String getName() const override { return "Print"; }
 
-    PrintSink(String prefix_)
+    explicit PrintSink(String prefix_)
             : ISink(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
               prefix(std::move(prefix_))
     {

@@ -32,14 +32,14 @@ public:
     {
         UInt64 size = 0;
 
-        for (size_t i = 0; i < arguments.size(); ++i)
-            size += blockSerializedSizeOne(block.getByPosition(arguments[i]));
+        for (auto arg_pos : arguments)
+            size += blockSerializedSizeOne(block.getByPosition(arg_pos));
 
         block.getByPosition(result).column = DataTypeUInt64().createColumnConst(
             input_rows_count, size)->convertToFullColumnIfConst();
     }
 
-    UInt64 blockSerializedSizeOne(const ColumnWithTypeAndName & elem) const
+    static UInt64 blockSerializedSizeOne(const ColumnWithTypeAndName & elem)
     {
         ColumnPtr full_column = elem.column->convertToFullColumnIfConst();
 

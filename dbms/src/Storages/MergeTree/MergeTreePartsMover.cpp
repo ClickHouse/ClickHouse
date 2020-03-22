@@ -33,7 +33,7 @@ class LargestPartsWithRequiredSize
     UInt64 current_size_sum = 0;
 
 public:
-    LargestPartsWithRequiredSize(UInt64 required_sum_size_) : required_size_sum(required_sum_size_) {}
+    explicit LargestPartsWithRequiredSize(UInt64 required_sum_size_) : required_size_sum(required_sum_size_) {}
 
     void add(MergeTreeData::DataPartPtr part)
     {
@@ -101,7 +101,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     const auto policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
-    if (volumes.size() > 0)
+    if (!volumes.empty())
     {
         /// Do not check last volume
         for (size_t i = 0; i != volumes.size() - 1; ++i)

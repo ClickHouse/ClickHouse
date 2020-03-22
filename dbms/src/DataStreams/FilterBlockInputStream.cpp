@@ -77,7 +77,7 @@ Block FilterBlockInputStream::readImpl()
         return {};
 
     /// Until non-empty block after filtering or end of stream.
-    while (1)
+    while (true)
     {
         res = children.back()->read();
         if (!res)

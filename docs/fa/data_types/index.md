@@ -1,4 +1,4 @@
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 # Data types {#data_types}
 

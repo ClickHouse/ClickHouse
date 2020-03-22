@@ -423,9 +423,9 @@ void ColumnAggregateFunction::insertDefault()
     pushBackAndCreateState(data, arena, func.get());
 }
 
-StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & dst, const char *& begin) const
+StringRef ColumnAggregateFunction::serializeValueIntoArena(size_t n, Arena & arena, const char *& begin) const
 {
-    WriteBufferFromArena out(dst, begin);
+    WriteBufferFromArena out(arena, begin);
     func->serialize(data[n], out);
     return out.finish();
 }
@@ -501,7 +501,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     size_t num_rows = size();
 
     {
-        size_t reserve_size = num_rows / num_columns * 1.1; /// 1.1 is just a guess. Better to use n-sigma rule.
+        size_t reserve_size = double(num_rows) / num_columns * 1.1; /// 1.1 is just a guess. Better to use n-sigma rule.
 
         if (reserve_size > 1)
             for (auto & column : columns)
@@ -576,8 +576,9 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
-    : foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-      func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
+    : COWHelper<IColumn, ColumnAggregateFunction>(src_),
+    foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
+    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {
 }
 
