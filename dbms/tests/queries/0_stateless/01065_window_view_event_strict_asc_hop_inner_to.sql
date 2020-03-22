@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS wv;
 
 CREATE TABLE dst(count UInt64, w_end DateTime) Engine=MergeTree ORDER BY tuple();
 CREATE TABLE mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
-CREATE WINDOW VIEW wv TO dst ENGINE=MergeTree() order by tuple() WATERMARK=STRICTLY_ASCENDING AS SELECT count(a) AS count, HOP_END(wid) as w_end FROM mt GROUP BY HOP(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND) AS wid;
+CREATE WINDOW VIEW wv TO dst ENGINE=AggregatingMergeTree() order by wid WATERMARK=STRICTLY_ASCENDING AS SELECT count(a) AS count, HOP_END(wid) as w_end FROM mt GROUP BY HOP(timestamp, INTERVAL '2' SECOND, INTERVAL '3' SECOND) AS wid;
 
 INSERT INTO mt VALUES (1, '1990/01/01 12:00:00');
 INSERT INTO mt VALUES (1, '1990/01/01 12:00:01');

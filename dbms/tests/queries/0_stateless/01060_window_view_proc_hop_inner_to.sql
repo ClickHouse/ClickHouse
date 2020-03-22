@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS wv;
 
 CREATE TABLE dst(count UInt64) Engine=MergeTree ORDER BY tuple();
 CREATE TABLE mt(a Int32, timestamp DateTime) ENGINE=MergeTree ORDER BY tuple();
-CREATE WINDOW VIEW wv TO dst ENGINE=MergeTree ORDER BY tuple() AS SELECT count(a) AS count FROM mt GROUP BY HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '1' SECOND) AS wid;
+CREATE WINDOW VIEW wv TO dst ENGINE=AggregatingMergeTree ORDER BY wid AS SELECT count(a) AS count FROM mt GROUP BY HOP(timestamp, INTERVAL '1' SECOND, INTERVAL '1' SECOND) AS wid;
 
 INSERT INTO mt VALUES (1, now());
 SELECT sleep(2);
