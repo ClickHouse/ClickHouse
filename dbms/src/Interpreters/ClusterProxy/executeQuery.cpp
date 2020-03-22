@@ -31,6 +31,12 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     new_settings.max_memory_usage_for_user.changed = false;
     new_settings.max_memory_usage_for_all_queries.changed = false;
 
+    if (settings.force_optimize_skip_unused_shards_no_nested)
+    {
+        new_settings.force_optimize_skip_unused_shards = 0;
+        new_settings.force_optimize_skip_unused_shards.changed = false;
+    }
+
     Context new_context(context);
     new_context.setSettings(new_settings);
 
