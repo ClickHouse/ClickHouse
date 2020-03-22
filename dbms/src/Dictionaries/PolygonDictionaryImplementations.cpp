@@ -118,7 +118,7 @@ SmartPolygonDictionary::SmartPolygonDictionary(
     buckets.reserve(polygons.size());
     for (size_t i = 0; i < buckets.size(); ++i)
     {
-        buckets.emplace_back({polygons[i]});
+        buckets.emplace_back(std::vector<Polygon>{polygons[i]});
     }
 }
 
