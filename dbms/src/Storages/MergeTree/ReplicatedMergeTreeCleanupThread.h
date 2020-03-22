@@ -9,7 +9,6 @@
 
 #include <map>
 #include <unordered_map>
-#include <pcg_random.hpp>
 
 
 namespace DB
@@ -36,7 +35,6 @@ private:
     String log_name;
     Logger * log;
     BackgroundSchedulePool::TaskHolder task;
-    pcg64 rng;
 
     void run();
     void iterate();

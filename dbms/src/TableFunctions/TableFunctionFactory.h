@@ -1,15 +1,16 @@
 #pragma once
 
-#include <TableFunctions/ITableFunction.h>
+#include "ITableFunction.h"
+
 #include <Common/IFactoryWithAliases.h>
 #include <Common/NamePrompter.h>
 
+#include <boost/noncopyable.hpp>
 
 #include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <boost/noncopyable.hpp>
 
 
 namespace DB

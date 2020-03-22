@@ -1,8 +1,8 @@
 #pragma once
 
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/IFactoryWithAliases.h>
+#include "IAggregateFunction.h"
 
+#include <Common/IFactoryWithAliases.h>
 
 #include <functional>
 #include <memory>

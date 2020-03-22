@@ -1,13 +1,13 @@
 #include "ExternalLoader.h"
 
 #include <mutex>
-#include <pcg_random.hpp>
 #include <Common/Config/AbstractConfigurationComparison.h>
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Common/thread_local_rng.h>
 #include <ext/chrono_io.h>
 #include <ext/scope_guard.h>
 #include <boost/range/adaptor/map.hpp>
@@ -1129,7 +1129,7 @@ private:
             if (!error_count)
             {
                 std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
-                auto result = std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)};
+                auto result = std::chrono::system_clock::now() + std::chrono::seconds{distribution(thread_local_rng)};
                 LOG_TRACE(log, "Supposed update time for "
                     "'" << loaded_object->getLoadableName() << "'"
                     " is " << ext::to_string(result)
@@ -1138,7 +1138,7 @@ private:
                 return result;
             }
 
-            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
+            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(error_count));
             LOG_TRACE(log, "Supposed update time for '" << loaded_object->getLoadableName() << "'"
                 " is " << ext::to_string(result)
                 << " (backoff, " << error_count << " errors)");
@@ -1146,7 +1146,7 @@ private:
         }
         else
         {
-            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
+            auto result = std::chrono::system_clock::now() + std::chrono::seconds(calculateDurationWithBackoff(error_count));
             LOG_TRACE(log, "Supposed update time for unspecified object "
                 " is " << ext::to_string(result)
                 << " (backoff, " << error_count << " errors.");
@@ -1167,7 +1167,6 @@ private:
     std::unordered_map<size_t, ThreadFromGlobalPool> loading_threads;
     std::unordered_map<std::thread::id, size_t> min_id_to_finish_loading_dependencies;
     size_t next_id_counter = 1; /// should always be > 0
-    mutable pcg64 rnd_engine{randomSeed()};
 };
 
 

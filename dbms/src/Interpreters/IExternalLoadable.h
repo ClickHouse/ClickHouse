@@ -1,15 +1,18 @@
 #pragma once
 
+#include <Core/Types.h>
+
+#include <boost/noncopyable.hpp>
+
 #include <string>
 #include <memory>
-#include <boost/noncopyable.hpp>
-#include <pcg_random.hpp>
-#include <Core/Types.h>
 
 
 namespace Poco::Util
 {
-    class AbstractConfiguration;
+
+class AbstractConfiguration;
+
 }
 
 
@@ -26,7 +29,7 @@ struct ExternalLoadableLifetime
 };
 
 /// Get delay before trying to load again after error.
-UInt64 calculateDurationWithBackoff(pcg64 & rnd_engine, size_t error_count = 1);
+UInt64 calculateDurationWithBackoff(size_t error_count = 1);
 
 /// Basic interface for external loadable objects. Is used in ExternalLoader.
 class IExternalLoadable : public std::enable_shared_from_this<IExternalLoadable>, private boost::noncopyable

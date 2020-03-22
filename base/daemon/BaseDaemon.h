@@ -1,28 +1,34 @@
 #pragma once
 
-#include <sys/types.h>
-#include <unistd.h>
-#include <iostream>
-#include <memory>
-#include <functional>
-#include <optional>
-#include <mutex>
-#include <condition_variable>
-#include <atomic>
-#include <chrono>
+#include "GraphiteWriter.h"
+
+#include <Common/Config/ConfigProcessor.h>
+
+#include <common/getThreadId.h>
+#include <common/logger_useful.h>
+#include <common/types.h>
+
+#include <loggers/Loggers.h>
+
+#include <Poco/Net/SocketAddress.h>
 #include <Poco/Process.h>
-#include <Poco/ThreadPool.h>
 #include <Poco/TaskNotification.h>
+#include <Poco/ThreadPool.h>
 #include <Poco/Util/Application.h>
 #include <Poco/Util/ServerApplication.h>
-#include <Poco/Net/SocketAddress.h>
 #include <Poco/Version.h>
-#include <common/types.h>
-#include <common/logger_useful.h>
-#include <common/getThreadId.h>
-#include <daemon/GraphiteWriter.h>
-#include <Common/Config/ConfigProcessor.h>
-#include <loggers/Loggers.h>
+
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <functional>
+#include <iostream>
+#include <memory>
+#include <mutex>
+#include <optional>
+
+#include <unistd.h>
+#include <sys/types.h>
 
 
 namespace Poco { class TaskManager; }

@@ -8,7 +8,6 @@
 #include <vector>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnString.h>
-#include <pcg_random.hpp>
 #include <Common/ArenaWithFreeLists.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/ProfilingScopedRWLock.h>
@@ -554,7 +553,7 @@ private:
                     cell.hash = hash;
 
                     if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-                        cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
+                        cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(thread_local_rng)});
                     else
                         cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
@@ -616,7 +615,7 @@ private:
             cell.hash = hash;
 
             if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
-                cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(rnd_engine)});
+                cell.setExpiresAt(std::chrono::system_clock::now() + std::chrono::seconds{distribution(thread_local_rng)});
             else
                 cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
 
@@ -699,8 +698,6 @@ private:
     std::unique_ptr<ArenaWithFreeLists> keys_pool = key_size_is_fixed ? nullptr : std::make_unique<ArenaWithFreeLists>();
     std::unique_ptr<SmallObjectPool> fixed_size_keys_pool = key_size_is_fixed ? std::make_unique<SmallObjectPool>(key_size) : nullptr;
     std::unique_ptr<ArenaWithFreeLists> string_arena;
-
-    mutable pcg64 rnd_engine;
 
     mutable size_t bytes_allocated = 0;
     mutable std::atomic<size_t> element_count{0};

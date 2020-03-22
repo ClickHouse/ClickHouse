@@ -1,6 +1,7 @@
 #pragma once
 
-#include <Functions/IFunctionAdaptors.h>
+#include "IFunctionAdaptors.h"
+
 #include <Common/IFactoryWithAliases.h>
 
 #include <functional>

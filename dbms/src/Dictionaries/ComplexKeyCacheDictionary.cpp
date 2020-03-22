@@ -65,7 +65,6 @@ ComplexKeyCacheDictionary::ComplexKeyCacheDictionary(
     , dict_lifetime(dict_lifetime_)
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
-    , rnd_engine(randomSeed())
 {
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{full_name + ": source cannot be used with ComplexKeyCacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};

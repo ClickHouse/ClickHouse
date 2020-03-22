@@ -1,8 +1,9 @@
 #pragma once
 
+#include <Common/thread_local_rng.h>
+
 #include <cmath>
 #include <random>
-#include <pcg_random.hpp>
 
 
 namespace LZ4
@@ -75,7 +76,7 @@ struct PerformanceStatistics
                 sum += seconds / bytes;
         }
 
-        double sample(pcg64 & stat_rng) const
+        double sample() const
         {
             /// If there is a variant with not enough statistics, always choose it.
             /// And in that case prefer variant with less number of invocations.
@@ -83,7 +84,7 @@ struct PerformanceStatistics
             if (adjustedCount() < 2)
                 return adjustedCount() - 1;
             else
-                return std::normal_distribution<>(mean(), sigma())(stat_rng);
+                return std::normal_distribution<>(mean(), sigma())(thread_local_rng);
         }
     };
 
@@ -101,9 +102,6 @@ struct PerformanceStatistics
 
     Element data[NUM_ELEMENTS];
 
-    /// It's Ok that generator is not seeded.
-    pcg64 rng;
-
     /// To select from different algorithms we use a kind of "bandits" algorithm.
     /// Sample random values from estimated normal distributions and choose the minimal.
     size_t select()
@@ -112,9 +110,7 @@ struct PerformanceStatistics
         {
             double samples[NUM_ELEMENTS];
             for (size_t i = 0; i < NUM_ELEMENTS; ++i)
-                samples[i] = choose_method == -1
-                    ? data[i].sample(rng)
-                    : data[i].adjustedCount();
+                samples[i] = choose_method == -1 ? data[i].sample() : data[i].adjustedCount();
 
             return std::min_element(samples, samples + NUM_ELEMENTS) - samples;
         }

@@ -42,7 +42,7 @@
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
-#include <Interpreters/SystemLog.cpp>
+#include <Interpreters/SystemLog.h>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
 #include <Access/AccessControlManager.h>
 #include <Storages/StorageReplicatedMergeTree.h>

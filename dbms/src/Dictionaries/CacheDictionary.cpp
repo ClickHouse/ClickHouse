@@ -82,7 +82,6 @@ CacheDictionary::CacheDictionary(
     , size{roundUpToPowerOfTwoOrZero(std::max(size_, size_t(max_collision_length)))}
     , size_overlap_mask{this->size - 1}
     , cells{this->size}
-    , rnd_engine(randomSeed())
     , update_queue(max_update_queue_size_)
     , update_pool(max_threads_for_updates)
 {
@@ -890,7 +889,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
                     if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
                     {
                         std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-                        cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
+                        cell.setExpiresAt(now + std::chrono::seconds{distribution(thread_local_rng)});
                     }
                     else
                         cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());
@@ -914,7 +913,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
         {
             ++error_count;
             last_exception = std::current_exception();
-            backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(rnd_engine, error_count));
+            backoff_end_time = now + std::chrono::seconds(calculateDurationWithBackoff(error_count));
 
             tryLogException(last_exception, log, "Could not update cache dictionary '" + getFullName() +
                                                  "', next update is scheduled at " + ext::to_string(backoff_end_time.load()));
@@ -967,7 +966,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
         if (dict_lifetime.min_sec != 0 && dict_lifetime.max_sec != 0)
         {
             std::uniform_int_distribution<UInt64> distribution{dict_lifetime.min_sec, dict_lifetime.max_sec};
-            cell.setExpiresAt(now + std::chrono::seconds{distribution(rnd_engine)});
+            cell.setExpiresAt(now + std::chrono::seconds{distribution(thread_local_rng)});
         }
         else
             cell.setExpiresAt(std::chrono::time_point<std::chrono::system_clock>::max());

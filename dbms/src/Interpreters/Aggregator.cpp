@@ -653,9 +653,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         no_more_keys, \
         overflow_row_ptr);
 
-        if (false)
-        {
-        } // NOLINT
+        if (false) {} // NOLINT
         APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
     }
@@ -723,9 +721,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
         writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out);
 
-    if (false)
-    {
-    } // NOLINT
+    if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else

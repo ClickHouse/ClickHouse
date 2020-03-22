@@ -1,5 +1,6 @@
 #pragma once
-#include <Functions/IFunction.h>
+
+#include "IFunction.h"
 
 /// This file contains developer interface for functions.
 /// In order to implement a new function you can choose one of two options:

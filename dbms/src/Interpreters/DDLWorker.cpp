@@ -39,7 +39,6 @@
 #include <Poco/Timestamp.h>
 #include <common/sleep.h>
 #include <random>
-#include <pcg_random.hpp>
 #include <Poco/Net/NetException.h>
 
 
@@ -756,8 +755,6 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
         return false;
     };
 
-    pcg64 rng(randomSeed());
-
     auto lock = createSimpleZooKeeperLock(zookeeper, shard_path, "lock", task.host_id_str);
     static const size_t max_tries = 20;
     bool executed_by_leader = false;
@@ -794,7 +791,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
         /// Does nothing if wasn't previously locked
         lock->unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 1000)(rng)));
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 1000)(thread_local_rng)));
     }
 
     /// Not executed by leader so was not executed at all
