@@ -176,7 +176,7 @@ void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
     /** using custom comparator for fetching edges in right_point order, like in scanline */
     auto cmp = [](const Edge & a, const Edge & b)
     {
-        return Edge::compare1(a, b);
+        return Edge::compare2(a, b);
     };
     std::set<Edge, decltype(cmp)> interesting_edges(cmp);
 
