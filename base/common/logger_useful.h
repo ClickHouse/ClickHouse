@@ -2,11 +2,14 @@
 
 /// Macros for convenient usage of Poco logger.
 
-#include <sstream>
+#include <Common/CurrentThread.h>
+
 #include <Poco/Logger.h>
 #include <Poco/Message.h>
 #include <Poco/Version.h>
-#include <Common/CurrentThread.h>
+
+#include <sstream>
+
 
 #ifndef QUERY_PREVIEW_LENGTH
 #define QUERY_PREVIEW_LENGTH 160
@@ -47,4 +50,3 @@ using DB::CurrentThread;
 #define LOG_WARNING(logger, message) LOG_SIMPLE(logger, message, LogsLevel::warning, Message::PRIO_WARNING)
 #define LOG_ERROR(logger, message)   LOG_SIMPLE(logger, message, LogsLevel::error, Message::PRIO_ERROR)
 #define LOG_FATAL(logger, message)   LOG_SIMPLE(logger, message, LogsLevel::error, Message::PRIO_FATAL)
-

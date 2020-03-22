@@ -2,18 +2,8 @@
 
 #include "defines.h"
 
-#if __has_include(<common/config_common.h>)
-#    include <common/config_common.h>
-#endif
-
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
-
-#    if JEMALLOC_VERSION_MAJOR < 4
-#        undef USE_JEMALLOC
-#        define USE_JEMALLOC 0
-#        include <cstdlib>
-#    endif
 #else
 #    include <cstdlib>
 #endif
@@ -44,7 +34,7 @@ inline ALWAYS_INLINE void deleteImpl(void * ptr) noexcept
     free(ptr);
 }
 
-#if USE_JEMALLOC
+#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
 
 inline ALWAYS_INLINE void deleteSized(void * ptr, std::size_t size) noexcept
 {

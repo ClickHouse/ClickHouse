@@ -1,8 +1,13 @@
 LIBRARY()
 
 ADDINCL(
+    # public
+    GLOBAL clickhouse/base
+    GLOBAL clickhouse/dbms/src
+    GLOBAL util/digest # for <city.h>
+
+    # private
     contrib/libs/cctz/include
-    util/digest
 )
 
 PEERDIR(
@@ -13,14 +18,14 @@ PEERDIR(
     util
 )
 
-CFLAGS (-D ARCADIA_BUILD)
+CFLAGS (GLOBAL -DARCADIA_BUILD)
 
 IF (OS_DARWIN)
-    CFLAGS (-D OS_DARWIN)
+    CFLAGS (GLOBAL -DOS_DARWIN)
 ELSEIF (OS_FREEBSD)
-    CFLAGS (-D OS_FREEBSD)
+    CFLAGS (GLOBAL -DOS_FREEBSD)
 ELSEIF (OS_LINUX)
-    CFLAGS (-D OS_LINUX)
+    CFLAGS (GLOBAL -DOS_LINUX)
 ENDIF ()
 
 SRCS(

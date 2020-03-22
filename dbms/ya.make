@@ -1,0 +1,4 @@
+RECURSE(
+    programs/server
+    src
+)

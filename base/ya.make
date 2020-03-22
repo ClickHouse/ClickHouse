@@ -1,3 +1,5 @@
 RECURSE(
     common
+    daemon
+    loggers
 )

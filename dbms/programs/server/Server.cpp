@@ -631,7 +631,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     if (!TaskStatsInfoGetter::checkPermissions())
     {
         LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
