@@ -32,8 +32,8 @@ struct ReplicatedMergeTreeLogEntryData
         GET_PART,       /// Get the part from another replica.
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
-        CLEAR_COLUMN,   /// Drop specific column from specified partition.
-        CLEAR_INDEX,    /// Drop specific index from specified partition.
+        CLEAR_COLUMN,   /// NOTE: Deprecated. Drop specific column from specified partition.
+        CLEAR_INDEX,    /// NOTE: Deprecated. Drop specific index from specified partition.
         REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
         MUTATE_PART,    /// Apply one or several mutations to the part.
         ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths

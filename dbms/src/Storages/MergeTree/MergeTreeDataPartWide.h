@@ -56,10 +56,6 @@ public:
 
     ColumnSize getColumnSize(const String & column_name, const IDataType & type) const override;
 
-    NameToNameMap createRenameMapForAlter(
-        AlterAnalysisResult & analysis_result,
-        const NamesAndTypesList & old_columns) const override;
-
     ~MergeTreeDataPartWide() override;
 
     bool hasColumnFiles(const String & column, const IDataType & type) const override;

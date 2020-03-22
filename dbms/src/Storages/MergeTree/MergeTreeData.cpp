@@ -84,7 +84,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NO_SUCH_DATA_PART;
-    extern const int TABLE_DIFFERS_TOO_MUCH;
     extern const int NOT_IMPLEMENTED;
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int TOO_MANY_UNEXPECTED_DATA_PARTS;
@@ -1532,83 +1531,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 checkStoragePolicy(global_context.getStoragePolicy(changed_setting.value.safeGet<String>()));
         }
     }
-
-    if (commands.isModifyingData())
-        analyzeAlterConversions(getColumns().getAllPhysical(), metadata.columns.getAllPhysical(), getIndices().indices, metadata.indices.indices);
 }
-
-
-AlterAnalysisResult MergeTreeData::analyzeAlterConversions(
-    const NamesAndTypesList & old_columns,
-    const NamesAndTypesList & new_columns,
-    const IndicesASTs & old_indices,
-    const IndicesASTs & new_indices) const
-{
-    AlterAnalysisResult res;
-
-    /// Remove old indices
-    std::unordered_set<String> new_indices_set;
-    for (const auto & index_decl : new_indices)
-        new_indices_set.emplace(index_decl->as<ASTIndexDeclaration &>().name);
-    for (const auto & index_decl : old_indices)
-    {
-        const auto & index = index_decl->as<ASTIndexDeclaration &>();
-        if (!new_indices_set.count(index.name))
-            res.removed_indices.push_back(index.name);
-    }
-
-    for (const NameAndTypePair & column : new_columns)
-        res.new_types.emplace(column.name, column.type.get());
-
-    for (const NameAndTypePair & column : old_columns)
-    {
-        if (!res.new_types.count(column.name))
-        {
-            res.removed_columns.push_back(column);
-        }
-        else
-        {
-            /// The column was converted. Collect conversions.
-            const auto * new_type = res.new_types[column.name];
-            const String new_type_name = new_type->getName();
-            const auto * old_type = column.type.get();
-
-            if (!new_type->equals(*old_type))
-            {
-                if (isMetadataOnlyConversion(old_type, new_type))
-                {
-                    res.force_update_metadata = true;
-                    continue;
-                }
-
-                /// Need to modify column type.
-                if (!res.expression)
-                    res.expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), global_context);
-
-                res.expression->addInput(ColumnWithTypeAndName(nullptr, column.type, column.name));
-
-                Names out_names;
-
-                /// This is temporary name for expression. TODO Invent the name more safely.
-                const String new_type_name_column = '#' + new_type_name + "_column";
-                res.expression->add(ExpressionAction::addColumn(
-                    { DataTypeString().createColumnConst(1, new_type_name), std::make_shared<DataTypeString>(), new_type_name_column }));
-
-                const auto & function = FunctionFactory::instance().get("CAST", global_context);
-                res.expression->add(ExpressionAction::applyFunction(
-                    function, Names{column.name, new_type_name_column}), out_names);
-
-                res.expression->add(ExpressionAction::removeColumn(new_type_name_column));
-                res.expression->add(ExpressionAction::removeColumn(column.name));
-
-                res.conversions.emplace_back(column.name, out_names.at(0));
-            }
-        }
-    }
-
-    return res;
-}
-
 
 MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, size_t rows_count) const
 {
@@ -1672,171 +1595,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(
     return createPart(name, type, part_info, disk, relative_path);
 }
 
-/// This code is not used anymore in StorageReplicatedMergeTree
-/// soon it will be removed from StorageMergeTree as well
-/// TODO(alesap)
-void MergeTreeData::alterDataPart(
-    const NamesAndTypesList & new_columns,
-    const IndicesASTs & new_indices,
-    bool skip_sanity_checks,
-    AlterDataPartTransactionPtr & transaction)
-{
-    const auto settings = getSettings();
-    const auto & part = transaction->getDataPart();
-
-    auto res = analyzeAlterConversions(part->getColumns(), new_columns, getIndices().indices, new_indices);
-
-    NamesAndTypesList additional_columns;
-    transaction->rename_map = part->createRenameMapForAlter(res, part->getColumns());
-
-    if (!transaction->rename_map.empty())
-    {
-        WriteBufferFromOwnString out;
-        out << "Will ";
-        bool first = true;
-        for (const auto & [from, to] : transaction->rename_map)
-        {
-            if (!first)
-                out << ", ";
-            first = false;
-            if (to.empty())
-                out << "remove " << from;
-            else
-                out << "rename " << from << " to " << to;
-        }
-        out << " in part " << part->name;
-        LOG_DEBUG(log, out.str());
-    }
-
-    size_t num_files_to_modify = transaction->rename_map.size();
-    size_t num_files_to_remove = 0;
-
-    for (const auto & [from, to] : transaction->rename_map)
-        if (to.empty())
-            ++num_files_to_remove;
-
-    if (!skip_sanity_checks
-        && (num_files_to_modify > settings->max_files_to_modify_in_alter_columns
-            || num_files_to_remove > settings->max_files_to_remove_in_alter_columns))
-    {
-        transaction->clear();
-
-        const bool forbidden_because_of_modify = num_files_to_modify > settings->max_files_to_modify_in_alter_columns;
-
-        std::stringstream exception_message;
-        exception_message
-            << "Suspiciously many ("
-            << (forbidden_because_of_modify ? num_files_to_modify : num_files_to_remove)
-            << ") files (";
-
-        bool first = true;
-        for (const auto & [from, to] : transaction->rename_map)
-        {
-            if (!first)
-                exception_message << ", ";
-            if (forbidden_because_of_modify)
-            {
-                exception_message << "from " << backQuote(from) << " to " << backQuote(to);
-                first = false;
-            }
-            else if (to.empty())
-            {
-                exception_message << backQuote(from);
-                first = false;
-            }
-        }
-
-        exception_message
-            << ") need to be "
-            << (forbidden_because_of_modify ? "modified" : "removed")
-            << " in part " << part->name << " of table at " << part->getFullPath() << ". Aborting just in case."
-            << " If it is not an error, you could increase merge_tree/"
-            << (forbidden_because_of_modify ? "max_files_to_modify_in_alter_columns" : "max_files_to_remove_in_alter_columns")
-            << " parameter in configuration file (current value: "
-            << (forbidden_because_of_modify ? settings->max_files_to_modify_in_alter_columns : settings->max_files_to_remove_in_alter_columns)
-            << ")";
-
-        throw Exception(exception_message.str(), ErrorCodes::TABLE_DIFFERS_TOO_MUCH);
-    }
-
-    DataPart::Checksums add_checksums;
-
-    if (transaction->rename_map.empty() && !res.force_update_metadata)
-    {
-        transaction->clear();
-        return;
-    }
-
-    /// Apply the expression and write the result to temporary files.
-    if (res.expression)
-    {
-        BlockInputStreamPtr part_in = std::make_shared<MergeTreeSequentialBlockInputStream>(
-                *this, part, res.expression->getRequiredColumns(), false, /* take_column_types_from_storage = */ false);
-
-        auto compression_codec = global_context.chooseCompressionCodec(
-            part->bytes_on_disk,
-            static_cast<double>(part->bytes_on_disk) / this->getTotalActiveSizeInBytes());
-        ExpressionBlockInputStream in(part_in, res.expression);
-
-        /** Don't write offsets for arrays, because ALTER never change them
-         *  (MODIFY COLUMN could only change types of elements but never modify array sizes).
-          * Also note that they does not participate in 'rename_map'.
-          * Also note, that for columns, that are parts of Nested,
-          *  temporary column name ('converting_column_name') created in 'createConvertExpression' method
-          *  will have old name of shared offsets for arrays.
-          */
-
-        MergedColumnOnlyOutputStream out(
-            part,
-            in.getHeader(),
-            true /* sync */,
-            compression_codec,
-            true /* skip_offsets */,
-            /// Don't recalc indices because indices alter is restricted
-            std::vector<MergeTreeIndexPtr>{},
-            nullptr /* offset_columns */,
-            part->index_granularity,
-            &part->index_granularity_info,
-            true /* is_writing_temp_files */);
-
-        in.readPrefix();
-        out.writePrefix();
-
-        while (Block b = in.read())
-            out.write(b);
-
-        in.readSuffix();
-        add_checksums = out.writeSuffixAndGetChecksums();
-    }
-
-    /// Update the checksums.
-    DataPart::Checksums new_checksums = part->checksums;
-    for (const auto & [from, to] : transaction->rename_map)
-    {
-        if (to.empty())
-            new_checksums.files.erase(from);
-        else
-            new_checksums.files[to] = add_checksums.files[from];
-    }
-
-    /// Write the checksums to the temporary file.
-    if (!part->checksums.empty())
-    {
-        transaction->new_checksums = new_checksums;
-        auto checksums_file = part->disk->writeFile(part->getFullRelativePath() + "checksums.txt.tmp", 4096);
-        new_checksums.write(*checksums_file);
-        transaction->rename_map["checksums.txt.tmp"] = "checksums.txt";
-    }
-
-    /// Write the new column list to the temporary file.
-    {
-        transaction->new_columns = new_columns.filter(part->getColumns().getNames());
-        auto columns_file = part->disk->writeFile(part->getFullRelativePath() + "columns.txt.tmp", 4096);
-        transaction->new_columns.writeText(*columns_file);
-        transaction->rename_map["columns.txt.tmp"] = "columns.txt";
-    }
-}
-
 void MergeTreeData::changeSettings(
         const ASTPtr & new_settings,
         TableStructureWriteLockHolder & /* table_lock_holder */)
@@ -1882,142 +1640,9 @@ void MergeTreeData::changeSettings(
     }
 }
 
-void MergeTreeData::removeEmptyColumnsFromPart(MergeTreeData::MutableDataPartPtr & data_part)
-{
-    auto & empty_columns = data_part->expired_columns;
-    if (empty_columns.empty())
-        return;
-
-    NamesAndTypesList new_columns;
-    for (const auto & [name, type] : data_part->getColumns())
-        if (!empty_columns.count(name))
-            new_columns.emplace_back(name, type);
-
-    std::stringstream log_message;
-    for (auto it = empty_columns.begin(); it != empty_columns.end(); ++it)
-    {
-        if (it != empty_columns.begin())
-            log_message << ", ";
-        log_message << *it;
-    }
-
-    LOG_INFO(log, "Removing empty columns: " << log_message.str() << " from part " << data_part->name);
-    AlterDataPartTransactionPtr transaction(new AlterDataPartTransaction(data_part));
-    alterDataPart(new_columns, getIndices().indices, false, transaction);
-    if (transaction->isValid())
-        transaction->commit();
-
-    empty_columns.clear();
-}
-
 void MergeTreeData::freezeAll(const String & with_name, const Context & context, TableStructureReadLockHolder &)
 {
     freezePartitionsByMatcher([] (const DataPartPtr &){ return true; }, with_name, context);
-}
-
-
-bool MergeTreeData::AlterDataPartTransaction::isValid() const
-{
-    return valid && data_part;
-}
-
-void MergeTreeData::AlterDataPartTransaction::clear()
-{
-    valid = false;
-}
-
-void MergeTreeData::AlterDataPartTransaction::commit()
-{
-    if (!isValid())
-        return;
-    if (!data_part)
-        return;
-
-    try
-    {
-        std::unique_lock<std::shared_mutex> lock(data_part->columns_lock);
-
-        auto disk = data_part->disk;
-        String path = data_part->getFullRelativePath();
-
-        /// NOTE: checking that a file exists before renaming or deleting it
-        /// is justified by the fact that, when converting an ordinary column
-        /// to a nullable column, new files are created which did not exist
-        /// before, i.e. they do not have older versions.
-
-        /// 1) Rename the old files.
-        for (const auto & [from, to] : rename_map)
-        {
-            String name = to.empty() ? from : to;
-            if (disk->exists(path + name))
-                disk->moveFile(path + name, path + name + ".tmp2");
-        }
-
-        /// 2) Move new files in the place of old and update the metadata in memory.
-        for (const auto & [from, to] : rename_map)
-        {
-            if (!to.empty())
-                disk->moveFile(path + from, path + to);
-        }
-
-        auto & mutable_part = const_cast<DataPart &>(*data_part);
-        mutable_part.checksums = new_checksums;
-        mutable_part.setColumns(new_columns);
-
-        /// 3) Delete the old files and drop required columns (DROP COLUMN)
-        for (const auto & [from, to] : rename_map)
-        {
-            String name = to.empty() ? from : to;
-            disk->removeIfExists(path + name + ".tmp2");
-        }
-
-        mutable_part.bytes_on_disk = new_checksums.getTotalSizeOnDisk();
-
-        /// TODO: we can skip resetting caches when the column is added.
-        data_part->storage.global_context.dropCaches();
-
-        clear();
-    }
-    catch (...)
-    {
-        /// Don't delete temporary files in the destructor in case something went wrong.
-        clear();
-        throw;
-    }
-}
-
-MergeTreeData::AlterDataPartTransaction::~AlterDataPartTransaction()
-{
-
-    if (!isValid())
-        return;
-    if (!data_part)
-        return;
-
-    try
-    {
-        LOG_WARNING(data_part->storage.log, "Aborting ALTER of part " << data_part->relative_path);
-
-        String path = data_part->getFullRelativePath();
-        for (const auto & [from, to] : rename_map)
-        {
-            if (!to.empty())
-            {
-                try
-                {
-                    data_part->disk->removeIfExists(path + from);
-                }
-                catch (Poco::Exception & e)
-                {
-                    LOG_WARNING(data_part->storage.log, "Can't remove " << fullPath(data_part->disk, path + from) << ": " << e.displayText());
-                }
-            }
-        }
-    }
-    catch (...)
-    {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
 }
 
 void MergeTreeData::PartsTemporaryRename::addPart(const String & old_name, const String & new_name)
@@ -2795,8 +2420,6 @@ void MergeTreeData::calculateColumnSizesImpl()
 
 void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 {
-    std::shared_lock<std::shared_mutex> lock(part->columns_lock);
-
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
@@ -2807,8 +2430,6 @@ void MergeTreeData::addPartContributionToColumnSizes(const DataPartPtr & part)
 
 void MergeTreeData::removePartContributionToColumnSizes(const DataPartPtr & part)
 {
-    std::shared_lock<std::shared_mutex> lock(part->columns_lock);
-
     for (const auto & column : part->getColumns())
     {
         ColumnSize & total_column_size = column_sizes[column.name];
