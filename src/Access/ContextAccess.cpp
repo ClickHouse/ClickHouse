@@ -404,14 +404,16 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
     static const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
         | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
         | AccessType::TRUNCATE;
+
     static const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
     static const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
     static const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
-    static const AccessFlags all_dcl = AccessType::CREATE_USER | AccessType::CREATE_ROLE | AccessType::CREATE_POLICY
-        | AccessType::CREATE_QUOTA | AccessType::CREATE_SETTINGS_PROFILE | AccessType::ALTER_USER | AccessType::ALTER_ROLE
-        | AccessType::ALTER_POLICY | AccessType::ALTER_QUOTA | AccessType::ALTER_SETTINGS_PROFILE | AccessType::DROP_USER
-        | AccessType::DROP_ROLE | AccessType::DROP_POLICY | AccessType::DROP_QUOTA | AccessType::DROP_SETTINGS_PROFILE
-        | AccessType::ROLE_ADMIN;
+
+    static const AccessFlags all_dcl = AccessType::CREATE_USER | AccessType::ALTER_USER | AccessType::DROP_USER
+                                     | AccessType::CREATE_ROLE | AccessType::ALTER_ROLE | AccessType::DROP_ROLE | AccessType::ROLE_ADMIN
+                                     | AccessType::CREATE_POLICY | AccessType::ALTER_POLICY | AccessType::DROP_POLICY
+                                     | AccessType::CREATE_SETTINGS_PROFILE | AccessType::ALTER_SETTINGS_PROFILE | AccessType::DROP_SETTINGS_PROFILE
+                                     | AccessType::CREATE_QUOTA | AccessType::ALTER_QUOTA | AccessType::DROP_QUOTA;
 
     if (readonly_)
         merged_access->revoke(write_table_access | all_dcl | table_and_dictionary_ddl | AccessType::SYSTEM | AccessType::KILL_QUERY);
