@@ -129,6 +129,7 @@ private:
         Point l;
         Point r;
         size_t polygon_id;
+        size_t edge_id;
 
         static bool compare1(const Edge & a, const Edge & b);
         static bool compare2(const Edge & a, const Edge & b);
@@ -143,8 +144,19 @@ private:
     /** Edges from all polygons, classified by sorted_x borders.
      *  edges_index[i] stores all interesting edges in range ( sorted_x[i]; sorted_x[i + 1] ]
      *  That means edges_index.size() + 1 == sorted_x.size()
+     * 
+     *  std::vector<std::vector<Edge>> edges_index;
      */
-    std::vector<std::vector<Edge>> edges_index;
+
+    /** TODO: fix this and previous comments.
+     *  This edges_index_tree stores the same info as edges_index, but more efficiently.
+     *  To do that, edges_index_tree is actually a segment tree of segments between x coordinates.
+     *  edges_index_tree.size() == edges_index.size() * 2 == n * 2, and as in usual segment tree,
+     *  edges_index_tree[i] combines segments edges_index_tree[i*2] and edges_index_tree[i*2+1].
+     *  Every polygon's edge covers a segment of x coordinates, and can be added to this tree by
+     *  placing it into O(log n) vertexes of this tree.
+     */
+    std::vector<std::vector<size_t>> edges_index_tree;
 };
 
 }

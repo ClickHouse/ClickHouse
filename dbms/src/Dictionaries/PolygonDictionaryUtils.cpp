@@ -170,20 +170,33 @@ void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
 
     /** sorting edges consisting of (left_point, right_point, polygon_id) in that order */
     std::sort(this->all_edges.begin(), this->all_edges.end(), Edge::compare1);
+    for (size_t i = 0; i != this->all_edges.size(); ++i)
+    {
+        this->all_edges[i].edge_id = i;
+    }
+    
+    /** total number of edges */
+    size_t m = this->all_edges.size();
 
     LOG_TRACE(log, "Just sorted " << all_edges.size() << " edges from all " << polygons.size() << " polygons");
 
     /** using custom comparator for fetching edges in right_point order, like in scanline */
     auto cmp = [](const Edge & a, const Edge & b)
     {
-        return Edge::compare1(a, b);
+        return Edge::compare2(a, b);
     };
     std::set<Edge, decltype(cmp)> interesting_edges(cmp);
 
+    /** size of index (number of different x coordinates) */
+    size_t n = 0;
     if (!this->sorted_x.empty())
     {
-        this->edges_index.resize(this->sorted_x.size() - 1);
+        n = this->sorted_x.size() - 1;
     }
+    this->edges_index_tree.resize(2 * n);
+
+    /** Map of interesting edge ids to the index of left x, the index of right x */
+    std::vector<size_t> edge_left(m, n), edge_right(m, n);
 
     size_t total_index_edges = 0;
     size_t edges_it = 0;
@@ -195,6 +208,7 @@ void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         /** removing edges where right_point.x < lx */
         while (!interesting_edges.empty() && interesting_edges.begin()->r.x() < lx)
         {
+            edge_right[interesting_edges.begin()->edge_id] = l;
             interesting_edges.erase(interesting_edges.begin());
         }
 
@@ -202,17 +216,42 @@ void BucketsPolygonIndex::indexBuild(const std::vector<Polygon> & polygons)
         for (; edges_it < this->all_edges.size() && this->all_edges[edges_it].l.x() <= rx; ++edges_it)
         {
             interesting_edges.insert(this->all_edges[edges_it]);
+            edge_left[this->all_edges[edges_it].edge_id] = l;
         }
-
-        this->edges_index[l] = std::vector<Edge>(interesting_edges.begin(), interesting_edges.end());
-        total_index_edges += interesting_edges.size();
 
         if (l % 1000 == 0 || r + 1 == this->sorted_x.size())
         {
-            LOG_TRACE(log, "Iteration " << r << "/" << this->sorted_x.size() << ", total_index_edges="
-                    << total_index_edges << ", interesting_edges.size()=" << interesting_edges.size());
+            LOG_TRACE(log, "Iteration " << r << "/" << this->sorted_x.size());
         }
     }
+
+    for (size_t i = 0; i != this->all_edges.size(); i++)
+    {
+        size_t l = edge_left[i];
+        size_t r = edge_right[i];
+        if (l == n)
+        {
+            LOG_TRACE(log, "Edge " << i << " is very sad");
+            continue;
+        }
+
+        /** adding [l, r) to the segment tree */
+        for (l += n, r += n; l < r; l >>= 1, r >>= 1)
+        {
+            if (l & 1)
+            {
+                this->edges_index_tree[l++].push_back(i);
+                ++total_index_edges;
+            }
+            if (r & 1)
+            {
+                this->edges_index_tree[--r].push_back(i);
+                ++total_index_edges;
+            }
+        }
+    }
+
+    LOG_TRACE(log, "Index is built, total_index_edges=" << total_index_edges);
 }
 
 void BucketsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
@@ -233,7 +272,7 @@ void BucketsPolygonIndex::indexAddRing(const Ring & ring, size_t polygon_id)
             std::swap(a, b);
         }
 
-        this->all_edges.emplace_back(Edge{a, b, polygon_id});
+        this->all_edges.emplace_back(Edge{a, b, polygon_id, 0});
     }
 }
 
@@ -309,41 +348,49 @@ bool BucketsPolygonIndex::find(const Point & point, size_t & id) const
 
     size_t pos = std::upper_bound(this->sorted_x.begin() + 1, this->sorted_x.end() - 1, x) - this->sorted_x.begin() - 1;
 
-    /** iterating over interesting edges */
-    for (auto & edge : this->edges_index[pos])
+    /** pos += n */
+    pos += this->edges_index_tree.size() / 2;
+    do
     {
-        const Point & l = edge.l;
-        const Point & r = edge.r;
-        size_t polygon_id = edge.polygon_id;
-
-        /** check for vertical edge, seem like never happens */
-        if (l.x() == r.x())
+        /** iterating over interesting edges */
+        for (size_t edge_id : this->edges_index_tree[pos])
         {
-            if (l.x() == x && y >= l.y() && y <= r.y())
+            const auto & edge = this->all_edges[edge_id];
+
+            const Point & l = edge.l;
+            const Point & r = edge.r;
+            size_t polygon_id = edge.polygon_id;
+
+            /** check for vertical edge, seem like never happens */
+            if (l.x() == r.x())
+            {
+                if (l.x() == x && y >= l.y() && y <= r.y())
+                {
+                    on_the_edge[polygon_id] = true;
+                }
+                continue;
+            }
+
+            /** check if point outside of edge's x bounds */
+            if (x < l.x() || x >= r.x())
+            {
+                continue;
+            }
+
+            Float64 edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
+            if (edge_y > y)
+            {
+                continue;
+            }
+            if (edge_y == y)
             {
                 on_the_edge[polygon_id] = true;
             }
-            continue;
-        }
 
-        /** check if point outside of edge's x bounds */
-        if (x < l.x() || x >= r.x())
-        {
-            continue;
+            is_inside[polygon_id] ^= true;
         }
-
-        Float64 edge_y = l.y() + (r.y() - l.y()) / (r.x() - l.x()) * (x - l.x());
-        if (edge_y > y)
-        {
-            continue;
-        }
-        if (edge_y == y)
-        {
-            on_the_edge[polygon_id] = true;
-        }
-
-        is_inside[polygon_id] ^= true;
-    }
+        pos >>= 1;
+    } while (pos != 0);
 
     bool found = false;
     for (auto & [polygon_id, inside] : is_inside)
