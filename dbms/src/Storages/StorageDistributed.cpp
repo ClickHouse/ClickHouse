@@ -369,7 +369,7 @@ static QueryProcessingStage::Enum getQueryProcessingStageImpl(const Context & co
                                 : QueryProcessingStage::WithMergeableState;
 }
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ASTPtr &) const
 {
     auto cluster = getCluster();
     return getQueryProcessingStageImpl(context, cluster);

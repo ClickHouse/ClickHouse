@@ -59,7 +59,7 @@ public:
     void checkTableCanBeDropped() const override;
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ASTPtr & = nullptr) const override;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
