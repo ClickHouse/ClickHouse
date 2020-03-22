@@ -112,6 +112,12 @@ void ThreadFuzzer::initConfiguration()
     FOR_EACH_WRAPPED_FUNCTION(INIT_WRAPPER_PARAMS)
 
 #undef INIT_WRAPPER_PARAMS
+
+    pthread_mutex_lock_before_migrate_probability = 1;
+    pthread_mutex_lock_after_migrate_probability = 1;
+    pthread_mutex_unlock_before_migrate_probability = 1;
+    pthread_mutex_unlock_after_migrate_probability = 1;
+
 #endif
 }
 
