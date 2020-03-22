@@ -70,8 +70,8 @@ public:
     [[nodiscard]] const FinalCell * find(Float64 x, Float64 y) const override;
 
     /** When a cell is split every side is split into kSplit pieces producing kSplit * kSplit equal smaller cells. */
-    static constexpr size_t kSplit = 2;
-    static constexpr size_t kMultiProcessingDepth = 4;
+    static constexpr size_t kSplit = 4;
+    static constexpr size_t kMultiProcessingDepth = 2;
 
 private:
     std::unique_ptr<ICell> root = nullptr;
