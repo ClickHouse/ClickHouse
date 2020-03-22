@@ -225,11 +225,11 @@ private:
         context.setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-        for (auto && setting : context.getSettingsRef())
+        for (const auto & setting : context.getSettingsRef())
         {
             const String & name = setting.getName().toString();
             if (config().has(name) && !setting.isChanged())
-                setting.setValue(config().getString(name));
+                context.setSetting(name, config().getString(name));
         }
 
         /// Set path for format schema files
@@ -1736,8 +1736,8 @@ public:
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
 
-        context.makeGlobalContext();
-        context.getSettingsRef().addProgramOptions(main_description);
+        Settings cmd_settings;
+        cmd_settings.addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
         po::options_description external_description = createOptionsDescription("External tables options", terminal_width);
@@ -1804,6 +1804,9 @@ public:
                 exit(e.code());
             }
         }
+
+        context.makeGlobalContext();
+        context.setSettings(cmd_settings);
 
         /// Copy settings-related program options to config.
         /// TODO: Is this code necessary?

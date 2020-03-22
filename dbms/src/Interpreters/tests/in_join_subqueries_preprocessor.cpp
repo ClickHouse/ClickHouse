@@ -1170,9 +1170,7 @@ TestResult check(const TestEntry & entry)
         database->attachTable("visits_all", storage_distributed_visits);
         database->attachTable("hits_all", storage_distributed_hits);
         context.setCurrentDatabase("test");
-
-        auto & settings = context.getSettingsRef();
-        settings.distributed_product_mode = entry.mode;
+        context.setSetting("distributed_product_mode", entry.mode);
 
         /// Parse and process the incoming query.
         DB::ASTPtr ast_input;

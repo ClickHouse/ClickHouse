@@ -24,8 +24,8 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
         {"restrictive", std::make_shared<DataTypeUInt8>()},
     };
 
-    for (auto index : ext::range_with_static_cast<RowPolicy::ConditionIndex>(RowPolicy::MAX_CONDITION_INDEX))
-        names_and_types.push_back({RowPolicy::conditionIndexToColumnName(index), std::make_shared<DataTypeString>()});
+    for (auto index : ext::range_with_static_cast<RowPolicy::ConditionType>(RowPolicy::MAX_CONDITION_TYPE))
+        names_and_types.push_back({RowPolicy::conditionTypeToColumnName(index), std::make_shared<DataTypeString>()});
 
     return names_and_types;
 }
@@ -52,7 +52,7 @@ void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, const Cont
         res_columns[i++]->insert(storage ? storage->getStorageName() : "");
         res_columns[i++]->insert(policy->isRestrictive());
 
-        for (auto index : ext::range(RowPolicy::MAX_CONDITION_INDEX))
+        for (auto index : ext::range(RowPolicy::MAX_CONDITION_TYPE))
             res_columns[i++]->insert(policy->conditions[index]);
     }
 }

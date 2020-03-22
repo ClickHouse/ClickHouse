@@ -439,13 +439,13 @@ void HTTPHandler::processQuery(
 
     /// In theory if initially readonly = 0, the client can change any setting and then set readonly
     /// to some other value.
-    auto & settings = context.getSettingsRef();
+    const auto & settings = context.getSettingsRef();
 
     /// Only readonly queries are allowed for HTTP GET requests.
     if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
     {
         if (settings.readonly == 0)
-            settings.readonly = 2;
+            context.setSetting("readonly", 2);
     }
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
