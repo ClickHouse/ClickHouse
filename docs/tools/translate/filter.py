@@ -136,9 +136,10 @@ def translate_filter(key, value, _format, _):
         value[1] = process_sentence(value[1])
         return cls(*value)
     elif key == 'Header':
-        # TODO: title case header in en
-        if '_' not in value[1][0]:  # Preserve some manually specified anchors
+        if value[1][0].islower() and '_' not in value[1][0]:  # Preserve some manually specified anchors
             value[1][0] = slugify.slugify(value[1][0], separator='-', word_boundary=True, save_order=True)
+
+        # TODO: title case header in en
         value[2] = process_sentence(value[2])
         return cls(*value)
     elif key == 'SoftBreak':

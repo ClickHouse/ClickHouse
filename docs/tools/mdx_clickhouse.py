@@ -26,7 +26,7 @@ class ClickHouseLinkMixin(object):
             is_external = href.startswith('http:') or href.startswith('https:')
             if is_external:
                 if not href.startswith('https://clickhouse.tech'):
-                    el.set('rel', 'external nofollow')
+                    el.set('rel', 'external nofollow noreferrer')
             elif single_page:
                 if '#' in href:
                     el.set('href', '#' + href.split('#', 1)[1])
