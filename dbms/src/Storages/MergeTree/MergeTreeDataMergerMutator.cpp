@@ -1053,7 +1053,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     else /// TODO: check that we modify only non-key columns in this case.
     {
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
-        auto indices_to_recalc = getIndicesToRecalc(in, storage_from_source_part, updated_header.getNamesAndTypesList(), context);
+        auto indices_to_recalc = getIndicesToRecalculate(in, storage_from_source_part, updated_header.getNamesAndTypesList(), context);
 
         NameSet files_to_skip = collectFilesToSkip(updated_header, indices_to_recalc, mrk_extension);
         NameSet files_to_remove = collectFilesToRemove(source_part, for_file_renames, mrk_extension);
@@ -1341,7 +1341,7 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
     const Block & updated_header,
     NamesAndTypesList all_columns,
-    const MutationCommands & commands_for_removes) const
+    const MutationCommands & commands_for_removes)
 {
     NameSet removed_columns;
     for (const auto & command : commands_for_removes)
@@ -1371,7 +1371,7 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
 }
 
 
-std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalc(
+std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     BlockInputStreamPtr & input_stream,
     StoragePtr storage_from_source_part,
     const NamesAndTypesList & updated_columns,
@@ -1531,7 +1531,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
 void MergeTreeDataMergerMutator::finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
-    bool need_remove_expired_values) const
+    bool need_remove_expired_values)
 {
     auto disk = new_data_part->disk;
     if (need_remove_expired_values)
