@@ -1,4 +1,4 @@
-# CollapsingMergeTree {#table-engine-collapsingmergetree}
+# CollapsingMergeTree {#table_engine-collapsingmergetree}
 
 该引擎继承于 [MergeTree](mergetree.md)，并在数据块合并算法中添加了折叠行的逻辑。
 
@@ -57,7 +57,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 </details>
 
-## 折叠 {#table-engine-collapsingmergetree-collapsing}
+## 折叠 {#table_engine-collapsingmergetree-collapsing}
 
 ### 数据 {#shu-ju}
 
@@ -99,7 +99,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 2.  由于写入的负载，列中长的增长阵列会降低引擎的效率。数据越简单，效率越高。
 3.  `SELECT` 的结果很大程度取决于对象变更历史的一致性。在准备插入数据时要准确。在不一致的数据中会得到不可预料的结果，例如，像会话深度这种非负指标的负值。
 
-### 算法 {#table-engine-collapsingmergetree-collapsing-algorithm}
+### 算法 {#table_engine-collapsingmergetree-collapsing-algorithm}
 
 当 ClickHouse 合并数据片段时，每组具有相同主键的连续行被减少到不超过两行，一行 `Sign = 1`（«状态»行），另一行 `Sign = -1` （«取消»行），换句话说，数据项被折叠了。
 

@@ -1,4 +1,4 @@
-# Функция arrayJoin {#functions-arrayjoin}
+# Функция arrayJoin {#functions_arrayjoin}
 
 Это совсем необычная функция.
 

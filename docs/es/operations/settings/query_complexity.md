@@ -16,7 +16,7 @@ Puede tomar uno de dos valores: `throw` o `break`. Las restricciones en la agreg
 
 `any (only for group_by_overflow_mode)` – Continuar la agregación de las claves que se metieron en el conjunto, pero no añadir nuevas claves al conjunto.
 
-## Método de codificación de datos: {#settings-max-memory-usage}
+## Método de codificación de datos: {#settings_max_memory_usage}
 
 La cantidad máxima de RAM que se utiliza para ejecutar una consulta en un único servidor.
 
@@ -73,7 +73,7 @@ Un número máximo de claves únicas recibidas de la agregación. Esta configura
 Qué hacer cuando el número de claves únicas para la agregación excede el límite: ‘throw’, ‘break’, o ‘any’. Por defecto, tirar.
 Uso de la ‘any’ valor le permite ejecutar una aproximación de GROUP BY. La calidad de esta aproximación depende de la naturaleza estadística de los datos.
 
-## max\_bytes\_before\_external\_group\_by {#settings-max-bytes-before-external-group-by}
+## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
 Habilita o deshabilita la ejecución de `GROUP BY` en la memoria externa. Ver [GRUPO POR en memoria externa](../../query_language/select.md#select-group-by-in-external-memory).
 
@@ -96,7 +96,7 @@ Un número máximo de bytes antes de ordenar.
 
 Qué hacer si el número de filas recibidas antes de ordenar excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
 
-## max\_result\_rows {#setting-max-result-rows}
+## max\_result\_rows {#setting-max_result_rows}
 
 Límite en el número de filas en el resultado. También se comprueba si hay subconsultas y en servidores remotos cuando se ejecutan partes de una consulta distribuida.
 
@@ -223,7 +223,7 @@ Un número máximo de bytes (datos sin comprimir) que se pueden pasar a un servi
 
 Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
 
-## Método de codificación de datos: {#settings-max-rows-in-join}
+## Método de codificación de datos: {#settings-max_rows_in_join}
 
 Limita el número de filas de la tabla hash que se utiliza al unir tablas.
 
@@ -240,7 +240,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## Método de codificación de datos: {#settings-max-bytes-in-join}
+## Método de codificación de datos: {#settings-max_bytes_in_join}
 
 Limita el tamaño en bytes de la tabla hash utilizada al unir tablas.
 
@@ -257,7 +257,7 @@ Valores posibles:
 
 Valor predeterminado: 0.
 
-## join\_overflow\_mode {#settings-join-overflow-mode}
+## join\_overflow\_mode {#settings-join_overflow_mode}
 
 Define qué acción realiza ClickHouse cuando se alcanza cualquiera de los siguientes límites de combinación:
 

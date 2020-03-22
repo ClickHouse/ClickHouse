@@ -305,7 +305,7 @@ SELECT
 
 返回行所在结果集中的序列号。此函数仅考虑受影响的Block。
 
-## runningDifference(x) {#other-functions-runningdifference}
+## runningDifference(x) {#other_functions-runningdifference}
 
 计算数据块中相邻行的值之间的差异。
 对于第一行返回0，并为每个后续行返回与前一行的差异。

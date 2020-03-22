@@ -527,7 +527,7 @@ Resultado:
 └────────────┴───────┴───────────┴────────────────┘
 ```
 
-## EjecuciónDiferencia (x) {#other-functions-runningdifference}
+## EjecuciónDiferencia (x) {#other_functions-runningdifference}
 
 Calcula la diferencia entre los sucesivos valores de fila en el bloque de datos.
 Devuelve 0 para la primera fila y la diferencia con respecto a la fila anterior para cada fila subsiguiente.

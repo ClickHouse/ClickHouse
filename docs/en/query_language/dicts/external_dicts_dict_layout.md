@@ -78,7 +78,7 @@ or
 LAYOUT(FLAT())
 ```
 
-### hashed {#dicts-external-dicts-dict-layout-hashed}
+### hashed {#dicts-external_dicts_dict_layout-hashed}
 
 The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
 
@@ -98,7 +98,7 @@ or
 LAYOUT(HASHED())
 ```
 
-### sparse\_hashed {#dicts-external-dicts-dict-layout-sparse-hashed}
+### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
 Similar to `hashed`, but uses less memory in favor more CPU usage.
 

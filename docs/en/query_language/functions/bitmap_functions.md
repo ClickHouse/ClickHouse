@@ -8,7 +8,7 @@ RoaringBitmap is wrapped into a data structure while actual storage of Bitmap ob
 
 For more information on RoaringBitmap, see: [CRoaring](https://github.com/RoaringBitmap/CRoaring).
 
-## bitmapBuild {#bitmap-functions-bitmapbuild}
+## bitmapBuild {#bitmap_functions-bitmapbuild}
 
 Build a bitmap from unsigned integer array.
 
@@ -120,7 +120,7 @@ Result:
 └───────────────────────────┘
 ```
 
-## bitmapContains {#bitmap-functions-bitmapcontains}
+## bitmapContains {#bitmap_functions-bitmapcontains}
 
 Checks whether the bitmap contains an element.
 

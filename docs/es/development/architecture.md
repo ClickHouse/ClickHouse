@@ -24,7 +24,7 @@ Sin embargo, también es posible trabajar con valores individuales. Para represe
 
 Varias funciones en columnas se pueden implementar de una manera genérica, no eficiente utilizando `IColumn` para extraer `Field` valores, o de una manera especializada utilizando el conocimiento del diseño de la memoria interna de los datos en un `IColumn` aplicación. Para hacer esto, las funciones se convierten en un `IColumn` escriba y trate con la representación interna directamente. Por ejemplo, `ColumnUInt64` tiene el `getData` método que devuelve una referencia a una matriz interna, luego una rutina separada lee o llena esa matriz directamente. De hecho, tenemos “leaky abstractions” para permitir especializaciones eficientes de varias rutinas.
 
-## Tipos de datos {#data-types}
+## Tipos de datos {#data_types}
 
 `IDataType` es responsable de la serialización y deserialización: para leer y escribir fragmentos de columnas o valores individuales en formato binario o de texto. `IDataType` corresponde directamente a los tipos de datos en las tablas. Por ejemplo, heno `DataTypeUInt32`, `DataTypeDateTime`, `DataTypeString` y así sucesivamente.
 

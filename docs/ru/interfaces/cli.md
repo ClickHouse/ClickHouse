@@ -17,7 +17,7 @@ Connected to ClickHouse server version 19.17.1 revision 54428.
 
     ClickHouse client version is older than ClickHouse server. It may lack support for new features.
 
-## Использование {#cli-usage}
+## Использование {#cli_usage}
 
 Клиент может быть использован в интерактивном и не интерактивном (batch) режиме.
 Чтобы использовать batch режим, укажите параметр query, или отправьте данные в stdin (проверяется, что stdin - не терминал), или и то, и другое.
@@ -96,7 +96,7 @@ clickhouse-client --param_parName="[1, 2]"  -q "SELECT * FROM table WHERE a = {p
 $ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" -q "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
 ```
 
-## Конфигурирование {#interfaces-cli-configuration}
+## Конфигурирование {#interfaces_cli_configuration}
 
 В `clickhouse-client` можно передавать различные параметры (все параметры имеют значения по умолчанию) с помощью:
 

@@ -24,7 +24,7 @@ Nevertheless, it is possible to work with individual values as well. To represen
 
 Various functions on columns can be implemented in a generic, non-efficient way using `IColumn` methods to extract `Field` values, or in a specialized way using knowledge of inner memory layout of data in a specific `IColumn` implementation. To do this, functions are cast to a specific `IColumn` type and deal with internal representation directly. For example, `ColumnUInt64` has the `getData` method that returns a reference to an internal array, then a separate routine reads or fills that array directly. In fact, we have “leaky abstractions” to allow efficient specializations of various routines.
 
-## Data Types {#data-types}
+## Data Types {#data_types}
 
 `IDataType` is responsible for serialization and deserialization: for reading and writing chunks of columns or individual values in binary or text form. `IDataType` directly corresponds to data types in tables. For example, there are `DataTypeUInt32`, `DataTypeDateTime`, `DataTypeString` and so on.
 
@@ -191,4 +191,4 @@ In addition, each replica stores its state in ZooKeeper as the set of parts and 
 
 > The ClickHouse cluster consists of independent shards, and each shard consists of replicas. The cluster is not elastic, so after adding a new shard, data is not rebalanced between shards automatically. Instead, the cluster load will be uneven. This implementation gives you more control, and it is fine for relatively small clusters such as tens of nodes. But for clusters with hundreds of nodes that we are using in production, this approach becomes a significant drawback. We should implement a table engine that will span its data across the cluster with dynamically replicated regions that could be split and balanced between clusters automatically.
 
-[Original article](https://clickhouse.tech/docs/en/development/architecture/) <!--hide-->
+{## [Original article](https://clickhouse.tech/docs/en/development/architecture/) ##}

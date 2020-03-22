@@ -1,6 +1,6 @@
 # 机器学习函数 {#ji-qi-xue-xi-han-shu}
 
-## evalMLMethod (prediction) {#machine-learning-methods-evalmlmethod}
+## evalMLMethod (prediction) {#machine_learning_methods-evalmlmethod}
 
 使用拟合回归模型的预测请使用`evalMLMethod`函数。 请参阅`linearRegression`中的链接。
 

@@ -72,7 +72,7 @@ Todos los parámetros excepto `sign` y `version` el mismo significado que en `Me
 
 </details>
 
-## Derrumbar {#table-engines-versionedcollapsingmergetree}
+## Derrumbar {#table_engines-versionedcollapsingmergetree}
 
 ### Datos {#data}
 
@@ -120,7 +120,7 @@ Para averiguar por qué necesitamos dos filas para cada cambio, vea [Algoritmo](
 2.  Las matrices de largo crecimiento en columnas reducen la eficiencia del motor debido a la carga para escribir. Cuanto más sencillos sean los datos, mejor será la eficiencia.
 3.  `SELECT` Los resultados dependen en gran medida de la coherencia del historial de cambios de objetos. Sea preciso al preparar los datos para insertarlos. Puede obtener resultados impredecibles con datos incoherentes, como valores negativos para métricas no negativas, como la profundidad de la sesión.
 
-### Algoritmo {#table-engines-versionedcollapsingmergetree-algorithm}
+### Algoritmo {#table_engines-versionedcollapsingmergetree-algorithm}
 
 Cuando ClickHouse combina partes de datos, elimina cada par de filas que tienen la misma clave principal y versión y diferentes `Sign`. El orden de las filas no importa.
 

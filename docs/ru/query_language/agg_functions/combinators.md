@@ -1,4 +1,4 @@
-# Комбинаторы агрегатных функций {#aggregate-functions-combinators}
+# Комбинаторы агрегатных функций {#aggregate_functions_combinators}
 
 К имени агрегатной функции может быть приписан некоторый суффикс. При этом, работа агрегатной функции некоторым образом модифицируется.
 
@@ -33,11 +33,11 @@
 -   Комбинатор [-Merge](#aggregate_functions_combinators_merge).
 -   Комбинатор [-MergeState](#aggregate_functions_combinators_mergestate).
 
-## -Merge {#aggregate-functions-combinators-merge}
+## -Merge {#aggregate_functions_combinators-merge}
 
 В случае применения этого комбинатора, агрегатная функция будет принимать в качестве аргумента промежуточное состояние агрегации, доагрегировать (объединять вместе) эти состояния, и возвращать готовое значение.
 
-## -MergeState {#aggregate-functions-combinators-mergestate}
+## -MergeState {#aggregate_functions_combinators-mergestate}
 
 Выполняет слияние промежуточных состояний агрегации, аналогично комбинатору -Merge, но возвращает не готовое значение, а промежуточное состояние агрегации, аналогично комбинатору -State.
 

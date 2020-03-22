@@ -42,7 +42,7 @@ PRIMARY KEY Id
 -   `PRIMARY KEY` — [столбец с ключом](external_dicts_dict_structure.md#ext_dict_structure-key)
 -   `AttrName AttrType` — [столбец данных](external_dicts_dict_structure.md#ext_dict_structure-attributes). Можно задать несколько столбцов.
 
-## Ключ {#ext-dict-structure-key}
+## Ключ {#ext_dict_structure-key}
 
 ClickHouse поддерживает следующие виды ключей:
 
@@ -54,7 +54,7 @@ ClickHouse поддерживает следующие виды ключей:
 !!! warning "Обратите внимание"
     Ключ не надо дополнительно описывать в атрибутах.
 
-### Числовой ключ {#ext-dict-numeric-key}
+### Числовой ключ {#ext_dict-numeric-key}
 
 Тип: `UInt64`.
 
@@ -122,7 +122,7 @@ PRIMARY KEY field1, field2
 
 При запросе в функции `dictGet*` в качестве ключа передаётся кортеж. Пример: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-## Атрибуты {#ext-dict-structure-attributes}
+## Атрибуты {#ext_dict_structure-attributes}
 
 Пример конфигурации:
 

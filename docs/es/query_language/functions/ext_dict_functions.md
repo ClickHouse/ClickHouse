@@ -1,4 +1,4 @@
-# Funciones para trabajar con diccionarios externos {#ext-dict-functions}
+# Funciones para trabajar con diccionarios externos {#ext_dict_functions}
 
 Para obtener información sobre cómo conectar y configurar diccionarios externos, consulte [Diccionarios externos](../dicts/external_dicts.md).
 
@@ -154,7 +154,7 @@ dictIsIn('dict_name', child_id_expr, ancestor_id_expr)
 
 Tipo: `UInt8`.
 
-## Otras funciones {#ext-dict-functions-other}
+## Otras funciones {#ext_dict_functions-other}
 
 ClickHouse admite funciones especializadas que convierten los valores de atributo de diccionario a un tipo de datos específico, independientemente de la configuración del diccionario.
 

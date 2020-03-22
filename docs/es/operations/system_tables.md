@@ -6,7 +6,7 @@ Las tablas del sistema no tienen archivos con datos en el disco o archivos con m
 Las tablas del sistema son de solo lectura.
 Están ubicados en el ‘system’ basar.
 
-## sistema.asynchronous\_metrics {#system-tables-asynchronous-metrics}
+## sistema.asynchronous\_metrics {#system_tables-asynchronous_metrics}
 
 Contiene métricas que se calculan periódicamente en segundo plano. Por ejemplo, la cantidad de RAM en uso.
 
@@ -138,7 +138,7 @@ Esta tabla contiene una sola columna String llamada ‘name’ – el nombre de 
 Cada base de datos que el servidor conoce tiene una entrada correspondiente en la tabla.
 Esta tabla del sistema se utiliza para implementar el `SHOW DATABASES` consulta.
 
-## sistema.detached\_parts {#system-tables-detached-parts}
+## sistema.detached\_parts {#system_tables-detached_parts}
 
 Contiene información sobre piezas separadas de [Método de codificación de datos:](table_engines/mergetree.md) tabla. El `reason` columna especifica por qué se separó la pieza. Para las piezas separadas por el usuario, el motivo está vacío. Tales partes se pueden unir con [ALTER TABLE ATTACH PARTITION\|PARTE](../query_language/query_language/alter/#alter_attach-partition) comando. Para obtener la descripción de otras columnas, consulte [sistema.parte](#system_tables-parts). Si el nombre de la pieza no es válido, los valores de algunas columnas pueden ser `NULL`. Tales partes se pueden eliminar con [ALTER MESA GOTA PARTE DESMONTADA](../query_language/query_language/alter/#alter_drop-detached).
 
@@ -164,7 +164,7 @@ Columna:
 
 Tenga en cuenta que la cantidad de memoria utilizada por el diccionario no es proporcional a la cantidad de elementos almacenados en él. Por lo tanto, para los diccionarios planos y en caché, todas las celdas de memoria se asignan previamente, independientemente de qué tan lleno esté realmente el diccionario.
 
-## sistema.evento {#system-tables-events}
+## sistema.evento {#system_tables-events}
 
 Contiene información sobre el número de eventos que se han producido en el sistema. Por ejemplo, en la tabla, puede encontrar cuántos `SELECT` las consultas se procesaron desde que se inició el servidor ClickHouse.
 
@@ -242,7 +242,7 @@ Columna:
 -   `bytes_written_uncompressed` (UInt64) — Número de bytes escritos, sin comprimir.
 -   `rows_written` (UInt64) — Número de filas escritas.
 
-## sistema.métricas {#system-tables-metrics}
+## sistema.métricas {#system_tables-metrics}
 
 Contiene métricas que pueden calcularse instantáneamente o tener un valor actual. Por ejemplo, el número de consultas procesadas simultáneamente o el retraso de réplica actual. Esta tabla está siempre actualizada.
 
@@ -282,7 +282,7 @@ SELECT * FROM system.metrics LIMIT 10
 -   [sistema.metric\_log](#system_tables-metric_log) — Contiene un historial de valores de métricas de tablas `system.metrics` , . `system.events`.
 -   [Monitoreo](monitoring.md) — Conceptos básicos de monitoreo ClickHouse.
 
-## sistema.metric\_log {#system-tables-metric-log}
+## sistema.metric\_log {#system_tables-metric_log}
 
 Contiene el historial de valores de métricas de tablas `system.metrics` y `system.events`, periódicamente enjuagado al disco.
 Para activar la recopilación de historial de métricas en `system.metric_log`, crear `/etc/clickhouse-server/config.d/metric_log.xml` con el siguiente contenido:
@@ -355,7 +355,7 @@ Esta tabla contiene una sola fila con una ‘dummy’ Columna UInt8 que contiene
 Esta tabla se utiliza si una consulta SELECT no especifica la cláusula FROM.
 Esto es similar a la tabla DUAL que se encuentra en otros DBMS.
 
-## sistema.parte {#system-tables-parts}
+## sistema.parte {#system_tables-parts}
 
 Contiene información sobre partes de [Método de codificación de datos:](table_engines/mergetree.md) tabla.
 
@@ -436,7 +436,7 @@ Columna:
 
 -   `marks_size` (`UInt64`) – Alias para `marks_bytes`.
 
-## sistema.part\_log {#system-tables-part-log}
+## sistema.part\_log {#system_tables-part-log}
 
 El `system.part_log` se crea sólo si el [part\_log](server_settings/settings.md#server_settings-part-log) se especifica la configuración del servidor.
 
@@ -469,7 +469,7 @@ El `system.part_log` contiene las siguientes columnas:
 
 El `system.part_log` se crea después de la primera inserción de datos `MergeTree` tabla.
 
-## sistema.proceso {#system-tables-processes}
+## sistema.proceso {#system_tables-processes}
 
 Esta tabla del sistema se utiliza para implementar el `SHOW PROCESSLIST` consulta.
 
@@ -512,7 +512,7 @@ Columna:
 -   `source_file` (`LowCardinality(String)`) - Archivo de origen desde el que se realizó el registro.
 -   `source_line` (`UInt64`) - Línea de origen desde la que se realizó el registro.
 
-## sistema.query\_log {#system-tables-query-log}
+## sistema.query\_log {#system_tables-query_log}
 
 Contiene información sobre la ejecución de consultas. Para cada consulta, puede ver la hora de inicio del procesamiento, la duración del procesamiento, los mensajes de error y otra información.
 
@@ -598,7 +598,7 @@ Cuando la tabla se elimina manualmente, se creará automáticamente sobre la mar
 
 Puede especificar una clave de partición arbitraria `system.query_log` mesa en el [query\_log](server_settings/settings.md#server_settings-query-log) configuración del servidor (consulte el `partition_by` parámetro).
 
-## sistema.Sistema abierto. {#system-tables-query-thread-log}
+## sistema.Sistema abierto. {#system_tables-query-thread-log}
 
 La tabla contiene información sobre cada subproceso de ejecución de consultas.
 
@@ -663,7 +663,7 @@ Cuando la tabla se elimina manualmente, se creará automáticamente sobre la mar
 
 Puede especificar una clave de partición arbitraria `system.query_thread_log` mesa en el [Sistema abierto.](server_settings/settings.md#server_settings-query-thread-log) configuración del servidor (consulte el `partition_by` parámetro).
 
-## sistema.trace\_log {#system-tables-trace-log}
+## sistema.trace\_log {#system_tables-trace_log}
 
 Contiene seguimientos de pila recopilados por el generador de perfiles de consultas de muestreo.
 
@@ -710,7 +710,7 @@ query_id:      acc4d61f-5bd1-4a3e-bc91-2180be37c915
 trace:         [94222141367858,94222152240175,94222152325351,94222152329944,94222152330796,94222151449980,94222144088167,94222151682763,94222144088167,94222151682763,94222144088167,94222144058283,94222144059248,94222091840750,94222091842302,94222091831228,94222189631488,140509950166747,140509942945935]
 ```
 
-## sistema.Replica {#system-tables-replicas}
+## sistema.Replica {#system_tables-replicas}
 
 Contiene información y estado de las tablas replicadas que residen en el servidor local.
 Esta tabla se puede utilizar para el monitoreo. La tabla contiene una fila para cada tabla Replicated\*.
@@ -991,7 +991,7 @@ pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
 
-## sistema.mutación {#system-tables-mutations}
+## sistema.mutación {#system_tables-mutations}
 
 La tabla contiene información sobre [mutación](../query_language/alter.md#alter-mutations) de las tablas MergeTree y su progreso. Cada comando de mutación está representado por una sola fila. La tabla tiene las siguientes columnas:
 
@@ -1017,7 +1017,7 @@ Si hubo problemas con la mutación de algunas partes, las siguientes columnas co
 
 **Método de codificación de datos:** - El mensaje de excepción que causó el error de mutación de parte más reciente.
 
-## sistema.Discoteca {#system-tables-disks}
+## sistema.Discoteca {#system_tables-disks}
 
 Contiene información sobre los discos definidos en el [configuración del servidor](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
@@ -1029,7 +1029,7 @@ Columna:
 -   `total_space` ([UInt64](../data_types/int_uint.md)) — Volumen del disco en bytes.
 -   `keep_free_space` ([UInt64](../data_types/int_uint.md)) — Cantidad de espacio en disco que debe permanecer libre en el disco en bytes. Definido en el `keep_free_space_bytes` parámetro de configuración del disco.
 
-## sistema.almacenamiento\_policies {#system-tables-storage-policies}
+## sistema.almacenamiento\_policies {#system_tables-storage_policies}
 
 Contiene información sobre las directivas de almacenamiento y los volúmenes [configuración del servidor](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
