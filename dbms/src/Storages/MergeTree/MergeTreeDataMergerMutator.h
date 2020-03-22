@@ -154,10 +154,49 @@ private:
     static NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension);
 
     /// Get the columns list of the resulting part in the same order as all_columns.
-    static NamesAndTypesList getColumnsForNewDataPart(MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns);
+    NamesAndTypesList getColumnsForNewDataPart(
+        MergeTreeData::DataPartPtr source_part,
+        const Block & updated_header,
+        NamesAndTypesList all_columns,
+        const MutationCommands & commands_for_removes) const;
 
     bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
 
+    /// Return set of indices which should be recalculated during mutation also
+    /// wraps input stream into additional expression stream
+    std::set<MergeTreeIndexPtr> getIndicesToRecalc(
+        BlockInputStreamPtr & input_stream,
+        StoragePtr storage_from_source_part,
+        const NamesAndTypesList & updated_columns,
+        const Context & context) const;
+
+    /// Override all columns of new part using mutating_stream
+    void mutateAllPartColumns(
+        MergeTreeData::MutableDataPartPtr new_data_part,
+        BlockInputStreamPtr mutating_stream,
+        time_t time_of_mutation,
+        const CompressionCodecPtr & codec,
+        MergeListEntry & merge_entry,
+        bool need_remove_expired_values) const;
+
+    /// Mutate some columns of source part with mutation_stream
+    void mutateSomePartColumns(
+        const MergeTreeDataPartPtr & source_part,
+        const std::set<MergeTreeIndexPtr> & indices_to_recalc,
+        const Block & mutation_header,
+        MergeTreeData::MutableDataPartPtr new_data_part,
+        BlockInputStreamPtr mutating_stream,
+        time_t time_of_mutation,
+        const CompressionCodecPtr & codec,
+        MergeListEntry & merge_entry,
+        bool need_remove_expired_values) const;
+
+    /// Initialize and write to disk new part fields like checksums, columns,
+    /// etc.
+    void finalizeMutatedPart(
+        const MergeTreeDataPartPtr & source_part,
+        MergeTreeData::MutableDataPartPtr new_data_part,
+        bool need_remove_expired_values) const;
 
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
@@ -177,6 +216,9 @@ private:
     MergeAlgorithm chooseMergeAlgorithm(
         const MergeTreeData::DataPartsVector & parts,
         size_t rows_upper_bound, const NamesAndTypesList & gathering_columns, bool deduplicate, bool need_remove_expired_values) const;
+
+    bool checkOperationIsNotCanceled(const MergeListEntry & merge_entry) const;
+
 
 private:
     MergeTreeData & data;

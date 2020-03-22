@@ -60,10 +60,6 @@ public:
 
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
 
-    NameToNameMap createRenameMapForAlter(
-        AlterAnalysisResult & analysis_result,
-        const NamesAndTypesList & old_columns) const override;
-
     ~MergeTreeDataPartCompact() override;
 
 private:
