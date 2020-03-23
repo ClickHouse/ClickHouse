@@ -1,12 +1,12 @@
-# Функции хэширования
+# Функции хэширования {#funktsii-kheshirovaniia}
 
 Функции хэширования могут использоваться для детерминированного псевдослучайного разбрасывания элементов.
 
-## halfMD5 {#hash_functions-halfmd5}
+## halfMD5 {#hash-functions-halfmd5}
 
 [Интерпретирует](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) все входные параметры как строки и вычисляет хэш [MD5](https://ru.wikipedia.org/wiki/MD5) для каждой из них. Затем объединяет хэши, берет первые 8 байт хэша результирующей строки и интерпретирует их как значение типа `UInt64` с big-endian порядком байтов.
 
-```sql
+``` sql
 halfMD5(par1, ...)
 ```
 
@@ -23,11 +23,11 @@ halfMD5(par1, ...)
 
 **Пример**
 
-```sql
+``` sql
 SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS halfMD5hash, toTypeName(halfMD5hash) AS type
 ```
 
-```text
+``` text
 ┌────────halfMD5hash─┬─type───┐
 │ 186182704141653334 │ UInt64 │
 └────────────────────┴────────┘
@@ -43,7 +43,7 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 
 Генерирует 64-х битное значение [SipHash](https://131002.net/siphash/).
 
-```sql
+``` sql
 sipHash64(par1,...)
 ```
 
@@ -51,10 +51,10 @@ sipHash64(par1,...)
 
 Функция [интерпретирует](../../query_language/functions/type_conversion_functions.md#type_conversion_functions-reinterpretAsString) все входные параметры как строки и вычисляет хэш MD5 для каждой из них. Затем комбинирует хэши по следующему алгоритму.
 
-1. После хэширования всех входных параметров функция получает массив хэшей.
-2. Функция принимает первый и второй элементы и вычисляет хэш для массива из них.
-3. Затем функция принимает хэш-значение, вычисленное на предыдущем шаге, и третий элемент исходного хэш-массива, и вычисляет хэш для массива из них.
-4. Предыдущий шаг повторяется для всех остальных элементов исходного хэш-массива.
+1.  После хэширования всех входных параметров функция получает массив хэшей.
+2.  Функция принимает первый и второй элементы и вычисляет хэш для массива из них.
+3.  Затем функция принимает хэш-значение, вычисленное на предыдущем шаге, и третий элемент исходного хэш-массива, и вычисляет хэш для массива из них.
+4.  Предыдущий шаг повторяется для всех остальных элементов исходного хэш-массива.
 
 **Параметры**
 
@@ -66,11 +66,11 @@ sipHash64(par1,...)
 
 **Пример**
 
-```sql
+``` sql
 SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type
 ```
 
-```text
+``` text
 ┌──────────────SipHash─┬─type───┐
 │ 13726873534472839665 │ UInt64 │
 └──────────────────────┴────────┘
@@ -82,15 +82,15 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 Принимает аргумент типа String. Возвращает FixedString(16).
 Отличается от sipHash64 тем, что финальный xor-folding состояния делается только до 128 бит.
 
-## cityHash64
+## cityHash64 {#cityhash64}
 
 Генерирует 64-х битное значение [CityHash](https://github.com/google/cityhash).
 
-```sql
+``` sql
 cityHash64(par1,...)
 ```
 
-Это не криптографическая хэш-функция. Она использует CityHash алгоритм  для строковых параметров и зависящую от реализации быструю некриптографическую хэш-функцию для параметров с другими типами данных. Функция использует комбинатор CityHash для получения конечных результатов.
+Это не криптографическая хэш-функция. Она использует CityHash алгоритм для строковых параметров и зависящую от реализации быструю некриптографическую хэш-функцию для параметров с другими типами данных. Функция использует комбинатор CityHash для получения конечных результатов.
 
 **Параметры**
 
@@ -104,10 +104,11 @@ cityHash64(par1,...)
 
 Пример вызова:
 
-```sql
+``` sql
 SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type
 ```
-```text
+
+``` text
 ┌─────────────CityHash─┬─type───┐
 │ 12072650598913549138 │ UInt64 │
 └──────────────────────┴────────┘
@@ -115,47 +116,47 @@ SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 А вот так вы можете вычислить чексумму всей таблицы с точностью до порядка строк:
 
-```sql
+``` sql
 SELECT groupBitXor(cityHash64(*)) FROM table
 ```
 
-## intHash32
+## intHash32 {#inthash32}
 
 Вычисляет 32-битный хэш-код от целого числа любого типа.
 Это сравнительно быстрая не криптографическая хэш-функция среднего качества для чисел.
 
-## intHash64
+## intHash64 {#inthash64}
 
 Вычисляет 64-битный хэш-код от целого числа любого типа.
 Работает быстрее, чем intHash32. Качество среднее.
 
-## SHA1
+## SHA1 {#sha1}
 
-## SHA224
+## SHA224 {#sha224}
 
-## SHA256
+## SHA256 {#sha256}
 
 Вычисляет SHA-1, SHA-224, SHA-256 от строки и возвращает полученный набор байт в виде FixedString(20), FixedString(28), FixedString(32).
 Функция работает достаточно медленно (SHA-1 - примерно 5 миллионов коротких строк в секунду на одном процессорном ядре, SHA-224 и SHA-256 - примерно 2.2 миллионов).
 Рекомендуется использовать эти функции лишь в тех случаях, когда вам нужна конкретная хэш-функция и вы не можете её выбрать.
 Даже в этих случаях, рекомендуется применять функцию оффлайн - заранее вычисляя значения при вставке в таблицу, вместо того, чтобы применять её при SELECT-ах.
 
-## URLHash(url\[, N\])
+## URLHash(url\[, N\]) {#urlhashurl-n}
 
 Быстрая не криптографическая хэш-функция неплохого качества для строки, полученной из URL путём некоторой нормализации.
 `URLHash(s)` - вычислить хэш от строки без одного завершающего символа `/`, `?` или `#` на конце, если там такой есть.
 `URLHash(s, N)` - вычислить хэш от строки до N-го уровня в иерархии URL, без одного завершающего символа `/`, `?` или `#` на конце, если там такой есть.
 Уровни аналогичные URLHierarchy. Функция специфична для Яндекс.Метрики.
 
-## farmHash64
+## farmHash64 {#farmhash64}
 
 Генерирует 64-х битное значение [FarmHash](https://github.com/google/farmhash).
 
-```sql
+``` sql
 farmHash64(par1, ...)
 ```
 
-Из всех [доступных методов](https://github.com/google/farmhash/blob/master/src/farmhash.h)  функция использует `Hash64`.
+Из всех [доступных методов](https://github.com/google/farmhash/blob/master/src/farmhash.h) функция использует `Hash64`.
 
 **Параметры**
 
@@ -167,11 +168,11 @@ farmHash64(par1, ...)
 
 **Пример**
 
-```sql
+``` sql
 SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type
 ```
 
-```text
+``` text
 ┌─────────────FarmHash─┬─type───┐
 │ 17790458267262532859 │ UInt64 │
 └──────────────────────┴────────┘
@@ -181,7 +182,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 
 Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки. `JavaHash` не отличается ни скоростью, ни качеством, поэтому эту функцию следует считать устаревшей. Используйте эту функцию, если вам необходимо получить значение хэша по такому же алгоритму.
 
-```sql
+``` sql
 SELECT javaHash('');
 ```
 
@@ -195,13 +196,13 @@ SELECT javaHash('');
 
 Запрос:
 
-```sql
+``` sql
 SELECT javaHash('Hello, world!');
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─javaHash('Hello, world!')─┐
 │               -1880044555 │
 └───────────────────────────┘
@@ -211,15 +212,15 @@ SELECT javaHash('Hello, world!');
 
 Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки, при допущении, что строка представлена в кодировке `UTF-16LE`.
 
-**Синтаксис** 
+**Синтаксис**
 
-```sql
+``` sql
 javaHashUTF16LE(stringUtf16le)
 ```
 
 **Параметры**
 
-- `stringUtf16le` —  строка в  `UTF-16LE`.
+-   `stringUtf16le` — строка в `UTF-16LE`.
 
 **Возвращаемое значение**
 
@@ -233,27 +234,27 @@ javaHashUTF16LE(stringUtf16le)
 
 Запрос:
 
-```sql
+``` sql
 SELECT javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─javaHashUTF16LE(convertCharset('test', 'utf-8', 'utf-16le'))─┐
 │                                                      3556498 │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## hiveHash {#hash_functions-hivehash}
+## hiveHash {#hash-functions-hivehash}
 
 Вычисляет `HiveHash` от строки.
 
-```sql
+``` sql
 SELECT hiveHash('');
 ```
 
-`HiveHash` — это результат [JavaHash](#hash_functions-javahash) с обнулённым битом знака числа. Функция используется в [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) вплоть до версии  3.0.
+`HiveHash` — это результат [JavaHash](#hash_functions-javahash) с обнулённым битом знака числа. Функция используется в [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) вплоть до версии 3.0.
 
 **Возвращаемое значение**
 
@@ -265,23 +266,23 @@ SELECT hiveHash('');
 
 Запрос:
 
-```sql
+``` sql
 SELECT hiveHash('Hello, world!');
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─hiveHash('Hello, world!')─┐
 │                 267439093 │
 └───────────────────────────┘
 ```
 
-## metroHash64
+## metroHash64 {#metrohash64}
 
-Генерирует 64-х битное  значение [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/).
+Генерирует 64-х битное значение [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/).
 
-```sql
+``` sql
 metroHash64(par1, ...)
 ```
 
@@ -295,27 +296,27 @@ metroHash64(par1, ...)
 
 **Пример**
 
-```sql
+``` sql
 SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MetroHash, toTypeName(MetroHash) AS type
 ```
 
-```text
+``` text
 ┌────────────MetroHash─┬─type───┐
 │ 14235658766382344533 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
-## jumpConsistentHash
+## jumpConsistentHash {#jumpconsistenthash}
 
 Вычисляет JumpConsistentHash от значения типа UInt64.
 Имеет два параметра: ключ типа UInt64 и количество бакетов. Возвращает значение типа Int32.
 Дополнительные сведения смотрите по ссылке: [JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## murmurHash2_32, murmurHash2_64
+## murmurHash2\_32, murmurHash2\_64 {#murmurhash2-32-murmurhash2-64}
 
 Генерирует значение [MurmurHash2](https://github.com/aappleby/smhasher).
 
-```sql
+``` sql
 murmurHash2_32(par1, ...)
 murmurHash2_64(par1, ...)
 ```
@@ -326,26 +327,26 @@ murmurHash2_64(par1, ...)
 
 **Возвращаемое значение**
 
-- Функция `murmurHash2_32` возвращает значение типа [UInt32](../../data_types/int_uint.md).
-- Функция `murmurHash2_64` возвращает значение типа [UInt64](../../data_types/int_uint.md).
+-   Функция `murmurHash2_32` возвращает значение типа [UInt32](../../data_types/int_uint.md).
+-   Функция `murmurHash2_64` возвращает значение типа [UInt64](../../data_types/int_uint.md).
 
 **Пример**
 
-```sql
+``` sql
 SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash2, toTypeName(MurmurHash2) AS type
 ```
 
-```text
+``` text
 ┌──────────MurmurHash2─┬─type───┐
 │ 11832096901709403633 │ UInt64 │
 └──────────────────────┴────────┘
 ```
 
-## murmurHash3_32, murmurHash3_64
+## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
 
 Генерирует значение [MurmurHash3](https://github.com/aappleby/smhasher).
 
-```sql
+``` sql
 murmurHash3_32(par1, ...)
 murmurHash3_64(par1, ...)
 ```
@@ -356,32 +357,32 @@ murmurHash3_64(par1, ...)
 
 **Возвращаемое значение**
 
-- Функция `murmurHash3_32` возвращает значение типа [UInt32](../../data_types/int_uint.md).
-- Функция `murmurHash3_64` возвращает значение типа [UInt64](../../data_types/int_uint.md).
+-   Функция `murmurHash3_32` возвращает значение типа [UInt32](../../data_types/int_uint.md).
+-   Функция `murmurHash3_64` возвращает значение типа [UInt64](../../data_types/int_uint.md).
 
 **Пример**
 
-```sql
+``` sql
 SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS MurmurHash3, toTypeName(MurmurHash3) AS type
 ```
 
-```text
+``` text
 ┌─MurmurHash3─┬─type───┐
 │     2152717 │ UInt32 │
 └─────────────┴────────┘
 ```
 
-## murmurHash3_128
+## murmurHash3\_128 {#murmurhash3-128}
 
 Генерирует значение [MurmurHash3](https://github.com/aappleby/smhasher).
 
-```sql
+``` sql
 murmurHash3_128( expr )
 ```
 
 **Параметры**
 
-- `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее значение типа[String](../../data_types/string.md).
+-   `expr` — [выражение](../syntax.md#syntax-expressions) возвращающее значение типа[String](../../data_types/string.md).
 
 **Возвращаемое значение**
 
@@ -389,21 +390,21 @@ murmurHash3_128( expr )
 
 **Пример**
 
-```sql
+``` sql
 SELECT murmurHash3_128('example_string') AS MurmurHash3, toTypeName(MurmurHash3) AS type
 ```
 
-```text
+``` text
 ┌─MurmurHash3──────┬─type────────────┐
 │ 6�1�4"S5KT�~~q │ FixedString(16) │
 └──────────────────┴─────────────────┘
 ```
 
-## xxHash32, xxHash64 {#hash_functions-xxhash32-xxhash64}
+## xxHash32, xxHash64 {#hash-functions-xxhash32-xxhash64}
 
 Вычисляет `xxHash` от строки. Предлагается в двух вариантах: 32 и 64 бита.
 
-```sql
+``` sql
 SELECT xxHash32('');
 
 OR
@@ -421,13 +422,13 @@ SELECT xxHash64('');
 
 Запрос:
 
-```sql
+``` sql
 SELECT xxHash32('Hello, world!');
 ```
 
 Ответ:
 
-```text
+``` text
 ┌─xxHash32('Hello, world!')─┐
 │                 834093149 │
 └───────────────────────────┘
@@ -435,6 +436,6 @@ SELECT xxHash32('Hello, world!');
 
 **Смотрите также**
 
-- [xxHash](http://cyan4973.github.io/xxHash/).
+-   [xxHash](http://cyan4973.github.io/xxHash/).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/hash_functions/) <!--hide-->

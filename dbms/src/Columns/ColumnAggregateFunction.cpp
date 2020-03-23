@@ -93,13 +93,13 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
 
-    auto ML_function = func.get();
-    if (ML_function)
+    auto machine_learning_function = func.get();
+    if (machine_learning_function)
     {
         if (data.size() == 1)
         {
             /// Case for const column. Predict using single model.
-            ML_function->predictValues(data[0], *res, block, 0, block.rows(), arguments, context);
+            machine_learning_function->predictValues(data[0], *res, block, 0, block.rows(), arguments, context);
         }
         else
         {
@@ -107,7 +107,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
             size_t row_num = 0;
             for (auto val : data)
             {
-                ML_function->predictValues(val, *res, block, row_num, 1, arguments, context);
+                machine_learning_function->predictValues(val, *res, block, row_num, 1, arguments, context);
                 ++row_num;
             }
         }
@@ -522,7 +522,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     size_t num_rows = size();
 
     {
-        size_t reserve_size = num_rows / num_columns * 1.1; /// 1.1 is just a guess. Better to use n-sigma rule.
+        size_t reserve_size = double(num_rows) / num_columns * 1.1; /// 1.1 is just a guess. Better to use n-sigma rule.
 
         if (reserve_size > 1)
             for (auto & column : columns)
@@ -597,8 +597,9 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
-    : foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-      func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
+    : COWHelper<IColumn, ColumnAggregateFunction>(src_),
+    foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
+    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {
 }
 

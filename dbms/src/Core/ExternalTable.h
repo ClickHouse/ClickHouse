@@ -66,8 +66,6 @@ protected:
     /// Function for debugging information output
     void write();
 
-    static std::vector<std::string> split(const std::string & s, const std::string & d);
-
     /// Construct the `structure` vector from the text field `structure`
     virtual void parseStructureFromStructureField(const std::string & argument);
 

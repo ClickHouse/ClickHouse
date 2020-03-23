@@ -5,10 +5,15 @@
 
 namespace DB
 {
+class ASTSettingsProfileElements;
+
+
 /** CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   *
   * ALTER ROLE [IF EXISTS] name
-  *      [RENAME TO new_name]
+  *     [RENAME TO new_name]
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   */
 class ASTCreateRoleQuery : public IAST
 {
@@ -23,8 +28,10 @@ public:
     String name;
     String new_name;
 
+    std::shared_ptr<ASTSettingsProfileElements> settings;
+
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 };
 }

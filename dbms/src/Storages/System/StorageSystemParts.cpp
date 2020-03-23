@@ -118,11 +118,7 @@ void StorageSystemParts::processNextStorage(MutableColumns & columns_, const Sto
             columns_[i++]->insert(part->stateString());
 
         MinimalisticDataPartChecksums helper;
-        {
-            /// TODO:IMergeTreeDataPart structure is too error-prone.
-            std::shared_lock<std::shared_mutex> lock(part->columns_lock);
-            helper.computeTotalChecksums(part->checksums);
-        }
+        helper.computeTotalChecksums(part->checksums);
 
         auto checksum = helper.hash_of_all_files;
         columns_[i++]->insert(getHexUIntLowercase(checksum.first) + getHexUIntLowercase(checksum.second));

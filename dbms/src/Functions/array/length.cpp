@@ -20,12 +20,12 @@ struct LengthImpl
             res[i] = offsets[i] - 1 - offsets[i - 1];
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars & /*data*/, size_t n, UInt64 & res)
+    static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t n, UInt64 & res)
     {
         res = n;
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars & /*data*/, size_t /*n*/, PaddedPODArray<UInt64> & /*res*/)
+    static void vectorFixedToVector(const ColumnString::Chars & /*data*/, size_t /*n*/, PaddedPODArray<UInt64> & /*res*/)
     {
     }
 

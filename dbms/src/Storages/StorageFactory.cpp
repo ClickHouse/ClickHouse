@@ -5,7 +5,7 @@
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <IO/WriteHelpers.h>
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {
@@ -123,7 +123,7 @@ StoragePtr StorageFactory::get(
                     throw Exception("Unknown table engine " + name, ErrorCodes::UNKNOWN_STORAGE);
             }
 
-            auto checkFeature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
+            auto check_feature = [&](String feature_description, FeatureMatcherFn feature_matcher_fn)
             {
                 if (!feature_matcher_fn(it->second.features))
                 {
@@ -142,22 +142,22 @@ StoragePtr StorageFactory::get(
             };
 
             if (storage_def->settings)
-                checkFeature(
+                check_feature(
                     "SETTINGS clause",
                     [](StorageFeatures features) { return features.supports_settings; });
 
             if (storage_def->partition_by || storage_def->primary_key || storage_def->order_by || storage_def->sample_by)
-                checkFeature(
+                check_feature(
                     "PARTITION_BY, PRIMARY_KEY, ORDER_BY or SAMPLE_BY clauses",
                     [](StorageFeatures features) { return features.supports_sort_order; });
 
             if (storage_def->ttl_table || !columns.getColumnTTLs().empty())
-                checkFeature(
+                check_feature(
                     "TTL clause",
                     [](StorageFeatures features) { return features.supports_ttl; });
 
             if (query.columns_list && query.columns_list->indices && !query.columns_list->indices->children.empty())
-                checkFeature(
+                check_feature(
                     "skipping indices",
                     [](StorageFeatures features) { return features.supports_skipping_indices; });
         }

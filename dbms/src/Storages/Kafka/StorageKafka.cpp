@@ -188,11 +188,6 @@ void StorageKafka::shutdown()
     task->deactivate();
 }
 
-void StorageKafka::updateDependencies()
-{
-    task->activateAndSchedule();
-}
-
 
 void StorageKafka::pushReadBuffer(ConsumerBufferPtr buffer)
 {
@@ -291,14 +286,14 @@ void StorageKafka::updateConfiguration(cppkafka::Configuration & conf)
 bool StorageKafka::checkDependencies(const StorageID & table_id)
 {
     // Check if all dependencies are attached
-    auto dependencies = global_context.getDependencies(table_id);
+    auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
     if (dependencies.empty())
         return true;
 
     // Check the dependencies are ready?
     for (const auto & db_tab : dependencies)
     {
-        auto table = global_context.tryGetTable(db_tab);
+        auto table = DatabaseCatalog::instance().tryGetTable(db_tab);
         if (!table)
             return false;
 
@@ -321,19 +316,21 @@ void StorageKafka::threadFunc()
     {
         auto table_id = getStorageID();
         // Check if at least one direct dependency is attached
-        auto dependencies = global_context.getDependencies(table_id);
-
-        // Keep streaming as long as there are attached views and streaming is not cancelled
-        while (!stream_cancelled && num_created_consumers > 0 && !dependencies.empty())
+        size_t dependencies_count = DatabaseCatalog::instance().getDependencies(table_id).size();
+        if (dependencies_count)
         {
-            if (!checkDependencies(table_id))
-                break;
+            // Keep streaming as long as there are attached views and streaming is not cancelled
+            while (!stream_cancelled && num_created_consumers > 0)
+            {
+                if (!checkDependencies(table_id))
+                    break;
 
-            LOG_DEBUG(log, "Started streaming to " << dependencies.size() << " attached views");
+                LOG_DEBUG(log, "Started streaming to " << dependencies_count << " attached views");
 
-            // Reschedule if not limited
-            if (!streamToViews())
-                break;
+                // Reschedule if not limited
+                if (!streamToViews())
+                    break;
+            }
         }
     }
     catch (...)
@@ -350,14 +347,13 @@ void StorageKafka::threadFunc()
 bool StorageKafka::streamToViews()
 {
     auto table_id = getStorageID();
-    auto table = global_context.getTable(table_id);
+    auto table = DatabaseCatalog::instance().getTable(table_id);
     if (!table)
         throw Exception("Engine table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::LOGICAL_ERROR);
 
     // Create an INSERT query for streaming data
     auto insert = std::make_shared<ASTInsertQuery>();
-    insert->database = table_id.database_name;
-    insert->table = table_id.table_name;
+    insert->table_id = table_id;
 
     const Settings & settings = global_context.getSettingsRef();
     size_t block_size = max_block_size;
@@ -435,7 +431,7 @@ void registerStorageKafka(StorageFactory & factory)
         // Check arguments and settings
         #define CHECK_KAFKA_STORAGE_ARGUMENT(ARG_NUM, PAR_NAME)            \
             /* One of the four required arguments is not specified */      \
-            if (args_count < ARG_NUM && ARG_NUM <= 4 &&                    \
+            if (args_count < (ARG_NUM) && (ARG_NUM) <= 4 &&                    \
                 !kafka_settings.PAR_NAME.changed)                          \
             {                                                              \
                 throw Exception(                                           \
@@ -446,7 +442,7 @@ void registerStorageKafka(StorageFactory & factory)
             /* The same argument is given in two places */                 \
             if (has_settings &&                                            \
                 kafka_settings.PAR_NAME.changed &&                         \
-                args_count >= ARG_NUM)                                     \
+                args_count >= (ARG_NUM))                                     \
             {                                                              \
                 throw Exception(                                           \
                     "The argument №" #ARG_NUM " of storage Kafka "         \

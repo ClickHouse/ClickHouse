@@ -38,7 +38,6 @@
 #include <Parsers/parseQuery.h>
 
 #include <Access/AccessFlags.h>
-#include <Access/RowPolicyContext.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -52,6 +51,7 @@
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/Join.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -115,6 +115,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -264,13 +265,24 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        CrossToInnerJoinVisitor::Data cross_to_inner{joined_tables.tablesWithColumns(), context->getCurrentDatabase()};
+        ASTSelectQuery & select = getSelectQuery();
+
+        Aliases aliases;
+        if (ASTPtr with = select.with())
+            QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
+        QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
+
+        CrossToInnerJoinVisitor::Data cross_to_inner{joined_tables.tablesWithColumns(), aliases, context->getCurrentDatabase()};
         CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
 
-        JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context};
+        size_t rewriter_version = settings.multiple_joins_rewriter_version;
+        if (!rewriter_version || rewriter_version > 2)
+            throw Exception("Bad multiple_joins_rewriter_version setting value: " + settings.multiple_joins_rewriter_version.toString(),
+                            ErrorCodes::INVALID_SETTING_VALUE);
+        JoinToSubqueryTransformVisitor::Data join_to_subs_data{joined_tables.tablesWithColumns(), aliases, rewriter_version};
         JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
 
-        joined_tables.reset(getSelectQuery());
+        joined_tables.reset(select);
         joined_tables.resolveTables();
 
         if (storage && joined_tables.isLeftTableSubquery())
@@ -310,7 +322,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (!options.only_analyze)
         {
-            if (query.sample_size() && (input || input_pipe || !storage || !storage->supportsSampling()))
+            if (query.sampleSize() && (input || input_pipe || !storage || !storage->supportsSampling()))
                 throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
             if (query.final() && (input || input_pipe || !storage || !storage->supportsFinal()))
@@ -321,8 +333,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
             /// Save the new temporary tables in the query context
             for (const auto & it : query_analyzer->getExternalTables())
-                if (!context->tryGetExternalTable(it.first))
-                    context->addExternalTable(it.first, it.second);
+                if (!context->tryResolveStorageID({"", it.first}, Context::ResolveExternal))
+                    context->addExternalTable(it.first, std::move(*it.second));
         }
 
         if (!options.only_analyze || options.modify_inplace)
@@ -348,8 +360,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             source_header = storage->getSampleBlockForColumns(required_columns);
 
             /// Fix source_header for filter actions.
-            auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
-            row_policy_filter = RowPolicyContext::combineConditionsUsingAnd(row_policy_filter, context->getInitialRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER));
+            auto row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
             if (row_policy_filter)
             {
                 filter_info = std::make_shared<FilterInfo>();
@@ -402,14 +413,14 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (query.prewhere() && !query.where())
         analysis_result.prewhere_info->need_filter = true;
 
-    const String & database_name = joined_tables.leftTableDatabase();
-    const String & table_name = joined_tables.leftTableName();
+    const StorageID & left_table_id = joined_tables.leftTableID();
 
-    if (!table_name.empty() && !database_name.empty() /* always allow access to temporary tables */)
-        context->checkAccess(AccessType::SELECT, database_name, table_name, required_columns);
+    if (left_table_id)
+        context->checkAccess(AccessType::SELECT, left_table_id, required_columns);
 
     /// Remove limits for some tables in the `system` database.
-    if (database_name == "system" && ((table_name == "quotas") || (table_name == "quota_usage") || (table_name == "one")))
+    if (left_table_id.database_name == "system" &&
+        ((left_table_id.table_name == "quotas") || (left_table_id.table_name == "quota_usage") || (left_table_id.table_name == "one")))
     {
         options.ignore_quota = true;
         options.ignore_limits = true;
@@ -477,8 +488,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
 
         /// PREWHERE optimization.
         /// Turn off, if the table filter (row-level security) is applied.
-        if (!context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER)
-            && !context->getInitialRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER))
+        if (!context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER))
         {
             auto optimize_prewhere = [&](auto & merge_tree)
             {
@@ -909,7 +919,12 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 }
 
                 if (query.limitLength())
-                    executePreLimit(pipeline);
+                {
+                    if constexpr (pipeline_with_processors)
+                        executePreLimit(pipeline, true);
+                    else
+                        executePreLimit(pipeline);
+                }
             }
 
             // If there is no global subqueries, we can run subqueries only when receive them on server.
@@ -975,13 +990,20 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             /** Optimization - if there are several sources and there is LIMIT, then first apply the preliminary LIMIT,
               * limiting the number of rows in each up to `offset + limit`.
               */
+            bool has_prelimit = false;
             if (query.limitLength() && !query.limit_with_ties && pipeline.hasMoreThanOneStream() &&
                 !query.distinct && !expressions.hasLimitBy() && !settings.extremes)
             {
-                executePreLimit(pipeline);
+                if constexpr (pipeline_with_processors)
+                    executePreLimit(pipeline, false);
+                else
+                    executePreLimit(pipeline);
+
+                has_prelimit = true;
             }
 
-            bool need_merge_streams = need_second_distinct_pass || query.limitLength() || query.limitBy();
+            bool need_merge_streams = need_second_distinct_pass || query.limitBy()
+                || (!pipeline_with_processors && query.limitLength()); /// Don't merge streams for pre-limit more.
 
             if constexpr (!pipeline_with_processors)
                 if (pipeline.hasDelayedStream())
@@ -1017,7 +1039,8 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
               */
             executeExtremes(pipeline);
 
-            executeLimit(pipeline);
+            if (!(pipeline_with_processors && has_prelimit))  /// Limit is no longer needed if there is prelimit.
+                executeLimit(pipeline);
         }
     }
 
@@ -1040,7 +1063,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     auto check_trivial_count_query = [&]() -> std::optional<AggregateDescription>
     {
         if (!settings.optimize_trivial_count_query || !syntax_analyzer_result->maybe_optimize_trivial_count || !storage
-            || query.sample_size() || query.sample_offset() || query.final() || query.prewhere() || query.where()
+            || query.sampleSize() || query.sampleOffset() || query.final() || query.prewhere() || query.where()
             || !query_analyzer->hasAggregation() || processing_stage != QueryProcessingStage::FetchColumns)
             return {};
 
@@ -1102,7 +1125,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     if (storage)
     {
         /// Append columns from the table filter to required
-        auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
+        auto row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
         if (row_policy_filter)
         {
             auto initial_required_columns = required_columns;
@@ -2033,10 +2056,12 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
 
         if (need_finish_sorting)
         {
-            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
+            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
             {
-                bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
-                return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
+                if (stream_type != QueryPipeline::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
             });
 
             pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
@@ -2050,10 +2075,12 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
         return;
     }
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
-        bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
-        return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
+        if (stream_type != QueryPipeline::StreamType::Main)
+            return nullptr;
+
+        return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
     });
 
     /// Merge the sorted blocks.
@@ -2250,20 +2277,22 @@ void InterpreterSelectQuery::executePreLimit(Pipeline & pipeline)
 }
 
 /// Preliminary LIMIT - is used in every source, if there are several sources, before they are combined.
-void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline)
+void InterpreterSelectQuery::executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset)
 {
     auto & query = getSelectQuery();
     /// If there is LIMIT
     if (query.limitLength())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, *context);
-        pipeline.addSimpleTransform([&, limit = limit_length + limit_offset](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-        {
-            if (stream_type == QueryPipeline::StreamType::Totals)
-                return nullptr;
 
-            return std::make_shared<LimitTransform>(header, limit, 0);
-        });
+        if (do_not_skip_offset)
+        {
+            limit_length += limit_offset;
+            limit_offset = 0;
+        }
+
+        auto limit = std::make_shared<LimitTransform>(pipeline.getHeader(), limit_length, limit_offset, pipeline.getNumStreams());
+        pipeline.addPipe({std::move(limit)});
     }
 }
 
@@ -2465,7 +2494,7 @@ void InterpreterSelectQuery::executeLimit(QueryPipeline & pipeline)
                 return nullptr;
 
             return std::make_shared<LimitTransform>(
-                    header, limit_length, limit_offset, always_read_till_end, query.limit_with_ties, order_descr);
+                    header, limit_length, limit_offset, 1, always_read_till_end, query.limit_with_ties, order_descr);
         });
     }
 }

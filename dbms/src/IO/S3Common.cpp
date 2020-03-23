@@ -36,7 +36,7 @@ public:
 
     Aws::Utils::Logging::LogLevel GetLogLevel() const final { return Aws::Utils::Logging::LogLevel::Trace; }
 
-    void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final
+    void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
     {
         auto & [level, prio] = convertLogLevel(log_level);
         LOG_SIMPLE(log, std::string(tag) + ": " + format_str, level, prio);
@@ -84,7 +84,7 @@ namespace S3
         return ret;
     }
 
-    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create(
+    std::shared_ptr<Aws::S3::S3Client> ClientFactory::create( // NOLINT
         const String & endpoint,
         const String & access_key_id,
         const String & secret_access_key)
@@ -106,7 +106,7 @@ namespace S3
 
     URI::URI(const Poco::URI & uri_)
     {
-        static const std::regex BUCKET_KEY_PATTERN("([^/]+)/(.*)");
+        static const std::regex bucket_key_pattern("([^/]+)/(.*)"); /// TODO std::regex is discouraged
 
         uri = uri_;
 
@@ -133,7 +133,7 @@ namespace S3
 
         // Parse bucket and key from path.
         std::smatch match;
-        std::regex_search(uri.getPath(), match, BUCKET_KEY_PATTERN);
+        std::regex_search(uri.getPath(), match, bucket_key_pattern);
         if (!match.empty())
         {
             bucket = match.str(1);

@@ -27,7 +27,7 @@
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 #include "config_core.h"
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
@@ -41,6 +41,7 @@
 #include <Interpreters/ExternalModelsLoader.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/DNSCacheUpdater.h>
 #include <Interpreters/SystemLog.cpp>
 #include <Interpreters/ExternalLoaderXMLConfigRepository.h>
@@ -161,12 +162,12 @@ int Server::run()
 {
     if (config().hasOption("help"))
     {
-        Poco::Util::HelpFormatter helpFormatter(Server::options());
+        Poco::Util::HelpFormatter help_formatter(Server::options());
         std::stringstream header;
         header << commandName() << " [OPTION] [-- [ARG]...]\n";
         header << "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010";
-        helpFormatter.setHeader(header.str());
-        helpFormatter.format(std::cout);
+        help_formatter.setHeader(header.str());
+        help_formatter.format(std::cout);
         return 0;
     }
     if (config().hasOption("version"))
@@ -174,7 +175,7 @@ int Server::run()
         std::cout << DBMS_NAME << " server version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
         return 0;
     }
-    return Application::run();
+    return Application::run(); // NOLINT
 }
 
 void Server::initialize(Poco::Util::Application & self)
@@ -526,7 +527,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
-    Settings & settings = global_context->getSettingsRef();
+    const Settings & settings = global_context->getSettingsRef();
 
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");
@@ -559,9 +560,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// After attaching system databases we can initialize system log.
         global_context->initializeSystemLogs();
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
-        attachSystemTablesServer(*global_context->getDatabase("system"), has_zookeeper);
+        attachSystemTablesServer(*DatabaseCatalog::instance().getSystemDatabase(), has_zookeeper);
         /// Then, load remaining databases
         loadMetadata(*global_context);
+        DatabaseCatalog::instance().loadDatabases();
     }
     catch (...)
     {
@@ -721,7 +723,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         /// This object will periodically calculate some metrics.
         AsynchronousMetrics async_metrics(*global_context);
-        attachSystemTablesAsync(*global_context->getDatabase("system"), async_metrics);
+        attachSystemTablesAsync(*DatabaseCatalog::instance().getSystemDatabase(), async_metrics);
 
         for (const auto & listen_host : listen_hosts)
         {

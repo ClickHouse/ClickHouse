@@ -133,57 +133,6 @@ bool MergeTreeDataPartCompact::hasColumnFiles(const String & column_name, const 
     return (bin_checksum != checksums.files.end() && mrk_checksum != checksums.files.end());
 }
 
-NameToNameMap MergeTreeDataPartCompact::createRenameMapForAlter(
-    AlterAnalysisResult & analysis_result,
-    const NamesAndTypesList & /* old_columns */) const
-{
-    const auto & part_mrk_file_extension = index_granularity_info.marks_file_extension;
-    NameToNameMap rename_map;
-
-    for (const auto & index_name : analysis_result.removed_indices)
-    {
-        rename_map["skp_idx_" + index_name + ".idx"] = "";
-        rename_map["skp_idx_" + index_name + part_mrk_file_extension] = "";
-    }
-
-    /// We have to rewrite all data if any column has been changed.
-    if (!analysis_result.removed_columns.empty() || !analysis_result.conversions.empty())
-    {
-        if (!analysis_result.expression)
-            analysis_result.expression = std::make_shared<ExpressionActions>(NamesAndTypesList(), storage.global_context);
-
-        NameSet altered_columns;
-        NamesWithAliases projection;
-
-        for (const auto & column : analysis_result.removed_columns)
-            altered_columns.insert(column.name);
-
-        for (const auto & [source_name, result_name] : analysis_result.conversions)
-        {
-            altered_columns.insert(source_name);
-            projection.emplace_back(result_name, source_name);
-        }
-
-        /// Add other part columns to read
-        for (const auto & column : columns)
-        {
-            if (!altered_columns.count(column.name))
-            {
-                analysis_result.expression->addInput(column);
-                projection.emplace_back(column.name, "");
-            }
-        }
-
-        analysis_result.expression->add(ExpressionAction::project(projection));
-
-        String data_temp_name = String(DATA_FILE_NAME) + TEMP_FILE_SUFFIX;
-        rename_map[data_temp_name + DATA_FILE_EXTENSION] = DATA_FILE_NAME_WITH_EXTENSION;
-        rename_map[data_temp_name + part_mrk_file_extension] = DATA_FILE_NAME + part_mrk_file_extension;
-    }
-
-    return rename_map;
-}
-
 void MergeTreeDataPartCompact::checkConsistency(bool require_part_metadata) const
 {
     checkConsistencyBase();

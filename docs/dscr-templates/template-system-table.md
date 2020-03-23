@@ -1,21 +1,21 @@
-## system.table_name {#system_tables-table_name}
+## system.table\_name {#system-tables-table-name}
 
 Description.
 
 Columns:
 
-- `column_name` ([data_type_name](data_type_uri)) — Description.
+-   `column_name` ([data\_type\_name](data_type_uri)) — Description.
 
 **Example**
 
-```sql
+``` sql
 SELECT * FROM system.table_name
 ```
 
-```text
+``` text
 Some output. It shouldn't be long.
 ```
 
 **See Also**
 
-- [Article name](uri) — Some words about referenced information.
+-   [Article name](uri) — Some words about referenced information.

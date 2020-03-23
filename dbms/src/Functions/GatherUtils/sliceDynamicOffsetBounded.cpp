@@ -1,3 +1,5 @@
+#ifndef __clang_analyzer__ // It's too hard to analyze.
+
 #include "GatherUtils.h"
 #include "Selectors.h"
 #include "Algorithms.h"
@@ -18,3 +20,5 @@ void sliceDynamicOffsetBounded(IArraySource & src, IArraySink & sink, const ICol
     SliceDynamicOffsetBoundedSelectArraySource::select(src, sink, offset_column, length_column);
 }
 }
+
+#endif
