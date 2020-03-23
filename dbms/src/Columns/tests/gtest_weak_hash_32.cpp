@@ -364,10 +364,10 @@ TEST(WeakHash32, ColumnArray)
      * [2, 2, 2]
      * ...
      */
+    UInt64 cur_off = 0;
     for (int _i [[maybe_unused]] : {1, 2})
     {
         UInt32 cur = 0;
-        UInt64 cur_off = 0;
         for (int64_t i = 0; i < 65536; ++i)
         {
             eq_data.push_back(i);
@@ -421,11 +421,11 @@ TEST(WeakHash32, ColumnArrayArray)
      * [[0, 0], [0, 0], [0, 0]]
      * ...
      */
+    UInt64 cur_off = 0;
+    UInt64 cur_off2 = 0;
     for (int _i [[maybe_unused]] : {1, 2})
     {
         UInt32 cur = 1;
-        UInt64 cur_off = 0;
-        UInt64 cur_off2 = 0;
         for (int64_t i = 0; i < 65536; ++i)
         {
             eq_data.push_back(i);
