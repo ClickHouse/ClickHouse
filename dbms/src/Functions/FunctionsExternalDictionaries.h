@@ -138,7 +138,8 @@ private:
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<GridPolygonDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<SmartPolygonDictionary>(block, arguments, result, dict_ptr))
+            !executeDispatchComplex<SmartPolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<OneBucketPolygonDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -312,6 +313,7 @@ private:
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<GridPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<SmartPolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<OneBucketPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
@@ -495,6 +497,7 @@ private:
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<GridPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<SmartPolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<OneBucketPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
@@ -836,6 +839,7 @@ private:
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<GridPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<SmartPolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<OneBucketPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
@@ -1097,6 +1101,7 @@ private:
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<GridPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<SmartPolygonDictionary>(block, arguments, result, dict_ptr) &&
+            !executeDispatchComplex<OneBucketPolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
