@@ -273,9 +273,6 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
     if (num_using && (num_tables - num_array_join) > 2)
         throw Exception("Multiple CROSS/COMMA JOIN do not support USING", ErrorCodes::NOT_IMPLEMENTED);
 
-    if (num_comma && (num_comma != (joined_tables.size() - 1)))
-        throw Exception("Mix of COMMA and other JOINS is not supported", ErrorCodes::NOT_IMPLEMENTED);
-
     return !(num_array_join || num_using);
 }
 

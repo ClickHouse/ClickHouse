@@ -24,7 +24,7 @@ public:
         bool done = false;
     };
 
-    static bool needChildVisit(ASTPtr &, const ASTPtr &) { return true; }
+    static bool needChildVisit(ASTPtr &, const ASTPtr &);
     static void visit(ASTPtr & ast, Data & data);
 
 private:
