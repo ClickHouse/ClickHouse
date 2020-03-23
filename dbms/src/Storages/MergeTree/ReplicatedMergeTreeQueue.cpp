@@ -1578,7 +1578,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
         for (const String & partition : partitions)
             lock_futures.push_back(zookeeper->asyncGetChildren(queue.zookeeper_path + "/block_numbers/" + partition));
 
-        struct BlockInfo_
+        struct BlockInfoInZooKeeper
         {
             String partition;
             Int64 number;
@@ -1586,7 +1586,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
             std::future<Coordination::GetResponse> contents_future;
         };
 
-        std::vector<BlockInfo_> block_infos;
+        std::vector<BlockInfoInZooKeeper> block_infos;
         for (size_t i = 0; i < partitions.size(); ++i)
         {
             Strings partition_block_numbers = lock_futures[i].get().names;
@@ -1599,7 +1599,7 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
                     Int64 block_number = parse<Int64>(entry.substr(strlen("block-")));
                     String zk_path = queue.zookeeper_path + "/block_numbers/" + partitions[i] + "/" + entry;
                     block_infos.emplace_back(
-                        BlockInfo_{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
+                        BlockInfoInZooKeeper{partitions[i], block_number, zk_path, zookeeper->asyncTryGet(zk_path)});
                 }
             }
         }

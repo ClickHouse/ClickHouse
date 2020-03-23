@@ -1048,13 +1048,13 @@ void Context::setCurrentQueryId(const String & query_id)
         random.words.b = thread_local_rng(); //-V656
 
         /// Use protected constructor.
-        struct qUUID : Poco::UUID
+        struct QueryUUID : Poco::UUID
         {
-            qUUID(const char * bytes, Poco::UUID::Version version)
+            QueryUUID(const char * bytes, Poco::UUID::Version version)
                 : Poco::UUID(bytes, version) {}
         };
 
-        query_id_to_set = qUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
+        query_id_to_set = QueryUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
     }
 
     client_info.current_query_id = query_id_to_set;

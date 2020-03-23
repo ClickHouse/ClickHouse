@@ -688,7 +688,7 @@ static void trieTraverse(const btrie_t * trie, Getter && getter)
         node = node->left;
     }
 
-    auto getBit = [&high_bit](size_t size) { return size ? (high_bit >> (size - 1)) : 0; };
+    auto get_bit = [&high_bit](size_t size) { return size ? (high_bit >> (size - 1)) : 0; };
 
     while (!stack.empty())
     {
@@ -703,13 +703,13 @@ static void trieTraverse(const btrie_t * trie, Getter && getter)
         if (node && node->right)
         {
             stack.push(nullptr);
-            key |= getBit(stack.size());
+            key |= get_bit(stack.size());
             stack.push(node->right);
             while (stack.top()->left)
                 stack.push(stack.top()->left);
         }
         else
-            key &= ~getBit(stack.size());
+            key &= ~get_bit(stack.size());
     }
 }
 
@@ -740,13 +740,13 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
 {
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 
-    auto getKeys = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    auto get_keys = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         const auto & attr = dict_attributes.front();
         return ColumnsWithTypeAndName(
             {ColumnWithTypeAndName(columns.front(), std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name)});
     };
-    auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    auto get_view = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         auto column = ColumnString::create();
         const auto & ip_column = assert_cast<const ColumnFixedString &>(*columns.front());
@@ -765,7 +765,7 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
             ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dict_attributes.front().name)};
     };
     return std::make_shared<BlockInputStreamType>(
-        shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(getKeys), std::move(getView));
+        shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
 }
 
 
