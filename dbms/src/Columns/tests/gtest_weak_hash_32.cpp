@@ -389,7 +389,7 @@ TEST(WeakHash32, ColumnArray)
     WeakHash32 hash(col_arr->size());
     col_arr->updateWeakHash32(hash);
 
-    auto print_function = [&](size_t row)
+    auto print_function = [&col_arr](size_t row)
     {
         auto & off = col_arr->getOffsets();
         size_t s = off[row] - off[row - 1];
@@ -454,7 +454,7 @@ TEST(WeakHash32, ColumnArrayArray)
     WeakHash32 hash(col_arr_arr->size());
     col_arr_arr->updateWeakHash32(hash);
 
-    auto print_function = [&](size_t row2)
+    auto print_function = [&col_arr_arr](size_t row2)
     {
         auto & off2 = col_arr_arr->getOffsets();
         size_t s2 = off2[row2] - off2[row2 - 1];
