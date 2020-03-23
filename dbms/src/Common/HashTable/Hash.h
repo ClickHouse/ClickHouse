@@ -89,12 +89,44 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
 {
     if (size < 8)
     {
-        auto value = unalignedLoad<DB::UInt64>(pos);
-        /// 8 bytes were loaded to UInt64 value, but string size is less then 8 bytes.
-        /// We need to zero excessive bytes to remove the garbage.
-        /// But instead we move bits, so that we had zeros at left.
-        /// It helps to have different hash for strings like 'a' and 'a\0'
-        value <<= UInt8(8 * (8 - size));
+        DB::UInt64 value = 0;
+        auto * value_ptr = reinterpret_cast<unsigned char *>(&value);
+
+        typedef __attribute__((__aligned__(1))) uint16_t uint16_unaligned_t;
+        typedef __attribute__((__aligned__(1))) uint32_t uint32_unaligned_t;
+
+        /// Adopted code from FastMemcpy.h (memcpy_tiny)
+        switch (size)
+        {
+            case 0:
+                break;
+            case 1:
+                value_ptr[0] = pos[0];
+                break;
+            case 3:
+                value_ptr[2] = pos[2];
+            case 2:
+                *reinterpret_cast<uint16_t *>(value_ptr) = *reinterpret_cast<const uint16_unaligned_t *>(pos);
+                break;
+            case 5:
+                value_ptr[4] = pos[4];
+            case 4:
+                *reinterpret_cast<uint32_t *>(value_ptr) = *reinterpret_cast<const uint32_unaligned_t *>(pos);
+                break;
+            case 6:
+                *reinterpret_cast<uint32_t *>(value_ptr) = *reinterpret_cast<const uint32_unaligned_t *>(pos);
+                *reinterpret_cast<uint16_t *>(value_ptr + 4) = *reinterpret_cast<const uint16_unaligned_t *>(pos + 4);
+                break;
+            case 7:
+                *reinterpret_cast<uint32_t *>(value_ptr) = *reinterpret_cast<const uint32_unaligned_t *>(pos);
+                *reinterpret_cast<uint32_unaligned_t *>(value_ptr + 3) =
+                        *reinterpret_cast<const uint32_unaligned_t *>(pos + 3);
+                break;
+            default:
+                __builtin_unreachable();
+        }
+
+        value |= size;
         return intHashCRC32(value, updated_value);
     }
 
