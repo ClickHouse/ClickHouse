@@ -1,38 +1,31 @@
+#pragma once
+
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeEnum.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypesNumber.h>
-#include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
-#include <Common/FieldVisitors.h>
-#include <Common/assert_cast.h>
-#include <Common/memcmpSmall.h>
 
 
 namespace DB
 {
+
+class Context;
+
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
+
 
 template <typename Method, typename Name>
 class FunctionArrayScalarProduct : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayScalarProduct>(context); }
-    FunctionArrayScalarProduct(const Context & context_) : context(context_) {}
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayScalarProduct>(); }
 
 private:
     using ResultColumnType = ColumnVector<typename Method::ResultType>;
@@ -40,11 +33,16 @@ private:
     template <typename T>
     bool executeNumber(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        return executeNumberNumber<T, UInt8>(block, arguments, result) || executeNumberNumber<T, UInt16>(block, arguments, result)
-            || executeNumberNumber<T, UInt32>(block, arguments, result) || executeNumberNumber<T, UInt64>(block, arguments, result)
-            || executeNumberNumber<T, Int8>(block, arguments, result) || executeNumberNumber<T, Int16>(block, arguments, result)
-            || executeNumberNumber<T, Int32>(block, arguments, result) || executeNumberNumber<T, Int64>(block, arguments, result)
-            || executeNumberNumber<T, Float32>(block, arguments, result) || executeNumberNumber<T, Float64>(block, arguments, result);
+        return executeNumberNumber<T, UInt8>(block, arguments, result)
+            || executeNumberNumber<T, UInt16>(block, arguments, result)
+            || executeNumberNumber<T, UInt32>(block, arguments, result)
+            || executeNumberNumber<T, UInt64>(block, arguments, result)
+            || executeNumberNumber<T, Int8>(block, arguments, result)
+            || executeNumberNumber<T, Int16>(block, arguments, result)
+            || executeNumberNumber<T, Int32>(block, arguments, result)
+            || executeNumberNumber<T, Int64>(block, arguments, result)
+            || executeNumberNumber<T, Float32>(block, arguments, result)
+            || executeNumberNumber<T, Float64>(block, arguments, result);
     }
 
 
@@ -61,45 +59,47 @@ private:
         if (!col_array1 || !col_array2)
             return false;
 
+        if (!col_array1->hasEqualOffsets(*col_array2))
+            throw Exception("Array arguments for function " + getName() + " must have equal sizes", ErrorCodes::BAD_ARGUMENTS);
+
         const ColumnVector<T> * col_nested1 = checkAndGetColumn<ColumnVector<T>>(col_array1->getData());
         const ColumnVector<U> * col_nested2 = checkAndGetColumn<ColumnVector<U>>(col_array2->getData());
         if (!col_nested1 || !col_nested2)
             return false;
 
         auto col_res = ResultColumnType::create();
-        vector(col_nested1->getData(), col_array1->getOffsets(), col_nested2->getData(), col_array2->getOffsets(), col_res->getData());
+
+        vector(
+            col_nested1->getData(),
+            col_nested2->getData(),
+            col_array1->getOffsets(),
+            col_res->getData());
+
         block.getByPosition(result).column = std::move(col_res);
         return true;
     }
 
     template <typename T, typename U>
-    static void vector(
+    static NO_INLINE void vector(
         const PaddedPODArray<T> & data1,
-        const ColumnArray::Offsets & offsets1,
         const PaddedPODArray<U> & data2,
-        const ColumnArray::Offsets & offsets2,
+        const ColumnArray::Offsets & offsets,
         PaddedPODArray<typename Method::ResultType> & result)
     {
-        size_t size = offsets1.size();
+        size_t size = offsets.size();
         result.resize(size);
 
-        ColumnArray::Offset current_offset1 = 0;
-        ColumnArray::Offset current_offset2 = 0;
+        ColumnArray::Offset current_offset = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            size_t array1_size = offsets1[i] - current_offset1;
-            size_t array2_size = offsets2[i] - current_offset2;
-            result[i] = Method::apply(data1, current_offset1, array1_size, data2, current_offset2, array2_size);
-
-            current_offset1 = offsets1[i];
-            current_offset2 = offsets2[i];
+            size_t array_size = offsets[i] - current_offset;
+            result[i] = Method::apply(&data1[current_offset], &data2[current_offset], array_size);
+            current_offset = offsets[i];
         }
     }
 
 public:
-    /// Get function name.
     String getName() const override { return name; }
-
     size_t getNumberOfArguments() const override { return 2; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -125,18 +125,21 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /* input_rows_count */) override
     {
-        if (!(executeNumber<UInt8>(block, arguments, result) || executeNumber<UInt16>(block, arguments, result)
-              || executeNumber<UInt32>(block, arguments, result) || executeNumber<UInt64>(block, arguments, result)
-              || executeNumber<Int8>(block, arguments, result) || executeNumber<Int16>(block, arguments, result)
-              || executeNumber<Int32>(block, arguments, result) || executeNumber<Int64>(block, arguments, result)
-              || executeNumber<Float32>(block, arguments, result) || executeNumber<Float64>(block, arguments, result)))
+        if (!(executeNumber<UInt8>(block, arguments, result)
+            || executeNumber<UInt16>(block, arguments, result)
+              || executeNumber<UInt32>(block, arguments, result)
+              || executeNumber<UInt64>(block, arguments, result)
+              || executeNumber<Int8>(block, arguments, result)
+              || executeNumber<Int16>(block, arguments, result)
+              || executeNumber<Int32>(block, arguments, result)
+              || executeNumber<Int64>(block, arguments, result)
+              || executeNumber<Float32>(block, arguments, result)
+              || executeNumber<Float64>(block, arguments, result)))
             throw Exception{"Illegal column " + block.getByPosition(arguments[0]).column->getName() + " of first argument of function "
                                 + getName(),
                             ErrorCodes::ILLEGAL_COLUMN};
     }
-
-private:
-    const Context & context;
 };
 
 }
+

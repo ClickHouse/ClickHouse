@@ -970,8 +970,9 @@ Result:
 │ [('a','d'),('b','e'),('c','f')]            │
 └────────────────────────────────────────────┘
 ```
+
 ## arrayAUC {#arrayauc}
-Calculate AUC(Area Under the Curve, which is a concept in machine learning, see more details: https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
+Calculate AUC (Area Under the Curve, which is a concept in machine learning, see more details: https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 
 **Syntax**
 ```sql
@@ -983,7 +984,7 @@ arrayAUC(arr_scores, arr_labels)
 - `arr_labels` —  labels of samples, usually 1 for positive sample and 0 for negtive sample.
 
 **Returned value**
-return AUC value with type Float64.
+Returns AUC value with type Float64.
 
 **Example**
 Query:
