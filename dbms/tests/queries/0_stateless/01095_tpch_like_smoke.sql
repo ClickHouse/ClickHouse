@@ -517,7 +517,7 @@ where
     and l_shipdate < date '1995-09-01' + interval '1' month;
 
 select 15, 'fail: correlated subquery'; -- TODO: Missing columns: 'total_revenue'
-drop table if exists revenue0;
+drop view if exists revenue0;
 create view revenue0 as
     select
         l_suppkey,
@@ -548,7 +548,7 @@ where
     )
 order by
     s_suppkey; -- { serverError 47 }
-drop table revenue0; -- TODO: drop view
+drop view revenue0;
 
 select 16;
 select
