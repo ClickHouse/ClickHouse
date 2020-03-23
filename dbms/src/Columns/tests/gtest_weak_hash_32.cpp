@@ -151,7 +151,7 @@ TEST(WeakHash32, ColumnVectorI16)
 
     for (int _i [[maybe_unused]] : {1, 2})
     {
-        for (int i = 32768; i < 32768; ++i)
+        for (int i = -32768; i < 32768; ++i)
             data.push_back(i);
     }
 
@@ -186,7 +186,7 @@ TEST(WeakHash32, ColumnVectorI32)
     for (int _i [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = -32768; i < 32768; ++i)
-            data.push_back(i << 16);
+            data.push_back(i << 16); //-V610
     }
 
     WeakHash32 hash(col->size());
@@ -220,7 +220,7 @@ TEST(WeakHash32, ColumnVectorI64)
     for (int _i [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = -32768; i < 32768; ++i)
-            data.push_back(i << 32);
+            data.push_back(i << 32); //-V610
     }
 
     WeakHash32 hash(col->size());
