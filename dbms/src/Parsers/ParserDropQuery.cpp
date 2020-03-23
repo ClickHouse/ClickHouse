@@ -16,6 +16,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_dictionary("DICTIONARY");
+    ParserKeyword s_view("VIEW");
     ParserKeyword s_database("DATABASE");
     ParserToken s_dot(TokenType::Dot);
     ParserKeyword s_if_exists("IF EXISTS");
@@ -27,6 +28,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     bool if_exists = false;
     bool temporary = false;
     bool is_dictionary = false;
+    bool is_view = false;
 
     if (s_database.ignore(pos, expected))
     {
@@ -44,14 +46,16 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        if (s_temporary.ignore(pos, expected))
+        if (s_view.ignore(pos, expected))
+            is_view = true;
+        else if (s_dictionary.ignore(pos, expected))
+            is_dictionary = true;
+        else if (s_temporary.ignore(pos, expected))
             temporary = true;
 
-        if (!s_table.ignore(pos, expected))
+        if (!is_view && !is_dictionary && !s_table.ignore(pos, expected))
         {
-            if (!s_dictionary.ignore(pos, expected))
-                return false;
-            is_dictionary = true;
+            return false;
         }
 
         if (s_if_exists.ignore(pos, expected))
@@ -81,6 +85,7 @@ bool parseDropQuery(IParser::Pos & pos, ASTPtr & node, Expected & expected)
     query->if_exists = if_exists;
     query->temporary = temporary;
     query->is_dictionary = is_dictionary;
+    query->is_view = is_view;
 
     tryGetIdentifierNameInto(database, query->database);
     tryGetIdentifierNameInto(table, query->table);
