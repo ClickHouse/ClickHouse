@@ -391,10 +391,10 @@ TEST(WeakHash32, ColumnArray)
 
     auto print_function = [&col_arr](size_t row)
     {
-        auto & off = col_arr->getOffsets();
-        size_t s = off[row] - off[row - 1];
-        auto val = col_arr->getData().getUInt(off[row]);
-        return std::string("[array of size ") + std::to_string(s) + " with values " + std::to_string(val) + "]";
+        auto & offsets = col_arr->getOffsets();
+        size_t s = offsets[row] - offsets[row - 1];
+        auto value = col_arr->getData().getUInt(offsets[row]);
+        return std::string("[array of size ") + std::to_string(s) + " with values " + std::to_string(value) + "]";
     };
 
     checkColumn(hash.getData(), eq_data, print_function);
@@ -456,15 +456,15 @@ TEST(WeakHash32, ColumnArrayArray)
 
     auto print_function = [&col_arr_arr](size_t row2)
     {
-        auto & off2 = col_arr_arr->getOffsets();
-        size_t s2 = off2[row2] - off2[row2 - 1];
+        auto & offsets2 = col_arr_arr->getOffsets();
+        size_t s2 = offsets2[row2] - offsets2[row2 - 1];
         auto & arr2 = typeid_cast<const ColumnArray &>(col_arr_arr->getData());
-        auto & off = arr2.getOffsets();
-        size_t row = off2[row2];
-        size_t s = off[row] - off[row - 1];
-        auto val = arr2.getData().getUInt(off[row]);
+        auto & offsets = arr2.getOffsets();
+        size_t row = offsets2[row2];
+        size_t s = offsets[row] - offsets[row - 1];
+        auto value = arr2.getData().getUInt(offsets[row]);
         return std::string("[array of size ") + std::to_string(s2) + " with values ["
-                                "[[array of size " + std::to_string(s) + " with values " + std::to_string(val) + "]]";
+                                "[[array of size " + std::to_string(s) + " with values " + std::to_string(value) + "]]";
     };
 
     checkColumn(hash.getData(), eq_data, print_function);
