@@ -175,7 +175,7 @@ namespace
         }
     };
 
-    static inline IntervalKind strToIntervalKind(const String& interval_str)
+    IntervalKind strToIntervalKind(const String& interval_str)
     {
         if (interval_str == "Second")
             return IntervalKind::Second;
@@ -196,7 +196,7 @@ namespace
         __builtin_unreachable();
     }
 
-    static UInt32 addTime(UInt32 time_sec, IntervalKind::Kind window_kind, int window_num_units, const DateLUTImpl & time_zone)
+    UInt32 addTime(UInt32 time_sec, IntervalKind::Kind window_kind, int window_num_units, const DateLUTImpl & time_zone)
     {
         switch (window_kind)
         {
@@ -218,9 +218,9 @@ namespace
         __builtin_unreachable();
     }
 
-    static inline String generateInnerTableName(const String & table_name) { return ".inner." + table_name; }
+    String generateInnerTableName(const String & table_name) { return ".inner." + table_name; }
 
-    static ASTPtr generateDeleteRetiredQuery(StorageID inner_table_id, UInt32 timestamp)
+    ASTPtr generateDeleteRetiredQuery(StorageID inner_table_id, UInt32 timestamp)
     {
         auto function_equal = makeASTFunction(
             "less", std::make_shared<ASTIdentifier>("____w_end"), std::make_shared<ASTLiteral>(timestamp));
@@ -240,7 +240,7 @@ namespace
         return alterQuery;
     }
 
-    static std::shared_ptr<ASTSelectQuery> generateFetchColumnsQuery(const StorageID & inner_storage)
+    std::shared_ptr<ASTSelectQuery> generateFetchColumnsQuery(const StorageID & inner_storage)
     {
         auto res_query = std::make_shared<ASTSelectQuery>();
         auto select = std::make_shared<ASTExpressionList>();
@@ -623,8 +623,8 @@ inline UInt32 StorageWindowView::getWindowUpperBound(UInt32 time_sec)
 inline void StorageWindowView::addFireSignal(std::set<UInt32> & signals)
 {
     std::lock_guard lock(fire_signal_mutex);
-    for (auto it = signals.begin(); it != signals.end(); ++it)
-        fire_signal.push_back(*it);
+    for (auto & signal : signals)
+        fire_signal.push_back(signal);
     fire_signal_condition.notify_all();
 }
 
@@ -1030,10 +1030,10 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
         {
             auto & column_timestamp = block.getByName(window_view.timestamp_column_name).column;
             const ColumnUInt32::Container & timestamp_data = static_cast<const ColumnUInt32 &>(*column_timestamp).getData();
-            for (size_t i = 0; i < timestamp_data.size(); ++i)
+            for (auto& timestamp_ : timestamp_data)
             {
-                if (timestamp_data[i] > max_timestamp__)
-                    max_timestamp__ = timestamp_data[i];
+                if (timestamp_ > max_timestamp__)
+                    max_timestamp__ = timestamp_;
             }
         }
 
