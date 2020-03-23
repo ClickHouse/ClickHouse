@@ -47,7 +47,7 @@ namespace ErrorCodes
     extern const int UNSUPPORTED_METHOD;
 }
 
-static [[noreturn]] void renameat2(const std::string &, const std::string &, int)
+[[noreturn]] static void renameat2(const std::string &, const std::string &, int)
 {
     throw Exception("Compiled without renameat2() support", ErrorCodes::UNSUPPORTED_METHOD);
 }
