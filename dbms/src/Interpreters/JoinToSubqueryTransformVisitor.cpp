@@ -364,7 +364,6 @@ using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
 
 } /// namelesspace
 
-
 bool JoinToSubqueryTransformMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
 {
     return !node->as<ASTSubquery>();
