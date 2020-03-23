@@ -21,7 +21,7 @@ More information about [cloud providers](../commercial/cloud.md).
 
 ClickHouse Playground web interface makes requests via ClickHouse [HTTP API](../interfaces/http.md).
 Playground backend is just a ClickHouse cluster without any additional server-side application.
-ClickHouse HTTP endpoint is is also available as a part of Playground.
+ClickHouse HTTPS endpoint is is also available as a part of Playground.
 
 You can make queries to playground using any HTTP client, for example [curl](https://curl.haxx.se) or [wget](https://www.gnu.org/software/wget/), or set up a connection using [JDBC](../interfaces/jdbc.md) or [ODBC](../interfaces/odbc.md) drivers.
 More information about software products that support ClickHouse is available [here](../interfaces/index.md).
