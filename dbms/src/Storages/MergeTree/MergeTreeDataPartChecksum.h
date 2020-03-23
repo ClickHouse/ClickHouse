@@ -71,9 +71,9 @@ struct MergeTreeDataPartChecksums
     bool read(ReadBuffer & in);
     /// Assume that header with version (the first line) is read
     bool read(ReadBuffer & in, size_t format_version);
-    bool read_v2(ReadBuffer & in);
-    bool read_v3(ReadBuffer & in);
-    bool read_v4(ReadBuffer & from);
+    bool readV2(ReadBuffer & in);
+    bool readV3(ReadBuffer & in);
+    bool readV4(ReadBuffer & from);
 
     void write(WriteBuffer & to) const;
 

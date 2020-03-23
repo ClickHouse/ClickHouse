@@ -109,7 +109,7 @@ private:
 };
 
 template<typename TimeT = std::chrono::milliseconds>
-struct measure
+struct Measure
 {
     template<typename F, typename ...Args>
     static typename TimeT::rep execution(F&& func, Args&&... args)
@@ -150,8 +150,8 @@ try
         executor.execute(num_threads);
     };
 
-    auto time_single = measure<>::execution(execute_chain, 1);
-    auto time_mt = measure<>::execution(execute_chain, 4);
+    auto time_single = Measure<>::execution(execute_chain, 1);
+    auto time_mt = Measure<>::execution(execute_chain, 4);
 
     std::cout << "Single Thread time: " << time_single << " ms.\n";
     std::cout << "Multiple Threads time: " << time_mt << " ms.\n";

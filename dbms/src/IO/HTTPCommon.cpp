@@ -164,10 +164,10 @@ namespace
 
             /// We store exception messages in session data.
             /// Poco HTTPSession also stores exception, but it can be removed at any time.
-            const auto & sessionData = session->sessionData();
-            if (!sessionData.empty())
+            const auto & session_data = session->sessionData();
+            if (!session_data.empty())
             {
-                auto msg = Poco::AnyCast<std::string>(sessionData);
+                auto msg = Poco::AnyCast<std::string>(session_data);
                 if (!msg.empty())
                 {
                     LOG_TRACE((&Logger::get("HTTPCommon")), "Failed communicating with " << host << " with error '" << msg << "' will try to reconnect session");

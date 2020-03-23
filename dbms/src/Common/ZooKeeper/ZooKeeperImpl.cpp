@@ -758,17 +758,17 @@ struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
         {
             ZooKeeper::OpNum op_num;
             bool done;
-            int32_t error_;
+            int32_t error_read;
 
             Coordination::read(op_num, in);
             Coordination::read(done, in);
-            Coordination::read(error_, in);
+            Coordination::read(error_read, in);
 
             if (!done)
                 throw Exception("Too many results received for multi transaction", ZMARSHALLINGERROR);
             if (op_num != -1)
                 throw Exception("Unexpected op_num received at the end of results for multi transaction", ZMARSHALLINGERROR);
-            if (error_ != -1)
+            if (error_read != -1)
                 throw Exception("Unexpected error value received at the end of results for multi transaction", ZMARSHALLINGERROR);
         }
     }

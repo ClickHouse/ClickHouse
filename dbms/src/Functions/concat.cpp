@@ -119,7 +119,7 @@ private:
         auto c_res = ColumnString::create();
         std::vector<const ColumnString::Chars *> data(arguments.size());
         std::vector<const ColumnString::Offsets *> offsets(arguments.size());
-        std::vector<size_t> fixed_string_N(arguments.size());
+        std::vector<size_t> fixed_string_sizes(arguments.size());
         std::vector<String> constant_strings(arguments.size());
         bool has_column_string = false;
         bool has_column_fixed_string = false;
@@ -136,7 +136,7 @@ private:
             {
                 has_column_fixed_string = true;
                 data[i] = &fixed_col->getChars();
-                fixed_string_N[i] = fixed_col->getN();
+                fixed_string_sizes[i] = fixed_col->getN();
             }
             else if (const ColumnConst * const_col = checkAndGetColumnConstStringOrFixedString(column.get()))
             {
@@ -159,7 +159,7 @@ private:
             std::move(pattern),
             data,
             offsets,
-            fixed_string_N,
+            fixed_string_sizes,
             constant_strings,
             c_res->getChars(),
             c_res->getOffsets(),

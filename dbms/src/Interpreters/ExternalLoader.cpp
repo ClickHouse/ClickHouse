@@ -621,7 +621,7 @@ public:
             for (const auto & name_and_info : infos)
             {
                 const auto & info = name_and_info.second;
-                if ((now >= info.next_update_time) && !info.is_loading() && info.loaded())
+                if ((now >= info.next_update_time) && !info.isLoading() && info.loaded())
                     should_update_map.emplace(info.object, info.failedToReload());
             }
         }
@@ -651,7 +651,7 @@ public:
             TimePoint now = std::chrono::system_clock::now();
             for (auto & [name, info] : infos)
             {
-                if ((now >= info.next_update_time) && !info.is_loading())
+                if ((now >= info.next_update_time) && !info.isLoading())
                 {
                     if (info.loaded())
                     {
@@ -693,23 +693,23 @@ private:
         bool loaded() const { return object != nullptr; }
         bool failed() const { return !object && exception; }
         bool loadedOrFailed() const { return loaded() || failed(); }
-        bool triedToLoad() const { return loaded() || failed() || is_loading(); }
+        bool triedToLoad() const { return loaded() || failed() || isLoading(); }
         bool failedToReload() const { return loaded() && exception != nullptr; }
-        bool is_loading() const { return loading_id > state_id; }
+        bool isLoading() const { return loading_id > state_id; }
 
         Status status() const
         {
             if (object)
-                return is_loading() ? Status::LOADED_AND_RELOADING : Status::LOADED;
+                return isLoading() ? Status::LOADED_AND_RELOADING : Status::LOADED;
             else if (exception)
-                return is_loading() ? Status::FAILED_AND_RELOADING : Status::FAILED;
+                return isLoading() ? Status::FAILED_AND_RELOADING : Status::FAILED;
             else
-                return is_loading() ? Status::LOADING : Status::NOT_LOADED;
+                return isLoading() ? Status::LOADING : Status::NOT_LOADED;
         }
 
         Duration loadingDuration() const
         {
-            if (is_loading())
+            if (isLoading())
                 return std::chrono::duration_cast<Duration>(std::chrono::system_clock::now() - loading_start_time);
             return std::chrono::duration_cast<Duration>(loading_end_time - loading_start_time);
         }
@@ -871,7 +871,7 @@ private:
 
     void startLoading(Info & info, bool forced_to_reload = false, size_t min_id_to_finish_loading_dependencies_ = 1)
     {
-        if (info.is_loading())
+        if (info.isLoading())
         {
             LOG_TRACE(log, "The object '" << info.name <<
                       "' is already being loaded, force = " << forced_to_reload << ".");
@@ -911,7 +911,7 @@ private:
 
     static void cancelLoading(Info & info)
     {
-        if (!info.is_loading())
+        if (!info.isLoading())
             return;
 
         /// In fact we cannot actually CANCEL the loading (because it's possibly already being performed in another thread).
@@ -972,7 +972,7 @@ private:
         Info * info = getInfo(name);
         /// We check here if this is exactly the same loading as we planned to perform.
         /// This check is necessary because the object could be removed or load with another config before this thread even starts.
-        if (!info || !info->is_loading() || (info->loading_id != loading_id))
+        if (!info || !info->isLoading() || (info->loading_id != loading_id))
             return {};
 
         min_id_to_finish_loading_dependencies[std::this_thread::get_id()] = min_id_to_finish_loading_dependencies_;
@@ -1040,7 +1040,7 @@ private:
             LOG_TRACE(log, "Next update time for '" << name << "' will not be set because this object was not found.");
             return;
         }
-        if (!info->is_loading())
+        if (!info->isLoading())
         {
             LOG_TRACE(log, "Next update time for '" << name << "' will not be set because this object is not currently loading.");
             return;

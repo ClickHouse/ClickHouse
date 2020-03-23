@@ -67,7 +67,7 @@ struct AlternativeHash
 
 #if defined(__x86_64__)
 
-struct CRC32Hash_
+struct CRC32HashTest
 {
     size_t operator() (UInt64 x) const
     {
@@ -215,7 +215,7 @@ int main(int argc, char ** argv)
     {
         Stopwatch watch;
 
-        using Map = HashMap<Key, Value, CRC32Hash_>;
+        using Map = HashMap<Key, Value, CRC32HashTest>;
         Map map;
         Map::LookupResult it;
         bool inserted;
