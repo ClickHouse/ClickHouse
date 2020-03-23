@@ -27,6 +27,8 @@ void checkColumn(
     size_t allowed_collisions = 0,
     size_t max_collisions_to_print = 10)
 {
+    ASSERT_EQ(hash.size(), eq_class.size());
+
     auto print_for_row = [&](size_t row)
     {
         std::string res = "row: " + std::to_string(row);
@@ -568,7 +570,7 @@ TEST(WeakHash32, ColumnConst)
     auto cls = ColumnUInt8::create();
     auto & data = cls->getData();
 
-    for (size_t i = 0; i < 265; ++i)
+    for (size_t i = 0; i < 256; ++i)
         data.push_back(0);
 
     auto col_const = ColumnConst::create(std::move(inner_col), 256);
