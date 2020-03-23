@@ -71,6 +71,20 @@ inline DB::UInt64 intHashCRC32(DB::UInt64 x, DB::UInt64 updated_value)
 #endif
 }
 
+template <typename T>
+inline typename std::enable_if<(sizeof(T) > sizeof(DB::UInt64)), DB::UInt64>::type
+intHashCRC32(const T & x, DB::UInt64 updated_value)
+{
+    auto * begin64 = reinterpret_cast<const UInt64 *>(&x);
+    for (size_t i = 0; i < sizeof(T); i += sizeof(UInt64))
+    {
+        updated_value = intHashCRC32(*begin64, updated_value);
+        ++begin64;
+    }
+
+    return updated_value;
+}
+
 inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size,  DB::UInt32 updated_value)
 {
     if (size < 8)
