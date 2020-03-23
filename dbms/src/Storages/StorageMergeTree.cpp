@@ -159,14 +159,12 @@ BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Con
 void StorageMergeTree::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    const_cast<StorageMergeTree &>(*this).recalculateColumnSizes();
     global_context.checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
 
 void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
     auto table_id = getStorageID();
-    const_cast<StorageMergeTree &>(*this).recalculateColumnSizes();
 
     const String partition_id = getPartitionIDFromQuery(partition, global_context);
     auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
