@@ -98,7 +98,7 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     String old_metadata_path = getObjectMetadataPath(table_name);
-    String new_metadata_path = to_database.getObjectMetadataPath(table_name);
+    String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
 
     if (this == &to_database)
     {

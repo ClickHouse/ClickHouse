@@ -439,7 +439,7 @@ void StorageMerge::alter(
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
     params.apply(storage_metadata);
-    DatabaseCatalog::instance().getDatabaseAndTable(table_id).first->alterTable(context, table_id, storage_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, storage_metadata);
     setColumns(storage_metadata.columns);
 }
 

@@ -272,6 +272,7 @@ void DatabaseOnDisk::renameTable(
         table_metadata_path = getObjectMetadataPath(table_name);
         attach_query = parseQueryFromMetadata(log, context, table_metadata_path);
         auto & create = attach_query->as<ASTCreateQuery &>();
+        create.database = to_database.getDatabaseName();
         create.table = to_table_name;
         if (from_ordinary_to_atomic)
             create.uuid = UUIDHelpers::generateV4();

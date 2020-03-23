@@ -494,7 +494,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     }
 
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().getDatabaseAndTable(table_id).first->alterTable(global_context, table_id, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, metadata);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
@@ -3270,7 +3270,7 @@ void StorageReplicatedMergeTree::alter(
 
         changeSettings(metadata.settings_ast, table_lock_holder);
 
-        DatabaseCatalog::instance().getDatabaseAndTable(table_id).first->alterTable(query_context, table_id, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata);
         return;
     }
 
@@ -3331,7 +3331,7 @@ void StorageReplicatedMergeTree::alter(
             /// Just change settings
             current_metadata.settings_ast = future_metadata.settings_ast;
             changeSettings(current_metadata.settings_ast, table_lock_holder);
-            DatabaseCatalog::instance().getDatabaseAndTable(table_id).first->alterTable(query_context, table_id, current_metadata);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, current_metadata);
         }
 
         /// We can be sure, that in case of successfull commit in zookeeper our
