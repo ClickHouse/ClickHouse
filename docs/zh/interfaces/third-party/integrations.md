@@ -42,6 +42,7 @@
     -   [PromHouse](https://github.com/Percona-Lab/PromHouse)
     -   [Nagios](https://www.nagios.org/)
     -   [check\_clickhouse](https://github.com/exogroup/check_clickhouse/)
+    -   [check\_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
     -   [Zabbix](https://www.zabbix.com)
     -   [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
     -   [Sematext](https://sematext.com/)
