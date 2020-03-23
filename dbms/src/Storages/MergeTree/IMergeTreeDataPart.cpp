@@ -892,8 +892,8 @@ ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name, const I
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
 {
-    for (const auto & [name, size] : columns_sizes)
-        column_to_size[name] = size.data_compressed;
+    for (const auto & [column_name, size] : columns_sizes)
+        column_to_size[column_name] = size.data_compressed;
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)
