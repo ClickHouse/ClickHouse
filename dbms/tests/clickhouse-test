@@ -98,12 +98,19 @@ def get_processlist(client_cmd):
         return "" #  server seems dead
 
 
-def get_stacktraces(server_pid):
+def get_stacktraces_from_gdb(server_pid):
     cmd = "gdb -batch -ex 'thread apply all backtrace' -p {}".format(server_pid)
     try:
         return subprocess.check_output(cmd, shell=True)
     except Exception as ex:
-        return "Error occured while receiving stack traces {}".format(str(ex))
+        return "Error occured while receiving stack traces from gdb: {}".format(str(ex))
+
+
+def get_stacktraces_from_clickhouse(client):
+    try:
+        return subprocess.check_call("{} --allow_introspection_functions=1 --query \"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace FROM system.stack_trace format Vertical\"".format(client), shell=True)
+    except Exception as ex:
+        return "Error occured while receiving stack traces from client: {}".format(str(ex))
 
 
 def get_server_pid(server_tcp_port):
@@ -111,7 +118,7 @@ def get_server_pid(server_tcp_port):
     try:
         output = subprocess.check_output(cmd, shell=True)
         if output:
-            return int(output[1:])
+            return int(output)
         else:
             return None # server dead
     except Exception as ex:
@@ -459,8 +466,10 @@ def main(args):
             server_pid = get_server_pid(clickhouse_tcp_port)
             if server_pid:
                 print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
-                print("\nCollecting stacktraces from all running threads:")
-                print(get_stacktraces(server_pid))
+                print("\nCollecting stacktraces from system.stacktraces table:")
+                print(get_stacktraces_from_clickhouse(args.client))
+                print("\nCollecting stacktraces from all running threads with gdb:")
+                print(get_stacktraces_from_gdb(server_pid))
             else:
                 print(
                     colored(
