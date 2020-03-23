@@ -48,13 +48,7 @@ public:
 
     bool supportsVerticalMerge() const override { return true; }
 
-    void accumulateColumnSizes(ColumnToSize & column_to_size) const override;
-
     String getFileNameForColumn(const NameAndTypePair & column) const override;
-
-    ColumnSize getTotalColumnsSize() const override;
-
-    ColumnSize getColumnSize(const String & column_name, const IDataType & type) const override;
 
     ~MergeTreeDataPartWide() override;
 
@@ -67,6 +61,8 @@ private:
     void loadIndexGranularity() override;
 
     ColumnSize getColumnSizeImpl(const String & name, const IDataType & type, std::unordered_set<String> * processed_substreams) const;
+
+    void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
 }
