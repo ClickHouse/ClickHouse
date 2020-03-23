@@ -20,7 +20,7 @@ instance hosted in [Yandex.Cloud](https://cloud.yandex.com/).
 More information about [cloud providers](../commercial/cloud.md).
 
 ClickHouse Playground web interface makes requests via ClickHouse [HTTP API](../interfaces/http.md).
-Backend is just a ClickHouse cluster.
+Playground backend is just a ClickHouse cluster without any additional server-side application.
 ClickHouse HTTP endpoint is is also available as a part of Playground.
 
 You can make queries to playground using any HTTP client, for example [curl](https://curl.haxx.se) or [wget](https://www.gnu.org/software/wget/), or set up a connection using [JDBC](../interfaces/jdbc.md) or [ODBC](../interfaces/odbc.md) drivers.
