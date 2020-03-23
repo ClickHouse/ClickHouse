@@ -3160,8 +3160,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     /// This transaction may not happen, but it's OK, because on the next retry we will eventually create/update this node
     zookeeper->createOrUpdate(replica_path + "/metadata_version", std::to_string(metadata_version), zkutil::CreateMode::Persistent);
 
-    recalculateColumnSizes();
-
     return true;
 }
 
@@ -3556,8 +3554,6 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
 
 void StorageReplicatedMergeTree::checkTableCanBeDropped() const
 {
-    /// Consider only synchronized data
-    const_cast<StorageReplicatedMergeTree &>(*this).recalculateColumnSizes();
     auto table_id = getStorageID();
     global_context.checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
@@ -3565,8 +3561,6 @@ void StorageReplicatedMergeTree::checkTableCanBeDropped() const
 
 void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
-    const_cast<StorageReplicatedMergeTree &>(*this).recalculateColumnSizes();
-
     const String partition_id = getPartitionIDFromQuery(partition, global_context);
     auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
