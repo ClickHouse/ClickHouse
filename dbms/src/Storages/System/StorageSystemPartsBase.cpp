@@ -96,7 +96,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         rows = block_to_filter.rows();
 
         /// Block contains new columns, update database_column.
-        ColumnPtr database_column_ = block_to_filter.getByName("database").column;
+        ColumnPtr database_column_for_filter = block_to_filter.getByName("database").column;
 
         if (rows)
         {
@@ -106,7 +106,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
 
             for (size_t i = 0; i < rows; ++i)
             {
-                String database_name = (*database_column_)[i].get<String>();
+                String database_name = (*database_column_for_filter)[i].get<String>();
                 const DatabasePtr database = databases.at(database_name);
 
                 offsets[i] = i ? offsets[i - 1] : 0;
@@ -171,7 +171,7 @@ StoragesInfo StoragesInfoStream::next()
         info.database = (*database_column)[next_row].get<String>();
         info.table = (*table_column)[next_row].get<String>();
 
-        auto isSameTable = [&info, this] (size_t row) -> bool
+        auto is_same_table = [&info, this] (size_t row) -> bool
         {
             return (*database_column)[row].get<String>() == info.database &&
                    (*table_column)[row].get<String>() == info.table;
@@ -180,7 +180,7 @@ StoragesInfo StoragesInfoStream::next()
         /// We may have two rows per table which differ in 'active' value.
         /// If rows with 'active = 0' were not filtered out, this means we
         /// must collect the inactive parts. Remember this fact in StoragesInfo.
-        for (; next_row < rows && isSameTable(next_row); ++next_row)
+        for (; next_row < rows && is_same_table(next_row); ++next_row)
         {
             const auto active = (*active_column)[next_row].get<UInt64>();
             if (active == 0)

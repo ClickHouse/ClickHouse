@@ -62,25 +62,25 @@ struct BinaryOperationImplBase
     using ResultType = ResultType_;
     static const constexpr bool allow_fixed_string = false;
 
-    static void NO_INLINE vector_vector(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
+    static void NO_INLINE vectorVector(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size)
     {
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a[i], b[i]);
     }
 
-    static void NO_INLINE vector_constant(const A * __restrict a, B b, ResultType * __restrict c, size_t size)
+    static void NO_INLINE vectorConstant(const A * __restrict a, B b, ResultType * __restrict c, size_t size)
     {
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a[i], b);
     }
 
-    static void NO_INLINE constant_vector(A a, const B * __restrict b, ResultType * __restrict c, size_t size)
+    static void NO_INLINE constantVector(A a, const B * __restrict b, ResultType * __restrict c, size_t size)
     {
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<ResultType>(a, b[i]);
     }
 
-    static ResultType constant_constant(A a, B b)
+    static ResultType constantConstant(A a, B b)
     {
         return Op::template apply<ResultType>(a, b);
     }
@@ -89,7 +89,7 @@ struct BinaryOperationImplBase
 template <typename Op>
 struct FixedStringOperationImpl
 {
-    static void NO_INLINE vector_vector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size)
+    static void NO_INLINE vectorVector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size)
     {
         for (size_t i = 0; i < size; ++i)
             c[i] = Op::template apply<UInt8>(a[i], b[i]);
@@ -146,12 +146,12 @@ struct FixedStringOperationImpl
         }
     }
 
-    static void vector_constant(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
+    static void vectorConstant(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
     {
         vector_constant_impl<false>(a, b, c, size, N);
     }
 
-    static void constant_vector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
+    static void constantVector(const UInt8 * __restrict a, const UInt8 * __restrict b, UInt8 * __restrict c, size_t size, size_t N)
     {
         vector_constant_impl<true>(b, a, c, size, N);
     }
@@ -206,39 +206,39 @@ struct DecimalBinaryOperation
     using ArrayC = typename ColumnDecimal<ResultType>::Container;
     using SelfNoOverflow = DecimalBinaryOperation<A, B, Operation, ResultType_, false>;
 
-    static void vector_vector(const ArrayA & a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static void vectorVector(const ArrayA & a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
-            vector_vector(a, b, c, scale_a, scale_b);
+            vectorVector(a, b, c, scale_a, scale_b);
         else
-            SelfNoOverflow::vector_vector(a, b, c, scale_a, scale_b);
+            SelfNoOverflow::vectorVector(a, b, c, scale_a, scale_b);
     }
 
-    static void vector_constant(const ArrayA & a, B b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static void vectorConstant(const ArrayA & a, B b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
-            vector_constant(a, b, c, scale_a, scale_b);
+            vectorConstant(a, b, c, scale_a, scale_b);
         else
-            SelfNoOverflow::vector_constant(a, b, c, scale_a, scale_b);
+            SelfNoOverflow::vectorConstant(a, b, c, scale_a, scale_b);
     }
 
-    static void constant_vector(A a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static void constantVector(A a, const ArrayB & b, ArrayC & c, ResultType scale_a, ResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
-            constant_vector(a, b, c, scale_a, scale_b);
+            constantVector(a, b, c, scale_a, scale_b);
         else
-            SelfNoOverflow::constant_vector(a, b, c, scale_a, scale_b);
+            SelfNoOverflow::constantVector(a, b, c, scale_a, scale_b);
     }
 
-    static ResultType constant_constant(A a, B b, ResultType scale_a, ResultType scale_b, bool check_overflow)
+    static ResultType constantConstant(A a, B b, ResultType scale_a, ResultType scale_b, bool check_overflow)
     {
         if (check_overflow)
-            return constant_constant(a, b, scale_a, scale_b);
+            return constantConstant(a, b, scale_a, scale_b);
         else
-            return SelfNoOverflow::constant_constant(a, b, scale_a, scale_b);
+            return SelfNoOverflow::constantConstant(a, b, scale_a, scale_b);
     }
 
-    static void NO_INLINE vector_vector(const ArrayA & a, const ArrayB & b, ArrayC & c,
+    static void NO_INLINE vectorVector(const ArrayA & a, const ArrayB & b, ArrayC & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
@@ -269,7 +269,7 @@ struct DecimalBinaryOperation
             c[i] = apply(a[i], b[i]);
     }
 
-    static void NO_INLINE vector_constant(const ArrayA & a, B b, ArrayC & c,
+    static void NO_INLINE vectorConstant(const ArrayA & a, B b, ArrayC & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = a.size();
@@ -300,7 +300,7 @@ struct DecimalBinaryOperation
             c[i] = apply(a[i], b);
     }
 
-    static void NO_INLINE constant_vector(A a, const ArrayB & b, ArrayC & c,
+    static void NO_INLINE constantVector(A a, const ArrayB & b, ArrayC & c,
                                         ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         size_t size = b.size();
@@ -331,7 +331,7 @@ struct DecimalBinaryOperation
             c[i] = apply(a, b[i]);
     }
 
-    static ResultType constant_constant(A a, B b, ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
+    static ResultType constantConstant(A a, B b, ResultType scale_a [[maybe_unused]], ResultType scale_b [[maybe_unused]])
     {
         if constexpr (is_plus_minus_compare)
         {
@@ -863,7 +863,7 @@ public:
                 auto col_res = ColumnFixedString::create(col_left->getN());
                 auto & out_chars = col_res->getChars();
                 out_chars.resize(col_left->getN());
-                OpImpl::vector_vector(col_left->getChars().data(),
+                OpImpl::vectorVector(col_left->getChars().data(),
                                       col_right->getChars().data(),
                                       out_chars.data(),
                                       out_chars.size());
@@ -893,7 +893,7 @@ public:
 
             if (!is_left_column_const && !is_right_column_const)
             {
-                OpImpl::vector_vector(
+                OpImpl::vectorVector(
                     col_left->getChars().data(),
                     col_right->getChars().data(),
                     out_chars.data(),
@@ -901,7 +901,7 @@ public:
             }
             else if (is_left_column_const)
             {
-                OpImpl::constant_vector(
+                OpImpl::constantVector(
                     col_left->getChars().data(),
                     col_right->getChars().data(),
                     out_chars.data(),
@@ -910,7 +910,7 @@ public:
             }
             else
             {
-                OpImpl::vector_constant(
+                OpImpl::vectorConstant(
                     col_left->getChars().data(),
                     col_right->getChars().data(),
                     out_chars.data(),
@@ -965,7 +965,7 @@ public:
                         if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                             scale_a = right.getScaleMultiplier();
 
-                        auto res = OpImpl::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>(),
+                        auto res = OpImpl::constantConstant(col_left->template getValue<T0>(), col_right->template getValue<T1>(),
                                                                 scale_a, scale_b, check_decimal_overflow);
                         block.getByPosition(result).column =
                             ResultDataType(type.getPrecision(), type.getScale()).createColumnConst(
@@ -974,7 +974,7 @@ public:
                     }
                     else
                     {
-                        auto res = OpImpl::constant_constant(col_left->template getValue<T0>(), col_right->template getValue<T1>());
+                        auto res = OpImpl::constantConstant(col_left->template getValue<T0>(), col_right->template getValue<T1>());
                         block.getByPosition(result).column = ResultDataType().createColumnConst(col_left->size(), toField(res));
                     }
                     return true;
@@ -1006,11 +1006,11 @@ public:
                         if constexpr (IsDataTypeDecimal<RightDataType> && is_division)
                             scale_a = right.getScaleMultiplier();
 
-                        OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res,
+                        OpImpl::constantVector(col_left_const->template getValue<T0>(), col_right->getData(), vec_res,
                                                 scale_a, scale_b, check_decimal_overflow);
                     }
                     else
-                        OpImpl::constant_vector(col_left_const->template getValue<T0>(), col_right->getData().data(), vec_res.data(), vec_res.size());
+                        OpImpl::constantVector(col_left_const->template getValue<T0>(), col_right->getData().data(), vec_res.data(), vec_res.size());
                 }
                 else
                     return false;
@@ -1027,12 +1027,12 @@ public:
                         scale_a = right.getScaleMultiplier();
                     if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
                     {
-                        OpImpl::vector_vector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b,
+                        OpImpl::vectorVector(col_left->getData(), col_right->getData(), vec_res, scale_a, scale_b,
                                               check_decimal_overflow);
                     }
                     else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
                     {
-                        OpImpl::vector_constant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res,
+                        OpImpl::vectorConstant(col_left->getData(), col_right_const->template getValue<T1>(), vec_res,
                                                 scale_a, scale_b, check_decimal_overflow);
                     }
                     else
@@ -1041,9 +1041,9 @@ public:
                 else
                 {
                     if (auto col_right = checkAndGetColumn<ColVecT1>(col_right_raw))
-                        OpImpl::vector_vector(col_left->getData().data(), col_right->getData().data(), vec_res.data(), vec_res.size());
+                        OpImpl::vectorVector(col_left->getData().data(), col_right->getData().data(), vec_res.data(), vec_res.size());
                     else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_raw))
-                        OpImpl::vector_constant(col_left->getData().data(), col_right_const->template getValue<T1>(), vec_res.data(), vec_res.size());
+                        OpImpl::vectorConstant(col_left->getData().data(), col_right_const->template getValue<T1>(), vec_res.data(), vec_res.size());
                     else
                         return false;
                 }

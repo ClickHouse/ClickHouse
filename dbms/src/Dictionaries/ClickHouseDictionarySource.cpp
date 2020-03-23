@@ -209,7 +209,7 @@ std::string ClickHouseDictionarySource::doInvalidateQuery(const std::string & re
 
 void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
 {
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -218,7 +218,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
     {
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
     };
-    factory.registerSource("clickhouse", createTableSource);
+    factory.registerSource("clickhouse", create_table_source);
 }
 
 }

@@ -23,8 +23,8 @@ static void test(size_t data_size)
     {
         std::cout << "block size " << read_buffer_block_size << std::endl;
         std::stringstream io;
-        DB::WriteBufferFromOStream out_(io);
-        DB::HashingWriteBuffer out(out_);
+        DB::WriteBufferFromOStream out_impl(io);
+        DB::HashingWriteBuffer out(out_impl);
         out.write(data, data_size);
         out.next();
 

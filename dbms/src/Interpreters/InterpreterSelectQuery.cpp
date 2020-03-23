@@ -322,7 +322,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (!options.only_analyze)
         {
-            if (query.sample_size() && (input || input_pipe || !storage || !storage->supportsSampling()))
+            if (query.sampleSize() && (input || input_pipe || !storage || !storage->supportsSampling()))
                 throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
             if (query.final() && (input || input_pipe || !storage || !storage->supportsFinal()))
@@ -1063,7 +1063,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     auto check_trivial_count_query = [&]() -> std::optional<AggregateDescription>
     {
         if (!settings.optimize_trivial_count_query || !syntax_analyzer_result->maybe_optimize_trivial_count || !storage
-            || query.sample_size() || query.sample_offset() || query.final() || query.prewhere() || query.where()
+            || query.sampleSize() || query.sampleOffset() || query.final() || query.prewhere() || query.where()
             || !query_analyzer->hasAggregation() || processing_stage != QueryProcessingStage::FetchColumns)
             return {};
 
