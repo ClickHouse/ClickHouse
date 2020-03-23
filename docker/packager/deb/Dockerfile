@@ -41,7 +41,7 @@ RUN apt-get --allow-unauthenticated update -y \
             liblz4-dev \
             libdouble-conversion-dev \
             librdkafka-dev \
-            libpoconetssl50 \
+            libpoconetssl62 \
             libpoco-dev \
             libgoogle-perftools-dev \
             libzstd-dev \
