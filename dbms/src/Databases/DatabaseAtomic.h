@@ -43,6 +43,9 @@ public:
     void shutdown() override;
 
 private:
+    void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path) override;
+    void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
+                           const String & table_metadata_tmp_path, const String & table_metadata_path) override;
 
     //TODO store path in DatabaseWithOwnTables::tables
     std::map<String, String> table_name_to_path;

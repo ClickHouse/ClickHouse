@@ -280,26 +280,7 @@ void DatabaseOrdinary::alterTable(
         out.close();
     }
 
-    std::lock_guard lock{mutex};
-    auto actual_table_id = getTableUnlocked(table_id.table_name)->getStorageID();
-    if (table_id.database_name != actual_table_id.database_name ||
-        table_id.table_name != actual_table_id.table_name ||
-        table_id.uuid != actual_table_id.uuid)
-    {
-        Poco::File(table_metadata_tmp_path).remove();
-        throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
-    }
-
-    try
-    {
-        /// rename atomically replaces the old file with the new one.
-        Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
-    }
-    catch (...)
-    {
-        Poco::File(table_metadata_tmp_path).remove();
-        throw;
-    }
+    commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path);
 }
 
 }

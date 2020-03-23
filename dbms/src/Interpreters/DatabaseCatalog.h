@@ -151,6 +151,9 @@ public:
     /// Such tables can be accessed by persistent UUID instead of database and table name.
     void addUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
     void removeUUIDMapping(const UUID & uuid);
+    /// For moving table between databases
+    void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
+
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;
