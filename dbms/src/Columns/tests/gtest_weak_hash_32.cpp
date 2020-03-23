@@ -276,7 +276,10 @@ TEST(WeakHash32, ColumnString_2)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), data, [&](size_t row) { return col->getDataAt(row).toString(); });
+    /// Now there is single collision between 'k' * 544 and 'q' * 2512 (which is calculated twice)
+    size_t allowed_collisions = 4;
+
+    checkColumn(hash.getData(), data, [&](size_t row) { return col->getDataAt(row).toString(); }, allowed_collisions);
 }
 
 TEST(WeakHash32, ColumnString_3)
@@ -314,9 +317,7 @@ TEST(WeakHash32, ColumnString_3)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    /// Now there is single collision between 'k' * 544 and 'q' * 2512 (which is calculated twice)
-    size_t allowed_collisions = 4;
-    checkColumn(hash.getData(), data, [&](size_t row) { return col->getDataAt(row).toString(); }, allowed_collisions);
+    checkColumn(hash.getData(), data, [&](size_t row) { return col->getDataAt(row).toString(); });
 }
 
 TEST(WeakHash32, ColumnFixedString)
@@ -404,7 +405,7 @@ TEST(WeakHash32, ColumnArray)
 
 TEST(WeakHash32, ColumnArrayArray)
 {
-    size_t max_size = 1000;
+    size_t max_size = 3000;
     auto val = ColumnUInt32::create();
     auto off = ColumnUInt64::create();
     auto off2 = ColumnUInt64::create();
@@ -428,7 +429,7 @@ TEST(WeakHash32, ColumnArrayArray)
     for (int _i [[maybe_unused]] : {1, 2})
     {
         UInt32 cur = 1;
-        for (int64_t i = 0; i < 1000; ++i)
+        for (int64_t i = 0; i < 3000; ++i)
         {
             eq_data.push_back(i);
             size_t s = (i % max_size) + 1;
