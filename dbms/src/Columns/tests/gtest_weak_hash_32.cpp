@@ -4,11 +4,18 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnLowCardinality.h>
+
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesNumber.h>
 
 #include <Common/WeakHash.h>
 
 #include <unordered_map>
 #include <iostream>
+#include <Common/hex.h>
 
 using namespace DB;
 
@@ -218,6 +225,86 @@ TEST(WeakHash32, ColumnVectorI64)
     col->updateWeakHash32(hash);
 
     checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(col->getElement(row)); });
+}
+
+TEST(WeakHash32, ColumnVectorU128)
+{
+    auto col = ColumnUInt128::create();
+    auto & data = col->getData();
+    auto eq = ColumnUInt32::create();
+    auto & eq_data = eq->getData();
+
+    for (int _i [[maybe_unused]] : {1, 2})
+    {
+        for (uint64_t i = 0; i < 65536; ++i)
+        {
+            UInt128 val(i << 32u, i << 32u);
+            data.push_back(val);
+            eq_data.push_back(i);
+        }
+    }
+
+    WeakHash32 hash(col->size());
+    col->updateWeakHash32(hash);
+
+    checkColumn(hash.getData(), eq_data, [&](size_t row) { return col->getElement(row).toHexString(); });
+}
+
+TEST(WeakHash32, ColumnDecimal32)
+{
+    auto col = ColumnDecimal<Decimal32>::create(0, 0);
+    auto & data = col->getData();
+
+    for (int _i [[maybe_unused]] : {1, 2})
+    {
+        for (int64_t i = -32768; i < 32768; ++i)
+            data.push_back(i << 16);
+    }
+
+    WeakHash32 hash(col->size());
+    col->updateWeakHash32(hash);
+
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(col->getElement(row)); });
+}
+
+TEST(WeakHash32, ColumnDecimal64)
+{
+    auto col = ColumnDecimal<Decimal64>::create(0, 0);
+    auto & data = col->getData();
+
+    for (int _i [[maybe_unused]] : {1, 2})
+    {
+        for (int64_t i = -32768; i < 32768; ++i)
+            data.push_back(i << 32);
+    }
+
+    WeakHash32 hash(col->size());
+    col->updateWeakHash32(hash);
+
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(col->getElement(row)); });
+}
+
+TEST(WeakHash32, ColumnDecimal128)
+{
+    auto col = ColumnDecimal<Decimal128>::create(0, 0);
+    auto & data = col->getData();
+    auto eq = ColumnUInt32::create();
+    auto & eq_data = eq->getData();
+
+    for (int _i [[maybe_unused]] : {1, 2})
+    {
+        for (uint64_t i = 0; i < 65536; ++i)
+        {
+            UInt128 val(i << 32u, i << 32u);
+            data.push_back(val);
+            eq_data.push_back(i);
+        }
+    }
+
+    WeakHash32 hash(col->size());
+    col->updateWeakHash32(hash);
+
+    checkColumn(hash.getData(), eq_data, [&](size_t row) { return getHexUIntLowercase(col->getElement(row)); });
 }
 
 TEST(WeakHash32, ColumnString_1)
@@ -471,4 +558,44 @@ TEST(WeakHash32, ColumnArrayArray)
     };
 
     checkColumn(hash.getData(), eq_data, print_function);
+}
+
+TEST(WeakHash32, ColumnConst)
+{
+    auto inner_col = ColumnUInt8::create();
+    inner_col->insert(0);
+
+    auto cls = ColumnUInt8::create();
+    auto & data = cls->getData();
+
+    for (size_t i = 0; i < 265; ++i)
+        data.push_back(0);
+
+    auto col_const = ColumnConst::create(std::move(inner_col), 256);
+
+    WeakHash32 hash(col_const->size());
+    col_const->updateWeakHash32(hash);
+
+    checkColumn(hash.getData(), data, [&](size_t) { return std::to_string(0); });
+}
+
+TEST(WeakHash32, ColumnLowcardinality)
+{
+    auto col = DataTypeLowCardinality(std::make_shared<DataTypeUInt8>()).createColumn();
+    auto eq = ColumnUInt8::create();
+    auto & data = eq->getData();
+
+    for (int _i [[maybe_unused]] : {1, 2})
+    {
+        for (size_t i = 0; i < 65536; ++i)
+        {
+            data.push_back(i);
+            col->insert(i);
+        }
+    }
+
+    WeakHash32 hash(col->size());
+    col->updateWeakHash32(hash);
+
+    checkColumn(hash.getData(), data, [&](size_t row) { return std::to_string(col->getUInt(row)); });
 }
