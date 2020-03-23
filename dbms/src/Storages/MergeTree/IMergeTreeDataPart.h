@@ -156,8 +156,6 @@ public:
 
     size_t rows_count = 0;
 
-    std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
-                                            /// May not contain size of checksums.txt and columns.txt
 
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
@@ -278,6 +276,9 @@ public:
     UInt64 getIndexSizeInAllocatedBytes() const;
     UInt64 getMarksCount() const;
 
+    UInt64 getBytesOnDisk() const { return bytes_on_disk; }
+    void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
+
     size_t getFileSizeOrZero(const String & file_name) const;
     String getFullRelativePath() const;
     String getFullPath() const;
@@ -300,6 +301,10 @@ protected:
 
     /// Size for each column, calculated once in calcuateColumnSizesOnDisk
     ColumnSizeByName columns_sizes;
+
+    /// Total size on disk, not only columns. May not contain size of
+    /// checksums.txt and columns.txt. 0 - if not counted;
+    UInt64 bytes_on_disk{0};
 
     /// Columns description. Cannot be changed, after part initialiation.
     NamesAndTypesList columns;
