@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
 
     <stop_conditions>
         <any_of>
@@ -9,6 +8,6 @@
 
     <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(MACNumToString(number))</query>
     <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(MACStringToNum(MACNumToString(number)))</query>
-    <query>SELECT count() FROM numbers_mt(10000000) WHERE NOT ignore(MACNumToString(rand64()))</query>
-    <query>SELECT count() FROM numbers_mt(10000000) WHERE NOT ignore(MACStringToNum(MACNumToString(rand64())))</query>
+    <query>SELECT count() FROM zeros_mt(10000000) WHERE NOT ignore(MACNumToString(rand64()))</query>
+    <query>SELECT count() FROM zeros_mt(10000000) WHERE NOT ignore(MACStringToNum(MACNumToString(rand64())))</query>
 </test>

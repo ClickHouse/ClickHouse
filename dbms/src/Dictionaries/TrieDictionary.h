@@ -207,8 +207,6 @@ private:
 
     void calculateBytesAllocated();
 
-    void validateKeyTypes(const DataTypes & key_types) const;
-
     template <typename T>
     void createAttributeImpl(Attribute & attribute, const Field & null_value);
 
@@ -229,9 +227,6 @@ private:
 
     template <typename T>
     void has(const Attribute & attribute, const Columns & key_columns, PaddedPODArray<UInt8> & out) const;
-
-    template <typename Getter, typename KeyType>
-    void trieTraverse(const btrie_t * trie, Getter && getter) const;
 
     Columns getKeyColumns() const;
 

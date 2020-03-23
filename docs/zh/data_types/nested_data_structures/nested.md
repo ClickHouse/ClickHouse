@@ -1,10 +1,10 @@
-# Nested(Name1 Type1, Name2 Type2, ...)
+# Nested(Name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
 
 嵌套数据结构类似于嵌套表。嵌套数据结构的参数（列名和类型）与 CREATE 查询类似。每个表可以包含任意多行嵌套数据结构。
 
 示例:
 
-```sql
+``` sql
 CREATE TABLE test.visits
 (
     CounterID UInt32,
@@ -27,7 +27,7 @@ CREATE TABLE test.visits
 ) ENGINE = CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
 ```
 
-上述示例声明了 `Goals` 这种嵌套数据结构，它包含访客转化相关的数据（访客达到的目标）。在 'visits' 表中每一行都可以对应零个或者任意个转化数据。
+上述示例声明了 `Goals` 这种嵌套数据结构，它包含访客转化相关的数据（访客达到的目标）。在 ‘visits’ 表中每一行都可以对应零个或者任意个转化数据。
 
 只支持一级嵌套。嵌套结构的列中，若列的类型是数组类型，那么该列其实和多维数组是相同的，所以目前嵌套层级的支持很局限（MergeTree 引擎中不支持存储这样的列）
 
@@ -35,7 +35,7 @@ CREATE TABLE test.visits
 
 示例:
 
-```sql
+``` sql
 SELECT
     Goals.ID,
     Goals.EventTime
@@ -44,7 +44,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+``` text
 ┌─Goals.ID───────────────────────┬─Goals.EventTime───────────────────────────────────────────────────────────────────────────┐
 │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
 │ [1073752]                      │ ['2014-03-17 00:28:25']                                                                   │
@@ -61,9 +61,9 @@ LIMIT 10
 
 所以可以简单地把嵌套数据结构当做是所有列都是相同长度的多列数组。
 
-SELECT 查询只有在使用 ARRAY JOIN 的时候才可以指定整个嵌套数据结构的名称。更多信息，参考 "ARRAY JOIN 子句"。示例：
+SELECT 查询只有在使用 ARRAY JOIN 的时候才可以指定整个嵌套数据结构的名称。更多信息，参考 «ARRAY JOIN 子句»。示例：
 
-```sql
+``` sql
 SELECT
     Goal.ID,
     Goal.EventTime
@@ -73,7 +73,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+``` text
 ┌─Goal.ID─┬──────Goal.EventTime─┐
 │ 1073752 │ 2014-03-17 16:38:10 │
 │  591325 │ 2014-03-17 16:38:48 │

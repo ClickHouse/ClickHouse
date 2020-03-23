@@ -216,7 +216,7 @@ void ClusterCopier::reloadTaskDescription()
 
     /// Setup settings
     task_cluster->reloadSettings(*config);
-    context.getSettingsRef() = task_cluster->settings_common;
+    context.setSettings(task_cluster->settings_common);
 
     task_cluster_current_config = config;
     task_descprtion_current_stat = stat;
@@ -499,7 +499,10 @@ ASTPtr ClusterCopier::removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast
     return new_query_ast;
 }
 
-std::shared_ptr<ASTCreateQuery> ClusterCopier::rewriteCreateQueryStorage(const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
+
+/// Replaces ENGINE and table name in a create query
+static std::shared_ptr<ASTCreateQuery> rewriteCreateQueryStorage(
+    const ASTPtr & create_query_ast, const DatabaseAndTableName & new_table, const ASTPtr & new_storage_ast)
 {
     const auto & create = create_query_ast->as<ASTCreateQuery &>();
     auto res = std::make_shared<ASTCreateQuery>(create);
@@ -961,8 +964,8 @@ PartitionTaskStatus ClusterCopier::processPartitionTaskImpl(const ConnectionTime
         {
             Context local_context = context;
             // Use pull (i.e. readonly) settings, but fetch data from destination servers
-            local_context.getSettingsRef() = task_cluster->settings_pull;
-            local_context.getSettingsRef().skip_unavailable_shards = true;
+            local_context.setSettings(task_cluster->settings_pull);
+            local_context.setSetting("skip_unavailable_shards", true);
 
             Block block = getBlockWithAllStreamData(InterpreterFactory::get(query_select_ast, local_context)->execute().in);
             count = (block) ? block.safeGetByPosition(0).column->getUInt(0) : 0;
@@ -1050,10 +1053,10 @@ PartitionTaskStatus ClusterCopier::processPartitionTaskImpl(const ConnectionTime
         {
             /// Custom INSERT SELECT implementation
             Context context_select = context;
-            context_select.getSettingsRef() = task_cluster->settings_pull;
+            context_select.setSettings(task_cluster->settings_pull);
 
             Context context_insert = context;
-            context_insert.getSettingsRef() = task_cluster->settings_push;
+            context_insert.setSettings(task_cluster->settings_push);
 
             BlockInputStreamPtr input;
             BlockOutputStreamPtr output;
@@ -1178,7 +1181,7 @@ String ClusterCopier::getRemoteCreateTable(const DatabaseAndTableName & table, C
 ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard)
 {
     /// Fetch and parse (possibly) new definition
-    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull);
+    auto connection_entry = task_shard.info.pool->get(timeouts, &task_cluster->settings_pull, true);
     String create_query_pull_str = getRemoteCreateTable(
         task_shard.task_table.table_pull,
         *connection_entry,

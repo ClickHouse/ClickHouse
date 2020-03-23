@@ -11,6 +11,7 @@ namespace DB
   * DROP ROLE [IF EXISTS] name [,...]
   * DROP QUOTA [IF EXISTS] name [,...]
   * DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
+  * DROP [SETTINGS] PROFILE [IF EXISTS] name [,...]
   */
 class ASTDropAccessEntityQuery : public IAST
 {
@@ -21,11 +22,10 @@ public:
         ROLE,
         QUOTA,
         ROW_POLICY,
+        SETTINGS_PROFILE,
     };
 
     const Kind kind;
-    const char * const keyword;
-
     bool if_exists = false;
     Strings names;
     std::vector<RowPolicy::FullNameParts> row_policies_names;

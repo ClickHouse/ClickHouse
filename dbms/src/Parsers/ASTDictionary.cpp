@@ -76,7 +76,7 @@ ASTPtr ASTDictionaryLayout::clone() const
 
 void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
                                      FormatState & state,
-                                     FormatStateStacked expected) const
+                                     FormatStateStacked frame) const
 {
     settings.ostr << (settings.hilite ? hilite_keyword : "")
                   << "LAYOUT"
@@ -94,7 +94,7 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
                       << (settings.hilite ? hilite_none : "")
                       << " ";
 
-        parameter->second->formatImpl(settings, state, expected);
+        parameter->second->formatImpl(settings, state, frame);
     }
     settings.ostr << ")";
     settings.ostr << ")";

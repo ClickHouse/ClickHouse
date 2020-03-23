@@ -23,14 +23,12 @@ static const Field UNKNOWN_FIELD(3u);
 
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index_)
-    : IMergeTreeIndexGranule()
-    , index(index_)
+    : index(index_)
     , block(index.header.cloneEmpty()) {}
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const MergeTreeIndexSet & index_, MutableColumns && mutable_columns_)
-    : IMergeTreeIndexGranule()
-    , index(index_)
+    : index(index_)
     , block(index.header.cloneWithColumns(std::move(mutable_columns_))) {}
 
 void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
@@ -217,14 +215,11 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         const SelectQueryInfo & query,
         const Context & context,
         const MergeTreeIndexSet &index_)
-        : IMergeTreeIndexCondition(), index(index_)
+        : index(index_)
 {
-    for (size_t i = 0, size = index.columns.size(); i < size; ++i)
-    {
-        std::string name = index.columns[i];
+    for (const auto & name : index.columns)
         if (!key_columns.count(name))
             key_columns.insert(name);
-    }
 
     const auto & select = query.query->as<ASTSelectQuery &>();
 
@@ -267,7 +262,7 @@ bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
         throw Exception(
                 "Set index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
-    if (useless || !granule->size() || (index.max_rows && granule->size() > index.max_rows))
+    if (useless || granule->empty() || (index.max_rows && granule->size() > index.max_rows))
         return true;
 
     Block result = granule->block;
@@ -347,7 +342,7 @@ bool MergeTreeIndexConditionSet::atomFromAST(ASTPtr & node) const
     return false;
 }
 
-bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
+bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
 {
     /// Functions AND, OR, NOT. Replace with bit*.
     auto * func = node->as<ASTFunction>();

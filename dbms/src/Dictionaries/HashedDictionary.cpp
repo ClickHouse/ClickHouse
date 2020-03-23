@@ -9,12 +9,12 @@ namespace
 /// NOTE: Trailing return type is explicitly specified for SFINAE.
 
 /// google::sparse_hash_map
-template <typename T> auto first(const T & value) -> decltype(value.first) { return value.first; }
-template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; }
+template <typename T> auto first(const T & value) -> decltype(value.first) { return value.first; } // NOLINT
+template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; } // NOLINT
 
 /// HashMap
-template <typename T> auto first(const T & value) -> decltype(value.getKey()) { return value.getKey(); }
-template <typename T> auto second(const T & value) -> decltype(value.getMapped()) { return value.getMapped(); }
+template <typename T> auto first(const T & value) -> decltype(value.getKey()) { return value.getKey(); } // NOLINT
+template <typename T> auto second(const T & value) -> decltype(value.getMapped()) { return value.getMapped(); } // NOLINT
 
 }
 
@@ -444,9 +444,9 @@ void HashedDictionary::addAttributeSize(const Attribute & attribute)
         bucket_count = map_ref->bucket_count();
 
         /** TODO: more accurate calculation */
-        bytes_allocated += sizeof(CollectionType<T>);
+        bytes_allocated += sizeof(SparseCollectionType<T>);
         bytes_allocated += bucket_count;
-        bytes_allocated += map_ref->size() * sizeof(Key) * sizeof(T);
+        bytes_allocated += map_ref->size() * (sizeof(Key) + sizeof(T));
     }
 }
 

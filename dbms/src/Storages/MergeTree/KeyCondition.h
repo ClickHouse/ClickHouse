@@ -249,9 +249,9 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr);
 
-    /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `parallelogram`.
-    BoolMask checkInParallelogram(
-        const std::vector<Range> & parallelogram,
+    /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
+    BoolMask checkInHyperrectangle(
+        const std::vector<Range> & hyperrectangle,
         const DataTypes & data_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
@@ -382,7 +382,7 @@ private:
 
     void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
     bool tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
-    bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
+    static bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
 
     /** Is node the key column
       *  or expression in which column of key is wrapped by chain of functions,

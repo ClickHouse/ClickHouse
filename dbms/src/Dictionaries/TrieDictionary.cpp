@@ -34,6 +34,18 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+static void validateKeyTypes(const DataTypes & key_types)
+{
+    if (key_types.size() != 1)
+        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
+
+    const auto & actual_type = key_types[0]->getName();
+
+    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
+        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
+}
+
+
 TrieDictionary::TrieDictionary(
     const std::string & database_,
     const std::string & name_,
@@ -416,17 +428,6 @@ void TrieDictionary::calculateBytesAllocated()
     bytes_allocated += btrie_allocated(trie);
 }
 
-void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
-{
-    if (key_types.size() != 1)
-        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
-
-    const auto & actual_type = key_types[0]->getName();
-
-    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
-        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
-}
-
 
 template <typename T>
 void TrieDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
@@ -672,13 +673,13 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
 }
 
 template <typename Getter, typename KeyType>
-void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
+static void trieTraverse(const btrie_t * trie, Getter && getter)
 {
     KeyType key = 0;
     const KeyType high_bit = ~((~key) >> 1);
 
     btrie_node_t * node;
-    node = tree->root;
+    node = trie->root;
 
     std::stack<btrie_node_t *> stack;
     while (node)

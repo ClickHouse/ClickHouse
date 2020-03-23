@@ -21,7 +21,7 @@ namespace ErrorCodes
 class Exception : public Poco::Exception
 {
 public:
-    Exception();
+    Exception() = default;
     Exception(const std::string & msg, int code);
 
     enum CreateFromPocoTag { CreateFromPoco };

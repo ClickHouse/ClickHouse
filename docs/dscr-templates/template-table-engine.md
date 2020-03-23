@@ -1,51 +1,49 @@
-# EngineName
+# EngineName {#enginename}
 
-- What the engine does.
-- Relations with other engines if they exist.
+-   What the engine does.
+-   Relations with other engines if they exist.
 
-## Creating a Table
+## Creating a Table {#creating-a-table}
 
-```
-Syntax codeblock
-```
+    Syntax codeblock
 
 **Engine Parameters**
 
 **Query Clauses**
 
-
-## Virtual columns
+## Virtual columns {#virtual-columns}
 
 If they exist.
 
-## Specifics and recommendations
+## Specifics and recommendations {#specifics-and-recommendations}
+
 Algorithms
 Specifics of read/write processes
 Examples of tasks
 Recommendations for usage
 Specifics of data storage
 
-## Usage Example
+## Usage Example {#usage-example}
 
 The example must show usage and/or a use cases. The following text contains recommended parts of an example.
 
 Input table:
 
-```text
+``` text
 ```
 
 Query:
 
-```sql
+``` sql
 ```
 
 Result:
 
-```text
+``` text
 ```
 
 Any text clarifying the example.
 
-## See Also
+## See Also {#see-also}
 
-- [link](#)
+-   [link](#)

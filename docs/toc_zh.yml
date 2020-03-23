@@ -47,6 +47,7 @@ nav:
   - 'FixedString(N)': 'data_types/fixedstring.md'
   - 'UUID': 'data_types/uuid.md'
   - 'Date': 'data_types/date.md'
+  - 'DateTime64': 'data_types/datetime64.md'
   - 'DateTime': 'data_types/datetime.md'
   - 'Enum': 'data_types/enum.md'
   - 'Array(T)': 'data_types/array.md'
@@ -109,7 +110,7 @@ nav:
     - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
-    - 'Generate': 'operations/table_engines/generate.md'
+    - 'GenerateRandom': 'operations/table_engines/generate.md'
 
 - 'SQL语法':
   - 'hidden': 'query_language/index.md'
@@ -171,7 +172,7 @@ nav:
     - 'odbc': 'query_language/table_functions/odbc.md'
     - 'hdfs': 'query_language/table_functions/hdfs.md'
     - 'input': 'query_language/table_functions/input.md'
-    - 'generate': 'query_language/table_functions/generate.md'
+    - 'generateRandom': 'query_language/table_functions/generate.md'
   - '字典':
     - '介绍': 'query_language/dicts/index.md'
     - '外部字典':
@@ -240,5 +241,9 @@ nav:
 
 - '新功能特性':
   - '路线图': 'roadmap.md'
-  - '更新日志': 'changelog.md'
+  - '更新日志':
+    - '2020': 'changelog/index.md'
+    - '2019': 'changelog/2019.md'
+    - '2018': 'changelog/2018.md'
+    - '2017': 'changelog/2017.md'
   - '安全更改日志': 'security_changelog.md'

@@ -80,7 +80,7 @@ nav:
     - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
-    - 'Generate': 'operations/table_engines/generate.md'
+    - 'GenerateRandom': 'operations/table_engines/generate.md'
 
 - 'Справка по SQL':
   - 'hidden': 'query_language/index.md'
@@ -144,7 +144,7 @@ nav:
     - 'odbc': 'query_language/table_functions/odbc.md'
     - 'hdfs': 'query_language/table_functions/hdfs.md'
     - 'input': 'query_language/table_functions/input.md'
-    - 'generate': 'query_language/table_functions/generate.md'
+    - 'generateRandom': 'query_language/table_functions/generate.md'
   - 'Словари':
     - 'Введение': 'query_language/dicts/index.md'
     - 'Внешние словари':
@@ -168,6 +168,7 @@ nav:
     - 'UUID': 'data_types/uuid.md'
     - 'Date': 'data_types/date.md'
     - 'DateTime': 'data_types/datetime.md'
+    - 'DateTime64': 'data_types/datetime64.md'
     - 'Enum': 'data_types/enum.md'
     - 'Array(T)': 'data_types/array.md'
     - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
@@ -237,7 +238,11 @@ nav:
   - 'Сторонние библиотеки': 'development/contrib.md'
 
 - 'Что нового':
-  - 'Changelog': 'changelog.md'
+  - 'Changelog':
+    - '2020': 'changelog/index.md'
+    - '2019': 'changelog/2019.md'
+    - '2018': 'changelog/2018.md'
+    - '2017': 'changelog/2017.md'
   - 'Security changelog': 'security_changelog.md'
   - 'Roadmap': 'roadmap.md'
   - 'Подробный roadmap 2020': 'extended_roadmap.md'

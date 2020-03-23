@@ -9,7 +9,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Access/AccessRightsContext.h>
+#include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
@@ -73,11 +73,11 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
     MutableColumnPtr engine_column_mut = ColumnString::create();
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
 
-    const auto access_rights = context.getAccessRights();
-    const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW);
+    const auto access = context.getAccess();
+    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
     {
-        Databases databases = context.getDatabases();
+        Databases databases = DatabaseCatalog::instance().getDatabases();
 
         /// Add column 'database'.
         MutableColumnPtr database_column_mut = ColumnString::create();
@@ -119,7 +119,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 
-                    if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name))
+                    if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                         continue;
 
                     storages[std::make_pair(database_name, iterator->name())] = storage;

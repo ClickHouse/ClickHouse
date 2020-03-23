@@ -152,7 +152,7 @@ class AssociativeApplierImpl
 
 public:
     /// Remembers the last N columns from `in`.
-    AssociativeApplierImpl(const UInt8ColumnPtrs & in)
+    explicit AssociativeApplierImpl(const UInt8ColumnPtrs & in)
         : vec(in[in.size() - N]->getData()), next(in) {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
@@ -176,7 +176,7 @@ class AssociativeApplierImpl<Op, 1>
     using ResultValueType = typename Op::ResultType;
 
 public:
-    AssociativeApplierImpl(const UInt8ColumnPtrs & in)
+    explicit AssociativeApplierImpl(const UInt8ColumnPtrs & in)
         : vec(in[in.size() - 1]->getData()) {}
 
     inline ResultValueType apply(const size_t i) const { return vec[i]; }
@@ -239,7 +239,7 @@ class AssociativeGenericApplierImpl
 
 public:
     /// Remembers the last N columns from `in`.
-    AssociativeGenericApplierImpl(const ColumnRawPtrs & in)
+    explicit AssociativeGenericApplierImpl(const ColumnRawPtrs & in)
         : val_getter{ValueGetterBuilder::build(in[in.size() - N])}, next{in} {}
 
     /// Returns a combination of values in the i-th row of all columns stored in the constructor.
@@ -265,7 +265,7 @@ class AssociativeGenericApplierImpl<Op, 1>
 
 public:
     /// Remembers the last N columns from `in`.
-    AssociativeGenericApplierImpl(const ColumnRawPtrs & in)
+    explicit AssociativeGenericApplierImpl(const ColumnRawPtrs & in)
         : val_getter{ValueGetterBuilder::build(in[in.size() - 1])} {}
 
     inline ResultValueType apply(const size_t i) const { return val_getter(i); }
@@ -287,7 +287,7 @@ struct OperationApplier
     {
         if (!use_result_data_as_input)
             doBatchedApply<false>(in, result_data);
-        while (in.size() > 0)
+        while (!in.empty())
             doBatchedApply<true>(in, result_data);
     }
 
