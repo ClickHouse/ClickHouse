@@ -275,8 +275,6 @@ private:
     private:
         WrappedPtr column_unique;
         bool shared = false;
-
-        void checkColumn(const IColumn & column);
     };
 
     Dictionary dictionary;

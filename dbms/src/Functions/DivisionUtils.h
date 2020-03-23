@@ -1,7 +1,6 @@
 #pragma once
 
 #include <type_traits>
-#include <common/likely.h>
 #include <Common/Exception.h>
 #include <Common/config.h>
 #include <DataTypes/NumberTraits.h>

@@ -1,6 +1,6 @@
 #include <common/shift10.h>
 
-#include <common/likely.h>
+#include "defines.h"
 
 #include <limits>
 
@@ -8,8 +8,8 @@
 template <typename T>
 static T shift10Impl(T x, int exponent)
 {
-    static constexpr ssize_t MIN_EXPONENT = -323;
-    static constexpr ssize_t MAX_EXPONENT = 308;
+    static constexpr ssize_t min_exponent = -323;
+    static constexpr ssize_t max_exponent = 308;
 
     static const long double powers10[] =
     {
@@ -47,12 +47,12 @@ static T shift10Impl(T x, int exponent)
         1e291L,1e292L,1e293L,1e294L,1e295L,1e296L,1e297L,1e298L,1e299L,1e300L,1e301L,1e302L,1e303L,1e304L,1e305L,1e306L,1e307L,1e308L
     };
 
-    if (unlikely(exponent < MIN_EXPONENT))  /// Note: there are some values below MIN_EXPONENT that is greater than zero.
+    if (unlikely(exponent < min_exponent))  /// Note: there are some values below MIN_EXPONENT that is greater than zero.
         x *= 0;     /// Multiplying to keep the sign of zero.
-    else if (unlikely(exponent > MAX_EXPONENT))
+    else if (unlikely(exponent > max_exponent))
         x *= std::numeric_limits<T>::infinity();  /// Multiplying to keep the sign of infinity.
     else
-        x *= powers10[exponent - MIN_EXPONENT];
+        x *= powers10[exponent - min_exponent];
 
     return x;
 }

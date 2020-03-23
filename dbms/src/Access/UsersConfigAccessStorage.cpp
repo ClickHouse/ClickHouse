@@ -2,11 +2,15 @@
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
 #include <Access/User.h>
+#include <Access/SettingsProfile.h>
 #include <Dictionaries/IDictionary.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
+#include <common/logger_useful.h>
+#include <boost/range/algorithm/copy.hpp>
+#include <boost/range/adaptor/map.hpp>
 #include <cstring>
 
 
@@ -16,6 +20,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -29,6 +34,8 @@ namespace
             return 'Q';
         if (type == typeid(RowPolicy))
             return 'P';
+        if (type == typeid(SettingsProfile))
+            return 'S';
         return 0;
     }
 
@@ -82,7 +89,14 @@ namespace
             user->authentication.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
         }
 
-        user->profile = config.getString(user_config + ".profile");
+        const auto profile_name_config = user_config + ".profile";
+        if (config.has(profile_name_config))
+        {
+            auto profile_name = config.getString(profile_name_config);
+            SettingsProfileElement profile_element;
+            profile_element.parent_profile = generateID(typeid(SettingsProfile), profile_name);
+            user->settings.push_back(std::move(profile_element));
+        }
 
         /// Fill list of allowed hosts.
         const auto networks_config = user_config + ".networks";
@@ -141,19 +155,18 @@ namespace
 
         if (databases)
         {
-            user->access.fullRevoke(AccessFlags::databaseLevel());
+            user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
+            user->access.grant(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
             for (const String & database : *databases)
-                user->access.grant(AccessFlags::databaseLevel(), database);
+                user->access.grant(AccessFlags::allFlags(), database);
         }
 
         if (dictionaries)
         {
-            user->access.fullRevoke(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
+            user->access.revoke(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
             for (const String & dictionary : *dictionaries)
-                user->access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG, dictionary);
+                user->access.grant(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG, dictionary);
         }
-        else if (databases)
-            user->access.grant(AccessType::dictGet, IDictionary::NO_DATABASE_TAG);
 
         user->access_with_grant_option = user->access;
 
@@ -225,7 +238,7 @@ namespace
             limits.max[ResourceType::EXECUTION_TIME] = Quota::secondsToExecutionTime(config.getUInt64(interval_config + ".execution_time", Quota::UNLIMITED));
         }
 
-        quota->roles.add(user_ids);
+        quota->to_roles.add(user_ids);
 
         return quota;
     }
@@ -325,11 +338,98 @@ namespace
                 auto policy = std::make_shared<RowPolicy>();
                 policy->setFullName(database, table_name, user_name);
                 policy->conditions[RowPolicy::SELECT_FILTER] = filter;
-                policy->roles.add(generateID(typeid(User), user_name));
+                policy->to_roles.add(generateID(typeid(User), user_name));
                 policies.push_back(policy);
             }
         }
         return policies;
+    }
+
+
+    SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
+                                                     const String & path_to_constraints)
+    {
+        SettingsProfileElements profile_elements;
+        Poco::Util::AbstractConfiguration::Keys names;
+        config.keys(path_to_constraints, names);
+        for (const String & name : names)
+        {
+            SettingsProfileElement profile_element;
+            profile_element.name = name;
+            Poco::Util::AbstractConfiguration::Keys constraint_types;
+            String path_to_name = path_to_constraints + "." + name;
+            config.keys(path_to_name, constraint_types);
+            for (const String & constraint_type : constraint_types)
+            {
+                if (constraint_type == "min")
+                    profile_element.min_value = config.getString(path_to_name + "." + constraint_type);
+                else if (constraint_type == "max")
+                    profile_element.max_value = config.getString(path_to_name + "." + constraint_type);
+                else if (constraint_type == "readonly")
+                    profile_element.readonly = true;
+                else
+                    throw Exception("Setting " + constraint_type + " value for " + name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
+            }
+            profile_elements.push_back(std::move(profile_element));
+        }
+        return profile_elements;
+    }
+
+    std::shared_ptr<SettingsProfile> parseSettingsProfile(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & profile_name)
+    {
+        auto profile = std::make_shared<SettingsProfile>();
+        profile->setName(profile_name);
+        String profile_config = "profiles." + profile_name;
+
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(profile_config, keys);
+
+        for (const std::string & key : keys)
+        {
+            if (key == "profile" || key.starts_with("profile["))
+            {
+                String parent_profile_name = config.getString(profile_config + "." + key);
+                SettingsProfileElement profile_element;
+                profile_element.parent_profile = generateID(typeid(SettingsProfile), parent_profile_name);
+                profile->elements.emplace_back(std::move(profile_element));
+                continue;
+            }
+
+            if (key == "constraints" || key.starts_with("constraints["))
+            {
+                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key));
+                continue;
+            }
+
+            SettingsProfileElement profile_element;
+            profile_element.name = key;
+            profile_element.value = config.getString(profile_config + "." + key);
+            profile->elements.emplace_back(std::move(profile_element));
+        }
+
+        return profile;
+    }
+
+
+    std::vector<AccessEntityPtr> parseSettingsProfiles(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+    {
+        std::vector<AccessEntityPtr> profiles;
+        Poco::Util::AbstractConfiguration::Keys profile_names;
+        config.keys("profiles", profile_names);
+        for (const auto & profile_name : profile_names)
+        {
+            try
+            {
+                profiles.push_back(parseSettingsProfile(config, profile_name));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Could not parse profile " + backQuote(profile_name));
+            }
+        }
+        return profiles;
     }
 }
 
@@ -347,6 +447,8 @@ void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfig
     for (const auto & entity : parseQuotas(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
     for (const auto & entity : parseRowPolicies(config, getLogger()))
+        all_entities.emplace_back(generateID(*entity), entity);
+    for (const auto & entity : parseSettingsProfiles(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
     memory_storage.setAll(all_entities);
 }

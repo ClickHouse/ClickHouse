@@ -49,7 +49,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     {
         auto resolve_table_type = show_query->temporary ? Context::ResolveExternal : Context::ResolveOrdinary;
         auto table_id = context.resolveStorageID(*show_query, resolve_table_type);
-        context.checkAccess(AccessType::SHOW, table_id);
+        context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
         create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(context, table_id.table_name);
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
@@ -57,7 +57,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         if (show_query->temporary)
             throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
         show_query->database = context.resolveDatabase(show_query->database);
-        context.checkAccess(AccessType::SHOW, show_query->database);
+        context.checkAccess(AccessType::SHOW_DATABASES, show_query->database);
         create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDatabaseQuery(context);
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
@@ -65,7 +65,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         if (show_query->temporary)
             throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
         show_query->database = context.resolveDatabase(show_query->database);
-        context.checkAccess(AccessType::SHOW, show_query->database, show_query->table);
+        context.checkAccess(AccessType::SHOW_DICTIONARIES, show_query->database, show_query->table);
         create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDictionaryQuery(context, show_query->table);
     }
 

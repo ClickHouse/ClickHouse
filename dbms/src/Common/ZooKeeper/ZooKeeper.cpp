@@ -5,9 +5,9 @@
 
 #include <random>
 #include <functional>
-#include <boost/algorithm/string.hpp>
 
 #include <common/logger_useful.h>
+#include <common/find_symbols.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/PODArray.h>
 #include <Common/thread_local_rng.h>
@@ -61,7 +61,7 @@ void ZooKeeper::init(const std::string & implementation, const std::string & hos
             throw KeeperException("No addresses passed to ZooKeeper constructor.", Coordination::ZBADARGUMENTS);
 
         std::vector<std::string> addresses_strings;
-        boost::split(addresses_strings, hosts, boost::is_any_of(","));
+        splitInto<','>(addresses_strings, hosts);
         Coordination::ZooKeeper::Addresses addresses;
         addresses.reserve(addresses_strings.size());
 

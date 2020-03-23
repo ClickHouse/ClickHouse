@@ -57,13 +57,22 @@ void MergedColumnOnlyOutputStream::writeSuffix()
     throw Exception("Method writeSuffix is not supported by MergedColumnOnlyOutputStream", ErrorCodes::NOT_IMPLEMENTED);
 }
 
-MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums()
+MergeTreeData::DataPart::Checksums
+MergedColumnOnlyOutputStream::writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums)
 {
     /// Finish columns serialization.
     MergeTreeData::DataPart::Checksums checksums;
     writer->finishDataSerialization(checksums, sync);
     writer->finishSkipIndicesSerialization(checksums);
 
+    auto columns = new_part->getColumns();
+
+    auto removed_files = removeEmptyColumnsFromPart(new_part, columns, checksums);
+    for (const String & removed_file : removed_files)
+        if (all_checksums.files.count(removed_file))
+            all_checksums.files.erase(removed_file);
+
+    new_part->setColumns(columns);
     return checksums;
 }
 

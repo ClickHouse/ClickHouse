@@ -3,7 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/Stopwatch.h>
-#include <common/Types.h>
+#include <common/types.h>
 #include <Common/ThreadPool.h>
 #include <random>
 #include <pcg_random.hpp>

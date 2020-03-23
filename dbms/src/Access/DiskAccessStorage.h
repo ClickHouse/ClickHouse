@@ -33,9 +33,9 @@ private:
 
     void initialize(const String & directory_path_, Notifications & notifications);
     bool readLists();
-    void writeLists();
+    bool writeLists();
     void scheduleWriteLists(std::type_index type);
-    void rebuildLists();
+    bool rebuildLists();
 
     void startListsWritingThread();
     void stopListsWritingThread();

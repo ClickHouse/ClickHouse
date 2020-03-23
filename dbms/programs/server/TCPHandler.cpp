@@ -162,7 +162,7 @@ void TCPHandler::runImpl()
         std::optional<DB::Exception> exception;
         bool network_error = false;
 
-        bool send_exception_with_stack_trace = connection_context.getSettingsRef().calculate_text_stack_trace;
+        bool send_exception_with_stack_trace = true;
 
         try
         {
@@ -647,8 +647,6 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
           */
         if (!isQueryCancelled())
         {
-            pipeline.finalize();
-
             sendTotals(lazy_format->getTotals());
             sendExtremes(lazy_format->getExtremes());
             sendProfileInfo(lazy_format->getProfileInfo());
@@ -952,11 +950,11 @@ void TCPHandler::receiveUnexpectedQuery()
 
     readStringBinary(skip_string, *in);
 
-    ClientInfo & skip_client_info = query_context->getClientInfo();
+    ClientInfo skip_client_info;
     if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         skip_client_info.read(*in, client_revision);
 
-    Settings & skip_settings = query_context->getSettingsRef();
+    Settings skip_settings;
     auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
                                                                                                       : SettingsBinaryFormat::OLD;
     skip_settings.deserialize(*in, settings_format);
@@ -1032,7 +1030,7 @@ void TCPHandler::receiveUnexpectedData()
             last_block_in.header,
             client_revision);
 
-    Block skip_block = skip_block_in->read();
+    skip_block_in->read();
     throw NetException("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 }
 

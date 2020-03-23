@@ -241,5 +241,9 @@ nav:
 
 - '新功能特性':
   - '路线图': 'roadmap.md'
-  - '更新日志': 'changelog.md'
+  - '更新日志':
+    - '2020': 'changelog/index.md'
+    - '2019': 'changelog/2019.md'
+    - '2018': 'changelog/2018.md'
+    - '2017': 'changelog/2017.md'
   - '安全更改日志': 'security_changelog.md'

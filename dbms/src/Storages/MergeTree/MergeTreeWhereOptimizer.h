@@ -65,7 +65,7 @@ private:
     Conditions analyze(const ASTPtr & expression) const;
 
     /// Transform Conditions list to WHERE or PREWHERE expression.
-    ASTPtr reconstruct(const Conditions & conditions) const;
+    static ASTPtr reconstruct(const Conditions & conditions);
 
     void calculateColumnSizes(const MergeTreeData & data, const Names & column_names);
 
@@ -74,8 +74,6 @@ private:
     void optimizeArbitrary(ASTSelectQuery & select) const;
 
     UInt64 getIdentifiersColumnSize(const NameSet & identifiers) const;
-
-    bool isConditionGood(const ASTPtr & condition) const;
 
     bool hasPrimaryKeyAtoms(const ASTPtr & ast) const;
 

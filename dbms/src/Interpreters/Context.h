@@ -9,6 +9,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/IAST_fwd.h>
+#include <Access/RowPolicy.h>
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
@@ -44,14 +45,11 @@ namespace DB
 
 struct ContextShared;
 class Context;
-class AccessRightsContext;
-using AccessRightsContextPtr = std::shared_ptr<const AccessRightsContext>;
+class ContextAccess;
 struct User;
 using UserPtr = std::shared_ptr<const User>;
-class RowPolicyContext;
-using RowPolicyContextPtr = std::shared_ptr<const RowPolicyContext>;
-class QuotaContext;
-using QuotaContextPtr = std::shared_ptr<const QuotaContext>;
+class EnabledRowPolicies;
+class EnabledQuota;
 class AccessFlags;
 struct AccessRightsElement;
 class AccessRightsElements;
@@ -151,11 +149,10 @@ private:
     std::optional<UUID> user_id;
     std::vector<UUID> current_roles;
     bool use_default_roles = false;
-    AccessRightsContextPtr access_rights;
-    RowPolicyContextPtr initial_row_policy;
+    std::shared_ptr<const ContextAccess> access;
+    std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
     String current_database;
     Settings settings;                                  /// Setting for query execution.
-    std::shared_ptr<const SettingsConstraints> settings_constraints;
     using ProgressCallback = std::function<void(const Progress & progress)>;
     ProgressCallback progress_callback;                 /// Callback for tracking progress of query execution.
     QueryStatus * process_list_elem = nullptr;   /// For tracking total resource usage for query.
@@ -246,31 +243,30 @@ public:
 
     /// Checks access rights.
     /// Empty database means the current database.
-    void checkAccess(const AccessFlags & access) const;
-    void checkAccess(const AccessFlags & access, const std::string_view & database) const;
-    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table) const;
-    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
-    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
-    void checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
-    void checkAccess(const AccessRightsElement & access) const;
-    void checkAccess(const AccessRightsElements & access) const;
+    void checkAccess(const AccessFlags & flags) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const;
+    void checkAccess(const AccessFlags & flags, const StorageID & table_id) const;
+    void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::string_view & column) const;
+    void checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const;
+    void checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const;
+    void checkAccess(const AccessRightsElement & element) const;
+    void checkAccess(const AccessRightsElements & elements) const;
 
-    void checkAccess(const AccessFlags & access, const StorageID & table_id) const;
-    void checkAccess(const AccessFlags & access, const StorageID & table_id, const std::string_view & column) const;
-    void checkAccess(const AccessFlags & access, const StorageID & table_id, const std::vector<std::string_view> & columns) const;
-    void checkAccess(const AccessFlags & access, const StorageID & table_id, const Strings & columns) const;
+    std::shared_ptr<const ContextAccess> getAccess() const;
 
-    AccessRightsContextPtr getAccessRights() const;
-
-    RowPolicyContextPtr getRowPolicy() const;
+    std::shared_ptr<const EnabledRowPolicies> getRowPolicies() const;
+    ASTPtr getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const;
 
     /// Sets an extra row policy based on `client_info.initial_user`, if it exists.
     /// TODO: we need a better solution here. It seems we should pass the initial row policy
     /// because a shard is allowed to don't have the initial user or it may be another user with the same name.
     void setInitialRowPolicy();
-    RowPolicyContextPtr getInitialRowPolicy() const;
 
-    QuotaContextPtr getQuota() const;
+    std::shared_ptr<const EnabledQuota> getQuota() const;
 
     /// We have to copy external tables inside executeQuery() to track limits. Therefore, set callback for it. Must set once.
     void setExternalTablesInitializer(ExternalTablesInitializer && initializer);
@@ -344,8 +340,8 @@ public:
     void setSettings(const Settings & settings_);
 
     /// Set settings by name.
-    void setSetting(const String & name, const String & value);
-    void setSetting(const String & name, const Field & value);
+    void setSetting(const StringRef & name, const String & value);
+    void setSetting(const StringRef & name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
@@ -356,7 +352,7 @@ public:
     void clampToSettingsConstraints(SettingsChanges & changes) const;
 
     /// Returns the current constraints (can return null).
-    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const { return settings_constraints; }
+    std::shared_ptr<const SettingsConstraints> getSettingsConstraints() const;
 
     const EmbeddedDictionaries & getEmbeddedDictionaries() const;
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
@@ -427,7 +423,6 @@ public:
     }
 
     const Settings & getSettingsRef() const { return settings; }
-    Settings & getSettingsRef() { return settings; }
 
     void setProgressCallback(ProgressCallback callback);
     /// Used in InterpreterSelectQuery to pass it to the IBlockInputStream.
@@ -597,7 +592,6 @@ private:
     std::unique_lock<std::recursive_mutex> getLock() const;
 
     /// Compute and set actual user settings, client_info.current_user should be set
-    void calculateUserSettings();
     void calculateAccessRights();
 
     template <typename... Args>

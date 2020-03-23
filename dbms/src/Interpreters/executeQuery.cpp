@@ -24,7 +24,7 @@
 
 #include <Storages/StorageInput.h>
 
-#include <Access/QuotaContext.h>
+#include <Access/EnabledQuota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
@@ -148,7 +148,8 @@ static void logException(Context & context, QueryLogElement & elem)
 static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time)
 {
     /// Exception before the query execution.
-    context.getQuota()->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
+    if (auto quota = context.getQuota())
+        quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -307,12 +308,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         auto interpreter = InterpreterFactory::get(ast, context, stage);
         bool use_processors = settings.experimental_use_processors && allow_processors && interpreter->canExecuteWithProcessors();
 
-        QuotaContextPtr quota;
+        std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())
         {
             quota = context.getQuota();
-            quota->used(Quota::QUERIES, 1);
-            quota->checkExceeded(Quota::ERRORS);
+            if (quota)
+            {
+                quota->used(Quota::QUERIES, 1);
+                quota->checkExceeded(Quota::ERRORS);
+            }
         }
 
         IBlockInputStream::LocalLimits limits;
@@ -486,9 +490,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             };
 
-            auto exception_callback = [elem, &context, log_queries] () mutable
+            auto exception_callback = [elem, &context, log_queries, quota(quota)] () mutable
             {
-                context.getQuota()->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
+                if (quota)
+                    quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
                 elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
 
@@ -748,8 +753,6 @@ void executeQuery(
                 auto executor = pipeline.execute();
                 executor->execute(context.getSettingsRef().max_threads);
             }
-
-            pipeline.finalize();
         }
     }
     catch (...)

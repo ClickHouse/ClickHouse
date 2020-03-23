@@ -12,7 +12,7 @@ class Context;
 
 /** Implements `databases` system table, which allows you to get information about all databases.
   */
-class StorageSystemDatabases : public ext::shared_ptr_helper<StorageSystemDatabases>, public IStorageSystemOneBlock<StorageSystemDatabases>
+class StorageSystemDatabases final : public ext::shared_ptr_helper<StorageSystemDatabases>, public IStorageSystemOneBlock<StorageSystemDatabases>
 {
     friend struct ext::shared_ptr_helper<StorageSystemDatabases>;
 public:

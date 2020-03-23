@@ -34,8 +34,6 @@ private:
 
     BlockIO executeToDictionary(const String & database_name, const String & dictionary_name, ASTDropQuery::Kind kind, bool if_exists, bool is_temporary, bool no_ddl_lock);
 
-    DatabasePtr tryGetDatabase(const String & database_name, bool exists);
-
     DatabaseAndTable tryGetDatabaseAndTable(const String & database_name, const String & table_name, bool if_exists);
 
     BlockIO executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind);

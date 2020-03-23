@@ -41,7 +41,7 @@ namespace DB
 /// Also this class write and flush special X-ClickHouse-Progress HTTP headers
 ///  if no data was sent at the time of progress notification.
 /// This allows to implement progress bar in HTTP clients.
-class WriteBufferFromHTTPServerResponse : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferFromHTTPServerResponse final : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
     Poco::Net::HTTPServerRequest & request;
