@@ -81,6 +81,9 @@ protected:
 
     ASTPtr getCreateQueryFromMetadata(const Context & context, const String & metadata_path, bool throw_on_error) const;
 
+    virtual void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path);
+    virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
+                                   const String & table_metadata_tmp_path, const String & table_metadata_path);
 
     //bool detachTableAndRemoveMetadata(const String & table_name);
     //void replaceMetadata(const ASTPtr & create, );

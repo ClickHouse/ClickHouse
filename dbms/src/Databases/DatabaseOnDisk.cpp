@@ -140,6 +140,8 @@ void DatabaseOnDisk::createTable(
     const ASTPtr & query)
 {
     const auto & settings = context.getSettingsRef();
+    const auto & create = query->as<ASTCreateQuery &>();
+    assert(getDatabaseName() == create.database && table_name == create.table);
 
     /// Create a file with metadata if necessary - if the query is not ATTACH.
     /// Write the query of `ATTACH table` to it.
@@ -153,12 +155,20 @@ void DatabaseOnDisk::createTable(
     /// A race condition would be possible if a table with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
+
     if (isDictionaryExist(context, table_name))
         throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.",
             ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
     if (isTableExist(context, table_name))
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+
+    if (create.attach_short_syntax)
+    {
+        /// Metadata already exists, table was detached
+        attachTable(table_name, table, getTableDataPath(create));
+        return;
+    }
 
     String table_metadata_path = getObjectMetadataPath(table_name);
     String table_metadata_tmp_path = table_metadata_path + create_suffix;
@@ -176,10 +186,16 @@ void DatabaseOnDisk::createTable(
         out.close();
     }
 
+    commitCreateTable(create, table, table_metadata_tmp_path, table_metadata_path);
+}
+
+void DatabaseOnDisk::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
+                                       const String & table_metadata_tmp_path, const String & table_metadata_path)
+{
     try
     {
         /// Add a table to the map of known tables.
-        attachTable(table_name, table, getTableDataPath(query->as<ASTCreateQuery &>()));
+        attachTable(query.table, table, getTableDataPath(query));
 
         /// If it was ATTACH query and file with table metadata already exist
         /// (so, ATTACH is done after DETACH), then rename atomically replaces old file with new one.
@@ -473,6 +489,20 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const Context & context, const
     }
 
     return ast;
+}
+
+void DatabaseOnDisk::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path)
+{
+    try
+    {
+        /// rename atomically replaces the old file with the new one.
+        Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
+    }
+    catch (...)
+    {
+        Poco::File(table_metadata_tmp_path).remove();
+        throw;
+    }
 }
 
 }

@@ -5,6 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
 #include <Parsers/formatAST.h>
+#include <Common/rename.h>
 
 
 namespace DB
@@ -14,7 +15,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int FILE_DOESNT_EXIST;
-    extern const int DATABASE_NOT_EMPTY;
+    extern const int CANNOT_ASSIGN_ALTER;
 }
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, Context & context_)
@@ -50,30 +51,32 @@ void DatabaseAtomic::drop(const Context &)
 void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     assert(relative_table_path != data_path && !relative_table_path.empty());
-    DatabaseWithDictionaries::attachTable(name, table, relative_table_path);
     std::lock_guard lock(mutex);
+    DatabaseWithDictionaries::attachTableUnlocked(name, table, relative_table_path);
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
 }
 
 StoragePtr DatabaseAtomic::detachTable(const String & name)
 {
-    {
-        std::lock_guard lock(mutex);
-        table_name_to_path.erase(name);
-    }
-    return DatabaseWithDictionaries::detachTable(name);
+    std::lock_guard lock(mutex);
+    auto table = DatabaseWithDictionaries::detachTableUnlocked(name);
+    table_name_to_path.erase(name);
+    return table;
 }
 
 void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool no_delay)
 {
     String table_metadata_path = getObjectMetadataPath(table_name);
-
-    //FIXME
-    StoragePtr table = detachTable(table_name);
-
-    String table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
-    LOG_INFO(log, "Mark table " + table->getStorageID().getNameForLogs() + " to drop.");
-    Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);
+    String table_metadata_path_drop;
+    StoragePtr table;
+    {
+        std::lock_guard lock(mutex);
+        table = getTableUnlocked(table_name);
+        table_metadata_path_drop = DatabaseCatalog::instance().getPathForDroppedMetadata(table->getStorageID());
+        Poco::File(table_metadata_path).renameTo(table_metadata_path_drop);
+        DatabaseWithDictionaries::detachTableUnlocked(table_name);       /// Should never throw
+        table_name_to_path.erase(table_name);
+    }
     DatabaseCatalog::instance().enqueueDroppedTableCleanup(table->getStorageID(), table, table_metadata_path_drop, no_delay);
 }
 
@@ -94,14 +97,38 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     if (!table)
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
-    /// Update database and table name in memory without moving any data on disk
-    table->renameInMemory(to_database.getDatabaseName(), to_table_name);
+    String old_metadata_path = getObjectMetadataPath(table_name);
+    String new_metadata_path = to_database.getObjectMetadataPath(table_name);
 
-    /// NOTE Non-atomic.
-    auto path = getTableDataPath(table_name);
-    detachTable(table_name);
-    Poco::File(getObjectMetadataPath(table_name)).renameTo(to_database.getObjectMetadataPath(to_table_name));
-    to_database.attachTable(to_table_name, table, path);
+    if (this == &to_database)
+    {
+        std::lock_guard lock(mutex);
+        renameNoReplace(old_metadata_path, new_metadata_path);
+        auto table_data_path = table_name_to_path.find(table_name)->second;
+        tables.erase(table_name);
+        table_name_to_path.erase(table_name);
+        table->renameInMemory(to_database.getDatabaseName(), to_table_name);
+        tables.emplace(to_table_name, table);
+        table_name_to_path.emplace(to_table_name, table_data_path);
+    }
+    else
+    {
+        String table_data_path;
+        {
+            std::lock_guard lock(mutex);
+            renameNoReplace(old_metadata_path, new_metadata_path);
+            table_data_path = table_name_to_path.find(table_name)->second;
+            tables.erase(table_name);
+            table_name_to_path.erase(table_name);
+            DatabaseCatalog::instance().updateUUIDMapping(table->getStorageID().uuid, to_database.shared_from_this(), table);
+        }
+        table->renameInMemory(to_database.getDatabaseName(), to_table_name);
+        auto & to_atomic_db = dynamic_cast<DatabaseAtomic &>(to_database);
+
+        std::lock_guard lock(to_atomic_db.mutex);
+        to_atomic_db.tables.emplace(to_table_name, table);
+        to_atomic_db.table_name_to_path.emplace(to_table_name, table_data_path);
+    }
 }
 
 void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
@@ -112,6 +139,38 @@ void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore
 void DatabaseAtomic::shutdown()
 {
     DatabaseWithDictionaries::shutdown();
+}
+
+void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
+                                       const String & table_metadata_tmp_path, const String & table_metadata_path)
+{
+    auto table_data_path = getTableDataPath(query);
+    try
+    {
+        std::lock_guard lock{mutex};
+        renameNoReplace(table_metadata_tmp_path, table_metadata_path);
+        attachTableUnlocked(query.table, table, table_data_path);   /// Should never throw
+        table_name_to_path.emplace(query.table, table_data_path);
+    }
+    catch (...)
+    {
+        Poco::File(table_metadata_tmp_path).remove();
+        throw;
+    }
+
+}
+
+void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path)
+{
+    SCOPE_EXIT({ Poco::File(table_metadata_tmp_path).remove(); });
+
+    std::lock_guard lock{mutex};
+    auto actual_table_id = getTableUnlocked(table_id.table_name)->getStorageID();
+
+    if (table_id.uuid != actual_table_id.uuid)
+        throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
+
+    renameExchange(table_metadata_tmp_path, table_metadata_path);
 }
 
 }

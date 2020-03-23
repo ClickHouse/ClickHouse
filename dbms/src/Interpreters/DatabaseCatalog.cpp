@@ -358,6 +358,17 @@ void DatabaseCatalog::removeUUIDMapping(const UUID & uuid)
         throw Exception("Mapping for table with UUID=" + toString(uuid) + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
 }
 
+void DatabaseCatalog::updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table)
+{
+    assert(uuid != UUIDHelpers::Nil && getFirstLevelIdx(uuid) < uuid_map.size());
+    UUIDToStorageMapPart & map_part = uuid_map[getFirstLevelIdx(uuid)];
+    std::lock_guard lock{map_part.mutex};
+    auto it = map_part.map.find(uuid);
+    if (it == map_part.map.end())
+        throw Exception("Mapping for table with UUID=" + toString(uuid) + " doesn't exist", ErrorCodes::LOGICAL_ERROR);
+    it->second = std::make_pair(std::move(database), std::move(table));
+}
+
 DatabaseCatalog::DatabaseCatalog(Context * global_context_)
     : global_context(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
 {
