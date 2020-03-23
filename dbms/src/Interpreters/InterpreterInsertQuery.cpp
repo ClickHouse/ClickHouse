@@ -123,11 +123,11 @@ BlockIO InterpreterInsertQuery::execute()
     {
         // Distributed INSERT SELECT
         std::shared_ptr<StorageDistributed> storage_src;
-        auto & select_ = query.select->as<ASTSelectWithUnionQuery &>();
+        auto & select = query.select->as<ASTSelectWithUnionQuery &>();
         auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
-        if (select_.list_of_selects->children.size() == 1)
+        if (select.list_of_selects->children.size() == 1)
         {
-            auto & select_query = select_.list_of_selects->children.at(0)->as<ASTSelectQuery &>();
+            auto & select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery &>();
             JoinedTables joined_tables(Context(context), select_query);
 
             if (joined_tables.tablesCount() == 1)
