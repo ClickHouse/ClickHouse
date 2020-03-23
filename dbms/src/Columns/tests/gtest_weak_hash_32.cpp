@@ -8,12 +8,26 @@
 #include <Common/WeakHash.h>
 
 #include <unordered_map>
+#include <iostream>
 
 using namespace DB;
 
 template <typename T>
-void checkColumn(const WeakHash32::Container & hash, const PaddedPODArray<T> & eq_class, size_t allowed_collisions = 0)
+void checkColumn(
+    const WeakHash32::Container & hash,
+    const PaddedPODArray<T> & eq_class,
+    const std::function<std::string(size_t)> & print_function,
+    size_t allowed_collisions = 0,
+    size_t max_collisions_to_print = 10)
 {
+    auto print_for_row = [&](size_t row)
+    {
+        std::string res = "row: " + std::to_string(row);
+        res += " hash: " + std::to_string(hash[row]);
+        res += " value: " + print_function(row);
+        return res;
+    };
+
     /// Check equal rows has equal hash.
     {
         std::unordered_map<T, UInt32> map;
@@ -26,7 +40,16 @@ void checkColumn(const WeakHash32::Container & hash, const PaddedPODArray<T> & e
             if (it == map.end())
                 map[val] = hash[i];
             else
+            {
+                if (it->second != hash[i])
+                {
+                    std::cout << "Different hashes for the same equivalent class (" << val << "):\n";
+                    std::cout << print_for_row(it->first) << '\n';
+                    std::cout << print_for_row(i) << std::endl;
+                }
+
                 ASSERT_EQ(it->second, hash[i]);
+            }
         }
     }
 
@@ -43,7 +66,18 @@ void checkColumn(const WeakHash32::Container & hash, const PaddedPODArray<T> & e
             if (it == map.end())
                 map[hash[i]] = val;
             else if (it->second != val)
+            {
                 ++num_collisions;
+
+                if (num_collisions <= max_collisions_to_print)
+                {
+                    std::cout << "Collision:\n";
+                    std::cout << print_for_row(it->second) << '\n';
+                    std::cout << print_for_row(i) << std::endl;
+                }
+                else if (num_collisions > allowed_collisions)
+                    break;
+            }
         }
 
         ASSERT_LE(num_collisions, allowed_collisions);
@@ -64,7 +98,7 @@ TEST(WeakHash32, ColumnVectorU8)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), col->getData());
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(col->getElement(row)); });
 }
 
 TEST(WeakHash32, ColumnVectorI8)
@@ -81,7 +115,7 @@ TEST(WeakHash32, ColumnVectorI8)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), col->getData());
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(col->getElement(row)); });
 }
 
 TEST(WeakHash32, ColumnVectorU16)
@@ -98,7 +132,7 @@ TEST(WeakHash32, ColumnVectorU16)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), col->getData());
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(col->getElement(row)); });
 }
 
 TEST(WeakHash32, ColumnVectorI16)
@@ -115,7 +149,7 @@ TEST(WeakHash32, ColumnVectorI16)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), col->getData());
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(col->getElement(row)); });
 }
 
 TEST(WeakHash32, ColumnVectorU32)
@@ -132,7 +166,7 @@ TEST(WeakHash32, ColumnVectorU32)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), col->getData());
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(col->getElement(row)); });
 }
 
 TEST(WeakHash32, ColumnVectorI32)
@@ -149,7 +183,7 @@ TEST(WeakHash32, ColumnVectorI32)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), col->getData());
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(col->getElement(row)); });
 }
 
 TEST(WeakHash32, ColumnVectorU64)
@@ -166,7 +200,7 @@ TEST(WeakHash32, ColumnVectorU64)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), col->getData());
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(col->getElement(row)); });
 }
 
 TEST(WeakHash32, ColumnVectorI64)
@@ -183,7 +217,7 @@ TEST(WeakHash32, ColumnVectorI64)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), col->getData());
+    checkColumn(hash.getData(), col->getData(), [&](size_t row) { return std::to_string(col->getElement(row)); });
 }
 
 TEST(WeakHash32, ColumnString_1)
@@ -205,7 +239,7 @@ TEST(WeakHash32, ColumnString_1)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), data);
+    checkColumn(hash.getData(), data, [&](size_t row) { return col->getDataAt(row).toString(); });
 }
 
 TEST(WeakHash32, ColumnString_2)
@@ -242,7 +276,7 @@ TEST(WeakHash32, ColumnString_2)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), data);
+    checkColumn(hash.getData(), data, [&](size_t row) { return col->getDataAt(row).toString(); });
 }
 
 TEST(WeakHash32, ColumnString_3)
@@ -280,7 +314,7 @@ TEST(WeakHash32, ColumnString_3)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), data);
+    checkColumn(hash.getData(), data, [&](size_t row) { return col->getDataAt(row).toString(); });
 }
 
 TEST(WeakHash32, ColumnFixedString)
@@ -308,7 +342,7 @@ TEST(WeakHash32, ColumnFixedString)
     WeakHash32 hash(col->size());
     col->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), data);
+    checkColumn(hash.getData(), data, [&](size_t row) { return col->getDataAt(row).toString(); });
 }
 
 TEST(WeakHash32, ColumnArray)
@@ -355,7 +389,15 @@ TEST(WeakHash32, ColumnArray)
     WeakHash32 hash(col_arr->size());
     col_arr->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), eq_data);
+    auto print_function = [&](size_t row)
+    {
+        auto & off = col_arr->getOffsets();
+        size_t s = off[row] - off[row - 1];
+        auto val = col_arr->getData().getUInt(off[row]);
+        return std::string("[array of size ") + std::to_string(s) + " with values " + std::to_string(val) + "]";
+    };
+
+    checkColumn(hash.getData(), eq_data, print_function);
 }
 
 TEST(WeakHash32, ColumnArrayArray)
@@ -368,7 +410,7 @@ TEST(WeakHash32, ColumnArrayArray)
     auto & eq_data = eq->getData();
     auto & val_data = val->getData();
     auto & off_data = off->getData();
-    auto & off2_data = off->getData();
+    auto & off2_data = off2->getData();
 
     /* [[0]]
      * [[0], [0]]
@@ -410,7 +452,20 @@ TEST(WeakHash32, ColumnArrayArray)
     auto col_arr_arr = ColumnArray::create(std::move(col_arr), std::move(off2));
 
     WeakHash32 hash(col_arr_arr->size());
-    col_arr->updateWeakHash32(hash);
+    col_arr_arr->updateWeakHash32(hash);
 
-    checkColumn(hash.getData(), eq_data);
+    auto print_function = [&](size_t row2)
+    {
+        auto & off2 = col_arr_arr->getOffsets();
+        size_t s2 = off2[row2] - off2[row2 - 1];
+        auto & arr2 = typeid_cast<const ColumnArray &>(col_arr_arr->getData());
+        auto & off = arr2.getOffsets();
+        size_t row = off2[row2];
+        size_t s = off[row] - off[row - 1];
+        auto val = arr2.getData().getUInt(off[row]);
+        return std::string("[array of size ") + std::to_string(s2) + " with values ["
+                                "[[array of size " + std::to_string(s) + " with values " + std::to_string(val) + "]]";
+    };
+
+    checkColumn(hash.getData(), eq_data, print_function);
 }
