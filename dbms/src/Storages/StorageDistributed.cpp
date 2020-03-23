@@ -222,17 +222,11 @@ public:
             if (!isColumnConst(*result.column))
                 return;
 
-            if (result.column->isNullAt(0))
-            {
-                node = std::make_shared<ASTLiteral>(Field());
-            }
-            else
-            {
-                node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
-            }
+            node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
         }
     }
 };
+
 void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & columns)
 {
     auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns);
@@ -242,7 +236,7 @@ void replaceConstantExpressions(ASTPtr & node, const Context & context, const Na
     visitor.visit(node);
 }
 
-} // \anonymous
+}
 
 
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
