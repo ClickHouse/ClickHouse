@@ -82,5 +82,26 @@ private:
     static constexpr size_t kMaxDepth = 7;
 };
 
+/** Uses single BucketsPolygonIndex for all queries. */
+class OneBucketPolygonDictionary : public IPolygonDictionary
+{
+public:
+    OneBucketPolygonDictionary(
+            const std::string & database_,
+            const std::string & name_,
+            const DictionaryStructure & dict_struct_,
+            DictionarySourcePtr source_ptr_,
+            DictionaryLifetime dict_lifetime_,
+            InputType input_type_,
+            PointType point_type_);
+
+    std::shared_ptr<const IExternalLoadable> clone() const override;
+
+private:
+    bool find(const Point & point, size_t & id) const override;
+
+    BucketsPolygonIndex buckets_idx;
+};
+
 }
 
