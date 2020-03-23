@@ -92,8 +92,10 @@ public:
     virtual bool supportsVerticalMerge() const { return false; }
 
     /// NOTE: Returns zeros if column files are not found in checksums.
+    /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
 
+    /// Return information about column size on disk for all columns in part
     ColumnSize getTotalColumnsSize() const { return total_columns_size; }
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
