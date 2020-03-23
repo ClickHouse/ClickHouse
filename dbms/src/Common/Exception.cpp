@@ -273,7 +273,7 @@ void tryLogException(std::exception_ptr e, const char * log_name, const std::str
 {
     try
     {
-        std::rethrow_exception(std::move(e));
+        std::rethrow_exception(std::move(e)); // NOLINT
     }
     catch (...)
     {
@@ -285,7 +285,7 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 {
     try
     {
-        std::rethrow_exception(std::move(e));
+        std::rethrow_exception(std::move(e)); // NOLINT
     }
     catch (...)
     {
@@ -327,7 +327,7 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
 {
     try
     {
-        std::rethrow_exception(std::move(e));
+        std::rethrow_exception(std::move(e)); // NOLINT
     }
     catch (...)
     {

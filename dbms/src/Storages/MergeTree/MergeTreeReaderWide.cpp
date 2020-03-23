@@ -26,18 +26,18 @@ namespace ErrorCodes
 }
 
 MergeTreeReaderWide::MergeTreeReaderWide(
-    const DataPartWidePtr & data_part_,
-    const NamesAndTypesList & columns_,
+    DataPartWidePtr data_part_,
+    NamesAndTypesList columns_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
-    const MarkRanges & mark_ranges_,
-    const MergeTreeReaderSettings & settings_,
-    const IMergeTreeDataPart::ValueSizeMap & avg_value_size_hints_,
+    MarkRanges mark_ranges_,
+    MergeTreeReaderSettings settings_,
+    IMergeTreeDataPart::ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
     : IMergeTreeReader(
-        data_part_, columns_, uncompressed_cache_, mark_cache_,
-        mark_ranges_, settings_, avg_value_size_hints_)
+        std::move(data_part_), std::move(columns_), uncompressed_cache_, std::move(mark_cache_),
+        std::move(mark_ranges_), std::move(settings_), std::move(avg_value_size_hints_))
 {
     try
     {

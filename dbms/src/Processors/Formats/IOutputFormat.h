@@ -2,6 +2,7 @@
 
 #include <string>
 #include <Processors/IProcessor.h>
+#include <Processors/RowsBeforeLimitCounter.h>
 #include <IO/Progress.h>
 
 
@@ -33,6 +34,8 @@ protected:
     bool finished = false;
     bool finalized = false;
 
+    RowsBeforeLimitCounterPtr rows_before_limit_counter;
+
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}
@@ -49,6 +52,9 @@ public:
 
     /// Value for rows_before_limit_at_least field.
     virtual void setRowsBeforeLimit(size_t /*rows_before_limit*/) {}
+
+    /// Counter to calculate rows_before_limit_at_least in processors pipeline.
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit_counter.swap(counter); }
 
     /// Notify about progress. Method could be called from different threads.
     /// Passed value are delta, that must be summarized.

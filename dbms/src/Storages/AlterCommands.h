@@ -41,8 +41,8 @@ struct AlterCommand
 
     String column_name;
 
-    /// For DROP COLUMN ... FROM PARTITION
-    String partition_name;
+    /// For DROP/CLEAR COLUMN/INDEX ... IN PARTITION
+    ASTPtr partition;
 
     /// For ADD and MODIFY, a new column type.
     DataTypePtr data_type = nullptr;
@@ -83,6 +83,9 @@ struct AlterCommand
 
     /// indicates that this command should not be applied, for example in case of if_exists=true and column doesn't exist.
     bool ignore = false;
+
+    /// Clear columns or index (don't drop from metadata)
+    bool clear = false;
 
     /// For ADD and MODIFY
     CompressionCodecPtr codec = nullptr;

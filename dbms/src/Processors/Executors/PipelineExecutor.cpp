@@ -45,7 +45,7 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
 
 bool PipelineExecutor::addEdges(UInt64 node)
 {
-    auto throwUnknownProcessor = [](const IProcessor * proc, const IProcessor * parent, bool from_input_port)
+    auto throw_unknown_processor = [](const IProcessor * proc, const IProcessor * parent, bool from_input_port)
     {
         String msg = "Processor " + proc->getName() + " was found as " + (from_input_port ? "input" : "output")
                      + " for processor " + parent->getName() + ", but not found in list of processors.";
@@ -61,7 +61,7 @@ bool PipelineExecutor::addEdges(UInt64 node)
     {
         auto it = processors_map.find(to_proc);
         if (it == processors_map.end())
-            throwUnknownProcessor(to_proc, cur, true);
+            throw_unknown_processor(to_proc, cur, true);
 
         UInt64 proc_num = it->second;
         auto & edge = edges.emplace_back(proc_num, is_backward, input_port_number, output_port_number, update_list);

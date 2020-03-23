@@ -34,11 +34,11 @@ struct LengthUTF8Impl
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt64 & /*res*/)
+    static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt64 & /*res*/)
     {
     }
 
-    static void vector_fixed_to_vector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt64> & res)
+    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt64> & res)
     {
         size_t size = data.size() / n;
 

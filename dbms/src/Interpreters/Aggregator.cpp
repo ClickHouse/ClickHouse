@@ -82,8 +82,8 @@ void AggregatedDataVariants::convertToTwoLevel()
     {
     #define M(NAME) \
         case Type::NAME: \
-            NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*NAME); \
-            NAME.reset(); \
+            NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*(NAME)); \
+            (NAME).reset(); \
             type = Type::NAME ## _two_level; \
             break;
 
@@ -510,7 +510,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     AggregatedDataWithoutKey & res,
     size_t rows,
     AggregateFunctionInstruction * aggregate_instructions,
-    Arena * arena) const
+    Arena * arena)
 {
     /// Adding values
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)

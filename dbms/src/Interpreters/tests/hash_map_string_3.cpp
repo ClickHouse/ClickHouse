@@ -57,10 +57,10 @@ struct STRUCT : public StringRef {}; \
 namespace ZeroTraits \
 { \
     template <> \
-    inline bool check<STRUCT>(STRUCT x) { return nullptr == x.data; } \
+    inline bool check<STRUCT>(STRUCT x) { return nullptr == x.data; } /* NOLINT */ \
  \
     template <> \
-    inline void set<STRUCT>(STRUCT & x) { x.data = nullptr; } \
+    inline void set<STRUCT>(STRUCT & x) { x.data = nullptr; } /* NOLINT */ \
 } \
  \
 template <> \
@@ -466,8 +466,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = atoi(argv[1]);
-    size_t m = atoi(argv[2]);
+    size_t n = std::stol(argv[1]);
+    size_t m = std::stol(argv[2]);
 
     DB::Arena pool;
     std::vector<StringRef> data(n);

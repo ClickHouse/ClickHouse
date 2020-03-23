@@ -40,7 +40,7 @@ struct ReverseImpl
         }
     }
 
-    static void vector_fixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data)
+    static void vectorFixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data)
     {
         res_data.resize(data.size());
         size_t size = data.size() / n;
@@ -100,7 +100,7 @@ public:
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = ColumnFixedString::create(col_fixed->getN());
-            ReverseImpl::vector_fixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
+            ReverseImpl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
             block.getByPosition(result).column = std::move(col_res);
         }
         else

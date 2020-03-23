@@ -89,8 +89,6 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
         MergeTreeData::DataPartPtr part = findPart(part_name);
 
-        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
-
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
         /// We'll take a list of files from the list of checksums.
