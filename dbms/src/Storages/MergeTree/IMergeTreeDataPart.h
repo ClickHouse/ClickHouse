@@ -15,7 +15,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Storages/MergeTree/AlterAnalysisResult.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Columns/IColumn.h>
 
@@ -94,18 +93,12 @@ public:
 
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
-    ///   (either by locking columns_lock, or by locking table structure).
+    ///   (by locking table structure).
     virtual ColumnSize getColumnSize(const String & /* name */, const IDataType & /* type */) const { return {}; }
 
     virtual ColumnSize getTotalColumnsSize() const { return {}; }
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
-
-    /// Returns rename map of column files for the alter converting expression onto new table files.
-    /// Files to be deleted are mapped to an empty string in rename map.
-    virtual NameToNameMap createRenameMapForAlter(
-        AlterAnalysisResult & /* analysis_result */,
-        const NamesAndTypesList & /* old_columns */) const { return {}; }
 
     virtual ~IMergeTreeDataPart();
 
@@ -255,7 +248,7 @@ public:
     struct MinMaxIndex
     {
         /// A direct product of ranges for each key column. See Storages/MergeTree/KeyCondition.cpp for details.
-        std::vector<Range> parallelogram;
+        std::vector<Range> hyperrectangle;
         bool initialized = false;
 
     public:
@@ -263,14 +256,14 @@ public:
 
         /// For month-based partitioning.
         MinMaxIndex(DayNum min_date, DayNum max_date)
-            : parallelogram(1, Range(min_date, true, max_date, true))
+            : hyperrectangle(1, Range(min_date, true, max_date, true))
             , initialized(true)
         {
         }
 
-        void load(const MergeTreeData & storage, const String & part_path);
-        void store(const MergeTreeData & storage, const String & part_path, Checksums & checksums) const;
-        void store(const Names & column_names, const DataTypes & data_types, const String & part_path, Checksums & checksums) const;
+        void load(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path);
+        void store(const MergeTreeData & data, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
+        void store(const Names & column_names, const DataTypes & data_types, const DiskPtr & disk_, const String & part_path, Checksums & checksums) const;
 
         void update(const Block & block, const Names & column_names);
         void merge(const MinMaxIndex & other);
@@ -283,17 +276,13 @@ public:
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
-    /** It is blocked for writing when changing columns, checksums or any part files.
-        * Locked to read when reading columns, checksums or any part files.
-        */
-    mutable std::shared_mutex columns_lock;
-
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
     UInt64 getMarksCount() const;
 
     size_t getFileSizeOrZero(const String & file_name) const;
+    String getFullRelativePath() const;
     String getFullPath() const;
     void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = false) const;
     void renameToDetached(const String & prefix) const;
@@ -305,7 +294,7 @@ public:
     /// Checks that .bin and .mrk files exist
     virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
 
-    static UInt64 calculateTotalSizeOnDisk(const String & from);
+    static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
 
 protected:
     /// Columns description.

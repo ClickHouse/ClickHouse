@@ -266,7 +266,7 @@ private:
 
         /// Dictionary may be shared for several mutable columns.
         /// Immutable columns may have the same column unique, which isn't necessarily shared dictionary.
-        void setShared(const ColumnPtr & dictionary);
+        void setShared(const ColumnPtr & column_unique_);
         bool isShared() const { return shared; }
 
         /// Create new dictionary with only keys that are mentioned in positions.
@@ -275,8 +275,6 @@ private:
     private:
         WrappedPtr column_unique;
         bool shared = false;
-
-        void checkColumn(const IColumn & column);
     };
 
     Dictionary dictionary;

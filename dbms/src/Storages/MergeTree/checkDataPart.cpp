@@ -28,7 +28,8 @@ namespace ErrorCodes
 
 
 IMergeTreeDataPart::Checksums checkDataPart(
-    const String & full_path,
+    const DiskPtr & disk,
+    const String & full_relative_path,
     const NamesAndTypesList & columns_list,
     const MergeTreeDataPartType & part_type,
     bool require_checksums,
@@ -42,16 +43,16 @@ IMergeTreeDataPart::Checksums checkDataPart(
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedChecks};
 
-    String path = full_path;
+    String path = full_relative_path;
     if (!path.empty() && path.back() != '/')
         path += "/";
 
     NamesAndTypesList columns_txt;
 
     {
-        ReadBufferFromFile buf(path + "columns.txt");
-        columns_txt.readText(buf);
-        assertEOF(buf);
+        auto buf = disk->readFile(path + "columns.txt");
+        columns_txt.readText(*buf);
+        assertEOF(*buf);
     }
 
     if (columns_txt != columns_list)
@@ -62,10 +63,10 @@ IMergeTreeDataPart::Checksums checkDataPart(
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
     IMergeTreeDataPart::Checksums checksums_data;
 
-    auto checksum_compressed_file = [](const String & file_path)
+    auto checksum_compressed_file = [](const DiskPtr & disk_, const String & file_path)
     {
-        ReadBufferFromFile file_buf(file_path);
-        HashingReadBuffer compressed_hashing_buf(file_buf);
+        auto file_buf = disk_->readFile(file_path);
+        HashingReadBuffer compressed_hashing_buf(*file_buf);
         CompressedReadBuffer uncompressing_buf(compressed_hashing_buf);
         HashingReadBuffer uncompressed_hashing_buf(uncompressing_buf);
 
@@ -80,7 +81,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     if (part_type == MergeTreeDataPartType::COMPACT)
     {
         const auto & file_name = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
-        checksums_data.files[file_name] = checksum_compressed_file(path + file_name);
+        checksums_data.files[file_name] = checksum_compressed_file(disk, path + file_name);
     }
     else if (part_type == MergeTreeDataPartType::WIDE)
     {
@@ -89,7 +90,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
             column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
             {
                 String file_name = IDataType::getFileNameForStream(column.name, substream_path) + ".bin";
-                checksums_data.files[file_name] = checksum_compressed_file(path + file_name);
+                checksums_data.files[file_name] = checksum_compressed_file(disk, path + file_name);
             }, {});
         }
     }
@@ -98,15 +99,14 @@ IMergeTreeDataPart::Checksums checkDataPart(
         throw Exception("Unknown type in part " + path, ErrorCodes::UNKNOWN_PART_TYPE);
     }
 
-    Poco::DirectoryIterator dir_end;
-    for (Poco::DirectoryIterator dir_it(path); dir_it != dir_end; ++dir_it)
+    for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
     {
-        const String & file_name = dir_it.name();
+        const String & file_name = it->name();
         auto checksum_it = checksums_data.files.find(file_name);
         if (checksum_it == checksums_data.files.end() && file_name != "checksums.txt" && file_name != "columns.txt")
         {
-            ReadBufferFromFile file_buf(dir_it->path());
-            HashingReadBuffer hashing_buf(file_buf);
+            auto file_buf = disk->readFile(it->path());
+            HashingReadBuffer hashing_buf(*file_buf);
             hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
             checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
         }
@@ -115,11 +115,11 @@ IMergeTreeDataPart::Checksums checkDataPart(
     /// Checksums from file checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.
     IMergeTreeDataPart::Checksums checksums_txt;
 
-    if (require_checksums || Poco::File(path + "checksums.txt").exists())
+    if (require_checksums || disk->exists(path + "checksums.txt"))
     {
-        ReadBufferFromFile buf(path + "checksums.txt");
-        checksums_txt.read(buf);
-        assertEOF(buf);
+        auto buf = disk->readFile(path + "checksums.txt");
+        checksums_txt.read(*buf);
+        assertEOF(*buf);
     }
 
     if (is_cancelled())
@@ -137,7 +137,8 @@ IMergeTreeDataPart::Checksums checkDataPart(
     std::function<bool()> is_cancelled)
 {
     return checkDataPart(
-        data_part->getFullPath(),
+        data_part->disk,
+        data_part->getFullRelativePath(),
         data_part->getColumns(),
         data_part->getType(),
         require_checksums,

@@ -108,24 +108,24 @@ def test_on_session_expired(test_cluster):
 def test_simple_alters(test_cluster):
     instance = test_cluster.instances['ch2']
 
-    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS merge ON CLUSTER cluster_without_replication")
-    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS all_merge_32 ON CLUSTER cluster_without_replication")
-    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS all_merge_64 ON CLUSTER cluster_without_replication")
+    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS merge ON CLUSTER '{cluster}'")
+    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS all_merge_32 ON CLUSTER '{cluster}'")
+    test_cluster.ddl_check_query(instance, "DROP TABLE IF EXISTS all_merge_64 ON CLUSTER '{cluster}'")
 
     test_cluster.ddl_check_query(instance, """
-CREATE TABLE IF NOT EXISTS merge ON CLUSTER cluster_without_replication (p Date, i Int32)
+CREATE TABLE IF NOT EXISTS merge ON CLUSTER '{cluster}' (p Date, i Int32)
 ENGINE = MergeTree(p, p, 1)
 """)
     test_cluster.ddl_check_query(instance, """
-CREATE TABLE IF NOT EXISTS all_merge_32 ON CLUSTER cluster_without_replication (p Date, i Int32)
-ENGINE = Distributed(cluster_without_replication, default, merge, i)
+CREATE TABLE IF NOT EXISTS all_merge_32 ON CLUSTER '{cluster}' (p Date, i Int32)
+ENGINE = Distributed('{cluster}', default, merge, i)
 """)
     test_cluster.ddl_check_query(instance, """
-CREATE TABLE IF NOT EXISTS all_merge_64 ON CLUSTER cluster_without_replication (p Date, i Int64, s String)
-ENGINE = Distributed(cluster_without_replication, default, merge, i)
+CREATE TABLE IF NOT EXISTS all_merge_64 ON CLUSTER '{cluster}' (p Date, i Int64, s String)
+ENGINE = Distributed('{cluster}', default, merge, i)
 """)
 
-    for i in xrange(4):
+    for i in xrange(0, 4, 2):
         k = (i / 2) * 2
         test_cluster.instances['ch{}'.format(i + 1)].query("INSERT INTO merge (i) VALUES ({})({})".format(k, k+1))
 
@@ -133,26 +133,26 @@ ENGINE = Distributed(cluster_without_replication, default, merge, i)
 
 
     time.sleep(5)
-    test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER cluster_without_replication MODIFY COLUMN i Int64")
+    test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER '{cluster}' MODIFY COLUMN i Int64")
     time.sleep(5)
-    test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER cluster_without_replication ADD COLUMN s String DEFAULT toString(i) FORMAT TSV")
+    test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER '{cluster}' ADD COLUMN s String DEFAULT toString(i) FORMAT TSV")
 
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(4)]))
 
 
-    for i in xrange(4):
+    for i in xrange(0, 4, 2):
         k = (i / 2) * 2 + 4
         test_cluster.instances['ch{}'.format(i + 1)].query("INSERT INTO merge (p, i) VALUES (31, {})(31, {})".format(k, k+1))
 
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(8)]))
 
 
-    test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER cluster_without_replication DETACH PARTITION 197002")
+    test_cluster.ddl_check_query(instance, "ALTER TABLE merge ON CLUSTER '{cluster}' DETACH PARTITION 197002")
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(4)]))
 
-    test_cluster.ddl_check_query(instance, "DROP TABLE merge ON CLUSTER cluster_without_replication")
-    test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_32 ON CLUSTER cluster_without_replication")
-    test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_64 ON CLUSTER cluster_without_replication")
+    test_cluster.ddl_check_query(instance, "DROP TABLE merge ON CLUSTER '{cluster}'")
+    test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_32 ON CLUSTER '{cluster}'")
+    test_cluster.ddl_check_query(instance, "DROP TABLE all_merge_64 ON CLUSTER '{cluster}'")
 
 
 def test_macro(test_cluster):

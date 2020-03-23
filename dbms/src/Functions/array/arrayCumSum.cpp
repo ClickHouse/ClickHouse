@@ -77,16 +77,14 @@ struct ArrayCumSumImpl
             res_values.resize(column_const->size());
 
             size_t pos = 0;
-            for (size_t i = 0; i < offsets.size(); ++i)
+            for (auto offset : offsets)
             {
                 // skip empty arrays
-                if (pos < offsets[i])
+                if (pos < offset)
                 {
                     res_values[pos++] = x;
-                    for (; pos < offsets[i]; ++pos)
-                    {
+                    for (; pos < offset; ++pos)
                         res_values[pos] = res_values[pos - 1] + x;
-                    }
                 }
             }
 
@@ -107,16 +105,14 @@ struct ArrayCumSumImpl
         res_values.resize(data.size());
 
         size_t pos = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (auto offset : offsets)
         {
             // skip empty arrays
-            if (pos < offsets[i])
+            if (pos < offset)
             {
                 res_values[pos] = data[pos];
-                for (++pos; pos < offsets[i]; ++pos)
-                {
+                for (++pos; pos < offset; ++pos)
                     res_values[pos] = res_values[pos - 1] + data[pos];
-                }
             }
         }
         res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());

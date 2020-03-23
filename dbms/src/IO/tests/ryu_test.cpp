@@ -6,7 +6,7 @@
 
 struct DecomposedFloat64
 {
-    DecomposedFloat64(double x)
+    explicit DecomposedFloat64(double x)
     {
         memcpy(&x_uint, &x, sizeof(x));
     }
@@ -43,7 +43,7 @@ struct DecomposedFloat64
 
 struct DecomposedFloat32
 {
-    DecomposedFloat32(float x)
+    explicit DecomposedFloat32(float x)
     {
         memcpy(&x_uint, &x, sizeof(x));
     }

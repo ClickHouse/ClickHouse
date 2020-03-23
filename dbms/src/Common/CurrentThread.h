@@ -3,7 +3,6 @@
 #include <memory>
 #include <string>
 
-#include <common/likely.h>
 #include <common/StringRef.h>
 #include <Common/ThreadStatus.h>
 
@@ -107,4 +106,3 @@ private:
 };
 
 }
-

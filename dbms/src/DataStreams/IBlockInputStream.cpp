@@ -2,7 +2,7 @@
 
 #include <Core/Field.h>
 #include <Interpreters/ProcessList.h>
-#include <Access/QuotaContext.h>
+#include <Access/EnabledQuota.h>
 #include <Common/CurrentThread.h>
 #include <common/sleep.h>
 
@@ -336,9 +336,7 @@ Block IBlockInputStream::getTotals()
     forEachChild([&] (IBlockInputStream & child)
     {
         res = child.getTotals();
-        if (res)
-            return true;
-        return false;
+        return bool(res);
     });
     return res;
 }
@@ -353,9 +351,7 @@ Block IBlockInputStream::getExtremes()
     forEachChild([&] (IBlockInputStream & child)
     {
         res = child.getExtremes();
-        if (res)
-            return true;
-        return false;
+        return bool(res);
     });
     return res;
 }
@@ -391,9 +387,9 @@ size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
         throw Exception("Query pipeline is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_PIPELINE);
 
     size_t res = 0;
-    for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (const auto & child : children)
     {
-        size_t child_depth = (*it)->checkDepth(level + 1);
+        size_t child_depth = child->checkDepth(level + 1);
         if (child_depth > res)
             res = child_depth;
     }

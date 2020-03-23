@@ -11,6 +11,7 @@ void registerTableFunctions()
     registerTableFunctionMerge(factory);
     registerTableFunctionRemote(factory);
     registerTableFunctionNumbers(factory);
+    registerTableFunctionZeros(factory);
     registerTableFunctionFile(factory);
     registerTableFunctionURL(factory);
     registerTableFunctionValues(factory);

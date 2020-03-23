@@ -26,9 +26,9 @@ static void append(std::vector<String> & to, const std::vector<String> & what, s
         throw Exception("Table function 'remote': first argument generates too many result addresses",
                         ErrorCodes::BAD_ARGUMENTS);
     std::vector<String> res;
-    for (size_t i = 0; i < to.size(); ++i)
-        for (size_t j = 0; j < what.size(); ++j)
-            res.push_back(to[i] + what[j]);
+    for (const auto & elem_to : to)
+        for (const auto & elem_what : what)
+            res.push_back(elem_to + elem_what);
 
     to.swap(res);
 }

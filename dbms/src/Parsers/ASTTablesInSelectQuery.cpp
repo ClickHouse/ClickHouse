@@ -11,11 +11,11 @@ do \
 { \
     if (member) \
     { \
-        res->member = member->clone(); \
+        res->member = (member)->clone(); \
         res->children.push_back(res->member); \
     } \
 } \
-while (0)
+while (false)
 
 
 ASTPtr ASTTableExpression::clone() const

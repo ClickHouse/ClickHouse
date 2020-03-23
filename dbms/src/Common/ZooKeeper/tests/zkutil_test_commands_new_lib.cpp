@@ -4,7 +4,7 @@
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/typeid_cast.h>
 #include <iostream>
-#include <boost/algorithm/string.hpp>
+#include <common/find_symbols.h>
 
 
 using namespace Coordination;
@@ -25,7 +25,7 @@ try
 
     std::string addresses_arg = argv[1];
     std::vector<std::string> addresses_strings;
-    boost::split(addresses_strings, addresses_arg, boost::is_any_of(","));
+    splitInto<','>(addresses_strings, addresses_arg);
     ZooKeeper::Addresses addresses;
     addresses.reserve(addresses_strings.size());
     for (const auto & address_string : addresses_strings)

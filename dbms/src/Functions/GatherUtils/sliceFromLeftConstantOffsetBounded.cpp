@@ -1,3 +1,5 @@
+#ifndef __clang_analyzer__ // It's too hard to analyze.
+
 #include "GatherUtils.h"
 #include "Selectors.h"
 #include "Algorithms.h"
@@ -19,3 +21,5 @@ void sliceFromLeftConstantOffsetBounded(IArraySource & src, IArraySink & sink, s
     SliceFromLeftConstantOffsetBoundedSelectArraySource::select(src, sink, offset, length);
 }
 }
+
+#endif

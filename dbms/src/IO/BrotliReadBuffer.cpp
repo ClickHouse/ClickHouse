@@ -44,9 +44,7 @@ BrotliReadBuffer::BrotliReadBuffer(std::unique_ptr<ReadBuffer> in_, size_t buf_s
 {
 }
 
-BrotliReadBuffer::~BrotliReadBuffer()
-{
-}
+BrotliReadBuffer::~BrotliReadBuffer() = default;
 
 bool BrotliReadBuffer::nextImpl()
 {
