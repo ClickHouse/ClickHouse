@@ -146,7 +146,6 @@ private:
     UInt8 strict_order; // When the 'strict_order' is set, it doesn't allow interventions of other events.
                         // In the case of 'A->B->D->C', it stops finding 'A->B->C' at the 'D' and the max event level is 2.
 
-
     // Loop through the entire events_list, update the event timestamp value
     // The level path must be 1---2---3---...---check_events_size, find the max event level that statisfied the path in the sliding window.
     // If found, returns the max event level, else return 0.
@@ -222,6 +221,9 @@ public:
                 strict = 1;
             else if (option.compare("strict_order") == 0)
                 strict_order = 1;
+            else if (option.compare("no_nullify") == 0)
+                // The no_nullify is used in AggreagteFunctionNull to decide a nullification behavior.
+                continue;
             else
                 throw Exception{"Aggregate function " + getName() + " doesn't support a parameter: " + option, ErrorCodes::BAD_ARGUMENTS};
         }
