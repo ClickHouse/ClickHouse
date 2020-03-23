@@ -141,7 +141,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->modification_time = time(nullptr);
     new_part->index = writer->releaseIndexColumns();
     new_part->checksums = checksums;
-    new_part->bytes_on_disk = checksums.getTotalSizeOnDisk();
+    new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
     new_part->calculateColumnsSizesOnDisk();
 }

@@ -998,7 +998,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
         size_t sum_parts_bytes_on_disk = 0;
         for (const auto & part : parts)
-            sum_parts_bytes_on_disk += part->bytes_on_disk;
+            sum_parts_bytes_on_disk += part->getBytesOnDisk();
 
         if (sum_parts_bytes_on_disk >= storage_settings_ptr->prefer_fetch_merged_part_size_threshold)
         {
@@ -2203,7 +2203,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 DataPartsVector data_parts = getDataPartsVector();
                 for (const auto & part : data_parts)
                 {
-                    if (part->bytes_on_disk > max_source_part_size_for_mutation)
+                    if (part->getBytesOnDisk() > max_source_part_size_for_mutation)
                         continue;
 
                     std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
@@ -3567,7 +3567,7 @@ void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & parti
     UInt64 partition_size = 0;
 
     for (const auto & part : parts_to_remove)
-        partition_size += part->bytes_on_disk;
+        partition_size += part->getBytesOnDisk();
 
     auto table_id = getStorageID();
     global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
