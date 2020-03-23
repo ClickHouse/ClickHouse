@@ -25,6 +25,9 @@ RUN apt-get update -y \
             clang-9 \
             lld-9 \
             clang-tidy-9 \
+            clang-8 \
+            lld-8 \
+            clang-tidy-8 \
             libicu-dev \
             libreadline-dev \
             ninja-build \
