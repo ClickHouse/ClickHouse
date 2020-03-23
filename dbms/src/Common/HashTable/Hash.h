@@ -130,7 +130,7 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
                 __builtin_unreachable();
         }
 
-        value |= size;
+        value_ptr[7] = size;
         return intHashCRC32(value, updated_value);
     }
 
