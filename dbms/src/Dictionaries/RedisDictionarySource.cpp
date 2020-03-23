@@ -12,7 +12,7 @@ namespace DB
 
     void registerDictionarySourceRedis(DictionarySourceFactory & factory)
     {
-        auto createTableSource = [=](const DictionaryStructure & dict_struct,
+        auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                      const Poco::Util::AbstractConfiguration & config,
                                      const String & config_prefix,
                                      Block & sample_block,
@@ -29,7 +29,7 @@ namespace DB
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
         };
-        factory.registerSource("redis", createTableSource);
+        factory.registerSource("redis", create_table_source);
     }
 
 }

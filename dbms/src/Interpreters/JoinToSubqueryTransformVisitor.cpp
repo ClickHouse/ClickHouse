@@ -507,7 +507,7 @@ public:
 private:
     std::unordered_map<String, String> long_to_short;
 
-    String generateUniqueName(const String & long_name)
+    static String generateUniqueName(const String & long_name)
     {
         return String(pattern) + long_name;
     }

@@ -68,7 +68,7 @@ PoolWithFailover::PoolWithFailover(const PoolWithFailover & other)
     }
 }
 
-PoolWithFailover::Entry PoolWithFailover::Get()
+PoolWithFailover::Entry PoolWithFailover::get()
 {
     Poco::Util::Application & app = Poco::Util::Application::instance();
     std::lock_guard<std::mutex> locker(mutex);
@@ -89,7 +89,7 @@ PoolWithFailover::Entry PoolWithFailover::Get()
 
                 try
                 {
-                    Entry entry = shareable ? pool->Get() : pool->tryGet();
+                    Entry entry = shareable ? pool->get() : pool->tryGet();
 
                     if (!entry.isNull())
                     {
@@ -121,7 +121,7 @@ PoolWithFailover::Entry PoolWithFailover::Get()
     if (full_pool)
     {
         app.logger().error("All connections failed, trying to wait on a full pool " + (*full_pool)->getDescription());
-        return (*full_pool)->Get();
+        return (*full_pool)->get();
     }
 
     std::stringstream message;

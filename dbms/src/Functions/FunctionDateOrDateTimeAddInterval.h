@@ -249,7 +249,7 @@ struct Adder
     {}
 
     template <typename FromVectorType, typename ToVectorType>
-    void NO_INLINE vector_constant(const FromVectorType & vec_from, ToVectorType & vec_to, Int64 delta, const DateLUTImpl & time_zone) const
+    void NO_INLINE vectorConstant(const FromVectorType & vec_from, ToVectorType & vec_to, Int64 delta, const DateLUTImpl & time_zone) const
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
@@ -259,7 +259,7 @@ struct Adder
     }
 
     template <typename FromVectorType, typename ToVectorType>
-    void vector_vector(const FromVectorType & vec_from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
+    void vectorVector(const FromVectorType & vec_from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
     {
         size_t size = vec_from.size();
         vec_to.resize(size);
@@ -268,11 +268,11 @@ struct Adder
             ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
             ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
             ColumnFloat32, ColumnFloat64>(
-            &delta, [&](const auto & column){ vector_vector(vec_from, vec_to, column, time_zone, size); return true; });
+            &delta, [&](const auto & column){ vectorVector(vec_from, vec_to, column, time_zone, size); return true; });
     }
 
     template <typename FromType, typename ToVectorType>
-    void constant_vector(const FromType & from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
+    void constantVector(const FromType & from, ToVectorType & vec_to, const IColumn & delta, const DateLUTImpl & time_zone) const
     {
         size_t size = delta.size();
         vec_to.resize(size);
@@ -281,19 +281,19 @@ struct Adder
             ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64,
             ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64,
             ColumnFloat32, ColumnFloat64>(
-            &delta, [&](const auto & column){ constant_vector(from, vec_to, column, time_zone, size); return true; });
+            &delta, [&](const auto & column){ constantVector(from, vec_to, column, time_zone, size); return true; });
     }
 
 private:
     template <typename FromVectorType, typename ToVectorType, typename DeltaColumnType>
-    void NO_INLINE vector_vector(const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    void NO_INLINE vectorVector(const FromVectorType & vec_from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
             vec_to[i] = transform.execute(vec_from[i], delta.getData()[i], time_zone);
     }
 
     template <typename FromType, typename ToVectorType, typename DeltaColumnType>
-    void NO_INLINE constant_vector(const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
+    void NO_INLINE constantVector(const FromType & from, ToVectorType & vec_to, const DeltaColumnType & delta, const DateLUTImpl & time_zone, size_t size) const
     {
         for (size_t i = 0; i < size; ++i)
             vec_to[i] = transform.execute(from, delta.getData()[i], time_zone);
@@ -324,13 +324,13 @@ struct DateTimeAddIntervalImpl
             const IColumn & delta_column = *block.getByPosition(arguments[1]).column;
 
             if (const auto * delta_const_column = typeid_cast<const ColumnConst *>(&delta_column))
-                op.vector_constant(sources->getData(), col_to->getData(), delta_const_column->getField().get<Int64>(), time_zone);
+                op.vectorConstant(sources->getData(), col_to->getData(), delta_const_column->getField().get<Int64>(), time_zone);
             else
-                op.vector_vector(sources->getData(), col_to->getData(), delta_column, time_zone);
+                op.vectorVector(sources->getData(), col_to->getData(), delta_column, time_zone);
         }
         else if (const auto * sources_const = checkAndGetColumnConst<FromColumnType>(source_col.get()))
         {
-            op.constant_vector(sources_const->template getValue<FromValueType>(), col_to->getData(), *block.getByPosition(arguments[1]).column, time_zone);
+            op.constantVector(sources_const->template getValue<FromValueType>(), col_to->getData(), *block.getByPosition(arguments[1]).column, time_zone);
         }
         else
         {

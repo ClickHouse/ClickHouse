@@ -64,7 +64,7 @@ public:
 private:
     /// A separate method which binds the lock holder to the owned lock
     /// N.B. It is very important that this method produces no allocations
-    bool bind_with(RWLock && parent_, GroupsContainer::iterator it_group_) noexcept
+    bool bindWith(RWLock && parent_, GroupsContainer::iterator it_group_) noexcept
     {
         if (bound)
             return false;
@@ -170,7 +170,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
             /// N.B. Type is Read here, query_id is not empty and it_query is a valid iterator
             all_read_locks.add(query_id);                                     /// SM1: may throw on insertion (nothing to roll back)
             ++it_query->second;                                               /// SM2: nothrow
-            lock_holder->bind_with(shared_from_this(), current_owner_group);  /// SM3: nothrow
+            lock_holder->bindWith(shared_from_this(), current_owner_group);  /// SM3: nothrow
 
             finalize_metrics();
             return lock_holder;
@@ -244,7 +244,7 @@ RWLockImpl::LockHolder RWLockImpl::getLock(RWLockImpl::Type type, const String &
         }
     }
 
-    lock_holder->bind_with(shared_from_this(), it_group);  /// SM: nothrow
+    lock_holder->bindWith(shared_from_this(), it_group);  /// SM: nothrow
 
     finalize_metrics();
     return lock_holder;

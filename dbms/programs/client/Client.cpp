@@ -1122,7 +1122,7 @@ private:
                 /// to avoid losing sync.
                 if (!cancelled)
                 {
-                    auto cancelQuery = [&] {
+                    auto cancel_query = [&] {
                         connection->sendCancel();
                         cancelled = true;
                         if (is_interactive)
@@ -1134,7 +1134,7 @@ private:
 
                     if (interrupt_listener.check())
                     {
-                        cancelQuery();
+                        cancel_query();
                     }
                     else
                     {
@@ -1145,7 +1145,7 @@ private:
                                       << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
                                       << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
 
-                            cancelQuery();
+                            cancel_query();
                         }
                     }
                 }

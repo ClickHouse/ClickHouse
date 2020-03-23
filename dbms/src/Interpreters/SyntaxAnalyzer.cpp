@@ -437,7 +437,7 @@ void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
-    if (ASTPtr array_join_expression_list = select_query->array_join_expression_list())
+    if (ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList())
     {
         ArrayJoinedColumnsVisitor::Data visitor_data{result.aliases,
                                                     result.array_join_name_to_alias,
@@ -449,7 +449,7 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
         /// to get the correct number of rows.
         if (result.array_join_result_to_source.empty())
         {
-            ASTPtr expr = select_query->array_join_expression_list()->children.at(0);
+            ASTPtr expr = select_query->arrayJoinExpressionList()->children.at(0);
             String source_name = expr->getColumnName();
             String result_name = expr->getAliasOrColumnName();
 

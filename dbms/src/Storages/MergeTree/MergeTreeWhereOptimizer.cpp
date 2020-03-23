@@ -348,7 +348,7 @@ bool MergeTreeWhereOptimizer::cannotBeMoved(const ASTPtr & ptr) const
 
 void MergeTreeWhereOptimizer::determineArrayJoinedNames(ASTSelectQuery & select)
 {
-    auto array_join_expression_list = select.array_join_expression_list();
+    auto array_join_expression_list = select.arrayJoinExpressionList();
 
     /// much simplified code from ExpressionAnalyzer::getArrayJoinedColumns()
     if (!array_join_expression_list)

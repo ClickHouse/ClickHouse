@@ -165,7 +165,7 @@ private:
 };
 
 template<typename TimeT = std::chrono::milliseconds>
-struct measure
+struct Measure
 {
     template<typename F, typename ...Args>
     static typename TimeT::rep execution(F&& func, Args&&... args)
@@ -371,7 +371,7 @@ try
             ThreadStatus cur_status;
 
             CurrentThread::attachToIfDetached(thread_group);
-            time = measure<>::execution(func, msg, num_threads, two_level, external);
+            time = Measure<>::execution(func, msg, num_threads, two_level, external);
         };
 
         std::thread thread(wrapper);

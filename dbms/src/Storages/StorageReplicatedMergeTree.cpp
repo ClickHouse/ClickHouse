@@ -2973,14 +2973,12 @@ Pipes StorageReplicatedMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    const Settings & settings_ = context.getSettingsRef();
-
     /** The `select_sequential_consistency` setting has two meanings:
     * 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
     * For this you have to synchronously go to ZooKeeper.
     */
-    if (settings_.select_sequential_consistency)
+    if (context.getSettingsRef().select_sequential_consistency)
     {
         auto max_added_blocks = getMaxAddedBlocks();
         return reader.read(column_names, query_info, context, max_block_size, num_streams, &max_added_blocks);

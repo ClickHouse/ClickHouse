@@ -70,7 +70,7 @@ Poco::Timestamp FileDictionarySource::getLastModification() const
 
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -86,7 +86,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
         return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context, check_config);
     };
 
-    factory.registerSource("file", createTableSource);
+    factory.registerSource("file", create_table_source);
 }
 
 }

@@ -154,17 +154,17 @@ private:
     static NameSet collectFilesToSkip(const Block & updated_header, const std::set<MergeTreeIndexPtr> & indices_to_recalc, const String & mrk_extension);
 
     /// Get the columns list of the resulting part in the same order as all_columns.
-    NamesAndTypesList getColumnsForNewDataPart(
+    static NamesAndTypesList getColumnsForNewDataPart(
         MergeTreeData::DataPartPtr source_part,
         const Block & updated_header,
         NamesAndTypesList all_columns,
-        const MutationCommands & commands_for_removes) const;
+        const MutationCommands & commands_for_removes);
 
     bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
 
     /// Return set of indices which should be recalculated during mutation also
     /// wraps input stream into additional expression stream
-    std::set<MergeTreeIndexPtr> getIndicesToRecalc(
+    std::set<MergeTreeIndexPtr> getIndicesToRecalculate(
         BlockInputStreamPtr & input_stream,
         StoragePtr storage_from_source_part,
         const NamesAndTypesList & updated_columns,
@@ -193,10 +193,10 @@ private:
 
     /// Initialize and write to disk new part fields like checksums, columns,
     /// etc.
-    void finalizeMutatedPart(
+    static void finalizeMutatedPart(
         const MergeTreeDataPartPtr & source_part,
         MergeTreeData::MutableDataPartPtr new_data_part,
-        bool need_remove_expired_values) const;
+        bool need_remove_expired_values);
 
 public :
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.

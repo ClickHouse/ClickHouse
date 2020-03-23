@@ -32,7 +32,7 @@ struct SmallLock
 {
     std::atomic<int> locked {false};
 
-    bool try_lock()
+    bool tryLock()
     {
         int expected = 0;
         return locked.compare_exchange_strong(expected, 1, std::memory_order_acquire);

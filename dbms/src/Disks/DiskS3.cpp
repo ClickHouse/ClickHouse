@@ -61,7 +61,7 @@ namespace
     struct Metadata
     {
         /// Metadata file version.
-        const UInt32 VERSION = 1;
+        static constexpr UInt32 VERSION = 1;
 
         using PathAndSize = std::pair<String, size_t>;
 
