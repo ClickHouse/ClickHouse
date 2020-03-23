@@ -1564,7 +1564,7 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     new_data_part->modification_time = time(nullptr);
     new_data_part->bytes_on_disk
         = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath());
-
+    new_data_part->calculateColumnsSizesOnDisk();
 }
 
 
