@@ -7,6 +7,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/escapeForFileName.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -19,7 +20,7 @@
 #include <Interpreters/TraceLog.h>
 #include <Interpreters/TextLog.h>
 #include <Interpreters/MetricLog.h>
-#include <Access/AccessRightsContext.h>
+#include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -38,6 +39,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_KILL;
     extern const int NOT_IMPLEMENTED;
@@ -117,40 +119,38 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
         throw Exception("Unknown action type: " + std::to_string(action_type), ErrorCodes::LOGICAL_ERROR);
 }
 
+}
 
 /// Implements SYSTEM [START|STOP] <something action from ActionLocks>
-void startStopAction(Context & context, Poco::Logger * log, ASTSystemQuery & query, StorageActionBlockType action_type, bool start)
+void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type, bool start)
 {
     auto manager = context.getActionLocksManager();
     manager->cleanExpired();
 
-    if (!query.table.empty())
+    if (table_id)
     {
-        String database = !query.database.empty() ? query.database : context.getCurrentDatabase();
-        context.checkAccess(getRequiredAccessType(action_type), database, query.table);
+        context.checkAccess(getRequiredAccessType(action_type), table_id);
         if (start)
-            manager->remove(database, query.table, action_type);
+            manager->remove(table_id, action_type);
         else
-            manager->add(database, query.table, action_type);
+            manager->add(table_id, action_type);
     }
     else
     {
-        for (auto & elem : context.getDatabases())
+        auto access = context.getAccess();
+        for (auto & elem : DatabaseCatalog::instance().getDatabases())
         {
             for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             {
-                if (context.getAccessRights()->isGranted(log, getRequiredAccessType(action_type), elem.first, iterator->name()))
-                {
-                    if (start)
-                        manager->remove(iterator->table(), action_type);
-                    else
-                        manager->add(iterator->table(), action_type);
-                }
+                if (!access->isGranted(log, getRequiredAccessType(action_type), elem.first, iterator->name()))
+                    continue;
+                if (start)
+                    manager->remove(iterator->table(), action_type);
+                else
+                    manager->add(iterator->table(), action_type);
             }
         }
     }
-}
-
 }
 
 
@@ -174,8 +174,8 @@ BlockIO InterpreterSystemQuery::execute()
     system_context.setSetting("profile", context.getSystemProfileName());
 
     /// Make canonical query for simpler processing
-    if (!query.table.empty() && query.database.empty())
-         query.database = context.getCurrentDatabase();
+    if (!query.table.empty())
+         table_id = context.resolveStorageID(StorageID(query.database, query.table), Context::ResolveOrdinary);
 
     if (!query.target_dictionary.empty() && !query.database.empty())
         query.target_dictionary = query.database + "." + query.target_dictionary;
@@ -215,6 +215,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::RELOAD_DICTIONARY:
             context.checkAccess(AccessType::RELOAD_DICTIONARY);
             system_context.getExternalDictionariesLoader().loadOrReload(query.target_dictionary);
+            ExternalDictionariesLoader::resetAll();
             break;
         case Type::RELOAD_DICTIONARIES:
             context.checkAccess(AccessType::RELOAD_DICTIONARY);
@@ -222,6 +223,7 @@ BlockIO InterpreterSystemQuery::execute()
                     [&] () { system_context.getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                     [&] () { system_context.getEmbeddedDictionaries().reload(); }
             );
+            ExternalDictionariesLoader::resetAll();
             break;
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
             context.checkAccess(AccessType::RELOAD_DICTIONARY);
@@ -232,46 +234,46 @@ BlockIO InterpreterSystemQuery::execute()
             system_context.reloadConfig();
             break;
         case Type::STOP_MERGES:
-            startStopAction(context, log, query, ActionLocks::PartsMerge, false);
+            startStopAction(ActionLocks::PartsMerge, false);
             break;
         case Type::START_MERGES:
-            startStopAction(context, log, query, ActionLocks::PartsMerge, true);
+            startStopAction(ActionLocks::PartsMerge, true);
             break;
         case Type::STOP_TTL_MERGES:
-            startStopAction(context, log, query, ActionLocks::PartsTTLMerge, false);
+            startStopAction(ActionLocks::PartsTTLMerge, false);
             break;
         case Type::START_TTL_MERGES:
-            startStopAction(context, log, query, ActionLocks::PartsTTLMerge, true);
+            startStopAction(ActionLocks::PartsTTLMerge, true);
             break;
         case Type::STOP_MOVES:
-            startStopAction(context, log, query, ActionLocks::PartsMove, false);
+            startStopAction(ActionLocks::PartsMove, false);
             break;
         case Type::START_MOVES:
-            startStopAction(context, log, query, ActionLocks::PartsMove, true);
+            startStopAction(ActionLocks::PartsMove, true);
             break;
         case Type::STOP_FETCHES:
-            startStopAction(context, log, query, ActionLocks::PartsFetch, false);
+            startStopAction(ActionLocks::PartsFetch, false);
             break;
         case Type::START_FETCHES:
-            startStopAction(context, log, query, ActionLocks::PartsFetch, true);
+            startStopAction(ActionLocks::PartsFetch, true);
             break;
         case Type::STOP_REPLICATED_SENDS:
-            startStopAction(context, log, query, ActionLocks::PartsSend, false);
+            startStopAction(ActionLocks::PartsSend, false);
             break;
         case Type::START_REPLICATED_SENDS:
-            startStopAction(context, log, query, ActionLocks::PartsSend, true);
+            startStopAction(ActionLocks::PartsSend, true);
             break;
         case Type::STOP_REPLICATION_QUEUES:
-            startStopAction(context, log, query, ActionLocks::ReplicationQueue, false);
+            startStopAction(ActionLocks::ReplicationQueue, false);
             break;
         case Type::START_REPLICATION_QUEUES:
-            startStopAction(context, log, query, ActionLocks::ReplicationQueue, true);
+            startStopAction(ActionLocks::ReplicationQueue, true);
             break;
         case Type::STOP_DISTRIBUTED_SENDS:
-            startStopAction(context, log, query, ActionLocks::DistributedSend, false);
+            startStopAction(ActionLocks::DistributedSend, false);
             break;
         case Type::START_DISTRIBUTED_SENDS:
-            startStopAction(context, log, query, ActionLocks::DistributedSend, true);
+            startStopAction(ActionLocks::DistributedSend, true);
             break;
         case Type::SYNC_REPLICA:
             syncReplica(query);
@@ -283,7 +285,7 @@ BlockIO InterpreterSystemQuery::execute()
             restartReplicas(system_context);
             break;
         case Type::RESTART_REPLICA:
-            if (!tryRestartReplica(query.database, query.table, system_context))
+            if (!tryRestartReplica(table_id, system_context))
                 throw Exception("There is no " + query.database + "." + query.table + " replicated table",
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
@@ -309,67 +311,61 @@ BlockIO InterpreterSystemQuery::execute()
 }
 
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const String & database_name, const String & table_name, Context & system_context)
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, Context & system_context)
 {
-    context.checkAccess(AccessType::RESTART_REPLICA, database_name, table_name);
-    auto database = system_context.getDatabase(database_name);
+    context.checkAccess(AccessType::RESTART_REPLICA, replica);
 
-    auto table_ddl_guard = system_context.getDDLGuard(database_name, table_name);
+    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
+    auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica);
     ASTPtr create_ast;
 
     /// Detach actions
+    if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+        return nullptr;
+
+    table->shutdown();
     {
-        auto table = system_context.tryGetTable(database_name, table_name);
-
-        if (!table || !dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
-            return nullptr;
-
-        table->shutdown();
-
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(context.getCurrentQueryId());
-        create_ast = database->getCreateTableQuery(system_context, table_name);
+        create_ast = database->getCreateTableQuery(system_context, replica.table_name);
 
-        database->detachTable(table_name);
+        database->detachTable(replica.table_name);
     }
+    table.reset();
 
     /// Attach actions
-    {
-        /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
-        auto & create = create_ast->as<ASTCreateQuery &>();
-        create.attach = true;
+    /// getCreateTableQuery must return canonical CREATE query representation, there are no need for AST postprocessing
+    auto & create = create_ast->as<ASTCreateQuery &>();
+    create.attach = true;
 
-        auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
-        auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
+    auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
+    auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
 
-        StoragePtr table = StorageFactory::instance().get(create,
-            database->getTableDataPath(create),
-            system_context,
-            system_context.getGlobalContext(),
-            columns,
-            constraints,
-            false);
+    table = StorageFactory::instance().get(create,
+        database->getTableDataPath(create),
+        system_context,
+        system_context.getGlobalContext(),
+        columns,
+        constraints,
+        false);
 
-        database->createTable(system_context, table_name, table, create_ast);
+    database->createTable(system_context, replica.table_name, table, create_ast);
 
-        table->startup();
-        return table;
-    }
+    table->startup();
+    return table;
 }
 
 void InterpreterSystemQuery::restartReplicas(Context & system_context)
 {
-    std::vector<std::pair<String, String>> replica_names;
+    std::vector<StorageID> replica_names;
 
-    for (auto & elem : system_context.getDatabases())
+    for (auto & elem : DatabaseCatalog::instance().getDatabases())
     {
         DatabasePtr & database = elem.second;
-        const String & database_name = elem.first;
-
         for (auto iterator = database->getTablesIterator(system_context); iterator->isValid(); iterator->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
-                replica_names.emplace_back(database_name, iterator->name());
+                replica_names.emplace_back(iterator->table()->getStorageID());
         }
     }
 
@@ -378,44 +374,39 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
 
     ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
     for (auto & table : replica_names)
-        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(table.first, table.second, system_context); });
+        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(table, system_context); });
     pool.wait();
 }
 
-void InterpreterSystemQuery::syncReplica(ASTSystemQuery & query)
+void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
 {
-    String database_name = !query.database.empty() ? query.database : context.getCurrentDatabase();
-    const String & table_name = query.table;
-
-    context.checkAccess(AccessType::SYNC_REPLICA, database_name, table_name);
-    StoragePtr table = context.getTable(database_name, table_name);
+    context.checkAccess(AccessType::SYNC_REPLICA, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
 
     if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
         if (!storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.totalMilliseconds()))
         {
-            LOG_ERROR(log, "SYNC REPLICA " + database_name + "." + table_name + ": Timed out!");
+            LOG_ERROR(log, "SYNC REPLICA " + table_id.getNameForLogs() + ": Timed out!");
             throw Exception(
-                    "SYNC REPLICA " + database_name + "." + table_name + ": command timed out! "
+                    "SYNC REPLICA " + table_id.getNameForLogs() + ": command timed out! "
                     "See the 'receive_timeout' setting", ErrorCodes::TIMEOUT_EXCEEDED);
         }
-        LOG_TRACE(log, "SYNC REPLICA " + database_name + "." + table_name + ": OK");
+        LOG_TRACE(log, "SYNC REPLICA " + table_id.getNameForLogs() + ": OK");
     }
     else
-        throw Exception("Table " + database_name + "." + table_name + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Table " + table_id.getNameForLogs() + " is not replicated", ErrorCodes::BAD_ARGUMENTS);
 }
 
-void InterpreterSystemQuery::flushDistributed(ASTSystemQuery & query)
+void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
-    String database_name = !query.database.empty() ? query.database : context.getCurrentDatabase();
-    String & table_name = query.table;
-    context.checkAccess(AccessType::FLUSH_DISTRIBUTED, database_name, table_name);
+    context.checkAccess(AccessType::FLUSH_DISTRIBUTED, table_id);
 
-    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(context.getTable(database_name, table_name).get()))
+    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id).get()))
         storage_distributed->flushClusterNodesAllData();
     else
-        throw Exception("Table " + database_name + "." + table_name + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
+        throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);
 }
 
 

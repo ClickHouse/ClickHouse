@@ -50,7 +50,8 @@ const char * InternalTextLogsQueue::getPriorityName(int priority)
 {
     /// See Poco::Message::Priority
 
-    static const char * PRIORITIES [] = {
+    static constexpr const char * const PRIORITIES[] =
+    {
         "Unknown",
         "Fatal",
         "Critical",

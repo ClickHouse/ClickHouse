@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class ASTRoleList;
+class ASTExtendedRoleSet;
 
 
 /** CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name
@@ -29,6 +29,7 @@ class ASTCreateQuotaQuery : public IAST
 {
 public:
     bool alter = false;
+    bool attach = false;
 
     bool if_exists = false;
     bool if_not_exists = false;
@@ -36,7 +37,6 @@ public:
 
     String name;
     String new_name;
-
     using KeyType = Quota::KeyType;
     std::optional<KeyType> key_type;
 
@@ -53,7 +53,7 @@ public:
     };
     std::vector<Limits> all_limits;
 
-    std::shared_ptr<ASTRoleList> roles;
+    std::shared_ptr<ASTExtendedRoleSet> roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;

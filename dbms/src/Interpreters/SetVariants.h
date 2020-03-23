@@ -13,6 +13,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /** Methods for different implementations of sets (used in right hand side of IN or for DISTINCT).
   * To use as template parameter.

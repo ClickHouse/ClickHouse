@@ -769,8 +769,16 @@ inline std::enable_if_t<is_integral_v<T>, void>
 readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 template <typename T>
+inline std::enable_if_t<is_integral_v<T>, bool>
+tryReadText(T & x, ReadBuffer & buf) { return tryReadIntText(x, buf); }
+
+template <typename T>
 inline std::enable_if_t<std::is_floating_point_v<T>, void>
 readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
+
+template <typename T>
+inline std::enable_if_t<std::is_floating_point_v<T>, bool>
+tryReadText(T & x, ReadBuffer & buf) { return tryReadFloatText(x, buf); }
 
 inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
@@ -973,6 +981,13 @@ inline T parse(const char * data, size_t size)
 }
 
 template <typename T>
+inline bool tryParse(T & res, const char * data, size_t size)
+{
+    ReadBufferFromMemory buf(data, size);
+    return tryReadText(res, buf);
+}
+
+template <typename T>
 inline std::enable_if_t<!is_integral_v<T>, void>
 readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
 
@@ -994,7 +1009,7 @@ readTextWithSizeSuffix(T & x, ReadBuffer & buf)
         }
         else if (*buf.position() == 'i')
         {
-            x = (x << power_of_two); /// For binary suffixes, such as ki, Mi, Gi, etc.
+            x = (x << power_of_two); // NOLINT /// For binary suffixes, such as ki, Mi, Gi, etc.
             ++buf.position();
         }
         return;
@@ -1056,6 +1071,18 @@ template <typename T>
 inline T parse(const String & s)
 {
     return parse<T>(s.data(), s.size());
+}
+
+template <typename T>
+inline bool tryParse(T & res, const char * data)
+{
+    return tryParse(res, data, strlen(data));
+}
+
+template <typename T>
+inline bool tryParse(T & res, const String & s)
+{
+    return tryParse(res, s.data(), s.size());
 }
 
 

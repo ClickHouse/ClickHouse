@@ -1,4 +1,4 @@
-# JDBC {#table_engine-jdbc}
+# JDBC {#table-engine-jdbc}
 
 Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
@@ -6,9 +6,9 @@ To implement the JDBC connection, ClickHouse uses the separate program [clickhou
 
 This engine supports the [Nullable](../../data_types/nullable.md) data type.
 
-## Creating a Table
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
 (
     columns list...
@@ -18,19 +18,20 @@ ENGINE = JDBC(dbms_uri, external_database, external_table)
 
 **Engine Parameters**
 
-- `dbms_uri` — URI of an external DBMS.
+-   `dbms_uri` — URI of an external DBMS.
 
     Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
     Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
-- `external_database` — Database in an external DBMS.
-- `external_table` — Name of the table in `external_database`.
+-   `external_database` — Database in an external DBMS.
 
-## Usage Example
+-   `external_table` — Name of the table in `external_database`.
 
-Creating a table in MySQL server by connecting directly with it's console client:
+## Usage Example {#usage-example}
 
-```text
+Creating a table in MySQL server by connecting directly with it’s console client:
+
+``` text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -53,7 +54,7 @@ mysql> select * from test;
 
 Creating a table in ClickHouse server and selecting data from it:
 
-```sql
+``` sql
 CREATE TABLE jdbc_table
 (
     `int_id` Int32,
@@ -63,19 +64,20 @@ CREATE TABLE jdbc_table
 )
 ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
 ```
-```sql
+
+``` sql
 SELECT *
 FROM jdbc_table
 ```
-```text
+
+``` text
 ┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
 │      1 │         ᴺᵁᴸᴸ │     2 │           ᴺᵁᴸᴸ │
 └────────┴──────────────┴───────┴────────────────┘
-
 ```
 
-## See Also
+## See Also {#see-also}
 
-- [JDBC table function](../../query_language/table_functions/jdbc.md).
+-   [JDBC table function](../../query_language/table_functions/jdbc.md).
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->

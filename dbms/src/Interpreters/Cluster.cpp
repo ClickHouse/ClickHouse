@@ -28,7 +28,7 @@ namespace
 {
 
 /// Default shard weight.
-static constexpr UInt32 default_weight = 1;
+constexpr UInt32 default_weight = 1;
 
 inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::SocketAddress & resolved_address, UInt16 clickhouse_port)
 {
@@ -72,7 +72,8 @@ bool Cluster::Address::isLocal(UInt16 clickhouse_port) const
 }
 
 
-Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix)
+Cluster::Address::Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt32 shard_index_, UInt32 replica_index_) :
+    shard_index(shard_index_), replica_index(replica_index_)
 {
     host_name = config.getString(config_prefix + ".host");
     port = static_cast<UInt16>(config.getInt(config_prefix + ".port"));
@@ -134,15 +135,22 @@ std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_
 }
 
 
-String Cluster::Address::toFullString() const
+String Cluster::Address::toFullString(bool use_compact_format) const
 {
-    return
-        escapeForFileName(user) +
-        (password.empty() ? "" : (':' + escapeForFileName(password))) + '@' +
-        escapeForFileName(host_name) + ':' +
-        std::to_string(port) +
-        (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
-        + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
+    if (use_compact_format)
+    {
+        return ((shard_index == 0) ? "" : "shard" + std::to_string(shard_index))
+            + ((replica_index == 0) ? "" : "_replica" + std::to_string(replica_index));
+    }
+    else
+    {
+        return
+            escapeForFileName(user)
+            + (password.empty() ? "" : (':' + escapeForFileName(password))) + '@'
+            + escapeForFileName(host_name) + ':' + std::to_string(port)
+            + (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
+            + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
+    }
 }
 
 Cluster::Address Cluster::Address::fromFullString(const String & full_string)
@@ -150,35 +158,55 @@ Cluster::Address Cluster::Address::fromFullString(const String & full_string)
     const char * address_begin = full_string.data();
     const char * address_end = address_begin + full_string.size();
 
-    Protocol::Secure secure = Protocol::Secure::Disable;
-    const char * secure_tag = "+secure";
-    if (endsWith(full_string, secure_tag))
-    {
-        address_end -= strlen(secure_tag);
-        secure = Protocol::Secure::Enable;
-    }
-
     const char * user_pw_end = strchr(full_string.data(), '@');
-    const char * colon = strchr(full_string.data(), ':');
-    if (!user_pw_end || !colon)
-        throw Exception("Incorrect user[:password]@host:port#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
 
-    const bool has_pw = colon < user_pw_end;
-    const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
-    if (!host_end)
-        throw Exception("Incorrect address '" + full_string + "', it does not contain port", ErrorCodes::SYNTAX_ERROR);
+    /// parsing with the new [shard{shard_index}[_replica{replica_index}]] format
+    if (!user_pw_end && startsWith(full_string, "shard"))
+    {
+        const char * underscore = strchr(full_string.data(), '_');
 
-    const char * has_db = strchr(full_string.data(), '#');
-    const char * port_end = has_db ? has_db : address_end;
+        Address address;
+        address.shard_index = parse<UInt32>(address_begin + strlen("shard"));
+        address.replica_index = underscore ? parse<UInt32>(underscore + strlen("_replica")) : 0;
 
-    Address address;
-    address.secure = secure;
-    address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
-    address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
-    address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
-    address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
-    address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
-    return address;
+        return address;
+    }
+    else
+    {
+        /// parsing with the old user[:password]@host:port#default_database format
+        /// This format is appeared to be inconvenient for the following reasons:
+        /// - credentials are exposed in file name;
+        /// - the file name can be too long.
+
+        Protocol::Secure secure = Protocol::Secure::Disable;
+        const char * secure_tag = "+secure";
+        if (endsWith(full_string, secure_tag))
+        {
+            address_end -= strlen(secure_tag);
+            secure = Protocol::Secure::Enable;
+        }
+
+        const char * colon = strchr(full_string.data(), ':');
+        if (!user_pw_end || !colon)
+            throw Exception("Incorrect user[:password]@host:port#default_database format " + full_string, ErrorCodes::SYNTAX_ERROR);
+
+        const bool has_pw = colon < user_pw_end;
+        const char * host_end = has_pw ? strchr(user_pw_end + 1, ':') : colon;
+        if (!host_end)
+            throw Exception("Incorrect address '" + full_string + "', it does not contain port", ErrorCodes::SYNTAX_ERROR);
+
+        const char * has_db = strchr(full_string.data(), '#');
+        const char * port_end = has_db ? has_db : address_end;
+
+        Address address;
+        address.secure = secure;
+        address.port = parse<UInt16>(host_end + 1, port_end - (host_end + 1));
+        address.host_name = unescapeForFileName(std::string(user_pw_end + 1, host_end));
+        address.user = unescapeForFileName(std::string(address_begin, has_pw ? colon : user_pw_end));
+        address.password = has_pw ? unescapeForFileName(std::string(colon + 1, user_pw_end)) : std::string();
+        address.default_database = has_db ? unescapeForFileName(std::string(has_db + 1, address_end)) : std::string();
+        return address;
+    }
 }
 
 
@@ -309,14 +337,14 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
 
                 if (startsWith(replica_key, "replica"))
                 {
-                    replica_addresses.emplace_back(config, partial_prefix + replica_key);
+                    replica_addresses.emplace_back(config, partial_prefix + replica_key, current_shard_num, current_replica_num);
                     ++current_replica_num;
 
                     if (!replica_addresses.back().is_local)
                     {
                         if (internal_replication)
                         {
-                            auto dir_name = replica_addresses.back().toFullString();
+                            auto dir_name = replica_addresses.back().toFullString(settings.use_compact_format_in_distributed_parts_names);
                             if (first)
                                 dir_name_for_internal_replication = dir_name;
                             else
@@ -466,7 +494,6 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
 }
 
 Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Settings & settings)
-    : shards_info{}, addresses_with_failover{}
 {
     if (from.addresses_with_failover.empty())
         throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
@@ -508,7 +535,6 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
 
 Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector<size_t> & indices)
-    : shards_info{}
 {
     for (size_t index : indices)
     {

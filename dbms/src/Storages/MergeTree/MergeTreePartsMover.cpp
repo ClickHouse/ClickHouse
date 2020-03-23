@@ -1,5 +1,6 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+
 #include <set>
 #include <boost/algorithm/string/join.hpp>
 
@@ -9,8 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
-    extern const int NO_SUCH_DATA_PART;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace
@@ -34,7 +33,7 @@ class LargestPartsWithRequiredSize
     UInt64 current_size_sum = 0;
 
 public:
-    LargestPartsWithRequiredSize(UInt64 required_sum_size_) : required_size_sum(required_sum_size_) {}
+    explicit LargestPartsWithRequiredSize(UInt64 required_sum_size_) : required_size_sum(required_sum_size_) {}
 
     void add(MergeTreeData::DataPartPtr part)
     {
@@ -99,10 +98,10 @@ bool MergeTreePartsMover::selectPartsForMove(
         return false;
 
     std::unordered_map<DiskPtr, LargestPartsWithRequiredSize> need_to_move;
-    const auto & policy = data->getStoragePolicy();
+    const auto policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
-    if (volumes.size() > 0)
+    if (!volumes.empty())
     {
         /// Do not check last volume
         for (size_t i = 0; i != volumes.size() - 1; ++i)
@@ -196,8 +195,7 @@ MergeTreeData::DataPartPtr MergeTreePartsMover::clonePart(const MergeTreeMoveEnt
     moving_part.part->makeCloneOnDiskDetached(moving_part.reserved_space);
 
     MergeTreeData::MutableDataPartPtr cloned_part =
-        std::make_shared<MergeTreeData::DataPart>(*data, moving_part.reserved_space->getDisk(), moving_part.part->name);
-    cloned_part->relative_path = "detached/" + moving_part.part->name;
+        data->createPart(moving_part.part->name, moving_part.reserved_space->getDisk(), "detached/" + moving_part.part->name);
     LOG_TRACE(log, "Part " << moving_part.part->name << " was cloned to " << cloned_part->getFullPath());
 
     cloned_part->loadColumnsChecksumsIndexes(true, true);

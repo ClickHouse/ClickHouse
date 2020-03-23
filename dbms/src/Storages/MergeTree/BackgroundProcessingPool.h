@@ -82,8 +82,13 @@ public:
         return size;
     }
 
-    /// The task is started immediately.
+    /// Create task and start it.
     TaskHandle addTask(const Task & task);
+
+    /// Create task but not start it.
+    TaskHandle createTask(const Task & task);
+    /// Start the task that was created but not started. Precondition: task was not started.
+    void startTask(const TaskHandle & task);
 
     void removeTask(const TaskHandle & task);
 

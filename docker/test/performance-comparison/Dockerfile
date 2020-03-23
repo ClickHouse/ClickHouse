@@ -11,13 +11,16 @@ RUN apt-get update \
             curl \
             g++ \
             git \
+            libc6-dbg \
             moreutils \
             ncdu \
             p7zip-full \
+            parallel \
             psmisc \
             python3 \
             python3-dev \
             python3-pip \
+            rsync \
             tree \
             tzdata \
             vim \

@@ -91,7 +91,7 @@ struct SettingMaxThreads
     void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 
     void setAuto();
-    UInt64 getAutoValue() const;
+    static UInt64 getAutoValue();
 };
 
 
@@ -242,6 +242,14 @@ enum class JoinStrictness
 };
 using SettingJoinStrictness = SettingEnum<JoinStrictness>;
 
+enum class JoinAlgorithm
+{
+    AUTO = 0,
+    HASH,
+    PARTIAL_MERGE,
+    PREFER_PARTIAL_MERGE,
+};
+using SettingJoinAlgorithm = SettingEnum<JoinAlgorithm>;
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode

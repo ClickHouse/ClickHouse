@@ -53,8 +53,8 @@
 
 namespace
 {
-static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
-static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
+const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
+const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
 }
 
 namespace DB
@@ -62,9 +62,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int STORAGE_REQUIRES_PARAMETER;
     extern const int BAD_ARGUMENTS;
-    extern const int READONLY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
@@ -110,8 +110,7 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block_non_materialized)
 {
     auto query = std::make_shared<ASTInsertQuery>();
-    query->database = database;
-    query->table = table;
+    query->table_id = StorageID(database, table);
 
     auto columns = std::make_shared<ASTExpressionList>();
     query->columns = columns;
@@ -286,7 +285,7 @@ void StorageDistributed::createStorage()
     }
     else
     {
-        auto policy = global_context.getStoragePolicySelector()[storage_policy];
+        auto policy = global_context.getStoragePolicySelector()->get(storage_policy);
         if (policy->getVolumes().size() != 1)
              throw Exception("Policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
         volume = policy->getVolume(0);
@@ -319,13 +318,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     return res;
 }
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
-{
-    auto cluster = getCluster();
-    return getQueryProcessingStage(context, cluster);
-}
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const
+static QueryProcessingStage::Enum getQueryProcessingStageImpl(const Context & context, const ClusterPtr & cluster)
 {
     const Settings & settings = context.getSettingsRef();
 
@@ -340,7 +334,13 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
                                 : QueryProcessingStage::WithMergeableState;
 }
 
-BlockInputStreams StorageDistributed::read(
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
+{
+    auto cluster = getCluster();
+    return getQueryProcessingStageImpl(context, cluster);
+}
+
+Pipes StorageDistributed::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -368,7 +368,7 @@ BlockInputStreams StorageDistributed::read(
         ? ClusterProxy::SelectStreamFactory(
             header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, context.getExternalTables())
         : ClusterProxy::SelectStreamFactory(
-            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
+            header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
     UInt64 force = settings.force_optimize_skip_unused_shards;
     if (settings.optimize_skip_unused_shards)
@@ -413,7 +413,7 @@ BlockInputStreams StorageDistributed::read(
     }
 
     return ClusterProxy::executeQuery(
-        select_stream_factory, cluster, modified_query_ast, context, settings);
+        select_stream_factory, cluster, modified_query_ast, context, settings, query_info);
 }
 
 
@@ -469,13 +469,16 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
     checkAlterIsPossible(params, context.getSettingsRef());
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
     setColumns(std::move(metadata.columns));
 }
 
 
 void StorageDistributed::startup()
 {
+    if (remote_database.empty() && !remote_table_function_ptr)
+        LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
+
     if (!volume)
         return;
 
@@ -639,7 +642,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
         if (!block.has(sharding_key_column_name))
             throw Exception("sharding_key_expr should evaluate as a single row", ErrorCodes::TOO_MANY_ROWS);
 
-        const auto result = block.getByName(sharding_key_column_name);
+        const ColumnWithTypeAndName & result = block.getByName(sharding_key_column_name);
         const auto selector = createSelector(cluster, result);
 
         shards.insert(selector.begin(), selector.end());
@@ -660,8 +663,8 @@ void StorageDistributed::flushClusterNodesAllData()
     std::lock_guard lock(cluster_nodes_mutex);
 
     /// TODO: Maybe it should be executed in parallel
-    for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end(); ++it)
-        it->second.flushAllData();
+    for (auto & node : cluster_nodes_data)
+        node.second.flushAllData();
 }
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name,
@@ -719,7 +722,7 @@ void registerStorageDistributed(StorageFactory & factory)
                 "policy to store data in (optional).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        String cluster_name = getClusterName(*engine_args[0]);
+        String cluster_name = getClusterNameAndMakeLiteral(engine_args[0]);
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
         engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);

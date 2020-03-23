@@ -11,6 +11,7 @@
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
 #include <Disks/DiskLocal.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 int main(int, char **)
 try
@@ -80,7 +81,7 @@ try
 
         QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-        BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
+        BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
 
         Block sample;
         {

@@ -35,6 +35,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_MANY_BYTES;
@@ -89,9 +92,11 @@ inline bool likePatternIsStrstr(const String & pattern, String & res)
 template <bool like, bool revert = false>
 struct MatchImpl
 {
+    static constexpr bool use_default_implementation_for_constants = true;
+
     using ResultType = UInt8;
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)
     {
         if (offsets.empty())
@@ -240,21 +245,15 @@ struct MatchImpl
         }
     }
 
-    static void constant_constant(const std::string & data, const std::string & pattern, UInt8 & res)
-    {
-        const auto & regexp = Regexps::get<like, true>(pattern);
-        res = revert ^ regexp->match(data);
-    }
-
     template <typename... Args>
-    static void vector_vector(Args &&...)
+    static void vectorVector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     /// Search different needles in single haystack.
     template <typename... Args>
-    static void constant_vector(Args &&...)
+    static void constantVector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -270,22 +269,22 @@ struct MultiMatchAnyImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
-    static auto ReturnType()
+    static auto getReturnType()
     {
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
         PaddedPODArray<Type> & res,
         PaddedPODArray<UInt64> & offsets)
     {
-        vector_constant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
+        vectorConstant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
@@ -307,8 +306,8 @@ struct MultiMatchAnyImpl
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
         auto on_match = []([[maybe_unused]] unsigned int id,
-                           unsigned long long /* from */,
-                           unsigned long long /* to */,
+                           unsigned long long /* from */, // NOLINT
+                           unsigned long long /* to */, // NOLINT
                            unsigned int /* flags */,
                            void * context) -> int
         {
@@ -352,7 +351,7 @@ struct MultiMatchAnyImpl
         memset(accum.data(), 0, accum.size());
         for (size_t j = 0; j < needles.size(); ++j)
         {
-            MatchImpl<false, false>::vector_constant(haystack_data, haystack_offsets, needles[j].toString(), accum);
+            MatchImpl<false, false>::vectorConstant(haystack_data, haystack_offsets, needles[j].toString(), accum);
             for (size_t i = 0; i < res.size(); ++i)
             {
                 if constexpr (FindAny)
@@ -373,22 +372,22 @@ struct MultiMatchAllIndicesImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = true;
-    static auto ReturnType()
+    static auto getReturnType()
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
         PaddedPODArray<Type> & res,
         PaddedPODArray<UInt64> & offsets)
     {
-        vector_constant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
+        vectorConstant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
@@ -408,8 +407,8 @@ struct MultiMatchAllIndicesImpl
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
         auto on_match = [](unsigned int id,
-                           unsigned long long /* from */,
-                           unsigned long long /* to */,
+                           unsigned long long /* from */, // NOLINT
+                           unsigned long long /* to */, // NOLINT
                            unsigned int /* flags */,
                            void * context) -> int
         {
@@ -519,7 +518,7 @@ struct ReplaceRegexpImpl
     {
         Instructions instructions;
 
-        String now = "";
+        String now;
         for (size_t i = 0; i < s.size(); ++i)
         {
             if (s[i] == '\\' && i + 1 < s.size())
@@ -653,7 +652,7 @@ struct ReplaceRegexpImpl
         }
     }
 
-    static void vector_fixed(
+    static void vectorFixed(
         const ColumnString::Chars & data,
         size_t n,
         const std::string & needle,
@@ -764,7 +763,7 @@ struct ReplaceStringImpl
 
     /// Note: this function converts fixed-length strings to variable-length strings
     ///       and each variable-length string should ends with zero byte.
-    static void vector_fixed(
+    static void vectorFixed(
         const ColumnString::Chars & data,
         size_t n,
         const std::string & needle,
@@ -846,29 +845,6 @@ struct ReplaceStringImpl
 #undef COPY_REST_OF_CURRENT_STRING
         }
     }
-
-    static void constant(const std::string & data, const std::string & needle, const std::string & replacement, std::string & res_data)
-    {
-        res_data = "";
-        int replace_cnt = 0;
-        for (size_t i = 0; i < data.size(); ++i)
-        {
-            bool match = true;
-            if (i + needle.size() > data.size() || (replace_one && replace_cnt > 0))
-                match = false;
-            for (size_t j = 0; match && j < needle.size(); ++j)
-                if (data[i + j] != needle[j])
-                    match = false;
-            if (match)
-            {
-                ++replace_cnt;
-                res_data += replacement;
-                i = i + needle.size() - 1;
-            }
-            else
-                res_data += data[i];
-        }
-    }
 };
 
 
@@ -922,7 +898,7 @@ public:
         String needle = c1_const->getValue<String>();
         String replacement = c2_const->getValue<String>();
 
-        if (needle.size() == 0)
+        if (needle.empty())
             throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
@@ -934,7 +910,7 @@ public:
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vector_fixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
+            Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
             block.getByPosition(result).column = std::move(col_res);
         }
         else

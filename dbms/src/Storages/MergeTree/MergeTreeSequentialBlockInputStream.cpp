@@ -17,7 +17,6 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     bool quiet)
     : storage(storage_)
     , data_part(data_part_)
-    , part_columns_lock(data_part->columns_lock)
     , columns_to_read(columns_to_read_)
     , read_with_direct_io(read_with_direct_io_)
     , mark_cache(storage.global_context.getMarkCache())
@@ -35,7 +34,6 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     addTotalRowsApprox(data_part->rows_count);
 
     header = storage.getSampleBlockForColumns(columns_to_read);
-    fixHeader(header);
 
     /// Add columns because we don't want to read empty blocks
     injectRequiredColumns(storage, data_part, columns_to_read);
@@ -48,23 +46,27 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     else
     {
         /// take columns from data_part
-        columns_for_reader = data_part->columns.addTypes(columns_to_read);
+        columns_for_reader = data_part->getColumns().addTypes(columns_to_read);
     }
 
-    reader = std::make_unique<MergeTreeReader>(
-        data_part->getFullPath(), data_part, columns_for_reader, /* uncompressed_cache = */ nullptr,
-        mark_cache.get(), /* save_marks_in_cache = */ false, storage,
+    MergeTreeReaderSettings reader_settings =
+    {
+        /// bytes to use AIO (this is hack)
+        .min_bytes_to_use_direct_io = read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
+        .max_read_buffer_size = DBMS_DEFAULT_BUFFER_SIZE,
+        .save_marks_in_cache = false
+    };
+
+    reader = data_part->getReader(columns_for_reader,
         MarkRanges{MarkRange(0, data_part->getMarksCount())},
-        /* bytes to use AIO (this is hack) */
-        read_with_direct_io ? 1UL : std::numeric_limits<size_t>::max(),
-        0, DBMS_DEFAULT_BUFFER_SIZE);
+        /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings);
 }
 
 
 void MergeTreeSequentialBlockInputStream::fixHeader(Block & header_block) const
 {
     /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-    for (const auto & name_type : data_part->columns)
+    for (const auto & name_type : data_part->getColumns())
     {
         if (header_block.has(name_type.name))
         {
@@ -105,7 +107,11 @@ try
             reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_readed);
 
             if (should_evaluate_missing_defaults)
+            {
                 reader->evaluateMissingDefaults({}, columns);
+            }
+
+            reader->performRequiredConversions(columns);
 
             res = header.cloneEmpty();
 
@@ -146,7 +152,6 @@ void MergeTreeSequentialBlockInputStream::finish()
      * buffers don't waste memory.
      */
     reader.reset();
-    part_columns_lock.unlock();
     data_part.reset();
 }
 

@@ -3,6 +3,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 MergingAggregatedTransform::MergingAggregatedTransform(
     Block header_, AggregatingTransformParamsPtr params_, size_t max_threads_)

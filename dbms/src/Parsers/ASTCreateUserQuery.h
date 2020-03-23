@@ -7,21 +7,27 @@
 
 namespace DB
 {
+class ASTExtendedRoleSet;
+class ASTSettingsProfileElements;
+
 /** CREATE USER [IF NOT EXISTS | OR REPLACE] name
-  *      [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
-  *      [HOST {LOCAL | NAME 'name' | NAME REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-  *      [PROFILE 'profile_name']
+  *     [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
+  *     [HOST {LOCAL | NAME 'name' | NAME REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+  *     [DEFAULT ROLE role [,...]]
+  *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   *
   * ALTER USER [IF EXISTS] name
   *      [RENAME TO new_name]
   *      [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
   *      [[ADD|REMOVE] HOST {LOCAL | NAME 'name' | NAME REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
-  *      [PROFILE 'profile_name']
+  *      [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+  *      [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   */
 class ASTCreateUserQuery : public IAST
 {
 public:
     bool alter = false;
+    bool attach = false;
 
     bool if_exists = false;
     bool if_not_exists = false;
@@ -36,10 +42,12 @@ public:
     std::optional<AllowedClientHosts> add_hosts;
     std::optional<AllowedClientHosts> remove_hosts;
 
-    std::optional<String> profile;
+    std::shared_ptr<ASTExtendedRoleSet> default_roles;
+
+    std::shared_ptr<ASTSettingsProfileElements> settings;
 
     String getID(char) const override;
     ASTPtr clone() const override;
-    void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 };
 }

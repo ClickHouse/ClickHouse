@@ -16,6 +16,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
@@ -65,12 +66,6 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
-
-    /// Skip table functions.
-    if (const auto * table_func_ptr = node->as<ASTFunction>())
-        if (TableFunctionFactory::instance().isTableFunctionName(table_func_ptr->name))
-            return node;
-
     return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
@@ -80,6 +75,25 @@ ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, cons
         return std::make_shared<ASTLiteral>(id->name);
 
     return evaluateConstantExpressionAsLiteral(node, context);
+}
+
+ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Context & context)
+{
+    ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(node, context);
+    auto & literal = res->as<ASTLiteral &>();
+    if (literal.value.safeGet<String>().empty())
+    {
+        String current_database = context.getCurrentDatabase();
+        if (current_database.empty())
+        {
+            /// Table was created on older version of ClickHouse and CREATE contains not folded expression.
+            /// Current database is not set yet during server startup, so we cannot evaluate it correctly.
+            literal.value = context.getConfigRef().getString("default_database", "default");
+        }
+        else
+            literal.value = current_database;
+    }
+    return res;
 }
 
 namespace
@@ -102,8 +116,10 @@ namespace
             if (name == identifier->name)
             {
                 ColumnWithTypeAndName column;
-                // FIXME: what to do if field is not convertable?
-                column.column = type->createColumnConst(1, convertFieldToType(literal->value, *type));
+                Field value = convertFieldToType(literal->value, *type);
+                if (!literal->value.isNull() && value.isNull())
+                    return {};
+                column.column = type->createColumnConst(1, value);
                 column.name = name;
                 column.type = type;
                 return {{std::move(column)}};
@@ -259,21 +275,21 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
             return {};
         }
 
-        auto hasRequiredColumns = [&target_expr](const Block & block) -> bool
+        auto has_required_columns = [&target_expr](const Block & block) -> bool
         {
             for (const auto & name : target_expr->getRequiredColumns())
             {
-                bool hasColumn = false;
+                bool has_column = false;
                 for (const auto & column_name : block.getNames())
                 {
                     if (column_name == name)
                     {
-                        hasColumn = true;
+                        has_column = true;
                         break;
                     }
                 }
 
-                if (!hasColumn)
+                if (!has_column)
                     return false;
             }
 
@@ -285,7 +301,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
             Block block(conjunct);
 
             // Block should contain all required columns from `target_expr`
-            if (!hasRequiredColumns(block))
+            if (!has_required_columns(block))
             {
                 return {};
             }

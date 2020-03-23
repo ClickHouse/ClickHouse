@@ -23,6 +23,7 @@ static const UInt64 max_block_size = 8192;
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int DICTIONARY_ACCESS_DENIED;
 }
 
@@ -200,10 +201,7 @@ bool ExecutableDictionarySource::supportsSelectiveLoad() const
 
 bool ExecutableDictionarySource::hasUpdateField() const
 {
-    if (update_field.empty())
-        return false;
-    else
-        return true;
+    return !update_field.empty();
 }
 
 DictionarySourcePtr ExecutableDictionarySource::clone() const
@@ -218,7 +216,7 @@ std::string ExecutableDictionarySource::toString() const
 
 void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 {
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -238,7 +236,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             dict_struct, config, config_prefix + ".executable",
             sample_block, context);
     };
-    factory.registerSource("executable", createTableSource);
+    factory.registerSource("executable", create_table_source);
 }
 
 }

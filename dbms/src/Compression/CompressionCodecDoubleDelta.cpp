@@ -52,7 +52,7 @@ struct WriteSpec
 };
 
 // delta size prefix and data lengths based on few high bits peeked from binary stream
-static const WriteSpec WRITE_SPEC_LUT[32] = {
+const WriteSpec WRITE_SPEC_LUT[32] = {
     // 0b0 - 1-bit prefix, no data to read
     /* 00000 */ {1, 0b0, 0},
     /* 00001 */ {1, 0b0, 0},
@@ -324,9 +324,9 @@ CompressionCodecDoubleDelta::CompressionCodecDoubleDelta(UInt8 data_bytes_size_)
 {
 }
 
-UInt8 CompressionCodecDoubleDelta::getMethodByte() const
+uint8_t CompressionCodecDoubleDelta::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::DoubleDelta);
+    return static_cast<uint8_t>(CompressionMethodByte::DoubleDelta);
 }
 
 String CompressionCodecDoubleDelta::getCodecDesc() const

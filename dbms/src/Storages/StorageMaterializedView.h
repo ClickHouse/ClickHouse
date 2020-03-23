@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
+class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
@@ -66,7 +66,7 @@ public:
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

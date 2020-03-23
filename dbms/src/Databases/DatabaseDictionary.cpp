@@ -14,12 +14,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int TABLE_ALREADY_EXISTS;
-    extern const int UNKNOWN_TABLE;
-    extern const int LOGICAL_ERROR;
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int SYNTAX_ERROR;
-    extern const int UNSUPPORTED_METHOD;
 }
 
 DatabaseDictionary::DatabaseDictionary(const String & name_)
@@ -80,9 +75,9 @@ StoragePtr DatabaseDictionary::tryGetTable(
     return {};
 }
 
-DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name)
+DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
 {
-    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(context, filter_by_name));
+    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(context, filter_by_table_name));
 }
 
 bool DatabaseDictionary::empty(const Context & context) const

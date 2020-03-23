@@ -24,7 +24,7 @@ ProtobufSchemas & ProtobufSchemas::instance()
 class ProtobufSchemas::ImporterWithSourceTree : public google::protobuf::compiler::MultiFileErrorCollector
 {
 public:
-    ImporterWithSourceTree(const String & schema_directory) : importer(&disk_source_tree, this)
+    explicit ImporterWithSourceTree(const String & schema_directory) : importer(&disk_source_tree, this)
     {
         disk_source_tree.MapPath("", schema_directory);
     }

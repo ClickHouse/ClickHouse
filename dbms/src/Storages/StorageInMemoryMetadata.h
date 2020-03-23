@@ -35,6 +35,12 @@ struct StorageInMemoryMetadata
     ASTPtr settings_ast = nullptr;
     /// SELECT QUERY. Supported for MaterializedView only.
     ASTPtr select = nullptr;
+
+    StorageInMemoryMetadata(const StorageInMemoryMetadata & other);
+    StorageInMemoryMetadata() = default;
+    StorageInMemoryMetadata(const ColumnsDescription & columns_, const IndicesDescription & indices_, const ConstraintsDescription & constraints_);
+
+    StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
 };
 
 }
