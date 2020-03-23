@@ -229,10 +229,7 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns)
     column_name_to_position.reserve(new_columns.size());
     size_t pos = 0;
     for (const auto & column : columns)
-    {
         column_name_to_position.emplace(column.name, pos++);
-    }
-    total_columns_size = getTotalColumnsSize();
 }
 
 IMergeTreeDataPart::~IMergeTreeDataPart() = default;
