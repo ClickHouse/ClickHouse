@@ -83,20 +83,7 @@ void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
 
     while (begin < end)
     {
-        if constexpr (sizeof(T) <= sizeof(UInt64))
-        {
-            *hash_data = intHashCRC32(*begin, *hash_data);
-        }
-        else
-        {
-            auto * begin64 = reinterpret_cast<const UInt64 *>(begin);
-            for (size_t i = 0; i < sizeof(T); i += sizeof(UInt64))
-            {
-                *hash_data = intHashCRC32(*begin64, *hash_data);
-                ++begin64;
-            }
-        }
-
+        *hash_data = intHashCRC32(*begin, *hash_data);
         ++begin;
         ++hash_data;
     }
