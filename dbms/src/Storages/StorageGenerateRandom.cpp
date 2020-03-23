@@ -416,11 +416,11 @@ Pipes StorageGenerateRandom::read(
     Pipes pipes;
     pipes.reserve(num_streams);
 
-    const ColumnsDescription & columns_ = getColumns();
+    const ColumnsDescription & our_columns = getColumns();
     Block block_header;
     for (const auto & name : column_names)
     {
-        const auto & name_type = columns_.get(name);
+        const auto & name_type = our_columns.get(name);
         MutableColumnPtr column = name_type.type->createColumn();
         block_header.insert({std::move(column), name_type.type, name_type.name});
     }

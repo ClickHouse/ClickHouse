@@ -59,7 +59,7 @@ private:
     void processTask(DDLTask & task, const ZooKeeperPtr & zookeeper);
 
     /// Check that query should be executed on leader replica only
-    bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage) const;
+    static bool taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, StoragePtr storage);
 
     /// Check that shard has consistent config with table
     void checkShardConfig(const String & table, const DDLTask & task, StoragePtr storage) const;
@@ -84,7 +84,7 @@ private:
     void cleanupQueue(Int64 current_time_seconds, const ZooKeeperPtr & zookeeper);
 
     /// Init task node
-    void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
+    static void createStatusDirs(const std::string & node_path, const ZooKeeperPtr & zookeeper);
 
 
     void runMainThread();

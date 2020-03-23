@@ -3,7 +3,6 @@
 #include <Core/Defines.h>
 #include <IO/WriteBuffer.h>
 #include <common/itoa.h>
-#include <common/likely.h>
 
 /// 40 digits or 39 digits and a sign
 #define WRITE_HELPERS_MAX_INT_WIDTH 40U

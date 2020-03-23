@@ -22,19 +22,27 @@ function find_reference_sha
 
     # Go back from the revision to be tested, trying to find the closest published
     # testing release.
-    start_ref="$SHA_TO_TEST"
+    start_ref="$SHA_TO_TEST"~
     # If we are testing a PR, and it merges with master successfully, we are
     # building and testing not the nominal last SHA specified by pull/.../head
     # and SHA_TO_TEST, but a revision that is merged with recent master, given
     # by pull/.../merge ref.
+    # Master is the first parent of the pull/.../merge.
     if git -C ch rev-parse pr/merge
     then
-        start_ref=pr/merge
+        start_ref=pr/merge~
     fi
 
     while :
     do
-        ref_tag=$(git -C ch describe --match='v*-testing' --abbrev=0 --first-parent "$start_ref")
+        # FIXME the original idea was to compare to a closest testing tag, which
+        # is a version that is verified to work correctly. However, we're having
+        # some test stability issues now, and the testing release can't roll out
+        # for more that a weak already because of that. Temporarily switch to
+        # using just closest master, so that we can go on.
+        #ref_tag=$(git -C ch describe --match='v*-testing' --abbrev=0 --first-parent "$start_ref")
+        ref_tag="$start_ref"
+
         echo Reference tag is "$ref_tag"
         # We use annotated tags which have their own shas, so we have to further
         # dereference the tag to get the commit it points to, hence the '~0' thing.
@@ -84,12 +92,17 @@ export CHPC_RUNS=${CHPC_RUNS:-7}
 
 # Even if we have some errors, try our best to save the logs.
 set +e
-# compare.sh kills its process group, so put it into a separate one.
-# It's probably at fault for using `kill 0` as an error handling mechanism,
-# but I can't be bothered to change this now.
-set -m
-time ../compare.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
+
+# Use main comparison script from the tested package, so that we can change it
+# in PRs.
+# Older version use 'kill 0', so put the script into a separate process group
+# FIXME remove set +m in April 2020
 set +m
+{ \
+    time ../download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
+    time stage=configure right/scripts/compare.sh ; \
+} 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
+set -m
 
 # Stop the servers to free memory. Normally they are restarted before getting
 # the profile info, so they shouldn't use much, but if the comparison script

@@ -34,7 +34,6 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
-    part_columns_lock(data_part->columns_lock),
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     check_columns(check_columns_),
@@ -119,7 +118,6 @@ void MergeTreeSelectProcessor::finish()
     */
     reader.reset();
     pre_reader.reset();
-    part_columns_lock.unlock();
     data_part.reset();
 }
 

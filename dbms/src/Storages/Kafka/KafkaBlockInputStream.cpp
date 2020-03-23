@@ -137,22 +137,22 @@ Block KafkaBlockInputStream::readImpl()
 
         buffer->storeLastReadMessageOffset();
 
-        auto _topic         = buffer->currentTopic();
-        auto _key           = buffer->currentKey();
-        auto _offset        = buffer->currentOffset();
-        auto _partition     = buffer->currentPartition();
-        auto _timestamp_raw = buffer->currentTimestamp();
-        auto _timestamp     = _timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(_timestamp_raw->get_timestamp()).count()
+        auto topic         = buffer->currentTopic();
+        auto key           = buffer->currentKey();
+        auto offset        = buffer->currentOffset();
+        auto partition     = buffer->currentPartition();
+        auto timestamp_raw = buffer->currentTimestamp();
+        auto timestamp     = timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(timestamp_raw->get_timestamp()).count()
                                                 : 0;
         for (size_t i = 0; i < new_rows; ++i)
         {
-            virtual_columns[0]->insert(_topic);
-            virtual_columns[1]->insert(_key);
-            virtual_columns[2]->insert(_offset);
-            virtual_columns[3]->insert(_partition);
-            if (_timestamp_raw)
+            virtual_columns[0]->insert(topic);
+            virtual_columns[1]->insert(key);
+            virtual_columns[2]->insert(offset);
+            virtual_columns[3]->insert(partition);
+            if (timestamp_raw)
             {
-                virtual_columns[4]->insert(_timestamp);
+                virtual_columns[4]->insert(timestamp);
             }
             else
             {

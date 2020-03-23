@@ -1,8 +1,8 @@
-# SHOW Queries
+# SHOW Queries {#show-queries}
 
-## SHOW CREATE TABLE
+## SHOW CREATE TABLE {#show-create-table}
 
-```sql
+``` sql
 SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -10,16 +10,16 @@ SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [F
 
 ## SHOW DATABASES {#show-databases}
 
-```sql
+``` sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Выводит список всех баз данных.
 Запрос полностью аналогичен запросу `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
 
-## SHOW PROCESSLIST
+## SHOW PROCESSLIST {#show-processlist}
 
-```sql
+``` sql
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -29,15 +29,15 @@ SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 
 Полезный совет (выполните в консоли):
 
-```bash
+``` bash
 $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ```
 
-## SHOW TABLES
+## SHOW TABLES {#show-tables}
 
 Выводит список таблиц.
 
-```sql
+``` sql
 SHOW [TEMPORARY] TABLES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
@@ -45,7 +45,7 @@ SHOW [TEMPORARY] TABLES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE
 
 Результат, идентичный тому, что выдаёт запрос `SHOW TABLES` можно получить также запросом следующего вида:
 
-```sql
+``` sql
 SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
@@ -53,21 +53,22 @@ SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [
 
 Следующий запрос выбирает первые две строки из списка таблиц в базе данных `system`, чьи имена содержат `co`.
 
-```sql
+``` sql
 SHOW TABLES FROM system LIKE '%co%' LIMIT 2
 ```
-```text
+
+``` text
 ┌─name───────────────────────────┐
 │ aggregate_function_combinators │
 │ collations                     │
 └────────────────────────────────┘
 ```
 
-## SHOW DICTIONARIES
+## SHOW DICTIONARIES {#show-dictionaries}
 
 Выводит список [внешних словарей](dicts/external_dicts.md).
 
-```sql
+``` sql
 SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
@@ -75,7 +76,7 @@ SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <file
 
 Аналогичный результат можно получить следующим запросом:
 
-```sql
+``` sql
 SELECT name FROM system.dictionaries WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
@@ -83,10 +84,11 @@ SELECT name FROM system.dictionaries WHERE database = <db> [AND name LIKE <patte
 
 Запрос выводит первые две стоки из списка таблиц в базе данных `system`, имена которых содержат `reg`.
 
-```sql
+``` sql
 SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 ```
-```text
+
+``` text
 ┌─name─────────┐
 │ regions      │
 │ region_names │

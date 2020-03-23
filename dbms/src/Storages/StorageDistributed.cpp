@@ -110,8 +110,7 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block_non_materialized)
 {
     auto query = std::make_shared<ASTInsertQuery>();
-    query->database = database;
-    query->table = table;
+    query->table_id = StorageID(database, table);
 
     auto columns = std::make_shared<ASTExpressionList>();
     query->columns = columns;
@@ -319,13 +318,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     return res;
 }
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
-{
-    auto cluster = getCluster();
-    return getQueryProcessingStage(context, cluster);
-}
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const
+static QueryProcessingStage::Enum getQueryProcessingStageImpl(const Context & context, const ClusterPtr & cluster)
 {
     const Settings & settings = context.getSettingsRef();
 
@@ -338,6 +332,12 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
     else    /// Normal mode.
         return result_size == 1 ? QueryProcessingStage::Complete
                                 : QueryProcessingStage::WithMergeableState;
+}
+
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
+{
+    auto cluster = getCluster();
+    return getQueryProcessingStageImpl(context, cluster);
 }
 
 Pipes StorageDistributed::read(
@@ -368,7 +368,7 @@ Pipes StorageDistributed::read(
         ? ClusterProxy::SelectStreamFactory(
             header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, context.getExternalTables())
         : ClusterProxy::SelectStreamFactory(
-            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
+            header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
     UInt64 force = settings.force_optimize_skip_unused_shards;
     if (settings.optimize_skip_unused_shards)
@@ -469,7 +469,7 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
     checkAlterIsPossible(params, context.getSettingsRef());
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
     setColumns(std::move(metadata.columns));
 }
 
@@ -642,7 +642,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
         if (!block.has(sharding_key_column_name))
             throw Exception("sharding_key_expr should evaluate as a single row", ErrorCodes::TOO_MANY_ROWS);
 
-        const auto result = block.getByName(sharding_key_column_name);
+        const ColumnWithTypeAndName & result = block.getByName(sharding_key_column_name);
         const auto selector = createSelector(cluster, result);
 
         shards.insert(selector.begin(), selector.end());

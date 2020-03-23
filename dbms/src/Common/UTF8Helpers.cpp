@@ -75,15 +75,11 @@ static int wcwidth(wchar_t wc)
     switch (width)
     {
         case widechar_nonprint:
-            [[fallthrough]];
         case widechar_combining:
-            [[fallthrough]];
         case widechar_unassigned:
             return 0;
         case widechar_ambiguous:
-            [[fallthrough]];
         case widechar_private_use:
-            [[fallthrough]];
         case widechar_widened_in_9:
             return 1;
         default:

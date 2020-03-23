@@ -36,10 +36,7 @@ ArraysDepths getArraysDepths(const ColumnsWithTypeAndName & arguments)
         if (type_array)
         {
             if (depths.size() < array_num && prev_array_depth)
-            {
                 depths.emplace_back(prev_array_depth);
-                prev_array_depth = 0;
-            }
 
             prev_array_depth = type_array->getNumberOfDimensions();
             ++array_num;

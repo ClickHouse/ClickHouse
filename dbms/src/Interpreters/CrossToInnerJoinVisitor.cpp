@@ -4,7 +4,6 @@
 #include <Interpreters/CrossToInnerJoinVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
-#include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
@@ -31,7 +30,7 @@ namespace
 
 struct JoinedElement
 {
-    JoinedElement(const ASTTablesInSelectQueryElement & table_element)
+    explicit JoinedElement(const ASTTablesInSelectQueryElement & table_element)
         : element(table_element)
     {
         if (element.table_join)
@@ -95,7 +94,7 @@ public:
 
     CheckExpressionVisitorData(const std::vector<JoinedElement> & tables_,
                                const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-                               Aliases && aliases_)
+                               const Aliases & aliases_)
         : joined_tables(tables_)
         , tables(tables_with_columns)
         , aliases(aliases_)
@@ -168,7 +167,7 @@ private:
     const std::vector<JoinedElement> & joined_tables;
     const std::vector<TableWithColumnNamesAndTypes> & tables;
     std::map<size_t, std::vector<ASTPtr>> asts_to_join_on;
-    Aliases aliases;
+    const Aliases & aliases;
     bool ands_only;
 
     size_t canMoveEqualsToJoinOn(const ASTFunction & node)
@@ -323,13 +322,7 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
     if (!select.where())
         return;
 
-    Aliases aliases;
-    QueryAliasesVisitor::Data query_aliases_data{aliases};
-    if (ASTPtr with = select.with())
-        QueryAliasesVisitor(query_aliases_data).visit(with);
-    QueryAliasesVisitor(query_aliases_data).visit(select.select());
-
-    CheckExpressionVisitor::Data visitor_data{joined_tables, data.tables_with_columns, std::move(aliases)};
+    CheckExpressionVisitor::Data visitor_data{joined_tables, data.tables_with_columns, data.aliases};
     CheckExpressionVisitor(visitor_data).visit(select.where());
 
     if (visitor_data.complex())

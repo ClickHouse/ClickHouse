@@ -14,7 +14,7 @@ namespace DB
   * You could also specify a limit (how many zeros to give).
   * If multithreaded is specified, zeros will be generated in several streams.
   */
-class StorageSystemZeros : public ext::shared_ptr_helper<StorageSystemZeros>, public IStorage
+class StorageSystemZeros final : public ext::shared_ptr_helper<StorageSystemZeros>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageSystemZeros>;
 public:
@@ -37,7 +37,7 @@ private:
 protected:
     /// If even_distribution is true, numbers are distributed evenly between streams.
     /// Otherwise, streams concurrently increment atomic.
-    StorageSystemZeros(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt);
+    StorageSystemZeros(const StorageID & table_id_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt);
 };
 
 }
