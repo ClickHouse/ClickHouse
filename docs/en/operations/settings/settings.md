@@ -976,7 +976,7 @@ Enables or disables skipping of unused shards for SELECT queries that have shard
 
 Default value: 0
 
-## force\_optimize\_skip\_unused\_shards {#settings-force-optimize-skip-unused-shards}
+## force\_optimize\_skip\_unused\_shards {#settings-force_optimize_skip_unused_shards}
 
 Enables or disables query execution if [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled exception will be thrown.
 
