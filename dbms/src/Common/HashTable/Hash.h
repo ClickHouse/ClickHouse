@@ -109,10 +109,17 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
 
     if (pos < end)
     {
+        /// If string size is not divisible by 8.
+        /// Lets' assume the string was 'abcdefghXYZ', so it's tail is 'XYZ'.
         DB::UInt8 tail_size = end - pos;
+        /// Load tailing 8 bytes. Word is 'defghXYZ'.
         auto word = unalignedLoad<UInt64>(end - 8);
+        /// Prepare mask which will set other 5 bytes to 0. It is 0xFFFFFFFFFFFFFFFF << 5 = 0xFFFFFF0000000000.
+        /// word & mask = '\0\0\0\0\0XYZ' (bytes are reversed because of little ending)
         word &= (~UInt64(0)) << DB::UInt8(8 * (8 - tail_size));
+        /// Use least byte to store tail length.
         word |= tail_size;
+        /// Now word is '\3\0\0\0\0XYZ'
         updated_value = intHashCRC32(word, updated_value);
     }
 
