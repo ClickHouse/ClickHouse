@@ -85,8 +85,8 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     const SelectQueryInfo & info_, const Context & context_, const Block & header_, size_t hash_functions_)
     : header(header_), context(context_), query_info(info_), hash_functions(hash_functions_)
 {
-    auto atomFromAST = [this](auto & node, auto &, auto & constants, auto & out) { return traverseAtomAST(node, constants, out); };
-    rpn = std::move(RPNBuilder<RPNElement>(info_, context, atomFromAST).extractRPN());
+    auto atom_from_ast = [this](auto & node, auto &, auto & constants, auto & out) { return traverseAtomAST(node, constants, out); };
+    rpn = std::move(RPNBuilder<RPNElement>(info_, context, atom_from_ast).extractRPN());
 }
 
 bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
@@ -161,7 +161,7 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
                 match_rows = maybeTrueOnBloomFilter(&*hash_column, filter, hash_functions);
             }
 
-            rpn_stack.emplace_back(match_rows, !match_rows);
+            rpn_stack.emplace_back(match_rows, true);
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS || element.function == RPNElement::FUNCTION_NOT_IN)
                 rpn_stack.back() = !rpn_stack.back();
         }

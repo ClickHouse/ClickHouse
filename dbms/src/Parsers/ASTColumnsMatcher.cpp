@@ -4,7 +4,6 @@
 #include <re2/re2.h>
 
 
-
 namespace DB
 {
 namespace ErrorCodes

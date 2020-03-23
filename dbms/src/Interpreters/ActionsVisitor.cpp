@@ -145,19 +145,19 @@ SetPtr makeExplicitSet(
 
     auto [right_arg_value, right_arg_type] = evaluateConstantExpression(right_arg, context);
 
-    std::function<size_t(const DataTypePtr &)> getTypeDepth;
-    getTypeDepth = [&getTypeDepth](const DataTypePtr & type) -> size_t
+    std::function<size_t(const DataTypePtr &)> get_type_depth;
+    get_type_depth = [&get_type_depth](const DataTypePtr & type) -> size_t
     {
         if (auto array_type = typeid_cast<const DataTypeArray *>(type.get()))
-            return 1 + getTypeDepth(array_type->getNestedType());
+            return 1 + get_type_depth(array_type->getNestedType());
         else if (auto tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-            return 1 + (tuple_type->getElements().empty() ? 0 : getTypeDepth(tuple_type->getElements().at(0)));
+            return 1 + (tuple_type->getElements().empty() ? 0 : get_type_depth(tuple_type->getElements().at(0)));
 
         return 0;
     };
 
-    const size_t left_type_depth = getTypeDepth(left_arg_type);
-    const size_t right_type_depth = getTypeDepth(right_arg_type);
+    const size_t left_type_depth = get_type_depth(left_arg_type);
+    const size_t right_type_depth = get_type_depth(right_arg_type);
 
     auto throw_unsupported_type = [](const auto & type)
     {
@@ -222,11 +222,11 @@ void ScopeStack::pushLevel(const NamesAndTypesList & input_columns)
     ColumnsWithTypeAndName all_columns;
     NameSet new_names;
 
-    for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
+    for (const auto & input_column : input_columns)
     {
-        all_columns.emplace_back(nullptr, it->type, it->name);
-        new_names.insert(it->name);
-        stack.back().new_columns.insert(it->name);
+        all_columns.emplace_back(nullptr, input_column.type, input_column.name);
+        new_names.insert(input_column.name);
+        stack.back().new_columns.insert(input_column.name);
     }
 
     const Block & prev_sample_block = prev.actions->getSampleBlock();
@@ -253,17 +253,17 @@ void ScopeStack::addAction(const ExpressionAction & action)
 {
     size_t level = 0;
     Names required = action.getNeededColumns();
-    for (size_t i = 0; i < required.size(); ++i)
-        level = std::max(level, getColumnLevel(required[i]));
+    for (const auto & elem : required)
+        level = std::max(level, getColumnLevel(elem));
 
     Names added;
     stack[level].actions->add(action, added);
 
     stack[level].new_columns.insert(added.begin(), added.end());
 
-    for (size_t i = 0; i < added.size(); ++i)
+    for (const auto & elem : added)
     {
-        const ColumnWithTypeAndName & col = stack[level].actions->getSampleBlock().getByName(added[i]);
+        const ColumnWithTypeAndName & col = stack[level].actions->getSampleBlock().getByName(elem);
         for (size_t j = level + 1; j < stack.size(); ++j)
             stack[j].actions->addInput(col);
     }
@@ -400,16 +400,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
     }
 
-    /// A special function `indexHint`. Everything that is inside it is not calculated
-    /// (and is used only for index analysis, see KeyCondition).
-    if (node.name == "indexHint")
-    {
-        data.addAction(ExpressionAction::addColumn(ColumnWithTypeAndName(
-            ColumnConst::create(ColumnUInt8::create(1, 1), 1), std::make_shared<DataTypeUInt8>(),
-                column_name.get(ast))));
-        return;
-    }
-
     if (AggregateFunctionFactory::instance().isAggregateFunctionName(node.name))
         return;
 
@@ -490,13 +480,10 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
         else if (identifier && node.name == "joinGet" && arg == 0)
         {
-            String database_name;
-            String table_name;
-            std::tie(database_name, table_name) = IdentifierSemantic::extractDatabaseAndTable(*identifier);
-            if (database_name.empty())
-                database_name = data.context.getCurrentDatabase();
+            auto table_id = IdentifierSemantic::extractDatabaseAndTable(*identifier);
+            table_id = data.context.resolveStorageID(table_id, Context::ResolveOrdinary);
             auto column_string = ColumnString::create();
-            column_string->insert(database_name + "." + table_name);
+            column_string->insert(table_id.getDatabaseName() + "." + table_id.getTableName());
             ColumnWithTypeAndName column(
                 ColumnConst::create(std::move(column_string), 1),
                 std::make_shared<DataTypeString>(),
@@ -509,18 +496,17 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             /// If the argument is not a lambda expression, call it recursively and find out its type.
             visit(child, data);
-            std::string name = child_column_name;
-            if (data.hasColumn(name))
+            if (data.hasColumn(child_column_name))
             {
-                argument_types.push_back(data.getSampleBlock().getByName(name).type);
-                argument_names.push_back(name);
+                argument_types.push_back(data.getSampleBlock().getByName(child_column_name).type);
+                argument_names.push_back(child_column_name);
             }
             else
             {
                 if (data.only_consts)
                     arguments_present = false;
                 else
-                    throw Exception("Unknown identifier: " + name, ErrorCodes::UNKNOWN_IDENTIFIER);
+                    throw Exception("Unknown identifier: " + child_column_name, ErrorCodes::UNKNOWN_IDENTIFIER);
             }
         }
     }
@@ -642,8 +628,8 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
         ///  and the table has the type Set (a previously prepared set).
         if (identifier)
         {
-            DatabaseAndTableWithAlias database_table(*identifier);
-            StoragePtr table = data.context.tryGetTable(database_table.database, database_table.table);
+            auto table_id = data.context.resolveStorageID(right_in_operand);
+            StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
 
             if (table)
             {

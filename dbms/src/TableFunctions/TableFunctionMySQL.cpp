@@ -48,8 +48,8 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         throw Exception("Table function 'mysql' requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (size_t i = 0; i < args.size(); ++i)
-        args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     std::string host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     std::string remote_database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
@@ -100,7 +100,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         << " ORDER BY ORDINAL_POSITION";
 
     NamesAndTypesList columns;
-    MySQLBlockInputStream result(pool.Get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(pool.get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
     while (Block block = result.read())
     {
         size_t rows = block.rows();

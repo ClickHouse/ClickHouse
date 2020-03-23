@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>
@@ -12,7 +11,7 @@
       -->
 
     <create_query>CREATE TABLE empty_strings (s String) ENGINE = Log;</create_query>
-    <fill_query>INSERT INTO empty_strings SELECT '' FROM numbers(1000000000);</fill_query>
+    <fill_query>INSERT INTO empty_strings SELECT '' FROM zeros_mt(100000000);</fill_query>
 
     <query>SELECT count() FROM empty_strings</query>
 

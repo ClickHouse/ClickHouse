@@ -10,7 +10,6 @@
 #endif
 
 
-
 unsigned getNumberOfPhysicalCPUCores()
 {
 #if USE_CPUID

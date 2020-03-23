@@ -13,6 +13,8 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
 }
 
+ReadBufferFromHDFS::~ReadBufferFromHDFS() = default;
+
 struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
 {
     std::string hdfs_uri;
@@ -20,7 +22,7 @@ struct ReadBufferFromHDFS::ReadBufferFromHDFSImpl
     HDFSBuilderPtr builder;
     HDFSFSPtr fs;
 
-    ReadBufferFromHDFSImpl(const std::string & hdfs_name_)
+    explicit ReadBufferFromHDFSImpl(const std::string & hdfs_name_)
         : hdfs_uri(hdfs_name_)
         , builder(createHDFSBuilder(hdfs_uri))
         , fs(createHDFSFS(builder.get()))
@@ -65,10 +67,6 @@ bool ReadBufferFromHDFS::nextImpl()
     else
         return false;
     return true;
-}
-
-ReadBufferFromHDFS::~ReadBufferFromHDFS()
-{
 }
 
 }

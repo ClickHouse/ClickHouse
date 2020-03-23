@@ -47,16 +47,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         }
     }
 
-    Poco::File(part_path).createDirectories();
+    disk->createDirectories(part_path);
 
     writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), default_codec, writer_settings);
     writer->initPrimaryIndex();
     writer->initSkipIndices();
-}
-
-std::string MergedBlockOutputStream::getPartPath() const
-{
-    return part_path;
 }
 
 /// If data is pre-sorted.
@@ -80,7 +75,7 @@ void MergedBlockOutputStream::writeSuffix()
 
 void MergedBlockOutputStream::writeSuffixAndFinalizePart(
         MergeTreeData::MutableDataPartPtr & new_part,
-        const NamesAndTypesList * total_column_list,
+        const NamesAndTypesList * total_columns_list,
         MergeTreeData::DataPart::Checksums * additional_column_checksums)
 {
     /// Finish write and get checksums.
@@ -94,20 +89,23 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     writer->finishPrimaryIndexSerialization(checksums);
     writer->finishSkipIndicesSerialization(checksums);
 
-    if (!total_column_list)
-        total_column_list = &columns_list;
+    NamesAndTypesList part_columns;
+    if (!total_columns_list)
+        part_columns = columns_list;
+    else
+        part_columns = *total_columns_list;
 
     if (storage.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING || isCompactPart(new_part))
     {
-        new_part->partition.store(storage, part_path, checksums);
+        new_part->partition.store(storage, disk, part_path, checksums);
         if (new_part->minmax_idx.initialized)
-            new_part->minmax_idx.store(storage, part_path, checksums);
+            new_part->minmax_idx.store(storage, disk, part_path, checksums);
         else if (rows_count)
             throw Exception("MinMax index was not initialized for new non-empty part " + new_part->name
                 + ". It is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-        WriteBufferFromFile count_out(part_path + "count.txt", 4096);
-        HashingWriteBuffer count_out_hashing(count_out);
+        auto count_out = disk->writeFile(part_path + "count.txt", 4096);
+        HashingWriteBuffer count_out_hashing(*count_out);
         writeIntText(rows_count, count_out_hashing);
         count_out_hashing.next();
         checksums.files["count.txt"].file_size = count_out_hashing.count();
@@ -117,25 +115,28 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     if (!new_part->ttl_infos.empty())
     {
         /// Write a file with ttl infos in json format.
-        WriteBufferFromFile out(part_path + "ttl.txt", 4096);
-        HashingWriteBuffer out_hashing(out);
+        auto out = disk->writeFile(part_path + "ttl.txt", 4096);
+        HashingWriteBuffer out_hashing(*out);
         new_part->ttl_infos.write(out_hashing);
         checksums.files["ttl.txt"].file_size = out_hashing.count();
         checksums.files["ttl.txt"].file_hash = out_hashing.getHash();
     }
 
+    removeEmptyColumnsFromPart(new_part, part_columns, checksums);
+
     {
         /// Write a file with a description of columns.
-        WriteBufferFromFile out(part_path + "columns.txt", 4096);
-        total_column_list->writeText(out);
+        auto out = disk->writeFile(part_path + "columns.txt", 4096);
+        part_columns.writeText(*out);
     }
 
     {
         /// Write file with checksums.
-        WriteBufferFromFile out(part_path + "checksums.txt", 4096);
-        checksums.write(out);
+        auto out = disk->writeFile(part_path + "checksums.txt", 4096);
+        checksums.write(*out);
     }
 
+    new_part->setColumns(part_columns);
     new_part->rows_count = rows_count;
     new_part->modification_time = time(nullptr);
     new_part->index = writer->releaseIndexColumns();

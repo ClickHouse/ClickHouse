@@ -57,7 +57,7 @@ bool MergeTreeThreadSelectBlockInputProcessor::getNewTask()
         return false;
     }
 
-    const std::string path = task->data_part->getFullPath();
+    const std::string path = task->data_part->getFullRelativePath();
 
     /// Allows pool to reduce number of threads in case of too slow reads.
     auto profile_callback = [this](ReadBufferFromFileBase::ProfileInfo info_) { pool->profileFeedback(info_); };

@@ -34,7 +34,7 @@ bool PredicateExpressionsOptimizer::optimize(ASTSelectQuery & select_query)
     if (!select_query.tables() || select_query.tables()->children.empty())
         return false;
 
-    if ((!select_query.where() && !select_query.prewhere()) || select_query.array_join_expression_list())
+    if ((!select_query.where() && !select_query.prewhere()) || select_query.arrayJoinExpressionList())
         return false;
 
     const auto & tables_predicates = extractTablesPredicates(select_query.where(), select_query.prewhere());
@@ -98,10 +98,10 @@ std::vector<ASTs> PredicateExpressionsOptimizer::extractTablesPredicates(const A
         {
             if (expression_info.unique_reference_tables_pos.size() == 1)
                 tables_predicates[*expression_info.unique_reference_tables_pos.begin()].emplace_back(predicate_expression);
-            else if (expression_info.unique_reference_tables_pos.size() == 0)
+            else if (expression_info.unique_reference_tables_pos.empty())
             {
-                for (size_t index = 0; index < tables_predicates.size(); ++index)
-                    tables_predicates[index].emplace_back(predicate_expression);
+                for (auto & predicate : tables_predicates)
+                    predicate.emplace_back(predicate_expression);
             }
         }
     }

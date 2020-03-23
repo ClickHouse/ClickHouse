@@ -11,10 +11,11 @@ using namespace DB;
 
 using TraceDataType = TraceLogElement::TraceDataType;
 
-const TraceDataType::Values TraceLogElement::trace_values = {
-    {"Real", static_cast<UInt8>(TraceType::REAL_TIME)},
-    {"CPU", static_cast<UInt8>(TraceType::CPU_TIME)},
-    {"Memory", static_cast<UInt8>(TraceType::MEMORY)},
+const TraceDataType::Values TraceLogElement::trace_values =
+{
+    {"Real", static_cast<UInt8>(TraceType::Real)},
+    {"CPU", static_cast<UInt8>(TraceType::CPU)},
+    {"Memory", static_cast<UInt8>(TraceType::Memory)},
 };
 
 Block TraceLogElement::createBlock()
@@ -23,6 +24,7 @@ Block TraceLogElement::createBlock()
     {
         {std::make_shared<DataTypeDate>(),                                    "event_date"},
         {std::make_shared<DataTypeDateTime>(),                                "event_time"},
+        {std::make_shared<DataTypeUInt64>(),                                  "timestamp_ns"},
         {std::make_shared<DataTypeUInt32>(),                                  "revision"},
         {std::make_shared<TraceDataType>(trace_values),                       "trace_type"},
         {std::make_shared<DataTypeUInt64>(),                                  "thread_id"},
@@ -40,6 +42,7 @@ void TraceLogElement::appendToBlock(Block & block) const
 
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time));
     columns[i++]->insert(event_time);
+    columns[i++]->insert(timestamp_ns);
     columns[i++]->insert(ClickHouseRevision::get());
     columns[i++]->insert(static_cast<UInt8>(trace_type));
     columns[i++]->insert(thread_id);

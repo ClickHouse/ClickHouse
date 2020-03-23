@@ -358,7 +358,6 @@ void Block::setColumns(const Columns & columns)
 }
 
 
-
 Block Block::cloneWithColumns(MutableColumns && columns) const
 {
     Block res;

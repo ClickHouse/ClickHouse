@@ -78,14 +78,23 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
 ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
 {
     /// NOTE: see https://github.com/edenhill/librdkafka/issues/2077
-    consumer->unsubscribe();
-    consumer->unassign();
-    while (consumer->get_consumer_queue().next_event(100ms));
+    try
+    {
+        if (!consumer->get_subscription().empty())
+            consumer->unsubscribe();
+        if (!assignment.empty())
+            consumer->unassign();
+        while (consumer->get_consumer_queue().next_event(100ms));
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer destructor: " << e.what());
+    }
 }
 
 void ReadBufferFromKafkaConsumer::commit()
 {
-    auto PrintOffsets = [this] (const char * prefix, const cppkafka::TopicPartitionList & offsets)
+    auto print_offsets = [this] (const char * prefix, const cppkafka::TopicPartitionList & offsets)
     {
         for (const auto & topic_part : offsets)
         {
@@ -118,7 +127,7 @@ void ReadBufferFromKafkaConsumer::commit()
         }
     };
 
-    PrintOffsets("Polled offset", consumer->get_offsets_position(consumer->get_assignment()));
+    print_offsets("Polled offset", consumer->get_offsets_position(consumer->get_assignment()));
 
     if (hasMorePolledMessages())
     {
@@ -138,7 +147,7 @@ void ReadBufferFromKafkaConsumer::commit()
         LOG_TRACE(log,"Nothing to commit.");
     }
 
-    PrintOffsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
+    print_offsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
     offsets_stored = 0;
 
     stalled = false;
@@ -184,7 +193,17 @@ void ReadBufferFromKafkaConsumer::unsubscribe()
     current = messages.begin();
     BufferBase::set(nullptr, 0, 0);
 
-    consumer->unsubscribe();
+    // it should not raise exception as used in destructor
+    try
+    {
+        if (!consumer->get_subscription().empty())
+            consumer->unsubscribe();
+    }
+    catch (const cppkafka::HandleException & e)
+    {
+        LOG_ERROR(log, "Exception from ReadBufferFromKafkaConsumer::unsubscribe: " << e.what());
+    }
+
 }
 
 
@@ -222,7 +241,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
             commit();
 
         size_t waited_for_assignment = 0;
-        while (1)
+        while (true)
         {
             /// Don't drop old messages immediately, since we may need them for virtual columns.
             auto new_messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));

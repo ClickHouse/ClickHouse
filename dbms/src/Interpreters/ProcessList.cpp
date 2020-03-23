@@ -197,8 +197,14 @@ ProcessList::EntryPtr ProcessList::insert(const String & query_, const IAST * as
 
                 /// Set query-level memory trackers
                 thread_group->memory_tracker.setOrRaiseHardLimit(process_it->max_memory_usage);
-                thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
-                thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+
+                if (query_context.hasTraceCollector())
+                {
+                    /// Set up memory profiling
+                    thread_group->memory_tracker.setOrRaiseProfilerLimit(settings.memory_profiler_step);
+                    thread_group->memory_tracker.setProfilerStep(settings.memory_profiler_step);
+                }
+
                 thread_group->memory_tracker.setDescription("(for query)");
                 if (process_it->memory_tracker_fault_probability)
                     thread_group->memory_tracker.setFaultProbability(process_it->memory_tracker_fault_probability);
@@ -275,7 +281,7 @@ ProcessListEntry::~ProcessListEntry()
         user_process_list.resetTrackers();
 
     /// This removes memory_tracker for all requests. At this time, no other memory_trackers live.
-    if (parent.processes.size() == 0)
+    if (parent.processes.empty())
     {
         /// Reset MemoryTracker, similarly (see above).
         parent.total_memory_tracker.logPeakMemoryUsage();
@@ -477,5 +483,33 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 
 ProcessListForUser::ProcessListForUser() = default;
 
+
+ProcessListForUserInfo ProcessListForUser::getInfo(bool get_profile_events) const
+{
+    ProcessListForUserInfo res;
+
+    res.memory_usage = user_memory_tracker.get();
+    res.peak_memory_usage = user_memory_tracker.getPeak();
+
+    if (get_profile_events)
+        res.profile_counters = std::make_shared<ProfileEvents::Counters>(user_performance_counters.getPartiallyAtomicSnapshot());
+
+    return res;
+}
+
+
+ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
+{
+    UserInfo per_user_infos;
+
+    std::lock_guard lock(mutex);
+
+    per_user_infos.reserve(user_to_queries.size());
+
+    for (const auto & [user, user_queries] : user_to_queries)
+        per_user_infos.emplace(user, user_queries.getInfo(get_profile_events));
+
+    return per_user_infos;
+}
 
 }

@@ -33,8 +33,8 @@ namespace DataPartsExchange
 
 namespace
 {
-static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
-static constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE = 1;
+constexpr auto REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE_AND_TTL_INFOS = 2;
 
 
 std::string getEndpointId(const std::string & node_id)
@@ -89,8 +89,6 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
         MergeTreeData::DataPartPtr part = findPart(part_name);
 
-        std::shared_lock<std::shared_mutex> part_lock(part->columns_lock);
-
         CurrentMetrics::Increment metric_increment{CurrentMetrics::ReplicatedSend};
 
         /// We'll take a list of files from the list of checksums.
@@ -116,16 +114,17 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         {
             String file_name = it.first;
 
-            String path = part->getFullPath() + file_name;
+            auto disk = part->disk;
+            String path = part->getFullRelativePath() + file_name;
 
-            UInt64 size = Poco::File(path).getSize();
+            UInt64 size = disk->getFileSize(path);
 
             writeStringBinary(it.first, out);
             writeBinary(size, out);
 
-            ReadBufferFromFile file_in(path);
+            auto file_in = disk->readFile(path);
             HashingWriteBuffer hashing_out(out);
-            copyData(file_in, hashing_out, blocker.getCounter());
+            copyData(*file_in, hashing_out, blocker.getCounter());
 
             if (blocker.isCancelled())
                 throw Exception("Transferring part to replica was cancelled", ErrorCodes::ABORTED);

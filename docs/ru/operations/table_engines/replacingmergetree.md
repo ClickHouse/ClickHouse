@@ -1,4 +1,4 @@
-# ReplacingMergeTree
+# ReplacingMergeTree {#replacingmergetree}
 
 Движок отличается от [MergeTree](mergetree.md#table_engines-mergetree) тем, что выполняет удаление дублирующихся записей с одинаковым значением первичного ключа (точнее, с одинаковым значением [ключа сортировки](mergetree.md)).
 
@@ -6,9 +6,9 @@
 
 Таким образом, `ReplacingMergeTree` подходит для фоновой чистки дублирующихся данных в целях экономии места, но не даёт гарантии отсутствия дубликатов.
 
-## Создание таблицы
+## Создание таблицы {#sozdanie-tablitsy}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -25,23 +25,25 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 **Параметры ReplacingMergeTree**
 
-- `ver` — столбец с версией, тип `UInt*`, `Date` или `DateTime`. Необязательный параметр.
+-   `ver` — столбец с версией, тип `UInt*`, `Date` или `DateTime`. Необязательный параметр.
 
-    При слиянии, из всех строк с одинаковым значением первичного ключа `ReplacingMergeTree` оставляет только одну:
+        При слиянии, из всех строк с одинаковым значением первичного ключа `ReplacingMergeTree` оставляет только одну:
 
-    - Последнюю в выборке, если `ver` не задан.
-    - С максимальной версией, если `ver` задан.
+        - Последнюю в выборке, если `ver` не задан.
+        - С максимальной версией, если `ver` задан.
 
 **Секции запроса**
 
 При создании таблицы `ReplacingMergeTree` используются те же [секции](mergetree.md), что и при создании таблицы `MergeTree`.
 
-<details markdown="1"><summary>Устаревший способ создания таблицы</summary>
+<details markdown="1">
 
-!!! attention
+<summary>Устаревший способ создания таблицы</summary>
+
+!!! attention "Attention"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -52,7 +54,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Все параметры, кроме `ver` имеют то же значение, что в и `MergeTree`.
 
-- `ver` — столбец с версией. Необязательный параметр. Описание смотрите выше по тексту.
+-   `ver` — столбец с версией. Необязательный параметр. Описание смотрите выше по тексту.
+
 </details>
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/replacingmergetree/) <!--hide-->

@@ -81,7 +81,7 @@ struct ExtractParamImpl
     static constexpr bool use_default_implementation_for_constants = true;
 
     /// It is assumed that `res` is the correct size and initialized with zeros.
-    static void vector_constant(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
+    static void vectorConstant(const ColumnString::Chars & data, const ColumnString::Offsets & offsets,
         std::string needle,
         PaddedPODArray<ResultType> & res)
     {
@@ -121,12 +121,12 @@ struct ExtractParamImpl
             memset(&res[i], 0, (res.size() - i) * sizeof(res[0]));
     }
 
-    template <typename... Args> static void vector_vector(Args &&...)
+    template <typename... Args> static void vectorVector(Args &&...)
     {
         throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    template <typename... Args> static void constant_vector(Args &&...)
+    template <typename... Args> static void constantVector(Args &&...)
     {
         throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }

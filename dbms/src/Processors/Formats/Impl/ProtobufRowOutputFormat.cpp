@@ -10,7 +10,6 @@
 #include <google/protobuf/descriptor.h>
 
 
-
 namespace DB
 {
 namespace ErrorCodes

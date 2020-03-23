@@ -11,26 +11,6 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-static Block replaceTypes(Block && header, const MergeTreeData::DataPartPtr & data_part)
-{
-    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-    /// NOTE: We may use similar code to implement non blocking ALTERs.
-    for (const auto & name_type : data_part->getColumns())
-    {
-        if (header.has(name_type.name))
-        {
-            auto & elem = header.getByName(name_type.name);
-            if (!elem.type->equals(*name_type.type))
-            {
-                elem.type = name_type.type;
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-
-    return std::move(header);
-}
-
 MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const MergeTreeData & storage_,
     const MergeTreeData::DataPartPtr & owned_data_part_,
@@ -48,17 +28,16 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     bool quiet)
     :
     MergeTreeBaseSelectProcessor{
-        replaceTypes(storage_.getSampleBlockForColumns(required_columns_), owned_data_part_),
+        storage_.getSampleBlockForColumns(required_columns_),
         storage_, prewhere_info_, max_block_size_rows_,
         preferred_block_size_bytes_, preferred_max_column_in_block_size_bytes_,
         reader_settings_, use_uncompressed_cache_, virt_column_names_},
     required_columns{std::move(required_columns_)},
     data_part{owned_data_part_},
-    part_columns_lock(data_part->columns_lock),
     all_mark_ranges(std::move(mark_ranges_)),
     part_index_in_query(part_index_in_query_),
     check_columns(check_columns_),
-    path(data_part->getFullPath())
+    path(data_part->getFullRelativePath())
 {
     /// Let's estimate total number of rows for progress bar.
     for (const auto & range : all_mark_ranges)
@@ -139,7 +118,6 @@ void MergeTreeSelectProcessor::finish()
     */
     reader.reset();
     pre_reader.reset();
-    part_columns_lock.unlock();
     data_part.reset();
 }
 

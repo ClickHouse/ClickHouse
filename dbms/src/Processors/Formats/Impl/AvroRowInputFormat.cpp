@@ -75,7 +75,7 @@ namespace ErrorCodes
 class InputStreamReadBufferAdapter : public avro::InputStream
 {
 public:
-    InputStreamReadBufferAdapter(ReadBuffer & in_) : in(in_) {}
+    explicit InputStreamReadBufferAdapter(ReadBuffer & in_) : in(in_) {}
 
     bool next(const uint8_t ** data, size_t * len) override
     {
@@ -444,7 +444,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
 
 AvroDeserializer::AvroDeserializer(const ColumnsWithTypeAndName & columns, avro::ValidSchema schema)
 {
-    auto schema_root = schema.root();
+    const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
     {
         throw Exception("Root schema must be a record", ErrorCodes::TYPE_MISMATCH);
@@ -519,7 +519,7 @@ bool AvroRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &)
 class AvroConfluentRowInputFormat::SchemaRegistry
 {
 public:
-    SchemaRegistry(const std::string & base_url_, size_t schema_cache_max_size = 1000)
+    explicit SchemaRegistry(const std::string & base_url_, size_t schema_cache_max_size = 1000)
         : base_url(base_url_), schema_cache(schema_cache_max_size)
     {
         if (base_url.empty())

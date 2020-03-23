@@ -5,7 +5,7 @@
 #include <functional>
 #include <ostream>
 
-#include <common/Types.h>
+#include <common/types.h>
 #include <common/unaligned.h>
 
 #include <city.h>
@@ -27,17 +27,17 @@ struct StringRef
     size_t size = 0;
 
     template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
-    StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_) {}
+    constexpr StringRef(const CharT * data_, size_t size_) : data(reinterpret_cast<const char *>(data_)), size(size_) {}
 
     StringRef(const std::string & s) : data(s.data()), size(s.size()) {}
-    StringRef(const std::string_view & s) : data(s.data()), size(s.size()) {}
-    explicit StringRef(const char * data_) : data(data_), size(strlen(data_)) {}
-    StringRef() = default;
+    constexpr StringRef(const std::string_view & s) : data(s.data()), size(s.size()) {}
+    constexpr StringRef(const char * data_) : StringRef(std::string_view{data_}) {}
+    constexpr StringRef() = default;
 
     std::string toString() const { return std::string(data, size); }
 
     explicit operator std::string() const { return toString(); }
-    explicit operator std::string_view() const { return {data, size}; }
+    constexpr explicit operator std::string_view() const { return {data, size}; }
 };
 
 using StringRefs = std::vector<StringRef>;

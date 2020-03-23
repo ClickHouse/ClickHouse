@@ -63,7 +63,6 @@ $CLICKHOUSE_CLIENT $settings -q "
 SELECT
     -- max(thread_realtime), $query_elapsed, max(thread_time_user_system_io),
     0.9 * $query_elapsed <= max(thread_realtime) AND max(thread_realtime) <= 1.1 * $query_elapsed,
-    0.7 * $query_elapsed <= max(thread_time_user_system_io) AND max(thread_time_user_system_io) <= 1.3 * $query_elapsed,
     uniqExact(thread_id) = $threads
 FROM
 (
