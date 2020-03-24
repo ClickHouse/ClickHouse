@@ -494,6 +494,50 @@ TEST(WeakHash32, ColumnArray)
     checkColumn(hash.getData(), eq_data, print_function);
 }
 
+TEST(WeakHash32, ColumnArray_2)
+{
+    auto val = ColumnUInt32::create();
+    auto off = ColumnUInt64::create();
+    auto eq = ColumnUInt32::create();
+    auto & eq_data = eq->getData();
+    auto & val_data = val->getData();
+    auto & off_data = off->getData();
+
+    UInt64 cur_off = 0;
+    for (int _i [[maybe_unused]] : {1, 2})
+    {
+        for (int64_t i = 0; i < 1000; ++i)
+        {
+            for (size_t j = 0; j < 1000; ++j)
+            {
+                eq_data.push_back(i * 1000 + j);
+
+                cur_off += 2;
+                off_data.push_back(cur_off);
+
+                val_data.push_back(i);
+                val_data.push_back(j);
+            }
+        }
+    }
+
+    auto col_arr = ColumnArray::create(std::move(val), std::move(off));
+
+    WeakHash32 hash(col_arr->size());
+    col_arr->updateWeakHash32(hash);
+
+    auto print_function = [&col_arr](size_t row)
+    {
+        auto & offsets = col_arr->getOffsets();
+        size_t s = offsets[row] - offsets[row - 1];
+        auto value1 = col_arr->getData().getUInt(offsets[row]);
+        auto value2 = col_arr->getData().getUInt(offsets[row] + 1);
+        return std::string("[") + std::to_string(value1) + ", " + std::to_string(value2) + "]";
+    };
+
+    checkColumn(hash.getData(), eq_data, print_function);
+}
+
 TEST(WeakHash32, ColumnArrayArray)
 {
     size_t max_size = 3000;
@@ -610,7 +654,7 @@ TEST(WeakHash32, ColumnNullable)
     auto & data = col->getData();
     auto mask = ColumnUInt8::create();
     auto & mask_data = mask->getData();
-    PaddedPODArray<Int32> eq;
+    PaddedPODArray<Int64> eq;
 
     for (int _i [[maybe_unused]] : {1, 2})
     {
@@ -635,7 +679,7 @@ TEST(WeakHash32, ColumnTuple_UInt64_UInt64)
     auto col1 = ColumnUInt64::create();
     auto col2 = ColumnUInt64::create();
     auto & data1 = col1->getData();
-    auto & data2 = col1->getData();
+    auto & data2 = col2->getData();
     PaddedPODArray<Int32> eq;
 
     for (int _i [[maybe_unused]] : {0, 1, 2, 3})
