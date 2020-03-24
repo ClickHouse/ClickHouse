@@ -116,10 +116,10 @@ namespace
             if (name == identifier->name)
             {
                 ColumnWithTypeAndName column;
-                Field value = convertFieldToType(literal->value, *type);
-                if (!literal->value.isNull() && value.isNull())
+                Field converted = convertFieldToType(value, *type);
+                if (converted.isNull())
                     return {};
-                column.column = type->createColumnConst(1, value);
+                column.column = type->createColumnConst(1, converted);
                 column.name = name;
                 column.type = type;
                 return {{std::move(column)}};

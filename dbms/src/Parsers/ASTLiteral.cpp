@@ -17,13 +17,13 @@ void ASTLiteral::updateTreeHashImpl(SipHash & hash_state) const
 void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
 {
     /// 100 - just arbitrary value.
-    constexpr auto MIN_ELEMENTS_FOR_HASHING = 100;
+    constexpr auto min_elements_for_hashing = 100;
 
     /// Special case for very large arrays and tuples. Instead of listing all elements, will use hash of them.
     /// (Otherwise column name will be too long, that will lead to significant slowdown of expression analysis.)
     auto type = value.getType();
-    if ((type == Field::Types::Array && value.get<const Array &>().size() > MIN_ELEMENTS_FOR_HASHING)
-        || (type == Field::Types::Tuple && value.get<const Tuple &>().size() > MIN_ELEMENTS_FOR_HASHING))
+    if ((type == Field::Types::Array && value.get<const Array &>().size() > min_elements_for_hashing)
+        || (type == Field::Types::Tuple && value.get<const Tuple &>().size() > min_elements_for_hashing))
     {
         SipHash hash;
         applyVisitor(FieldVisitorHash(hash), value);
