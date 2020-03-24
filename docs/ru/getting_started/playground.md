@@ -8,8 +8,8 @@ ClickHouse Playground позволяет моментально выполнит
 - запроещены INSERT запросы
 
 Также установлены следующие опции:
-- [`max_result_bytes=10485760`](../operations/settings/query_complexity/#max-result-bytes) 
-- [`max_result_rows=2000`](../operations/settings/query_complexity/#setting-max_result_rows) 
+- [`max_result_bytes=10485760`](../operations/settings/query_complexity/#max-result-bytes)
+- [`max_result_rows=2000`](../operations/settings/query_complexity/#setting-max_result_rows)
 - [`result_overflow_mode=break`](../operations/settings/query_complexity/#result-overflow-mode)
 - [`max_execution_time=60000`](../operations/settings/query_complexity/#max-execution-time)
 
