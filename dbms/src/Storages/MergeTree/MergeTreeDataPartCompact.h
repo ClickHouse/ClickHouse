@@ -42,27 +42,21 @@ public:
         UncompressedCache * uncompressed_cache,
         MarkCache * mark_cache,
         const MergeTreeReaderSettings & reader_settings_,
-        const ValueSizeMap & avg_value_size_hints = ValueSizeMap{},
-        const ReadBufferFromFileBase::ProfileCallback & profile_callback = ReadBufferFromFileBase::ProfileCallback{}) const override;
+        const ValueSizeMap & avg_value_size_hints,
+        const ReadBufferFromFileBase::ProfileCallback & profile_callback) const override;
 
     MergeTreeWriterPtr getWriter(
         const NamesAndTypesList & columns_list,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
         const CompressionCodecPtr & default_codec_,
         const MergeTreeWriterSettings & writer_settings,
-        const MergeTreeIndexGranularity & computed_index_granularity = {}) const override;
+        const MergeTreeIndexGranularity & computed_index_granularity) const override;
 
     bool isStoredOnDisk() const override { return true; }
-
-    ColumnSize getTotalColumnsSize() const override;
 
     bool hasColumnFiles(const String & column_name, const IDataType & type) const override;
 
     String getFileNameForColumn(const NameAndTypePair & /* column */) const override { return DATA_FILE_NAME; }
-
-    NameToNameMap createRenameMapForAlter(
-        AlterAnalysisResult & analysis_result,
-        const NamesAndTypesList & old_columns) const override;
 
     ~MergeTreeDataPartCompact() override;
 
@@ -71,6 +65,9 @@ private:
 
     /// Loads marks index granularity into memory
     void loadIndexGranularity() override;
+
+    /// Compact parts doesn't support per column size, only total size
+    void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const override;
 };
 
 }

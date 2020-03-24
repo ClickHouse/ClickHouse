@@ -19,7 +19,7 @@ struct DictionaryStructure;
 struct IDictionaryBase;
 class ExternalDictionaries;
 
-class StorageDictionary : public ext::shared_ptr_helper<StorageDictionary>, public IStorage
+class StorageDictionary final : public ext::shared_ptr_helper<StorageDictionary>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageDictionary>;
 public:

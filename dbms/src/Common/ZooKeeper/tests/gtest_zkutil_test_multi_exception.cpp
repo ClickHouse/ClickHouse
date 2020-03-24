@@ -12,12 +12,13 @@
 
 using namespace DB;
 
-TEST(zkutil, zookeeper_connected)
+TEST(zkutil, ZookeeperConnected)
 {
     try
     {
         auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
         zookeeper->exists("/");
+        zookeeper->createIfNotExists("/clickhouse_test", "Unit tests of ClickHouse");
     }
     catch (...)
     {
@@ -26,7 +27,7 @@ TEST(zkutil, zookeeper_connected)
     }
 }
 
-TEST(zkutil, multi_nice_exception_msg)
+TEST(zkutil, MultiNiceExceptionMsg)
 {
     auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
 
@@ -64,7 +65,7 @@ TEST(zkutil, multi_nice_exception_msg)
 }
 
 
-TEST(zkutil, multi_async)
+TEST(zkutil, MultiAsync)
 {
     auto zookeeper = std::make_unique<zkutil::ZooKeeper>("localhost:2181");
     Coordination::Requests ops;
@@ -112,6 +113,7 @@ TEST(zkutil, multi_async)
     using namespace std::chrono_literals;
     std::this_thread::sleep_for(1s);
 
+    try
     {
         ops.clear();
         ops.emplace_back(zkutil::makeCreateRequest("/clickhouse_test/zkutil_multi", "_", zkutil::CreateMode::Persistent));
@@ -124,9 +126,17 @@ TEST(zkutil, multi_async)
         ASSERT_EQ(res.error, Coordination::ZNODEEXISTS);
         ASSERT_EQ(res.responses.size(), 2);
     }
+    catch (const Coordination::Exception & e)
+    {
+        /// The test is quite heavy. It is normal if session is expired during this test.
+        /// If we don't check that, the test will be flacky.
+
+        if (e.code != Coordination::ZSESSIONEXPIRED && e.code != Coordination::ZCONNECTIONLOSS)
+            throw;
+    }
 }
 
-TEST(zkutil, watch_get_children_with_chroot)
+TEST(zkutil, WatchGetChildrenWithChroot)
 {
     try
     {
@@ -163,7 +173,7 @@ TEST(zkutil, watch_get_children_with_chroot)
     }
 }
 
-TEST(zkutil, multi_create_sequential)
+TEST(zkutil, MultiCreateSequential)
 {
     try
     {

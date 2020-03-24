@@ -30,7 +30,7 @@ private:
     friend class COWHelper<IColumn, ConcreteColumn>;
 
     int data;
-    ConcreteColumn(int data_) : data(data_) {}
+    explicit ConcreteColumn(int data_) : data(data_) {}
     ConcreteColumn(const ConcreteColumn &) = default;
 
 public:
@@ -45,7 +45,7 @@ private:
 
     ConcreteColumn::WrappedPtr wrapped;
 
-    ColumnComposition(int data) : wrapped(ConcreteColumn::create(data)) {}
+    explicit ColumnComposition(int data) : wrapped(ConcreteColumn::create(data)) {}
     ColumnComposition(const ColumnComposition &) = default;
 
     IColumn::MutablePtr deepMutate() const override

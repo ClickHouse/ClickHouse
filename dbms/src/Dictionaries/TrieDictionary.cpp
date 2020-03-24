@@ -34,6 +34,18 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+static void validateKeyTypes(const DataTypes & key_types)
+{
+    if (key_types.size() != 1)
+        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
+
+    const auto & actual_type = key_types[0]->getName();
+
+    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
+        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
+}
+
+
 TrieDictionary::TrieDictionary(
     const std::string & database_,
     const std::string & name_,
@@ -416,17 +428,6 @@ void TrieDictionary::calculateBytesAllocated()
     bytes_allocated += btrie_allocated(trie);
 }
 
-void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
-{
-    if (key_types.size() != 1)
-        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
-
-    const auto & actual_type = key_types[0]->getName();
-
-    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
-        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
-}
-
 
 template <typename T>
 void TrieDictionary::createAttributeImpl(Attribute & attribute, const Field & null_value)
@@ -672,13 +673,13 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
 }
 
 template <typename Getter, typename KeyType>
-void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
+static void trieTraverse(const btrie_t * trie, Getter && getter)
 {
     KeyType key = 0;
     const KeyType high_bit = ~((~key) >> 1);
 
     btrie_node_t * node;
-    node = tree->root;
+    node = trie->root;
 
     std::stack<btrie_node_t *> stack;
     while (node)
@@ -687,7 +688,7 @@ void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
         node = node->left;
     }
 
-    auto getBit = [&high_bit](size_t size) { return size ? (high_bit >> (size - 1)) : 0; };
+    auto get_bit = [&high_bit](size_t size) { return size ? (high_bit >> (size - 1)) : 0; };
 
     while (!stack.empty())
     {
@@ -702,13 +703,13 @@ void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
         if (node && node->right)
         {
             stack.push(nullptr);
-            key |= getBit(stack.size());
+            key |= get_bit(stack.size());
             stack.push(node->right);
             while (stack.top()->left)
                 stack.push(stack.top()->left);
         }
         else
-            key &= ~getBit(stack.size());
+            key &= ~get_bit(stack.size());
     }
 }
 
@@ -739,13 +740,13 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
 {
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 
-    auto getKeys = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    auto get_keys = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         const auto & attr = dict_attributes.front();
         return ColumnsWithTypeAndName(
             {ColumnWithTypeAndName(columns.front(), std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name)});
     };
-    auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    auto get_view = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         auto column = ColumnString::create();
         const auto & ip_column = assert_cast<const ColumnFixedString &>(*columns.front());
@@ -764,7 +765,7 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
             ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dict_attributes.front().name)};
     };
     return std::make_shared<BlockInputStreamType>(
-        shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(getKeys), std::move(getView));
+        shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
 }
 
 

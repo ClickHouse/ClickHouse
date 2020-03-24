@@ -73,7 +73,7 @@ static StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, co
 
 static void checkAllowedQueries(const ASTSelectQuery & query)
 {
-    if (query.prewhere() || query.final() || query.sample_size())
+    if (query.prewhere() || query.final() || query.sampleSize())
         throw Exception("MATERIALIZED VIEW cannot have PREWHERE, SAMPLE or FINAL.", DB::ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
 
     ASTPtr subquery = extractTableExpression(query, 0);
@@ -147,11 +147,11 @@ StorageMaterializedView::StorageMaterializedView(
         create_interpreter.setInternal(true);
         create_interpreter.execute();
 
-        target_table_id = global_context.getTable(manual_create_query->database, manual_create_query->table)->getStorageID();
+        target_table_id = DatabaseCatalog::instance().getTable({manual_create_query->database, manual_create_query->table})->getStorageID();
     }
 
     if (!select_table_id.empty())
-        global_context.addDependency(select_table_id, getStorageID());
+        DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 }
 
 NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
@@ -209,7 +209,7 @@ BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const 
 
 static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id)
 {
-    if (global_context.tryGetTable(target_table_id))
+    if (DatabaseCatalog::instance().tryGetTable(target_table_id))
     {
         /// We create and execute `drop` query for internal table.
         auto drop_query = std::make_shared<ASTDropQuery>();
@@ -227,7 +227,7 @@ void StorageMaterializedView::drop(TableStructureWriteLockHolder &)
 {
     auto table_id = getStorageID();
     if (!select_table_id.empty())
-        global_context.removeDependency(select_table_id, table_id);
+        DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
 
     if (has_inner_table && tryGetTargetTable())
         executeDropQuery(ASTDropQuery::Kind::Drop, global_context, target_table_id);
@@ -276,24 +276,15 @@ void StorageMaterializedView::alter(
         checkAllowedQueries(select_query);
 
         auto new_select_table_id = extractDependentTableFromSelectQuery(select_query, context);
+        DatabaseCatalog::instance().updateDependency(select_table_id, table_id, new_select_table_id, table_id);
 
-        {
-            auto context_lock = global_context.getLock();
-
-            if (!select_table_id.empty())
-                global_context.removeDependency(select_table_id, getStorageID());
-
-            if (!new_select_table_id.empty())
-                global_context.addDependency(new_select_table_id, getStorageID());
-
-            select_table_id = new_select_table_id;
-            select = metadata.select;
-            inner_query = new_inner_query;
-        }
+        select_table_id = new_select_table_id;
+        select = metadata.select;
+        inner_query = new_inner_query;
     }
     /// end modify query
 
-    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
     setColumns(std::move(metadata.columns));
 }
 
@@ -359,29 +350,26 @@ void StorageMaterializedView::rename(
         target_table_id.table_name = new_target_table_name;
     }
 
-    auto lock = global_context.getLock();
-    if (!select_table_id.empty())
-        global_context.removeDependencyUnsafe(select_table_id, getStorageID());
+    auto old_table_id = getStorageID();
     IStorage::renameInMemory(new_database_name, new_table_name);
-    if (!select_table_id.empty())
-        global_context.addDependencyUnsafe(select_table_id, getStorageID());
+    DatabaseCatalog::instance().updateDependency(select_table_id, old_table_id, select_table_id, getStorageID());
 }
 
 void StorageMaterializedView::shutdown()
 {
     /// Make sure the dependency is removed after DETACH TABLE
     if (!select_table_id.empty())
-        global_context.removeDependency(select_table_id, getStorageID());
+        DatabaseCatalog::instance().removeDependency(select_table_id, getStorageID());
 }
 
 StoragePtr StorageMaterializedView::getTargetTable() const
 {
-    return global_context.getTable(target_table_id);
+    return DatabaseCatalog::instance().getTable(target_table_id);
 }
 
 StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
-    return global_context.tryGetTable(target_table_id);
+    return DatabaseCatalog::instance().tryGetTable(target_table_id);
 }
 
 Strings StorageMaterializedView::getDataPaths() const

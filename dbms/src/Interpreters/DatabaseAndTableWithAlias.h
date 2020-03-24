@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <optional>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -24,6 +25,7 @@ struct DatabaseAndTableWithAlias
     String database;
     String table;
     String alias;
+    UUID uuid = UUIDHelpers::Nil;
 
     DatabaseAndTableWithAlias() = default;
     DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
@@ -35,6 +37,12 @@ struct DatabaseAndTableWithAlias
 
     /// Check if it satisfies another db_table name. @note opterion is not symmetric.
     bool satisfies(const DatabaseAndTableWithAlias & table, bool table_may_be_an_alias);
+
+    /// Exactly the same table name
+    bool same(const DatabaseAndTableWithAlias & db_table) const
+    {
+        return database == db_table.database && table == db_table.table && alias == db_table.alias && uuid == db_table.uuid;
+    }
 };
 
 struct TableWithColumnNames
@@ -80,6 +88,19 @@ struct TableWithColumnNamesAndTypes
         , columns(columns_)
     {}
 
+    bool hasColumn(const String & name) const
+    {
+        if (names.empty())
+        {
+            for (auto & col : columns)
+                names.insert(col.name);
+            for (auto & col : hidden_columns)
+                names.insert(col.name);
+        }
+
+        return names.count(name);
+    }
+
     void addHiddenColumns(const NamesAndTypesList & addition)
     {
         hidden_columns.insert(hidden_columns.end(), addition.begin(), addition.end());
@@ -99,6 +120,9 @@ struct TableWithColumnNamesAndTypes
 
         return TableWithColumnNames(table, std::move(out_columns), std::move(out_hidden_columns));
     }
+
+private:
+    mutable NameSet names;
 };
 
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database);

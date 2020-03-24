@@ -22,7 +22,7 @@ public:
         UInt64 max_block_size_rows,
         size_t preferred_block_size_bytes,
         size_t preferred_max_column_in_block_size_bytes,
-        Names column_names_,
+        Names required_columns_,
         MarkRanges mark_ranges,
         bool use_uncompressed_cache,
         const PrewhereInfoPtr & prewhere_info,
@@ -55,8 +55,6 @@ private:
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
-    /// Forbids to change columns list of the part during reading
-    std::shared_lock<std::shared_mutex> part_columns_lock;
 
     /// Mark ranges we should read (in ascending order)
     MarkRanges all_mark_ranges;

@@ -38,7 +38,7 @@ using ASTPtr = std::shared_ptr<IAST>;
 using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
 using MergeableBlocksPtr = std::shared_ptr<MergeableBlocks>;
 
-class StorageLiveView : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
+class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageLiveView>;
 friend class LiveViewBlockInputStream;
@@ -49,12 +49,11 @@ public:
     ~StorageLiveView() override;
     String getName() const override { return "LiveView"; }
     bool isView() const override { return true; }
-    StorageID getSelectTableID() const { return select_table_id; }
-    StorageID getBlocksStorageID() const
+    String getBlocksTableName() const
     {
-        return StorageID("", getStorageID().table_name + "_blocks");
+        return getStorageID().table_name + "_blocks";
     }
-    StoragePtr getParentStorage() const { return global_context.getTable(select_table_id); }
+    StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id); }
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;

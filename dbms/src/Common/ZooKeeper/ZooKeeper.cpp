@@ -5,9 +5,9 @@
 
 #include <random>
 #include <functional>
-#include <boost/algorithm/string.hpp>
 
 #include <common/logger_useful.h>
+#include <common/find_symbols.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/PODArray.h>
 #include <Common/thread_local_rng.h>
@@ -61,7 +61,7 @@ void ZooKeeper::init(const std::string & implementation, const std::string & hos
             throw KeeperException("No addresses passed to ZooKeeper constructor.", Coordination::ZBADARGUMENTS);
 
         std::vector<std::string> addresses_strings;
-        boost::split(addresses_strings, hosts, boost::is_any_of(","));
+        splitInto<','>(addresses_strings, hosts);
         Coordination::ZooKeeper::Addresses addresses;
         addresses.reserve(addresses_strings.size());
 
@@ -164,8 +164,8 @@ struct ZooKeeperArgs
 
         for (auto & host : hosts_strings)
         {
-            if (hosts.size())
-                hosts += ",";
+            if (!hosts.empty())
+                hosts += ',';
             hosts += host;
         }
 
@@ -281,10 +281,10 @@ int32_t ZooKeeper::createImpl(const std::string & path, const std::string & data
     return code;
 }
 
-std::string ZooKeeper::create(const std::string & path, const std::string & data, int32_t type)
+std::string ZooKeeper::create(const std::string & path, const std::string & data, int32_t mode)
 {
     std::string path_created;
-    check(tryCreate(path, data, type, path_created), path);
+    check(tryCreate(path, data, mode, path_created), path);
     return path_created;
 }
 
@@ -393,9 +393,7 @@ bool ZooKeeper::existsWatch(const std::string & path, Coordination::Stat * stat,
 
     if (!(code == Coordination::ZOK || code == Coordination::ZNONODE))
         throw KeeperException(code, path);
-    if (code == Coordination::ZNONODE)
-        return false;
-    return true;
+    return code != Coordination::ZNONODE;
 }
 
 int32_t ZooKeeper::getImpl(const std::string & path, std::string & res, Coordination::Stat * stat, Coordination::WatchCallback watch_callback)

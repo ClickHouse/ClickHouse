@@ -52,7 +52,7 @@ namespace ErrorCodes
 class OutputStreamWriteBufferAdapter : public avro::OutputStream
 {
 public:
-    OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
+    explicit OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
 
     virtual bool next(uint8_t ** data, size_t * len) override
     {
@@ -315,7 +315,7 @@ void AvroSerializer::serializeRow(const Columns & columns, size_t row_num, avro:
 
 static avro::Codec getCodec(const std::string & codec_name)
 {
-    if (codec_name == "")
+    if (codec_name.empty())
     {
 #ifdef SNAPPY_CODEC_AVAILABLE
         return avro::Codec::SNAPPY_CODEC;

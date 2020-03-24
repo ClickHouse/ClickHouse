@@ -27,9 +27,17 @@ protected:
 
     IDataType::OutputStreamGetter createStreamGetter(const String & name, WrittenOffsetColumns & offset_columns, bool skip_offsets);
 
+    /// Remove all columns marked expired in data_part. Also, clears checksums
+    /// and columns array. Return set of removed files names.
+    static NameSet removeEmptyColumnsFromPart(
+        const MergeTreeDataPartPtr & data_part,
+        NamesAndTypesList & columns,
+        MergeTreeData::DataPart::Checksums & checksums);
+
 protected:
     const MergeTreeData & storage;
 
+    DiskPtr disk;
     String part_path;
 
     static Block getBlockAndPermute(const Block & block, const Names & names, const IColumn::Permutation * permutation);

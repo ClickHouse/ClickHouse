@@ -1,23 +1,14 @@
-#if __has_include(<cctz/civil_time.h>)
-#include <cctz/civil_time.h> // bundled, debian
-#else
-#include <civil_time.h> // freebsd
-#endif
+#include "DateLUTImpl.h"
 
-#if __has_include(<cctz/time_zone.h>)
+#include <cctz/civil_time.h>
 #include <cctz/time_zone.h>
-#else
-#include <time_zone.h>
-#endif
-
-#include <common/DateLUTImpl.h>
 #include <Poco/Exception.h>
 
-#include <memory>
+#include <cassert>
 #include <chrono>
 #include <cstring>
-#include <cassert>
 #include <iostream>
+#include <memory>
 
 #define DATE_LUT_MIN 0
 
@@ -59,7 +50,7 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     time_t start_of_day = DATE_LUT_MIN;
 
     cctz::time_zone cctz_time_zone;
-    if (!cctz::load_time_zone(time_zone.data(), &cctz_time_zone))
+    if (!cctz::load_time_zone(time_zone, &cctz_time_zone))
         throw Poco::Exception("Cannot load time zone " + time_zone_);
 
     cctz::time_zone::absolute_lookup start_of_epoch_lookup = cctz_time_zone.lookup(std::chrono::system_clock::from_time_t(start_of_day));

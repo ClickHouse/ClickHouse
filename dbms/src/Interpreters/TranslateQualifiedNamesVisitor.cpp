@@ -34,7 +34,7 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
     auto nested1 = IdentifierSemantic::extractNestedName(identifier, table.table);
     auto nested2 = IdentifierSemantic::extractNestedName(identifier, table.alias);
 
-    String short_name = identifier.shortName();
+    const String & short_name = identifier.shortName();
     const Names & column_names = tables[table_pos].columns;
     for (auto & known_name : column_names)
     {
@@ -93,10 +93,10 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
     if (IdentifierSemantic::getColumnName(identifier))
     {
         String short_name = identifier.shortName();
-        size_t table_pos = 0;
         bool allow_ambiguous = data.join_using_columns.count(short_name);
-        if (IdentifierSemantic::chooseTable(identifier, data.tables, table_pos, allow_ambiguous))
+        if (auto best_pos = IdentifierSemantic::chooseTable(identifier, data.tables, allow_ambiguous))
         {
+            size_t table_pos = *best_pos;
             if (data.unknownColumn(table_pos, identifier))
             {
                 String table_name = data.tables[table_pos].table.getQualifiedNamePrefix(false);

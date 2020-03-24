@@ -7,7 +7,7 @@
 namespace DB
 {
 
-class StorageSystemTableEngines : public ext::shared_ptr_helper<StorageSystemTableEngines>,
+class StorageSystemTableEngines final : public ext::shared_ptr_helper<StorageSystemTableEngines>,
                                   public IStorageSystemOneBlock<StorageSystemTableEngines>
 {
     friend struct ext::shared_ptr_helper<StorageSystemTableEngines>;

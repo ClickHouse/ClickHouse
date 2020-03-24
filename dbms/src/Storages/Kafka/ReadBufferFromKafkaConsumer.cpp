@@ -94,7 +94,7 @@ ReadBufferFromKafkaConsumer::~ReadBufferFromKafkaConsumer()
 
 void ReadBufferFromKafkaConsumer::commit()
 {
-    auto PrintOffsets = [this] (const char * prefix, const cppkafka::TopicPartitionList & offsets)
+    auto print_offsets = [this] (const char * prefix, const cppkafka::TopicPartitionList & offsets)
     {
         for (const auto & topic_part : offsets)
         {
@@ -127,7 +127,7 @@ void ReadBufferFromKafkaConsumer::commit()
         }
     };
 
-    PrintOffsets("Polled offset", consumer->get_offsets_position(consumer->get_assignment()));
+    print_offsets("Polled offset", consumer->get_offsets_position(consumer->get_assignment()));
 
     if (hasMorePolledMessages())
     {
@@ -147,7 +147,7 @@ void ReadBufferFromKafkaConsumer::commit()
         LOG_TRACE(log,"Nothing to commit.");
     }
 
-    PrintOffsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
+    print_offsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
     offsets_stored = 0;
 
     stalled = false;
@@ -241,7 +241,7 @@ bool ReadBufferFromKafkaConsumer::nextImpl()
             commit();
 
         size_t waited_for_assignment = 0;
-        while (1)
+        while (true)
         {
             /// Don't drop old messages immediately, since we may need them for virtual columns.
             auto new_messages = consumer->poll_batch(batch_size, std::chrono::milliseconds(poll_timeout));

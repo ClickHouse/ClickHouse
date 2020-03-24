@@ -59,6 +59,7 @@ DiskSelectorPtr DiskSelector::updateFromConfig(const Poco::Util::AbstractConfigu
 
     std::shared_ptr<DiskSelector> result = std::make_shared<DiskSelector>(*this);
 
+    constexpr auto default_disk_name = "default";
     std::set<String> old_disks_minus_new_disks;
     for (const auto & [disk_name, _] : result->disks)
     {
@@ -83,6 +84,8 @@ DiskSelectorPtr DiskSelector::updateFromConfig(const Poco::Util::AbstractConfigu
             /// implementing that may appear as not trivial task.
         }
     }
+
+    old_disks_minus_new_disks.erase(default_disk_name);
 
     if (!old_disks_minus_new_disks.empty())
     {
@@ -173,7 +176,7 @@ Volume::Volume(
                             << formatReadableSizeWithBinarySuffix(sizes[i]) << ") for containing part the size of max_data_part_size ("
                             << formatReadableSizeWithBinarySuffix(max_data_part_size) << ")");
     }
-    constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
+    static constexpr UInt64 MIN_PART_SIZE = 8u * 1024u * 1024u;
     if (max_data_part_size != 0 && max_data_part_size < MIN_PART_SIZE)
         LOG_WARNING(
             logger,
@@ -188,11 +191,11 @@ DiskPtr Volume::getNextDisk()
     return disks[index];
 }
 
-ReservationPtr Volume::reserve(UInt64 expected_size)
+ReservationPtr Volume::reserve(UInt64 bytes)
 {
     /// This volume can not store files which size greater than max_data_part_size
 
-    if (max_data_part_size != 0 && expected_size > max_data_part_size)
+    if (max_data_part_size != 0 && bytes > max_data_part_size)
         return {};
 
     size_t start_from = last_used.fetch_add(1u, std::memory_order_relaxed);
@@ -201,7 +204,7 @@ ReservationPtr Volume::reserve(UInt64 expected_size)
     {
         size_t index = (start_from + i) % disks_num;
 
-        auto reservation = disks[index]->reserve(expected_size);
+        auto reservation = disks[index]->reserve(bytes);
 
         if (reservation)
             return reservation;
@@ -351,12 +354,12 @@ UInt64 StoragePolicy::getMaxUnreservedFreeSpace() const
 }
 
 
-ReservationPtr StoragePolicy::reserve(UInt64 expected_size, size_t min_volume_index) const
+ReservationPtr StoragePolicy::reserve(UInt64 bytes, size_t min_volume_index) const
 {
     for (size_t i = min_volume_index; i < volumes.size(); ++i)
     {
         const auto & volume = volumes[i];
-        auto reservation = volume->reserve(expected_size);
+        auto reservation = volume->reserve(bytes);
         if (reservation)
             return reservation;
     }
@@ -364,9 +367,9 @@ ReservationPtr StoragePolicy::reserve(UInt64 expected_size, size_t min_volume_in
 }
 
 
-ReservationPtr StoragePolicy::reserve(UInt64 expected_size) const
+ReservationPtr StoragePolicy::reserve(UInt64 bytes) const
 {
-    return reserve(expected_size, 0);
+    return reserve(bytes, 0);
 }
 
 
@@ -465,9 +468,11 @@ StoragePolicySelectorPtr StoragePolicySelector::updateFromConfig(const Poco::Uti
 
     std::shared_ptr<StoragePolicySelector> result = std::make_shared<StoragePolicySelector>(config, config_prefix, disks);
 
+    constexpr auto default_storage_policy_name = "default";
+
     for (const auto & [name, policy] : policies)
     {
-        if (result->policies.count(name) == 0)
+        if (name != default_storage_policy_name && result->policies.count(name) == 0)
             throw Exception("Storage policy " + backQuote(name) + " is missing in new configuration", ErrorCodes::BAD_ARGUMENTS);
 
         policy->checkCompatibleWith(result->policies[name]);

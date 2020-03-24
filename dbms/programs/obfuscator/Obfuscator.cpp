@@ -111,7 +111,7 @@ public:
     /// Deterministically change seed to some other value. This can be used to generate more values than were in source.
     virtual void updateSeed();
 
-    virtual ~IModel() {}
+    virtual ~IModel() = default;
 };
 
 using ModelPtr = std::unique_ptr<IModel>;
@@ -181,7 +181,7 @@ private:
     UInt64 seed;
 
 public:
-    UnsignedIntegerModel(UInt64 seed_) : seed(seed_) {}
+    explicit UnsignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -222,7 +222,7 @@ private:
     UInt64 seed;
 
 public:
-    SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
+    explicit SignedIntegerModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -271,7 +271,7 @@ private:
     Float res_prev_value = 0;
 
 public:
-    FloatModel(UInt64 seed_) : seed(seed_) {}
+    explicit FloatModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -372,7 +372,7 @@ private:
     UInt64 seed;
 
 public:
-    FixedStringModel(UInt64 seed_) : seed(seed_) {}
+    explicit FixedStringModel(UInt64 seed_) : seed(seed_) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -414,7 +414,7 @@ private:
     const DateLUTImpl & date_lut;
 
 public:
-    DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
+    explicit DateTimeModel(UInt64 seed_) : seed(seed_), date_lut(DateLUT::instance()) {}
 
     void train(const IColumn &) override {}
     void finalize() override {}
@@ -529,13 +529,13 @@ private:
     static constexpr CodePoint END = -2;
 
 
-    NGramHash hashContext(const CodePoint * begin, const CodePoint * end) const
+    static NGramHash hashContext(const CodePoint * begin, const CodePoint * end)
     {
         return CRC32Hash()(StringRef(reinterpret_cast<const char *>(begin), (end - begin) * sizeof(CodePoint)));
     }
 
     /// By the way, we don't have to use actual Unicode numbers. We use just arbitrary bijective mapping.
-    CodePoint readCodePoint(const char *& pos, const char * end)
+    static CodePoint readCodePoint(const char *& pos, const char * end)
     {
         size_t length = UTF8::seqLength(*pos);
 
@@ -550,7 +550,7 @@ private:
         return res;
     }
 
-    bool writeCodePoint(CodePoint code, char *& pos, char * end)
+    static bool writeCodePoint(CodePoint code, char *& pos, const char * end)
     {
         size_t length
             = (code & 0xFF000000) ? 4
@@ -567,7 +567,7 @@ private:
     }
 
 public:
-    MarkovModel(MarkovModelParameters params_)
+    explicit MarkovModel(MarkovModelParameters params_)
         : params(std::move(params_)), code_points(params.order, BEGIN) {}
 
     void consume(const char * data, size_t size)
@@ -677,7 +677,7 @@ public:
                 if (!histogram.total)
                     continue;
 
-                double average = histogram.total / histogram.buckets.size();
+                double average = double(histogram.total) / histogram.buckets.size();
 
                 UInt64 new_total = 0;
                 for (auto & bucket : histogram.buckets)
@@ -836,7 +836,7 @@ private:
     ModelPtr nested_model;
 
 public:
-    ArrayModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
+    explicit ArrayModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {
@@ -874,7 +874,7 @@ private:
     ModelPtr nested_model;
 
 public:
-    NullableModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
+    explicit NullableModel(ModelPtr nested_model_) : nested_model(std::move(nested_model_)) {}
 
     void train(const IColumn & column) override
     {

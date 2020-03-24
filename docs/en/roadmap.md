@@ -1,9 +1,12 @@
-# Roadmap
+# Roadmap {#roadmap}
 
-## Q1 2020
+## Q1 2020 {#q1-2020}
 
-- Role-based access control
-- Integration with external authentication services
-- Resource pools for more precise distribution of cluster capacity between users
+-   Role-based access control
 
-[Original article](https://clickhouse.tech/docs/en/roadmap/) <!--hide-->
+## Q2 2020 {#q2-2020}
+
+-   Integration with external authentication services
+-   Resource pools for more precise distribution of cluster capacity between users
+
+{## [Original article](https://clickhouse.tech/docs/en/roadmap/) ##}

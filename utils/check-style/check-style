@@ -48,3 +48,6 @@ find $ROOT_PATH/{dbms,base} -name '*.h' -or -name '*.cpp' | xargs grep -l -P 'Er
 
 # Three or more consecutive empty lines
 find $ROOT_PATH/{dbms,base} -name '*.h' -or -name '*.cpp' | while read file; do awk '/^$/ { ++i; if (i > 2) { print "More than two consecutive empty lines in file '$file'" } } /./ { i = 0 }' $file; done
+
+# Broken XML files (requires libxml2-utils)
+find $ROOT_PATH/{dbms,base} -name '*.xml' | xargs xmllint --noout --nonet

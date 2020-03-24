@@ -437,7 +437,7 @@ void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
-    if (ASTPtr array_join_expression_list = select_query->array_join_expression_list())
+    if (ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList())
     {
         ArrayJoinedColumnsVisitor::Data visitor_data{result.aliases,
                                                     result.array_join_name_to_alias,
@@ -449,7 +449,7 @@ void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const 
         /// to get the correct number of rows.
         if (result.array_join_result_to_source.empty())
         {
-            ASTPtr expr = select_query->array_join_expression_list()->children.at(0);
+            ASTPtr expr = select_query->arrayJoinExpressionList()->children.at(0);
             String source_name = expr->getColumnName();
             String result_name = expr->getAliasOrColumnName();
 
@@ -702,7 +702,7 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
                 columns.emplace_back(ColumnSizeTuple{c->second.data_compressed, type_size, c->second.data_uncompressed, source_column.name});
             }
         }
-        if (columns.size())
+        if (!columns.empty())
             required.insert(std::min_element(columns.begin(), columns.end())->name);
         else
             /// If we have no information about columns sizes, choose a column of minimum size of its data type.
@@ -806,6 +806,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
     /// TODO: Remove unneeded conversion
     std::vector<TableWithColumnNames> tables_with_column_names;
+    tables_with_column_names.reserve(tables_with_columns.size());
     for (const auto & table : tables_with_columns)
         tables_with_column_names.emplace_back(table.removeTypes());
 
@@ -887,14 +888,13 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings & settings) const
+void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings & settings)
 {
     CustomizeFunctionsVisitor::Data data{settings.count_distinct_implementation};
     CustomizeFunctionsVisitor(data).visit(query);
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
-    QueryAliasesVisitor::Data query_aliases_data{aliases};
-    QueryAliasesVisitor(query_aliases_data).visit(query);
+    QueryAliasesVisitor(aliases).visit(query);
 
     /// Mark table ASTIdentifiers with not a column marker
     MarkTableIdentifiersVisitor::Data identifiers_data{aliases};
