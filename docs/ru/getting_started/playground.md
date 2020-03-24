@@ -1,4 +1,4 @@
-# ClickHouse Playground
+# ClickHouse Playground {#clickhouse-playground}
 
 ClickHouse Playground позволяет моментально выполнить запросы к ClickHouse из бразуера.
 В Playground доступны несколько тестовых массивов данных и примеры запросов, которые показывают некоторые отличительные черты ClickHouse.
@@ -8,8 +8,8 @@ ClickHouse Playground позволяет моментально выполнит
 - запроещены INSERT запросы
 
 Также установлены следующие опции:
-- [`max_result_bytes=10485760`](../operations/settings/query_complexity/#max-result-bytes) 
-- [`max_result_rows=2000`](../operations/settings/query_complexity/#setting-max_result_rows) 
+- [`max_result_bytes=10485760`](../operations/settings/query_complexity/#max-result-bytes)
+- [`max_result_rows=2000`](../operations/settings/query_complexity/#setting-max_result_rows)
 - [`result_overflow_mode=break`](../operations/settings/query_complexity/#result-overflow-mode)
 - [`max_execution_time=60000`](../operations/settings/query_complexity/#max-execution-time)
 
@@ -25,14 +25,14 @@ ClickHouse HTTP интерфейс также доступен как часть
 Запросы к Playground могут быть выполнены с помощью curl/wget, а также через соединеие JDBC/ODBC драйвера
 Больше информации про приложения с поддержкой ClickHouse доступно в разделе [Интерфейсы](../interfaces/index.md).
 
-| Параметр | Значение |  
-|:----------|:-------------|
-| Адрес| https://play-api.clickhouse.tech:8443 |
-| Имя пользователя  | `playground`  |
-| Пароль  | `clickhouse`  |
+| Параметр         | Значение                              |
+|:-----------------|:--------------------------------------|
+| Адрес            | https://play-api.clickhouse.tech:8443 |
+| Имя пользователя | `playground`                          |
+| Пароль           | `clickhouse`                          |
 
 Требуется SSL соединение.
 
-```bash
+``` bash
 curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse!';&user=playground&password=clickhouse&database=datasets"
 ```
