@@ -867,7 +867,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, StoragePtr storage) const
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
