@@ -45,5 +45,12 @@ select * from dist_01072 where key=toInt32(value); -- { serverError 507; }
 select * from dist_01072 where key=value settings force_optimize_skip_unused_shards=0;
 select * from dist_01072 where key=toInt32(value) settings force_optimize_skip_unused_shards=0;
 
+-- check virtual columns
+drop table data_01072;
+drop table dist_01072;
+create table data_01072 (key Int) Engine=MergeTree() ORDER BY key;
+create table dist_01072 (key Int) Engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01072, key);
+select * from dist_01072 where key=0 and _part='0' settings force_optimize_skip_unused_shards=2;
+
 drop table data_01072;
 drop table dist_01072;
