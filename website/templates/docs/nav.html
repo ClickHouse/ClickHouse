@@ -1,12 +1,12 @@
-<nav class="navbar navbar-expand-lg bg-dark-alt text-white sticky-top">
+<nav id="top-nav" class="navbar navbar-expand-lg bg-dark-alt text-white sticky-top">
     <div class="container-fluid">
-        <div class="navbar-brand mr-3" href="#">
-            <a href="/"><img id="logo-icon" src="/images/logo.svg" alt="ClickHouse logo" title="ClickHouse logo"/></a>
-        </div>
+        <a class="d-block navbar-brand mr-3" href="/">
+            <img id="docs-logo-icon" src="/images/logo.svg" alt="ClickHouse logo" title="ClickHouse logo"/>
+        </a>
         <div class="w-100 navbar-text text-left">
-            <a href="#" class="text-decoration-none">
-                <h1 class="text-white h3 m-0 p-0 d-inline">{{ page.title or config.site_name }}</h1>
-            </a>
+            <h1 class="h3 m-0 p-0 d-inline">
+                <a href="#" class="text-white text-decoration-none">{{ page.title or config.site_name }}</a>
+            </h1>
         </div>
 
         <button class="navbar-toggler border-0" type="button" data-toggle="collapse" data-target="#navbar-toggle" aria-controls="navbar-toggle" aria-expanded="false" aria-label="Toggle navigation">
@@ -16,8 +16,21 @@
         <div class="collapse navbar-collapse" id="navbar-toggle">
             <ul class="navbar-nav ml-auto mt-2 mt-lg-0 justify-content-end">
                 <li class="nav-item">
-                    <a class="nav-link" href="https://github.com/ClickHouse/ClickHouse" rel="external nofollow noreferrer">
-                        <img src="/images/index/github.svg" alt="GitHub repository" title="Go to GitHub"  height="32" />
+                     <a class="nav-link" href="#" rel="external nofollow noreferrer">
+                        <img id="dark-mode-switch" src="/images/mkdocs/moon.svg" alt="Light mode" title="Switch dark mode" height="32" />
+                    </a>
+                </li>
+                {% if config.extra.single_page %}
+                    {% set page.edit_url = config.repo_url + 'tree/master/docs' %}
+                {% endif %}
+                {% if page.edit_url %}
+                <li class="nav-item">
+                    <a href="{{ page.edit_url }}" title="Edit this article" class="nav-link" rel="external nofollow noreferrer" target="_blank"><img src="/images/mkdocs/edit.svg" alt="Edit this article" class="mt-1" height="22" /></a>
+                </li>
+                {% endif %}
+                <li class="nav-item">
+                     <a class="nav-link" href="https://github.com/ClickHouse/ClickHouse" rel="external nofollow noreferrer">
+                        <img src="/images/index/github.svg" alt="GitHub repository" title="Go to GitHub" height="32" />
                     </a>
                 </li>
                 <li class="nav-item dropdown">

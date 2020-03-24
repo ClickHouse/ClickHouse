@@ -1,0 +1,17 @@
+{% if toc_item.children %}
+<a href="{{ toc_item.url }}" title="{{ toc_item.title }}" class="nav-link text-muted text-wrap">
+    {{ toc_item.title }}
+</a>
+<nav id="toc-{{ path }}" class="nav flex-column pl-{{ level }}">
+    {% set base = path %}
+    {% for toc_item in toc_item.children %}
+        {% set path = base + "-" + loop.index | string %}
+        {% set level = level + 1 %}
+        {% include "templates/docs/toc-item.html"  %}
+    {% endfor %}
+</nav>
+{% else %}
+<a href="{{ toc_item.url }}" title="{{ toc_item.title }}" class="nav-link text-dark text-wrap d-inline-block w-100">
+    {{ toc_item.title }}
+</a>
+{% endif %}

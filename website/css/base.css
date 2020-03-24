@@ -11,7 +11,7 @@ a:hover, a:active {
     text-decoration: underline;
 }
 
-#logo-icon {
+#logo-icon, #docs-logo-icon {
     width: 40px;
 }
 
@@ -34,6 +34,10 @@ a:hover, a:active {
 
 .bg-secondary-alt:focus {
     background: #444451;
+}
+
+.text-dark-alt {
+    color: #36363F;
 }
 
 .btn-dark-alt {

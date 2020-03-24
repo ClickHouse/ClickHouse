@@ -1,4 +1,4 @@
-{% set collapsed_threshold = 2 %}
+{% set collapsed_threshold = 1 %}
 {% if nav_item.title != "hidden" %}
 {% if nav_item.children %}
 <a href="#nav-{{ path }}" data-toggle="collapse" aria-expanded="{% if level < collapsed_threshold %}true{% else %}false{% endif %}" aria-controls="nav-{{ path }}" title="{{ nav_item.title }}" class="nav-link text-light text-wrap dropdown-toggle">
@@ -17,28 +17,4 @@
     {{ nav_item.title }}
 </a>
 {% endif %}
-{##
-{% elif nav_item == page %}
-
-  <li class="{{ class }}">
-    {% set toc_ = page.toc %}
-    <input class="md-toggle md-nav__toggle" data-md-toggle="toc" type="checkbox" id="toc">
-    {% if toc_ | first is defined and "\x3ch1 id=" in page.content %}
-      {% set toc_ = (toc_ | first).children %}
-    {% endif %}
-    {% if toc_ | first is defined %}
-      <label class="md-nav__link md-nav__link--active" for="toc">
-        {{ nav_item.title }}
-      </label>
-    {% endif %}
-
-    {% if toc_ | first is defined %}
-      {% include "templates/docs/toc.html" %}
-    {% endif %}
-  </li>
-{% else %}
-<a href="{{ base_url }}/{{ nav_item.url }}" title="{{ nav_item.title }}" class="nav-link {{ class }}">
-  {{ nav_item.title }}
-</a>
-##}
 {% endif %}

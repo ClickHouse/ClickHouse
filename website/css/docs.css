@@ -1,6 +1,30 @@
-.nav .nav-link.active {
+.dark-mode {
+    background: #1c1c1c;
+    color: #efefef;
+}
+
+#sidebar {
+    position: fixed;
+    left: 0;
+}
+
+.dark-mode #sidebar {
+    background: #333;
+}
+
+#toc {
+    position: fixed;
+    right: 0;
+}
+
+#sidebar .nav-link.active {
     font-weight: bold;
 }
+
+#toc .nav-link.active {
+    color: #6c757d !important;
+}
+
 .headerlink {
     display: none;
     text-decoration: none !important;
@@ -11,7 +35,10 @@
     border: 1px solid #dee2e6;
     width: 100%;
     margin-bottom: 1rem;
-    color: #212529;
+}
+
+.dark-mode #content table {
+    border: 1px solid #2a2b2c;
 }
 
 #content thead {
