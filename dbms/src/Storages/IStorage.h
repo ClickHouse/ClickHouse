@@ -224,7 +224,8 @@ public:
       * SelectQueryInfo is required since the stage can depends on the query
       * (see Distributed() engine and optimize_skip_unused_shards).
       */
-    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, const ASTPtr & = nullptr) const { return QueryProcessingStage::FetchColumns; }
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &context) const { return getQueryProcessingStage(context, {}); }
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, const ASTPtr &) const { return QueryProcessingStage::FetchColumns; }
 
     /** Watch live changes to the table.
      * Accepts a list of columns to read, as well as a description of the query,
