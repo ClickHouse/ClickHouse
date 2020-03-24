@@ -119,7 +119,7 @@ Pool::~Pool()
 }
 
 
-Pool::Entry Pool::Get()
+Pool::Entry Pool::get()
 {
     std::unique_lock<std::mutex> lock(mutex);
 

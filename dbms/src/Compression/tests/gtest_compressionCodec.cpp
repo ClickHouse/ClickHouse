@@ -171,7 +171,7 @@ public:
         return current_value;
     }
 
-    size_t ItemsLeft() const
+    size_t itemsLeft() const
     {
         return reinterpret_cast<const char *>(data_end) - reinterpret_cast<const char *>(data);
     }
@@ -184,7 +184,7 @@ public:
 
     explicit operator bool() const
     {
-        return ItemsLeft() > 0;
+        return itemsLeft() > 0;
     }
 
 private:
@@ -230,7 +230,7 @@ template <typename T, typename ContainerLeft, typename ContainerRight>
     auto l = AsSequenceOf<T>(left);
     auto r = AsSequenceOf<T>(right);
 
-    const auto MAX_MISMATCHING_ITEMS = 5;
+    static constexpr auto MAX_MISMATCHING_ITEMS = 5;
     int mismatching_items = 0;
     size_t i = 0;
 
@@ -607,7 +607,7 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
         }
     }
 
-    auto computeMeanAndStdDev = [](const auto & values)
+    auto compute_mean_and_stddev = [](const auto & values)
     {
         double mean{};
 
@@ -648,7 +648,7 @@ TEST_P(CodecTestPerformance, TranscodingWithDataType)
     for (const auto & k : {"encoding", "decoding"})
     {
         const auto & values = results[k];
-        const auto & [mean, std_dev] = computeMeanAndStdDev(values);
+        const auto & [mean, std_dev] = compute_mean_and_stddev(values);
         // Ensure that Coefficient of variation is reasonably low, otherwise these numbers are meaningless
         EXPECT_GT(0.05, std_dev / mean);
         std::cerr << "\t" << std::fixed << std::setprecision(1) << mean / 1000.0;
@@ -1128,7 +1128,7 @@ template <typename ValueType>
 auto DDCompatibilityTestSequence()
 {
     // Generates sequences with double delta in given range.
-    auto ddGenerator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
+    auto dd_generator = [prev_delta = static_cast<Int64>(0), prev = static_cast<Int64>(0)](auto dd) mutable
     {
         const auto curr = dd + prev + prev_delta;
         prev = curr;
@@ -1150,7 +1150,7 @@ auto DDCompatibilityTestSequence()
 
         // - 4 is to allow DD value to settle before transitioning through important point,
         // since DD depends on 2 previous values of data, + 2 is arbitrary.
-        ret.append(generateSeq<ValueType>(G(ddGenerator), p - 4, p + 2));
+        ret.append(generateSeq<ValueType>(G(dd_generator), p - 4, p + 2));
     }
 
     return ret;

@@ -11,7 +11,7 @@ namespace DB
   * It stores tables list in filesystem using list of .sql files,
   *  that contain declaration of table represented by SQL ATTACH TABLE query.
   */
-class DatabaseOrdinary : public DatabaseWithDictionaries //DatabaseWithOwnTablesBase
+class DatabaseOrdinary : public DatabaseWithDictionaries
 {
 public:
     DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context);

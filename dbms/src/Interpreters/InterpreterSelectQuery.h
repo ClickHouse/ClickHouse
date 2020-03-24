@@ -92,6 +92,8 @@ public:
 
     ASTPtr getQuery() const { return query_ptr; }
 
+    size_t getMaxStreams() const { return max_streams; }
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -122,6 +124,9 @@ private:
         BlockInputStreamPtr stream_with_non_joined_data;
         bool union_stream = false;
 
+        /// Cache value of InterpreterSelectQuery::max_streams
+        size_t max_threads = 1;
+
         BlockInputStreamPtr & firstStream() { return streams.at(0); }
 
         template <typename Transform>
@@ -147,6 +152,10 @@ private:
 
         bool hasDelayedStream() const { return stream_with_non_joined_data != nullptr; }
         bool initialized() const { return !streams.empty(); }
+
+        /// Compatibility with QueryPipeline (Processors)
+        void   setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
+        size_t getNumThreads() const { return max_threads; }
     };
 
     template <typename TPipeline>

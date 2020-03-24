@@ -96,23 +96,6 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     return size;
 }
 
-ColumnSize MergeTreeDataPartWide::getTotalColumnsSize() const
-{
-    ColumnSize totals;
-    std::unordered_set<String> processed_substreams;
-    for (const NameAndTypePair & column : columns)
-    {
-        ColumnSize size = getColumnSizeImpl(column.name, *column.type, &processed_substreams);
-        totals.add(size);
-    }
-    return totals;
-}
-
-ColumnSize MergeTreeDataPartWide::getColumnSize(const String & column_name, const IDataType & type) const
-{
-    return getColumnSizeImpl(column_name, type, nullptr);
-}
-
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
     String full_path = getFullRelativePath();
@@ -155,22 +138,6 @@ void MergeTreeDataPartWide::loadIndexGranularity()
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
 {
     removeIfNeeded();
-}
-
-void MergeTreeDataPartWide::accumulateColumnSizes(ColumnToSize & column_to_size) const
-{
-    std::shared_lock<std::shared_mutex> part_lock(columns_lock);
-
-    for (const NameAndTypePair & name_type : storage.getColumns().getAllPhysical())
-    {
-        IDataType::SubstreamPath path;
-        name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-        {
-            auto bin_file_path = getFullRelativePath() + IDataType::getFileNameForStream(name_type.name, substream_path) + ".bin";
-            if (disk->exists(bin_file_path))
-                column_to_size[name_type.name] += disk->getFileSize(bin_file_path);
-        }, path);
-    }
 }
 
 void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
@@ -249,82 +216,6 @@ bool MergeTreeDataPartWide::hasColumnFiles(const String & column_name, const IDa
     return res;
 }
 
-NameToNameMap MergeTreeDataPartWide::createRenameMapForAlter(
-    AlterAnalysisResult & analysis_result,
-    const NamesAndTypesList & old_columns) const
-{
-    const auto & part_mrk_file_extension = index_granularity_info.marks_file_extension;
-    NameToNameMap rename_map;
-
-    for (const auto & index_name : analysis_result.removed_indices)
-    {
-        rename_map["skp_idx_" + index_name + ".idx"] = "";
-        rename_map["skp_idx_" + index_name + part_mrk_file_extension] = "";
-    }
-
-    /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
-    std::map<String, size_t> stream_counts;
-    for (const NameAndTypePair & column : old_columns)
-    {
-        column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-        {
-            ++stream_counts[IDataType::getFileNameForStream(column.name, substream_path)];
-        }, {});
-    }
-
-    for (const auto & column : analysis_result.removed_columns)
-    {
-        if (hasColumnFiles(column.name, *column.type))
-        {
-            column.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-            {
-                String file_name = IDataType::getFileNameForStream(column.name, substream_path);
-
-                /// Delete files if they are no longer shared with another column.
-                if (--stream_counts[file_name] == 0)
-                {
-                    rename_map[file_name + ".bin"] = "";
-                    rename_map[file_name + part_mrk_file_extension] = "";
-                }
-            }, {});
-        }
-    }
-
-    if (!analysis_result.conversions.empty())
-    {
-        /// Give proper names for temporary columns with conversion results.
-        NamesWithAliases projection;
-        projection.reserve(analysis_result.conversions.size());
-        for (const auto & source_and_expression : analysis_result.conversions)
-        {
-            /// Column name for temporary filenames before renaming. NOTE The is unnecessarily tricky.
-            const auto & source_name = source_and_expression.first;
-            String temporary_column_name = source_name + " converting";
-
-            projection.emplace_back(source_and_expression.second, temporary_column_name);
-
-            /// After conversion, we need to rename temporary files into original.
-            analysis_result.new_types.at(source_name)->enumerateStreams(
-                [&](const IDataType::SubstreamPath & substream_path)
-                {
-                    /// Skip array sizes, because they cannot be modified in ALTER.
-                    if (!substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
-                        return;
-
-                    String original_file_name = IDataType::getFileNameForStream(source_name, substream_path);
-                    String temporary_file_name = IDataType::getFileNameForStream(temporary_column_name, substream_path);
-
-                    rename_map[temporary_file_name + ".bin"] = original_file_name + ".bin";
-                    rename_map[temporary_file_name + part_mrk_file_extension] = original_file_name + part_mrk_file_extension;
-                }, {});
-        }
-
-        analysis_result.expression->add(ExpressionAction::project(projection));
-    }
-
-    return rename_map;
-}
-
 String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & column) const
 {
     String filename;
@@ -334,6 +225,17 @@ String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & colum
             filename = IDataType::getFileNameForStream(column.name, substream_path);
     });
     return filename;
+}
+
+void MergeTreeDataPartWide::calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
+{
+    std::unordered_set<String> processed_substreams;
+    for (const NameAndTypePair & column : columns)
+    {
+        ColumnSize size = getColumnSizeImpl(column.name, *column.type, &processed_substreams);
+        each_columns_size[column.name] = size;
+        total_size.add(size);
+    }
 }
 
 }

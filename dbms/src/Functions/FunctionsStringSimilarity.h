@@ -72,7 +72,7 @@ public:
                         + std::to_string(Impl::max_string_size),
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
-            Impl::constant_constant(col_haystack_const->getValue<String>(), needle, res);
+            Impl::constantConstant(col_haystack_const->getValue<String>(), needle, res);
             block.getByPosition(result).column
                 = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
             return;
@@ -96,11 +96,11 @@ public:
                         + std::to_string(Impl::max_string_size),
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
-            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
+            Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), needle, vec_res);
         }
         else if (col_haystack_vector && col_needle_vector)
         {
-            Impl::vector_vector(
+            Impl::vectorVector(
                 col_haystack_vector->getChars(),
                 col_haystack_vector->getOffsets(),
                 col_needle_vector->getChars(),
@@ -117,7 +117,7 @@ public:
                         + std::to_string(Impl::max_string_size),
                     ErrorCodes::TOO_LARGE_STRING_SIZE);
             }
-            Impl::constant_vector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
+            Impl::constantVector(haystack, col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         }
         else
         {

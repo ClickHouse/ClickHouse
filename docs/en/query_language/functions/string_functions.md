@@ -1,4 +1,4 @@
-# Functions for working with strings
+# Functions for working with strings {#functions-for-working-with-strings}
 
 ## empty {#empty}
 
@@ -21,17 +21,17 @@ The function also works for arrays.
 
 ## lengthUTF8 {#lengthutf8}
 
-Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
 
-## char_length, CHAR_LENGTH {#char_length}
+## char\_length, CHAR\_LENGTH {#char-length}
 
-Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
 
-## character_length, CHARACTER_LENGTH {#character_length}
+## character\_length, CHARACTER\_LENGTH {#character-length}
 
-Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
+Returns the length of a string in Unicode code points (not in characters), assuming that the string contains a set of bytes that make up UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 The result type is UInt64.
 
 ## lower, lcase {#lower}
@@ -45,14 +45,14 @@ Converts ASCII Latin symbols in a string to uppercase.
 ## lowerUTF8 {#lowerutf8}
 
 Converts a string to lowercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-It doesn't detect the language. So for Turkish the result might not be exactly correct.
+It doesn’t detect the language. So for Turkish the result might not be exactly correct.
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
 
 ## upperUTF8 {#upperutf8}
 
 Converts a string to uppercase, assuming the string contains a set of bytes that make up a UTF-8 encoded text.
-It doesn't detect the language. So for Turkish the result might not be exactly correct.
+It doesn’t detect the language. So for Turkish the result might not be exactly correct.
 If the length of the UTF-8 byte sequence is different for upper and lower case of a code point, the result may be incorrect for this code point.
 If the string contains a set of bytes that is not UTF-8, then the behavior is undefined.
 
@@ -64,22 +64,23 @@ Returns 1, if the set of bytes is valid UTF-8 encoded, otherwise 0.
 
 Replaces invalid UTF-8 characters by the `�` (U+FFFD) character. All running in a row invalid characters are collapsed into the one replacement character.
 
-```sql
+``` sql
 toValidUTF8( input_string )
 ```
 
 Parameters:
 
-- input_string — Any set of bytes represented as the [String](../../data_types/string.md) data type object.
+-   input\_string — Any set of bytes represented as the [String](../../data_types/string.md) data type object.
 
 Returned value: Valid UTF-8 string.
 
 **Example**
 
-```sql
+``` sql
 SELECT toValidUTF8('\x61\xF0\x80\x80\x80b')
 ```
-```text
+
+``` text
 ┌─toValidUTF8('a����b')─┐
 │ a�b                   │
 └───────────────────────┘
@@ -91,18 +92,18 @@ Repeats a string as many times as specified and concatenates the replicated valu
 
 **Syntax**
 
-```sql
+``` sql
 repeat(s, n)
 ```
 
 **Parameters**
 
-- `s` — The string to repeat. [String](../../data_types/string.md).
-- `n` — The number of times to repeat the string. [UInt](../../data_types/int_uint.md).
+-   `s` — The string to repeat. [String](../../data_types/string.md).
+-   `n` — The number of times to repeat the string. [UInt](../../data_types/int_uint.md).
 
 **Returned value**
 
-The single string, which contains the string  `s` repeated `n` times. If `n` < 1, the function returns empty string.
+The single string, which contains the string `s` repeated `n` times. If `n` \< 1, the function returns empty string.
 
 Type: `String`.
 
@@ -110,13 +111,13 @@ Type: `String`.
 
 Query:
 
-```sql
+``` sql
 SELECT repeat('abc', 10)
 ```
 
 Result:
 
-```text
+``` text
 ┌─repeat('abc', 10)──────────────┐
 │ abcabcabcabcabcabcabcabcabcabc │
 └────────────────────────────────┘
@@ -128,24 +129,27 @@ Reverses the string (as a sequence of bytes).
 
 ## reverseUTF8 {#reverseutf8}
 
-Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn't throw an exception).
+Reverses a sequence of Unicode code points, assuming that the string contains a set of bytes representing a UTF-8 text. Otherwise, it does something else (it doesn’t throw an exception).
 
-## format(pattern, s0, s1, ...) {#format}
+## format(pattern, s0, s1, …) {#format}
 
-Formatting constant pattern with the string listed in the arguments. `pattern` is a simplified Python format pattern. Format string contains "replacement fields" surrounded by curly braces `{}`. Anything that is not contained in braces is considered literal text, which is copied unchanged to the output. If you need to include a brace character in the literal text, it can be escaped by doubling: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are treated as consequence numbers).
+Formatting constant pattern with the string listed in the arguments. `pattern` is a simplified Python format pattern. Format string contains “replacement fields” surrounded by curly braces `{}`. Anything that is not contained in braces is considered literal text, which is copied unchanged to the output. If you need to include a brace character in the literal text, it can be escaped by doubling: `{{ '{{' }}` and `{{ '}}' }}`. Field names can be numbers (starting from zero) or empty (then they are treated as consequence numbers).
 
-```sql
+``` sql
 SELECT format('{1} {0} {1}', 'World', 'Hello')
 ```
-```text
+
+``` text
 ┌─format('{1} {0} {1}', 'World', 'Hello')─┐
 │ Hello World Hello                       │
 └─────────────────────────────────────────┘
 ```
-```sql
+
+``` sql
 SELECT format('{} {}', 'Hello', 'World')
 ```
-```text
+
+``` text
 ┌─format('{} {}', 'Hello', 'World')─┐
 │ Hello World                       │
 └───────────────────────────────────┘
@@ -155,9 +159,9 @@ SELECT format('{} {}', 'Hello', 'World')
 
 Concatenates the strings listed in the arguments, without a separator.
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 concat(s1, s2, ...)
 ```
 
@@ -167,21 +171,21 @@ Values of type String or FixedString.
 
 **Returned values**
 
-Returns the String that results from concatenating the arguments. 
+Returns the String that results from concatenating the arguments.
 
-If any of argument values is `NULL`, `concat` returns `NULL`. 
+If any of argument values is `NULL`, `concat` returns `NULL`.
 
 **Example**
 
 Query:
 
-```sql
+``` sql
 SELECT concat('Hello, ', 'World!')
 ```
 
 Result:
 
-```text
+``` text
 ┌─concat('Hello, ', 'World!')─┐
 │ Hello, World!               │
 └─────────────────────────────┘
@@ -191,11 +195,11 @@ Result:
 
 Same as [concat](#concat), the difference is that you need to ensure that `concat(s1, s2, ...) → sn` is injective, it will be used for optimization of GROUP BY.
 
-The function is named "injective" if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
+The function is named “injective” if it always returns different result for different values of arguments. In other words: different arguments never yield identical result.
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 concatAssumeInjective(s1, s2, ...)
 ```
 
@@ -205,7 +209,7 @@ Values of type String or FixedString.
 
 **Returned values**
 
-Returns the String that results from concatenating the arguments. 
+Returns the String that results from concatenating the arguments.
 
 If any of argument values is `NULL`, `concatAssumeInjective` returns `NULL`.
 
@@ -213,13 +217,13 @@ If any of argument values is `NULL`, `concatAssumeInjective` returns `NULL`.
 
 Input table:
 
-```sql
+``` sql
 CREATE TABLE key_val(`key1` String, `key2` String, `value` UInt32) ENGINE = TinyLog;
 INSERT INTO key_val VALUES ('Hello, ','World',1), ('Hello, ','World',2), ('Hello, ','World!',3), ('Hello',', World!',2);
 SELECT * from key_val;
 ```
 
-```text
+``` text
 ┌─key1────┬─key2─────┬─value─┐
 │ Hello,  │ World    │     1 │
 │ Hello,  │ World    │     2 │
@@ -230,13 +234,13 @@ SELECT * from key_val;
 
 Query:
 
-```sql
+``` sql
 SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)
 ```
 
 Result:
 
-```text
+``` text
 ┌─concat(key1, key2)─┬─sum(value)─┐
 │ Hello, World!      │          3 │
 │ Hello, World!      │          2 │
@@ -246,27 +250,27 @@ Result:
 
 ## substring(s, offset, length), mid(s, offset, length), substr(s, offset, length) {#substring}
 
-Returns a substring starting with the byte from the 'offset' index that is 'length' bytes long. Character indexing starts from one (as in standard SQL). The 'offset' and 'length' arguments must be constants.
+Returns a substring starting with the byte from the ‘offset’ index that is ‘length’ bytes long. Character indexing starts from one (as in standard SQL). The ‘offset’ and ‘length’ arguments must be constants.
 
 ## substringUTF8(s, offset, length) {#substringutf8}
 
-The same as 'substring', but for Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn't throw an exception).
+The same as ‘substring’, but for Unicode code points. Works under the assumption that the string contains a set of bytes representing a UTF-8 encoded text. If this assumption is not met, it returns some result (it doesn’t throw an exception).
 
 ## appendTrailingCharIfAbsent(s, c) {#appendtrailingcharifabsent}
 
-If the 's' string is non-empty and does not contain the 'c' character at the end, it appends the 'c' character to the end.
+If the ‘s’ string is non-empty and does not contain the ‘c’ character at the end, it appends the ‘c’ character to the end.
 
 ## convertCharset(s, from, to) {#convertcharset}
 
-Returns the string 's' that was converted from the encoding in 'from' to the encoding in 'to'.
+Returns the string ‘s’ that was converted from the encoding in ‘from’ to the encoding in ‘to’.
 
 ## base64Encode(s) {#base64encode}
 
-Encodes 's' string into base64
+Encodes ‘s’ string into base64
 
 ## base64Decode(s) {#base64decode}
 
-Decode base64-encoded string 's' into original string. In case of failure raises an exception.
+Decode base64-encoded string ‘s’ into original string. In case of failure raises an exception.
 
 ## tryBase64Decode(s) {#trybase64decode}
 
@@ -280,26 +284,26 @@ Returns whether to end with the specified suffix. Returns 1 if the string ends w
 
 Returns 1 whether string starts with the specified prefix, otherwise it returns 0.
 
-```sql
+``` sql
 SELECT startsWith('Spider-Man', 'Spi');
 ```
 
 **Returned values**
 
-- 1, if the string starts with the specified prefix.
-- 0, if the string doesn't start with the specified prefix.
+-   1, if the string starts with the specified prefix.
+-   0, if the string doesn’t start with the specified prefix.
 
 **Example**
 
 Query:
 
-```sql
+``` sql
 SELECT startsWith('Hello, world!', 'He');
 ```
 
 Result:
 
-```text
+``` text
 ┌─startsWith('Hello, world!', 'He')─┐
 │                                 1 │
 └───────────────────────────────────┘
@@ -312,14 +316,14 @@ By default removes all consecutive occurrences of common whitespace (ASCII chara
 
 **Syntax**
 
-```sql
+``` sql
 trim([[LEADING|TRAILING|BOTH] trim_character FROM] input_string)
 ```
 
 **Parameters**
 
-- `trim_character` — specified characters for trim. [String](../../data_types/string.md).
-- `input_string` — string for trim. [String](../../data_types/string.md).
+-   `trim_character` — specified characters for trim. [String](../../data_types/string.md).
+-   `input_string` — string for trim. [String](../../data_types/string.md).
 
 **Returned value**
 
@@ -331,13 +335,13 @@ Type: `String`.
 
 Query:
 
-```sql
+``` sql
 SELECT trim(BOTH ' ()' FROM '(   Hello, world!   )')
 ```
 
 Result:
 
-```text
+``` text
 ┌─trim(BOTH ' ()' FROM '(   Hello, world!   )')─┐
 │ Hello, world!                                 │
 └───────────────────────────────────────────────┘
@@ -345,19 +349,19 @@ Result:
 
 ## trimLeft {#trimleft}
 
-Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the beginning of a string. It doesn’t remove other kinds of whitespace characters (tab, no-break space, etc.).
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 trimLeft(input_string)
 ```
 
 Alias: `ltrim(input_string)`.
 
-**Parameters** 
+**Parameters**
 
-- `input_string` — string to trim. [String](../../data_types/string.md).
+-   `input_string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 
@@ -369,13 +373,13 @@ Type: `String`.
 
 Query:
 
-```sql
+``` sql
 SELECT trimLeft('     Hello, world!     ')
 ```
 
 Result:
 
-```text
+``` text
 ┌─trimLeft('     Hello, world!     ')─┐
 │ Hello, world!                       │
 └─────────────────────────────────────┘
@@ -383,11 +387,11 @@ Result:
 
 ## trimRight {#trimright}
 
-Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from the end of a string. It doesn’t remove other kinds of whitespace characters (tab, no-break space, etc.).
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 trimRight(input_string)
 ```
 
@@ -395,7 +399,7 @@ Alias: `rtrim(input_string)`.
 
 **Parameters**
 
-- `input_string` — string to trim. [String](../../data_types/string.md).
+-   `input_string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 
@@ -407,25 +411,25 @@ Type: `String`.
 
 Query:
 
-```sql
+``` sql
 SELECT trimRight('     Hello, world!     ')
 ```
 
 Result:
 
-```text
+``` text
 ┌─trimRight('     Hello, world!     ')─┐
 │      Hello, world!                   │
 └──────────────────────────────────────┘
 ```
 
-## trimBoth  {#trimboth}
+## trimBoth {#trimboth}
 
-Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It doesn't remove other kinds of whitespace characters (tab, no-break space, etc.).
+Removes all consecutive occurrences of common whitespace (ASCII character 32) from both ends of a string. It doesn’t remove other kinds of whitespace characters (tab, no-break space, etc.).
 
-**Syntax** 
+**Syntax**
 
-```sql
+``` sql
 trimBoth(input_string)
 ```
 
@@ -433,7 +437,7 @@ Alias: `trim(input_string)`.
 
 **Parameters**
 
-- `input_string` — string to trim. [String](../../data_types/string.md).
+-   `input_string` — string to trim. [String](../../data_types/string.md).
 
 **Returned value**
 
@@ -445,13 +449,13 @@ Type: `String`.
 
 Query:
 
-```sql
+``` sql
 SELECT trimBoth('     Hello, world!     ')
 ```
 
 Result:
 
-```text
+``` text
 ┌─trimBoth('     Hello, world!     ')─┐
 │ Hello, world!                       │
 └─────────────────────────────────────┘

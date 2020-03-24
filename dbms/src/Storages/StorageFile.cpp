@@ -385,8 +385,6 @@ Pipes StorageFile::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    const ColumnsDescription & columns_ = getColumns();
-    auto column_defaults = columns_.getDefaults();
     BlockInputStreams blocks_input;
 
     if (use_table_fd)   /// need to call ctr BlockInputStream
@@ -416,7 +414,8 @@ Pipes StorageFile::read(
     pipes.reserve(num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<StorageFileSource>(this_ptr, context, max_block_size, files_info, column_defaults));
+        pipes.emplace_back(std::make_shared<StorageFileSource>(
+            this_ptr, context, max_block_size, files_info, getColumns().getDefaults()));
 
     return pipes;
 }

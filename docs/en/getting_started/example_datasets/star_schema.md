@@ -1,8 +1,8 @@
-# Star Schema Benchmark
+# Star Schema Benchmark {#star-schema-benchmark}
 
 Compiling dbgen:
 
-```bash
+``` bash
 $ git clone git@github.com:vadimtk/ssb-dbgen.git
 $ cd ssb-dbgen
 $ make
@@ -11,10 +11,9 @@ $ make
 Generating data:
 
 !!! warning "Attention"
-    -s 100 -- dbgen generates 600 million rows (67 GB)
-    -s 1000 -- dbgen generates 6 billion rows (takes a lot of time)
+    With `-s 100` dbgen generates 600 million rows (67 GB), while while `-s 1000` it generates 6 billion rows (which takes a lot of time)
 
-```bash
+``` bash
 $ ./dbgen -s 1000 -T c
 $ ./dbgen -s 1000 -T l
 $ ./dbgen -s 1000 -T p
@@ -24,7 +23,7 @@ $ ./dbgen -s 1000 -T d
 
 Creating tables in ClickHouse:
 
-```sql
+``` sql
 CREATE TABLE customer
 (
         C_CUSTKEY       UInt32,
@@ -89,16 +88,16 @@ ENGINE = MergeTree ORDER BY S_SUPPKEY;
 
 Inserting data:
 
-```bash
+``` bash
 $ clickhouse-client --query "INSERT INTO customer FORMAT CSV" < customer.tbl
 $ clickhouse-client --query "INSERT INTO part FORMAT CSV" < part.tbl
 $ clickhouse-client --query "INSERT INTO supplier FORMAT CSV" < supplier.tbl
 $ clickhouse-client --query "INSERT INTO lineorder FORMAT CSV" < lineorder.tbl
 ```
 
-Converting "star schema" to denormalized "flat schema":
+Converting “star schema” to denormalized “flat schema”:
 
-```sql
+``` sql
 SET max_memory_usage = 20000000000;
 
 CREATE TABLE lineorder_flat
@@ -148,32 +147,38 @@ FROM lineorder AS l
 INNER JOIN customer AS c ON c.C_CUSTKEY = l.LO_CUSTKEY
 INNER JOIN supplier AS s ON s.S_SUPPKEY = l.LO_SUPPKEY
 INNER JOIN part AS p ON p.P_PARTKEY = l.LO_PARTKEY;
-
 ```
 
 Running the queries:
 
 Q1.1
-```sql
+
+``` sql
 SELECT sum(LO_EXTENDEDPRICE * LO_DISCOUNT) AS revenue
 FROM lineorder_flat
 WHERE toYear(LO_ORDERDATE) = 1993 AND LO_DISCOUNT BETWEEN 1 AND 3 AND LO_QUANTITY < 25;
 ```
+
 Q1.2
-```sql
+
+``` sql
 SELECT sum(LO_EXTENDEDPRICE * LO_DISCOUNT) AS revenue
 FROM lineorder_flat
 WHERE toYYYYMM(LO_ORDERDATE) = 199401 AND LO_DISCOUNT BETWEEN 4 AND 6 AND LO_QUANTITY BETWEEN 26 AND 35;
 ```
+
 Q1.3
-```sql
+
+``` sql
 SELECT sum(LO_EXTENDEDPRICE * LO_DISCOUNT) AS revenue
 FROM lineorder_flat
-WHERE toISOWeek(LO_ORDERDATE) = 6 AND toYear(LO_ORDERDATE) = 1994 
+WHERE toISOWeek(LO_ORDERDATE) = 6 AND toYear(LO_ORDERDATE) = 1994
   AND LO_DISCOUNT BETWEEN 5 AND 7 AND LO_QUANTITY BETWEEN 26 AND 35;
 ```
+
 Q2.1
-```sql
+
+``` sql
 SELECT
     sum(LO_REVENUE),
     toYear(LO_ORDERDATE) AS year,
@@ -187,8 +192,10 @@ ORDER BY
     year,
     P_BRAND;
 ```
+
 Q2.2
-```sql
+
+``` sql
 SELECT
     sum(LO_REVENUE),
     toYear(LO_ORDERDATE) AS year,
@@ -202,8 +209,10 @@ ORDER BY
     year,
     P_BRAND;
 ```
+
 Q2.3
-```sql
+
+``` sql
 SELECT
     sum(LO_REVENUE),
     toYear(LO_ORDERDATE) AS year,
@@ -217,8 +226,10 @@ ORDER BY
     year,
     P_BRAND;
 ```
+
 Q3.1
-```sql
+
+``` sql
 SELECT
     C_NATION,
     S_NATION,
@@ -234,8 +245,10 @@ ORDER BY
     year ASC,
     revenue DESC;
 ```
+
 Q3.2
-```sql
+
+``` sql
 SELECT
     C_CITY,
     S_CITY,
@@ -251,8 +264,10 @@ ORDER BY
     year ASC,
     revenue DESC;
 ```
+
 Q3.3
-```sql
+
+``` sql
 SELECT
     C_CITY,
     S_CITY,
@@ -268,8 +283,10 @@ ORDER BY
     year ASC,
     revenue DESC;
 ```
+
 Q3.4
-```sql
+
+``` sql
 SELECT
     C_CITY,
     S_CITY,
@@ -285,8 +302,10 @@ ORDER BY
     year ASC,
     revenue DESC;
 ```
+
 Q4.1
-```sql
+
+``` sql
 SELECT
     toYear(LO_ORDERDATE) AS year,
     C_NATION,
@@ -300,8 +319,10 @@ ORDER BY
     year ASC,
     C_NATION ASC;
 ```
+
 Q4.2
-```sql
+
+``` sql
 SELECT
     toYear(LO_ORDERDATE) AS year,
     S_NATION,
@@ -318,8 +339,10 @@ ORDER BY
     S_NATION ASC,
     P_CATEGORY ASC;
 ```
+
 Q4.3
-```sql
+
+``` sql
 SELECT
     toYear(LO_ORDERDATE) AS year,
     S_CITY,

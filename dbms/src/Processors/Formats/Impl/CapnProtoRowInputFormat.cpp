@@ -9,9 +9,8 @@
 #include <capnp/serialize.h>
 #include <capnp/dynamic.h>
 #include <capnp/common.h>
-#include <boost/algorithm/string.hpp>
-#include <boost/range/join.hpp>
 #include <common/logger_useful.h>
+#include <common/find_symbols.h>
 
 
 namespace DB
@@ -33,7 +32,7 @@ static CapnProtoRowInputFormat::NestedField split(const Block & header, size_t i
     if (!name.empty() && name[0] == '.')
         name.erase(0, 1);
 
-    boost::split(field.tokens, name, boost::is_any_of("._"));
+    splitInto<'.', '_'>(field.tokens, name);
     return field;
 }
 
@@ -66,10 +65,10 @@ static Field convertNodeToField(const capnp::DynamicValue::Reader & value)
         }
         case capnp::DynamicValue::LIST:
         {
-            auto listValue = value.as<capnp::DynamicList>();
-            Array res(listValue.size());
-            for (auto i : kj::indices(listValue))
-                res[i] = convertNodeToField(listValue[i]);
+            auto list_value = value.as<capnp::DynamicList>();
+            Array res(list_value.size());
+            for (auto i : kj::indices(list_value))
+                res[i] = convertNodeToField(list_value[i]);
 
             return res;
         }
@@ -77,12 +76,12 @@ static Field convertNodeToField(const capnp::DynamicValue::Reader & value)
             return value.as<capnp::DynamicEnum>().getRaw();
         case capnp::DynamicValue::STRUCT:
         {
-            auto structValue = value.as<capnp::DynamicStruct>();
-            const auto & fields = structValue.getSchema().getFields();
+            auto struct_value = value.as<capnp::DynamicStruct>();
+            const auto & fields = struct_value.getSchema().getFields();
 
             Tuple tuple(fields.size());
             for (auto i : kj::indices(fields))
-                tuple[i] = convertNodeToField(structValue.get(fields[i]));
+                tuple[i] = convertNodeToField(struct_value.get(fields[i]));
 
             return tuple;
         }

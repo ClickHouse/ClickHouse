@@ -260,7 +260,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime() const
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    MySQLBlockInputStream result(mysql_pool.Get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
 
     while (Block block = result.read())
     {
@@ -305,7 +305,7 @@ std::map<String, NamesAndTypesList> DatabaseMySQL::fetchTablesColumnsList(const 
           << " AND TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
 
     const auto & external_table_functions_use_nulls = global_context.getSettings().external_table_functions_use_nulls;
-    MySQLBlockInputStream result(mysql_pool.Get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
     while (Block block = result.read())
     {
         size_t rows = block.rows();

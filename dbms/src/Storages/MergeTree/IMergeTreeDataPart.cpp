@@ -406,6 +406,7 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
+    calculateColumnsSizesOnDisk();
     loadIndexGranularity();
     loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
     loadRowsCount(); /// Must be called after loadIndex() as it uses the value of `index_granularity`.
@@ -706,7 +707,7 @@ void IMergeTreeDataPart::remove() const
 
         try
         {
-            disk->removeRecursive(to);
+            disk->removeRecursive(to + "/");
         }
         catch (...)
         {
@@ -735,8 +736,6 @@ void IMergeTreeDataPart::remove() const
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wunused-variable"
 #endif
-        std::shared_lock<std::shared_mutex> lock(columns_lock);
-
         for (const auto & [file, _] : checksums.files)
             disk->remove(to + "/" + file);
 #if !__clang__
@@ -870,6 +869,31 @@ void IMergeTreeDataPart::checkConsistencyBase() const
                 check_file_not_empty(disk, path + "minmax_" + escapeForFileName(col_name) + ".idx");
         }
     }
+}
+
+
+void IMergeTreeDataPart::calculateColumnsSizesOnDisk()
+{
+    if (getColumns().empty() || checksums.empty())
+        throw Exception("Cannot calculate columns sizes when columns or checksums are not initialized", ErrorCodes::LOGICAL_ERROR);
+
+    calculateEachColumnSizesOnDisk(columns_sizes, total_columns_size);
+}
+
+ColumnSize IMergeTreeDataPart::getColumnSize(const String & column_name, const IDataType & /* type */) const
+{
+    /// For some types of parts columns_size maybe not calculated
+    auto it = columns_sizes.find(column_name);
+    if (it != columns_sizes.end())
+        return it->second;
+
+    return ColumnSize{};
+}
+
+void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
+{
+    for (const auto & [column_name, size] : columns_sizes)
+        column_to_size[column_name] = size.data_compressed;
 }
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part)

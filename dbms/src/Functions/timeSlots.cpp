@@ -34,7 +34,7 @@ namespace ErrorCodes
 template <typename DurationType>
 struct TimeSlotsImpl
 {
-    static void vector_vector(
+    static void vectorVector(
         const PaddedPODArray<UInt32> & starts, const PaddedPODArray<DurationType> & durations, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
@@ -56,7 +56,7 @@ struct TimeSlotsImpl
         }
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const PaddedPODArray<UInt32> & starts, DurationType duration, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
@@ -78,7 +78,7 @@ struct TimeSlotsImpl
         }
     }
 
-    static void constant_vector(
+    static void constantVector(
         UInt32 start, const PaddedPODArray<DurationType> & durations, UInt32 time_slot_size,
         PaddedPODArray<UInt32> & result_values, ColumnArray::Offsets & result_offsets)
     {
@@ -168,17 +168,17 @@ public:
 
         if (starts && durations)
         {
-            TimeSlotsImpl<UInt32>::vector_vector(starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets());
+            TimeSlotsImpl<UInt32>::vectorVector(starts->getData(), durations->getData(), time_slot_size, res_values, res->getOffsets());
             block.getByPosition(result).column = std::move(res);
         }
         else if (starts && const_durations)
         {
-            TimeSlotsImpl<UInt32>::vector_constant(starts->getData(), const_durations->getValue<UInt32>(), time_slot_size, res_values, res->getOffsets());
+            TimeSlotsImpl<UInt32>::vectorConstant(starts->getData(), const_durations->getValue<UInt32>(), time_slot_size, res_values, res->getOffsets());
             block.getByPosition(result).column = std::move(res);
         }
         else if (const_starts && durations)
         {
-            TimeSlotsImpl<UInt32>::constant_vector(const_starts->getValue<UInt32>(), durations->getData(), time_slot_size, res_values, res->getOffsets());
+            TimeSlotsImpl<UInt32>::constantVector(const_starts->getValue<UInt32>(), durations->getData(), time_slot_size, res_values, res->getOffsets());
             block.getByPosition(result).column = std::move(res);
         }
         else

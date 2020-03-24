@@ -38,7 +38,7 @@ using ASTPtr = std::shared_ptr<IAST>;
 using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
 using MergeableBlocksPtr = std::shared_ptr<MergeableBlocks>;
 
-class StorageLiveView : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
+class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageLiveView>;
 friend class LiveViewBlockInputStream;

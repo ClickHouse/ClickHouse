@@ -93,7 +93,7 @@ void FilterTransform::removeFilterIfNeed(Chunk & chunk)
 
 void FilterTransform::transform(Chunk & chunk)
 {
-    size_t num_rows_before_filtration = chunk.getNumRows();
+    size_t num_rows_before_filtration;
     auto columns = chunk.detachColumns();
 
     {

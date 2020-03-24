@@ -162,12 +162,12 @@ int Server::run()
 {
     if (config().hasOption("help"))
     {
-        Poco::Util::HelpFormatter helpFormatter(Server::options());
+        Poco::Util::HelpFormatter help_formatter(Server::options());
         std::stringstream header;
         header << commandName() << " [OPTION] [-- [ARG]...]\n";
         header << "positional arguments can be used to rewrite config.xml properties, for example, --http_port=8010";
-        helpFormatter.setHeader(header.str());
-        helpFormatter.format(std::cout);
+        help_formatter.setHeader(header.str());
+        help_formatter.format(std::cout);
         return 0;
     }
     if (config().hasOption("version"))
@@ -528,7 +528,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     /// Load global settings from default_profile and system_profile.
     global_context->setDefaultProfiles(config());
-    Settings & settings = global_context->getSettingsRef();
+    const Settings & settings = global_context->getSettingsRef();
 
     /// Size of cache for marks (index of MergeTree family of tables). It is mandatory.
     size_t mark_cache_size = config().getUInt64("mark_cache_size");

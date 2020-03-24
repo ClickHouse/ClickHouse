@@ -83,7 +83,7 @@ Pipes StorageMySQL::read(
     Pipes pipes;
     /// TODO: rewrite MySQLBlockInputStream
     pipes.emplace_back(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size_)));
+            std::make_shared<MySQLBlockInputStream>(pool.get(), query, sample_block, max_block_size_)));
 
     return pipes;
 }
@@ -199,7 +199,7 @@ private:
 BlockOutputStreamPtr StorageMySQL::write(
     const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.Get(), context.getSettingsRef().mysql_max_rows_to_insert);
+    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.get(), context.getSettingsRef().mysql_max_rows_to_insert);
 }
 
 void registerStorageMySQL(StorageFactory & factory)

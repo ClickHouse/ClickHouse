@@ -86,7 +86,7 @@ template <typename ValueType>
 class DateTimeToStringParamTestBase : public ::testing::TestWithParam<DateTimeToStringParamTestCase<ValueType>>
 {
 public:
-    void Test(const DateTimeToStringParamTestCase<ValueType> & param)
+    void test(const DateTimeToStringParamTestCase<ValueType> & param)
     {
         [[maybe_unused]] const auto & [description, input, expected, timezone_name] = param;
 
@@ -119,7 +119,7 @@ class DateTimeToStringParamTestDayNum : public DateTimeToStringParamTestBase<Day
 
 TEST_P(DateTimeToStringParamTestDayNum, writeDateText)
 {
-    ASSERT_NO_FATAL_FAILURE(Test(GetParam()));
+    ASSERT_NO_FATAL_FAILURE(test(GetParam()));
 }
 
 class DateTimeToStringParamTestTimeT : public DateTimeToStringParamTestBase<time_t>
@@ -127,7 +127,7 @@ class DateTimeToStringParamTestTimeT : public DateTimeToStringParamTestBase<time
 
 TEST_P(DateTimeToStringParamTestTimeT, writeDateText)
 {
-    ASSERT_NO_FATAL_FAILURE(Test(GetParam()));
+    ASSERT_NO_FATAL_FAILURE(test(GetParam()));
 }
 
 class DateTimeToStringParamTestDateTime64 : public DateTimeToStringParamTestBase<DateTime64WithScale>
@@ -135,7 +135,7 @@ class DateTimeToStringParamTestDateTime64 : public DateTimeToStringParamTestBase
 
 TEST_P(DateTimeToStringParamTestDateTime64, writeDateText)
 {
-    ASSERT_NO_FATAL_FAILURE(Test(GetParam()));
+    ASSERT_NO_FATAL_FAILURE(test(GetParam()));
 }
 
 static const Int32 NON_ZERO_TIME_T = 10 * 365 * 3600 * 24 + 123456;

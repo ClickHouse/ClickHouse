@@ -17,7 +17,7 @@ namespace DB
   * It does not support keys.
   * Data is stored as a set of blocks and is not stored anywhere else.
   */
-class StorageMemory : public ext::shared_ptr_helper<StorageMemory>, public IStorage
+class StorageMemory final : public ext::shared_ptr_helper<StorageMemory>, public IStorage
 {
 friend class MemoryBlockInputStream;
 friend class MemoryBlockOutputStream;

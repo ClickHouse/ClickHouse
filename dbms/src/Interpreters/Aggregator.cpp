@@ -329,6 +329,12 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::low_cardinality_keys256;
         }
 
+        if (keys_bytes <= 2)
+            return AggregatedDataVariants::Type::keys16;
+        if (keys_bytes <= 4)
+            return AggregatedDataVariants::Type::keys32;
+        if (keys_bytes <= 8)
+            return AggregatedDataVariants::Type::keys64;
         if (keys_bytes <= 16)
             return AggregatedDataVariants::Type::keys128;
         if (keys_bytes <= 32)

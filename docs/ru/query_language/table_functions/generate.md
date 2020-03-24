@@ -1,10 +1,10 @@
-# generate
+# generate {#generate}
 
 Генерирует случайные данные с заданной схемой.
 Позволяет заполнять тестовые таблицы данными.
 Поддерживает все типы данных, которые могут храниться в таблице, за исключением `LowCardinality` и `AggregateFunction`.
 
-```sql
+``` sql
 generate('name TypeName[, name TypeName]...', 'limit'[, 'max_array_length'[, 'max_string_length'[, 'random_seed']]]);
 ```
 
@@ -20,13 +20,13 @@ generate('name TypeName[, name TypeName]...', 'limit'[, 'max_array_length'[, 'ma
 
 Объект таблицы с запрошенной схемой.
 
-## Пример
+## Пример {#primer}
 
-
-```sql
+``` sql
 SELECT * FROM generate('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 3, 2, 10, 1);
 ```
-```text
+
+``` text
 ┌─a────────┬────────────d─┬─c──────────────────────────────────────────────────────────────────┐
 │ [77]     │ -124167.6723 │ ('2061-04-17 21:59:44.573','3f72f405-ec3e-13c8-44ca-66ef335f7835') │
 │ [32,110] │ -141397.7312 │ ('1979-02-09 03:43:48.526','982486d1-5a5d-a308-e525-7bd8b80ffa73') │
