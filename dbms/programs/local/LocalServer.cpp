@@ -21,6 +21,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
+#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
@@ -92,7 +93,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
 void LocalServer::applyCmdSettings()
 {
-    context->getSettingsRef().copyChangesFrom(cmd_settings);
+    context->applySettingsChanges(cmd_settings.changes());
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
@@ -115,6 +116,20 @@ void LocalServer::tryInitPath()
     context->setTemporaryStorage(cd + "tmp");
     context->setFlagsPath(cd + "flags");
     context->setUserFilesPath(""); // user's files are everywhere
+}
+
+
+static void attachSystemTables()
+{
+    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
+    if (!system_database)
+    {
+        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
+        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE);
+        DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
+    }
+
+    attachSystemTablesLocal(*system_database);
 }
 
 
@@ -248,20 +263,6 @@ std::string LocalServer::getInitialCreateTableQuery()
 }
 
 
-void LocalServer::attachSystemTables()
-{
-    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
-    if (!system_database)
-    {
-        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE);
-        DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
-    }
-
-    attachSystemTablesLocal(*system_database);
-}
-
-
 void LocalServer::processQueries()
 {
     String initial_create_query = getInitialCreateTableQuery();
@@ -375,7 +376,7 @@ static void showClientVersion()
     std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << '\n';
 }
 
-std::string LocalServer::getHelpHeader() const
+static std::string getHelpHeader()
 {
     return
         "usage: clickhouse-local [initial table definition] [--query <query>]\n"
@@ -390,7 +391,7 @@ std::string LocalServer::getHelpHeader() const
         "Either through corresponding command line parameters --table --structure --input-format and --file.";
 }
 
-std::string LocalServer::getHelpFooter() const
+static std::string getHelpFooter()
 {
     return
         "Example printing memory used by each Unix user:\n"

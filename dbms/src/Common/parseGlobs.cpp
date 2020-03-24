@@ -3,6 +3,8 @@
 #include <re2/stringpiece.h>
 #include <algorithm>
 #include <sstream>
+#include <cassert>
+
 
 namespace DB
 {
@@ -38,10 +40,12 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
 
         if (buffer.find(',') == std::string::npos)
         {
-            size_t range_begin, range_end;
+            size_t range_begin = 0;
+            size_t range_end = 0;
             char point;
             std::istringstream iss_range(buffer);
             iss_range >> range_begin >> point >> point >> range_end;
+            assert(iss_range.good());
             oss_for_replacing << range_begin;
             for (size_t i = range_begin + 1; i <= range_end; ++i)
             {

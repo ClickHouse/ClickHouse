@@ -18,6 +18,10 @@ $CLICKHOUSE_CLIENT $settings -q "INSERT INTO merge_tree_table SELECT (intHash64(
 
 $CLICKHOUSE_CLIENT $settings -q "OPTIMIZE TABLE merge_tree_table FINAL;"
 
+# The query may open more files if query log will be flushed during the query.
+# To lower this chance, we also flush logs before the query.
+$CLICKHOUSE_CLIENT $settings -q "SYSTEM FLUSH LOGS"
+
 toching_many_parts_query="SELECT count() FROM (SELECT toDayOfWeek(date) AS m, id, count() FROM merge_tree_table GROUP BY id, m ORDER BY count() DESC LIMIT 10 SETTINGS max_threads = 1)"
 $CLICKHOUSE_CLIENT $settings -q "$toching_many_parts_query" &> /dev/null
 

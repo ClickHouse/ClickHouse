@@ -85,8 +85,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         else
         {
             auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
-            context.checkAccess(AccessType::SHOW, table_id);
-
+            context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
             table = DatabaseCatalog::instance().getTable(table_id);
         }
 

@@ -1,8 +1,8 @@
 #include <Parsers/ParserCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Access/RowPolicy.h>
-#include <Parsers/ParserGenericRoleSet.h>
-#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ParserExtendedRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 namespace
 {
-    using ConditionIndex = RowPolicy::ConditionIndex;
+    using ConditionType = RowPolicy::ConditionType;
 
     bool parseRenameTo(IParserBase::Pos & pos, Expected & expected, String & new_policy_name)
     {
@@ -73,7 +73,7 @@ namespace
         });
     }
 
-    bool parseConditions(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<std::pair<ConditionIndex, ASTPtr>> & conditions)
+    bool parseConditions(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<std::pair<ConditionType, ASTPtr>> & conditions)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -136,14 +136,14 @@ namespace
             if (filter && !check && !alter)
                 check = filter;
 
-            auto set_condition = [&](ConditionIndex index, const ASTPtr & condition)
+            auto set_condition = [&](ConditionType index, const ASTPtr & condition)
             {
-                auto it = std::find_if(conditions.begin(), conditions.end(), [index](const std::pair<ConditionIndex, ASTPtr> & element)
+                auto it = std::find_if(conditions.begin(), conditions.end(), [index](const std::pair<ConditionType, ASTPtr> & element)
                 {
                     return element.first == index;
                 });
                 if (it == conditions.end())
-                    it = conditions.insert(conditions.end(), std::pair<ConditionIndex, ASTPtr>{index, nullptr});
+                    it = conditions.insert(conditions.end(), std::pair<ConditionType, ASTPtr>{index, nullptr});
                 it->second = condition;
             };
 
@@ -170,11 +170,11 @@ namespace
         });
     }
 
-    bool parseMultipleConditions(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<std::pair<ConditionIndex, ASTPtr>> & conditions)
+    bool parseMultipleConditions(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<std::pair<ConditionType, ASTPtr>> & conditions)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            std::vector<std::pair<ConditionIndex, ASTPtr>> res_conditions;
+            std::vector<std::pair<ConditionType, ASTPtr>> res_conditions;
             do
             {
                 if (!parseConditions(pos, expected, alter, res_conditions))
@@ -187,16 +187,16 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTGenericRoleSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
             if (roles || !ParserKeyword{"TO"}.ignore(pos, expected)
-                || !ParserGenericRoleSet{}.enableIDMode(id_mode).parse(pos, ast, expected))
+                || !ParserExtendedRoleSet{}.useIDMode(id_mode).parse(pos, ast, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTGenericRoleSet>(ast);
+            roles = std::static_pointer_cast<ASTExtendedRoleSet>(ast);
             return true;
         });
     }
@@ -206,12 +206,10 @@ namespace
 bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool alter = false;
-    bool attach = false;
     if (attach_mode)
     {
         if (!ParserKeyword{"ATTACH POLICY"}.ignore(pos, expected) && !ParserKeyword{"ATTACH ROW POLICY"}.ignore(pos, expected))
             return false;
-        attach = true;
     }
     else
     {
@@ -247,8 +245,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
 
     String new_policy_name;
     std::optional<bool> is_restrictive;
-    std::vector<std::pair<ConditionIndex, ASTPtr>> conditions;
-    std::shared_ptr<ASTGenericRoleSet> roles;
+    std::vector<std::pair<ConditionType, ASTPtr>> conditions;
 
     while (true)
     {
@@ -261,17 +258,17 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (parseMultipleConditions(pos, expected, alter, conditions))
             continue;
 
-        if (!roles && parseToRoles(pos, expected, attach, roles))
-            continue;
-
         break;
     }
+
+    std::shared_ptr<ASTExtendedRoleSet> roles;
+    parseToRoles(pos, expected, attach_mode, roles);
 
     auto query = std::make_shared<ASTCreateRowPolicyQuery>();
     node = query;
 
     query->alter = alter;
-    query->attach = attach;
+    query->attach = attach_mode;
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;

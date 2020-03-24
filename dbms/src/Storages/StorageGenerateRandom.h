@@ -9,7 +9,7 @@ namespace DB
 {
 /* Generates random data for given schema.
  */
-class StorageGenerateRandom : public ext::shared_ptr_helper<StorageGenerateRandom>, public IStorage
+class StorageGenerateRandom final : public ext::shared_ptr_helper<StorageGenerateRandom>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageGenerateRandom>;
 public:

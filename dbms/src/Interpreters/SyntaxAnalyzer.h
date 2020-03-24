@@ -99,7 +99,7 @@ public:
 private:
     const Context & context;
 
-    void normalize(ASTPtr & query, Aliases & aliases, const Settings & settings) const;
+    static void normalize(ASTPtr & query, Aliases & aliases, const Settings & settings);
 };
 
 }

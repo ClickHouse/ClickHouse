@@ -58,3 +58,5 @@ $(document).ready(function () {
         } else { f(); }
     })(document, window, "yandex_metrika_callbacks2");
 });
+
+{% include "js/index.js" %}

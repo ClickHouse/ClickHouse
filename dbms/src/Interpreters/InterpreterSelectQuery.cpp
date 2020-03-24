@@ -38,7 +38,6 @@
 #include <Parsers/parseQuery.h>
 
 #include <Access/AccessFlags.h>
-#include <Access/RowPolicyContext.h>
 
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -52,6 +51,7 @@
 #include <Interpreters/AnalyzedJoin.h>
 #include <Interpreters/Join.h>
 #include <Interpreters/JoinedTables.h>
+#include <Interpreters/QueryAliasesVisitor.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -115,6 +115,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int INVALID_LIMIT_EXPRESSION;
     extern const int INVALID_WITH_FILL_EXPRESSION;
+    extern const int INVALID_SETTING_VALUE;
 }
 
 /// Assumes `storage` is set and the table filter (row-level security) is not empty.
@@ -264,13 +265,24 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     /// Rewrite JOINs
     if (!has_input && joined_tables.tablesCount() > 1)
     {
-        CrossToInnerJoinVisitor::Data cross_to_inner{joined_tables.tablesWithColumns(), context->getCurrentDatabase()};
+        ASTSelectQuery & select = getSelectQuery();
+
+        Aliases aliases;
+        if (ASTPtr with = select.with())
+            QueryAliasesNoSubqueriesVisitor(aliases).visit(with);
+        QueryAliasesNoSubqueriesVisitor(aliases).visit(select.select());
+
+        CrossToInnerJoinVisitor::Data cross_to_inner{joined_tables.tablesWithColumns(), aliases, context->getCurrentDatabase()};
         CrossToInnerJoinVisitor(cross_to_inner).visit(query_ptr);
 
-        JoinToSubqueryTransformVisitor::Data join_to_subs_data{*context};
+        size_t rewriter_version = settings.multiple_joins_rewriter_version;
+        if (!rewriter_version || rewriter_version > 2)
+            throw Exception("Bad multiple_joins_rewriter_version setting value: " + settings.multiple_joins_rewriter_version.toString(),
+                            ErrorCodes::INVALID_SETTING_VALUE);
+        JoinToSubqueryTransformVisitor::Data join_to_subs_data{joined_tables.tablesWithColumns(), aliases, rewriter_version};
         JoinToSubqueryTransformVisitor(join_to_subs_data).visit(query_ptr);
 
-        joined_tables.reset(getSelectQuery());
+        joined_tables.reset(select);
         joined_tables.resolveTables();
 
         if (storage && joined_tables.isLeftTableSubquery())
@@ -310,7 +322,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (!options.only_analyze)
         {
-            if (query.sample_size() && (input || input_pipe || !storage || !storage->supportsSampling()))
+            if (query.sampleSize() && (input || input_pipe || !storage || !storage->supportsSampling()))
                 throw Exception("Illegal SAMPLE: table doesn't support sampling", ErrorCodes::SAMPLING_NOT_SUPPORTED);
 
             if (query.final() && (input || input_pipe || !storage || !storage->supportsFinal()))
@@ -348,8 +360,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             source_header = storage->getSampleBlockForColumns(required_columns);
 
             /// Fix source_header for filter actions.
-            auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
-            row_policy_filter = RowPolicyContext::combineConditionsUsingAnd(row_policy_filter, context->getInitialRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER));
+            auto row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
             if (row_policy_filter)
             {
                 filter_info = std::make_shared<FilterInfo>();
@@ -456,7 +467,6 @@ QueryPipeline InterpreterSelectQuery::executeWithProcessors()
 {
     QueryPipeline query_pipeline;
     executeImpl(query_pipeline, input, std::move(input_pipe), query_pipeline);
-    query_pipeline.setMaxThreads(max_streams);
     query_pipeline.addInterpreterContext(context);
     query_pipeline.addStorageHolder(storage);
     return query_pipeline;
@@ -477,8 +487,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
 
         /// PREWHERE optimization.
         /// Turn off, if the table filter (row-level security) is applied.
-        if (!context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER)
-            && !context->getInitialRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER))
+        if (!context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER))
         {
             auto optimize_prewhere = [&](auto & merge_tree)
             {
@@ -1053,7 +1062,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     auto check_trivial_count_query = [&]() -> std::optional<AggregateDescription>
     {
         if (!settings.optimize_trivial_count_query || !syntax_analyzer_result->maybe_optimize_trivial_count || !storage
-            || query.sample_size() || query.sample_offset() || query.final() || query.prewhere() || query.where()
+            || query.sampleSize() || query.sampleOffset() || query.final() || query.prewhere() || query.where()
             || !query_analyzer->hasAggregation() || processing_stage != QueryProcessingStage::FetchColumns)
             return {};
 
@@ -1115,7 +1124,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     if (storage)
     {
         /// Append columns from the table filter to required
-        auto row_policy_filter = context->getRowPolicy()->getCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
+        auto row_policy_filter = context->getRowPolicyCondition(table_id.getDatabaseName(), table_id.getTableName(), RowPolicy::SELECT_FILTER);
         if (row_policy_filter)
         {
             auto initial_required_columns = required_columns;
@@ -1291,6 +1300,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     {
         is_remote = true;
         max_streams = settings.max_distributed_connections;
+        pipeline.setMaxThreads(max_streams);
     }
 
     UInt64 max_block_size = settings.max_block_size;
@@ -1315,6 +1325,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     {
         max_block_size = std::max(UInt64(1), limit_length + limit_offset);
         max_streams = 1;
+        pipeline.setMaxThreads(max_streams);
     }
 
     if (!max_block_size)
@@ -2046,10 +2057,12 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
 
         if (need_finish_sorting)
         {
-            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
+            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
             {
-                bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
-                return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
+                if (stream_type != QueryPipeline::StreamType::Main)
+                    return nullptr;
+
+                return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
             });
 
             pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
@@ -2063,10 +2076,12 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
         return;
     }
 
-    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type)
+    pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
     {
-        bool do_count_rows = stream_type == QueryPipeline::StreamType::Main;
-        return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit, do_count_rows);
+        if (stream_type != QueryPipeline::StreamType::Main)
+            return nullptr;
+
+        return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
     });
 
     /// Merge the sorted blocks.
