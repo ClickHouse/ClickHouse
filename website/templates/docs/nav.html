@@ -21,11 +21,13 @@
                     </a>
                 </li>
                 {% if config.extra.single_page %}
-                    {% set page.edit_url = config.repo_url + 'tree/master/docs' %}
+                    {% set edit_url = config.repo_url + 'tree/master/docs' %}
+                {% else %}
+                    {% set edit_url = page.edit_url %}
                 {% endif %}
-                {% if page.edit_url %}
+                {% if edit_url %}
                 <li class="nav-item">
-                    <a href="{{ page.edit_url }}" title="Edit this article" class="nav-link" rel="external nofollow noreferrer" target="_blank"><img src="/images/mkdocs/edit.svg" alt="Edit this article" class="mt-1" height="22" /></a>
+                    <a href="{{ edit_url }}" title="Edit this article" class="nav-link" rel="external nofollow noreferrer" target="_blank"><img src="/images/mkdocs/edit.svg" alt="Edit this article" class="mt-1" height="22" /></a>
                 </li>
                 {% endif %}
                 <li class="nav-item">

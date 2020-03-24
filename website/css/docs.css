@@ -46,6 +46,10 @@
     color: #fff;
 }
 
+.dark-mode #content thead {
+    background: #333;
+}
+
 #content td, #content th {
     padding: .75rem;
     vertical-align: top;
@@ -65,7 +69,17 @@
     padding: 2px;
 }
 
+.dark-mode #content code {
+    background: #444;
+    color: #eee;
+}
+
 #content pre {
     background: #eee;
     padding: 1rem;
+}
+
+.dark-mode #content pre {
+    background: #444;
+    color: #eee;
 }
