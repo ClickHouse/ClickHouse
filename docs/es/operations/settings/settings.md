@@ -976,7 +976,7 @@ Habilita o deshabilita la omisión de fragmentos no utilizados para las consulta
 
 Valor predeterminado: 0
 
-## Fuerza\_optimize\_skip\_unused\_shards {#settings-force-optimize-skip-unused-shards}
+## Fuerza\_optimize\_skip\_unused\_shards {#settings-force_optimize_skip_unused_shards}
 
 Habilita o deshabilita la ejecución de consultas si [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) no es posible omitir fragmentos no utilizados. Si la omisión no es posible y la configuración está habilitada, se lanzará una excepción.
 
