@@ -392,7 +392,7 @@ Pipes StorageDistributed::read(
         if (!smaller_cluster)
         {
             LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
-                           (has_sharding_key ? "" : "(no sharding key)") << ": "
+                           (has_sharding_key ? "" : " (no sharding key)") << ": "
                            "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
                            "the query will be sent to all shards of the cluster");
 

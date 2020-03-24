@@ -746,7 +746,7 @@ void executeQuery(
 
             {
                 auto executor = pipeline.execute();
-                executor->execute(context.getSettingsRef().max_threads);
+                executor->execute(pipeline.getNumThreads());
             }
         }
     }

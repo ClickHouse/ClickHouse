@@ -265,7 +265,7 @@ void TCPHandler::runImpl()
                 state.io.onFinish();
             }
             else if (state.io.pipeline.initialized())
-                processOrdinaryQueryWithProcessors(query_context->getSettingsRef().max_threads);
+                processOrdinaryQueryWithProcessors();
             else
                 processOrdinaryQuery();
 
@@ -544,12 +544,9 @@ void TCPHandler::processOrdinaryQuery()
 }
 
 
-void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
+void TCPHandler::processOrdinaryQueryWithProcessors()
 {
     auto & pipeline = state.io.pipeline;
-
-    /// Reduce the number of threads to recommended value.
-    num_threads = std::min(num_threads, pipeline.getNumThreads());
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
@@ -585,7 +582,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 
             try
             {
-                executor->execute(num_threads);
+                executor->execute(pipeline.getNumThreads());
             }
             catch (...)
             {
