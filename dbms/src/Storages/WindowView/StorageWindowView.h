@@ -105,10 +105,10 @@ private:
     mutable StoragePtr inner_storage;
     mutable StoragePtr target_storage;
 
-    BackgroundSchedulePool::TaskHolder cleanCacheTask;
-    BackgroundSchedulePool::TaskHolder fireTask;
+    BackgroundSchedulePool::TaskHolder clean_cache_task;
+    BackgroundSchedulePool::TaskHolder fire_task;
 
-    ExpressionActionsPtr writeExpressions;
+    ExpressionActionsPtr write_expressions;
 
     ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
 
