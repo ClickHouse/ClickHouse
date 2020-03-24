@@ -529,7 +529,6 @@ TEST(WeakHash32, ColumnArray_2)
     auto print_function = [&col_arr](size_t row)
     {
         auto & offsets = col_arr->getOffsets();
-        size_t s = offsets[row] - offsets[row - 1];
         auto value1 = col_arr->getData().getUInt(offsets[row]);
         auto value2 = col_arr->getData().getUInt(offsets[row] + 1);
         return std::string("[") + std::to_string(value1) + ", " + std::to_string(value2) + "]";
