@@ -999,11 +999,9 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
     Pos literal_begin = pos;
 
     Collection arr;
-
     ParserLiteral literal_p;
 
     ++pos;
-
     while (pos.isValid())
     {
         if (!arr.empty())
@@ -1012,12 +1010,11 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             {
                 std::shared_ptr<ASTLiteral> literal;
 
-                /// Parse one-element tuples (e.g. (1)) as single values for backward compatibility.
+                /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
                 if (std::is_same_v<Collection, Tuple> && arr.size() == 1)
-                    literal = std::make_shared<ASTLiteral>(arr[0]);
-                else
-                    literal = std::make_shared<ASTLiteral>(arr);
+                    return false;
 
+                literal = std::make_shared<ASTLiteral>(arr);
                 literal->begin = literal_begin;
                 literal->end = ++pos;
                 node = literal;
@@ -1029,9 +1026,8 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             }
             else
             {
-                std::stringstream msg;
-                msg << "comma or " << getTokenName(closing_bracket);
-                expected.add(pos, msg.str().c_str());
+                String message = String("comma or ") + getTokenName(closing_bracket);
+                expected.add(pos, message.c_str());
                 return false;
             }
         }

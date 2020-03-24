@@ -1,4 +1,5 @@
 #include <Columns/ColumnConst.h>
+#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/FieldToDataType.h>
@@ -148,11 +149,18 @@ private:
             info.type = std::make_shared<DataTypeFloat64>();
         else if (field_type == Field::Types::String)
             info.type = std::make_shared<DataTypeString>();
-        else if (field_type == Field::Types::Array)
+        else if (field_type == Field::Types::Array || field_type == Field::Types::Tuple)
         {
             info.special_parser.is_array = true;
             info.type = applyVisitor(FieldToDataType(), info.literal->value);
-            auto nested_type = assert_cast<const DataTypeArray &>(*info.type).getNestedType();
+
+            DataTypePtr nested_type;
+            if (auto array_type = typeid_cast<const DataTypeArray *>(info.type.get()))
+                nested_type = array_type->getNestedType();
+            else if (auto tuple_type = typeid_cast<const DataTypeTuple *>(info.type.get()))
+                nested_type = tuple_type->getElements()[0];
+            else
+                throw Exception("Unexpected type " + info.type->getName(), ErrorCodes::LOGICAL_ERROR);
 
             /// It can be Array(Nullable(nested_type))
             bool array_of_nullable = false;
@@ -192,7 +200,18 @@ private:
                 info.special_parser.is_nullable = true;
             }
 
-            info.type = std::make_shared<DataTypeArray>(nested_type);
+            if (field_type == Field::Types::Tuple)
+            {
+                const auto & tuple = info.literal->value.get<const Tuple &>();
+                DataTypes elements(tuple.size());
+                for (size_t i = 0; i < tuple.size(); ++i)
+                    elements[i] = nested_type;
+                info.type = std::make_shared<DataTypeTuple>(elements);
+            }
+            else
+            {
+                info.type = std::make_shared<DataTypeArray>(nested_type);
+            }
         }
         else
             throw Exception(String("Unexpected literal type ") + info.literal->value.getTypeName() + ". It's a bug",
@@ -408,18 +427,28 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
     {
         /// TODO faster way to check types without using Parsers
         ParserArrayOfLiterals parser_array;
+        ParserTupleOfLiterals parser_tuple;
+
         Tokens tokens_number(istr.position(), istr.buffer().end());
         IParser::Pos iterator(tokens_number, settings.max_parser_depth);
         Expected expected;
         ASTPtr ast;
-
-        if (!parser_array.parse(iterator, ast, expected))
+        if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected))
             return false;
         istr.position() = const_cast<char *>(iterator->begin);
 
-        const Field & array = ast->as<ASTLiteral &>().value;
-        auto array_type = applyVisitor(FieldToDataType(), array);
-        auto nested_type = assert_cast<const DataTypeArray &>(*array_type).getNestedType();
+        const Field & collection = ast->as<ASTLiteral &>().value;
+        auto collection_type = applyVisitor(FieldToDataType(), collection);
+
+        DataTypePtr nested_type;
+        if (auto array_type = typeid_cast<const DataTypeArray *>(collection_type.get()))
+            nested_type = array_type->getNestedType();
+        else if (auto tuple_type = typeid_cast<const DataTypeTuple *>(collection_type.get()))
+            nested_type = tuple_type->getElements()[0];
+
+        if (!nested_type)
+            return false;
+
         if (type_info.is_nullable)
             if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
                 nested_type = nullable->getNestedType();
@@ -429,7 +458,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
             (nested_type_info.isNativeInt()  && type_info.nested_type == Type::Int64)  ||
             (nested_type_info.isFloat64()    && type_info.nested_type == Type::Float64))
         {
-            Field array_same_types = convertFieldToType(array, *complex_type, nullptr);
+            Field array_same_types = convertFieldToType(collection, *complex_type, nullptr);
             columns[column_idx]->insert(array_same_types);
             return true;
         }
