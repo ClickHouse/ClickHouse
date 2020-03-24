@@ -1,4 +1,4 @@
-#ClickHouse Playground
+# ClickHouse Playground {#clickhouse-playground}
 
 ClickHouse Playground позволяет моментально выполнить запросы к ClickHouse из бразуера.
 В Playground доступны несколько тестовых массивов данных и примеры запросов, которые показывают некоторые отличительные черты ClickHouse.
@@ -19,14 +19,14 @@ ClickHouse HTTP интерфейс также доступен как часть
 Запросы к Playground могут быть выполнены с помощью curl/wget, а также через соединеие JDBC/ODBC драйвера
 Больше информации про приложения с поддержкой ClickHouse доступно в разделе [Интерфейсы](../interfaces/index.md).
 
-| Параметр | Значение |  
-|:----------|:-------------|
-| Адрес| https://play-api.clickhouse.tech:8443 |
-| Имя пользователя  | `playground`  |
-| Пароль  | `clickhouse`  |
+| Параметр         | Значение                              |
+|:-----------------|:--------------------------------------|
+| Адрес            | https://play-api.clickhouse.tech:8443 |
+| Имя пользователя | `playground`                          |
+| Пароль           | `clickhouse`                          |
 
 Требуется SSL соединение.
 
-```bash
+``` bash
 curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse!';&user=playground&password=clickhouse&database=datasets"
 ```

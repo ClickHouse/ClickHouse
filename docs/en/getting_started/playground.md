@@ -1,4 +1,4 @@
-#ClickHouse Playground
+# ClickHouse Playground {#clickhouse-playground}
 
 ClickHouse Playground allows users to run ClickHouse queries instantly.
 Several example datasets are available in Playground as well as sample queries that show ClickHouse features.
@@ -19,14 +19,14 @@ ClickHouse HTTP endpoint is is also available as a part of Playground.
 You can make queries to playground using curl/wget or set up a connection using JDBC/ODBC drivers.
 More information about software products that support ClickHouse is available [here](../interfaces/index.md).
 
-| Parameter | Value |  
-|:----------|:-------------|
-| Endpoint| https://play-api.clickhouse.tech:8443 |
-| User  | `playground`  |
-| Password  | `clickhouse`  |
+| Parameter | Value                                 |
+|:----------|:--------------------------------------|
+| Endpoint  | https://play-api.clickhouse.tech:8443 |
+| User      | `playground`                          |
+| Password  | `clickhouse`                          |
 
 Note that endpoint requires a secure connection.
 
-```bash
+``` bash
 curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse!';&user=playground&password=clickhouse&database=datasets"
 ```
