@@ -7,6 +7,8 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -600,4 +602,219 @@ TEST(WeakHash32, ColumnLowcardinality)
     col->updateWeakHash32(hash);
 
     checkColumn(hash.getData(), data, [&](size_t row) { return std::to_string(col->getUInt(row)); });
+}
+
+TEST(WeakHash32, ColumnNullable)
+{
+    auto col = ColumnUInt64::create();
+    auto & data = col->getData();
+    auto mask = ColumnUInt8::create();
+    auto & mask_data = mask->getData();
+    PaddedPODArray<Int32> eq;
+
+    for (int _i [[maybe_unused]] : {1, 2})
+    {
+        for (uint64_t i = 0; i < 65536; ++i)
+        {
+            data.push_back(i << 32u);
+            mask_data.push_back(i % 7 == 0 ? 1 : 0);
+            eq.push_back(i % 7 == 0 ? -1 : (i << 32u));
+        }
+    }
+
+    auto col_null = ColumnNullable::create(std::move(col), std::move(mask));
+
+    WeakHash32 hash(col_null->size());
+    col_null->updateWeakHash32(hash);
+
+    checkColumn(hash.getData(), eq, [&](size_t row) { return eq[row] == -1 ? "Null" : std::to_string(eq[row]); });
+}
+
+TEST(WeakHash32, ColumnTuple_UInt64_UInt64)
+{
+    auto col1 = ColumnUInt64::create();
+    auto col2 = ColumnUInt64::create();
+    auto & data1 = col1->getData();
+    auto & data2 = col1->getData();
+    PaddedPODArray<Int32> eq;
+
+    for (int _i [[maybe_unused]] : {0, 1, 2, 3})
+    {
+        auto l = _i % 2;
+
+        for (uint64_t i = 0; i < 65536; ++i)
+        {
+            data1.push_back(l);
+            data2.push_back(i << 32u);
+            eq.push_back(l * 65536 + i);
+        }
+    }
+
+    Columns columns;
+    columns.emplace_back(std::move(col1));
+    columns.emplace_back(std::move(col2));
+    auto col_tuple = ColumnTuple::create(std::move(columns));
+
+    WeakHash32 hash(col_tuple->size());
+    col_tuple->updateWeakHash32(hash);
+
+    auto print_func = [&](size_t row)
+    {
+        std::string l = std::to_string(col_tuple->getColumn(0).getUInt(row));
+        std::string r = std::to_string(col_tuple->getColumn(1).getUInt(row));
+        return "(" + l + ", " + r + ")";
+    };
+
+    checkColumn(hash.getData(), eq, print_func);
+}
+
+TEST(WeakHash32, ColumnTuple_UInt64_String)
+{
+    auto col1 = ColumnUInt64::create();
+    auto col2 = ColumnString::create();
+    auto & data1 = col1->getData();
+    PaddedPODArray<Int32> eq;
+
+    for (int _i [[maybe_unused]] : {0, 1, 2, 3})
+    {
+        auto l = _i % 2;
+
+        size_t max_size = 3000;
+        char letter = 'a';
+        for (int64_t i = 0; i < 65536; ++i)
+        {
+            data1.push_back(l);
+            eq.push_back(l * 65536 + i);
+
+            size_t s = (i % max_size) + 1;
+            std::string str(s, letter);
+            col2->insertData(str.data(), str.size());
+
+            if (s == max_size)
+                ++letter;
+        }
+    }
+
+    Columns columns;
+    columns.emplace_back(std::move(col1));
+    columns.emplace_back(std::move(col2));
+    auto col_tuple = ColumnTuple::create(std::move(columns));
+
+    WeakHash32 hash(col_tuple->size());
+    col_tuple->updateWeakHash32(hash);
+
+    auto print_func = [&](size_t row)
+    {
+        std::string l = std::to_string(col_tuple->getColumn(0).getUInt(row));
+        std::string r = col_tuple->getColumn(1).getDataAt(row).toString();
+        return "(" + l + ", " + r + ")";
+    };
+
+    size_t allowed_collisions = 8;
+    checkColumn(hash.getData(), eq, print_func, allowed_collisions);
+}
+
+TEST(WeakHash32, ColumnTuple_UInt64_FixedString)
+{
+    size_t max_size = 3000;
+    auto col1 = ColumnUInt64::create();
+    auto col2 = ColumnFixedString::create(max_size);
+    auto & data1 = col1->getData();
+    PaddedPODArray<Int32> eq;
+
+    for (int _i [[maybe_unused]] : {0, 1, 2, 3})
+    {
+        auto l = _i % 2;
+
+        char letter = 'a';
+        for (int64_t i = 0; i < 65536; ++i)
+        {
+            data1.push_back(l);
+            eq.push_back(l * 65536 + i);
+
+            size_t s = (i % max_size) + 1;
+            std::string str(s, letter);
+            col2->insertData(str.data(), str.size());
+
+            if (s == max_size)
+                ++letter;
+        }
+    }
+
+    Columns columns;
+    columns.emplace_back(std::move(col1));
+    columns.emplace_back(std::move(col2));
+    auto col_tuple = ColumnTuple::create(std::move(columns));
+
+    WeakHash32 hash(col_tuple->size());
+    col_tuple->updateWeakHash32(hash);
+
+    auto print_func = [&](size_t row)
+    {
+        std::string l = std::to_string(col_tuple->getColumn(0).getUInt(row));
+        std::string r = col_tuple->getColumn(1).getDataAt(row).toString();
+        return "(" + l + ", " + r + ")";
+    };
+
+    checkColumn(hash.getData(), eq, print_func);
+}
+
+TEST(WeakHash32, ColumnTuple_UInt64_Array)
+{
+    size_t max_size = 3000;
+    auto val = ColumnUInt32::create();
+    auto off = ColumnUInt64::create();
+    auto eq = ColumnUInt32::create();
+    auto & eq_data = eq->getData();
+    auto & val_data = val->getData();
+    auto & off_data = off->getData();
+
+    auto col1 = ColumnUInt64::create();
+    auto & data1 = col1->getData();
+
+    UInt64 cur_off = 0;
+    for (int _i [[maybe_unused]] : {0, 1, 2, 3})
+    {
+        auto l = _i % 2;
+
+        UInt32 cur = 0;
+        for (int64_t i = 0; i < 65536; ++i)
+        {
+            data1.push_back(l);
+            eq_data.push_back(l * 65536 + i);
+            size_t s = (i % max_size) + 1;
+
+            cur_off += s;
+            off_data.push_back(cur_off);
+
+            for (size_t j = 0; j < s; ++j)
+                val_data.push_back(cur);
+
+            if (s == max_size)
+                ++cur;
+        }
+    }
+
+    Columns columns;
+    columns.emplace_back(std::move(col1));
+    columns.emplace_back(ColumnArray::create(std::move(val), std::move(off)));
+    auto col_tuple = ColumnTuple::create(std::move(columns));
+
+    WeakHash32 hash(col_tuple->size());
+    col_tuple->updateWeakHash32(hash);
+
+    auto print_func = [&](size_t row)
+    {
+        std::string l = std::to_string(col_tuple->getColumn(0).getUInt(row));
+
+        auto * col_arr = typeid_cast<const ColumnArray *>(col_tuple->getColumnPtr(1).get());
+        auto & offsets = col_arr->getOffsets();
+        size_t s = offsets[row] - offsets[row - 1];
+        auto value = col_arr->getData().getUInt(offsets[row]);
+        auto r = std::string("[array of size ") + std::to_string(s) + " with values " + std::to_string(value) + "]";
+
+        return "(" + l + ", " + r + ")";
+    };
+
+    checkColumn(hash.getData(), eq_data, print_func);
 }
