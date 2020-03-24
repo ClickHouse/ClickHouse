@@ -216,27 +216,31 @@ bitCount(x)
 
 **Parameters** 
 
-- `x` — [Integer](../../data_types/int_uint.md) or [floating point](../../data_types/float.md) number.
+- `x` — [Integer](../../data_types/int_uint.md) or [floating-point](../../data_types/float.md) number. The function uses the value representation in memory. It allows supporting floating-point numbers.
 
 **Returned value**
 
 - Number of bits set to one in the input number.
 
-Type: [Integer](../../data_types/int_uint.md).
+When converting signed numbers to larger type, the function ignores the sign extention. So, uint8_t(-1) has 8 bits.
+
+Type: `UInt8`.
 
 **Example**
+
+Take for example the number 333. Its binary representation: 0000000101001101.
 
 Query:
 
 ```sql
-SELECT bitCount(100)
+SELECT bitCount(333)
 ```
 
 Result:
 
 ```text
-┌─bitCount(100)─┐
-│             3 │
+┌─bitCount(333)─┐
+│             5 │
 └───────────────┘
 ```
 
