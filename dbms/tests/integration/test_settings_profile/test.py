@@ -104,3 +104,25 @@ def test_alter_and_drop():
     assert instance.query("SELECT value FROM system.settings WHERE name = 'max_memory_usage'", user="robin") == "10000000000\n"
     instance.query("SET max_memory_usage = 80000000", user="robin")
     instance.query("SET max_memory_usage = 120000000", user="robin")
+
+
+def test_allow_introspection():
+    assert "Not enough privileges" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
+    
+    instance.query("GRANT ALL ON *.* TO robin")
+    assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
+
+    instance.query("ALTER USER robin SETTINGS allow_introspection_functions=1")
+    assert instance.query("SELECT demangle('a')", user="robin") == "signed char\n"
+
+    instance.query("ALTER USER robin SETTINGS NONE")
+    assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
+
+    instance.query("CREATE SETTINGS PROFILE xyz SETTINGS allow_introspection_functions=1 TO robin")
+    assert instance.query("SELECT demangle('a')", user="robin") == "signed char\n"
+
+    instance.query("DROP SETTINGS PROFILE xyz")
+    assert "Introspection functions are disabled" in instance.query_and_get_error("SELECT demangle('a')", user="robin")
+
+    instance.query("REVOKE ALL ON *.* FROM robin")
+    assert "Not enough privileges" in instance.query_and_get_error("SELECT demangle('a')", user="robin")

@@ -372,17 +372,17 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
 
 boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool grant_option, UInt64 readonly_, bool allow_ddl_, bool allow_introspection_) const
 {
-    size_t cache_index = static_cast<size_t>(readonly_ != params.readonly)
+    size_t index = static_cast<size_t>(readonly_ != params.readonly)
                        + static_cast<size_t>(allow_ddl_ != params.allow_ddl) * 2 +
                        + static_cast<size_t>(allow_introspection_ != params.allow_introspection) * 3
                        + static_cast<size_t>(grant_option) * 4;
-    assert(cache_index < std::size(result_access));
-    auto res = result_access[cache_index].load();
+    assert(index < std::size(result_access));
+    auto res = result_access[index].load();
     if (res)
         return res;
 
     std::lock_guard lock{mutex};
-    res = result_access[cache_index].load();
+    res = result_access[index].load();
     if (res)
         return res;
 
@@ -412,10 +412,7 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
         | AccessType::DROP_ROLE | AccessType::DROP_POLICY | AccessType::DROP_QUOTA | AccessType::ROLE_ADMIN;
 
     if (readonly_)
-        merged_access->revoke(write_table_access | all_dcl | AccessType::SYSTEM | AccessType::KILL_QUERY);
-
-    if (readonly_ || !allow_ddl_)
-        merged_access->revoke(table_and_dictionary_ddl);
+        merged_access->revoke(write_table_access | all_dcl | table_and_dictionary_ddl | AccessType::SYSTEM | AccessType::KILL_QUERY);
 
     if (readonly_ == 1)
     {
@@ -424,7 +421,10 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
         merged_access->revoke(AccessType::CREATE_TEMPORARY_TABLE | AccessType::TABLE_FUNCTIONS);
     }
 
-    if (!allow_introspection_)
+    if (!allow_ddl_ && !grant_option)
+        merged_access->revoke(table_and_dictionary_ddl);
+
+    if (!allow_introspection_ && !grant_option)
         merged_access->revoke(AccessType::INTROSPECTION);
 
     /// Anyone has access to the "system" database.
@@ -452,10 +452,11 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
                 "Current_roles: " << boost::algorithm::join(roles_info->getCurrentRolesNames(), ", ")
                                   << ", enabled_roles: " << boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
         }
+        LOG_TRACE(trace_log, "Settings: readonly=" << readonly_ << ", allow_ddl=" << allow_ddl_ << ", allow_introspection_functions=" << allow_introspection_);
     }
 
     res = std::move(merged_access);
-    result_access[cache_index].store(res);
+    result_access[index].store(res);
     return res;
 }
 
