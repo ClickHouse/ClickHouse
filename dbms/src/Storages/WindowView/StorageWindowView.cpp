@@ -732,7 +732,7 @@ void StorageWindowView::threadFuncFireEvent()
 BlockInputStreams StorageWindowView::watch(
     const Names & /*column_names*/,
     const SelectQueryInfo & query_info,
-    const Context & /*context*/,
+    const Context & context,
     QueryProcessingStage::Enum & processed_stage,
     size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
@@ -751,7 +751,7 @@ BlockInputStreams StorageWindowView::watch(
         std::static_pointer_cast<StorageWindowView>(shared_from_this()),
         has_limit,
         limit,
-        global_context.getSettingsRef().window_view_heartbeat_interval.totalSeconds());
+        context.getSettingsRef().window_view_heartbeat_interval.totalSeconds());
 
     std::lock_guard lock(fire_signal_mutex);
     watch_streams.push_back(reader);
