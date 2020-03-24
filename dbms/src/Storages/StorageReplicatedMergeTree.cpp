@@ -5297,4 +5297,9 @@ StorageReplicatedMergeTree::getMetadataFromSharedZookeeper(const String & metada
 
 }
 
+MutationCommands StorageReplicatedMergeTree::getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const
+{
+    return queue.getFirstAlterMutationCommandsForPart(part);
+}
+
 }

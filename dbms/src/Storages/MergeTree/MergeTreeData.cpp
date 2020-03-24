@@ -3589,4 +3589,8 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     return true;
 }
 
+MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr /*part*/) const
+{
+    return AlterConversions{};
+}
 }

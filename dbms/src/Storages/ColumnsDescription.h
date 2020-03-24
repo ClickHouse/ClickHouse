@@ -57,6 +57,9 @@ public:
     /// `column_name` can be a Nested column name;
     void remove(const String & column_name);
 
+    /// TODO(alesap)
+    void rename(const String & column_from, const String & column_to);
+
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
     bool operator==(const ColumnsDescription & other) const { return columns == other.columns; }

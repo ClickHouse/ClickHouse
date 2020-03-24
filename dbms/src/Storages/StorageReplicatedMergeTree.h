@@ -527,6 +527,9 @@ private:
 
     StorageInMemoryMetadata getMetadataFromSharedZookeeper(const String & metadata_str, const String & columns_str) const;
 
+
+    MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
+
 protected:
     /** If not 'attach', either creates a new table in ZK, or adds a replica to an existing table.
       */
@@ -542,6 +545,7 @@ protected:
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
         bool has_force_restore_data_flag);
+
 };
 
 
