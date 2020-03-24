@@ -206,7 +206,7 @@ Result:
 ```
 ## bitCount {#bitcount}
 
-Calculates the number of bits set to one in a number.
+Calculates the number of bits set to one in the binary representation of a number.
 
 **Syntax** 
 
