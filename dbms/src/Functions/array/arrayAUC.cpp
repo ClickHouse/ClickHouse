@@ -50,8 +50,25 @@ namespace ErrorCodes
   * https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve
   *
   * To calculate AUC, we will draw points of (FPR, TPR) for different thresholds = score_i.
-  * FPR = countIf(score > score_i, label = negative) = count negative labels above certain score
-  * TPR = countIf(score > score_i, label = positive) = count positive labels above certain score
+  * FPR_raw = countIf(score > score_i, label = negative) = count negative labels above certain score
+  * TPR_raw = countIf(score > score_i, label = positive) = count positive labels above certain score
+  *
+  * Let's look at the example:
+  * arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
+  *
+  * 1. We have pairs: (-, 0.1), (-, 0.4), (+, 0.35), (+, 0.8)
+  *
+  * 2. Let's sort by score: (-, 0.1), (+, 0.35), (-, 0.4), (+, 0.8)
+  *
+  * 3. Let's draw the points:
+  *
+  * threshold = 0,    TPR = 1,   FPR = 1,   TPR_raw = 2, FPR_raw = 2
+  * threshold = 0.1,  TPR = 1,   FPR = 0.5, TPR_raw = 2, FPR_raw = 1
+  * threshold = 0.35, TPR = 0.5, FPR = 0.5, TPR_raw = 1, FPR_raw = 1
+  * threshold = 0.4,  TPR = 0.5, FPR = 0,   TPR_raw = 1, FPR_raw = 0
+  * threshold = 0.8,  TPR = 0,   FPR = 0,   TPR_raw = 0, FPR_raw = 0
+  *
+  * The "curve" will be present by a line that moves one step either towards right or top on each threshold change.
   */
 
 
@@ -68,9 +85,7 @@ public:
 
     static DataTypePtr getReturnType(const DataTypePtr & /* score_type */, const DataTypePtr & label_type)
     {
-        WhichDataType which(label_type);
-
-        if (!isNumber(which))
+        if (!(isNumber(label_type) || isEnum(label_type)))
             throw Exception(std::string(NameArrayAUC::name) + " label must have numeric type.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
         return std::make_shared<DataTypeNumber<ResultType>>();
@@ -82,9 +97,6 @@ public:
         const U * labels,
         size_t size)
     {
-        // Calculate positive labels and restore scores and labels in vector
-        size_t total_positive_labels = 0;
-
         struct ScoreLabel
         {
             T score;
@@ -98,45 +110,25 @@ public:
             bool label = labels[i] > 0;
             sorted_labels[i].score = scores[i];
             sorted_labels[i].label = label;
-            total_positive_labels += label;
         }
 
-        // Order pairs of score and label by score ascending
-        std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score < rhs.score; });
+        std::sort(sorted_labels.begin(), sorted_labels.end(), [](const auto & lhs, const auto & rhs) { return lhs.score > rhs.score; });
 
-        // Calculate the AUC
-        size_t curr_cnt = 0;
-        size_t cumulative_count_of_positive = 0;
-        Int64 curr_sum = 0;
-        T last_score = -1;
-        ResultType rank_sum = 0;
+        /// We will first calculate non-normalized area.
 
+        size_t area = 0;
+        size_t count_positive = 0;
         for (size_t i = 0; i < size; ++i)
         {
-            auto score = sorted_labels[i].score;
-            bool label = sorted_labels[i].label;
-
-            if (score == last_score)
-            {
-                curr_sum += i + 1;
-                ++curr_cnt;
-                if (label)
-                    ++cumulative_count_of_positive;
-            }
+            if (sorted_labels[i].label)
+                ++count_positive; /// The curve moves one step up. No area increase.
             else
-            {
-                if (i > 0)
-                    rank_sum += ResultType(curr_sum * cumulative_count_of_positive) / curr_cnt;
-
-                curr_sum = i + 1;
-                curr_cnt = 1;
-                cumulative_count_of_positive = label;
-            }
-            last_score = score;
+                area += count_positive; /// The curve moves one step right. Area is increased by 1 * height = count_positive.
         }
 
-        rank_sum += ResultType(curr_sum * cumulative_count_of_positive) / curr_cnt;
-        return (rank_sum - total_positive_labels * (total_positive_labels + 1) / ResultType(2)) / (total_positive_labels * (size - total_positive_labels));
+        /// Then divide the area to the area of rectangle.
+
+        return ResultType(area) / count_positive / (size - count_positive);
     }
 };
 
