@@ -35,7 +35,7 @@ namespace
     const pid_t expected_pid = getpid();
     const int sig = SIGRTMIN;
 
-    int sequence_num = 0;    /// For messages sent via pipe.
+    std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
 
     std::optional<StackTrace> stack_trace;
 
@@ -55,7 +55,7 @@ namespace
             return;
 
         /// Signal received too late.
-        if (info->si_value.sival_int != sequence_num)
+        if (info->si_value.sival_int != sequence_num.load(std::memory_order_relaxed))
             return;
 
         /// All these methods are signal-safe.
@@ -113,7 +113,7 @@ namespace
 
             if (read_res == sizeof(notification_num))
             {
-                if (notification_num == sequence_num)
+                if (notification_num == sequence_num.load(std::memory_order_relaxed))
                     return true;
                 else
                     continue;   /// Drain delayed notifications.
@@ -178,7 +178,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
         pid_t tid = parse<pid_t>(it->path().filename());
 
         sigval sig_value{};
-        sig_value.sival_int = sequence_num;
+        sig_value.sival_int = sequence_num.load(std::memory_order_relaxed);
         if (0 != ::sigqueue(tid, sig, sig_value))
         {
             /// The thread may has been already finished.
@@ -213,7 +213,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             res_columns[2]->insertDefault();
         }
 
-        sequence_num = static_cast<int>(static_cast<unsigned>(sequence_num) + 1);
+        ++sequence_num; /// FYI: For signed Integral types, arithmetic is defined to use two’s complement representation. There are no undefined results.
     }
 }
 
