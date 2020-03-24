@@ -35,7 +35,8 @@ RUN apt-get update -y \
             cmake \
             gdb \
             rename \
-            wget
+            wget \
+            build-essential
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-9 /usr/bin/ld.lld
