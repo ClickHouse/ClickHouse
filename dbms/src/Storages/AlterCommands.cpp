@@ -231,8 +231,18 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
     {
         AlterCommand command;
+        command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_QUERY;
         command.select = command_ast->select;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::RENAME_COLUMN)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::RENAME_COLUMN;
+        command.column_name = command_ast->column->as<ASTIdentifier &>().name;
+        command.rename_to = command_ast->rename_to->as<ASTIdentifier &>().name;
         return command;
     }
     else
@@ -437,6 +447,10 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
                 settings_from_storage.push_back(change);
         }
     }
+    else if (type == RENAME_COLUMN)
+    {
+        metadata.columns.rename(column_name, rename_to);
+    }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
@@ -519,7 +533,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (ignore)
         return false;
 
-    if (type == DROP_COLUMN || type == DROP_INDEX)
+    if (type == DROP_COLUMN || type == DROP_INDEX || type == RENAME_COLUMN)
         return true;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
@@ -619,6 +633,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "MODIFY SETTING";
     case AlterCommand::Type::MODIFY_QUERY:
         return "MODIFY QUERY";
+    case AlterCommand::Type::RENAME_COLUMN:
+        return "RENAME COLUMN";
     }
     __builtin_unreachable();
 }

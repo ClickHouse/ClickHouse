@@ -33,6 +33,7 @@ namespace DB
 class MergeListEntry;
 class AlterCommands;
 class MergeTreePartsMover;
+class MutationCommands;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -123,6 +124,11 @@ public:
     };
 
     STRONG_TYPEDEF(String, PartitionID)
+
+    struct AlterConversions
+    {
+        std::unordered_map<String, String> rename_map;
+    };
 
     struct LessDataPart
     {
@@ -647,6 +653,8 @@ public:
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() { return getStoragePolicy()->makeEmptyReservationOnLargestDisk(); }
 
+    AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
+
     MergeTreeDataFormatVersion format_version;
 
     Context & global_context;
@@ -908,6 +916,7 @@ protected:
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
+    virtual MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 

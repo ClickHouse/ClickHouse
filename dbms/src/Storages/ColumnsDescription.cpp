@@ -1,4 +1,6 @@
 #include <Storages/ColumnsDescription.h>
+
+#include <boost/algorithm/string/replace.hpp>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -193,6 +195,27 @@ void ColumnsDescription::remove(const String & column_name)
 
     for (auto list_it = range.first; list_it != range.second;)
         list_it = columns.get<0>().erase(list_it);
+}
+
+void ColumnsDescription::rename(const String & column_from, const String & column_to)
+{
+    auto range = getNameRange(columns, column_from);
+
+    if (range.first == range.second)
+        throw Exception("There is no column " + column_from + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
+
+    std::vector<ColumnDescription> iterators;
+    for (auto list_it = range.first; list_it != range.second;)
+    {
+        iterators.push_back(*list_it);
+        list_it = columns.get<0>().erase(list_it);
+    }
+
+    for (auto & col_desc : iterators)
+    {
+        boost::replace_all(col_desc.name, column_from, column_to);
+        add(col_desc);
+    }
 }
 
 
