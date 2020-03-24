@@ -1,14 +1,14 @@
-# Example datasets
+# Тестовые массивы данных
 
-This section describes how to obtain example datasets and write them to ClickHouse.
-For some datasets example queries are also available.
+Этот раздел описывает как получить тестовые массивы данных и загрузить их в ClickHouse.
+Для некоторых тестовых массивов данных также доступны тестовые запросы.
 
-* [Anonymized Yandex.Metrica Dataset](metrica.md)
+* [Анонимизированные данные Яндекс.Метрики](metrica.md)
 * [Star Schema Benchmark](star_schema.md)
 * [WikiStat](wikistat.md)
-* [Terabyte of Click Logs from Criteo](criteo.md)
+* [Терабайт логов кликов от Criteo](criteo.md)
 * [AMPLab Big Data Benchmark](amplab_benchmark.md)
-* [New York Taxi Data](nyc_taxi.md)
+* [Данные о такси в Нью-Йорке](nyc_taxi.md)
 * [OnTime](ontime.md)
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->
