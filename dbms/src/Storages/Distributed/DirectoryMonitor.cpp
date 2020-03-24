@@ -370,8 +370,8 @@ struct StorageDistributedDirectoryMonitor::BatchHeader
 
     bool operator==(const BatchHeader & other) const
     {
-        return settings == other.settings && query == other.query && client_info == other.client_info &&
-               blocksHaveEqualStructure(sample_block, other.sample_block);
+        return settings == other.settings && query == other.query && client_info.query_kind == other.client_info.query_kind
+            && blocksHaveEqualStructure(sample_block, other.sample_block);
     }
 
     struct Hash
