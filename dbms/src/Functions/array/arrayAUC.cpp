@@ -128,6 +128,9 @@ public:
 
         /// Then divide the area to the area of rectangle.
 
+        if (count_positive == 0 || count_positive == size)
+            return std::numeric_limits<ResultType>::quiet_NaN();
+
         return ResultType(area) / count_positive / (size - count_positive);
     }
 };
