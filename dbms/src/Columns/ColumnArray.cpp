@@ -232,6 +232,8 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
 
     for (size_t i = 0; i < s; ++i)
     {
+        /// This row improves hash a little bit according to integration tests.
+        /// It is the same as to use previous hash value as the first element of array.
         hash_data[i] = intHashCRC32(hash_data[i]);
 
         for (size_t row = prev_offset; row < offsets_data[i]; ++row)
