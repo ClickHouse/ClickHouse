@@ -232,6 +232,8 @@ void ColumnArray::updateWeakHash32(WeakHash32 & hash) const
 
     for (size_t i = 0; i < s; ++i)
     {
+        hash_data[i] = intHashCRC32(hash_data[i]);
+
         for (size_t row = prev_offset; row < offsets_data[i]; ++row)
             /// It is probably not the best way to combine hashes.
             /// But much better then xor which lead to similar hash for arrays like [1], [1, 1, 1], [1, 1, 1, 1, 1], ...
