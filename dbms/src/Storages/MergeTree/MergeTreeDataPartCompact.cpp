@@ -73,9 +73,9 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
         default_codec, writer_settings, computed_index_granularity);
 }
 
-ColumnSize MergeTreeDataPartCompact::getTotalColumnsSize() const
+
+void MergeTreeDataPartCompact::calculateEachColumnSizesOnDisk(ColumnSizeByName & /*each_columns_size*/, ColumnSize & total_size) const
 {
-    ColumnSize total_size;
     auto bin_checksum = checksums.files.find(DATA_FILE_NAME_WITH_EXTENSION);
     if (bin_checksum != checksums.files.end())
     {
@@ -86,8 +86,6 @@ ColumnSize MergeTreeDataPartCompact::getTotalColumnsSize() const
     auto mrk_checksum = checksums.files.find(DATA_FILE_NAME + index_granularity_info.marks_file_extension);
     if (mrk_checksum != checksums.files.end())
         total_size.marks += mrk_checksum->second.file_size;
-
-    return total_size;
 }
 
 void MergeTreeDataPartCompact::loadIndexGranularity()

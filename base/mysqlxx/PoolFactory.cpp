@@ -17,10 +17,10 @@ struct PoolFactory::Impl
     std::mutex mutex;
 };
 
-PoolWithFailover PoolFactory::Get(const std::string & config_name, unsigned default_connections,
+PoolWithFailover PoolFactory::get(const std::string & config_name, unsigned default_connections,
     unsigned max_connections, size_t max_tries)
 {
-    return Get(Poco::Util::Application::instance().config(), config_name, default_connections, max_connections, max_tries);
+    return get(Poco::Util::Application::instance().config(), config_name, default_connections, max_connections, max_tries);
 }
 
 /// Duplicate of code from StringUtils.h. Copied here for less dependencies.
@@ -72,7 +72,7 @@ static std::string getPoolEntryName(const Poco::Util::AbstractConfiguration & co
     return entry_name;
 }
 
-PoolWithFailover PoolFactory::Get(const Poco::Util::AbstractConfiguration & config,
+PoolWithFailover PoolFactory::get(const Poco::Util::AbstractConfiguration & config,
         const std::string & config_name, unsigned default_connections, unsigned max_connections, size_t max_tries)
 {
 

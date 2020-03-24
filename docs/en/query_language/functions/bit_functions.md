@@ -204,5 +204,44 @@ Result:
 │                    0 │
 └──────────────────────┘
 ```
+## bitCount {#bitcount}
+
+Calculates the number of bits set to one in the binary representation of a number.
+
+**Syntax** 
+
+```sql
+bitCount(x)
+```
+
+**Parameters** 
+
+- `x` — [Integer](../../data_types/int_uint.md) or [floating-point](../../data_types/float.md) number. The function uses the value representation in memory. It allows supporting floating-point numbers.
+
+**Returned value**
+
+- Number of bits set to one in the input number.
+
+The function doesn't convert input value to a larger type ([sign extension](https://en.wikipedia.org/wiki/Sign_extension)). So, for example, `bitCount(toUInt8(-1)) = 8`.
+
+Type: `UInt8`.
+
+**Example**
+
+Take for example the number 333. Its binary representation: 0000000101001101.
+
+Query:
+
+```sql
+SELECT bitCount(333)
+```
+
+Result:
+
+```text
+┌─bitCount(333)─┐
+│             5 │
+└───────────────┘
+```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/bit_functions/) <!--hide-->

@@ -159,14 +159,12 @@ BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Con
 void StorageMergeTree::checkTableCanBeDropped() const
 {
     auto table_id = getStorageID();
-    const_cast<StorageMergeTree &>(*this).recalculateColumnSizes();
     global_context.checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
 
 void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
     auto table_id = getStorageID();
-    const_cast<StorageMergeTree &>(*this).recalculateColumnSizes();
 
     const String partition_id = getPartitionIDFromQuery(partition, global_context);
     auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
@@ -175,7 +173,7 @@ void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
 
     for (const auto & part : parts_to_remove)
     {
-        partition_size += part->bytes_on_disk;
+        partition_size += part->getBytesOnDisk();
     }
     global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
 }
@@ -675,7 +673,7 @@ bool StorageMergeTree::tryMutatePart()
             if (mutations_begin_it == mutations_end_it)
                 continue;
 
-            if (merger_mutator.getMaxSourcePartSizeForMutation() < part->bytes_on_disk)
+            if (merger_mutator.getMaxSourcePartSizeForMutation() < part->getBytesOnDisk())
                 continue;
 
             size_t current_ast_elements = 0;

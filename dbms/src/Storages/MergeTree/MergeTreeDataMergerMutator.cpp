@@ -231,7 +231,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         }
 
         IMergeSelector::Part part_info;
-        part_info.size = part->bytes_on_disk;
+        part_info.size = part->getBytesOnDisk();
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
@@ -333,7 +333,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
             return false;
         }
 
-        sum_bytes += (*it)->bytes_on_disk;
+        sum_bytes += (*it)->getBytesOnDisk();
 
         prev_it = it;
         ++it;
@@ -671,7 +671,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         size_t total_size = 0;
         for (const auto & part : parts)
         {
-            total_size += part->bytes_on_disk;
+            total_size += part->getBytesOnDisk();
             if (total_size >= data_settings->min_merge_bytes_to_use_direct_io)
             {
                 LOG_DEBUG(log, "Will merge parts reading files in O_DIRECT");
@@ -958,8 +958,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     auto storage_from_source_part = StorageFromMergeTreeDataPart::create(source_part);
 
     auto context_for_reading = context;
-    context_for_reading.getSettingsRef().max_streams_to_max_threads_ratio = 1;
-    context_for_reading.getSettingsRef().max_threads = 1;
+    context_for_reading.setSetting("max_streams_to_max_threads_ratio", 1);
+    context_for_reading.setSetting("max_threads", 1);
 
     MutationCommands commands_for_part;
     for (const auto & command : commands)
@@ -1021,8 +1021,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
     auto compression_codec = context.chooseCompressionCodec(
-        source_part->bytes_on_disk,
-        static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
+        source_part->getBytesOnDisk(),
+        static_cast<double>(source_part->getBytesOnDisk()) / data.getTotalActiveSizeInBytes());
 
 
     disk->createDirectories(new_part_tmp_path);
@@ -1053,7 +1053,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     else /// TODO: check that we modify only non-key columns in this case.
     {
         /// We will modify only some of the columns. Other columns and key values can be copied as-is.
-        auto indices_to_recalc = getIndicesToRecalc(in, storage_from_source_part, updated_header.getNamesAndTypesList(), context);
+        auto indices_to_recalc = getIndicesToRecalculate(in, storage_from_source_part, updated_header.getNamesAndTypesList(), context);
 
         NameSet files_to_skip = collectFilesToSkip(updated_header, indices_to_recalc, mrk_extension);
         NameSet files_to_remove = collectFilesToRemove(source_part, for_file_renames, mrk_extension);
@@ -1193,7 +1193,7 @@ size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::
 {
     size_t res = 0;
     for (const MergeTreeData::DataPartPtr & part : source_parts)
-        res += part->bytes_on_disk;
+        res += part->getBytesOnDisk();
 
     return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
@@ -1341,7 +1341,7 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     MergeTreeData::DataPartPtr source_part,
     const Block & updated_header,
     NamesAndTypesList all_columns,
-    const MutationCommands & commands_for_removes) const
+    const MutationCommands & commands_for_removes)
 {
     NameSet removed_columns;
     for (const auto & command : commands_for_removes)
@@ -1371,7 +1371,7 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
 }
 
 
-std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalc(
+std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     BlockInputStreamPtr & input_stream,
     StoragePtr storage_from_source_part,
     const NamesAndTypesList & updated_columns,
@@ -1531,7 +1531,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
 void MergeTreeDataMergerMutator::finalizeMutatedPart(
     const MergeTreeDataPartPtr & source_part,
     MergeTreeData::MutableDataPartPtr new_data_part,
-    bool need_remove_expired_values) const
+    bool need_remove_expired_values)
 {
     auto disk = new_data_part->disk;
     if (need_remove_expired_values)
@@ -1562,9 +1562,9 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     new_data_part->index = source_part->index;
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
-    new_data_part->bytes_on_disk
-        = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath());
-
+    new_data_part->setBytesOnDisk(
+        MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath()));
+    new_data_part->calculateColumnsSizesOnDisk();
 }
 
 

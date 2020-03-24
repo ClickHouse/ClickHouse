@@ -971,4 +971,33 @@ Result:
 └────────────────────────────────────────────┘
 ```
 
+## arrayAUC {#arrayauc}
+Calculate AUC (Area Under the Curve, which is a concept in machine learning, see more details: https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
+
+**Syntax**
+```sql
+arrayAUC(arr_scores, arr_labels)
+```
+
+**Parameters**
+- `arr_scores` —  scores prediction model gives.
+- `arr_labels` —  labels of samples, usually 1 for positive sample and 0 for negtive sample.
+
+**Returned value**
+Returns AUC value with type Float64.
+
+**Example**
+Query:
+```sql
+select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])
+```
+
+Result:
+
+```text
+┌─arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+│                                          0.75 │
+└────────────────────────────────────────-----──┘
+```
+
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/array_functions/) <!--hide-->

@@ -96,23 +96,6 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     return size;
 }
 
-ColumnSize MergeTreeDataPartWide::getTotalColumnsSize() const
-{
-    ColumnSize totals;
-    std::unordered_set<String> processed_substreams;
-    for (const NameAndTypePair & column : columns)
-    {
-        ColumnSize size = getColumnSizeImpl(column.name, *column.type, &processed_substreams);
-        totals.add(size);
-    }
-    return totals;
-}
-
-ColumnSize MergeTreeDataPartWide::getColumnSize(const String & column_name, const IDataType & type) const
-{
-    return getColumnSizeImpl(column_name, type, nullptr);
-}
-
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
     String full_path = getFullRelativePath();
@@ -155,20 +138,6 @@ void MergeTreeDataPartWide::loadIndexGranularity()
 MergeTreeDataPartWide::~MergeTreeDataPartWide()
 {
     removeIfNeeded();
-}
-
-void MergeTreeDataPartWide::accumulateColumnSizes(ColumnToSize & column_to_size) const
-{
-    for (const NameAndTypePair & name_type : storage.getColumns().getAllPhysical())
-    {
-        IDataType::SubstreamPath path;
-        name_type.type->enumerateStreams([&](const IDataType::SubstreamPath & substream_path)
-        {
-            auto bin_file_path = getFullRelativePath() + IDataType::getFileNameForStream(name_type.name, substream_path) + ".bin";
-            if (disk->exists(bin_file_path))
-                column_to_size[name_type.name] += disk->getFileSize(bin_file_path);
-        }, path);
-    }
 }
 
 void MergeTreeDataPartWide::checkConsistency(bool require_part_metadata) const
@@ -256,6 +225,17 @@ String MergeTreeDataPartWide::getFileNameForColumn(const NameAndTypePair & colum
             filename = IDataType::getFileNameForStream(column.name, substream_path);
     });
     return filename;
+}
+
+void MergeTreeDataPartWide::calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
+{
+    std::unordered_set<String> processed_substreams;
+    for (const NameAndTypePair & column : columns)
+    {
+        ColumnSize size = getColumnSizeImpl(column.name, *column.type, &processed_substreams);
+        each_columns_size[column.name] = size;
+        total_size.add(size);
+    }
 }
 
 }

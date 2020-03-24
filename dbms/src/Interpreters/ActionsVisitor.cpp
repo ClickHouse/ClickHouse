@@ -145,19 +145,19 @@ SetPtr makeExplicitSet(
 
     auto [right_arg_value, right_arg_type] = evaluateConstantExpression(right_arg, context);
 
-    std::function<size_t(const DataTypePtr &)> getTypeDepth;
-    getTypeDepth = [&getTypeDepth](const DataTypePtr & type) -> size_t
+    std::function<size_t(const DataTypePtr &)> get_type_depth;
+    get_type_depth = [&get_type_depth](const DataTypePtr & type) -> size_t
     {
         if (auto array_type = typeid_cast<const DataTypeArray *>(type.get()))
-            return 1 + getTypeDepth(array_type->getNestedType());
+            return 1 + get_type_depth(array_type->getNestedType());
         else if (auto tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-            return 1 + (tuple_type->getElements().empty() ? 0 : getTypeDepth(tuple_type->getElements().at(0)));
+            return 1 + (tuple_type->getElements().empty() ? 0 : get_type_depth(tuple_type->getElements().at(0)));
 
         return 0;
     };
 
-    const size_t left_type_depth = getTypeDepth(left_arg_type);
-    const size_t right_type_depth = getTypeDepth(right_arg_type);
+    const size_t left_type_depth = get_type_depth(left_arg_type);
+    const size_t right_type_depth = get_type_depth(right_arg_type);
 
     auto throw_unsupported_type = [](const auto & type)
     {
