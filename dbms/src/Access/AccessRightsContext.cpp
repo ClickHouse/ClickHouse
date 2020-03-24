@@ -408,20 +408,19 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
     if (cached)
         return cached;
 
-    auto result_ptr = boost::make_shared<AccessRights>();
-    auto & result = *result_ptr;
+    auto merged_access = boost::make_shared<AccessRights>();
 
     if (grant_option)
     {
-        result = user->access_with_grant_option;
+        *merged_access = user->access_with_grant_option;
         if (roles_info)
-            result.merge(roles_info->access_with_grant_option);
+            merged_access->merge(roles_info->access_with_grant_option);
     }
     else
     {
-        result = user->access;
+        *merged_access = user->access;
         if (roles_info)
-            result.merge(roles_info->access);
+            merged_access->merge(roles_info->access);
     }
 
     static const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
@@ -434,34 +433,49 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
         | AccessType::CREATE_QUOTA | AccessType::ALTER_USER | AccessType::ALTER_POLICY | AccessType::ALTER_QUOTA | AccessType::DROP_USER
         | AccessType::DROP_ROLE | AccessType::DROP_POLICY | AccessType::DROP_QUOTA | AccessType::ROLE_ADMIN;
 
-    /// Anyone has access to the "system" database.
-    if (!result.isGranted(AccessType::SELECT, "system"))
-        result.grant(AccessType::SELECT, "system");
-
     if (readonly_)
-        result.fullRevoke(write_table_access | all_dcl | AccessType::SYSTEM | AccessType::KILL);
-
-    if (readonly_ || !allow_ddl_)
-        result.fullRevoke(table_and_dictionary_ddl);
-
-    if (readonly_ && grant_option)
-        result.fullRevoke(AccessType::ALL);
+        merged_access->fullRevoke(write_table_access | all_dcl | table_and_dictionary_ddl | AccessType::SYSTEM | AccessType::KILL);
 
     if (readonly_ == 1)
     {
         /// Table functions are forbidden in readonly mode.
         /// For example, for readonly = 2 - allowed.
-        result.fullRevoke(AccessType::CREATE_TEMPORARY_TABLE | AccessType::TABLE_FUNCTIONS);
+        merged_access->fullRevoke(AccessType::CREATE_TEMPORARY_TABLE | AccessType::TABLE_FUNCTIONS);
     }
 
-    if (!allow_introspection_)
-        result.fullRevoke(AccessType::INTROSPECTION);
+    if (!allow_ddl_ && !grant_option)
+        merged_access->fullRevoke(table_and_dictionary_ddl);
 
-    result_access_cache[cache_index].store(result_ptr);
+    if (!allow_introspection_ && !grant_option)
+        merged_access->fullRevoke(AccessType::INTROSPECTION);
+
+    /// Anyone has access to the "system" database.
+    merged_access->grant(AccessType::SELECT, "system");
+
+    if (readonly_ && grant_option)
+    {
+        /// No grant option in readonly mode.
+        merged_access->fullRevoke(AccessType::ALL);
+    }
 
     if (trace_log && (params.readonly == readonly_) && (params.allow_ddl == allow_ddl_) && (params.allow_introspection == allow_introspection_))
     {
-        LOG_TRACE(trace_log, "List of all grants: " << result_ptr->toString() << (grant_option ? " WITH GRANT OPTION" : ""));
+        LOG_TRACE(trace_log, "List of all grants: " << merged_access->toString() << (grant_option ? " WITH GRANT OPTION" : ""));
+        if (roles_info && !roles_info->getCurrentRolesNames().empty())
+        {
+            LOG_TRACE(
+                trace_log,
+                "Current_roles: " << boost::algorithm::join(roles_info->getCurrentRolesNames(), ", ")
+                                  << ", enabled_roles: " << boost::algorithm::join(roles_info->getEnabledRolesNames(), ", "));
+        }
+        LOG_TRACE(trace_log, "Settings: readonly=" << readonly_ << ", allow_ddl=" << allow_ddl_ << ", allow_introspection_functions=" << allow_introspection_);
+    }
+
+    result_access_cache[cache_index].store(merged_access);
+
+    if (trace_log && (params.readonly == readonly_) && (params.allow_ddl == allow_ddl_) && (params.allow_introspection == allow_introspection_))
+    {
+        LOG_TRACE(trace_log, "List of all grants: " << merged_access->toString() << (grant_option ? " WITH GRANT OPTION" : ""));
         if (roles_info && !roles_info->getCurrentRolesNames().empty())
         {
             LOG_TRACE(
@@ -471,7 +485,7 @@ boost::shared_ptr<const AccessRights> AccessRightsContext::calculateResultAccess
         }
     }
 
-    return result_ptr;
+    return merged_access;
 }
 
 
