@@ -24,10 +24,6 @@ class ArrayAUCImpl
 {
 public:
     using ResultType = Float64;
-    using LabelValueSet = std::set<Int16>;
-    using LabelValueSets = std::vector<LabelValueSet>;
-
-    inline static const LabelValueSets expect_label_value_sets = {{0, 1}, {-1, 1}};
 
     struct ScoreLabel
     {
