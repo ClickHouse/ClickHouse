@@ -976,7 +976,7 @@ Enables or disables skipping of unused shards for SELECT queries that have shard
 
 Default value: 0
 
-## force\_optimize\_skip\_unused\_shards {#settings-force-optimize-skip-unused-shards}
+## force\_optimize\_skip\_unused\_shards {#settings-force_optimize_skip_unused_shards}
 
 Enables or disables query execution if [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled exception will be thrown.
 
@@ -987,6 +987,17 @@ Possible values:
 -   2 - Disable query execution regardless sharding key is defined for the table
 
 Default value: 0
+
+## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
+
+Reset [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) for nested `Distributed` table
+
+Possible values:
+
+-   1 — Enabled.
+-   0 — Disabled.
+
+Default value: 0.
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
