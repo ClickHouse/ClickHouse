@@ -239,6 +239,7 @@ private:
     TokenType closing_bracket;
 };
 
+/// A tuple of literals with same type.
 class ParserTupleOfLiterals : public IParserBase
 {
 public:
