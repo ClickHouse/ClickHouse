@@ -103,7 +103,7 @@ public:
             bool label;
         };
 
-        std::vector<ScoreLabel> sorted_labels(size); /// TODO Memory allocation in inner loop - does it really needed?
+        std::vector<ScoreLabel> sorted_labels(size); /// TODO Memory allocation in inner loop - is it really needed?
 
         for (size_t i = 0; i < size; ++i)
         {
