@@ -27,7 +27,7 @@ MergeListElement::MergeListElement(const std::string & database_, const std::str
         source_part_names.emplace_back(source_part->name);
         source_part_paths.emplace_back(source_part->getFullPath());
 
-        total_size_bytes_compressed += source_part->bytes_on_disk;
+        total_size_bytes_compressed += source_part->getBytesOnDisk();
         total_size_marks += source_part->getMarksCount();
         total_rows_count += source_part->index_granularity.getTotalRows();
     }
