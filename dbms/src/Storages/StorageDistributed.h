@@ -114,6 +114,12 @@ public:
 
     ClusterPtr getCluster() const;
 
+    /// Apply the following settings:
+    /// - optimize_skip_unused_shards
+    /// - force_optimize_skip_unused_shards
+    ClusterPtr getOptimizedCluster(const Context &, const ASTPtr & query_ptr) const;
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const;
+
     ActionLock getActionLock(StorageActionBlockType type) override;
 
     String remote_database;
@@ -163,8 +169,6 @@ protected:
         const String & storage_policy_,
         const String & relative_data_path_,
         bool attach);
-
-    ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info, const Context & context);
 
     void createStorage();
 
