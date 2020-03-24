@@ -1,0 +1,44 @@
+.nav .nav-link.active {
+    font-weight: bold;
+}
+.headerlink {
+    display: none;
+    text-decoration: none !important;
+    margin-left: .5rem;
+}
+
+#content table {
+    border: 1px solid #dee2e6;
+    width: 100%;
+    margin-bottom: 1rem;
+    color: #212529;
+}
+
+#content thead {
+    background: #444451;
+    color: #fff;
+}
+
+#content td, #content th {
+    padding: .75rem;
+    vertical-align: top;
+}
+
+#content td {
+    border: 1px solid #dee2e6;
+}
+
+#content th {
+    border: 1px solid #444451;
+}
+
+#content code {
+    color: #111;
+    background: #eee;
+    padding: 2px;
+}
+
+#content pre {
+    background: #eee;
+    padding: 1rem;
+}

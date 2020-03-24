@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
 from __future__ import unicode_literals
 
 import argparse
@@ -56,6 +56,7 @@ def build_for_lang(lang, args):
             'custom_dir': os.path.join(os.path.dirname(__file__), args.theme_dir),
             'language': lang,
             'direction': 'rtl' if lang == 'fa' else 'ltr',
+            # TODO: cleanup
             'feature': {
                 'tabs': False
             },
@@ -82,6 +83,17 @@ def build_for_lang(lang, args):
             'ja': 'ClickHouseドキュメント %s',
             'fa': 'مستندات %sClickHouse'
         }
+
+        languages = {
+            'en': 'English',
+            'es': 'Español',
+            'ru': 'Русский',
+            'zh': '中文',
+            'ja': '日本語',
+            'fa': 'فارسی'
+        }
+
+        assert len(site_names) == len(languages)
 
         if args.version_prefix:
             site_dir = os.path.join(args.docs_output_dir, args.version_prefix, lang)
@@ -132,7 +144,8 @@ def build_for_lang(lang, args):
                 'rev':       args.rev,
                 'rev_short': args.rev_short,
                 'rev_url':   args.rev_url,
-                'events':    args.events
+                'events':    args.events,
+                'languages': languages
             }
         )
 
@@ -350,8 +363,8 @@ if __name__ == '__main__':
         new_args = sys.executable + ' ' + ' '.join(new_args)
 
         server = livereload.Server()
-        server.watch(args.website_dir + '**/*', livereload.shell(new_args, cwd='tools', shell=True))
         server.watch(args.docs_dir + '**/*', livereload.shell(new_args, cwd='tools', shell=True))
+        server.watch(args.website_dir + '**/*', livereload.shell(new_args, cwd='tools', shell=True))
         server.serve(
             root=args.output_dir,
             port=args.livereload

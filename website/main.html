@@ -1,0 +1,26 @@
+{# This file is an entrypoint for mkdocs theme, not an actual website page #}
+
+{% set language = config.theme.language %}
+{% if page and page.meta and page.meta.title %}
+    {% set title = page.meta.title %}
+{% elif page and page.title and not page.is_homepage and page.title != 'hidden' %}
+    {% set title = page.title + ' - ' + config.site_name %}
+{% elif page and page.title and not page.is_homepage and page.title == 'hidden' and page.ancestors %}
+    {% set title = (page.ancestors | first).title + ' - ' + config.site_name %}
+{% else %}
+    {% set title = config.site_name %}
+{% endif %}
+
+{% extends "templates/base.html" %}
+
+{% block content %}
+{% include "templates/docs/nav.html" %}
+<div class="container-fluid">
+    <div class="row">
+        {% include "templates/docs/sidebar.html" %}
+        {% include "templates/docs/content.html" %}
+        {% include "templates/docs/toc.html" %}
+    </div>
+</div>
+
+{% endblock %}

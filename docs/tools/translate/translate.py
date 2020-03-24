@@ -27,14 +27,16 @@ def translate(text):
     elif is_yandex:
         text = text.replace('‘', '\'')
         text = text.replace('’', '\'')
-        if text.isascii() and not text.isupper():
+        has_alpha = any([char.isalpha() for char in text])
+        if text.isascii() and has_alpha and not text.isupper():
             text = urllib.parse.quote(text)
             url = f'http://translate.yandex.net/api/v1/tr.json/translate?srv=docs&lang=en-{target_language}&text={text}'
             result = requests.get(url).json()
             if result.get('code') == 200:
                 return result['text'][0]
             else:
-                print('Failed to translate', str(result), file=sys.stderr)
+                result = str(result)
+                print(f'Failed to translate "{text}": {result}', file=sys.stderr)
                 sys.exit(1)
         else:
             return text

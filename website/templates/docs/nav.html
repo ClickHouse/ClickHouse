@@ -1,0 +1,50 @@
+<nav class="navbar navbar-expand-lg bg-dark-alt text-white sticky-top">
+    <div class="container-fluid">
+        <div class="navbar-brand mr-3" href="#">
+            <a href="/"><img id="logo-icon" src="/images/logo.svg" alt="ClickHouse logo" title="ClickHouse logo"/></a>
+        </div>
+        <div class="w-100 navbar-text text-left">
+            <a href="#" class="text-decoration-none">
+                <h1 class="text-white h3 m-0 p-0 d-inline">{{ page.title or config.site_name }}</h1>
+            </a>
+        </div>
+
+        <button class="navbar-toggler border-0" type="button" data-toggle="collapse" data-target="#navbar-toggle" aria-controls="navbar-toggle" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon text-white"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbar-toggle">
+            <ul class="navbar-nav ml-auto mt-2 mt-lg-0 justify-content-end">
+                <li class="nav-item">
+                    <a class="nav-link" href="https://github.com/ClickHouse/ClickHouse" rel="external nofollow noreferrer">
+                        <img src="/images/index/github.svg" alt="GitHub repository" title="Go to GitHub"  height="32" />
+                    </a>
+                </li>
+                <li class="nav-item dropdown">
+                    <a class="nav-link dropdown-toggle d-inline-block mt-1 text-muted" href="#" id="lang-dropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        <img src="/images/flags/en.svg" alt="English" title="English" width="32" class="d-inline-block mt-n1" />
+                    </a>
+                    <div class="dropdown-menu bg-dark" aria-labelledby="lang-dropdown">
+                        {% for code, name in config.extra.languages.items() %}
+                        <a class="dropdown-item{% if language == code %} disabled{% endif %}"
+                           href="/docs/{{ code }}/{{ page.url }}">
+                            <img src="/images/flags/{{ code }}.svg" alt="" title="" width="32" class="d-inline-block mr-2" />{{ name}}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </li>
+            </ul>
+        </div>
+
+        <form class="form-inline m-0">
+            <div class="input-group">
+                <div class="input-group-prepend">
+                    <span class="input-group-text bg-secondary-alt text-muted border-0" id="search-icon">
+                        <img src="/images/mkdocs/search.svg" />
+                    </span>
+                </div>
+                <input class="form-control bg-secondary-alt text-muted border-0 pl-0" type="search" placeholder="Search" aria-label="Search">
+            </div>
+        </form>
+    </div>
+</nav>
