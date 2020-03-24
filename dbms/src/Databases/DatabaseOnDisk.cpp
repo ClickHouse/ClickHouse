@@ -281,6 +281,7 @@ void DatabaseOnDisk::renameTable(
 
         /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
         table->rename(to_database.getTableDataPath(create), to_database.getDatabaseName(), to_table_name, table_lock);
+        table->resetStorageIDForTableFunction({create.database, create.table, create.uuid});  /// reset UUID
     }
     catch (const Exception &)
     {

@@ -76,8 +76,9 @@ BlockIO InterpreterDropQuery::executeToTable(
     auto table_id = context.resolveStorageID(table_id_, Context::ResolveOrdinary);
 
     std::unique_ptr<DDLGuard> ddl_guard;
-    if (DatabaseCatalog::instance().getDatabase(table_id.database_name)->getEngineName() != "Atomic")
-        ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
+    if (auto db = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name))   //FIXME
+        if (db->getEngineName() != "Atomic")
+            ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
     auto [database, table] = tryGetDatabaseAndTable(table_id.database_name, table_id.table_name, query.if_exists);
 
