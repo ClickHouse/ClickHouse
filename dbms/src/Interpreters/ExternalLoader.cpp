@@ -8,11 +8,18 @@
 #include <Common/ThreadPool.h>
 #include <Common/randomSeed.h>
 #include <Common/setThreadName.h>
+#include <Common/StatusInfo.h>
 #include <ext/chrono_io.h>
 #include <ext/scope_guard.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <unordered_set>
+
+
+namespace CurrentStatusInfo
+{
+    extern const Status DictionaryStatus;
+}
 
 
 namespace DB
@@ -1087,8 +1094,10 @@ private:
     {
         Info * info = getInfo(name);
         if (info && (info->loading_id == loading_id))
+        {
             info->loading_id = info->state_id;
-
+            CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, name, static_cast<Int8>(info->status()));
+        }
         min_id_to_finish_loading_dependencies.erase(std::this_thread::get_id());
 
         auto it = loading_threads.find(loading_id);
@@ -1443,43 +1452,6 @@ ExternalLoader::LoadablePtr ExternalLoader::createObject(
 
     return create(name, *config.config, config.key_in_config, config.repository_name);
 }
-
-std::vector<std::pair<String, Int8>> ExternalLoader::getStatusEnumAllPossibleValues()
-{
-    return std::vector<std::pair<String, Int8>>{
-        {toString(Status::NOT_LOADED), static_cast<Int8>(Status::NOT_LOADED)},
-        {toString(Status::LOADED), static_cast<Int8>(Status::LOADED)},
-        {toString(Status::FAILED), static_cast<Int8>(Status::FAILED)},
-        {toString(Status::LOADING), static_cast<Int8>(Status::LOADING)},
-        {toString(Status::LOADED_AND_RELOADING), static_cast<Int8>(Status::LOADED_AND_RELOADING)},
-        {toString(Status::FAILED_AND_RELOADING), static_cast<Int8>(Status::FAILED_AND_RELOADING)},
-        {toString(Status::NOT_EXIST), static_cast<Int8>(Status::NOT_EXIST)},
-    };
-}
-
-
-String toString(ExternalLoader::Status status)
-{
-    using Status = ExternalLoader::Status;
-    switch (status)
-    {
-        case Status::NOT_LOADED: return "NOT_LOADED";
-        case Status::LOADED: return "LOADED";
-        case Status::FAILED: return "FAILED";
-        case Status::LOADING: return "LOADING";
-        case Status::FAILED_AND_RELOADING: return "FAILED_AND_RELOADING";
-        case Status::LOADED_AND_RELOADING: return "LOADED_AND_RELOADING";
-        case Status::NOT_EXIST: return "NOT_EXIST";
-    }
-    __builtin_unreachable();
-}
-
-
-std::ostream & operator<<(std::ostream & out, ExternalLoader::Status status)
-{
-    return out << toString(status);
-}
-
 
 template ExternalLoader::LoadablePtr ExternalLoader::getCurrentLoadResult<ExternalLoader::LoadablePtr>(const String &) const;
 template ExternalLoader::LoadResult ExternalLoader::getCurrentLoadResult<ExternalLoader::LoadResult>(const String &) const;
