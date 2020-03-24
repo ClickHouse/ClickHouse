@@ -231,7 +231,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
         }
 
         IMergeSelector::Part part_info;
-        part_info.size = part->bytes_on_disk;
+        part_info.size = part->getBytesOnDisk();
         part_info.age = current_time - part->modification_time;
         part_info.level = part->info.level;
         part_info.data = &part;
@@ -333,7 +333,7 @@ bool MergeTreeDataMergerMutator::selectAllPartsToMergeWithinPartition(
             return false;
         }
 
-        sum_bytes += (*it)->bytes_on_disk;
+        sum_bytes += (*it)->getBytesOnDisk();
 
         prev_it = it;
         ++it;
@@ -671,7 +671,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
         size_t total_size = 0;
         for (const auto & part : parts)
         {
-            total_size += part->bytes_on_disk;
+            total_size += part->getBytesOnDisk();
             if (total_size >= data_settings->min_merge_bytes_to_use_direct_io)
             {
                 LOG_DEBUG(log, "Will merge parts reading files in O_DIRECT");
@@ -1021,8 +1021,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     /// the order is reverse. This annoys TSan even though one lock is locked in shared mode and thus
     /// deadlock is impossible.
     auto compression_codec = context.chooseCompressionCodec(
-        source_part->bytes_on_disk,
-        static_cast<double>(source_part->bytes_on_disk) / data.getTotalActiveSizeInBytes());
+        source_part->getBytesOnDisk(),
+        static_cast<double>(source_part->getBytesOnDisk()) / data.getTotalActiveSizeInBytes());
 
 
     disk->createDirectories(new_part_tmp_path);
@@ -1193,7 +1193,7 @@ size_t MergeTreeDataMergerMutator::estimateNeededDiskSpace(const MergeTreeData::
 {
     size_t res = 0;
     for (const MergeTreeData::DataPartPtr & part : source_parts)
-        res += part->bytes_on_disk;
+        res += part->getBytesOnDisk();
 
     return static_cast<size_t>(res * DISK_USAGE_COEFFICIENT_TO_RESERVE);
 }
@@ -1562,9 +1562,9 @@ void MergeTreeDataMergerMutator::finalizeMutatedPart(
     new_data_part->index = source_part->index;
     new_data_part->minmax_idx = source_part->minmax_idx;
     new_data_part->modification_time = time(nullptr);
-    new_data_part->bytes_on_disk
-        = MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath());
-
+    new_data_part->setBytesOnDisk(
+        MergeTreeData::DataPart::calculateTotalSizeOnDisk(new_data_part->disk, new_data_part->getFullRelativePath()));
+    new_data_part->calculateColumnsSizesOnDisk();
 }
 
 

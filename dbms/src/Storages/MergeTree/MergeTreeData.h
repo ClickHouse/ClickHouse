@@ -580,13 +580,6 @@ public:
         return column_sizes;
     }
 
-    /// Calculates column sizes in compressed form for the current state of data_parts.
-    void recalculateColumnSizes()
-    {
-        auto lock = lockParts();
-        calculateColumnSizesImpl();
-    }
-
     /// For ATTACH/DETACH/DROP PARTITION.
     String getPartitionIDFromQuery(const ASTPtr & ast, const Context & context);
 
