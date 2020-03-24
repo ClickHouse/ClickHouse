@@ -193,19 +193,54 @@ std::string makeFormattedListOfShards(const ClusterPtr & cluster)
     return os.str();
 }
 
-}
-
-
-/// For destruction of std::unique_ptr of type that is incomplete in class definition.
-StorageDistributed::~StorageDistributed() = default;
-
-static ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, NamesAndTypesList columns, bool project)
+ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, const NamesAndTypesList & columns, bool project)
 {
     ASTPtr query = sharding_key;
     auto syntax_result = SyntaxAnalyzer(context).analyze(query, columns);
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
+class ReplacingConstantExpressionsMatcher
+{
+public:
+    using Data = Block;
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &)
+    {
+        return true;
+    }
+
+    static void visit(ASTPtr & node, Block & block_with_constants)
+    {
+        if (!node->as<ASTFunction>())
+            return;
+
+        std::string name = node->getColumnName();
+        if (block_with_constants.has(name))
+        {
+            auto result = block_with_constants.getByName(name);
+            if (!isColumnConst(*result.column))
+                return;
+
+            node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
+        }
+    }
+};
+
+void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & columns)
+{
+    auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns);
+    Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
+
+    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
+    visitor.visit(node);
+}
+
+}
+
+
+/// For destruction of std::unique_ptr of type that is incomplete in class definition.
+StorageDistributed::~StorageDistributed() = default;
 
 StorageDistributed::StorageDistributed(
     const StorageID & id_,
@@ -378,7 +413,7 @@ Pipes StorageDistributed::read(
 
         if (has_sharding_key)
         {
-            smaller_cluster = skipUnusedShards(cluster, query_info);
+            smaller_cluster = skipUnusedShards(cluster, query_info, context);
 
             if (smaller_cluster)
             {
@@ -392,7 +427,7 @@ Pipes StorageDistributed::read(
         if (!smaller_cluster)
         {
             LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
-                           (has_sharding_key ? "" : "(no sharding key)") << ": "
+                           (has_sharding_key ? "" : " (no sharding key)") << ": "
                            "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
                            "the query will be sent to all shards of the cluster");
 
@@ -608,7 +643,7 @@ void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
-ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info)
+ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info, const Context & context)
 {
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
@@ -627,6 +662,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
     }
 
+    replaceConstantExpressions(condition_ast, context, getColumns().getAllPhysical() /** TODO: sharding_key_column_name */);
     const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards

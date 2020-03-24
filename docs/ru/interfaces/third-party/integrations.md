@@ -44,6 +44,7 @@
     -   [clickhouse\_exporter](https://github.com/hot-wifi/clickhouse_exporter) (использует [Go client](https://github.com/kshvakov/clickhouse/))
     -   [Nagios](https://www.nagios.org/)
     -   [check\_clickhouse](https://github.com/exogroup/check_clickhouse/)
+    -   [check\_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
     -   [Zabbix](https://www.zabbix.com)
     -   [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
     -   [Sematext](https://sematext.com/)

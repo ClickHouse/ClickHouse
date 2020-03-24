@@ -25,7 +25,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
     return {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
-        {"status", std::make_shared<DataTypeEnum8>(ExternalLoader::getStatusEnumAllPossibleValues())},
+        {"status", std::make_shared<DataTypeEnum8>(getStatusEnumAllPossibleValues())},
         {"origin", std::make_shared<DataTypeString>()},
         {"type", std::make_shared<DataTypeString>()},
         {"key", std::make_shared<DataTypeString>()},

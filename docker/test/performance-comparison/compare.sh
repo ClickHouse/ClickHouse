@@ -9,40 +9,7 @@ stage=${stage:-}
 function configure
 {
     # Use the new config for both servers, so that we can change it in a PR.
-
-    mkdir right/config/users.d ||:
-    mkdir right/config/config.d ||:
-
-    # FIXME delete these two configs when the performance.tgz with configs rolls out.
-    cat > right/config/config.d/zz-perf-test-tweaks-config.xml <<EOF
-    <yandex>
-        <logger>
-            <console>true</console>
-        </logger>
-        <text_log remove="remove">
-            <table remove="remove"/>
-        </text_log>
-        <use_uncompressed_cache>0</use_uncompressed_cache>
-        <!--1 GB-->
-        <uncompressed_cache_size>1000000000</uncompressed_cache_size>
-    </yandex>
-EOF
-
-    cat > right/config/users.d/zz-perf-test-tweaks-users.xml <<EOF
-    <yandex>
-        <profiles>
-            <default>
-                <query_profiler_real_time_period_ns>10000000</query_profiler_real_time_period_ns>
-                <query_profiler_cpu_time_period_ns>0</query_profiler_cpu_time_period_ns>
-                <allow_introspection_functions>1</allow_introspection_functions>
-                <log_queries>1</log_queries>
-            </default>
-        </profiles>
-    </yandex>
-EOF
-
     rm right/config/config.d/text_log.xml ||:
-
     cp -rv right/config left ||:
 
     sed -i 's/<tcp_port>9000/<tcp_port>9001/g' left/config/config.xml
@@ -242,7 +209,8 @@ done
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
 
 right/clickhouse local --query "
-create table queries engine Memory as select
+create table queries engine File(TSVWithNamesAndTypes, 'queries.tsv')
+    as select
         replaceAll(_file, '-report.tsv', '') test,
 
         -- FIXME Comparison mode doesn't make sense for queries that complete
@@ -382,7 +350,7 @@ create table stacks engine File(TSV, 'stacks.rep') as
     join unstable_query_runs using query_id
     group by query, trace
     ;
-" ||:
+" 2>> report-errors.txt ||:
 
 IFS=$'\n'
 for query in $(cut -d'	' -f1 stacks.rep | sort | uniq)

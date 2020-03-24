@@ -25,6 +25,9 @@ RUN apt-get update -y \
             clang-9 \
             lld-9 \
             clang-tidy-9 \
+            clang-8 \
+            lld-8 \
+            clang-tidy-8 \
             libicu-dev \
             libreadline-dev \
             ninja-build \
@@ -35,7 +38,8 @@ RUN apt-get update -y \
             cmake \
             gdb \
             rename \
-            wget
+            wget \
+            build-essential
 
 # This symlink required by gcc to find lld compiler
 RUN ln -s /usr/bin/lld-9 /usr/bin/ld.lld

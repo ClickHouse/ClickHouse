@@ -242,6 +242,8 @@ def print_test_times():
 
 print_test_times()
 
+# Add the errors reported by various steps of comparison script
+report_errors += tsvRows('report-errors.txt')
 if len(report_errors):
     print(tableStart('Errors while building the report'))
     print(tableHeader(['Error']))
