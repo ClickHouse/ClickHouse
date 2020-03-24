@@ -26,7 +26,7 @@ public:
         return std::make_shared<StorageBlocks>(table_id, columns, std::move(pipes), to_stage);
     }
     std::string getName() const override { return "Blocks"; }
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, const ASTPtr & = nullptr) const override { return to_stage; }
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, const ASTPtr &) const override { return to_stage; }
 
     Pipes read(
         const Names & /*column_names*/,
