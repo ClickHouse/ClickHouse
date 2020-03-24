@@ -216,8 +216,7 @@ protected:
                 {
                     if (need_lock_structure)
                     {
-                        if (!table)
-                            table = tables_it->table();
+                        table = tables_it->table();
                         lock = table->lockStructureForShare(false, context.getCurrentQueryId());
                     }
                 }
@@ -241,8 +240,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     res_columns[res_index++]->insert(table->getName());
                 }
 
@@ -251,9 +249,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
-
+                    assert(table != nullptr);
                     Array table_paths_array;
                     auto paths = table->getDataPaths();
                     table_paths_array.reserve(paths.size());
@@ -324,8 +320,7 @@ protected:
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -334,8 +329,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getSortingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -344,8 +338,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getPrimaryKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -354,8 +347,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -364,8 +356,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     auto policy = table->getStoragePolicy();
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
