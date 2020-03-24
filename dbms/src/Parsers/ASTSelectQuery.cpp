@@ -249,7 +249,7 @@ static const ASTTablesInSelectQueryElement * getFirstTableJoin(const ASTSelectQu
 }
 
 
-ASTPtr ASTSelectQuery::sample_size() const
+ASTPtr ASTSelectQuery::sampleSize() const
 {
     const ASTTableExpression * table_expression = getFirstTableExpression(*this);
     if (!table_expression)
@@ -259,7 +259,7 @@ ASTPtr ASTSelectQuery::sample_size() const
 }
 
 
-ASTPtr ASTSelectQuery::sample_offset() const
+ASTPtr ASTSelectQuery::sampleOffset() const
 {
     const ASTTableExpression * table_expression = getFirstTableExpression(*this);
     if (!table_expression)
@@ -291,7 +291,7 @@ bool ASTSelectQuery::withFill() const
 }
 
 
-ASTPtr ASTSelectQuery::array_join_expression_list(bool & is_left) const
+ASTPtr ASTSelectQuery::arrayJoinExpressionList(bool & is_left) const
 {
     const ASTArrayJoin * array_join = getFirstArrayJoin(*this);
     if (!array_join)
@@ -302,10 +302,10 @@ ASTPtr ASTSelectQuery::array_join_expression_list(bool & is_left) const
 }
 
 
-ASTPtr ASTSelectQuery::array_join_expression_list() const
+ASTPtr ASTSelectQuery::arrayJoinExpressionList() const
 {
     bool is_left;
-    return array_join_expression_list(is_left);
+    return arrayJoinExpressionList(is_left);
 }
 
 

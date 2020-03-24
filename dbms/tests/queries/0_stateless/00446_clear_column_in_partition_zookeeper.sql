@@ -1,5 +1,7 @@
 SELECT '===Ordinary case===';
 
+SET replication_alter_partitions_sync = 2;
+
 DROP TABLE IF EXISTS clear_column;
 CREATE TABLE clear_column (d Date, num Int64, str String) ENGINE = MergeTree(d, d, 8192);
 

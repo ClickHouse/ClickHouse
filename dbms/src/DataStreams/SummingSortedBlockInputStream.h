@@ -10,6 +10,8 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 
+namespace Poco { class Logger; }
+
 namespace DB
 {
 
@@ -47,7 +49,7 @@ protected:
     Block readImpl() override;
 
 private:
-    Logger * log = &Logger::get("SummingSortedBlockInputStream");
+    Poco::Logger * log;
 
     /// Read up to the end.
     bool finished = false;

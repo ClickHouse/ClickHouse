@@ -8,15 +8,18 @@
 #include <Access/Role.h>
 #include <Access/RowPolicy.h>
 #include <Access/Quota.h>
+#include <Access/SettingsProfile.h>
 #include <Parsers/ASTCreateUserQuery.h>
 #include <Parsers/ASTCreateRoleQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
+#include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ParserCreateUserQuery.h>
 #include <Parsers/ParserCreateRoleQuery.h>
 #include <Parsers/ParserCreateRowPolicyQuery.h>
 #include <Parsers/ParserCreateQuotaQuery.h>
+#include <Parsers/ParserCreateSettingsProfileQuery.h>
 #include <Parsers/ParserGrantQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -24,6 +27,7 @@
 #include <Interpreters/InterpreterCreateRoleQuery.h>
 #include <Interpreters/InterpreterCreateRowPolicyQuery.h>
 #include <Interpreters/InterpreterCreateQuotaQuery.h>
+#include <Interpreters/InterpreterCreateSettingsProfileQuery.h>
 #include <Interpreters/InterpreterGrantQuery.h>
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
@@ -64,6 +68,8 @@ namespace
                 return true;
             if (ParserCreateQuotaQuery{}.enableAttachMode(true).parse(pos, node, expected))
                 return true;
+            if (ParserCreateSettingsProfileQuery{}.enableAttachMode(true).parse(pos, node, expected))
+                return true;
             if (ParserGrantQuery{}.enableAttachMode(true).parse(pos, node, expected))
                 return true;
             return false;
@@ -97,6 +103,7 @@ namespace
         std::shared_ptr<Role> role;
         std::shared_ptr<RowPolicy> policy;
         std::shared_ptr<Quota> quota;
+        std::shared_ptr<SettingsProfile> profile;
         AccessEntityPtr res;
 
         for (const auto & query : queries)
@@ -129,6 +136,13 @@ namespace
                 res = quota = std::make_unique<Quota>();
                 InterpreterCreateQuotaQuery::updateQuotaFromQuery(*quota, *create_quota_query);
             }
+            else if (auto create_profile_query = query->as<ASTCreateSettingsProfileQuery>())
+            {
+                if (res)
+                    throw Exception("Two access entities are attached in the same file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                res = profile = std::make_unique<SettingsProfile>();
+                InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(*profile, *create_profile_query);
+            }
             else if (auto grant_query = query->as<ASTGrantQuery>())
             {
                 if (!user && !role)
@@ -139,13 +153,27 @@ namespace
                     InterpreterGrantQuery::updateRoleFromQuery(*role, *grant_query);
             }
             else
-                throw Exception("Two access entities are attached in the same file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
+                throw Exception("No interpreter found for query " + query->getID(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
         }
 
         if (!res)
             throw Exception("No access entities attached in file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
 
         return res;
+    }
+
+
+    AccessEntityPtr tryReadAccessEntityFile(const std::filesystem::path & file_path, Poco::Logger & log)
+    {
+        try
+        {
+            return readAccessEntityFile(file_path);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(&log, "Could not parse " + file_path.string());
+            return nullptr;
+        }
     }
 
 
@@ -238,6 +266,8 @@ namespace
             file_name = "quotas";
         else if (type == typeid(RowPolicy))
             file_name = "row_policies";
+        else if (type == typeid(SettingsProfile))
+            file_name = "settings_profiles";
         else
             throw Exception("Unexpected type of access entity: " + IAccessEntity::getTypeName(type),
                             ErrorCodes::LOGICAL_ERROR);
@@ -254,13 +284,6 @@ namespace
     }
 
 
-    const std::vector<std::type_index> & getAllAccessEntityTypes()
-    {
-        static const std::vector<std::type_index> res = {typeid(User), typeid(Role), typeid(RowPolicy), typeid(Quota)};
-        return res;
-    }
-
-
     bool tryParseUUID(const String & str, UUID & id)
     {
         try
@@ -273,13 +296,20 @@ namespace
             return false;
         }
     }
+
+
+    const std::vector<std::type_index> & getAllAccessEntityTypes()
+    {
+        static const std::vector<std::type_index> res = {typeid(User), typeid(Role), typeid(RowPolicy), typeid(Quota), typeid(SettingsProfile)};
+        return res;
+    }
 }
 
 
 DiskAccessStorage::DiskAccessStorage()
     : IAccessStorage("disk")
 {
-    for (const auto & type : getAllAccessEntityTypes())
+    for (auto type : getAllAccessEntityTypes())
         name_to_id_maps[type];
 }
 
@@ -340,10 +370,10 @@ void DiskAccessStorage::initialize(const String & directory_path_, Notifications
 bool DiskAccessStorage::readLists()
 {
     assert(id_to_entry_map.empty());
-    assert(name_to_id_maps.size() == getAllAccessEntityTypes().size());
     bool ok = true;
-    for (auto & [type, name_to_id_map] : name_to_id_maps)
+    for (auto type : getAllAccessEntityTypes())
     {
+        auto & name_to_id_map = name_to_id_maps.at(type);
         auto file_path = getListFilePath(directory_path, type);
         if (!std::filesystem::exists(file_path))
         {
@@ -362,6 +392,7 @@ bool DiskAccessStorage::readLists()
             ok = false;
             break;
         }
+
         for (const auto & [name, id] : name_to_id_map)
             id_to_entry_map.emplace(id, Entry{name, type});
     }
@@ -376,11 +407,14 @@ bool DiskAccessStorage::readLists()
 }
 
 
-void DiskAccessStorage::writeLists()
+bool DiskAccessStorage::writeLists()
 {
-    if (failed_to_write_lists || types_of_lists_to_write.empty())
-        return; /// We don't try to write list files after the first fail.
-                /// The next restart of the server will invoke rebuilding of the list files.
+    if (failed_to_write_lists)
+        return false; /// We don't try to write list files after the first fail.
+                      /// The next restart of the server will invoke rebuilding of the list files.
+
+    if (types_of_lists_to_write.empty())
+        return true;
 
     for (const auto & type : types_of_lists_to_write)
     {
@@ -395,13 +429,14 @@ void DiskAccessStorage::writeLists()
             tryLogCurrentException(getLogger(), "Could not write " + file_path.string());
             failed_to_write_lists = true;
             types_of_lists_to_write.clear();
-            return;
+            return false;
         }
     }
 
     /// The list files was successfully written, we don't need the 'need_rebuild_lists.mark' file any longer.
     std::filesystem::remove(getNeedRebuildListsMarkFilePath(directory_path));
     types_of_lists_to_write.clear();
+    return true;
 }
 
 
@@ -465,10 +500,11 @@ void DiskAccessStorage::listsWritingThreadFunc()
 
 /// Reads and parses all the "<id>.sql" files from a specified directory
 /// and then saves the files "users.list", "roles.list", etc. to the same directory.
-void DiskAccessStorage::rebuildLists()
+bool DiskAccessStorage::rebuildLists()
 {
     LOG_WARNING(getLogger(), "Recovering lists in directory " + directory_path);
     assert(id_to_entry_map.empty());
+
     for (const auto & directory_entry : std::filesystem::directory_iterator(directory_path))
     {
         if (!directory_entry.is_regular_file())
@@ -481,14 +517,21 @@ void DiskAccessStorage::rebuildLists()
         if (!tryParseUUID(path.stem(), id))
             continue;
 
-        auto entity = readAccessEntityFile(getAccessEntityFilePath(directory_path, id));
+        const auto access_entity_file_path = getAccessEntityFilePath(directory_path, id);
+        auto entity = tryReadAccessEntityFile(access_entity_file_path, *getLogger());
+        if (!entity)
+            continue;
+
         auto type = entity->getType();
-        auto & name_to_id_map = name_to_id_maps[type];
+        auto & name_to_id_map = name_to_id_maps.at(type);
         auto it_by_name = name_to_id_map.emplace(entity->getFullName(), id).first;
         id_to_entry_map.emplace(id, Entry{it_by_name->first, type});
     }
 
-    boost::range::copy(getAllAccessEntityTypes(), std::inserter(types_of_lists_to_write, types_of_lists_to_write.end()));
+    for (auto type : getAllAccessEntityTypes())
+        types_of_lists_to_write.insert(type);
+
+    return true;
 }
 
 
@@ -499,6 +542,7 @@ std::optional<UUID> DiskAccessStorage::findImpl(std::type_index type, const Stri
     auto it = name_to_id_map.find(name);
     if (it == name_to_id_map.end())
         return {};
+
     return it->second;
 }
 

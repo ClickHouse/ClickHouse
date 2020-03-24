@@ -1,28 +1,28 @@
 #include <Parsers/ParserSetRoleQuery.h>
 #include <Parsers/ASTSetRoleQuery.h>
 #include <Parsers/CommonParsers.h>
-#include <Parsers/ASTGenericRoleSet.h>
-#include <Parsers/ParserGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ParserExtendedRoleSet.h>
 
 
 namespace DB
 {
 namespace
 {
-    bool parseRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & roles)
+    bool parseRoles(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTExtendedRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (!ParserGenericRoleSet{}.enableCurrentUserKeyword(false).parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableCurrentUserKeyword(false).parse(pos, ast, expected))
                 return false;
 
-            roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
+            roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
             return true;
         });
     }
 
-    bool parseToUsers(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & to_users)
+    bool parseToUsers(IParserBase::Pos & pos, Expected & expected, std::shared_ptr<ASTExtendedRoleSet> & to_users)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -30,10 +30,10 @@ namespace
                 return false;
 
             ASTPtr ast;
-            if (!ParserGenericRoleSet{}.enableAllKeyword(false).parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableAllKeyword(false).parse(pos, ast, expected))
                 return false;
 
-            to_users = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
+            to_users = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
             return true;
         });
     }
@@ -53,8 +53,8 @@ bool ParserSetRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     else
         return false;
 
-    std::shared_ptr<ASTGenericRoleSet> roles;
-    std::shared_ptr<ASTGenericRoleSet> to_users;
+    std::shared_ptr<ASTExtendedRoleSet> roles;
+    std::shared_ptr<ASTExtendedRoleSet> to_users;
 
     if ((kind == Kind::SET_ROLE) || (kind == Kind::SET_DEFAULT_ROLE))
     {

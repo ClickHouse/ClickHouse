@@ -21,6 +21,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
+#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
@@ -92,7 +93,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
 void LocalServer::applyCmdSettings()
 {
-    context->getSettingsRef().copyChangesFrom(cmd_settings);
+    context->applySettingsChanges(cmd_settings.changes());
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata

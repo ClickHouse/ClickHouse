@@ -158,7 +158,10 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 }
 
 
-DatabaseAndTable  DatabaseCatalog::getTableImpl(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception) const
+DatabaseAndTable DatabaseCatalog::getTableImpl(
+    const StorageID & table_id,
+    const Context & local_context,
+    std::optional<Exception> * exception) const
 {
     if (!table_id)
     {
@@ -193,7 +196,7 @@ DatabaseAndTable  DatabaseCatalog::getTableImpl(const StorageID & table_id, cons
 
     DatabasePtr database;
     {
-        std::lock_guard _lock{databases_mutex};
+        std::lock_guard lock{databases_mutex};
         auto it = databases.find(table_id.getDatabaseName());
         if (databases.end() == it)
         {

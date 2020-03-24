@@ -484,4 +484,32 @@ ProcessList::Info ProcessList::getInfo(bool get_thread_list, bool get_profile_ev
 ProcessListForUser::ProcessListForUser() = default;
 
 
+ProcessListForUserInfo ProcessListForUser::getInfo(bool get_profile_events) const
+{
+    ProcessListForUserInfo res;
+
+    res.memory_usage = user_memory_tracker.get();
+    res.peak_memory_usage = user_memory_tracker.getPeak();
+
+    if (get_profile_events)
+        res.profile_counters = std::make_shared<ProfileEvents::Counters>(user_performance_counters.getPartiallyAtomicSnapshot());
+
+    return res;
+}
+
+
+ProcessList::UserInfo ProcessList::getUserInfo(bool get_profile_events) const
+{
+    UserInfo per_user_infos;
+
+    std::lock_guard lock(mutex);
+
+    per_user_infos.reserve(user_to_queries.size());
+
+    for (const auto & [user, user_queries] : user_to_queries)
+        per_user_infos.emplace(user, user_queries.getInfo(get_profile_events));
+
+    return per_user_infos;
+}
+
 }

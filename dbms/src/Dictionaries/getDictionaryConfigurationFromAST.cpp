@@ -115,7 +115,7 @@ void buildLayoutConfiguration(
 void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTDictionaryRange * range, const NamesToTypeNames & all_attrs)
 {
     // appends <key><name>value</name></key> to root
-    auto appendElem = [&doc, &root](const std::string & key, const std::string & name, const std::string & type)
+    auto append_element = [&doc, &root](const std::string & key, const std::string & name, const std::string & type)
     {
         AutoPtr<Element> element(doc->createElement(key));
         AutoPtr<Element> name_node(doc->createElement("name"));
@@ -131,8 +131,8 @@ void buildRangeConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const
         root->appendChild(element);
     };
 
-    appendElem("range_min", range->min_attr_name, all_attrs.at(range->min_attr_name));
-    appendElem("range_max", range->max_attr_name, all_attrs.at(range->max_attr_name));
+    append_element("range_min", range->min_attr_name, all_attrs.at(range->min_attr_name));
+    append_element("range_max", range->max_attr_name, all_attrs.at(range->max_attr_name));
 }
 
 
@@ -179,13 +179,13 @@ void buildSingleAttribute(
     type_element->appendChild(type);
     attribute_element->appendChild(type_element);
 
-     AutoPtr<Element> null_value_element(doc->createElement("null_value"));
-     String null_value_str;
-     if (dict_attr->default_value)
-         null_value_str = getFieldAsString(dict_attr->default_value->as<ASTLiteral>()->value);
-     AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
-     null_value_element->appendChild(null_value);
-     attribute_element->appendChild(null_value_element);
+    AutoPtr<Element> null_value_element(doc->createElement("null_value"));
+    String null_value_str;
+    if (dict_attr->default_value)
+        null_value_str = getFieldAsString(dict_attr->default_value->as<ASTLiteral>()->value);
+    AutoPtr<Text> null_value(doc->createTextNode(null_value_str));
+    null_value_element->appendChild(null_value);
+    attribute_element->appendChild(null_value_element);
 
     if (dict_attr->expression != nullptr)
     {

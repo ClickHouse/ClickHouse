@@ -19,7 +19,7 @@ std::pair<std::string, UInt16> parseAddress(const std::string & str, UInt16 defa
 
     const char * begin = str.data();
     const char * end = begin + str.size();
-    const char * port = end;
+    const char * port = end; // NOLINT
 
     if (begin[0] == '[')
     {

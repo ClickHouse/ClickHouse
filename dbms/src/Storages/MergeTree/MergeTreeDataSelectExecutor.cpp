@@ -300,8 +300,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    auto select_sample_size = select.sample_size();
-    auto select_sample_offset = select.sample_offset();
+    auto select_sample_size = select.sampleSize();
+    auto select_sample_offset = select.sampleOffset();
 
     if (select_sample_size)
     {

@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class StorageView : public ext::shared_ptr_helper<StorageView>, public IStorage
+class StorageView final : public ext::shared_ptr_helper<StorageView>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageView>;
 public:

@@ -1,10 +1,10 @@
-# FixedString
+# FixedString {#fixedstring}
 
 A fixed-length string of `N` bytes (neither characters nor code points).
 
 To declare a column of `FixedString` type, use the following syntax:
 
-```sql
+``` sql
 <column_name> FixedString(N)
 ```
 
@@ -14,23 +14,23 @@ The `FixedString` type is efficient when data has the length of precisely `N` by
 
 Examples of the values that can be efficiently stored in `FixedString`-typed columns:
 
-- The binary representation of IP addresses (`FixedString(16)` for IPv6).
-- Language codes (ru_RU, en_US ... ).
-- Currency codes (USD, RUB ... ).
-- Binary representation of hashes (`FixedString(16)` for MD5, `FixedString(32)` for SHA256).
+-   The binary representation of IP addresses (`FixedString(16)` for IPv6).
+-   Language codes (ru\_RU, en\_US … ).
+-   Currency codes (USD, RUB … ).
+-   Binary representation of hashes (`FixedString(16)` for MD5, `FixedString(32)` for SHA256).
 
 To store UUID values, use the [UUID](uuid.md) data type.
 
 When inserting the data, ClickHouse:
 
-- Complements a string with null bytes if the string contains fewer than `N` bytes.
-- Throws the `Too large value for FixedString(N)` exception if the string contains more than `N` bytes.
+-   Complements a string with null bytes if the string contains fewer than `N` bytes.
+-   Throws the `Too large value for FixedString(N)` exception if the string contains more than `N` bytes.
 
 When selecting the data, ClickHouse does not remove the null bytes at the end of the string. If you use the `WHERE` clause, you should add null bytes manually to match the `FixedString` value. The following example illustrates how to use the `WHERE` clause with `FixedString`.
 
-Let's consider the following table with the single `FixedString(2)` column:
+Let’s consider the following table with the single `FixedString(2)` column:
 
-```text
+``` text
 ┌─name──┐
 │ b     │
 └───────┘
@@ -38,11 +38,12 @@ Let's consider the following table with the single `FixedString(2)` column:
 
 The query `SELECT * FROM FixedStringTable WHERE a = 'b'` does not return any data as a result. We should complement the filter pattern with null bytes.
 
-```sql
+``` sql
 SELECT * FROM FixedStringTable
 WHERE a = 'b\0'
 ```
-```text
+
+``` text
 ┌─a─┐
 │ b │
 └───┘

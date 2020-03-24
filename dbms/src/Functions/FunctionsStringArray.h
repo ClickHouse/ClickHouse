@@ -232,21 +232,22 @@ public:
     /// Get the next token, if any, or return false.
     bool get(Pos & token_begin, Pos & token_end)
     {
-        if (!pos)
-            return false;
-
-        token_begin = pos;
-
         if (sep.empty())
         {
+            if (pos == end)
+                return false;
+
+            token_begin = pos;
             pos += 1;
             token_end = pos;
-
-            if (pos == end)
-                pos = nullptr;
         }
         else
         {
+            if (!pos)
+                return false;
+
+            token_begin = pos;
+
             pos = reinterpret_cast<Pos>(memmem(pos, end - pos, sep.data(), sep.size()));
 
             if (pos)

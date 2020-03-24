@@ -44,7 +44,8 @@ using SettingsChanges = std::vector<SettingChange>;
 
 class AlterCommands;
 class MutationCommands;
-class PartitionCommands;
+struct PartitionCommand;
+using PartitionCommands = std::vector<PartitionCommand>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;

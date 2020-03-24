@@ -12,7 +12,7 @@ class Context;
 
 /** implements system table "settings", which allows to get information about the current settings.
   */
-class StorageSystemSettings : public ext::shared_ptr_helper<StorageSystemSettings>, public IStorageSystemOneBlock<StorageSystemSettings>
+class StorageSystemSettings final : public ext::shared_ptr_helper<StorageSystemSettings>, public IStorageSystemOneBlock<StorageSystemSettings>
 {
     friend struct ext::shared_ptr_helper<StorageSystemSettings>;
 public:

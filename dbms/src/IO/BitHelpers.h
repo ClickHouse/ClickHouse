@@ -4,7 +4,8 @@
 #include <Common/BitHelpers.h>
 #include <Common/Exception.h>
 
-#include <string.h>
+#include <cstring>
+#include <cassert>
 
 #if defined(__OpenBSD__) || defined(__FreeBSD__)
 #   include <sys/endian.h>
@@ -115,6 +116,8 @@ private:
     template <GetBitsMode mode>
     inline UInt64 getBitsFromBitBuffer(UInt8 bits_to_read)
     {
+        assert(bits_to_read > 0);
+
         // push down the high-bits
         const UInt64 result = static_cast<UInt64>(bits_buffer >> (sizeof(bits_buffer) * 8 - bits_to_read));
 
@@ -186,6 +189,8 @@ public:
     // write `bits_to_write` low-bits of `value` to the buffer
     inline void writeBits(UInt8 bits_to_write, UInt64 value)
     {
+        assert(bits_to_write > 0);
+
         UInt32 capacity = BIT_BUFFER_SIZE - bits_count;
         if (capacity < bits_to_write)
         {

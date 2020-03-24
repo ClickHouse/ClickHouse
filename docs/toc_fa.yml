@@ -13,6 +13,7 @@ nav:
   - 'ﯼﺯﺍﺪﻧﺍ ﻩﺍﺭ ﻭ ﺐﺼﻧ': 'getting_started/install.md'
   - 'ﺵﺯﻮﻣﺁ': 'getting_started/tutorial.md'
   - 'ﻪﻧﻮﻤﻧ ﯼﺎﻫ ﻩﺩﺍﺩ ﻪﻋﻮﻤﺠﻣ':
+    - 'Introduction': 'getting_started/example_datasets/index.md'
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - ' داده های تاکسی New York': 'getting_started/example_datasets/nyc_taxi.md'
     - ' بنچمارک AMPLab Big Data': 'getting_started/example_datasets/amplab_benchmark.md'
@@ -20,6 +21,7 @@ nav:
     - ' ترابایت از لاگ های کلیک از سرویس Criteo': 'getting_started/example_datasets/criteo.md'
     - ' بنچمارک Star Schema': 'getting_started/example_datasets/star_schema.md'
     - 'Yandex.Metrica Data': 'getting_started/example_datasets/metrica.md'
+  - 'Playground': 'getting_started/playground.md'
 
 - 'ﻂﺑﺍﺭ':
   - 'Interface ها': 'interfaces/index.md'

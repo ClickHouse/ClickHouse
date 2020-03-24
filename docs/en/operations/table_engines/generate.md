@@ -4,12 +4,12 @@ The GenerateRandom table engine produces random data for given table schema.
 
 Usage examples:
 
-- Use in test to populate reproducible large table.
-- Generate random input for fuzzing tests.
+-   Use in test to populate reproducible large table.
+-   Generate random input for fuzzing tests.
 
-## Usage in ClickHouse Server
+## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
-```sql
+``` sql
 ENGINE = GenerateRandom(random_seed, max_string_length, max_array_length)
 ```
 
@@ -24,17 +24,17 @@ It supports all [DataTypes](../../data_types/index.md) that can be stored in a t
 
 **1.** Set up the `generate_engine_table` table:
 
-```sql
+``` sql
 CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
 ```
 
 **2.** Query the data:
 
-```sql
+``` sql
 SELECT * FROM generate_engine_table LIMIT 3
 ```
 
-```text
+``` text
 ┌─name─┬──────value─┐
 │ c4xJ │ 1412771199 │
 │ r    │ 1791099446 │
@@ -42,12 +42,13 @@ SELECT * FROM generate_engine_table LIMIT 3
 └──────┴────────────┘
 ```
 
-## Details of Implementation
-- Not supported:
-    - `ALTER`
-    - `SELECT ... SAMPLE`
-    - `INSERT`
-    - Indices
-    - Replication
+## Details of Implementation {#details-of-implementation}
+
+-   Not supported:
+    -   `ALTER`
+    -   `SELECT ... SAMPLE`
+    -   `INSERT`
+    -   Indices
+    -   Replication
 
 [Original article](https://clickhouse.tech/docs/en/operations/table_engines/generate/) <!--hide-->

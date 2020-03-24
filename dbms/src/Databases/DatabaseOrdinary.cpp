@@ -198,7 +198,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
     AtomicStopwatch watch;
     std::atomic<size_t> tables_processed{0};
 
-    auto startupOneTable = [&](const StoragePtr & table)
+    auto startup_one_table = [&](const StoragePtr & table)
     {
         table->startup();
         logAboutProgress(log, ++tables_processed, total_tables, watch);
@@ -207,7 +207,7 @@ void DatabaseOrdinary::startupTables(ThreadPool & thread_pool)
     try
     {
         for (const auto & table : tables)
-            thread_pool.scheduleOrThrowOnError([&]() { startupOneTable(table.second); });
+            thread_pool.scheduleOrThrowOnError([&]() { startup_one_table(table.second); });
     }
     catch (...)
     {
