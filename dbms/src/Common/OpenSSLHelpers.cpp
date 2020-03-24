@@ -23,7 +23,7 @@ String getOpenSSLErrors()
     SCOPE_EXIT(BIO_free(mem));
     ERR_print_errors(mem);
     char * buf = nullptr;
-    long size = BIO_get_mem_data(mem, &buf);
+    size_t size = BIO_get_mem_data(mem, &buf);
     return String(buf, size);
 }
 

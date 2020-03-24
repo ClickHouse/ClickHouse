@@ -20,32 +20,32 @@ namespace ErrorCodes
 namespace
 {
 
-template <typename T, typename Tlimit_num_elems>
+template <typename T, typename LimitNumberOfElements>
 struct MovingSum
 {
     using DataType = MovingSumData<T>;
-    using Function = MovingImpl<T, Tlimit_num_elems, DataType>;
+    using Function = MovingImpl<T, LimitNumberOfElements, DataType>;
 };
 
-template <typename T, typename Tlimit_num_elems>
+template <typename T, typename LimitNumberOfElements>
 struct MovingAvg
 {
     using DataType = MovingAvgData<T>;
-    using Function = MovingImpl<T, Tlimit_num_elems, DataType>;
+    using Function = MovingImpl<T, LimitNumberOfElements, DataType>;
 };
 
-template <typename T, typename Tlimit_num_elems> using MovingSumTemplate = typename MovingSum<T, Tlimit_num_elems>::Function;
-template <typename T, typename Tlimit_num_elems> using MovingAvgTemplate = typename MovingAvg<T, Tlimit_num_elems>::Function;
+template <typename T, typename LimitNumberOfElements> using MovingSumTemplate = typename MovingSum<T, LimitNumberOfElements>::Function;
+template <typename T, typename LimitNumberOfElements> using MovingAvgTemplate = typename MovingAvg<T, LimitNumberOfElements>::Function;
 
-template <template <typename, typename> class Function, typename has_limit, typename ... TArgs>
+template <template <typename, typename> class Function, typename HasLimit, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionMovingImpl(const std::string & name, const DataTypePtr & argument_type, TArgs ... args)
 {
     AggregateFunctionPtr res;
 
     if (isDecimal(argument_type))
-        res.reset(createWithDecimalType<Function, has_limit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
+        res.reset(createWithDecimalType<Function, HasLimit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
     else
-        res.reset(createWithNumericType<Function, has_limit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
+        res.reset(createWithNumericType<Function, HasLimit>(*argument_type, argument_type, std::forward<TArgs>(args)...));
 
     if (!res)
         throw Exception("Illegal type " + argument_type->getName() + " of argument for aggregate function " + name,

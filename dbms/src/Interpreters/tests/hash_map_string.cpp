@@ -277,7 +277,7 @@ struct Grower : public HashTableGrower<>
     }
 
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
-    [[noreturn]] void set(size_t /*num_elems*/)
+    [[noreturn]] static void set(size_t /*num_elems*/)
     {
         throw Poco::Exception(__PRETTY_FUNCTION__);
     }
@@ -292,8 +292,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = atoi(argv[1]);
-    size_t m = atoi(argv[2]);
+    size_t n = std::stol(argv[1]);
+    size_t m = std::stol(argv[2]);
 
     DB::Arena pool;
     std::vector<Key> data(n);

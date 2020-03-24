@@ -7,7 +7,7 @@
 
 namespace DB
 {
-class StorageSystemAggregateFunctionCombinators : public ext::shared_ptr_helper<StorageSystemAggregateFunctionCombinators>,
+class StorageSystemAggregateFunctionCombinators final : public ext::shared_ptr_helper<StorageSystemAggregateFunctionCombinators>,
                                                   public IStorageSystemOneBlock<StorageSystemAggregateFunctionCombinators>
 {
     friend struct ext::shared_ptr_helper<StorageSystemAggregateFunctionCombinators>;

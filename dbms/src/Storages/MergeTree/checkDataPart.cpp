@@ -99,7 +99,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
         throw Exception("Unknown type in part " + path, ErrorCodes::UNKNOWN_PART_TYPE);
     }
 
-    Poco::DirectoryIterator dir_end;
     for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
     {
         const String & file_name = it->name();

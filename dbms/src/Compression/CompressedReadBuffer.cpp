@@ -14,7 +14,12 @@ bool CompressedReadBuffer::nextImpl()
     if (!size_compressed)
         return false;
 
-    memory.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
+    auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
+
+    /// This is for clang static analyzer.
+    assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+
+    memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
     working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
     decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
@@ -39,8 +44,10 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
         if (!readCompressedData(size_decompressed, size_compressed_without_checksum))
             return bytes_read;
 
-        /// If the decompressed block is placed entirely where it needs to be copied.
-        if (size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer() <= n - bytes_read)
+        auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
+
+        /// If the decompressed block fits entirely where it needs to be copied.
+        if (size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
         {
             decompress(to + bytes_read, size_decompressed, size_compressed_without_checksum);
             bytes_read += size_decompressed;
@@ -49,7 +56,11 @@ size_t CompressedReadBuffer::readBig(char * to, size_t n)
         else
         {
             bytes += offset();
-            memory.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
+
+            /// This is for clang static analyzer.
+            assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+
+            memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
             pos = working_buffer.begin();
 

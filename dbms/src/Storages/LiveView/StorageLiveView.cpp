@@ -127,8 +127,8 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(const Context & conte
 Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 {
     Pipes pipes;
-    for (auto & blocks_ : *blocks)
-        pipes.emplace_back(std::make_shared<BlocksSource>(std::make_shared<BlocksPtr>(blocks_), sample_block));
+    for (auto & blocks_for_source : *blocks)
+        pipes.emplace_back(std::make_shared<BlocksSource>(std::make_shared<BlocksPtr>(blocks_for_source), sample_block));
 
     return pipes;
 }
@@ -323,7 +323,7 @@ ASTPtr StorageLiveView::getInnerBlocksQuery()
         /// Rewrite inner query with right aliases for JOIN.
         /// It cannot be done in constructor or startup() because InterpreterSelectQuery may access table,
         /// which is not loaded yet during server startup, so we do it lazily
-        InterpreterSelectQuery(inner_blocks_query, *live_view_context, SelectQueryOptions().modify().analyze());
+        InterpreterSelectQuery(inner_blocks_query, *live_view_context, SelectQueryOptions().modify().analyze()); // NOLINT
         auto table_id = getStorageID();
         extractDependentTable(inner_blocks_query, global_context, table_id.table_name, inner_subquery);
     }

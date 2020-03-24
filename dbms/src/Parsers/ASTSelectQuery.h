@@ -78,10 +78,10 @@ public:
     }
 
     /// Compatibility with old parser of tables list. TODO remove
-    ASTPtr sample_size() const;
-    ASTPtr sample_offset() const;
-    ASTPtr array_join_expression_list(bool & is_left) const;
-    ASTPtr array_join_expression_list() const;
+    ASTPtr sampleSize() const;
+    ASTPtr sampleOffset() const;
+    ASTPtr arrayJoinExpressionList(bool & is_left) const;
+    ASTPtr arrayJoinExpressionList() const;
     const ASTTablesInSelectQueryElement * join() const;
     bool final() const;
     bool withFill() const;

@@ -12,7 +12,7 @@ class Context;
 
 /** System table "build_options" with many params used for clickhouse building
   */
-class StorageSystemBuildOptions : public ext::shared_ptr_helper<StorageSystemBuildOptions>, public IStorageSystemOneBlock<StorageSystemBuildOptions>
+class StorageSystemBuildOptions final : public ext::shared_ptr_helper<StorageSystemBuildOptions>, public IStorageSystemOneBlock<StorageSystemBuildOptions>
 {
     friend struct ext::shared_ptr_helper<StorageSystemBuildOptions>;
 protected:

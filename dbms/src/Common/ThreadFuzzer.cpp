@@ -162,7 +162,7 @@ static void injection(
     {
         int migrate_to = std::uniform_int_distribution<>(0, num_cpus_loaded - 1)(thread_local_rng);
 
-        cpu_set_t set;
+        cpu_set_t set{};
         CPU_ZERO(&set);
         CPU_SET(migrate_to, &set);
 
@@ -212,11 +212,11 @@ void ThreadFuzzer::setup()
     if (sigaction(SIGPROF, &sa, nullptr))
         throwFromErrno("Failed to setup signal handler for thread fuzzer", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
-    static constexpr UInt32 TIMER_PRECISION = 1000000;
+    static constexpr UInt32 timer_precision = 1000000;
 
     struct timeval interval;
-    interval.tv_sec = cpu_time_period_us / TIMER_PRECISION;
-    interval.tv_usec = cpu_time_period_us % TIMER_PRECISION;
+    interval.tv_sec = cpu_time_period_us / timer_precision;
+    interval.tv_usec = cpu_time_period_us % timer_precision;
 
     struct itimerval timer = {.it_interval = interval, .it_value = interval};
 

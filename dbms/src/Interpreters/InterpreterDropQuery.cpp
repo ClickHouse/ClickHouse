@@ -25,6 +25,12 @@ namespace ErrorCodes
 }
 
 
+static DatabasePtr tryGetDatabase(const String & database_name, bool if_exists)
+{
+    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
+}
+
+
 InterpreterDropQuery::InterpreterDropQuery(const ASTPtr & query_ptr_, Context & context_) : query_ptr(query_ptr_), context(context_) {}
 
 
@@ -44,7 +50,7 @@ BlockIO InterpreterDropQuery::execute()
     else if (!drop.database.empty())
         return executeToDatabase(drop.database, drop.kind, drop.if_exists);
     else
-        throw Exception("Nothing to drop, both names are empty.", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Nothing to drop, both names are empty", ErrorCodes::LOGICAL_ERROR);
 }
 
 
@@ -66,7 +72,7 @@ BlockIO InterpreterDropQuery::executeToTable(
     {
         if (if_exists)
             return {};
-        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist.",
+        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist",
                         ErrorCodes::UNKNOWN_TABLE);
     }
 
@@ -78,6 +84,9 @@ BlockIO InterpreterDropQuery::executeToTable(
 
     if (database && table)
     {
+        if (query_ptr->as<ASTDropQuery &>().is_view && !table->isView())
+            throw Exception("Table " + backQuoteIfNeed(table_name) + " is not a View", ErrorCodes::LOGICAL_ERROR);
+
         auto table_id = table->getStorageID();
         if (kind == ASTDropQuery::Kind::Detach)
         {
@@ -227,6 +236,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
     return {};
 }
 
+
 BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, ASTDropQuery::Kind kind, bool if_exists)
 {
     auto ddl_guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
@@ -235,7 +245,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
     {
         if (kind == ASTDropQuery::Kind::Truncate)
         {
-            throw Exception("Unable to truncate database.", ErrorCodes::SYNTAX_ERROR);
+            throw Exception("Unable to truncate database", ErrorCodes::SYNTAX_ERROR);
         }
         else if (kind == ASTDropQuery::Kind::Detach || kind == ASTDropQuery::Kind::Drop)
         {
@@ -263,10 +273,6 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
     return {};
 }
 
-DatabasePtr InterpreterDropQuery::tryGetDatabase(const String & database_name, bool if_exists)
-{
-    return if_exists ? DatabaseCatalog::instance().tryGetDatabase(database_name) : DatabaseCatalog::instance().getDatabase(database_name);
-}
 
 DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(const String & database_name, const String & table_name, bool if_exists)
 {
@@ -276,7 +282,7 @@ DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(const String & dat
     {
         StoragePtr table = database->tryGetTable(context, table_name);
         if (!table && !if_exists)
-            throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist.",
+            throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist",
                             ErrorCodes::UNKNOWN_TABLE);
 
         return {std::move(database), std::move(table)};

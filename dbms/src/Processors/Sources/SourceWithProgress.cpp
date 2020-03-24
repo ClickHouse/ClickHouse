@@ -1,7 +1,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 
 #include <Interpreters/ProcessList.h>
-#include <Access/QuotaContext.h>
+#include <Access/EnabledQuota.h>
 
 namespace DB
 {

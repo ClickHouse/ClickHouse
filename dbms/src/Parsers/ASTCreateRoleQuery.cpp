@@ -1,4 +1,5 @@
 #include <Parsers/ASTCreateRoleQuery.h>
+#include <Parsers/ASTSettingsProfileElement.h>
 #include <Common/quoteString.h>
 
 
@@ -10,6 +11,12 @@ namespace
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " RENAME TO " << (settings.hilite ? IAST::hilite_none : "")
                       << quoteString(new_name);
+    }
+
+    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormatSettings & format)
+    {
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
+        settings.format(format);
     }
 }
 
@@ -26,28 +33,32 @@ ASTPtr ASTCreateRoleQuery::clone() const
 }
 
 
-void ASTCreateRoleQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTCreateRoleQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (attach)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH ROLE" << (settings.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << "ATTACH ROLE" << (format.hilite ? hilite_none : "");
     }
     else
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER ROLE" : "CREATE ROLE")
-                      << (settings.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER ROLE" : "CREATE ROLE")
+                      << (format.hilite ? hilite_none : "");
     }
 
     if (if_exists)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF EXISTS" << (settings.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
     else if (if_not_exists)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (settings.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
     else if (or_replace)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " OR REPLACE" << (settings.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
 
-    settings.ostr << " " << backQuoteIfNeed(name);
+    format.ostr << " " << backQuoteIfNeed(name);
 
     if (!new_name.empty())
-        formatRenameTo(new_name, settings);
+        formatRenameTo(new_name, format);
+
+    if (settings && (!settings->empty() || alter))
+        formatSettings(*settings, format);
 }
+
 }
