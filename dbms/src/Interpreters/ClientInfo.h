@@ -77,6 +77,10 @@ public:
 
     bool empty() const { return query_kind == QueryKind::NO_QUERY; }
 
+    auto toTuple() const { return std::tie(current_query_id, initial_query_id, current_address, initial_address, query_kind, current_user, initial_user, current_password, interface, os_user, client_hostname, client_name, client_version_major, client_version_minor, client_version_patch, client_revision, http_method, http_user_agent, quota_key); }
+    friend bool operator==(const ClientInfo & lhs, const ClientInfo & rhs) { return lhs.toTuple() == rhs.toTuple(); }
+    friend bool operator!=(const ClientInfo & lhs, const ClientInfo & rhs) { return !(lhs == rhs); }
+
     /** Serialization and deserialization.
       * Only values that are not calculated automatically or passed separately are serialized.
       * Revisions are passed to use format that server will understand or client was used.
