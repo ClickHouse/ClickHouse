@@ -103,7 +103,7 @@ public:
             bool label;
         };
 
-        std::vector<ScoreLabel> sorted_labels(size); /// TODO Memory allocation in inner loop - is it really needed?
+        PODArrayWithStackMemory<ScoreLabel, 1024> sorted_labels(size);
 
         for (size_t i = 0; i < size; ++i)
         {
