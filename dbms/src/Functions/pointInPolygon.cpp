@@ -231,7 +231,7 @@ private:
 
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonTrivial<Float64>, true>>();
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>, true>>();
 }
 
 }
