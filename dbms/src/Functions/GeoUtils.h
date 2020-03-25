@@ -625,57 +625,6 @@ ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImp
     return Impl::call(x, y, impl);
 }
 
-/// Total angle (signed) between neighbor vectors in linestring. Zero if linestring.size() < 2.
-template <typename Linestring>
-double calcLinestringRotation(const Linestring & points)
-{
-    using Point = std::decay_t<decltype(*points.begin())>;
-    double rotation = 0;
-
-    auto vecProduct = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
-    auto scalarProduct = [](const Point & from, const Point & to) { return from.x() * to.x() + from.y() * to.y(); };
-    auto getVector = [](const Point & from, const Point & to) -> Point
-    {
-        return Point(to.x() - from.x(), to.y() - from.y());
-    };
-
-    for (auto it = points.begin(); it != points.end(); ++it)
-    {
-        if (it != points.begin())
-        {
-            auto prev = std::prev(it);
-            auto next = std::next(it);
-
-            if (next == points.end())
-                next = std::next(points.begin());
-
-            Point from = getVector(*prev, *it);
-            Point to = getVector(*it, *next);
-
-            auto vec_prod = vecProduct(from, to);
-            auto scalar_prod = scalarProduct(from, to);
-            auto ang = std::atan2(vec_prod, scalar_prod);
-            rotation += ang;
-        }
-    }
-
-    return rotation;
-}
-
-/// Make inner linestring counter-clockwise and outers clockwise oriented.
-template <typename Polygon>
-void normalizePolygon(Polygon && polygon)
-{
-    auto & outer = polygon.outer();
-    if (calcLinestringRotation(outer) < 0)
-        std::reverse(outer.begin(), outer.end());
-
-    auto & inners = polygon.inners();
-    for (auto & inner : inners)
-        if (calcLinestringRotation(inner) > 0)
-            std::reverse(inner.begin(), inner.end());
-}
-
 
 template <typename Polygon>
 std::string serialize(Polygon && polygon)

@@ -5,6 +5,7 @@
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
+#include <boost/geometry/geometries/polygon.hpp>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
@@ -53,7 +54,6 @@ ColumnPtr callPointInPolygonImplWithPool(const IColumn & x, const IColumn & y, P
 
     auto factory = [& polygon]()
     {
-        GeoUtils::normalizePolygon(polygon);
         auto ptr = std::make_unique<PointInPolygonImpl>(polygon);
 
         /// To allocate memory.
@@ -80,11 +80,10 @@ ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, Polygon &
 
 }
 
-template <template <typename> typename PointInPolygonImpl, bool use_object_pool = false>
+template <template <typename> typename PointInPolygonImpl, bool use_object_pool>
 class FunctionPointInPolygon : public IFunction
 {
 public:
-
     template <typename Type>
     using Point = boost::geometry::model::d2::point_xy<Type>;
     template <typename Type>
@@ -92,11 +91,13 @@ public:
     template <typename Type>
     using Box = boost::geometry::model::box<Point<Type>>;
 
-    static const char * name;
+    static inline const char * name = "pointInPolygon";
 
-    static FunctionPtr create(const Context &)
+    FunctionPointInPolygon(bool validate_) : validate(validate_) {}
+
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl, use_object_pool>>();
+        return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl, use_object_pool>>(context.getSettingsRef().validate_polygons);
     }
 
     String getName() const override
@@ -182,6 +183,7 @@ public:
     }
 
 private:
+    bool validate;
 
     Float64 getCoordinateFromField(const Field & field)
     {
@@ -237,10 +239,16 @@ private:
                 Type y_coord = getCoordinateFromField((*column_y)[j]);
                 container.push_back(Point<Type>(x_coord, y_coord));
             }
+        }
 
-            /// Polygon assumed to be closed. Allow user to escape repeating of first point.
-            if (!boost::geometry::equals(container.front(), container.back()))
-                container.push_back(container.front());
+        boost::geometry::correct(polygon);
+
+        if (validate)
+        {
+            std::string failure_message;
+            auto is_valid = boost::geometry::is_valid(polygon, failure_message);
+            if (!is_valid)
+                throw Exception("Polygon is not valid: " + failure_message, ErrorCodes::BAD_ARGUMENTS);
         }
 
         auto call_impl = use_object_pool
@@ -257,9 +265,6 @@ using Point = boost::geometry::model::d2::point_xy<Type>;
 
 template <typename Type>
 using PointInPolygonWithGrid = GeoUtils::PointInPolygonWithGrid<Type>;
-
-template <>
-const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygon";
 
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {
