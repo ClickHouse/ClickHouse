@@ -411,8 +411,8 @@ bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGr
     if (outer.size() < 4)
         return false;
 
-    auto vecProduct = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
-    auto getVector = [](const Point & from, const Point & to) -> Point
+    auto vec_product = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
+    auto get_vector = [](const Point & from, const Point & to) -> Point
     {
         return Point(to.x() - from.x(), to.y() - from.y());
     };
@@ -423,13 +423,13 @@ bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGr
     for (auto i : ext::range(1, outer.size() - 1))
     {
         Point cur = getVector(outer[i], outer[i + 1]);
-        if (vecProduct(prev, cur) < 0)
+        if (vec_product(prev, cur) < 0)
             return false;
 
         prev = cur;
     }
 
-    return vecProduct(prev, first) >= 0;
+    return get_vector(prev, first) >= 0;
 }
 
 template <typename CoordinateType>
@@ -444,12 +444,24 @@ PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
     for (auto i : ext::range(0, outer.size() - 1))
     {
         /// Want to detect is intersection edge was formed from box edge or from polygon edge.
-        /// Only add polygon edges.
-        /// If center of the edge closer to box, than don't form the half-plane.
-        Segment segment(outer[i], outer[i + 1]);
-        Point center((segment.first.x() + segment.second.x()) / 2, (segment.first.y() + segment.second.y()) / 2);
-        if (boost::geometry::comparable_distance(center, polygon) < boost::geometry::comparable_distance(center, box))
-            half_planes.emplace_back(segment.first, segment.second);
+        /// If section (x1, y1), (x2, y2) is on box edge, then either x1 = x2 = one of box_x or y1 = y2 = one of box_y
+
+        auto x1 = outer[i].x();
+        auto y1 = outer[i].y();
+        auto x2 = outer[i + 1].x();
+        auto y2 = outer[i + 1].y();
+
+        auto box_x1 = box.min_corner().x();
+        auto box_y1 = box.min_corner().y();
+        auto box_x2 = box.max_corner().x();
+        auto box_y2 = box.max_corner().y();
+
+        if (! ((x1 == x2 && (x1 == box_x1 || x2 == box_x2))
+            || (y1 == y2 && (y1 == box_y1 || y2 == box_y2))))
+        {
+            std::cerr << x1 << ", " << y1 << "; " << x2 << ", " << y2 << "\n";
+            half_planes.emplace_back(Point(x1, y1), Point(x2, y2));
+        }
     }
 
     return half_planes;
@@ -504,8 +516,12 @@ void PointInPolygonWithGrid<CoordinateType>::addCell(
 
     auto half_planes = findHalfPlanes(box, intersection);
 
+    std::cerr << "half_planes: " << half_planes.size() << "\n";
+
     if (half_planes.empty())
+    {
         addCell(index, box);
+    }
     else if (half_planes.size() == 1)
     {
         cells[index].type = CellType::singleLine;
