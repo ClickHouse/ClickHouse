@@ -156,6 +156,7 @@ private:
 
     void buildGrid();
 
+    /// Calculate bounding box and shift/scale of cells.
     void calcGridAttributes(Box & box);
 
     template <typename T>
@@ -291,11 +292,8 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
 #pragma GCC diagnostic pop
             Box cell_box(Point(x_min, y_min), Point(x_max, y_max));
 
-            Polygon cell_bound;
-            boost::geometry::convert(cell_box, cell_bound);
-
             MultiPolygon intersection;
-            boost::geometry::intersection(polygon, cell_bound, intersection);
+            boost::geometry::intersection(polygon, cell_box, intersection);
 
             size_t cellIndex = getCellIndex(row, col);
 
