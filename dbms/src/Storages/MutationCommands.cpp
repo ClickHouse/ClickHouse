@@ -94,6 +94,15 @@ std::optional<MutationCommand> MutationCommand::parse(ASTAlterCommand * command,
             res.clear = true;
         return res;
     }
+    else if (parse_alter_commands && command->type == ASTAlterCommand::RENAME_COLUMN)
+    {
+        MutationCommand res;
+        res.ast = command->ptr();
+        res.type = MutationCommand::Type::RENAME_COLUMN;
+        res.column_name = command->column->as<ASTIdentifier &>().name;
+        res.rename_to = command->rename_to->as<ASTIdentifier &>().name;
+        return res;
+    }
     else if (command->type == ASTAlterCommand::MATERIALIZE_TTL)
     {
         MutationCommand res;

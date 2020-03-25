@@ -533,7 +533,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (ignore)
         return false;
 
-    if (type == DROP_COLUMN || type == DROP_INDEX || type == RENAME_COLUMN)
+    if (type == DROP_COLUMN || type == DROP_INDEX)
         return true;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)

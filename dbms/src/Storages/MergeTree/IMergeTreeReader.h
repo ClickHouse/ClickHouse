@@ -48,6 +48,9 @@ public:
     /// try to perform conversions of columns.
     void performRequiredConversions(Columns & res_columns);
 
+    /// TODO(alesap)
+    void renameColumnsWithAlters(Columns & res_columns);
+
     const NamesAndTypesList & getColumns() const { return columns; }
     size_t numColumnsInResult() const { return columns.size(); }
 
@@ -78,6 +81,7 @@ protected:
     MarkRanges all_mark_ranges;
 
     friend class MergeTreeRangeReader::DelayedStream;
+    MergeTreeData::AlterConversions alter_conversions;
 };
 
 }

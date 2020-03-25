@@ -3589,8 +3589,15 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     return true;
 }
 
-MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr /*part*/) const
+MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
 {
-    return AlterConversions{};
+    MutationCommands commands = getFirtsAlterMutationCommandsForPart(part);
+
+    AlterConversions result{};
+    for (const auto & command : commands)
+        if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            result.rename_map[command.column_name] = command.rename_to;
+
+    return result;
 }
 }
