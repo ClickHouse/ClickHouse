@@ -64,7 +64,7 @@ CREATE TABLE table_with_function_pk
     value String
   )
 ENGINE = MergeTree
-ORDER BY (key1 + key2 + cast(value as UInt64), key2);
+ORDER BY (cast(value as UInt64), key2);
 
 INSERT INTO table_with_function_pk SELECT number % 32, number, toDateTime('2019-10-01 00:00:00'), toString(number % 10) FROM numbers(10000000);
 
