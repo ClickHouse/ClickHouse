@@ -108,11 +108,10 @@ private:
     BackgroundSchedulePool::TaskHolder clean_cache_task;
     BackgroundSchedulePool::TaskHolder fire_task;
 
-    ExpressionActionsPtr write_expressions;
-
     ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
 
     std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(const ASTCreateQuery & inner_create_query, const String & database_name, const String & table_name);
+    ASTPtr generateCleanCacheQuery(UInt32 timestamp);
 
     UInt32 getWindowLowerBound(UInt32 time_sec);
     UInt32 getWindowUpperBound(UInt32 time_sec);

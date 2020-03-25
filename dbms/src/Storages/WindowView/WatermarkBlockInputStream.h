@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <DataStreams/IBlockInputStream.h>
@@ -13,11 +14,13 @@ class WatermarkBlockInputStream : public IBlockInputStream
 public:
     WatermarkBlockInputStream(
         BlockInputStreamPtr input_,
-        StorageWindowView& storage_)
+        StorageWindowView& storage_,
+        String& window_column_name_)
         : allowed_lateness(false)
         , update_timestamp(false)
         , watermark_specified(false)
         , storage(storage_)
+        , window_column_name(window_column_name_)
         , lateness_upper_bound(0)
         , max_timestamp(0)
         , max_watermark(0)
@@ -28,11 +31,13 @@ public:
     WatermarkBlockInputStream(
         BlockInputStreamPtr input_,
         StorageWindowView& storage_,
+        String& window_column_name_,
         UInt32 max_watermark_)
         : allowed_lateness(false)
         , update_timestamp(false)
         , watermark_specified(true)
         , storage(storage_)
+        , window_column_name(window_column_name_)
         , lateness_upper_bound(0)
         , max_timestamp(0)
         , max_watermark(max_watermark_)
@@ -66,8 +71,9 @@ protected:
         if (!res)
             return res;
 
-        auto & column_wend = res.getByName("____w_end").column;
-        const ColumnUInt32::Container & wend_data = static_cast<const ColumnUInt32 &>(*column_wend).getData();
+        auto & column_window = res.getByName(window_column_name).column;
+        const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*column_window);
+        const ColumnUInt32::Container & wend_data = static_cast<const ColumnUInt32 &>(*column_tuple.getColumnPtr(1)).getData();
         for (size_t i = 0; i < wend_data.size(); ++i)
         {
             if (!watermark_specified && wend_data[i] > max_watermark)
@@ -94,6 +100,7 @@ private:
     bool watermark_specified;
     std::set<UInt32> late_signals;
     StorageWindowView & storage;
+    String window_column_name;
     UInt32 lateness_upper_bound;
     UInt32 max_timestamp;
     UInt32 max_watermark;
