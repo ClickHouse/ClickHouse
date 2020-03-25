@@ -1,10 +1,12 @@
-#include <Core/Types.h>
-#include <Functions/GeoUtils.h>
+#include <array>
+#include <cassert>
+#include <Functions/GeoHash.h>
+
+namespace DB
+{
 
 namespace
 {
-
-using namespace DB;
 
 const char geohash_base32_encode_lookup_table[32] = {
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
@@ -232,15 +234,6 @@ inline size_t geohashEncodeImpl(Float64 longitude, Float64 latitude, uint8_t pre
 
 }
 
-namespace DB
-{
-
-namespace ErrorCodes
-{
-}
-
-namespace GeoUtils
-{
 
 size_t geohashEncode(Float64 longitude, Float64 latitude, uint8_t precision, char * out)
 {
@@ -345,8 +338,6 @@ UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out)
     }
 
     return items;
-}
-
 }
 
 }
