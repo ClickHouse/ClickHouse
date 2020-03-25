@@ -38,12 +38,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
-
-
-namespace GeoUtils
-{
 
 
 template <typename Polygon>
@@ -656,8 +652,6 @@ std::string serialize(Polygon && polygon)
     }
 
     return result;
-}
-
 }
 
 }
