@@ -153,7 +153,6 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-
         const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
         auto const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
         if (const_tuple_col)

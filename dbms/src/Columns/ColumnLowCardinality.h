@@ -90,6 +90,8 @@ public:
         return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
+    void updateWeakHash32(WeakHash32 & hash) const override;
+
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
@@ -229,6 +231,8 @@ public:
         void countKeys(ColumnUInt64::Container & counts) const;
 
         bool containsDefault() const;
+
+        void updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const;
 
     private:
         WrappedPtr positions;
