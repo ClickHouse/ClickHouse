@@ -15,7 +15,7 @@
         <div class="dropdown-menu bg-dark text-muted p-1" aria-labelledby="select-version">
             <a class="dropdown-item{% if not config.extra.version_prefix %} disable{% endif %}"
                href="/docs/{{ language }}/">
-                Version: <span class="text-light">latest</span>
+                <span class="text-light">latest</span>
             </a>
 
             {% for release in config.extra.stable_releases %}

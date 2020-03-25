@@ -23,14 +23,14 @@ function onResize() {
     }
 }
 $(document).ready(function () {
-    var tmp = $.fx.off;
-    $.fx.off = true;
     $('#sidebar .nav-link.active').parents('.collapse').each(function() {
-        if ($(this).attr('id') !== 'sidebar') {
-            $(this).collapse('show');
+        var current = $(this);
+        if (current.attr('id') !== 'sidebar') {
+            current.css('transition-duration', '0s');
+            current.collapse('show');
+            current.css('transition-duration', '0.4s');
         }
     });
-    $.fx.off = tmp;
     onResize();
     $(window).resize(onResize);
     $(window).on('activate.bs.scrollspy', function () {
@@ -60,7 +60,7 @@ $(document).ready(function () {
         var current = $(this);
         current.addClass('alert').addClass('lead');
         current.attr('role', 'alert');
-        current.children('a').addClass('alert-link');
+        current.find('a').addClass('alert-link');
         if (current.hasClass('info') || current.hasClass('note')) {
             current.addClass('alert-primary');
         } if (current.hasClass('attention') || current.hasClass('warning')) {

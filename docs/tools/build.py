@@ -128,7 +128,7 @@ def build_for_lang(lang, args):
         cfg = config.load_config(
             config_file=config_path,
             site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
-            site_url=f'https://clickhouse.yandex/docs/{lang}/',
+            site_url=f'https://clickhouse.tech/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=site_dir,
             strict=not args.version_prefix,
@@ -144,6 +144,7 @@ def build_for_lang(lang, args):
             extra={
                 'stable_releases': args.stable_releases,
                 'version_prefix': args.version_prefix,
+                'single_page': False,
                 'rev':       args.rev,
                 'rev_short': args.rev_short,
                 'rev_url':   args.rev_url,
@@ -233,6 +234,11 @@ def build_single_page_version(lang, args, cfg):
 
 
 def write_redirect_html(out_path, to_url):
+    out_dir = os.path.dirname(out_path)
+    try:
+        os.makedirs(out_dir)
+    except OSError:
+        pass
     with open(out_path, 'w') as f:
         f.write(f'''<!DOCTYPE HTML>
 <html lang="en-US">
@@ -253,11 +259,6 @@ def write_redirect_html(out_path, to_url):
 def build_redirect_html(args, from_path, to_path):
     for lang in args.lang.split(','):
         out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
-        out_dir = os.path.dirname(out_path)
-        try:
-            os.makedirs(out_dir)
-        except OSError:
-            pass
         version_prefix = args.version_prefix + '/' if args.version_prefix else '/'
         target_path = to_path.replace('.md', '/')
         to_url = f'/docs{version_prefix}{lang}/{target_path}'
@@ -266,19 +267,10 @@ def build_redirect_html(args, from_path, to_path):
 
 
 def build_redirects(args):
-    lang_re_fragment = args.lang.replace(',', '|')
-    rewrites = []
-
     with open(os.path.join(args.docs_dir, 'redirects.txt'), 'r') as f:
         for line in f:
             from_path, to_path = line.split(' ', 1)
             build_redirect_html(args, from_path, to_path)
-            from_path = '^/docs/(' + lang_re_fragment + ')/' + from_path.replace('.md', '/?') + '$'
-            to_path = '/docs/$1/' + to_path.replace('.md', '/')
-            rewrites.append(' '.join(['rewrite', from_path, to_path, 'permanent;']))
-
-    with open(os.path.join(args.docs_output_dir, 'redirects.conf'), 'w') as f:
-        f.write('\n'.join(rewrites))
 
 
 def build_docs(args):

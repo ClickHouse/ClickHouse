@@ -66,9 +66,23 @@ $(document).ready(function () {
     if (isAndroid) {
         $('select.form-control').removeClass('form-control').css('width', '100%');
     }
-    if (window.matchMedia('(prefers-reduced-motion: reduce)')) {
-        $.fx.off = true;
+    var beforePrint = function() {
+        var details = document.getElementsByTagName("details");
+        for (var i = 0; i < details.length; ++i) {
+            details[i].open = 1;
+        }
+    };
+    if (window.matchMedia) {
+        window.matchMedia('print').addListener(function(q) {
+            if (q.matches) {
+                beforePrint();
+            }
+        });
+        if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            $.fx.off = true;
+        }
     }
+    window.onbeforeprint = beforePrint;
 });
 
 {% include "js/index.js" %}

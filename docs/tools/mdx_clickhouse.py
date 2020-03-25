@@ -76,5 +76,21 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
         self.env.comment_start_string = '{##'
         self.env.comment_end_string = '##}'
 
+    def on_env(self, env, config, files):
+        env.add_extension('jinja2.ext.i18n')
+        env.install_gettext_translations(
+            self.get_translations(config),
+            newstyle=True
+        )
+        return env
+
+    @staticmethod
+    def get_translations(config):
+        import babel.support
+        return babel.support.Translations.load(
+            dirname=os.path.join(config.data['theme'].dirs[0], 'locale'),
+            locales=[config.data['theme']['language'], 'en']
+        )
+
 
 macros.plugin.MacrosPlugin = PatchedMacrosPlugin
