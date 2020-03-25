@@ -293,9 +293,9 @@ void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
 
     auto & hash_data = hash.getData();
 
+    std::vector<UInt8> v;
     for (size_t i = 0; i < s; ++i)
     {
-        std::vector<UInt8> v;
         WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
         func->serialize(data[i], wbuf);
         wbuf.finalize();

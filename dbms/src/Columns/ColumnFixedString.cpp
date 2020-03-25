@@ -112,8 +112,8 @@ void ColumnFixedString::updateWeakHash32(WeakHash32 & hash) const
         throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
                         ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
 
-    const UInt8 * pos = &chars[0];
-    UInt32 * hash_data = &hash.getData()[0];
+    const UInt8 * pos = chars.data();
+    UInt32 * hash_data = hash.getData().data();
 
     for (size_t row = 0; row < s; ++row)
     {
