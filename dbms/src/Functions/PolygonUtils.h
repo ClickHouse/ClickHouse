@@ -623,35 +623,28 @@ ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImp
 template <typename Polygon>
 std::string serialize(Polygon && polygon)
 {
-    std::string result;
+    WriteBufferFromOwnString buffer;
 
+    using RingType = typename std::decay_t<Polygon>::ring_type;
+
+    auto serializeRing = [&buffer](const RingType & ring)
     {
-        WriteBufferFromString buffer(result);
-
-        using RingType = typename std::decay_t<Polygon>::ring_type;
-
-        auto serializeFloat = [&buffer](float value) { buffer.write(reinterpret_cast<char *>(&value), sizeof(value)); };
-        auto serializeSize = [&buffer](size_t size) { buffer.write(reinterpret_cast<char *>(&size), sizeof(size)); };
-
-        auto serializeRing = [& serializeFloat, & serializeSize](const RingType & ring)
+        writeBinary(ring.size(), buffer);
+        for (const auto & point : ring)
         {
-            serializeSize(ring.size());
-            for (const auto & point : ring)
-            {
-                serializeFloat(point.x());
-                serializeFloat(point.y());
-            }
-        };
+            writeBinary(point.x(), buffer);
+            writeBinary(point.y(), buffer);
+        }
+    };
 
-        serializeRing(polygon.outer());
+    serializeRing(polygon.outer());
 
-        const auto & inners = polygon.inners();
-        serializeSize(inners.size());
-        for (auto & inner : inners)
-            serializeRing(inner);
-    }
+    const auto & inners = polygon.inners();
+    writeBinary(inners.size(), buffer);
+    for (auto & inner : inners)
+        serializeRing(inner);
 
-    return result;
+    return buffer.str();
 }
 
 }
