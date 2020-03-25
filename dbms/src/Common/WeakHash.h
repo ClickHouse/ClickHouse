@@ -4,7 +4,8 @@
 namespace DB
 {
 
-/// It's a class which represents the result of weak and fast hash function per row in column. It's usually crc32.
+/// It's a class which represents the result of weak and fast hash function per row in column.
+/// It's usually hardware accelerated CRC32-C.
 /// Has function result may be combined to calculate hash for tuples.
 ///
 /// The main purpose why this class needed is to support data initialization. Initially, every bit is 1.
