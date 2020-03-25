@@ -220,26 +220,6 @@ namespace
 
     String generateInnerTableName(const String & table_name) { return ".inner." + table_name; }
 
-    ASTPtr generateDeleteRetiredQuery(StorageID inner_table_id, UInt32 timestamp)
-    {
-        auto function_equal = makeASTFunction(
-            "less", std::make_shared<ASTIdentifier>("____w_end"), std::make_shared<ASTLiteral>(timestamp));
-
-        auto alter_command = std::make_shared<ASTAlterCommand>();
-        alter_command->type = ASTAlterCommand::DELETE;
-        alter_command->predicate = function_equal;
-        alter_command->children.push_back(alter_command->predicate);
-
-        auto alter_command_list = std::make_shared<ASTAlterCommandList>();
-        alter_command_list->add(alter_command);
-
-        auto alter_query = std::make_shared<ASTAlterQuery>();
-        alter_query->database = inner_table_id.database_name;
-        alter_query->table = inner_table_id.table_name;
-        alter_query->set(alter_query->command_list, alter_command_list);
-        return alter_query;
-    }
-
     std::shared_ptr<ASTSelectQuery> generateFetchColumnsQuery(const StorageID & inner_storage)
     {
         auto res_query = std::make_shared<ASTSelectQuery>();
@@ -295,6 +275,27 @@ static void extractDependentTable(ASTSelectQuery & query, String & select_databa
             "Logical error while creating StorageWindowView."
             " Could not retrieve table name from select query.",
             DB::ErrorCodes::LOGICAL_ERROR);
+}
+
+ASTPtr StorageWindowView::generateCleanCacheQuery(UInt32 timestamp)
+{
+    auto function_tuple
+        = makeASTFunction("tupleElement", std::make_shared<ASTIdentifier>(window_column_name), std::make_shared<ASTLiteral>("2"));
+    auto function_equal = makeASTFunction("less", function_tuple, std::make_shared<ASTLiteral>(timestamp));
+
+    auto alter_command = std::make_shared<ASTAlterCommand>();
+    alter_command->type = ASTAlterCommand::DELETE;
+    alter_command->predicate = function_equal;
+    alter_command->children.push_back(alter_command->predicate);
+
+    auto alter_command_list = std::make_shared<ASTAlterCommandList>();
+    alter_command_list->add(alter_command);
+
+    auto alter_query = std::make_shared<ASTAlterQuery>();
+    alter_query->database = inner_table_id.database_name;
+    alter_query->table = inner_table_id.table_name;
+    alter_query->set(alter_query->command_list, alter_command_list);
+    return alter_query;
 }
 
 void StorageWindowView::checkTableCanBeDropped() const
@@ -392,17 +393,18 @@ inline void StorageWindowView::cleanCache()
 
     if (!inner_table_id.empty())
     {
-        auto sql = generateDeleteRetiredQuery(inner_table_id, w_bound);
+        auto sql = generateCleanCacheQuery(w_bound);
         InterpreterAlterQuery alt_query(sql, global_context);
         alt_query.execute();
     }
     else
     {
         std::lock_guard lock(mutex);
-        mergeable_blocks.remove_if([w_bound](Block & block)
+        mergeable_blocks.remove_if([&](Block & block)
         {
-            auto & column = block.getByName("____w_end").column;
-            const auto & data = static_cast<const ColumnUInt32 &>(*column).getData();
+            auto & column = block.getByName(window_column_name).column;
+            const ColumnTuple & column_tuple = typeid_cast<const ColumnTuple &>(*column);
+            const ColumnUInt32::Container & data = static_cast<const ColumnUInt32 &>(*column_tuple.getColumnPtr(1)).getData();
             for (size_t i = 0; i < column->size(); ++i)
             {
                 if (data[i] >= w_bound)
@@ -503,10 +505,6 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
         column_dec->type = ast;
         columns_list->children.push_back(column_dec);
     }
-    auto column_wend = std::make_shared<ASTColumnDeclaration>();
-    column_wend->name = "____w_end";
-    column_wend->type = std::make_shared<ASTIdentifier>("DateTime");
-    columns_list->children.push_back(column_wend);
 
     if (inner_create_query.storage->ttl_table)
         throw Exception("TTL is not supported for inner table in Window View", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
@@ -888,22 +886,6 @@ StorageWindowView::StorageWindowView(
         fetch_column_query = generateFetchColumnsQuery(inner_table_id);
     }
 
-    {
-        // write expressions
-        ColumnsWithTypeAndName t_columns;
-        t_columns.emplace_back(
-            nullptr,
-            std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()}),
-            window_column_name);
-        t_columns.emplace_back(nullptr, std::make_shared<DataTypeDateTime>(), "____timestamp");
-        const auto & function_tuple = FunctionFactory::instance().get("tupleElement", global_context);
-        write_expressions = std::make_shared<ExpressionActions>(t_columns, global_context);
-        write_expressions->add(ExpressionAction::addColumn(
-            {std::make_shared<DataTypeUInt8>()->createColumnConst(1, toField(2)), std::make_shared<DataTypeUInt8>(), "____tuple_arg"}));
-        write_expressions->add(ExpressionAction::applyFunction(function_tuple, Names{window_column_name, "____tuple_arg"}, "____w_end"));
-        write_expressions->add(ExpressionAction::removeColumn("____tuple_arg"));
-    }
-
     clean_cache_task = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanCache(); });
     if (is_proctime)
         fire_task = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFireProc(); });
@@ -975,7 +957,6 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
         InterpreterSelectQuery select_block(window_view.getFinalQuery(), context, {std::move(pipe)}, QueryProcessingStage::WithMergeableState);
 
         source_stream = select_block.execute().in;
-        source_stream = std::make_shared<ExpressionBlockInputStream>(source_stream, window_view.write_expressions);
         source_stream = std::make_shared<SquashingBlockInputStream>(
             source_stream, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
     }
@@ -1035,15 +1016,14 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
         InterpreterSelectQuery select_block(window_view.getFinalQuery(), context, {std::move(pipe)}, QueryProcessingStage::WithMergeableState);
 
         source_stream = select_block.execute().in;
-        source_stream = std::make_shared<ExpressionBlockInputStream>(source_stream, window_view.write_expressions);
         source_stream = std::make_shared<SquashingBlockInputStream>(
             source_stream, context.getSettingsRef().min_insert_block_size_rows, context.getSettingsRef().min_insert_block_size_bytes);
 
         if (!window_view.is_tumble)
             source_stream
-                = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view, window_view.getWindowUpperBound(t_max_timstamp));
+                = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view, window_view.window_column_name, window_view.getWindowUpperBound(t_max_timstamp));
         else
-            source_stream = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view);
+            source_stream = std::make_shared<WatermarkBlockInputStream>(source_stream, window_view, window_view.window_column_name);
 
         if (window_view.is_watermark_bounded || window_view.allowed_lateness)
             std::static_pointer_cast<WatermarkBlockInputStream>(source_stream)->setMaxTimestamp(t_max_timstamp);
@@ -1155,9 +1135,18 @@ BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 waterma
     }
 
     ColumnsWithTypeAndName t_columns;
-    t_columns.emplace_back(nullptr, std::make_shared<DataTypeDateTime>(), "____w_end");
+    t_columns.emplace_back(
+        nullptr,
+        std::make_shared<DataTypeTuple>(DataTypes{std::make_shared<DataTypeDateTime>(), std::make_shared<DataTypeDateTime>()}),
+        window_column_name);
 
     ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(t_columns, global_context);
+    const auto & function_tuple = FunctionFactory::instance().get("tupleElement", global_context);
+    actions->add(ExpressionAction::addColumn(
+        {std::make_shared<DataTypeUInt8>()->createColumnConst(1, toField(2)), std::make_shared<DataTypeUInt8>(), "____tuple_arg"}));
+    actions->add(ExpressionAction::applyFunction(function_tuple, Names{window_column_name, "____tuple_arg"}, "____w_end"));
+    actions->add(ExpressionAction::removeColumn("____tuple_arg"));
+
     actions->add(ExpressionAction::addColumn({std::make_shared<DataTypeDateTime>()->createColumnConst(1, toField(watermark)),
                                                std::make_shared<DataTypeDateTime>(),
                                                "____watermark"}));
