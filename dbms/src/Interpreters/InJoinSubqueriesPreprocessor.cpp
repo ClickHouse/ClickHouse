@@ -45,7 +45,11 @@ struct NonGlobalTableData
     {
         ASTPtr & database_and_table = node.database_and_table_name;
         if (database_and_table)
+        {
             renameIfNeeded(database_and_table);
+            node.children.clear();
+            node.children.push_back(database_and_table);
+        }
     }
 
 private:
