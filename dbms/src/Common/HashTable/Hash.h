@@ -119,7 +119,8 @@ inline UInt32 updateWeakHash32(const DB::UInt8 * pos, size_t size, DB::UInt32 up
                 break;
             case 6:
                 *reinterpret_cast<uint32_t *>(value_ptr) = *reinterpret_cast<const uint32_unaligned_t *>(pos);
-                *reinterpret_cast<uint16_t *>(value_ptr + 4) = *reinterpret_cast<const uint16_unaligned_t *>(pos + 4);
+                *reinterpret_cast<uint16_unaligned_t *>(value_ptr + 4) =
+                        *reinterpret_cast<const uint16_unaligned_t *>(pos + 4);
                 break;
             case 7:
                 *reinterpret_cast<uint32_t *>(value_ptr) = *reinterpret_cast<const uint32_unaligned_t *>(pos);
