@@ -101,6 +101,24 @@ def build_for_lang(lang, args):
         else:
             site_dir = os.path.join(args.docs_output_dir, lang)
 
+        markdown_extensions = [
+            'mdx_clickhouse',
+            'admonition',
+            'attr_list',
+            'codehilite',
+            'nl2br',
+            'sane_lists',
+            'pymdownx.magiclink',
+            'pymdownx.superfences',
+            'extra',
+            {
+                'toc': {
+                    'permalink': True,
+                    'slugify': mdx_clickhouse.slugify
+                }
+            }
+        ]
+
         plugins = ['search']
         if not args.no_docs_macros:
             plugins.append('macros')
@@ -121,23 +139,7 @@ def build_for_lang(lang, args):
             repo_url='https://github.com/ClickHouse/ClickHouse/',
             edit_uri=f'edit/master/docs/{lang}',
             extra_css=[f'assets/stylesheets/custom.css?{args.rev_short}'],
-            markdown_extensions=[
-                'mdx_clickhouse',
-                'admonition',
-                'attr_list',
-                'codehilite',
-                'nl2br',
-                'sane_lists',
-                'pymdownx.magiclink',
-                'pymdownx.superfences',
-                'extra',
-                {
-                    'toc': {
-                        'permalink': True,
-                        'slugify': mdx_clickhouse.slugify
-                    }
-                }
-            ],
+            markdown_extensions=markdown_extensions,
             plugins=plugins,
             extra={
                 'stable_releases': args.stable_releases,
