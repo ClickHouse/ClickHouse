@@ -60,9 +60,9 @@ TEST(Processors, PortsNotConnected)
         catch (DB::Exception & e)
         {
             std::cout << e.displayText() << std::endl;
-            throw;
+            ASSERT_TRUE(e.displayText().find("pipeline") != std::string::npos);
         }
     };
 
-    ASSERT_THROW(exec(), DB::Exception);
+    exec();
 }
