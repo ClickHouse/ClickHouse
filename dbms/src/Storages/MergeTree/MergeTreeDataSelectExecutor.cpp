@@ -810,7 +810,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
         {
             auto concat = std::make_shared<ConcatProcessor>(res.front().getHeader(), res.size());
             Pipe pipe(std::move(res), std::move(concat));
-            res = { std::move(pipe) };
+            res = {};
+            res.emplace_back(std::move(pipe));
         }
     }
 
