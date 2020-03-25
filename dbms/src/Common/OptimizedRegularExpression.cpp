@@ -291,7 +291,7 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
                 "the first slash is for SQL and the second one is for regex",
                 DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
         }
-        
+
         if (!is_no_capture)
         {
             number_of_subpatterns = re2->NumberOfCapturingGroups();
