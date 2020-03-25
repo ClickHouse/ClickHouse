@@ -5,6 +5,8 @@ trap "exit" INT TERM
 trap "kill $(jobs -pr) ||:" EXIT
 
 stage=${stage:-}
+script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
 
 function configure
 {
@@ -209,10 +211,8 @@ done
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
 
 right/clickhouse local --query "
-create table queries engine File(TSVWithNamesAndTypes, 'queries.tsv')
+create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
     as select
-        replaceAll(_file, '-report.tsv', '') test,
-
         -- FIXME Comparison mode doesn't make sense for queries that complete
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
@@ -225,7 +225,9 @@ create table queries engine File(TSVWithNamesAndTypes, 'queries.tsv')
         -- likely to observe a difference > 5% in less than 5% cases.
         -- Not sure it is correct, but empirically it filters out a lot of noise.
         not short and abs(diff) > 0.15 and abs(diff) > rd[3] and rd[1] > 0.05 as changed,
-        *
+        left, right, diff, rd,
+        replaceAll(_file, '-report.tsv', '') test,
+        query
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
 create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
@@ -274,36 +276,52 @@ create table test_times_tsv engine File(TSV, 'test-times.tsv') as
 create table all_queries_tsv engine File(TSV, 'all-queries.tsv') as
     select left, right, diff, rd, test, query
     from queries order by rd[3] desc;
+" 2> >(head -2 >> report-errors.rep) ||:
 
-create view right_query_log as select *
-    from file('right-query-log.tsv', TSVWithNamesAndTypes, '$(cat right-query-log.tsv.columns)');
+for version in {right,left}
+do
+right/clickhouse local --query "
+create view queries as
+    select * from file('queries.rep', TSVWithNamesAndTypes,
+        'short int, unstable int, changed int, left float, right float,
+            diff float, rd Array(float), test text, query text');
 
-create view right_trace_log as select *
-    from file('right-trace-log.tsv', TSVWithNamesAndTypes, '$(cat right-trace-log.tsv.columns)');
+create view query_log as select *
+    from file('$version-query-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "$version-query-log.tsv.columns")');
 
-create view right_addresses_src as select *
-    from file('right-addresses.tsv', TSVWithNamesAndTypes, '$(cat right-addresses.tsv.columns)');
+create view trace_log as select *
+    from file('$version-trace-log.tsv', TSVWithNamesAndTypes,
+        '$(cat "$version-trace-log.tsv.columns")');
 
-create table right_addresses_join engine Join(any, left, address) as
-    select addr address, name from right_addresses_src;
+create view addresses_src as select *
+    from file('$version-addresses.tsv', TSVWithNamesAndTypes,
+        '$(cat "$version-addresses.tsv.columns")');
 
-create table unstable_query_runs engine File(TSVWithNamesAndTypes, 'unstable-query-runs.rep') as
-    select query_id, query from right_query_log
+create table addresses_join engine Join(any, left, address) as
+    select addr address, name from addresses_src;
+
+create table unstable_query_runs engine File(TSVWithNamesAndTypes,
+        'unstable-query-runs.$version.rep') as
+    select query_id, query from query_log
     join queries using query
     where query_id not like 'prewarm %' and (unstable or changed)
     ;
 
-create table unstable_query_log engine File(Vertical, 'unstable-query-log.rep') as
-    select * from right_query_log
+create table unstable_query_log engine File(Vertical,
+        'unstable-query-log.$version.rep') as
+    select * from query_log
     where query_id in (select query_id from unstable_query_runs);
 
-create table unstable_run_metrics engine File(TSVWithNamesAndTypes, 'unstable-run-metrics.rep') as
+create table unstable_run_metrics engine File(TSVWithNamesAndTypes,
+        'unstable-run-metrics.$version.rep') as
     select ProfileEvents.Values value, ProfileEvents.Names metric, query_id, query
-    from right_query_log array join ProfileEvents
+    from query_log array join ProfileEvents
     where query_id in (select query_id from unstable_query_runs)
     ;
 
-create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes, 'unstable-run-metrics-2.rep') as
+create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes,
+        'unstable-run-metrics-2.$version.rep') as
     select v, n, query_id, query
     from
         (select
@@ -311,20 +329,25 @@ create table unstable_run_metrics_2 engine File(TSVWithNamesAndTypes, 'unstable-
             [memory_usage, read_bytes, written_bytes, query_duration_ms] v,
             query,
             query_id
-        from right_query_log
+        from query_log
         where query_id in (select query_id from unstable_query_runs))
     array join n, v;
 
-create table unstable_run_traces engine File(TSVWithNamesAndTypes, 'unstable-run-traces.rep') as
-    select count() value, joinGet(right_addresses_join, 'name', arrayJoin(trace)) metric,
-        unstable_query_runs.query_id, any(unstable_query_runs.query) query
+create table unstable_run_traces engine File(TSVWithNamesAndTypes,
+        'unstable-run-traces.$version.rep') as
+    select
+        count() value,
+        joinGet(addresses_join, 'name', arrayJoin(trace)) metric,
+        unstable_query_runs.query_id,
+        any(unstable_query_runs.query) query
     from unstable_query_runs
-    join right_trace_log on right_trace_log.query_id = unstable_query_runs.query_id
+    join trace_log on trace_log.query_id = unstable_query_runs.query_id
     group by unstable_query_runs.query_id, metric
     order by count() desc
     ;
 
-create table metric_devation engine File(TSVWithNamesAndTypes, 'metric-deviation.rep') as
+create table metric_devation engine File(TSVWithNamesAndTypes,
+        'metric-deviation.$version.rep') as
     select floor((q[3] - q[1])/q[2], 3) d,
         quantilesExact(0, 0.5, 1)(value) q, metric, query
     from (select * from unstable_run_metrics
@@ -336,31 +359,36 @@ create table metric_devation engine File(TSVWithNamesAndTypes, 'metric-deviation
     order by any(rd[3]) desc, query desc, d desc
     ;
 
-create table stacks engine File(TSV, 'stacks.rep') as
+create table stacks engine File(TSV, 'stacks.$version.rep') as
     select
         query,
         arrayStringConcat(
-            arrayMap(x -> joinGet(right_addresses_join, 'name', x),
+            arrayMap(x -> joinGet(addresses_join, 'name', x),
                 arrayReverse(trace)
             ),
             ';'
         ) readable_trace,
         count()
-    from right_trace_log
+    from trace_log
     join unstable_query_runs using query_id
     group by query, trace
     ;
-" 2>> report-errors.txt ||:
+" 2> >(head -2 >> report-errors.rep) ||: # do not run in parallel because they use the same data dir for StorageJoins which leads to weird errors.
+done
+wait
 
 IFS=$'\n'
-for query in $(cut -d'	' -f1 stacks.rep | sort | uniq)
+for version in {right,left}
 do
-    query_file=$(echo "$query" | cut -c-120 | sed 's/[/]/_/g')
-    grep -F "$query	" stacks.rep \
-        | cut -d'	' -f 2- \
-        | sed 's/\t/ /g' \
-        | tee "$query_file.stacks.rep" \
-        | ~/fg/flamegraph.pl > "$query_file.svg" &
+    for query in $(cut -d'	' -f1 "stacks.$version.rep" | sort | uniq)
+    do
+        query_file=$(echo "$query" | cut -c-120 | sed 's/[/]/_/g')
+        grep -F "$query	" "stacks.$version.rep" \
+            | cut -d'	' -f 2- \
+            | sed 's/\t/ /g' \
+            | tee "$query_file.stacks.$version.rep" \
+            | ~/fg/flamegraph.pl > "$query_file.$version.svg" &
+    done
 done
 wait
 unset IFS

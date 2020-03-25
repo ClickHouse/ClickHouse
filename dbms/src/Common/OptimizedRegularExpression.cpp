@@ -281,8 +281,17 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
 
         re2 = std::make_unique<RegexType>(regexp_, regexp_options);
         if (!re2->ok())
-            throw DB::Exception("OptimizedRegularExpression: cannot compile re2: " + regexp_ + ", error: " + re2->error() + ". Look at https://github.com/google/re2/wiki/Syntax for reference.", DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
-
+        {
+            throw DB::Exception("OptimizedRegularExpression: cannot compile re2: "
+                + regexp_ + ", error: " + re2->error()
+                + ". Look at https://github.com/google/re2/wiki/Syntax "
+                "for reference. Please note that if you specify regex as an SQL "
+                "string literal, the slashes have to be additionally escaped. "
+                "For example, to match an opening brace, write '\\(' -- "
+                "the first slash is for SQL and the second one is for regex",
+                DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+        }
+        
         if (!is_no_capture)
         {
             number_of_subpatterns = re2->NumberOfCapturingGroups();
