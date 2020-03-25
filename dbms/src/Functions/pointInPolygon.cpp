@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/GeoUtils.h>
+#include <Functions/PolygonUtils.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <boost/geometry.hpp>
