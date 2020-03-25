@@ -87,9 +87,9 @@ def build_for_lang(lang, args):
 
         languages = {
             'en': 'English',
+            'zh': '中文',
             'es': 'Español',
             'ru': 'Русский',
-            'zh': '中文',
             'ja': '日本語',
             'fa': 'فارسی'
         }

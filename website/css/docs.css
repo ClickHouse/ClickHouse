@@ -1,5 +1,6 @@
 #sidebar {
     position: fixed;
+    z-index: 50;
     left: 0;
 }
 
@@ -62,10 +63,18 @@
 }
 
 
-
 #docsearch-input:focus, #docsearch-input:active {
     border: 0;
     color: #efefef!important;
+}
+
+@media (max-width: 768px) {
+    #search-form {
+        width: 75%;
+    }
+    .algolia-autocomplete, #docsearch-input, #search-form .input-group {
+        width: 100%;
+    }
 }
 
 .algolia-autocomplete .algolia-docsearch-suggestion--subcategory-column {
@@ -83,7 +92,6 @@
 }
 
 .algolia-autocomplete .ds-dropdown-menu {
-    width: 100% !important;
     max-height: 512px;
     overflow-x: hidden;
     overflow-y: auto;

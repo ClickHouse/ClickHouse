@@ -1,19 +1,17 @@
-<nav id="top-nav" class="navbar navbar-expand-md bg-dark-alt text-white sticky-top">
-    <div class="container-fluid">
+<nav id="top-nav" class="navbar navbar-dark navbar-expand-md bg-dark-alt text-white sticky-top">
+    <div class="container-fluid justify-content-between">
         <a class="d-block navbar-brand mr-3" href="/">
             <img id="docs-logo-icon" src="/images/logo.svg" alt="ClickHouse logo" title="ClickHouse logo"/>
         </a>
         <div class="w-100 navbar-text text-left d-none d-md-block">
             <h1 class="h3 m-0 p-0 d-inline">
-                <a href="#" class="text-white text-decoration-none">{{ page.title or config.site_name }}</a>
+                <a href="#" class="text-white text-decoration-none">
+                    {{ page.title or config.site_name }}
+                </a>
             </h1>
         </div>
 
-        <button class="navbar-toggler border-0" type="button" data-toggle="collapse" data-target="#navbar-toggle" aria-controls="navbar-toggle" aria-expanded="false" aria-label="Toggle navigation">
-            <span class="navbar-toggler-icon text-white"></span>
-        </button>
-
-        <div id="navbar-toggle" class="collapse navbar-collapse">
+        <div class="d-none d-md-block">
             <ul class="navbar-nav ml-auto mt-2 mt-lg-0 justify-content-end">
                 {% if config.extra.single_page %}
                     {% set edit_url = config.repo_url + 'tree/master/docs' %}
@@ -30,25 +28,27 @@
                         <img src="/images/index/github.svg" alt="GitHub repository" title="Go to GitHub" height="32" />
                     </a>
                 </li>
-                <li id="languages-dropdown" class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle d-inline-block mt-1 text-muted" href="#" id="lang-dropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                        <img src="/images/flags/{{ language }}.svg" alt="{{ config.extra.languages[language] }}" title="{{ config.extra.languages[language] }}" width="32" class="d-inline-block mt-n1" />
-                    </a>
-                    <div class="dropdown-menu bg-dark" aria-labelledby="lang-dropdown">
-                        {% for code, name in config.extra.languages.items() %}
-                        <a class="dropdown-item{% if language == code %} disabled{% endif %}"
-                           href="/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}{{ code }}/{{ page.url }}">
-                            <img src="/images/flags/{{ code }}.svg" alt="" title="" width="32" class="d-inline-block mr-2" />{{ name }}
+                <li id="languages-wrapper" class="nav-item dropdown">
+                    <div id="languages-dropdown">
+                        <a class="nav-link dropdown-toggle d-inline-block mt-1 text-muted" href="#" id="lang-dropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                            <img src="/images/flags/{{ language }}.svg" alt="{{ config.extra.languages[language] }}" title="{{ config.extra.languages[language] }}" width="32" class="d-inline-block mt-n1" />
                         </a>
-                        {% endfor %}
+                        <div class="dropdown-menu bg-dark" aria-labelledby="lang-dropdown">
+                            {% for code, name in config.extra.languages.items() %}
+                            <a class="dropdown-item{% if language == code %} disabled{% endif %}"
+                               href="/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}{{ code }}/{{ page.url }}">
+                                <img src="/images/flags/{{ code }}.svg" alt="" title="" width="32" class="d-inline-block mr-2" />{{ name }}
+                            </a>
+                            {% endfor %}
+                        </div>
                     </div>
                 </li>
             </ul>
         </div>
 
-        <form class="form-inline m-0">
+        <form id="search-form" class="form-inline m-0">
             <div class="input-group">
-                <div class="input-group-prepend">
+                <div class="input-group-prepend w-100">
                     <span class="input-group-text bg-secondary-alt text-muted border-0 mr-n1" id="search-icon">
                         <img src="/images/mkdocs/search.svg" />
                     </span>
@@ -56,5 +56,9 @@
                 </div>
             </div>
         </form>
+
+        <button id="navbar-toggler" class="navbar-toggler border-0" type="button" data-toggle="collapse" data-target="#sidebar" aria-controls="sidebar" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
     </div>
 </nav>

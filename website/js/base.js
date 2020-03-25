@@ -18,20 +18,6 @@ $(document).ready(function () {
 
         navbar_toggle.collapse('hide');
 
-        if (target_id === 'dark-mode-switch') {
-            var body = $('body');
-            if(body.hasClass('dark-mode')) {
-                body.removeClass('dark-mode');
-                target.attr('src', '/images/mkdocs/moon.svg');
-                localStorage.removeItem('dark-mode');
-            } else {
-                body.addClass('dark-mode');
-                target.attr('src', '/images/mkdocs/sun.svg');
-                localStorage.setItem('dark-mode', '1');
-            }
-            return;
-        }
-
         if (target_id && target_id.startsWith('logo-')) {
             selector = '#';
         }
