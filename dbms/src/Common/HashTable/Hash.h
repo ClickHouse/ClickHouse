@@ -75,11 +75,11 @@ template <typename T>
 inline typename std::enable_if<(sizeof(T) > sizeof(DB::UInt64)), DB::UInt64>::type
 intHashCRC32(const T & x, DB::UInt64 updated_value)
 {
-    auto * begin64 = reinterpret_cast<const UInt64 *>(&x);
+    auto * begin = reinterpret_cast<const char *>(&x);
     for (size_t i = 0; i < sizeof(T); i += sizeof(UInt64))
     {
-        updated_value = intHashCRC32(*begin64, updated_value);
-        ++begin64;
+        updated_value = intHashCRC32(unalignedLoad<DB::UInt64>(begin), updated_value);
+        begin += sizeof(DB::UInt64);
     }
 
     return updated_value;

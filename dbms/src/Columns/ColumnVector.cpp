@@ -63,9 +63,9 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
         throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
                         ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
 
-    const T * begin = &data[0];
+    const T * begin = data.data();
     const T * end = begin + s;
-    UInt32 * hash_data = &hash.getData()[0];
+    UInt32 * hash_data = hash.getData().data();
 
     while (begin < end)
     {
