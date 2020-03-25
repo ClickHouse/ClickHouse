@@ -86,9 +86,10 @@ public:
     using Segment = boost::geometry::model::segment<Point>;
 
     explicit PointInPolygonWithGrid(const Polygon & polygon_, UInt16 grid_size_ = 8)
-            : grid_size(std::max<UInt16>(1, grid_size_)), polygon(polygon_) {}
-
-    void init();
+        : grid_size(std::max<UInt16>(1, grid_size_)), polygon(polygon_)
+    {
+        buildGrid();
+    }
 
     /// True if bound box is empty.
     bool hasEmptyBound() const { return has_empty_bound; }
@@ -152,7 +153,6 @@ private:
     CoordinateType y_scale;
 
     bool has_empty_bound = false;
-    bool was_grid_built = false;
 
     void buildGrid();
 
@@ -201,8 +201,6 @@ public:
     explicit PointInPolygonTrivial(const Polygon & polygon_)
         : polygon(polygon_) {}
 
-    void init() {}
-
     /// True if bound box is empty.
     bool hasEmptyBound() const { return false; }
 
@@ -231,15 +229,6 @@ UInt64 PointInPolygonWithGrid<CoordinateType>::getAllocatedBytes() const
         size += getMultiPolygonAllocatedBytes(elem);
 
     return size;
-}
-
-template <typename CoordinateType>
-void PointInPolygonWithGrid<CoordinateType>::init()
-{
-    if (!was_grid_built)
-        buildGrid();
-
-    was_grid_built = true;
 }
 
 template <typename CoordinateType>
@@ -542,9 +531,7 @@ public:
     using Polygon = boost::geometry::model::polygon<Point, false>;
     using Box = boost::geometry::model::box<Point>;
 
-    explicit PointInPolygon(const Polygon & polygon_) : polygon(polygon_) {}
-
-    void init()
+    explicit PointInPolygon(const Polygon & polygon_) : polygon(polygon_)
     {
         boost::geometry::envelope(polygon, box);
 
@@ -584,12 +571,8 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
 {
     auto size = x.size();
 
-    impl.init();
-
     if (impl.hasEmptyBound())
-    {
         return ColumnVector<UInt8>::create(size, 0);
-    }
 
     auto result = ColumnVector<UInt8>::create(size);
     auto & data = result->getData();
@@ -598,9 +581,7 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
     const auto & y_data = y.getData();
 
     for (auto i : ext::range(0, size))
-    {
         data[i] = static_cast<UInt8>(impl.contains(x_data[i], y_data[i]));
-    }
 
     return result;
 }
