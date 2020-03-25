@@ -74,6 +74,81 @@ UInt64 getMultiPolygonAllocatedBytes(const MultiPolygon & multi_polygon)
     return size;
 }
 
+
+/// This algorithm can be used as a baseline for comparison.
+template <typename CoordinateType>
+class PointInPolygonTrivial
+{
+public:
+    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
+    /// Counter-Clockwise ordering.
+    using Polygon = boost::geometry::model::polygon<Point, false>;
+    using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
+    using Box = boost::geometry::model::box<Point>;
+    using Segment = boost::geometry::model::segment<Point>;
+
+    explicit PointInPolygonTrivial(const Polygon & polygon_)
+        : polygon(polygon_) {}
+
+    /// True if bound box is empty.
+    bool hasEmptyBound() const { return false; }
+
+    UInt64 getAllocatedBytes() const { return 0; }
+
+    bool contains(CoordinateType x, CoordinateType y) const
+    {
+        return boost::geometry::covered_by(Point(x, y), polygon);
+    }
+
+private:
+    Polygon polygon;
+};
+
+
+/// Simple algorithm with bounding box.
+template <typename Strategy, typename CoordinateType>
+class PointInPolygon
+{
+public:
+    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
+    /// Counter-Clockwise ordering.
+    using Polygon = boost::geometry::model::polygon<Point, false>;
+    using Box = boost::geometry::model::box<Point>;
+
+    explicit PointInPolygon(const Polygon & polygon_) : polygon(polygon_)
+    {
+        boost::geometry::envelope(polygon, box);
+
+        const Point & min_corner = box.min_corner();
+        const Point & max_corner = box.max_corner();
+
+        if (min_corner.x() == max_corner.x() || min_corner.y() == max_corner.y())
+            has_empty_bound = true;
+    }
+
+    bool hasEmptyBound() const { return has_empty_bound; }
+
+    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const
+    {
+        Point point(x, y);
+
+        if (!boost::geometry::within(point, box))
+            return false;
+
+        return boost::geometry::covered_by(point, polygon, strategy);
+    }
+
+    UInt64 getAllocatedBytes() const { return sizeof(*this); }
+
+private:
+    const Polygon & polygon;
+    Box box;
+    bool has_empty_bound = false;
+    Strategy strategy;
+};
+
+
+/// Optimized algorithm with bounding box and grid.
 template <typename CoordinateType>
 class PointInPolygonWithGrid
 {
@@ -101,13 +176,13 @@ public:
 private:
     enum class CellType
     {
-        inner,
-        outer,
-        singleLine,
-        pairOfLinesSingleConvexPolygon,
-        pairOfLinesSingleNonConvexPolygons,
-        pairOfLinesDifferentPolygons,
-        complexPolygon
+        inner,                                  /// The cell is completely inside polygon.
+        outer,                                  /// The cell is completely outside of polygon.
+        singleLine,                             /// The cell is splitted to inner/outer part by a single line.
+        pairOfLinesSingleConvexPolygon,         /// The cell is splitted to inner/outer part by a polyline of two sections and inner part is convex.
+        pairOfLinesSingleNonConvexPolygons,     /// The cell is splitted to inner/outer part by a polyline of two sections and inner part is non convex.
+        pairOfLinesDifferentPolygons,           /// The cell is spliited by two lines to three different parts.
+        complexPolygon                          /// Generic case.
     };
 
     struct HalfPlane
@@ -184,36 +259,6 @@ private:
 
     /// min(distance(point, edge) : edge in polygon)
     inline Distance distance(const Point & point, const Polygon & polygon);
-};
-
-
-/// This algorithm can be used as a baseline for comparison.
-template <typename CoordinateType>
-class PointInPolygonTrivial
-{
-public:
-    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
-    /// Counter-Clockwise ordering.
-    using Polygon = boost::geometry::model::polygon<Point, false>;
-    using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
-    using Box = boost::geometry::model::box<Point>;
-    using Segment = boost::geometry::model::segment<Point>;
-
-    explicit PointInPolygonTrivial(const Polygon & polygon_)
-        : polygon(polygon_) {}
-
-    /// True if bound box is empty.
-    bool hasEmptyBound() const { return false; }
-
-    UInt64 getAllocatedBytes() const { return 0; }
-
-    bool contains(CoordinateType x, CoordinateType y) const
-    {
-        return boost::geometry::covered_by(Point(x, y), polygon);
-    }
-
-private:
-    Polygon polygon;
 };
 
 
@@ -518,48 +563,6 @@ void PointInPolygonWithGrid<CoordinateType>::addCell(
     else
         addComplexPolygonCell(index, box);
 }
-
-
-template <typename Strategy, typename CoordinateType>
-class PointInPolygon
-{
-public:
-    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
-    /// Counter-Clockwise ordering.
-    using Polygon = boost::geometry::model::polygon<Point, false>;
-    using Box = boost::geometry::model::box<Point>;
-
-    explicit PointInPolygon(const Polygon & polygon_) : polygon(polygon_)
-    {
-        boost::geometry::envelope(polygon, box);
-
-        const Point & min_corner = box.min_corner();
-        const Point & max_corner = box.max_corner();
-
-        if (min_corner.x() == max_corner.x() || min_corner.y() == max_corner.y())
-            has_empty_bound = true;
-    }
-
-    bool hasEmptyBound() const { return has_empty_bound; }
-
-    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const
-    {
-        Point point(x, y);
-
-        if (!boost::geometry::within(point, box))
-            return false;
-
-        return boost::geometry::covered_by(point, polygon, strategy);
-    }
-
-    UInt64 getAllocatedBytes() const { return sizeof(*this); }
-
-private:
-    const Polygon & polygon;
-    Box box;
-    bool has_empty_bound = false;
-    Strategy strategy;
-};
 
 
 /// Algorithms.
