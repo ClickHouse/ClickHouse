@@ -51,14 +51,18 @@ TEST(Processors, PortsNotConnected)
 
     PipelineExecutor executor(processors);
 
-    ASSERT_THROW(
-    try
+    auto exec = [&]()
     {
-        executor.execute(1);
-    }
-    catch (DB::Exception & e)
-    {
-        std::cout << e.displayText() << std::endl;
-        throw;
-    }, DB::Exception);
+        try
+        {
+            executor.execute(1);
+        }
+        catch (DB::Exception & e)
+        {
+            std::cout << e.displayText() << std::endl;
+            throw;
+        }
+    };
+
+    ASSERT_THROW(exec(), DB::Exception);
 }
