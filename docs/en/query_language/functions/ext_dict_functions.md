@@ -2,7 +2,7 @@
 
 For information on connecting and configuring external dictionaries, see [External dictionaries](../dicts/external_dicts.md).
 
-## dictGet
+## dictGet {#dictget}
 
 Retrieves a value from an external dictionary.
 

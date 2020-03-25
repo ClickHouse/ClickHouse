@@ -191,7 +191,7 @@ Codecs:
 
 High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
 
-## Temporary Tables
+## Temporary Tables {#temporary-tables}
 
 ClickHouse supports temporary tables which have the following characteristics:
 

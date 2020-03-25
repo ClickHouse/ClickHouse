@@ -83,7 +83,7 @@ Similarly, a "detached" table can be re-attached using the `ATTACH` query (with 
 
 There is no `DETACH DATABASE` query.
 
-## DROP
+## DROP {#drop-statement}
 
 This query has two types: `DROP DATABASE` and `DROP TABLE`.
 
@@ -116,7 +116,7 @@ If `IF EXISTS` is specified, it doesn't return an error if the table doesn't exi
 
 `DROP ROW POLICY filter ON mydb.mytable;`
 
-## EXISTS
+## EXISTS {#exists-statement}
 
 ```sql
 EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT format]
@@ -124,7 +124,7 @@ EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT 
 
 Returns a single `UInt8`-type column, which contains the single value `0` if the table or database doesn't exist, or `1` if the table exists in the specified database.
 
-## KILL QUERY
+## KILL QUERY {#kill-query-statement}
 
 ```sql
 KILL QUERY [ON CLUSTER cluster]
@@ -236,7 +236,7 @@ For more information, see [Settings](../operations/settings/settings.md).
 
 
 
-## TRUNCATE
+## TRUNCATE {#truncate-statement}
 
 ```sql
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]

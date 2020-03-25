@@ -1,6 +1,6 @@
 # SHOW Queries
 
-## SHOW CREATE TABLE
+## SHOW CREATE TABLE {#show-create-table-statement}
 
 ```sql
 SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
