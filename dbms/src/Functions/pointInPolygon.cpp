@@ -92,7 +92,7 @@ public:
 
     static inline const char * name = "pointInPolygon";
 
-    FunctionPointInPolygon(bool validate_) : validate(validate_) {}
+    explicit FunctionPointInPolygon(bool validate_) : validate(validate_) {}
 
     static FunctionPtr create(const Context & context)
     {
@@ -242,6 +242,7 @@ private:
 
         boost::geometry::correct(polygon);
 
+#if !defined(__clang_analyzer__) /// It does not like boost.
         if (validate)
         {
             std::string failure_message;
@@ -249,6 +250,7 @@ private:
             if (!is_valid)
                 throw Exception("Polygon is not valid: " + failure_message, ErrorCodes::BAD_ARGUMENTS);
         }
+#endif
 
         auto call_impl = use_object_pool
             ? FunctionPointInPolygonDetail::callPointInPolygonImplWithPool<Polygon<Type>, PointInPolygonImpl<Type>>
