@@ -8,7 +8,6 @@
         <table_exists>hits_10m_single</table_exists>
     </preconditions>
 
-    <type>loop</type>
 
     <settings>
         <max_memory_usage>20000000000</max_memory_usage>

@@ -2,6 +2,7 @@
 #include <iomanip>
 #include <map>
 
+#include <pcg_random.hpp>
 #include <Core/Field.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/AutoArray.h>
@@ -12,6 +13,8 @@
 
 int main(int argc, char ** argv)
 {
+    pcg64 rng;
+
     {
         size_t n = 10;
         using T = std::string;
@@ -20,8 +23,8 @@ int main(int argc, char ** argv)
         for (size_t i = 0; i < arr.size(); ++i)
             arr[i] = "Hello, world! " + DB::toString(i);
 
-        for (size_t i = 0; i < arr.size(); ++i)
-            std::cerr << arr[i] << std::endl;
+        for (auto & elem : arr)
+            std::cerr << elem << std::endl;
     }
 
     std::cerr << std::endl;
@@ -36,17 +39,17 @@ int main(int argc, char ** argv)
         for (size_t i = 0; i < arr.size(); ++i)
             arr[i] = "Hello, world! " + DB::toString(i);
 
-        for (size_t i = 0; i < arr.size(); ++i)
-            std::cerr << arr[i] << std::endl;
+        for (auto & elem : arr)
+            std::cerr << elem << std::endl;
 
         std::cerr << std::endl;
 
         Arr arr2 = std::move(arr);
 
-        std::cerr << arr.size() << ", " << arr2.size() << std::endl;
+        std::cerr << arr.size() << ", " << arr2.size() << std::endl;  // NOLINT
 
-        for (size_t i = 0; i < arr2.size(); ++i)
-            std::cerr << arr2[i] << std::endl;
+        for (auto & elem : arr2)
+            std::cerr << elem << std::endl;
     }
 
     std::cerr << std::endl;
@@ -63,33 +66,33 @@ int main(int argc, char ** argv)
         {
             Arr key(n);
             for (size_t j = 0; j < n; ++j)
-                key[j] = DB::toString(rand());
+                key[j] = DB::toString(rng());
 
             map[std::move(key)] = "Hello, world! " + DB::toString(i);
         }
 
-        for (Map::const_iterator it = map.begin(); it != map.end(); ++it)
+        for (const auto & kv : map)
         {
             std::cerr << "[";
             for (size_t j = 0; j < n; ++j)
-                std::cerr << (j == 0 ? "" : ", ") << it->first[j];
+                std::cerr << (j == 0 ? "" : ", ") << kv.first[j];
             std::cerr << "]";
 
-            std::cerr << ":\t" << it->second << std::endl;
+            std::cerr << ":\t" << kv.second << std::endl;
         }
 
         std::cerr << std::endl;
 
         Map map2 = std::move(map);
 
-        for (Map::const_iterator it = map2.begin(); it != map2.end(); ++it)
+        for (const auto & kv : map2)
         {
             std::cerr << "[";
             for (size_t j = 0; j < n; ++j)
-                std::cerr << (j == 0 ? "" : ", ") << it->first[j];
+                std::cerr << (j == 0 ? "" : ", ") << kv.first[j];
             std::cerr << "]";
 
-            std::cerr << ":\t" << it->second << std::endl;
+            std::cerr << ":\t" << kv.second << std::endl;
         }
     }
 
@@ -107,16 +110,16 @@ int main(int argc, char ** argv)
         {
             Arr key(n);
             for (size_t j = 0; j < n; ++j)
-                key[j] = DB::toString(rand());
+                key[j] = DB::toString(rng());
 
             vec.push_back(std::move(key));
         }
 
-        for (Vec::const_iterator it = vec.begin(); it != vec.end(); ++it)
+        for (const auto & elem : vec)
         {
             std::cerr << "[";
             for (size_t j = 0; j < n; ++j)
-                std::cerr << (j == 0 ? "" : ", ") << (*it)[j];
+                std::cerr << (j == 0 ? "" : ", ") << elem[j];
             std::cerr << "]" << std::endl;
         }
 
@@ -124,11 +127,11 @@ int main(int argc, char ** argv)
 
         Vec vec2 = std::move(vec);
 
-        for (Vec::const_iterator it = vec2.begin(); it != vec2.end(); ++it)
+        for (const auto & elem : vec2)
         {
             std::cerr << "[";
             for (size_t j = 0; j < n; ++j)
-                std::cerr << (j == 0 ? "" : ", ") << (*it)[j];
+                std::cerr << (j == 0 ? "" : ", ") << elem[j];
             std::cerr << "]" << std::endl;
         }
     }
@@ -152,7 +155,7 @@ int main(int argc, char ** argv)
             Map::LookupResult it;
             bool inserted;
 
-            map.emplace(rand(), it, inserted);
+            map.emplace(rng(), it, inserted);
             if (inserted)
             {
                 new (&it->getMapped()) Arr(n);
@@ -182,7 +185,7 @@ int main(int argc, char ** argv)
         }
 
         arr2 = std::move(arr1);
-        arr1.resize(n);
+        arr1.resize(n); // NOLINT
 
         std::cerr
             << "arr1.size(): " << arr1.size() << ", arr2.size(): " << arr2.size() << std::endl

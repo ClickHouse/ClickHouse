@@ -27,9 +27,10 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Core/Settings.h>
 #include <Access/AccessControlManager.h>
-#include <Access/AccessRightsContext.h>
-#include <Access/RowPolicyContext.h>
+#include <Access/ContextAccess.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Access/User.h>
+#include <Access/SettingsProfile.h>
 #include <Access/SettingsConstraints.h>
 #include <Interpreters/ExpressionJIT.h>
 #include <Dictionaries/Embedded/GeoDictionariesLoader.h>
@@ -56,7 +57,7 @@
 #include <Common/TraceCollector.h>
 #include <common/logger_useful.h>
 #include <Common/RemoteHostFilter.h>
-
+#include <Interpreters/DatabaseCatalog.h>
 
 namespace ProfileEvents
 {
@@ -83,7 +84,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
-    extern const int DATABASE_ALREADY_EXISTS;
     extern const int THERE_IS_NO_SESSION;
     extern const int THERE_IS_NO_QUERY;
     extern const int NO_ELEMENTS_IN_CONFIG;
@@ -93,6 +93,182 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_SCALAR;
     extern const int AUTHENTICATION_FAILED;
+    extern const int NOT_IMPLEMENTED;
+}
+
+
+class NamedSessions
+{
+public:
+    using Key = NamedSessionKey;
+
+    ~NamedSessions()
+    {
+        try
+        {
+            {
+                std::lock_guard lock{mutex};
+                quit = true;
+            }
+
+            cond.notify_one();
+            thread.join();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    }
+
+    /// Find existing session or create a new.
+    std::shared_ptr<NamedSession> acquireSession(
+        const String & session_id,
+        Context & context,
+        std::chrono::steady_clock::duration timeout,
+        bool throw_if_not_found)
+    {
+        std::unique_lock lock(mutex);
+
+        auto & user_name = context.client_info.current_user;
+
+        if (user_name.empty())
+            throw Exception("Empty user name.", ErrorCodes::LOGICAL_ERROR);
+
+        Key key(user_name, session_id);
+
+        auto it = sessions.find(key);
+        if (it == sessions.end())
+        {
+            if (throw_if_not_found)
+                throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
+
+            /// Create a new session from current context.
+            it = sessions.insert(std::make_pair(key, std::make_shared<NamedSession>(key, context, timeout, *this))).first;
+        }
+        else if (it->second->key.first != context.client_info.current_user)
+        {
+            throw Exception("Session belongs to a different user", ErrorCodes::LOGICAL_ERROR);
+        }
+
+        /// Use existing session.
+        const auto & session = it->second;
+
+        if (!session.unique())
+            throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
+
+        return session;
+    }
+
+    void releaseSession(NamedSession & session)
+    {
+        std::unique_lock lock(mutex);
+        scheduleCloseSession(session, lock);
+    }
+
+private:
+    class SessionKeyHash
+    {
+    public:
+        size_t operator()(const Key & key) const
+        {
+            SipHash hash;
+            hash.update(key.first);
+            hash.update(key.second);
+            return hash.get64();
+        }
+    };
+
+    /// TODO it's very complicated. Make simple std::map with time_t or boost::multi_index.
+    using Container = std::unordered_map<Key, std::shared_ptr<NamedSession>, SessionKeyHash>;
+    using CloseTimes = std::deque<std::vector<Key>>;
+    Container sessions;
+    CloseTimes close_times;
+    std::chrono::steady_clock::duration close_interval = std::chrono::seconds(1);
+    std::chrono::steady_clock::time_point close_cycle_time = std::chrono::steady_clock::now();
+    UInt64 close_cycle = 0;
+
+    void scheduleCloseSession(NamedSession & session, std::unique_lock<std::mutex> &)
+    {
+        /// Push it on a queue of sessions to close, on a position corresponding to the timeout.
+        /// (timeout is measured from current moment of time)
+
+        const UInt64 close_index = session.timeout / close_interval + 1;
+        const auto new_close_cycle = close_cycle + close_index;
+
+        if (session.close_cycle != new_close_cycle)
+        {
+            session.close_cycle = new_close_cycle;
+            if (close_times.size() < close_index + 1)
+                close_times.resize(close_index + 1);
+            close_times[close_index].emplace_back(session.key);
+        }
+    }
+
+    void cleanThread()
+    {
+        setThreadName("SessionCleaner");
+
+        std::unique_lock lock{mutex};
+
+        while (true)
+        {
+            auto interval = closeSessions(lock);
+
+            if (cond.wait_for(lock, interval, [this]() -> bool { return quit; }))
+                break;
+        }
+    }
+
+    /// Close sessions, that has been expired. Returns how long to wait for next session to be expired, if no new sessions will be added.
+    std::chrono::steady_clock::duration closeSessions(std::unique_lock<std::mutex> & lock)
+    {
+        const auto now = std::chrono::steady_clock::now();
+
+        /// The time to close the next session did not come
+        if (now < close_cycle_time)
+            return close_cycle_time - now;  /// Will sleep until it comes.
+
+        const auto current_cycle = close_cycle;
+
+        ++close_cycle;
+        close_cycle_time = now + close_interval;
+
+        if (close_times.empty())
+            return close_interval;
+
+        auto & sessions_to_close = close_times.front();
+
+        for (const auto & key : sessions_to_close)
+        {
+            const auto session = sessions.find(key);
+
+            if (session != sessions.end() && session->second->close_cycle <= current_cycle)
+            {
+                if (!session->second.unique())
+                {
+                    /// Skip but move it to close on the next cycle.
+                    session->second->timeout = std::chrono::steady_clock::duration{0};
+                    scheduleCloseSession(*session->second, lock);
+                }
+                else
+                    sessions.erase(session);
+            }
+        }
+
+        close_times.pop_front();
+        return close_interval;
+    }
+
+    std::mutex mutex;
+    std::condition_variable cond;
+    std::atomic<bool> quit{false};
+    ThreadFromGlobalPool thread{&NamedSessions::cleanThread, this};
+};
+
+
+void NamedSession::release()
+{
+    parent.releaseSession(*this);
 }
 
 
@@ -129,7 +305,6 @@ struct ContextShared
     String tmp_path;                                        /// Path to the temporary files that occur when processing the request.
     mutable VolumePtr tmp_volume;                           /// Volume for the the temporary files that occur when processing the request.
 
-    Databases databases;                                    /// List of databases and tables in them.
     mutable std::optional<EmbeddedDictionaries> embedded_dictionaries;    /// Metrica's dictionaries. Have lazy initialization.
     mutable std::optional<ExternalDictionariesLoader> external_dictionaries_loader;
     mutable std::optional<ExternalModelsLoader> external_models_loader;
@@ -140,7 +315,6 @@ struct ContextShared
     mutable MarkCachePtr mark_cache;                        /// Cache of marks in compressed files.
     ProcessList process_list;                               /// Executing queries at the moment.
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
-    ViewDependencies view_dependencies;                     /// Current dependencies
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
@@ -165,28 +339,7 @@ struct ContextShared
     RemoteHostFilter remote_host_filter; /// Allowed URL from config.xml
 
     std::optional<TraceCollector> trace_collector;        /// Thread collecting traces from threads executing queries
-
-    /// Named sessions. The user could specify session identifier to reuse settings and temporary tables in subsequent requests.
-
-    class SessionKeyHash
-    {
-    public:
-        size_t operator()(const Context::SessionKey & key) const
-        {
-            SipHash hash;
-            hash.update(key.first);
-            hash.update(key.second);
-            return hash.get64();
-        }
-    };
-
-    using Sessions = std::unordered_map<Context::SessionKey, std::shared_ptr<Context>, SessionKeyHash>;
-    using CloseTimes = std::deque<std::vector<Context::SessionKey>>;
-    mutable Sessions sessions;
-    mutable CloseTimes close_times;
-    std::chrono::steady_clock::duration close_interval = std::chrono::seconds(1);
-    std::chrono::steady_clock::time_point close_cycle_time = std::chrono::steady_clock::now();
-    UInt64 close_cycle = 0;
+    std::optional<NamedSessions> named_sessions;        /// Controls named HTTP sessions.
 
     /// Clusters for distributed tables
     /// Initialized on demand (on distributed storages initialization) since Settings should be initialized
@@ -199,16 +352,6 @@ struct ContextShared
 #endif
 
     bool shutdown_called = false;
-
-    /// Do not allow simultaneous execution of DDL requests on the same table.
-    /// database -> object -> (mutex, counter), counter: how many threads are running a query on the table at the same time
-    /// For the duration of the operation, an element is placed here, and an object is returned,
-    /// which deletes the element in the destructor when counter becomes zero.
-    /// In case the element already exists, waits, when query will be executed in other thread. See class DDLGuard below.
-    using DDLGuards = std::unordered_map<String, DDLGuard::Map>;
-    DDLGuards ddl_guards;
-    /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
-    mutable std::mutex ddl_guards_mutex;
 
     Stopwatch uptime_watch;
 
@@ -261,28 +404,7 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
-        /** At this point, some tables may have threads that block our mutex.
-          * To shutdown them correctly, we will copy the current list of tables,
-          *  and ask them all to finish their work.
-          * Then delete all objects with tables.
-          */
-
-        Databases current_databases;
-
-        {
-            std::lock_guard lock(mutex);
-            current_databases = databases;
-        }
-
-        /// We still hold "databases" in Context (instead of std::move) for Buffer tables to flush data correctly.
-
-        for (auto & database : current_databases)
-            database.second->shutdown();
-
-        {
-            std::lock_guard lock(mutex);
-            databases.clear();
-        }
+        DatabaseCatalog::instance().shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
         /// TODO: Get rid of this.
@@ -323,8 +445,6 @@ Context & Context::operator=(const Context &) = default;
 Context Context::createGlobal()
 {
     Context res;
-    res.access_rights = std::make_shared<AccessRightsContext>();
-    res.initial_row_policy = std::make_shared<RowPolicyContext>();
     res.shared = std::make_shared<ContextShared>();
     return res;
 }
@@ -347,170 +467,25 @@ MergeList & Context::getMergeList() { return shared->merge_list; }
 const MergeList & Context::getMergeList() const { return shared->merge_list; }
 
 
-const Databases Context::getDatabases() const
+void Context::enableNamedSessions()
 {
-    auto lock = getLock();
-    return shared->databases;
+    shared->named_sessions.emplace();
 }
 
-Databases Context::getDatabases()
+std::shared_ptr<NamedSession> Context::acquireNamedSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check)
 {
-    auto lock = getLock();
-    return shared->databases;
+    if (!shared->named_sessions)
+        throw Exception("Support for named sessions is not enabled", ErrorCodes::NOT_IMPLEMENTED);
+
+    return shared->named_sessions->acquireSession(session_id, *this, timeout, session_check);
 }
 
-
-Context::SessionKey Context::getSessionKey(const String & session_id) const
+String Context::resolveDatabase(const String & database_name) const
 {
-    auto & user_name = client_info.current_user;
-
-    if (user_name.empty())
-        throw Exception("Empty user name.", ErrorCodes::LOGICAL_ERROR);
-
-    return SessionKey(user_name, session_id);
-}
-
-
-void Context::scheduleCloseSession(const Context::SessionKey & key, std::chrono::steady_clock::duration timeout)
-{
-    const UInt64 close_index = timeout / shared->close_interval + 1;
-    const auto new_close_cycle = shared->close_cycle + close_index;
-
-    if (session_close_cycle != new_close_cycle)
-    {
-        session_close_cycle = new_close_cycle;
-        if (shared->close_times.size() < close_index + 1)
-            shared->close_times.resize(close_index + 1);
-        shared->close_times[close_index].emplace_back(key);
-    }
-}
-
-
-std::shared_ptr<Context> Context::acquireSession(const String & session_id, std::chrono::steady_clock::duration timeout, bool session_check) const
-{
-    auto lock = getLock();
-
-    const auto & key = getSessionKey(session_id);
-    auto it = shared->sessions.find(key);
-
-    if (it == shared->sessions.end())
-    {
-        if (session_check)
-            throw Exception("Session not found.", ErrorCodes::SESSION_NOT_FOUND);
-
-        auto new_session = std::make_shared<Context>(*this);
-
-        new_session->scheduleCloseSession(key, timeout);
-
-        it = shared->sessions.insert(std::make_pair(key, std::move(new_session))).first;
-    }
-    else if (it->second->client_info.current_user != client_info.current_user)
-    {
-        throw Exception("Session belongs to a different user", ErrorCodes::LOGICAL_ERROR);
-    }
-
-    const auto & session = it->second;
-
-    if (session->session_is_used)
-        throw Exception("Session is locked by a concurrent client.", ErrorCodes::SESSION_IS_LOCKED);
-    session->session_is_used = true;
-
-    session->client_info = client_info;
-
-    return session;
-}
-
-
-void Context::releaseSession(const String & session_id, std::chrono::steady_clock::duration timeout)
-{
-    auto lock = getLock();
-
-    session_is_used = false;
-    scheduleCloseSession(getSessionKey(session_id), timeout);
-}
-
-
-std::chrono::steady_clock::duration Context::closeSessions() const
-{
-    auto lock = getLock();
-
-    const auto now = std::chrono::steady_clock::now();
-
-    if (now < shared->close_cycle_time)
-        return shared->close_cycle_time - now;
-
-    const auto current_cycle = shared->close_cycle;
-
-    ++shared->close_cycle;
-    shared->close_cycle_time = now + shared->close_interval;
-
-    if (shared->close_times.empty())
-        return shared->close_interval;
-
-    auto & sessions_to_close = shared->close_times.front();
-
-    for (const auto & key : sessions_to_close)
-    {
-        const auto session = shared->sessions.find(key);
-
-        if (session != shared->sessions.end() && session->second->session_close_cycle <= current_cycle)
-        {
-            if (session->second->session_is_used)
-                session->second->scheduleCloseSession(key, std::chrono::seconds(0));
-            else
-                shared->sessions.erase(session);
-        }
-    }
-
-    shared->close_times.pop_front();
-
-    return shared->close_interval;
-}
-
-
-static String resolveDatabase(const String & database_name, const String & current_database)
-{
-    String res = database_name.empty() ? current_database : database_name;
+    String res = database_name.empty() ? getCurrentDatabase() : database_name;
     if (res.empty())
         throw Exception("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
     return res;
-}
-
-
-const DatabasePtr Context::getDatabase(const String & database_name) const
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    assertDatabaseExists(db);
-    return shared->databases[db];
-}
-
-DatabasePtr Context::getDatabase(const String & database_name)
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    assertDatabaseExists(db);
-    return shared->databases[db];
-}
-
-const DatabasePtr Context::tryGetDatabase(const String & database_name) const
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    auto it = shared->databases.find(db);
-    if (it == shared->databases.end())
-        return {};
-    return it->second;
-}
-
-DatabasePtr Context::tryGetDatabase(const String & database_name)
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    auto it = shared->databases.find(db);
-    if (it == shared->databases.end())
-        return {};
-    return it->second;
 }
 
 String Context::getPath() const
@@ -583,7 +558,7 @@ VolumePtr Context::setTemporaryStorage(const String & path, const String & polic
         shared->tmp_volume = tmp_policy->getVolume(0);
     }
 
-    if (!shared->tmp_volume->disks.size())
+    if (shared->tmp_volume->disks.empty())
          throw Exception("No disks volume for temporary files", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     return shared->tmp_volume;
@@ -656,38 +631,38 @@ void Context::setUser(const String & name, const String & password, const Poco::
         client_info.quota_key = quota_key;
 
     auto new_user_id = getAccessControlManager().find<User>(name);
-    AccessRightsContextPtr new_access_rights;
+    std::shared_ptr<const ContextAccess> new_access;
     if (new_user_id)
     {
-        new_access_rights = getAccessControlManager().getAccessRightsContext(*new_user_id, {}, true, settings, current_database, client_info);
-        if (!new_access_rights->isClientHostAllowed() || !new_access_rights->isCorrectPassword(password))
+        new_access = getAccessControlManager().getContextAccess(*new_user_id, {}, true, settings, current_database, client_info);
+        if (!new_access->isClientHostAllowed() || !new_access->isCorrectPassword(password))
         {
             new_user_id = {};
-            new_access_rights = nullptr;
+            new_access = nullptr;
         }
     }
 
-    if (!new_user_id || !new_access_rights)
+    if (!new_user_id || !new_access)
         throw Exception(name + ": Authentication failed: password is incorrect or there is no user with such name", ErrorCodes::AUTHENTICATION_FAILED);
 
     user_id = new_user_id;
-    access_rights = std::move(new_access_rights);
+    access = std::move(new_access);
     current_roles.clear();
     use_default_roles = true;
 
-    calculateUserSettings();
+    setSettings(*access->getDefaultSettings());
 }
 
 std::shared_ptr<const User> Context::getUser() const
 {
     auto lock = getLock();
-    return access_rights->getUser();
+    return access->getUser();
 }
 
 String Context::getUserName() const
 {
     auto lock = getLock();
-    return access_rights->getUserName();
+    return access->getUserName();
 }
 
 UUID Context::getUserID() const
@@ -721,22 +696,22 @@ void Context::setCurrentRolesDefault()
 
 std::vector<UUID> Context::getCurrentRoles() const
 {
-    return getAccessRights()->getCurrentRoles();
+    return getAccess()->getCurrentRoles();
 }
 
 Strings Context::getCurrentRolesNames() const
 {
-    return getAccessRights()->getCurrentRolesNames();
+    return getAccess()->getCurrentRolesNames();
 }
 
 std::vector<UUID> Context::getEnabledRoles() const
 {
-    return getAccessRights()->getEnabledRoles();
+    return getAccess()->getEnabledRoles();
 }
 
 Strings Context::getEnabledRolesNames() const
 {
-    return getAccessRights()->getEnabledRolesNames();
+    return getAccess()->getEnabledRolesNames();
 }
 
 
@@ -744,195 +719,67 @@ void Context::calculateAccessRights()
 {
     auto lock = getLock();
     if (user_id)
-        access_rights = getAccessControlManager().getAccessRightsContext(*user_id, current_roles, use_default_roles, settings, current_database, client_info);
+        access = getAccessControlManager().getContextAccess(*user_id, current_roles, use_default_roles, settings, current_database, client_info);
 }
 
 
 template <typename... Args>
 void Context::checkAccessImpl(const Args &... args) const
 {
-    getAccessRights()->checkAccess(args...);
+    return getAccess()->checkAccess(args...);
 }
 
-void Context::checkAccess(const AccessFlags & access) const { return checkAccessImpl(access); }
-void Context::checkAccess(const AccessFlags & access, const std::string_view & database) const { return checkAccessImpl(access, database); }
-void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table) const { return checkAccessImpl(access, database, table); }
-void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return checkAccessImpl(access, database, table, column); }
-void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return checkAccessImpl(access, database, table, columns); }
-void Context::checkAccess(const AccessFlags & access, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return checkAccessImpl(access, database, table, columns); }
-void Context::checkAccess(const AccessRightsElement & access) const { return checkAccessImpl(access); }
-void Context::checkAccess(const AccessRightsElements & access) const { return checkAccessImpl(access); }
+void Context::checkAccess(const AccessFlags & flags) const { return checkAccessImpl(flags); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database) const { return checkAccessImpl(flags, database); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table) const { return checkAccessImpl(flags, database, table); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::string_view & column) const { return checkAccessImpl(flags, database, table, column); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const std::vector<std::string_view> & columns) const { return checkAccessImpl(flags, database, table, columns); }
+void Context::checkAccess(const AccessFlags & flags, const std::string_view & database, const std::string_view & table, const Strings & columns) const { return checkAccessImpl(flags, database, table, columns); }
+void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName()); }
+void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::string_view & column) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), column); }
+void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const std::vector<std::string_view> & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
+void Context::checkAccess(const AccessFlags & flags, const StorageID & table_id, const Strings & columns) const { checkAccessImpl(flags, table_id.getDatabaseName(), table_id.getTableName(), columns); }
+void Context::checkAccess(const AccessRightsElement & element) const { return checkAccessImpl(element); }
+void Context::checkAccess(const AccessRightsElements & elements) const { return checkAccessImpl(elements); }
 
-AccessRightsContextPtr Context::getAccessRights() const
+
+std::shared_ptr<const ContextAccess> Context::getAccess() const
 {
     auto lock = getLock();
-    return access_rights;
+    return access ? access : ContextAccess::getFullAccess();
 }
 
-RowPolicyContextPtr Context::getRowPolicy() const
+ASTPtr Context::getRowPolicyCondition(const String & database, const String & table_name, RowPolicy::ConditionType type) const
 {
-    return getAccessRights()->getRowPolicy();
+    auto lock = getLock();
+    auto initial_condition = initial_row_policy ? initial_row_policy->getCondition(database, table_name, type) : nullptr;
+    return getAccess()->getRowPolicyCondition(database, table_name, type, initial_condition);
+}
+
+std::shared_ptr<const EnabledRowPolicies> Context::getRowPolicies() const
+{
+    return getAccess()->getRowPolicies();
 }
 
 void Context::setInitialRowPolicy()
 {
     auto lock = getLock();
     auto initial_user_id = getAccessControlManager().find<User>(client_info.initial_user);
+    initial_row_policy = nullptr;
     if (initial_user_id)
-        initial_row_policy = getAccessControlManager().getRowPolicyContext(*initial_user_id, {});
-}
-
-RowPolicyContextPtr Context::getInitialRowPolicy() const
-{
-    auto lock = getLock();
-    return initial_row_policy;
+        initial_row_policy = getAccessControlManager().getEnabledRowPolicies(*initial_user_id, {});
 }
 
 
-QuotaContextPtr Context::getQuota() const
+std::shared_ptr<const EnabledQuota> Context::getQuota() const
 {
-    return getAccessRights()->getQuota();
+    return getAccess()->getQuota();
 }
 
 
-void Context::calculateUserSettings()
+void Context::setProfile(const String & profile_name)
 {
-    auto lock = getLock();
-    String profile = getUser()->profile;
-
-    bool old_readonly = settings.readonly;
-    bool old_allow_ddl = settings.allow_ddl;
-    bool old_allow_introspection_functions = settings.allow_introspection_functions;
-
-    /// 1) Set default settings (hardcoded values)
-    /// NOTE: we ignore global_context settings (from which it is usually copied)
-    /// NOTE: global_context settings are immutable and not auto updated
-    settings = Settings();
-    settings_constraints = nullptr;
-
-    /// 2) Apply settings from default profile
-    auto default_profile_name = getDefaultProfileName();
-    if (profile != default_profile_name)
-        setProfile(default_profile_name);
-
-    /// 3) Apply settings from current user
-    setProfile(profile);
-
-    /// 4) Recalculate access rights if it's necessary.
-    if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
-        calculateAccessRights();
-}
-
-void Context::setProfile(const String & profile)
-{
-    settings.setProfile(profile, *shared->users_config);
-
-    auto new_constraints
-        = settings_constraints ? std::make_shared<SettingsConstraints>(*settings_constraints) : std::make_shared<SettingsConstraints>();
-    new_constraints->setProfile(profile, *shared->users_config);
-    settings_constraints = std::move(new_constraints);
-}
-
-
-void Context::addDependencyUnsafe(const StorageID & from, const StorageID & where)
-{
-    shared->view_dependencies[from].insert(where);
-
-    // Notify table of dependencies change
-    auto table = tryGetTable(from);
-    if (table != nullptr)
-        table->updateDependencies();
-}
-
-void Context::addDependency(const StorageID & from, const StorageID & where)
-{
-    auto lock = getLock();
-    addDependencyUnsafe(from, where);
-}
-
-void Context::removeDependencyUnsafe(const StorageID & from, const StorageID & where)
-{
-    shared->view_dependencies[from].erase(where);
-
-    // Notify table of dependencies change
-    auto table = tryGetTable(from);
-    if (table != nullptr)
-        table->updateDependencies();
-}
-
-void Context::removeDependency(const StorageID & from, const StorageID & where)
-{
-    auto lock = getLock();
-    removeDependencyUnsafe(from, where);
-}
-
-Dependencies Context::getDependencies(const StorageID & from) const
-{
-    auto lock = getLock();
-
-    String db = resolveDatabase(from.database_name, current_database);
-    ViewDependencies::const_iterator iter = shared->view_dependencies.find(StorageID(db, from.table_name, from.uuid));
-    if (iter == shared->view_dependencies.end())
-        return {};
-
-    return Dependencies(iter->second.begin(), iter->second.end());
-}
-
-bool Context::isTableExist(const String & database_name, const String & table_name) const
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    Databases::const_iterator it = shared->databases.find(db);
-    return shared->databases.end() != it
-        && it->second->isTableExist(*this, table_name);
-}
-
-bool Context::isDictionaryExists(const String & database_name, const String & dictionary_name) const
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    Databases::const_iterator it = shared->databases.find(db);
-    return shared->databases.end() != it && it->second->isDictionaryExist(*this, dictionary_name);
-}
-
-bool Context::isDatabaseExist(const String & database_name) const
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    return shared->databases.end() != shared->databases.find(db);
-}
-
-bool Context::isExternalTableExist(const String & table_name) const
-{
-    return external_tables.end() != external_tables.find(table_name);
-}
-
-
-void Context::assertTableDoesntExist(const String & database_name, const String & table_name) const
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    Databases::const_iterator it = shared->databases.find(db);
-    if (shared->databases.end() != it && it->second->isTableExist(*this, table_name))
-        throw Exception("Table " + backQuoteIfNeed(db) + "." + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-}
-
-
-void Context::assertDatabaseExists(const String & database_name) const
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    if (shared->databases.end() == shared->databases.find(db))
-        throw Exception("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
-}
-
-
-void Context::assertDatabaseDoesntExist(const String & database_name) const
-{
-    auto lock = getLock();
-    String db = resolveDatabase(database_name, current_database);
-    if (shared->databases.end() != shared->databases.find(db))
-        throw Exception("Database " + backQuoteIfNeed(db) + " already exists.", ErrorCodes::DATABASE_ALREADY_EXISTS);
+    applySettingsChanges(*getAccessControlManager().getProfileSettings(profile_name));
 }
 
 
@@ -953,131 +800,64 @@ const Block & Context::getScalar(const String & name) const
 
 Tables Context::getExternalTables() const
 {
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     auto lock = getLock();
 
     Tables res;
-    for (auto & table : external_tables)
-        res[table.first] = table.second.first;
+    for (auto & table : external_tables_mapping)
+        res[table.first] = table.second->getTable();
 
-    if (session_context && session_context != this)
+    if (query_context && query_context != this)
+    {
+        Tables buf = query_context->getExternalTables();
+        res.insert(buf.begin(), buf.end());
+    }
+    else if (session_context && session_context != this)
     {
         Tables buf = session_context->getExternalTables();
         res.insert(buf.begin(), buf.end());
     }
-    else if (global_context && global_context != this)
-    {
-        Tables buf = global_context->getExternalTables();
-        res.insert(buf.begin(), buf.end());
-    }
     return res;
 }
 
 
-StoragePtr Context::tryGetExternalTable(const String & table_name) const
+void Context::addExternalTable(const String & table_name, TemporaryTableHolder && temporary_table)
 {
-    TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
-    if (external_tables.end() == jt)
-        return StoragePtr();
-
-    return jt->second.first;
-}
-
-StoragePtr Context::getTable(const String & database_name, const String & table_name) const
-{
-    return getTable(StorageID(database_name, table_name));
-}
-
-StoragePtr Context::getTable(const StorageID & table_id) const
-{
-    std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, &exc);
-    if (!res)
-        throw *exc;
-    return res;
-}
-
-StoragePtr Context::tryGetTable(const String & database_name, const String & table_name) const
-{
-    return getTableImpl(StorageID(database_name, table_name), {});
-}
-
-StoragePtr Context::tryGetTable(const StorageID & table_id) const
-{
-    return getTableImpl(table_id, {});
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    auto lock = getLock();
+    if (external_tables_mapping.end() != external_tables_mapping.find(table_name))
+        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+    external_tables_mapping.emplace(table_name, std::make_shared<TemporaryTableHolder>(std::move(temporary_table)));
 }
 
 
-StoragePtr Context::getTableImpl(const StorageID & table_id, std::optional<Exception> * exception) const
+std::shared_ptr<TemporaryTableHolder> Context::removeExternalTable(const String & table_name)
 {
-    String db;
-    DatabasePtr database;
-
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+    std::shared_ptr<TemporaryTableHolder> holder;
     {
         auto lock = getLock();
-
-        if (table_id.database_name.empty())
-        {
-            StoragePtr res = tryGetExternalTable(table_id.table_name);
-            if (res)
-                return res;
-        }
-
-        db = resolveDatabase(table_id.database_name, current_database);
-
-        Databases::const_iterator it = shared->databases.find(db);
-        if (shared->databases.end() == it)
-        {
-            if (exception)
-                exception->emplace("Database " + backQuoteIfNeed(db) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+        auto iter = external_tables_mapping.find(table_name);
+        if (iter == external_tables_mapping.end())
             return {};
-        }
-
-        database = it->second;
+        holder = iter->second;
+        external_tables_mapping.erase(iter);
     }
-
-    auto table = database->tryGetTable(*this, table_id.table_name);
-    if (!table)
-    {
-        if (exception)
-            exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-        return {};
-    }
-
-    return table;
-}
-
-
-void Context::addExternalTable(const String & table_name, const StoragePtr & storage, const ASTPtr & ast)
-{
-    if (external_tables.end() != external_tables.find(table_name))
-        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
-
-    external_tables[table_name] = std::pair(storage, ast);
+    return holder;
 }
 
 
 void Context::addScalar(const String & name, const Block & block)
 {
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     scalars[name] = block;
 }
 
 
 bool Context::hasScalar(const String & name) const
 {
+    assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
     return scalars.count(name);
-}
-
-
-StoragePtr Context::tryRemoveExternalTable(const String & table_name)
-{
-    TableAndCreateASTs::const_iterator it = external_tables.find(table_name);
-
-    if (external_tables.end() == it)
-        return StoragePtr();
-
-    auto storage = it->second.first;
-    external_tables.erase(it);
-    return storage;
 }
 
 
@@ -1115,62 +895,6 @@ StoragePtr Context::getViewSource()
     return view_source;
 }
 
-
-DDLGuard::DDLGuard(Map & map_, std::unique_lock<std::mutex> guards_lock_, const String & elem)
-    : map(map_), guards_lock(std::move(guards_lock_))
-{
-    it = map.emplace(elem, Entry{std::make_unique<std::mutex>(), 0}).first;
-    ++it->second.counter;
-    guards_lock.unlock();
-    table_lock = std::unique_lock(*it->second.mutex);
-}
-
-DDLGuard::~DDLGuard()
-{
-    guards_lock.lock();
-    --it->second.counter;
-    if (!it->second.counter)
-    {
-        table_lock.unlock();
-        map.erase(it);
-    }
-}
-
-std::unique_ptr<DDLGuard> Context::getDDLGuard(const String & database, const String & table) const
-{
-    std::unique_lock lock(shared->ddl_guards_mutex);
-    return std::make_unique<DDLGuard>(shared->ddl_guards[database], std::move(lock), table);
-}
-
-
-void Context::addDatabase(const String & database_name, const DatabasePtr & database)
-{
-    auto lock = getLock();
-
-    assertDatabaseDoesntExist(database_name);
-    shared->databases[database_name] = database;
-}
-
-
-DatabasePtr Context::detachDatabase(const String & database_name)
-{
-    auto lock = getLock();
-    auto res = getDatabase(database_name);
-    shared->databases.erase(database_name);
-
-    return res;
-}
-
-
-ASTPtr Context::getCreateExternalTableQuery(const String & table_name) const
-{
-    TableAndCreateASTs::const_iterator jt = external_tables.find(table_name);
-    if (external_tables.end() == jt)
-        throw Exception("Temporary table " + backQuoteIfNeed(table_name) + " doesn't exist", ErrorCodes::UNKNOWN_TABLE);
-
-    return jt->second.second;
-}
-
 Settings Context::getSettings() const
 {
     return settings;
@@ -1180,9 +904,9 @@ Settings Context::getSettings() const
 void Context::setSettings(const Settings & settings_)
 {
     auto lock = getLock();
-    bool old_readonly = settings.readonly;
-    bool old_allow_ddl = settings.allow_ddl;
-    bool old_allow_introspection_functions = settings.allow_introspection_functions;
+    auto old_readonly = settings.readonly;
+    auto old_allow_ddl = settings.allow_ddl;
+    auto old_allow_introspection_functions = settings.allow_introspection_functions;
 
     settings = settings_;
 
@@ -1191,7 +915,7 @@ void Context::setSettings(const Settings & settings_)
 }
 
 
-void Context::setSetting(const String & name, const String & value)
+void Context::setSetting(const StringRef & name, const String & value)
 {
     auto lock = getLock();
     if (name == "profile")
@@ -1206,7 +930,7 @@ void Context::setSetting(const String & name, const String & value)
 }
 
 
-void Context::setSetting(const String & name, const Field & value)
+void Context::setSetting(const StringRef & name, const Field & value)
 {
     auto lock = getLock();
     if (name == "profile")
@@ -1237,32 +961,40 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
 
 void Context::checkSettingsConstraints(const SettingChange & change) const
 {
-    if (settings_constraints)
+    if (auto settings_constraints = getSettingsConstraints())
         settings_constraints->check(settings, change);
 }
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes) const
 {
-    if (settings_constraints)
+    if (auto settings_constraints = getSettingsConstraints())
         settings_constraints->check(settings, changes);
 }
 
 
 void Context::clampToSettingsConstraints(SettingChange & change) const
 {
-    if (settings_constraints)
+    if (auto settings_constraints = getSettingsConstraints())
         settings_constraints->clamp(settings, change);
 }
 
 void Context::clampToSettingsConstraints(SettingsChanges & changes) const
 {
-    if (settings_constraints)
+    if (auto settings_constraints = getSettingsConstraints())
         settings_constraints->clamp(settings, changes);
+}
+
+
+std::shared_ptr<const SettingsConstraints> Context::getSettingsConstraints() const
+{
+    auto lock = getLock();
+    return access->getSettingsConstraints();
 }
 
 
 String Context::getCurrentDatabase() const
 {
+    auto lock = getLock();
     return current_database;
 }
 
@@ -1281,10 +1013,10 @@ String Context::getInitialQueryId() const
 
 void Context::setCurrentDatabase(const String & name)
 {
+    DatabaseCatalog::instance().assertDatabaseExists(name);
     auto lock = getLock();
-    assertDatabaseExists(name);
-    current_database = name;
     calculateAccessRights();
+    current_database = name;
 }
 
 
@@ -1316,13 +1048,13 @@ void Context::setCurrentQueryId(const String & query_id)
         random.words.b = thread_local_rng(); //-V656
 
         /// Use protected constructor.
-        struct qUUID : Poco::UUID
+        struct QueryUUID : Poco::UUID
         {
-            qUUID(const char * bytes, Poco::UUID::Version version)
+            QueryUUID(const char * bytes, Poco::UUID::Version version)
                 : Poco::UUID(bytes, version) {}
         };
 
-        query_id_to_set = qUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
+        query_id_to_set = QueryUUID(random.bytes, Poco::UUID::UUID_RANDOM).toString();
     }
 
     client_info.current_query_id = query_id_to_set;
@@ -1564,7 +1296,18 @@ BackgroundProcessingPool & Context::getBackgroundPool()
 {
     auto lock = getLock();
     if (!shared->background_pool)
-        shared->background_pool.emplace(settings.background_pool_size);
+    {
+        BackgroundProcessingPool::PoolSettings pool_settings;
+        auto & config = getConfigRef();
+        pool_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
+        pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
+        pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
+        pool_settings.task_sleep_seconds_when_no_work_min = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_min", 10);
+        pool_settings.task_sleep_seconds_when_no_work_max = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_max", 600);
+        pool_settings.task_sleep_seconds_when_no_work_multiplier = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_multiplier", 1.1);
+        pool_settings.task_sleep_seconds_when_no_work_random_part = config.getDouble("background_processing_pool_task_sleep_seconds_when_no_work_random_part", 1.0);
+        shared->background_pool.emplace(settings.background_pool_size, pool_settings);
+    }
     return *shared->background_pool;
 }
 
@@ -1804,7 +1547,7 @@ std::shared_ptr<QueryLog> Context::getQueryLog()
 {
     auto lock = getLock();
 
-    if (!shared->system_logs || !shared->system_logs->query_log)
+    if (!shared->system_logs)
         return {};
 
     return shared->system_logs->query_log;
@@ -1815,7 +1558,7 @@ std::shared_ptr<QueryThreadLog> Context::getQueryThreadLog()
 {
     auto lock = getLock();
 
-    if (!shared->system_logs || !shared->system_logs->query_thread_log)
+    if (!shared->system_logs)
         return {};
 
     return shared->system_logs->query_thread_log;
@@ -1827,13 +1570,13 @@ std::shared_ptr<PartLog> Context::getPartLog(const String & part_database)
     auto lock = getLock();
 
     /// No part log or system logs are shutting down.
-    if (!shared->system_logs || !shared->system_logs->part_log)
+    if (!shared->system_logs)
         return {};
 
     /// Will not log operations on system tables (including part_log itself).
     /// It doesn't make sense and not allow to destruct PartLog correctly due to infinite logging and flushing,
     /// and also make troubles on startup.
-    if (part_database == shared->system_logs->part_log_database)
+    if (part_database == DatabaseCatalog::SYSTEM_DATABASE)
         return {};
 
     return shared->system_logs->part_log;
@@ -1844,7 +1587,7 @@ std::shared_ptr<TraceLog> Context::getTraceLog()
 {
     auto lock = getLock();
 
-    if (!shared->system_logs || !shared->system_logs->trace_log)
+    if (!shared->system_logs)
         return {};
 
     return shared->system_logs->trace_log;
@@ -1855,7 +1598,7 @@ std::shared_ptr<TextLog> Context::getTextLog()
 {
     auto lock = getLock();
 
-    if (!shared->system_logs || !shared->system_logs->text_log)
+    if (!shared->system_logs)
         return {};
 
     return shared->system_logs->text_log;
@@ -1866,7 +1609,7 @@ std::shared_ptr<MetricLog> Context::getMetricLog()
 {
     auto lock = getLock();
 
-    if (!shared->system_logs || !shared->system_logs->metric_log)
+    if (!shared->system_logs)
         return {};
 
     return shared->system_logs->metric_log;
@@ -2109,8 +1852,10 @@ void Context::setApplicationType(ApplicationType type)
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)
 {
     shared->default_profile_name = config.getString("default_profile", "default");
+    getAccessControlManager().setDefaultProfileName(shared->default_profile_name);
+
     shared->system_profile_name = config.getString("system_profile", shared->default_profile_name);
-    setSetting("profile", shared->system_profile_name);
+    setProfile(shared->system_profile_name);
 }
 
 String Context::getDefaultProfileName() const
@@ -2281,39 +2026,105 @@ void Context::resetInputCallbacks()
 }
 
 
-SessionCleaner::~SessionCleaner()
+StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where) const
 {
-    try
+    if (storage_id.uuid != UUIDHelpers::Nil)
+        return storage_id;
+
+    auto lock = getLock();
+    std::optional<Exception> exc;
+    auto resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
+    if (exc)
+        throw Exception(*exc);
+    return resolved;
+}
+
+StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace where) const
+{
+    if (storage_id.uuid != UUIDHelpers::Nil)
+        return storage_id;
+
+    auto lock = getLock();
+    return resolveStorageIDImpl(std::move(storage_id), where, nullptr);
+}
+
+StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const
+{
+    if (storage_id.uuid != UUIDHelpers::Nil)
+        return storage_id;
+
+    if (!storage_id)
     {
+        if (exception)
+            exception->emplace("Both table name and UUID are empty", ErrorCodes::UNKNOWN_TABLE);
+        return storage_id;
+    }
+
+    bool look_for_external_table = where & StorageNamespace::ResolveExternal;
+    bool in_current_database = where & StorageNamespace::ResolveCurrentDatabase;
+    bool in_specified_database = where & StorageNamespace::ResolveGlobal;
+
+    if (!storage_id.database_name.empty())
+    {
+        if (in_specified_database)
+            return storage_id;     /// NOTE There is no guarantees that table actually exists in database.
+        if (exception)
+            exception->emplace("External and temporary tables have no database, but " +
+                        storage_id.database_name + " is specified", ErrorCodes::UNKNOWN_TABLE);
+        return StorageID::createEmpty();
+    }
+
+    /// Database name is not specified. It's temporary table or table in current database.
+
+    if (look_for_external_table)
+    {
+        /// Global context should not contain temporary tables
+        assert(global_context != this || getApplicationType() == ApplicationType::LOCAL);
+
+        auto resolved_id = StorageID::createEmpty();
+        auto try_resolve = [&](const Context & context) -> bool
         {
-            std::lock_guard lock{mutex};
-            quit = true;
+            const auto & tables = context.external_tables_mapping;
+            auto it = tables.find(storage_id.getTableName());
+            if (it == tables.end())
+                return false;
+            resolved_id = it->second->getGlobalTableID();
+            return true;
+        };
+
+        /// Firstly look for temporary table in current context
+        if (try_resolve(*this))
+            return resolved_id;
+
+        /// If not found and current context was created from some query context, look for temporary table in query context
+        bool is_local_context = query_context && query_context != this;
+        if (is_local_context && try_resolve(*query_context))
+            return resolved_id;
+
+        /// If not found and current context was created from some session context, look for temporary table in session context
+        bool is_local_or_query_context = session_context && session_context != this;
+        if (is_local_or_query_context && try_resolve(*session_context))
+            return resolved_id;
+    }
+
+    /// Temporary table not found. It's table in current database.
+
+    if (in_current_database)
+    {
+        if (current_database.empty())
+        {
+            if (exception)
+                exception->emplace("Default database is not selected", ErrorCodes::UNKNOWN_DATABASE);
+            return StorageID::createEmpty();
         }
-
-        cond.notify_one();
-
-        thread.join();
+        storage_id.database_name = current_database;
+        /// NOTE There is no guarantees that table actually exists in database.
+        return storage_id;
     }
-    catch (...)
-    {
-        DB::tryLogCurrentException(__PRETTY_FUNCTION__);
-    }
+
+    if (exception)
+        exception->emplace("Cannot resolve database name for table " + storage_id.getNameForLogs(), ErrorCodes::UNKNOWN_TABLE);
+    return StorageID::createEmpty();
 }
-
-void SessionCleaner::run()
-{
-    setThreadName("SessionCleaner");
-
-    std::unique_lock lock{mutex};
-
-    while (true)
-    {
-        auto interval = context.closeSessions();
-
-        if (cond.wait_for(lock, interval, [this]() -> bool { return quit; }))
-            break;
-    }
-}
-
 
 }

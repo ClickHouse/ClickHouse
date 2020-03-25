@@ -109,18 +109,17 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
     /// We will find out how many rows we would have read without sampling.
     LOG_DEBUG(log, "Preliminary index scan with condition: " << key_condition.toString());
 
-    for (size_t i = 0; i < parts.size(); ++i)
+    for (const auto & part : parts)
     {
-        const MergeTreeData::DataPartPtr & part = parts[i];
         MarkRanges ranges = markRangesFromPKRange(part, key_condition, settings);
 
         /** In order to get a lower bound on the number of rows that match the condition on PK,
           *  consider only guaranteed full marks.
           * That is, do not take into account the first and last marks, which may be incomplete.
           */
-        for (size_t j = 0; j < ranges.size(); ++j)
-            if (ranges[j].end - ranges[j].begin > 2)
-                rows_count += part->index_granularity.getRowsCountInRange({ranges[j].begin + 1, ranges[j].end - 1});
+        for (const auto & range : ranges)
+            if (range.end - range.begin > 2)
+                rows_count += part->index_granularity.getRowsCountInRange({range.begin + 1, range.end - 1});
 
     }
 
@@ -276,8 +275,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
             if (part->isEmpty())
                 continue;
 
-            if (minmax_idx_condition && !minmax_idx_condition->checkInParallelogram(
-                    part->minmax_idx.parallelogram, data.minmax_idx_column_types).can_be_true)
+            if (minmax_idx_condition && !minmax_idx_condition->checkInHyperrectangle(
+                    part->minmax_idx.hyperrectangle, data.minmax_idx_column_types).can_be_true)
                 continue;
 
             if (max_block_numbers_to_read)
@@ -301,8 +300,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    auto select_sample_size = select.sample_size();
-    auto select_sample_offset = select.sample_offset();
+    auto select_sample_size = select.sampleSize();
+    auto select_sample_offset = select.sampleOffset();
 
     if (select_sample_size)
     {
@@ -794,10 +793,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
     {
         /// Sequential query execution.
 
-        for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+        for (const auto & part : parts)
         {
-            RangesInDataPart & part = parts[part_index];
-
             auto source = std::make_shared<MergeTreeSelectProcessor>(
                 data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
                 settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
@@ -1025,13 +1022,13 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     const auto data_settings = data.getSettings();
     size_t sum_marks = 0;
     size_t adaptive_parts = 0;
-    for (size_t i = 0; i < parts.size(); ++i)
+    for (const auto & part : parts)
     {
-        for (size_t j = 0; j < parts[i].ranges.size(); ++j)
-            sum_marks += parts[i].ranges[j].end - parts[i].ranges[j].begin;
+        for (const auto & range : part.ranges)
+            sum_marks += range.end - range.begin;
 
-        if (parts[i].data_part->index_granularity_info.is_adaptive)
-            adaptive_parts++;
+        if (part.data_part->index_granularity_info.is_adaptive)
+            ++adaptive_parts;
     }
 
     size_t index_granularity_bytes = 0;
@@ -1049,10 +1046,8 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
 
     Pipes pipes;
 
-    for (size_t part_index = 0; part_index < parts.size(); ++part_index)
+    for (const auto & part : parts)
     {
-        RangesInDataPart & part = parts[part_index];
-
         auto source_processor = std::make_shared<MergeTreeSelectProcessor>(
             data, part.data_part, max_block_size, settings.preferred_block_size_bytes,
             settings.preferred_max_column_in_block_size_bytes, column_names, part.ranges, use_uncompressed_cache,
@@ -1096,8 +1091,10 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         {
             auto merged_processor =
                     std::make_shared<MergingSortedTransform>(header, pipes.size(), sort_description, max_block_size);
-            pipes.emplace_back(std::move(pipes), std::move(merged_processor));
-            break;
+            Pipe pipe(std::move(pipes), std::move(merged_processor));
+            pipes = Pipes();
+            pipes.emplace_back(std::move(pipe));
+            return pipes;
         }
 
         case MergeTreeData::MergingParams::Collapsing:
@@ -1263,7 +1260,7 @@ MarkRanges MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     const MarkRanges & ranges,
     const Settings & settings) const
 {
-    if (!Poco::File(part->getFullPath() + index->getFileName() + ".idx").exists())
+    if (!part->disk->exists(part->getFullRelativePath() + index->getFileName() + ".idx"))
     {
         LOG_DEBUG(log, "File for index " << backQuote(index->name) << " does not exist. Skipping it.");
         return ranges;

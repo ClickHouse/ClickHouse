@@ -7,7 +7,6 @@
         <table_exists>test.hits</table_exists>
     </preconditions>
 
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>

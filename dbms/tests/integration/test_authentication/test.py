@@ -10,8 +10,8 @@ def setup_nodes():
     try:
         cluster.start()
 
-        instance.query("CREATE USER sasha PROFILE 'default'")
-        instance.query("CREATE USER masha IDENTIFIED BY 'qwerty' PROFILE 'default'")
+        instance.query("CREATE USER sasha")
+        instance.query("CREATE USER masha IDENTIFIED BY 'qwerty'")
 
         yield cluster
 

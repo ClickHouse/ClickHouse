@@ -1,6 +1,7 @@
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/StorageID.h>
 
 namespace DB
 {
@@ -14,29 +15,18 @@ namespace ErrorCodes
 namespace
 {
 
-const DatabaseAndTableWithAlias & extractTable(const DatabaseAndTableWithAlias & table)
-{
-    return table;
-}
-
-const DatabaseAndTableWithAlias & extractTable(const TableWithColumnNames & table)
-{
-    return table.table;
-}
-
 template <typename T>
-IdentifierSemantic::ColumnMatch tryChooseTable(const ASTIdentifier & identifier, const std::vector<T> & tables,
-                                               size_t & best_table_pos, bool allow_ambiguous)
+std::optional<size_t> tryChooseTable(const ASTIdentifier & identifier, const std::vector<T> & tables, bool allow_ambiguous)
 {
     using ColumnMatch = IdentifierSemantic::ColumnMatch;
 
-    best_table_pos = 0;
+    size_t best_table_pos = 0;
     auto best_match = ColumnMatch::NoMatch;
     size_t same_match = 0;
 
     for (size_t i = 0; i < tables.size(); ++i)
     {
-        auto match = IdentifierSemantic::canReferColumnToTable(identifier, extractTable(tables[i]));
+        auto match = IdentifierSemantic::canReferColumnToTable(identifier, tables[i]);
         if (match != ColumnMatch::NoMatch)
         {
             if (match > best_match)
@@ -54,9 +44,13 @@ IdentifierSemantic::ColumnMatch tryChooseTable(const ASTIdentifier & identifier,
     {
         if (!allow_ambiguous)
             throw Exception("Ambiguous column '" + identifier.name + "'", ErrorCodes::AMBIGUOUS_COLUMN_NAME);
-        return ColumnMatch::Ambiguous;
+        best_match = ColumnMatch::Ambiguous;
+        return {};
     }
-    return best_match;
+
+    if (best_match != ColumnMatch::NoMatch)
+        return best_table_pos;
+    return {};
 }
 
 }
@@ -125,28 +119,32 @@ std::optional<size_t> IdentifierSemantic::getMembership(const ASTIdentifier & id
     return identifier.semantic->membership;
 }
 
-bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<DatabaseAndTableWithAlias> & tables,
-                                     size_t & best_table_pos, bool ambiguous)
+std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<DatabaseAndTableWithAlias> & tables,
+                                                      bool ambiguous)
 {
-    static constexpr auto no_match = IdentifierSemantic::ColumnMatch::NoMatch;
-    return tryChooseTable<DatabaseAndTableWithAlias>(identifier, tables, best_table_pos, ambiguous) != no_match;
+    return tryChooseTable<DatabaseAndTableWithAlias>(identifier, tables, ambiguous);
 }
 
-bool IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNames> & tables,
-                                     size_t & best_table_pos, bool ambiguous)
+std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNames> & tables,
+                                                      bool ambiguous)
 {
-    static constexpr auto no_match = IdentifierSemantic::ColumnMatch::NoMatch;
-    return tryChooseTable<TableWithColumnNames>(identifier, tables, best_table_pos, ambiguous) != no_match;
+    return tryChooseTable<TableWithColumnNames>(identifier, tables, ambiguous);
 }
 
-std::pair<String, String> IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
+std::optional<size_t> IdentifierSemantic::chooseTable(const ASTIdentifier & identifier, const std::vector<TableWithColumnNamesAndTypes> & tables,
+                                                      bool ambiguous)
+{
+    return tryChooseTable<TableWithColumnNamesAndTypes>(identifier, tables, ambiguous);
+}
+
+StorageID IdentifierSemantic::extractDatabaseAndTable(const ASTIdentifier & identifier)
 {
     if (identifier.name_parts.size() > 2)
         throw Exception("Logical error: more than two components in table expression", ErrorCodes::LOGICAL_ERROR);
 
     if (identifier.name_parts.size() == 2)
-        return { identifier.name_parts[0], identifier.name_parts[1] };
-    return { "", identifier.name };
+        return { identifier.name_parts[0], identifier.name_parts[1], identifier.uuid };
+    return { "", identifier.name, identifier.uuid };
 }
 
 std::optional<String> IdentifierSemantic::extractNestedName(const ASTIdentifier & identifier, const String & table_name)
@@ -196,6 +194,22 @@ IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const 
     }
 
     return ColumnMatch::NoMatch;
+}
+
+IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const ASTIdentifier & identifier,
+                                                                          const TableWithColumnNames & db_and_table)
+{
+    /// TODO: ColumnName match logic is disabled cause caller's code is not ready for it
+    return canReferColumnToTable(identifier, db_and_table.table);
+}
+
+IdentifierSemantic::ColumnMatch IdentifierSemantic::canReferColumnToTable(const ASTIdentifier & identifier,
+                                                                          const TableWithColumnNamesAndTypes & db_and_table)
+{
+    ColumnMatch match = canReferColumnToTable(identifier, db_and_table.table);
+    if (match == ColumnMatch::NoMatch && identifier.isShort() && db_and_table.hasColumn(identifier.shortName()))
+        match = ColumnMatch::ColumnName;
+    return match;
 }
 
 /// Strip qualificators from left side of column name.

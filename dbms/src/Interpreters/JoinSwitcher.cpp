@@ -59,7 +59,7 @@ void JoinSwitcher::switchJoin()
     /// names to positions optimization
     std::vector<size_t> positions;
     std::vector<bool> is_nullable;
-    if (right_blocks.size())
+    if (!right_blocks.empty())
     {
         positions.reserve(right_sample_block.columns());
         const Block & tmp_block = *right_blocks.begin();

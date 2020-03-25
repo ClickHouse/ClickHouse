@@ -25,10 +25,6 @@ namespace ErrorCodes
 }
 
 
-Exception::Exception()
-{
-}
-
 Exception::Exception(const std::string & msg, int code)
     : Poco::Exception(msg, code)
 {
@@ -82,12 +78,12 @@ std::string Exception::getStackTraceString() const
 }
 
 
-std::string errnoToString(int code, int e)
+std::string errnoToString(int code, int the_errno)
 {
     const size_t buf_size = 128;
     char buf[buf_size];
 #ifndef _GNU_SOURCE
-    int rc = strerror_r(e, buf, buf_size);
+    int rc = strerror_r(the_errno, buf, buf_size);
 #ifdef __APPLE__
     if (rc != 0 && rc != EINVAL)
 #else
@@ -100,16 +96,16 @@ std::string errnoToString(int code, int e)
         strcpy(buf, unknown_message);
         strcpy(buf + strlen(unknown_message), code_str);
     }
-    return "errno: " + toString(e) + ", strerror: " + std::string(buf);
+    return "errno: " + toString(the_errno) + ", strerror: " + std::string(buf);
 #else
     (void)code;
-    return "errno: " + toString(e) + ", strerror: " + std::string(strerror_r(e, buf, sizeof(buf)));
+    return "errno: " + toString(the_errno) + ", strerror: " + std::string(strerror_r(the_errno, buf, sizeof(buf)));
 #endif
 }
 
-void throwFromErrno(const std::string & s, int code, int e)
+void throwFromErrno(const std::string & s, int code, int the_errno)
 {
-    throw ErrnoException(s + ", " + errnoToString(code, e), code, e);
+    throw ErrnoException(s + ", " + errnoToString(code, the_errno), code, the_errno);
 }
 
 void throwFromErrnoWithPath(const std::string & s, const std::string & path, int code, int the_errno)
@@ -267,9 +263,9 @@ int getCurrentExceptionCode()
 
 void rethrowFirstException(const Exceptions & exceptions)
 {
-    for (size_t i = 0, size = exceptions.size(); i < size; ++i)
-        if (exceptions[i])
-            std::rethrow_exception(exceptions[i]);
+    for (auto & exception : exceptions)
+        if (exception)
+            std::rethrow_exception(exception);
 }
 
 
@@ -277,7 +273,7 @@ void tryLogException(std::exception_ptr e, const char * log_name, const std::str
 {
     try
     {
-        std::rethrow_exception(std::move(e));
+        std::rethrow_exception(std::move(e)); // NOLINT
     }
     catch (...)
     {
@@ -289,7 +285,7 @@ void tryLogException(std::exception_ptr e, Poco::Logger * logger, const std::str
 {
     try
     {
-        std::rethrow_exception(std::move(e));
+        std::rethrow_exception(std::move(e)); // NOLINT
     }
     catch (...)
     {
@@ -331,7 +327,7 @@ std::string getExceptionMessage(std::exception_ptr e, bool with_stacktrace)
 {
     try
     {
-        std::rethrow_exception(std::move(e));
+        std::rethrow_exception(std::move(e)); // NOLINT
     }
     catch (...)
     {

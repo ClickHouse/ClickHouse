@@ -155,7 +155,7 @@ struct PositionImpl
     using ResultType = UInt64;
 
     /// Find one substring in many strings.
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & needle, PaddedPODArray<UInt64> & res)
     {
         const UInt8 * begin = data.data();
@@ -192,7 +192,7 @@ struct PositionImpl
     }
 
     /// Search for substring in string.
-    static void constant_constant(std::string data, std::string needle, UInt64 & res)
+    static void constantConstant(std::string data, std::string needle, UInt64 & res)
     {
         Impl::toLowerIfNeed(data);
         Impl::toLowerIfNeed(needle);
@@ -205,7 +205,7 @@ struct PositionImpl
     }
 
     /// Search each time for a different single substring inside each time different string.
-    static void vector_vector(
+    static void vectorVector(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const ColumnString::Chars & needle_data,
@@ -255,7 +255,7 @@ struct PositionImpl
     }
 
     /// Find many substrings in single string.
-    static void constant_vector(
+    static void constantVector(
         const String & haystack,
         const ColumnString::Chars & needle_data,
         const ColumnString::Offsets & needle_offsets,
@@ -303,7 +303,7 @@ struct MultiSearchAllPositionsImpl
 {
     using ResultType = UInt64;
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
@@ -344,9 +344,9 @@ struct MultiSearchImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
-    static auto ReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
+    static auto getReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
@@ -381,9 +381,9 @@ struct MultiSearchFirstPositionImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
-    static auto ReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
+    static auto getReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
@@ -428,9 +428,9 @@ struct MultiSearchFirstIndexImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
-    static auto ReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
+    static auto getReturnType() { return std::make_shared<DataTypeNumber<ResultType>>(); }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
@@ -467,7 +467,7 @@ struct HasTokenImpl
 
     static constexpr bool use_default_implementation_for_constants = true;
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)
     {
         if (offsets.empty())
@@ -508,14 +508,14 @@ struct HasTokenImpl
     }
 
     template <typename... Args>
-    static void vector_vector(Args &&...)
+    static void vectorVector(Args &&...)
     {
         throw Exception("Function 'hasToken' does not support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     /// Search different needles in single haystack.
     template <typename... Args>
-    static void constant_vector(Args &&...)
+    static void constantVector(Args &&...)
     {
         throw Exception("Function 'hasToken' does not support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }

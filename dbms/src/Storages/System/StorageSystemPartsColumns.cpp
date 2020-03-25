@@ -116,7 +116,7 @@ void StorageSystemPartsColumns::processNextStorage(MutableColumns & columns_, co
             columns_[j++]->insert(part->getMarksCount());
 
             columns_[j++]->insert(part->rows_count);
-            columns_[j++]->insert(part->bytes_on_disk.load(std::memory_order_relaxed));
+            columns_[j++]->insert(part->getBytesOnDisk());
             columns_[j++]->insert(columns_size.data_compressed);
             columns_[j++]->insert(columns_size.data_uncompressed);
             columns_[j++]->insert(columns_size.marks);

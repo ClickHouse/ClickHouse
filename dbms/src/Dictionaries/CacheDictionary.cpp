@@ -447,8 +447,8 @@ CacheDictionary::Attribute CacheDictionary::createAttributeWithType(const Attrib
     {
 #define DISPATCH(TYPE) \
     case AttributeUnderlyingType::ut##TYPE: \
-        attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); \
-        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); \
+        attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT */ \
+        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT */ \
         bytes_allocated += size * sizeof(TYPE); \
         break;
         DISPATCH(UInt8)
@@ -748,7 +748,7 @@ void CacheDictionary::updateThreadFunction()
 
         UpdateUnitPtr current_unit_ptr;
 
-        while (update_request.size() && update_queue.tryPop(current_unit_ptr))
+        while (!update_request.empty() && update_queue.tryPop(current_unit_ptr))
             update_request.emplace_back(std::move(current_unit_ptr));
 
         BunchUpdateUnit bunch_update_unit(update_request);

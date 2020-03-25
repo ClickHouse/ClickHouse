@@ -11,7 +11,7 @@ class Context;
 
 /** System table "contributors" with list of clickhouse contributors
   */
-class StorageSystemContributors : public ext::shared_ptr_helper<StorageSystemContributors>,
+class StorageSystemContributors final : public ext::shared_ptr_helper<StorageSystemContributors>,
                                   public IStorageSystemOneBlock<StorageSystemContributors>
 {
     friend struct ext::shared_ptr_helper<StorageSystemContributors>;

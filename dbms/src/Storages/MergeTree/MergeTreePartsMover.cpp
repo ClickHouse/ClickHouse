@@ -24,7 +24,9 @@ class LargestPartsWithRequiredSize
         bool operator()(const MergeTreeData::DataPartPtr & f, const MergeTreeData::DataPartPtr & s) const
         {
             /// If parts have equal sizes, than order them by names (names are unique)
-            return std::tie(f->bytes_on_disk, f->name) < std::tie(s->bytes_on_disk, s->name);
+            UInt64 first_part_size = f->getBytesOnDisk();
+            UInt64 second_part_size = s->getBytesOnDisk();
+            return std::tie(first_part_size, f->name) < std::tie(second_part_size, s->name);
         }
     };
 
@@ -33,23 +35,23 @@ class LargestPartsWithRequiredSize
     UInt64 current_size_sum = 0;
 
 public:
-    LargestPartsWithRequiredSize(UInt64 required_sum_size_) : required_size_sum(required_sum_size_) {}
+    explicit LargestPartsWithRequiredSize(UInt64 required_sum_size_) : required_size_sum(required_sum_size_) {}
 
     void add(MergeTreeData::DataPartPtr part)
     {
         if (current_size_sum < required_size_sum)
         {
             elems.emplace(part);
-            current_size_sum += part->bytes_on_disk;
+            current_size_sum += part->getBytesOnDisk();
             return;
         }
 
         /// Adding smaller element
-        if (!elems.empty() && (*elems.begin())->bytes_on_disk >= part->bytes_on_disk)
+        if (!elems.empty() && (*elems.begin())->getBytesOnDisk() >= part->getBytesOnDisk())
             return;
 
         elems.emplace(part);
-        current_size_sum += part->bytes_on_disk;
+        current_size_sum += part->getBytesOnDisk();
 
         removeRedundantElements();
     }
@@ -73,9 +75,9 @@ public:
 private:
     void removeRedundantElements()
     {
-        while (!elems.empty() && (current_size_sum - (*elems.begin())->bytes_on_disk >= required_size_sum))
+        while (!elems.empty() && (current_size_sum - (*elems.begin())->getBytesOnDisk() >= required_size_sum))
         {
-            current_size_sum -= (*elems.begin())->bytes_on_disk;
+            current_size_sum -= (*elems.begin())->getBytesOnDisk();
             elems.erase(elems.begin());
         }
     }
@@ -101,7 +103,7 @@ bool MergeTreePartsMover::selectPartsForMove(
     const auto policy = data->getStoragePolicy();
     const auto & volumes = policy->getVolumes();
 
-    if (volumes.size() > 0)
+    if (!volumes.empty())
     {
         /// Do not check last volume
         for (size_t i = 0; i != volumes.size() - 1; ++i)
@@ -133,7 +135,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         {
             auto destination = ttl_entry->getDestination(policy);
             if (destination && !ttl_entry->isPartInDestination(policy, *part))
-                reservation = part->storage.tryReserveSpace(part->bytes_on_disk, ttl_entry->getDestination(policy));
+                reservation = part->storage.tryReserveSpace(part->getBytesOnDisk(), ttl_entry->getDestination(policy));
         }
 
         if (reservation) /// Found reservation by TTL rule.
@@ -144,10 +146,10 @@ bool MergeTreePartsMover::selectPartsForMove(
             /// possibly to zero.
             if (to_insert != need_to_move.end())
             {
-                to_insert->second.decreaseRequiredSizeAndRemoveRedundantParts(part->bytes_on_disk);
+                to_insert->second.decreaseRequiredSizeAndRemoveRedundantParts(part->getBytesOnDisk());
             }
             ++parts_to_move_by_ttl_rules;
-            parts_to_move_total_size_bytes += part->bytes_on_disk;
+            parts_to_move_total_size_bytes += part->getBytesOnDisk();
         }
         else
         {
@@ -161,7 +163,7 @@ bool MergeTreePartsMover::selectPartsForMove(
         auto min_volume_index = policy->getVolumeIndexByDisk(move.first) + 1;
         for (auto && part : move.second.getAccumulatedParts())
         {
-            auto reservation = policy->reserve(part->bytes_on_disk, min_volume_index);
+            auto reservation = policy->reserve(part->getBytesOnDisk(), min_volume_index);
             if (!reservation)
             {
                 /// Next parts to move from this disk has greater size and same min volume index.
@@ -171,7 +173,7 @@ bool MergeTreePartsMover::selectPartsForMove(
             }
             parts_to_move.emplace_back(part, std::move(reservation));
             ++parts_to_move_by_policy_rules;
-            parts_to_move_total_size_bytes += part->bytes_on_disk;
+            parts_to_move_total_size_bytes += part->getBytesOnDisk();
         }
     }
 

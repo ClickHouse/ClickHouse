@@ -81,7 +81,7 @@ Block TotalsHavingBlockInputStream::readImpl()
     Block finalized;
     Block block;
 
-    while (1)
+    while (true)
     {
         block = children[0]->read();
 

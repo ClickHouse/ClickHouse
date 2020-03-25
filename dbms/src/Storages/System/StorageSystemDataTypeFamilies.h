@@ -6,7 +6,7 @@
 namespace DB
 {
 
-class StorageSystemDataTypeFamilies : public ext::shared_ptr_helper<StorageSystemDataTypeFamilies>,
+class StorageSystemDataTypeFamilies final : public ext::shared_ptr_helper<StorageSystemDataTypeFamilies>,
                                       public IStorageSystemOneBlock<StorageSystemDataTypeFamilies>
 {
     friend struct ext::shared_ptr_helper<StorageSystemDataTypeFamilies>;

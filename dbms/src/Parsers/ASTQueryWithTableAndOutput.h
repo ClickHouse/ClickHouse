@@ -16,7 +16,7 @@ class ASTQueryWithTableAndOutput : public ASTQueryWithOutput
 public:
     String database;
     String table;
-    UUID uuid;
+    UUID uuid = UUIDHelpers::Nil;
     bool temporary{false};
 
 protected:

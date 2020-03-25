@@ -50,66 +50,56 @@ template <typename T>
 class DiskTest : public testing::Test
 {
 public:
-    void SetUp() override { disk_ = createDisk<T>(); }
+    void SetUp() override { disk = createDisk<T>(); }
+    void TearDown() override { destroyDisk<T>(disk); }
 
-    void TearDown() override { destroyDisk<T>(disk_); }
-
-    const DB::DiskPtr & getDisk() { return disk_; }
-
-private:
-    DB::DiskPtr disk_;
+    DB::DiskPtr disk;
 };
 
 
-typedef testing::Types<DB::DiskMemory, DB::DiskLocal> DiskImplementations;
+using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(DiskTest, DiskImplementations);
 
 
 TYPED_TEST(DiskTest, createDirectories)
 {
-    const auto & disk = this->getDisk();
+    this->disk->createDirectories("test_dir1/");
+    EXPECT_TRUE(this->disk->isDirectory("test_dir1/"));
 
-    disk->createDirectories("test_dir1/");
-    EXPECT_TRUE(disk->isDirectory("test_dir1/"));
-
-    disk->createDirectories("test_dir2/nested_dir/");
-    EXPECT_TRUE(disk->isDirectory("test_dir2/nested_dir/"));
+    this->disk->createDirectories("test_dir2/nested_dir/");
+    EXPECT_TRUE(this->disk->isDirectory("test_dir2/nested_dir/"));
 }
 
 
 TYPED_TEST(DiskTest, writeFile)
 {
-    const auto & disk = this->getDisk();
-
     {
-        std::unique_ptr<DB::WriteBuffer> out = disk->writeFile("test_file");
+        std::unique_ptr<DB::WriteBuffer> out = this->disk->writeFile("test_file");
         writeString("test data", *out);
     }
 
     DB::String data;
     {
-        std::unique_ptr<DB::ReadBuffer> in = disk->readFile("test_file");
+        std::unique_ptr<DB::ReadBuffer> in = this->disk->readFile("test_file");
         readString(data, *in);
     }
 
     EXPECT_EQ("test data", data);
-    EXPECT_EQ(data.size(), disk->getFileSize("test_file"));
+    EXPECT_EQ(data.size(), this->disk->getFileSize("test_file"));
 }
 
 
 TYPED_TEST(DiskTest, readFile)
 {
-    const auto & disk = this->getDisk();
-
     {
-        std::unique_ptr<DB::WriteBuffer> out = disk->writeFile("test_file");
+        std::unique_ptr<DB::WriteBuffer> out = this->disk->writeFile("test_file");
         writeString("test data", *out);
     }
 
     // Test SEEK_SET
     {
         String buf(4, '0');
-        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
+        std::unique_ptr<DB::SeekableReadBuffer> in = this->disk->readFile("test_file");
 
         in->seek(5, SEEK_SET);
 
@@ -119,7 +109,7 @@ TYPED_TEST(DiskTest, readFile)
 
     // Test SEEK_CUR
     {
-        std::unique_ptr<DB::SeekableReadBuffer> in = disk->readFile("test_file");
+        std::unique_ptr<DB::SeekableReadBuffer> in = this->disk->readFile("test_file");
         String buf(4, '0');
 
         in->readStrict(buf.data(), 4);
@@ -136,12 +126,10 @@ TYPED_TEST(DiskTest, readFile)
 
 TYPED_TEST(DiskTest, iterateDirectory)
 {
-    const auto & disk = this->getDisk();
-
-    disk->createDirectories("test_dir/nested_dir/");
+    this->disk->createDirectories("test_dir/nested_dir/");
 
     {
-        auto iter = disk->iterateDirectory("");
+        auto iter = this->disk->iterateDirectory("");
         EXPECT_TRUE(iter->isValid());
         EXPECT_EQ("test_dir/", iter->path());
         iter->next();
@@ -149,7 +137,7 @@ TYPED_TEST(DiskTest, iterateDirectory)
     }
 
     {
-        auto iter = disk->iterateDirectory("test_dir/");
+        auto iter = this->disk->iterateDirectory("test_dir/");
         EXPECT_TRUE(iter->isValid());
         EXPECT_EQ("test_dir/nested_dir/", iter->path());
         iter->next();

@@ -12,7 +12,7 @@ namespace ErrorCodes
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -29,7 +29,7 @@ void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
     };
-    factory.registerSource("mongodb", createTableSource);
+    factory.registerSource("mongodb", create_table_source);
 }
 
 }
@@ -319,16 +319,16 @@ BlockInputStreamPtr MongoDBDictionarySource::loadKeys(const Columns & key_column
                     break;
 
                 case AttributeUnderlyingType::utString:
-                    String _str(get<String>((*key_columns[attr.first])[row_idx]));
+                    String loaded_str(get<String>((*key_columns[attr.first])[row_idx]));
                     /// Convert string to ObjectID
                     if (attr.second.is_object_id)
                     {
-                        Poco::MongoDB::ObjectId::Ptr _id(new Poco::MongoDB::ObjectId(_str));
-                        key.add(attr.second.name, _id);
+                        Poco::MongoDB::ObjectId::Ptr loaded_id(new Poco::MongoDB::ObjectId(loaded_str));
+                        key.add(attr.second.name, loaded_id);
                     }
                     else
                     {
-                        key.add(attr.second.name, _str);
+                        key.add(attr.second.name, loaded_str);
                     }
                     break;
             }

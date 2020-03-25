@@ -68,12 +68,12 @@ void InterserverIOHTTPHandler::processQuery(Poco::Net::HTTPServerRequest & reque
 
     if (compress)
     {
-        CompressedWriteBuffer compressed_out(*used_output.out.get());
+        CompressedWriteBuffer compressed_out(*used_output.out);
         endpoint->processQuery(params, body, compressed_out, response);
     }
     else
     {
-        endpoint->processQuery(params, body, *used_output.out.get(), response);
+        endpoint->processQuery(params, body, *used_output.out, response);
     }
 }
 

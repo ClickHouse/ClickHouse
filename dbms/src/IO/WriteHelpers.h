@@ -239,11 +239,6 @@ inline void writeFloatText(T x, WriteBuffer & buf)
 }
 
 
-inline void writeString(const String & s, WriteBuffer & buf)
-{
-    buf.write(s.data(), s.size());
-}
-
 inline void writeString(const char * data, size_t size, WriteBuffer & buf)
 {
     buf.write(data, size);
@@ -605,7 +600,7 @@ inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 void formatUUID(const UInt8 * src16, UInt8 * dst36);
-void formatUUID(std::reverse_iterator<const UInt8 *> dst16, UInt8 * dst36);
+void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {

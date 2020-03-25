@@ -53,7 +53,7 @@ struct NumIfImpl
     using ArrayB = PaddedPODArray<B>;
     using ColVecResult = ColumnVector<ResultType>;
 
-    static void vector_vector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32)
+    static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
@@ -64,7 +64,7 @@ struct NumIfImpl
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void vector_constant(const ArrayCond & cond, const ArrayA & a, B b, Block & block, size_t result, UInt32)
+    static void vectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
@@ -75,7 +75,7 @@ struct NumIfImpl
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void constant_vector(const ArrayCond & cond, A a, const ArrayB & b, Block & block, size_t result, UInt32)
+    static void constantVector(const ArrayCond & cond, A a, const ArrayB & b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
@@ -86,7 +86,7 @@ struct NumIfImpl
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void constant_constant(const ArrayCond & cond, A a, B b, Block & block, size_t result, UInt32)
+    static void constantConstant(const ArrayCond & cond, A a, B b, Block & block, size_t result, UInt32)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size);
@@ -107,7 +107,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
     using ArrayB = DecimalPaddedPODArray<Decimal<B>>;
     using ColVecResult = ColumnDecimal<ResultType>;
 
-    static void vector_vector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
+    static void vectorVector(const ArrayCond & cond, const ArrayA & a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
@@ -118,7 +118,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void vector_constant(const ArrayCond & cond, const ArrayA & a, B b, Block & block, size_t result, UInt32 scale)
+    static void vectorConstant(const ArrayCond & cond, const ArrayA & a, B b, Block & block, size_t result, UInt32 scale)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
@@ -129,7 +129,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void constant_vector(const ArrayCond & cond, A a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
+    static void constantVector(const ArrayCond & cond, A a, const ArrayB & b, Block & block, size_t result, UInt32 scale)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
@@ -140,7 +140,7 @@ struct NumIfImpl<Decimal<A>, Decimal<B>, Decimal<R>>
         block.getByPosition(result).column = std::move(col_res);
     }
 
-    static void constant_constant(const ArrayCond & cond, A a, B b, Block & block, size_t result, UInt32 scale)
+    static void constantConstant(const ArrayCond & cond, A a, B b, Block & block, size_t result, UInt32 scale)
     {
         size_t size = cond.size();
         auto col_res = ColVecResult::create(size, scale);
@@ -156,15 +156,15 @@ template <typename A, typename B>
 struct NumIfImpl<A, B, NumberTraits::Error>
 {
 private:
-    [[noreturn]] static void throw_error()
+    [[noreturn]] static void throwError()
     {
         throw Exception("Internal logic error: invalid types of arguments 2 and 3 of if", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 public:
-    template <typename... Args> static void vector_vector(Args &&...) { throw_error(); }
-    template <typename... Args> static void vector_constant(Args &&...) { throw_error(); }
-    template <typename... Args> static void constant_vector(Args &&...) { throw_error(); }
-    template <typename... Args> static void constant_constant(Args &&...) { throw_error(); }
+    template <typename... Args> static void vectorVector(Args &&...) { throwError(); }
+    template <typename... Args> static void vectorConstant(Args &&...) { throwError(); }
+    template <typename... Args> static void constantVector(Args &&...) { throwError(); }
+    template <typename... Args> static void constantConstant(Args &&...) { throwError(); }
 };
 
 
@@ -173,7 +173,7 @@ class FunctionIf : public FunctionIfBase</*null_is_false=*/false>
 public:
     static constexpr auto name = "if";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIf>(context); }
-    FunctionIf(const Context & context_) : context(context_) {}
+    explicit FunctionIf(const Context & context_) : context(context_) {}
 
 private:
     template <typename T0, typename T1>
@@ -209,13 +209,13 @@ private:
 
         if (auto col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
         {
-            NumIfImpl<T0, T1, ResultType>::vector_vector(
+            NumIfImpl<T0, T1, ResultType>::vectorVector(
                 cond_col->getData(), col_left->getData(), col_right_vec->getData(), block, result, scale);
             return true;
         }
         else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
         {
-            NumIfImpl<T0, T1, ResultType>::vector_constant(
+            NumIfImpl<T0, T1, ResultType>::vectorConstant(
                 cond_col->getData(), col_left->getData(), col_right_const->template getValue<T1>(), block, result, scale);
             return true;
         }
@@ -238,13 +238,13 @@ private:
 
         if (auto col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
         {
-            NumIfImpl<T0, T1, ResultType>::constant_vector(
+            NumIfImpl<T0, T1, ResultType>::constantVector(
                 cond_col->getData(), col_left->template getValue<T0>(), col_right_vec->getData(), block, result, scale);
             return true;
         }
         else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
         {
-            NumIfImpl<T0, T1, ResultType>::constant_constant(
+            NumIfImpl<T0, T1, ResultType>::constantConstant(
                 cond_col->getData(), col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), block, result, scale);
             return true;
         }
@@ -416,7 +416,7 @@ private:
         return true;
     }
 
-    bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    static bool executeString(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
     {
         const IColumn * col_then_untyped = block.getByPosition(arguments[1]).column.get();
         const IColumn * col_else_untyped = block.getByPosition(arguments[2]).column.get();
@@ -494,7 +494,7 @@ private:
         return false;
     }
 
-    bool executeGenericArray(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
+    static bool executeGenericArray(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result)
     {
         /// For generic implementation, arrays must be of same type.
         if (!block.getByPosition(arguments[1]).type->equals(*block.getByPosition(arguments[2]).type))

@@ -13,7 +13,7 @@ target_link_libraries(clickhouse_functions
         clickhouse_dictionaries
         clickhouse_dictionaries_embedded
         dbms
-        ${CONSISTENT_HASHING_LIBRARY}
+        consistent-hashing
         consistent-hashing-sumbur
         ${CITYHASH_LIBRARIES}
         ${FARMHASH_LIBRARIES}
@@ -33,10 +33,6 @@ endif()
 
 target_include_directories(clickhouse_functions SYSTEM PRIVATE ${DIVIDE_INCLUDE_DIR} ${METROHASH_INCLUDE_DIR} ${SPARSEHASH_INCLUDE_DIR})
 
-if (CONSISTENT_HASHING_INCLUDE_DIR)
-    target_include_directories (clickhouse_functions PRIVATE ${CONSISTENT_HASHING_INCLUDE_DIR})
-endif ()
-
 if (CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE" OR CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO" OR CMAKE_BUILD_TYPE_UC STREQUAL "MINSIZEREL")
     # Won't generate debug info for files with heavy template instantiation to achieve faster linking and lower size.
     target_compile_options(clickhouse_functions PRIVATE "-g0")
@@ -45,10 +41,6 @@ endif ()
 if (USE_ICU)
     target_link_libraries (clickhouse_functions PRIVATE ${ICU_LIBRARIES})
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${ICU_INCLUDE_DIRS})
-endif ()
-
-if (USE_VECTORCLASS)
-    target_include_directories (clickhouse_functions SYSTEM PRIVATE ${VECTORCLASS_INCLUDE_DIR})
 endif ()
 
 if (USE_FASTOPS)
