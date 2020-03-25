@@ -95,7 +95,7 @@ public:
 
     UInt64 getAllocatedBytes() const;
 
-    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y);
+    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const;
 
 private:
     enum class CellType
@@ -184,6 +184,39 @@ private:
     /// min(distance(point, edge) : edge in polygon)
     inline Distance distance(const Point & point, const Polygon & polygon);
 };
+
+
+/// This algorithm can be used as a baseline for comparison.
+template <typename CoordinateType>
+class PointInPolygonTrivial
+{
+public:
+    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
+    /// Counter-Clockwise ordering.
+    using Polygon = boost::geometry::model::polygon<Point, false>;
+    using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
+    using Box = boost::geometry::model::box<Point>;
+    using Segment = boost::geometry::model::segment<Point>;
+
+    explicit PointInPolygonTrivial(const Polygon & polygon_)
+        : polygon(polygon_) {}
+
+    void init() {}
+
+    /// True if bound box is empty.
+    bool hasEmptyBound() const { return false; }
+
+    UInt64 getAllocatedBytes() const { return 0; }
+
+    bool contains(CoordinateType x, CoordinateType y) const
+    {
+        return boost::geometry::covered_by(Point(x, y), polygon);
+    }
+
+private:
+    Polygon polygon;
+};
+
 
 template <typename CoordinateType>
 UInt64 PointInPolygonWithGrid<CoordinateType>::getAllocatedBytes() const
@@ -290,7 +323,7 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
 }
 
 template <typename CoordinateType>
-bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, CoordinateType y)
+bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, CoordinateType y) const
 {
     if (has_empty_bound)
         return false;
@@ -524,7 +557,7 @@ public:
 
     bool hasEmptyBound() const { return has_empty_bound; }
 
-    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y)
+    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const
     {
         Point point(x, y);
 
