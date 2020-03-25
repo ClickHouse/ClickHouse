@@ -1,7 +1,7 @@
-#include "registerAggregateFunctions.h"
+#include <AggregateFunctions/registerAggregateFunctions.h>
 
-#include "AggregateFunctionFactory.h"
-#include "AggregateFunctionCombinatorFactory.h"
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 
 
 namespace DB
@@ -32,10 +32,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionUniqUpTo(factory);
         registerAggregateFunctionTopK(factory);
         registerAggregateFunctionsBitwise(factory);
-#if !defined(ARCADIA_BUILD)
-        /// TODO: uses custom croaring contrib
         registerAggregateFunctionsBitmap(factory);
-#endif
         registerAggregateFunctionsMaxIntersections(factory);
         registerAggregateFunctionHistogram(factory);
         registerAggregateFunctionRetention(factory);

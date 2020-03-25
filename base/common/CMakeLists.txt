@@ -15,7 +15,6 @@ set (SRCS
     setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp
-    StringRef.cpp
     terminalColors.cpp
 )
 
@@ -37,8 +36,6 @@ if (WITH_COVERAGE)
 else ()
     target_compile_definitions(common PUBLIC WITH_COVERAGE=0)
 endif ()
-
-target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 
 target_include_directories(common PUBLIC .. ${CMAKE_CURRENT_BINARY_DIR}/..)
 

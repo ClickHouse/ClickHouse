@@ -27,9 +27,7 @@
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <ryu/ryu.h>
-#endif
+#include <ryu/ryu.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -208,24 +206,14 @@ inline size_t writeFloatTextFastPath(T x, char * buffer)
         if (DecomposedFloat64(x).is_inside_int64())
             result = itoa(Int64(x), buffer) - buffer;
         else
-#if !defined(ARCADIA_BUILD)
             result = d2s_buffered_n(x, buffer);
-#else
-            /// TODO: add ryu to contribs
-            result = -1;
-#endif
     }
     else
     {
         if (DecomposedFloat32(x).is_inside_int32())
             result = itoa(Int32(x), buffer) - buffer;
         else
-#if !defined(ARCADIA_BUILD)
             result = f2s_buffered_n(x, buffer);
-#else
-            /// TODO: add ryu to contribs
-            result = -1;
-#endif
     }
 
     if (result <= 0)

@@ -177,10 +177,7 @@ struct OneAdder
             else
             {
                 StringRef value = column.getDataAt(row_num);
-#if !defined(ARCADIA_BUILD)
-                using namespace CityHash_v1_0_2;
-#endif
-                data.set.insert(CityHash64(value.data, value.size));
+                data.set.insert(CityHash_v1_0_2::CityHash64(value.data, value.size));
             }
         }
         else if constexpr (std::is_same_v<Data, AggregateFunctionUniqExactData<T>>)

@@ -7,6 +7,7 @@
 #include <ctime>
 #include <string>
 
+
 #define DATE_LUT_MAX (0xFFFFFFFFU - 86400)
 #define DATE_LUT_MAX_DAY_NUM (0xFFFFFFFFU / 86400)
 /// Table size is bigger than DATE_LUT_MAX_DAY_NUM to fill all indices within UInt16 range: this allows to remove extra check.
@@ -14,12 +15,6 @@
 #define DATE_LUT_MIN_YEAR 1970
 #define DATE_LUT_MAX_YEAR 2105 /// Last supported year
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
-
-#if defined(__PPC__)
-#    if !__clang__
-#        pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-#    endif
-#endif
 
 /// Flags for toYearWeek() function.
 enum class WeekModeFlag : UInt8
@@ -927,9 +922,3 @@ public:
         return s;
     }
 };
-
-#if defined(__PPC__)
-#    if !__clang__
-#        pragma GCC diagnostic pop
-#    endif
-#endif

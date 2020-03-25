@@ -1,7 +1,5 @@
 LIBRARY()
 
-NO_COMPILER_WARNINGS()
-
 PEERDIR(
     clickhouse/dbms/src/Common
 )
@@ -22,7 +20,7 @@ SRCS(
     AggregateFunctionGroupArray.cpp
     AggregateFunctionGroupArrayInsertAt.cpp
     AggregateFunctionGroupArrayMoving.cpp
-    # AggregateFunctionGroupBitmap.cpp
+    AggregateFunctionGroupBitmap.cpp
     AggregateFunctionGroupUniqArray.cpp
     AggregateFunctionHistogram.cpp
     AggregateFunctionIf.cpp

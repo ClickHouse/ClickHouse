@@ -70,10 +70,7 @@ struct UInt128Hash
 {
     size_t operator()(UInt128 x) const
     {
-#if !defined(ARCADIA_BUILD)
-        using namespace CityHash_v1_0_2;
-#endif
-        return Hash128to64({x.low, x.high});
+        return CityHash_v1_0_2::Hash128to64({x.low, x.high});
     }
 };
 
@@ -138,11 +135,8 @@ struct UInt256Hash
 {
     size_t operator()(UInt256 x) const
     {
-#if !defined(ARCADIA_BUILD)
-        using namespace CityHash_v1_0_2;
-#endif
-        /// NOTE: suboptimal
-        return Hash128to64({Hash128to64({x.a, x.b}), Hash128to64({x.c, x.d})});
+        /// NOTE suboptimal
+        return CityHash_v1_0_2::Hash128to64({CityHash_v1_0_2::Hash128to64({x.a, x.b}), CityHash_v1_0_2::Hash128to64({x.c, x.d})});
     }
 };
 
@@ -199,10 +193,7 @@ template <> struct hash<DB::UInt128>
 {
     size_t operator()(const DB::UInt128 & u) const
     {
-#if !defined(ARCADIA_BUILD)
-        using namespace CityHash_v1_0_2;
-#endif
-        return Hash128to64({u.low, u.high});
+        return CityHash_v1_0_2::Hash128to64({u.low, u.high});
     }
 };
 

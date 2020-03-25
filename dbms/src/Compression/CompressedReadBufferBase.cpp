@@ -35,17 +35,13 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
 }
 
-#if !defined(ARCADIA_BUILD)
-using namespace CityHash_v1_0_2;
-#endif
-
-using Checksum = uint128;
+using Checksum = CityHash_v1_0_2::uint128;
 
 
 /// Validate checksum of data, and if it mismatches, find out possible reason and throw exception.
 static void validateChecksum(char * data, size_t size, const Checksum expected_checksum)
 {
-    auto calculated_checksum = CityHash128(data, size);
+    auto calculated_checksum = CityHash_v1_0_2::CityHash128(data, size);
     if (expected_checksum == calculated_checksum)
         return;
 
@@ -69,7 +65,7 @@ static void validateChecksum(char * data, size_t size, const Checksum expected_c
     {
         flip_bit(data, bit_pos);
 
-        auto checksum_of_data_with_flipped_bit = CityHash128(data, size);
+        auto checksum_of_data_with_flipped_bit = CityHash_v1_0_2::CityHash128(data, size);
         if (expected_checksum == checksum_of_data_with_flipped_bit)
         {
             message << ". The mismatch is caused by single bit flip in data block at byte " << (bit_pos / 8) << ", bit " << (bit_pos % 8) << ". "

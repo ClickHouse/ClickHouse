@@ -15,11 +15,7 @@ template <typename Buffer>
 class IHashingBuffer : public BufferWithOwnMemory<Buffer>
 {
 public:
-#if !defined(ARCADIA_BUILD)
     using uint128 = CityHash_v1_0_2::uint128;
-#else
-    using uint128 = uint128;
-#endif
 
     IHashingBuffer<Buffer>(size_t block_size_ = DBMS_DEFAULT_HASHING_BLOCK_SIZE)
         : BufferWithOwnMemory<Buffer>(block_size_), block_pos(0), block_size(block_size_), state(0, 0)
@@ -28,21 +24,15 @@ public:
 
     uint128 getHash()
     {
-#if !defined(ARCADIA_BUILD)
-        using namespace CityHash_v1_0_2;
-#endif
         if (block_pos)
-            return CityHash128WithSeed(&BufferWithOwnMemory<Buffer>::memory[0], block_pos, state);
+            return CityHash_v1_0_2::CityHash128WithSeed(&BufferWithOwnMemory<Buffer>::memory[0], block_pos, state);
         else
             return state;
     }
 
     void append(DB::BufferBase::Position data)
     {
-#if !defined(ARCADIA_BUILD)
-        using namespace CityHash_v1_0_2;
-#endif
-        state = CityHash128WithSeed(data, block_size, state);
+        state = CityHash_v1_0_2::CityHash128WithSeed(data, block_size, state);
     }
 
     /// computation of the hash depends on the partitioning of blocks

@@ -15,11 +15,6 @@
 #include <common/getFQDNOrHostName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
 #include <Common/SettingsChanges.h>
 #include <Disks/DiskSpaceMonitor.h>
 #include <Compression/CompressedReadBuffer.h>

@@ -16,10 +16,6 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 
-#if defined(ARCADIA_BUILD)
-#    include <util/random/fast.h>
-#endif
-
 #include <type_traits>
 
 #define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE 0xFFFFFF
@@ -67,11 +63,7 @@ struct GroupArraySamplerData
 
     Array value;
     size_t total_values = 0;
-#if defined(ARCADIA_BUILD)
-    TReallyFastRng32 rng{123456};
-#else
     pcg32_fast rng;
-#endif
 
     UInt64 genRandom(size_t lim)
     {
@@ -152,12 +144,8 @@ public:
     void create(AggregateDataPtr place) const override
     {
         [[maybe_unused]] auto a = new (place) Data;
-#if !defined(ARCADIA_BUILD)
         if constexpr (Trait::sampler == Sampler::RNG)
             a->rng.seed(seed);
-#else
-        /// TODO: allow to reset seed.
-#endif
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -257,9 +245,7 @@ public:
         {
             DB::writeIntBinary<size_t>(this->data(place).total_values, buf);
             std::ostringstream rng_stream;
-#if !defined(ARCADIA_BUILD)
             rng_stream << this->data(place).rng;
-#endif
             DB::writeStringBinary(rng_stream.str(), buf);
         }
 
@@ -289,9 +275,7 @@ public:
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
             std::istringstream rng_stream(rng_string);
-#if !defined(ARCADIA_BUILD)
             rng_stream >> this->data(place).rng;
-#endif
         }
 
         // TODO
@@ -463,12 +447,8 @@ public:
     void create(AggregateDataPtr place) const override
     {
         [[maybe_unused]] auto a = new (place) Data;
-#if !defined(ARCADIA_BUILD)
         if constexpr (Trait::sampler == Sampler::RNG)
             a->rng.seed(seed);
-#else
-        /// TODO:
-#endif
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, size_t row_num, Arena * arena) const override
@@ -579,9 +559,7 @@ public:
         {
             DB::writeIntBinary<size_t>(data(place).total_values, buf);
             std::ostringstream rng_stream;
-#if !defined(ARCADIA_BUILD)
             rng_stream << data(place).rng;
-#endif
             DB::writeStringBinary(rng_stream.str(), buf);
         }
 
@@ -615,9 +593,7 @@ public:
             std::string rng_string;
             DB::readStringBinary(rng_string, buf);
             std::istringstream rng_stream(rng_string);
-#if !defined(ARCADIA_BUILD)
             rng_stream >> data(place).rng;
-#endif
         }
 
         // TODO

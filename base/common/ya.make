@@ -4,7 +4,6 @@ ADDINCL(
     # public
     GLOBAL clickhouse/base
     GLOBAL clickhouse/dbms/src
-    GLOBAL util/digest # for <city.h>
 
     # private
     contrib/libs/cctz/include
@@ -16,7 +15,6 @@ PEERDIR(
     contrib/libs/poco/Net
     contrib/libs/poco/Util
     contrib/restricted/boost
-    util
 )
 
 CFLAGS (GLOBAL -DARCADIA_BUILD)

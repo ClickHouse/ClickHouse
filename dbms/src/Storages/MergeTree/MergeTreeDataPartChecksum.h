@@ -17,11 +17,7 @@ namespace DB
 /// Checksum of one file.
 struct MergeTreeDataPartChecksum
 {
-#if !defined(ARCADIA_BUILD)
     using uint128 = CityHash_v1_0_2::uint128;
-#else
-    using uint128 = uint128;
-#endif
 
     UInt64 file_size {};
     uint128 file_hash {};
