@@ -340,16 +340,16 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
             MultiPolygon intersection;
             boost::geometry::intersection(polygon, cell_box, intersection);
 
-            size_t cellIndex = getCellIndex(row, col);
+            size_t cell_index = getCellIndex(row, col);
 
             if (intersection.empty())
-                addCell(cellIndex, cell_box);
+                addCell(cell_index, cell_box);
             else if (intersection.size() == 1)
-                addCell(cellIndex, cell_box, intersection.front());
+                addCell(cell_index, cell_box, intersection.front());
             else if (intersection.size() == 2)
-                addCell(cellIndex, cell_box, intersection.front(), intersection.back());
+                addCell(cell_index, cell_box, intersection.front(), intersection.back());
             else
-                addComplexPolygonCell(cellIndex, cell_box);
+                addComplexPolygonCell(cell_index, cell_box);
         }
     }
 }
@@ -371,8 +371,12 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
     int row = std::min<int>(float_row, grid_size - 1);
     int col = std::min<int>(float_col, grid_size - 1);
 
+    std::cerr << "row: " << row << ", col: " << col << "\n";
+
     int index = getCellIndex(row, col);
     const auto & cell = cells[index];
+
+    std::cerr << "index: " << index << ", type: " << int(cell.type) << "\n";
 
     switch (cell.type)
     {
