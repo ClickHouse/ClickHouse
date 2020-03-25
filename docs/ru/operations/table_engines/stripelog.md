@@ -1,4 +1,4 @@
-# StripeLog
+# StripeLog {#stripelog}
 
 Движок относится к семейству движков Log. Смотрите общие свойства и различия движков в статье [Семейство Log](log_family.md).
 
@@ -6,7 +6,7 @@
 
 ## Создание таблицы {#table_engines-stripelog-creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -23,8 +23,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Для каждой таблицы ClickHouse записывает файлы:
 
-- `data.bin` — файл с данными.
-- `index.mrk` — файл с метками. Метки содержат смещения для каждого столбца каждого вставленного блока данных.
+-   `data.bin` — файл с данными.
+-   `index.mrk` — файл с метками. Метки содержат смещения для каждого столбца каждого вставленного блока данных.
 
 Движок `StripeLog` не поддерживает запросы `ALTER UPDATE` и `ALTER DELETE`.
 
@@ -36,7 +36,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Создание таблицы:
 
-```sql
+``` sql
 CREATE TABLE stripe_log_table
 (
     timestamp DateTime,
@@ -48,7 +48,7 @@ ENGINE = StripeLog
 
 Вставка данных:
 
-```sql
+``` sql
 INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The first regular message')
 INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
 ```
@@ -57,11 +57,11 @@ INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The second regular message
 
 ClickHouse использует несколько потоков при выборе данных. Каждый поток считывает отдельный блок данных и возвращает результирующие строки независимо по мере завершения. В результате порядок блоков строк в выходных данных в большинстве случаев не совпадает с порядком тех же блоков во входных данных. Например:
 
-```sql
+``` sql
 SELECT * FROM stripe_log_table
 ```
 
-```text
+``` text
 ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
 │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
 │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
@@ -73,11 +73,11 @@ SELECT * FROM stripe_log_table
 
 Сортировка результатов (по умолчанию по возрастанию):
 
-```sql
+``` sql
 SELECT * FROM stripe_log_table ORDER BY timestamp
 ```
 
-```text
+``` text
 ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
 │ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
 │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │

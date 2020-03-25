@@ -4,9 +4,8 @@ CREATE TABLE alter_update_00806 (d Date, e Enum8('foo'=1, 'bar'=2)) Engine = Mer
 INSERT INTO alter_update_00806 (d, e) VALUES ('2018-01-01', 'foo');
 INSERT INTO alter_update_00806 (d, e) VALUES ('2018-01-02', 'bar');
 
-ALTER TABLE alter_update_00806 UPDATE e = CAST('foo', 'Enum8(\'foo\' = 1, \'bar\' = 2)') WHERE d='2018-01-02';
+ALTER TABLE alter_update_00806 UPDATE e = CAST('foo', 'Enum8(\'foo\' = 1, \'bar\' = 2)') WHERE d='2018-01-02' SETTINGS mutations_sync = 1;
 
-SELECT sleep(1); -- TODO: there should be setting for sync ALTER UPDATE someday.
 
 SELECT e FROM alter_update_00806 ORDER BY d;
 

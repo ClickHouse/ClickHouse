@@ -1,6 +1,5 @@
-# Boolean Values
+# Boolean Values {#boolean-values}
 
-There isn't a separate type for boolean values. They use the UInt8 type, restricted to the values 0 or 1.
-
+There is no separate type for boolean values. Use UInt8 type, restricted to the values 0 or 1.
 
 [Original article](https://clickhouse.tech/docs/en/data_types/boolean/) <!--hide-->

@@ -300,8 +300,8 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
-    auto select_sample_size = select.sample_size();
-    auto select_sample_offset = select.sample_offset();
+    auto select_sample_size = select.sampleSize();
+    auto select_sample_offset = select.sampleOffset();
 
     if (select_sample_size)
     {
@@ -1091,8 +1091,10 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
         {
             auto merged_processor =
                     std::make_shared<MergingSortedTransform>(header, pipes.size(), sort_description, max_block_size);
-            pipes.emplace_back(std::move(pipes), std::move(merged_processor));
-            break;
+            Pipe pipe(std::move(pipes), std::move(merged_processor));
+            pipes = Pipes();
+            pipes.emplace_back(std::move(pipe));
+            return pipes;
         }
 
         case MergeTreeData::MergingParams::Collapsing:

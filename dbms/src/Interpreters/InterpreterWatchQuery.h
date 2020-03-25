@@ -39,7 +39,6 @@ private:
     ASTPtr query_ptr;
     Context & context;
 
-    BlockInputStreamPtr executeImpl();
     /// Table from where to read data, if not subquery.
     StoragePtr storage;
     /// Streams of read data

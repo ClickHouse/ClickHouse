@@ -3,6 +3,8 @@
 #include <algorithm>
 
 #include <IO/WriteHelpers.h>
+#include <Common/StatusInfo.h>
+#include <boost/algorithm/string/replace.hpp>
 
 namespace
 {
@@ -40,6 +42,7 @@ PrometheusMetricsWriter::PrometheusMetricsWriter(
     , send_events(config.getBool(config_name + ".events", true))
     , send_metrics(config.getBool(config_name + ".metrics", true))
     , send_asynchronous_metrics(config.getBool(config_name + ".asynchronous_metrics", true))
+    , send_status_info(config.getBool(config_name + ".status_info", true))
 {
 }
 
@@ -94,6 +97,39 @@ void PrometheusMetricsWriter::write(WriteBuffer & wb) const
             // TODO: add HELP section? asynchronous_metrics contains only key and value
             writeOutLine(wb, "# TYPE", key, "gauge");
             writeOutLine(wb, key, value);
+        }
+    }
+
+    if (send_status_info)
+    {
+        for (size_t i = 0, end = CurrentStatusInfo::end(); i < end; ++i)
+        {
+            std::lock_guard<std::mutex> lock(CurrentStatusInfo::locks[static_cast<CurrentStatusInfo::Status>(i)]);
+            std::string metric_name{CurrentStatusInfo::getName(static_cast<CurrentStatusInfo::Status>(i))};
+            std::string metric_doc{CurrentStatusInfo::getDocumentation(static_cast<CurrentStatusInfo::Status>(i))};
+
+            replaceInvalidChars(metric_name);
+            std::string key{current_status_prefix + metric_name};
+
+            writeOutLine(wb, "# HELP", key, metric_doc);
+            writeOutLine(wb, "# TYPE", key, "gauge");
+
+            for (const auto & value: CurrentStatusInfo::values[i])
+            {
+                for (const auto & enum_value: CurrentStatusInfo::getAllPossibleValues(static_cast<CurrentStatusInfo::Status>(i)))
+                {
+                    DB::writeText(key, wb);
+                    DB::writeChar('{', wb);
+                    DB::writeText(key, wb);
+                    DB::writeChar('=', wb);
+                    writeDoubleQuotedString(enum_value.first, wb);
+                    DB::writeText(",name=", wb);
+                    writeDoubleQuotedString(value.first, wb);
+                    DB::writeText("} ", wb);
+                    DB::writeText(value.second == enum_value.second, wb);
+                    DB::writeChar('\n', wb);
+                }
+            }
         }
     }
 }

@@ -20,7 +20,7 @@ DOCKER_HASH="$2"
 if [[ -z "$1" ]]
 then
     source "${BASE_DIR}/venv/bin/activate"
-    python "${BASE_DIR}/build.py" ${EXTRA_BUILD_ARGS}
+    python3 "${BASE_DIR}/build.py" ${EXTRA_BUILD_ARGS}
     rm -rf "${PUBLISH_DIR}" || true
     git clone "${GIT_TEST_URI}" "${PUBLISH_DIR}"
     cd "${PUBLISH_DIR}"

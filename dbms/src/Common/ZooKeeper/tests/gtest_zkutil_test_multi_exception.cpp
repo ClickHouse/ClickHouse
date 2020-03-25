@@ -131,7 +131,7 @@ TEST(zkutil, MultiAsync)
         /// The test is quite heavy. It is normal if session is expired during this test.
         /// If we don't check that, the test will be flacky.
 
-        if (e.code != Coordination::ZSESSIONEXPIRED)
+        if (e.code != Coordination::ZSESSIONEXPIRED && e.code != Coordination::ZCONNECTIONLOSS)
             throw;
     }
 }

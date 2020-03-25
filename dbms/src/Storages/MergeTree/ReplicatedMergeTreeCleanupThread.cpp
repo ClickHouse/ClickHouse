@@ -28,7 +28,7 @@ ReplicatedMergeTreeCleanupThread::ReplicatedMergeTreeCleanupThread(StorageReplic
 void ReplicatedMergeTreeCleanupThread::run()
 {
     auto storage_settings = storage.getSettings();
-    const auto CLEANUP_SLEEP_MS = storage_settings->cleanup_delay_period * 1000
+    const auto sleep_ms = storage_settings->cleanup_delay_period * 1000
         + std::uniform_int_distribution<UInt64>(0, storage_settings->cleanup_delay_period_random_add * 1000)(rng);
 
     try
@@ -47,7 +47,7 @@ void ReplicatedMergeTreeCleanupThread::run()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    task->scheduleAfter(CLEANUP_SLEEP_MS);
+    task->scheduleAfter(sleep_ms);
 }
 
 

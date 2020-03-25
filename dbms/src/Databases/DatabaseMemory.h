@@ -16,7 +16,7 @@ namespace DB
   * All tables are created by calling code.
   * TODO: Maybe DatabaseRuntime is more suitable class name.
   */
-class DatabaseMemory : public DatabaseWithOwnTablesBase
+class DatabaseMemory final : public DatabaseWithOwnTablesBase
 {
 public:
     DatabaseMemory(const String & name_);

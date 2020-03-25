@@ -11,7 +11,7 @@ do \
 { \
     if (member) \
     { \
-        res->member = member->clone(); \
+        res->member = (member)->clone(); \
         res->children.push_back(res->member); \
     } \
 } \

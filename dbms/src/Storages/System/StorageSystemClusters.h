@@ -15,7 +15,7 @@ class Context;
   *  that allows to obtain information about available clusters
   *  (which may be specified in Distributed tables).
   */
-class StorageSystemClusters : public ext::shared_ptr_helper<StorageSystemClusters>, public IStorageSystemOneBlock<StorageSystemClusters>
+class StorageSystemClusters final : public ext::shared_ptr_helper<StorageSystemClusters>, public IStorageSystemOneBlock<StorageSystemClusters>
 {
     friend struct ext::shared_ptr_helper<StorageSystemClusters>;
 public:

@@ -48,8 +48,11 @@ def build_website(args):
 
     for root, _, filenames in os.walk(args.output_dir):
         for filename in filenames:
+            if filename == 'main.html':
+                continue
+
             path = os.path.join(root, filename)
-            if not (filename.endswith('.html') or filename.endswith('.css')):
+            if not (filename.endswith('.html') or filename.endswith('.css') or filename.endswith('.js')):
                 continue
             logging.info('Processing %s', path)
             with open(path, 'rb') as f:
