@@ -71,16 +71,14 @@ struct ArrayDifferenceImpl
         res_values.resize(data.size());
 
         size_t pos = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (auto offset : offsets)
         {
             // skip empty arrays
-            if (pos < offsets[i])
+            if (pos < offset)
             {
                 res_values[pos] = 0;
-                for (++pos; pos < offsets[i]; ++pos)
-                {
+                for (++pos; pos < offset; ++pos)
                     res_values[pos] = static_cast<Result>(data[pos]) - static_cast<Result>(data[pos - 1]);
-                }
             }
         }
         res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());

@@ -164,8 +164,8 @@ bool isStorageTouchedByMutations(
             return true;
     }
 
-    context_copy.getSettingsRef().max_streams_to_max_threads_ratio = 1;
-    context_copy.getSettingsRef().max_threads = 1;
+    context_copy.setSetting("max_streams_to_max_threads_ratio", 1);
+    context_copy.setSetting("max_threads", 1);
 
     ASTPtr select_query = prepareQueryAffectedAST(commands);
 
@@ -638,7 +638,7 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         bool empty = false;
         /// In all other cases we cannot have empty key
         if (auto key_function = key_expr->as<ASTFunction>())
-            empty = key_function->arguments->children.size() == 0;
+            empty = key_function->arguments->children.empty();
 
         /// Not explicitely spicified empty key
         if (!empty)

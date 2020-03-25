@@ -4,15 +4,18 @@
 #include <Parsers/ASTCreateRoleQuery.h>
 #include <Parsers/ASTCreateQuotaQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
+#include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
-#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
 #include <Access/AccessControlManager.h>
-#include <Access/QuotaContext.h>
+#include <Access/EnabledQuota.h>
+#include <Access/QuotaUsageInfo.h>
 #include <Access/User.h>
 #include <Access/Role.h>
+#include <Access/SettingsProfile.h>
 #include <Columns/ColumnString.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
@@ -42,15 +45,12 @@ namespace
         if (user.allowed_client_hosts != AllowedClientHosts::AnyHostTag{})
             query->hosts = user.allowed_client_hosts;
 
-        if (!user.profile.empty())
-            query->profile = user.profile;
-
-        if (user.default_roles != GenericRoleSet::AllTag{})
+        if (user.default_roles != ExtendedRoleSet::AllTag{})
         {
             if (attach_mode)
-                query->default_roles = GenericRoleSet{user.default_roles}.toAST();
+                query->default_roles = user.default_roles.toAST();
             else
-                query->default_roles = GenericRoleSet{user.default_roles}.toASTWithNames(*manager);
+                query->default_roles = user.default_roles.toASTWithNames(*manager);
         }
 
         if (attach_mode && (user.authentication.getType() != Authentication::NO_PASSWORD))
@@ -58,15 +58,59 @@ namespace
             /// We don't show password unless it's an ATTACH statement.
             query->authentication = user.authentication;
         }
+
+        if (!user.settings.empty())
+        {
+            if (attach_mode)
+                query->settings = user.settings.toAST();
+            else
+                query->settings = user.settings.toASTWithNames(*manager);
+        }
+
         return query;
     }
 
 
-    ASTPtr getCreateQueryImpl(const Role & role, const AccessControlManager *, bool attach_mode = false)
+    ASTPtr getCreateQueryImpl(const Role & role, const AccessControlManager * manager, bool attach_mode = false)
     {
         auto query = std::make_shared<ASTCreateRoleQuery>();
         query->name = role.getName();
         query->attach = attach_mode;
+
+        if (!role.settings.empty())
+        {
+            if (attach_mode)
+                query->settings = role.settings.toAST();
+            else
+                query->settings = role.settings.toASTWithNames(*manager);
+        }
+
+        return query;
+    }
+
+
+    ASTPtr getCreateQueryImpl(const SettingsProfile & profile, const AccessControlManager * manager, bool attach_mode = false)
+    {
+        auto query = std::make_shared<ASTCreateSettingsProfileQuery>();
+        query->name = profile.getName();
+        query->attach = attach_mode;
+
+        if (!profile.elements.empty())
+        {
+            if (attach_mode)
+                query->settings = profile.elements.toAST();
+            else
+                query->settings = profile.elements.toASTWithNames(*manager);
+        }
+
+        if (!profile.to_roles.empty())
+        {
+            if (attach_mode)
+                query->to_roles = profile.to_roles.toAST();
+            else
+                query->to_roles = profile.to_roles.toASTWithNames(*manager);
+        }
+
         return query;
     }
 
@@ -94,12 +138,12 @@ namespace
             query->all_limits.push_back(create_query_limits);
         }
 
-        if (!quota.roles.empty())
+        if (!quota.to_roles.empty())
         {
             if (attach_mode)
-                query->roles = quota.roles.toAST();
+                query->roles = quota.to_roles.toAST();
             else
-                query->roles = quota.roles.toASTWithNames(*manager);
+                query->roles = quota.to_roles.toASTWithNames(*manager);
         }
 
         return query;
@@ -118,7 +162,7 @@ namespace
         if (policy.isRestrictive())
             query->is_restrictive = policy.isRestrictive();
 
-        for (auto index : ext::range_with_static_cast<RowPolicy::ConditionIndex>(RowPolicy::MAX_CONDITION_INDEX))
+        for (auto index : ext::range_with_static_cast<RowPolicy::ConditionType>(RowPolicy::MAX_CONDITION_TYPE))
         {
             const auto & condition = policy.conditions[index];
             if (!condition.empty())
@@ -129,12 +173,12 @@ namespace
             }
         }
 
-        if (!policy.roles.empty())
+        if (!policy.to_roles.empty())
         {
             if (attach_mode)
-                query->roles = policy.roles.toAST();
+                query->roles = policy.to_roles.toAST();
             else
-                query->roles = policy.roles.toASTWithNames(*manager);
+                query->roles = policy.to_roles.toASTWithNames(*manager);
         }
 
         return query;
@@ -153,7 +197,24 @@ namespace
             return getCreateQueryImpl(*policy, manager, attach_mode);
         if (const Quota * quota = typeid_cast<const Quota *>(&entity))
             return getCreateQueryImpl(*quota, manager, attach_mode);
+        if (const SettingsProfile * profile = typeid_cast<const SettingsProfile *>(&entity))
+            return getCreateQueryImpl(*profile, manager, attach_mode);
         throw Exception("Unexpected type of access entity: " + entity.getTypeName(), ErrorCodes::LOGICAL_ERROR);
+    }
+
+    using Kind = ASTShowCreateAccessEntityQuery::Kind;
+
+    std::type_index getType(Kind kind)
+    {
+        switch (kind)
+        {
+            case Kind::USER: return typeid(User);
+            case Kind::ROLE: return typeid(Role);
+            case Kind::QUOTA: return typeid(Quota);
+            case Kind::ROW_POLICY: return typeid(RowPolicy);
+            case Kind::SETTINGS_PROFILE: return typeid(SettingsProfile);
+        }
+        __builtin_unreachable();
     }
 }
 
@@ -195,36 +256,28 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const ASTShowCreateAccessEntityQuery & show_query) const
 {
     const auto & access_control = context.getAccessControlManager();
-    using Kind = ASTShowCreateAccessEntityQuery::Kind;
-    switch (show_query.kind)
+
+    if (show_query.current_user)
     {
-        case Kind::USER:
-        {
-            UserPtr user;
-            if (show_query.current_user)
-                user = context.getUser();
-            else
-                user = access_control.read<User>(show_query.name);
-            return getCreateQueryImpl(*user, &access_control);
-        }
-
-        case Kind::QUOTA:
-        {
-            QuotaPtr quota;
-            if (show_query.current_quota)
-                quota = access_control.read<Quota>(context.getQuota()->getUsageInfo().quota_id);
-            else
-                quota = access_control.read<Quota>(show_query.name);
-            return getCreateQueryImpl(*quota, &access_control);
-        }
-
-        case Kind::ROW_POLICY:
-        {
-            RowPolicyPtr policy = access_control.read<RowPolicy>(show_query.row_policy_name.getFullName(context));
-            return getCreateQueryImpl(*policy, &access_control);
-        }
+        auto user = context.getUser();
+        return getCreateQueryImpl(*user, &access_control);
     }
-    __builtin_unreachable();
+
+    if (show_query.current_quota)
+    {
+        auto quota = access_control.read<Quota>(context.getQuota()->getUsageInfo().quota_id);
+        return getCreateQueryImpl(*quota, &access_control);
+    }
+
+    auto type = getType(show_query.kind);
+    if (show_query.kind == Kind::ROW_POLICY)
+    {
+        RowPolicyPtr policy = access_control.read<RowPolicy>(show_query.row_policy_name.getFullName(context));
+        return getCreateQueryImpl(*policy, &access_control);
+    }
+
+    auto entity = access_control.read(access_control.getID(type, show_query.name));
+    return getCreateQueryImpl(*entity, &access_control);
 }
 
 

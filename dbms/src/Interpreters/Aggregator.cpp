@@ -82,8 +82,8 @@ void AggregatedDataVariants::convertToTwoLevel()
     {
     #define M(NAME) \
         case Type::NAME: \
-            NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*NAME); \
-            NAME.reset(); \
+            NAME ## _two_level = std::make_unique<decltype(NAME ## _two_level)::element_type>(*(NAME)); \
+            (NAME).reset(); \
             type = Type::NAME ## _two_level; \
             break;
 
@@ -329,6 +329,12 @@ AggregatedDataVariants::Type Aggregator::chooseAggregationMethod()
                 return AggregatedDataVariants::Type::low_cardinality_keys256;
         }
 
+        if (keys_bytes <= 2)
+            return AggregatedDataVariants::Type::keys16;
+        if (keys_bytes <= 4)
+            return AggregatedDataVariants::Type::keys32;
+        if (keys_bytes <= 8)
+            return AggregatedDataVariants::Type::keys64;
         if (keys_bytes <= 16)
             return AggregatedDataVariants::Type::keys128;
         if (keys_bytes <= 32)
@@ -510,7 +516,7 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     AggregatedDataWithoutKey & res,
     size_t rows,
     AggregateFunctionInstruction * aggregate_instructions,
-    Arena * arena) const
+    Arena * arena)
 {
     /// Adding values
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
@@ -649,7 +655,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
                 executeImpl(*result.NAME, result.aggregates_pool, num_rows, key_columns, aggregate_functions_instructions.data(), \
                     no_more_keys, overflow_row_ptr);
 
-        if (false) {}
+        if (false) {} // NOLINT
         APPLY_FOR_AGGREGATED_VARIANTS(M)
         #undef M
     }
@@ -717,7 +723,7 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, co
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
         writeToTemporaryFileImpl(data_variants, *data_variants.NAME, block_out);
 
-    if (false) {}
+    if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else
@@ -798,7 +804,7 @@ Block Aggregator::mergeAndConvertOneBucketToBlock(
     auto method = merged_data.type;
     Block block;
 
-    if (false) {}
+    if (false) {} // NOLINT
 #define M(NAME) \
     else if (method == AggregatedDataVariants::Type::NAME) \
     { \
@@ -1048,8 +1054,8 @@ Block Aggregator::prepareBlockAndFill(
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
             ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
 
-            for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
-                column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
+            for (auto & pool : data_variants.aggregates_pools)
+                column_aggregate_func.addArena(pool);
 
             aggregate_columns_data[i] = &column_aggregate_func.getData();
             aggregate_columns_data[i]->reserve(rows);
@@ -1064,8 +1070,8 @@ Block Aggregator::prepareBlockAndFill(
                 /// The ColumnAggregateFunction column captures the shared ownership of the arena with aggregate function states.
                 ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*final_aggregate_columns[i]);
 
-                for (size_t j = 0; j < data_variants.aggregates_pools.size(); ++j)
-                    column_aggregate_func.addArena(data_variants.aggregates_pools[j]);
+                for (auto & pool : data_variants.aggregates_pools)
+                    column_aggregate_func.addArena(pool);
             }
         }
     }
@@ -1152,7 +1158,7 @@ Block Aggregator::prepareBlockAndFillSingleLevel(AggregatedDataVariants & data_v
             convertToBlockImpl(*data_variants.NAME, data_variants.NAME->data, \
                 key_columns, aggregate_columns, final_aggregate_columns, final_);
 
-        if (false) {}
+        if (false) {} // NOLINT
         APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
     #undef M
         else
@@ -1169,7 +1175,7 @@ BlocksList Aggregator::prepareBlocksAndFillTwoLevel(AggregatedDataVariants & dat
     else if (data_variants.type == AggregatedDataVariants::Type::NAME) \
         return prepareBlocksAndFillTwoLevelImpl(data_variants, *data_variants.NAME, final, thread_pool);
 
-    if (false) {}
+    if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else
@@ -1587,7 +1593,7 @@ protected:
         #define M(NAME) \
             else if (first->type == AggregatedDataVariants::Type::NAME) \
                 aggregator.mergeSingleLevelDataImpl<decltype(first->NAME)::element_type>(data);
-            if (false) {}
+            if (false) {} // NOLINT
             APPLY_FOR_VARIANTS_SINGLE_LEVEL(M)
         #undef M
             else
@@ -1687,7 +1693,7 @@ private:
             size_t thread_number = static_cast<size_t>(bucket_num) % threads;
             Arena * arena = merged_data.aggregates_pools.at(thread_number).get();
 
-            if (false) {}
+            if (false) {} // NOLINT
         #define M(NAME) \
             else if (method == AggregatedDataVariants::Type::NAME) \
             { \
@@ -1993,7 +1999,7 @@ void Aggregator::mergeBlocks(BucketToBlocks bucket_to_blocks, AggregatedDataVari
                 else if (result.type == AggregatedDataVariants::Type::NAME) \
                     mergeStreamsImpl(block, aggregates_pool, *result.NAME, result.NAME->data.impls[bucket], nullptr, false);
 
-                if (false) {}
+                if (false) {} // NOLINT
                     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
             #undef M
                 else
@@ -2249,7 +2255,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
     else if (type == AggregatedDataVariants::Type::NAME) \
         type = AggregatedDataVariants::Type::NAME ## _two_level;
 
-    if (false) {}
+    if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
 #undef M
     else
@@ -2263,7 +2269,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
     else if (data.type == AggregatedDataVariants::Type::NAME) \
         num_buckets = data.NAME->data.NUM_BUCKETS;
 
-    if (false) {}
+    if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else
@@ -2276,7 +2282,7 @@ std::vector<Block> Aggregator::convertBlockToTwoLevel(const Block & block)
         convertBlockToTwoLevelImpl(*data.NAME, data.aggregates_pool, \
             key_columns, block, splitted_blocks);
 
-    if (false) {}
+    if (false) {} // NOLINT
     APPLY_FOR_VARIANTS_TWO_LEVEL(M)
 #undef M
     else
@@ -2324,7 +2330,7 @@ void Aggregator::destroyWithoutKey(AggregatedDataVariants & result) const
 
 void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
 {
-    if (result.size() == 0)
+    if (result.empty())
         return;
 
     LOG_TRACE(log, "Destroying aggregate states");
@@ -2337,7 +2343,7 @@ void Aggregator::destroyAllAggregateStates(AggregatedDataVariants & result)
     else if (result.type == AggregatedDataVariants::Type::NAME) \
         destroyImpl<decltype(result.NAME)::element_type>(result.NAME->data);
 
-    if (false) {}
+    if (false) {} // NOLINT
     APPLY_FOR_AGGREGATED_VARIANTS(M)
 #undef M
     else if (result.type != AggregatedDataVariants::Type::without_key)

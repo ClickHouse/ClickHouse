@@ -19,7 +19,7 @@
 namespace Memory
 {
 
-ALWAYS_INLINE void trackMemory(std::size_t size)
+inline ALWAYS_INLINE void trackMemory(std::size_t size)
 {
 #if USE_JEMALLOC
     /// The nallocx() function allocates no memory, but it performs the same size computation as the mallocx() function
@@ -31,7 +31,7 @@ ALWAYS_INLINE void trackMemory(std::size_t size)
 #endif
 }
 
-ALWAYS_INLINE bool trackMemoryNoExcept(std::size_t size) noexcept
+inline ALWAYS_INLINE bool trackMemoryNoExcept(std::size_t size) noexcept
 {
     try
     {
@@ -45,7 +45,7 @@ ALWAYS_INLINE bool trackMemoryNoExcept(std::size_t size) noexcept
     return true;
 }
 
-ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]] = 0) noexcept
+inline ALWAYS_INLINE void untrackMemory(void * ptr [[maybe_unused]], std::size_t size [[maybe_unused]] = 0) noexcept
 {
     try
     {

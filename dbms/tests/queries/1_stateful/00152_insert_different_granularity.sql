@@ -8,7 +8,8 @@ INSERT INTO fixed_granularity_table SELECT * FROM test.hits LIMIT 10; -- should 
 
 INSERT INTO fixed_granularity_table SELECT * FROM test.hits LIMIT 10;
 
-OPTIMIZE TABLE fixed_granularity_table FINAL; -- and even after optimize
+-- We have removed testing of OPTIMIZE because it's too heavy on very slow builds (debug + coverage + thread fuzzer with sleeps)
+-- OPTIMIZE TABLE fixed_granularity_table FINAL; -- and even after optimize
 
 DETACH TABLE fixed_granularity_table;
 
@@ -39,7 +40,7 @@ ALTER TABLE test.hits DETACH PARTITION 201403;
 
 ALTER TABLE test.hits ATTACH PARTITION 201403;
 
-OPTIMIZE TABLE test.hits;
+-- OPTIMIZE TABLE test.hits;
 
 SELECT count() FROM test.hits;
 

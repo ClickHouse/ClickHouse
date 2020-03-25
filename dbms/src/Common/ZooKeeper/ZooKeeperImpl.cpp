@@ -412,7 +412,7 @@ void ZooKeeperRequest::write(WriteBuffer & out) const
 
 struct ZooKeeperResponse : virtual Response
 {
-    virtual ~ZooKeeperResponse() {}
+    virtual ~ZooKeeperResponse() = default;
     virtual void readImpl(ReadBuffer &) = 0;
 };
 
@@ -480,8 +480,8 @@ struct ZooKeeperCloseResponse final : ZooKeeperResponse
 
 struct ZooKeeperCreateRequest final : CreateRequest, ZooKeeperRequest
 {
-    ZooKeeperCreateRequest() {}
-    ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
+    ZooKeeperCreateRequest() = default;
+    explicit ZooKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 1; }
     void writeImpl(WriteBuffer & out) const override
@@ -512,8 +512,8 @@ struct ZooKeeperCreateResponse final : CreateResponse, ZooKeeperResponse
 
 struct ZooKeeperRemoveRequest final : RemoveRequest, ZooKeeperRequest
 {
-    ZooKeeperRemoveRequest() {}
-    ZooKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
+    ZooKeeperRemoveRequest() = default;
+    explicit ZooKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 2; }
     void writeImpl(WriteBuffer & out) const override
@@ -570,8 +570,8 @@ struct ZooKeeperGetResponse final : GetResponse, ZooKeeperResponse
 
 struct ZooKeeperSetRequest final : SetRequest, ZooKeeperRequest
 {
-    ZooKeeperSetRequest() {}
-    ZooKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
+    ZooKeeperSetRequest() = default;
+    explicit ZooKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 5; }
     void writeImpl(WriteBuffer & out) const override
@@ -613,8 +613,8 @@ struct ZooKeeperListResponse final : ListResponse, ZooKeeperResponse
 
 struct ZooKeeperCheckRequest final : CheckRequest, ZooKeeperRequest
 {
-    ZooKeeperCheckRequest() {}
-    ZooKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
+    ZooKeeperCheckRequest() = default;
+    explicit ZooKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
 
     ZooKeeper::OpNum getOpNum() const override { return 13; }
     void writeImpl(WriteBuffer & out) const override
@@ -710,7 +710,7 @@ struct ZooKeeperMultiRequest final : MultiRequest, ZooKeeperRequest
 
 struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
 {
-    ZooKeeperMultiResponse(const Requests & requests)
+    explicit ZooKeeperMultiResponse(const Requests & requests)
     {
         responses.reserve(requests.size());
 
@@ -758,17 +758,17 @@ struct ZooKeeperMultiResponse final : MultiResponse, ZooKeeperResponse
         {
             ZooKeeper::OpNum op_num;
             bool done;
-            int32_t error_;
+            int32_t error_read;
 
             Coordination::read(op_num, in);
             Coordination::read(done, in);
-            Coordination::read(error_, in);
+            Coordination::read(error_read, in);
 
             if (!done)
                 throw Exception("Too many results received for multi transaction", ZMARSHALLINGERROR);
             if (op_num != -1)
                 throw Exception("Unexpected op_num received at the end of results for multi transaction", ZMARSHALLINGERROR);
-            if (error_ != -1)
+            if (error_read != -1)
                 throw Exception("Unexpected error value received at the end of results for multi transaction", ZMARSHALLINGERROR);
         }
     }

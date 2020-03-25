@@ -1,5 +1,5 @@
 #include <Parsers/ASTCreateRowPolicyQuery.h>
-#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Common/quoteString.h>
 #include <boost/range/algorithm/transform.hpp>
@@ -10,7 +10,7 @@ namespace DB
 {
 namespace
 {
-    using ConditionIndex = RowPolicy::ConditionIndex;
+    using ConditionType = RowPolicy::ConditionType;
 
     void formatRenameTo(const String & new_policy_name, const IAST::FormatSettings & settings)
     {
@@ -37,13 +37,13 @@ namespace
     }
 
 
-    std::vector<std::pair<ConditionIndex, String>>
-    conditionalExpressionsToStrings(const std::vector<std::pair<ConditionIndex, ASTPtr>> & exprs, const IAST::FormatSettings & settings)
+    std::vector<std::pair<ConditionType, String>>
+    conditionalExpressionsToStrings(const std::vector<std::pair<ConditionType, ASTPtr>> & exprs, const IAST::FormatSettings & settings)
     {
-        std::vector<std::pair<ConditionIndex, String>> result;
+        std::vector<std::pair<ConditionType, String>> result;
         std::stringstream ss;
         IAST::FormatSettings temp_settings(ss, settings);
-        boost::range::transform(exprs, std::back_inserter(result), [&](const std::pair<ConditionIndex, ASTPtr> & in)
+        boost::range::transform(exprs, std::back_inserter(result), [&](const std::pair<ConditionType, ASTPtr> & in)
         {
             formatConditionalExpression(in.second, temp_settings);
             auto out = std::pair{in.first, ss.str()};
@@ -70,9 +70,9 @@ namespace
     }
 
 
-    void formatMultipleConditions(const std::vector<std::pair<ConditionIndex, ASTPtr>> & conditions, bool alter, const IAST::FormatSettings & settings)
+    void formatMultipleConditions(const std::vector<std::pair<ConditionType, ASTPtr>> & conditions, bool alter, const IAST::FormatSettings & settings)
     {
-        std::optional<String> scond[RowPolicy::MAX_CONDITION_INDEX];
+        std::optional<String> scond[RowPolicy::MAX_CONDITION_TYPE];
         for (const auto & [index, scondition] : conditionalExpressionsToStrings(conditions, settings))
             scond[index] = scondition;
 
@@ -112,7 +112,7 @@ namespace
         }
     }
 
-    void formatToRoles(const ASTGenericRoleSet & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTExtendedRoleSet & roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
         roles.format(settings);
@@ -165,7 +165,7 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
 
     formatMultipleConditions(conditions, alter, settings);
 
-    if (roles)
+    if (roles && (!roles->empty() || alter))
         formatToRoles(*roles, settings);
 }
 }

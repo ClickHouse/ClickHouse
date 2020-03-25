@@ -15,10 +15,6 @@ KafkaBlockOutputStream::KafkaBlockOutputStream(StorageKafka & storage_, const Co
 {
 }
 
-KafkaBlockOutputStream::~KafkaBlockOutputStream()
-{
-}
-
 Block KafkaBlockOutputStream::getHeader() const
 {
     return storage.getSampleBlockNonMaterialized();
@@ -30,7 +26,7 @@ void KafkaBlockOutputStream::writePrefix()
     if (!buffer)
         throw Exception("Failed to create Kafka producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
-    child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & columns, size_t row){ buffer->count_row(columns, row); });
+    child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & columns, size_t row){ buffer->countRow(columns, row); });
 }
 
 void KafkaBlockOutputStream::write(const Block & block)

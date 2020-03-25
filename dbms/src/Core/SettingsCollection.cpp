@@ -165,7 +165,7 @@ void SettingMaxThreads::set(const Field & x)
     if (x.getType() == Field::Types::String)
         set(get<const String &>(x));
     else
-        set(safeGet<UInt64>(x));
+        set(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), x));
 }
 
 void SettingMaxThreads::set(const String & x)
@@ -208,7 +208,7 @@ void SettingMaxThreads::setAuto()
     is_auto = true;
 }
 
-UInt64 SettingMaxThreads::getAutoValue() const
+UInt64 SettingMaxThreads::getAutoValue()
 {
     static auto res = getNumberOfPhysicalCPUCores();
     return res;
@@ -246,7 +246,7 @@ void SettingTimespan<io_unit>::set(const Field & x)
     if (x.getType() == Field::Types::String)
         set(get<const String &>(x));
     else
-        set(safeGet<UInt64>(x));
+        set(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), x));
 }
 
 template <SettingTimespanIO io_unit>
@@ -465,7 +465,7 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
     case static_cast<UnderlyingType>(EnumType::NAME): return IO_NAME;
 
 #define IMPLEMENT_SETTING_ENUM_FROM_STRING_HELPER_(NAME, IO_NAME) \
-    if (s == IO_NAME) \
+    if (s == (IO_NAME)) \
     { \
         set(EnumType::NAME); \
         return; \
@@ -474,7 +474,7 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
 #define IMPLEMENT_SETTING_ENUM_CONCAT_NAMES_HELPER_(NAME, IO_NAME) \
     if (!all_io_names.empty()) \
         all_io_names += ", "; \
-    all_io_names += String("'") + IO_NAME + "'";
+    all_io_names += String("'") + (IO_NAME) + "'";
 
 
 #define LOAD_BALANCING_LIST_OF_NAMES(M) \
@@ -489,7 +489,7 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, LOAD_BALANCING_LIST_OF_NAMES, ErrorCodes::
     M(Unspecified, "") \
     M(ALL, "ALL") \
     M(ANY, "ANY")
-IMPLEMENT_SETTING_ENUM(JoinStrictness, JOIN_STRICTNESS_LIST_OF_NAMES, ErrorCodes::UNKNOWN_JOIN)
+IMPLEMENT_SETTING_ENUM(JoinStrictness, JOIN_STRICTNESS_LIST_OF_NAMES, ErrorCodes::UNKNOWN_JOIN) // NOLINT
 
 #define JOIN_ALGORITHM_NAMES(M) \
     M(AUTO, "auto") \

@@ -67,7 +67,7 @@ struct AlternativeHash
 
 #if defined(__x86_64__)
 
-struct CRC32Hash_
+struct CRC32HashTest
 {
     size_t operator() (UInt64 x) const
     {
@@ -92,8 +92,8 @@ int main(int argc, char ** argv)
     using Value = std::vector<IAggregateFunction*>;
 #endif
 
-    size_t n = argc < 2 ? 10000000 : atoi(argv[1]);
-    //size_t m = atoi(argv[2]);
+    size_t n = argc < 2 ? 10000000 : std::stol(argv[1]);
+    //size_t m = std::stol(argv[2]);
 
     AggregateFunctionFactory factory;
     DataTypes data_types_empty;
@@ -149,7 +149,7 @@ int main(int argc, char ** argv)
             << std::endl;
     }
 
-    if (argc < 3 || atoi(argv[2]) == 1)
+    if (argc < 3 || std::stol(argv[2]) == 1)
     {
         Stopwatch watch;
 
@@ -179,7 +179,7 @@ int main(int argc, char ** argv)
             << std::endl;
     }
 
-    if (argc < 3 || atoi(argv[2]) == 2)
+    if (argc < 3 || std::stol(argv[2]) == 2)
     {
         Stopwatch watch;
 
@@ -211,11 +211,11 @@ int main(int argc, char ** argv)
     }
 
 #if defined(__x86_64__)
-    if (argc < 3 || atoi(argv[2]) == 3)
+    if (argc < 3 || std::stol(argv[2]) == 3)
     {
         Stopwatch watch;
 
-        using Map = HashMap<Key, Value, CRC32Hash_>;
+        using Map = HashMap<Key, Value, CRC32HashTest>;
         Map map;
         Map::LookupResult it;
         bool inserted;
@@ -243,7 +243,7 @@ int main(int argc, char ** argv)
     }
 #endif
 
-    if (argc < 3 || atoi(argv[2]) == 4)
+    if (argc < 3 || std::stol(argv[2]) == 4)
     {
         Stopwatch watch;
 
@@ -263,7 +263,7 @@ int main(int argc, char ** argv)
             << std::endl;
     }
 
-    if (argc < 3 || atoi(argv[2]) == 5)
+    if (argc < 3 || std::stol(argv[2]) == 5)
     {
         Stopwatch watch;
 
@@ -284,7 +284,7 @@ int main(int argc, char ** argv)
             << std::endl;
     }
 
-    if (argc < 3 || atoi(argv[2]) == 6)
+    if (argc < 3 || std::stol(argv[2]) == 6)
     {
         Stopwatch watch;
 

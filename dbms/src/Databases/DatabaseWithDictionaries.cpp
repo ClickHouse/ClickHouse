@@ -1,4 +1,6 @@
 #include <Databases/DatabaseWithDictionaries.h>
+#include <Common/StatusInfo.h>
+#include <Common/ExternalLoaderStatus.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ExternalLoaderTempConfigRepository.h>
 #include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
@@ -9,6 +11,11 @@
 #include <Poco/File.h>
 #include <ext/scope_guard.h>
 
+
+namespace CurrentStatusInfo
+{
+    extern const Status DictionaryStatus;
+}
 
 namespace DB
 {
@@ -31,6 +38,7 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
             throw Exception("Dictionary " + full_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
     }
 
+    CurrentStatusInfo::set(CurrentStatusInfo::DictionaryStatus, full_name, static_cast<Int8>(ExternalLoaderStatus::NOT_LOADED));
     /// ExternalLoader::reloadConfig() will find out that the dictionary's config has been added
     /// and in case `dictionaries_lazy_load == false` it will load the dictionary.
     const auto & external_loader = context.getExternalDictionariesLoader();
@@ -48,6 +56,7 @@ void DatabaseWithDictionaries::detachDictionary(const String & dictionary_name, 
         dictionaries.erase(it);
     }
 
+    CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, full_name);
     /// ExternalLoader::reloadConfig() will find out that the dictionary's config has been removed
     /// and therefore it will unload the dictionary.
     const auto & external_loader = context.getExternalDictionariesLoader();
@@ -146,6 +155,7 @@ void DatabaseWithDictionaries::removeDictionary(const Context & context, const S
     try
     {
         Poco::File(dictionary_metadata_path).remove();
+        CurrentStatusInfo::unset(CurrentStatusInfo::DictionaryStatus, getDatabaseName() + "." + dictionary_name);
     }
     catch (...)
     {
@@ -168,11 +178,12 @@ StoragePtr DatabaseWithDictionaries::tryGetTable(const Context & context, const 
     return {};
 }
 
-DatabaseTablesIteratorPtr DatabaseWithDictionaries::getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name)
+DatabaseTablesIteratorPtr DatabaseWithDictionaries::getTablesWithDictionaryTablesIterator(
+    const Context & context, const FilterByNameFunction & filter_by_dictionary_name)
 {
     /// NOTE: it's not atomic
-    auto tables_it = getTablesIterator(context, filter_by_name);
-    auto dictionaries_it = getDictionariesIterator(context, filter_by_name);
+    auto tables_it = getTablesIterator(context, filter_by_dictionary_name);
+    auto dictionaries_it = getDictionariesIterator(context, filter_by_dictionary_name);
 
     Tables result;
     while (tables_it && tables_it->isValid())

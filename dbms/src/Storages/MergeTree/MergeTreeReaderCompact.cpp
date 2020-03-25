@@ -15,30 +15,42 @@ namespace ErrorCodes
 
 
 MergeTreeReaderCompact::MergeTreeReaderCompact(
-    const DataPartCompactPtr & data_part_,
-    const NamesAndTypesList & columns_,
+    DataPartCompactPtr data_part_,
+    NamesAndTypesList columns_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
-    const MarkRanges & mark_ranges_,
-    const MergeTreeReaderSettings & settings_,
-    const ValueSizeMap & avg_value_size_hints_,
+    MarkRanges mark_ranges_,
+    MergeTreeReaderSettings settings_,
+    ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
-    : IMergeTreeReader(data_part_, columns_,
-        uncompressed_cache_, mark_cache_, mark_ranges_,
-        settings_, avg_value_size_hints_)
-    , marks_loader(mark_cache,
-        data_part->index_granularity_info.getMarksFilePath(path + MergeTreeDataPartCompact::DATA_FILE_NAME),
+    : IMergeTreeReader(std::move(data_part_), std::move(columns_),
+        uncompressed_cache_, mark_cache_, std::move(mark_ranges_),
+        std::move(settings_), std::move(avg_value_size_hints_))
+    , marks_loader(
+        data_part->disk,
+        mark_cache,
+        data_part->index_granularity_info.getMarksFilePath(data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME),
         data_part->getMarksCount(), data_part->index_granularity_info,
         settings.save_marks_in_cache, data_part->getColumns().size())
 {
     size_t buffer_size = settings.max_read_buffer_size;
-    const String full_data_path = path + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
+    const String full_data_path = data_part->getFullRelativePath() + MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
 
     if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
-            full_data_path, uncompressed_cache, 0, settings.min_bytes_to_use_direct_io, buffer_size);
+            fullPath(data_part->disk, full_data_path),
+            [this, full_data_path, buffer_size]()
+            {
+                return data_part->disk->readFile(
+                    full_data_path,
+                    buffer_size,
+                    0,
+                    settings.min_bytes_to_use_direct_io,
+                    0);
+            },
+            uncompressed_cache);
 
         if (profile_callback_)
             buffer->setProfileCallback(profile_callback_, clock_type_);
@@ -48,8 +60,9 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     }
     else
     {
-        auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            full_data_path, 0, settings.min_bytes_to_use_direct_io, buffer_size);
+        auto buffer =
+            std::make_unique<CompressedReadBufferFromFile>(
+                data_part->disk->readFile(full_data_path, buffer_size, 0, settings.min_bytes_to_use_direct_io, 0));
 
         if (profile_callback_)
             buffer->setProfileCallback(profile_callback_, clock_type_);
@@ -142,7 +155,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
     for (size_t i = 0; i < num_columns; ++i)
     {
         auto & column = mutable_columns[i];
-        if (column && column->size())
+        if (column && !column->empty())
             res_columns[i] = std::move(column);
         else
             res_columns[i] = nullptr;

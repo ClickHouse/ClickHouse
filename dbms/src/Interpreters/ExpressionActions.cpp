@@ -64,7 +64,7 @@ ExpressionAction ExpressionAction::applyFunction(
     const std::vector<std::string> & argument_names_,
     std::string result_name_)
 {
-    if (result_name_ == "")
+    if (result_name_.empty())
     {
         result_name_ = function_->getName() + "(";
         for (size_t i = 0 ; i < argument_names_.size(); ++i)
@@ -253,12 +253,12 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
         {
             Block new_block;
 
-            for (size_t i = 0; i < projection.size(); ++i)
+            for (const auto & elem : projection)
             {
-                const std::string & name = projection[i].first;
-                const std::string & alias = projection[i].second;
+                const std::string & name = elem.first;
+                const std::string & alias = elem.second;
                 ColumnWithTypeAndName column = sample_block.getByName(name);
-                if (alias != "")
+                if (!alias.empty())
                     column.name = alias;
                 new_block.insert(std::move(column));
             }
@@ -269,12 +269,12 @@ void ExpressionAction::prepare(Block & sample_block, const Settings & settings, 
 
         case ADD_ALIASES:
         {
-            for (size_t i = 0; i < projection.size(); ++i)
+            for (const auto & elem : projection)
             {
-                const std::string & name = projection[i].first;
-                const std::string & alias = projection[i].second;
+                const std::string & name = elem.first;
+                const std::string & alias = elem.second;
                 const ColumnWithTypeAndName & column = sample_block.getByName(name);
-                if (alias != "" && !sample_block.has(alias))
+                if (!alias.empty() && !sample_block.has(alias))
                     sample_block.insert({column.column, column.type, alias});
             }
             break;
@@ -371,12 +371,12 @@ void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_
         {
             Block new_block;
 
-            for (size_t i = 0; i < projection.size(); ++i)
+            for (const auto & elem : projection)
             {
-                const std::string & name = projection[i].first;
-                const std::string & alias = projection[i].second;
+                const std::string & name = elem.first;
+                const std::string & alias = elem.second;
                 ColumnWithTypeAndName column = block.getByName(name);
-                if (alias != "")
+                if (!alias.empty())
                     column.name = alias;
                 new_block.insert(std::move(column));
             }
@@ -388,12 +388,12 @@ void ExpressionAction::execute(Block & block, bool dry_run, ExtraBlockPtr & not_
 
         case ADD_ALIASES:
         {
-            for (size_t i = 0; i < projection.size(); ++i)
+            for (const auto & elem : projection)
             {
-                const std::string & name = projection[i].first;
-                const std::string & alias = projection[i].second;
+                const std::string & name = elem.first;
+                const std::string & alias = elem.second;
                 const ColumnWithTypeAndName & column = block.getByName(name);
-                if (alias != "" && !block.has(alias))
+                if (!alias.empty() && !block.has(alias))
                     block.insert({column.column, column.type, alias});
             }
             break;
@@ -497,7 +497,7 @@ std::string ExpressionAction::toString() const
                 if (i)
                     ss << ", ";
                 ss << projection[i].first;
-                if (projection[i].second != "" && projection[i].second != projection[i].first)
+                if (!projection[i].second.empty() && projection[i].second != projection[i].first)
                     ss << " AS " << projection[i].second;
             }
             break;
@@ -558,7 +558,7 @@ void ExpressionActions::add(const ExpressionAction & action)
 
 void ExpressionActions::addImpl(ExpressionAction action, Names & new_names)
 {
-    if (action.result_name != "")
+    if (!action.result_name.empty())
         new_names.push_back(action.result_name);
 
     if (action.array_join)
@@ -720,9 +720,8 @@ std::string ExpressionActions::getSmallestColumn(const NamesAndTypesList & colum
 void ExpressionActions::finalize(const Names & output_columns)
 {
     NameSet final_columns;
-    for (size_t i = 0; i < output_columns.size(); ++i)
+    for (const auto & name : output_columns)
     {
-        const std::string & name = output_columns[i];
         if (!sample_block.has(name))
             throw Exception("Unknown column: " + name + ", there are only columns "
                             + sample_block.dumpNames(), ErrorCodes::UNKNOWN_IDENTIFIER);
@@ -743,8 +742,8 @@ void ExpressionActions::finalize(const Names & output_columns)
 
     {
         NamesAndTypesList sample_columns = sample_block.getNamesAndTypesList();
-        for (NamesAndTypesList::iterator it = sample_columns.begin(); it != sample_columns.end(); ++it)
-            unmodified_columns.insert(it->name);
+        for (const auto & sample_column : sample_columns)
+            unmodified_columns.insert(sample_column.name);
     }
 
     /// Let's go from the end and maintain set of required columns at this stage.
@@ -942,25 +941,25 @@ std::string ExpressionActions::dumpActions() const
     std::stringstream ss;
 
     ss << "input:\n";
-    for (NamesAndTypesList::const_iterator it = input_columns.begin(); it != input_columns.end(); ++it)
-        ss << it->name << " " << it->type->getName() << "\n";
+    for (const auto & input_column : input_columns)
+        ss << input_column.name << " " << input_column.type->getName() << "\n";
 
     ss << "\nactions:\n";
-    for (size_t i = 0; i < actions.size(); ++i)
-        ss << actions[i].toString() << '\n';
+    for (const auto & action : actions)
+        ss << action.toString() << '\n';
 
     ss << "\noutput:\n";
     NamesAndTypesList output_columns = sample_block.getNamesAndTypesList();
-    for (NamesAndTypesList::const_iterator it = output_columns.begin(); it != output_columns.end(); ++it)
-        ss << it->name << " " << it->type->getName() << "\n";
+    for (const auto & output_column : output_columns)
+        ss << output_column.name << " " << output_column.type->getName() << "\n";
 
     return ss.str();
 }
 
 void ExpressionActions::optimizeArrayJoin()
 {
-    const size_t NONE = actions.size();
-    size_t first_array_join = NONE;
+    const size_t none = actions.size();
+    size_t first_array_join = none;
 
     /// Columns that need to be evaluated for arrayJoin.
     /// Actions for adding them can not be moved to the left of the arrayJoin.
@@ -986,14 +985,14 @@ void ExpressionActions::optimizeArrayJoin()
         }
         else
         {
-            if (first_array_join == NONE)
+            if (first_array_join == none)
                 continue;
 
             needed = actions[i].getNeededColumns();
 
-            for (size_t j = 0; j < needed.size(); ++j)
+            for (const auto & elem : needed)
             {
-                if (array_joined_columns.count(needed[j]))
+                if (array_joined_columns.count(elem))
                 {
                     depends_on_array_join = true;
                     break;
@@ -1003,10 +1002,10 @@ void ExpressionActions::optimizeArrayJoin()
 
         if (depends_on_array_join)
         {
-            if (first_array_join == NONE)
+            if (first_array_join == none)
                 first_array_join = i;
 
-            if (actions[i].result_name != "")
+            if (!actions[i].result_name.empty())
                 array_joined_columns.insert(actions[i].result_name);
             if (actions[i].array_join)
                 array_joined_columns.insert(actions[i].array_join->columns.begin(), actions[i].array_join->columns.end());

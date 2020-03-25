@@ -53,8 +53,8 @@
 
 namespace
 {
-static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
-static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
+const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
+const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
 }
 
 namespace DB
@@ -110,8 +110,7 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block_non_materialized)
 {
     auto query = std::make_shared<ASTInsertQuery>();
-    query->database = database;
-    query->table = table;
+    query->table_id = StorageID(database, table);
 
     auto columns = std::make_shared<ASTExpressionList>();
     query->columns = columns;
@@ -194,19 +193,54 @@ std::string makeFormattedListOfShards(const ClusterPtr & cluster)
     return os.str();
 }
 
-}
-
-
-/// For destruction of std::unique_ptr of type that is incomplete in class definition.
-StorageDistributed::~StorageDistributed() = default;
-
-static ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, NamesAndTypesList columns, bool project)
+ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, const NamesAndTypesList & columns, bool project)
 {
     ASTPtr query = sharding_key;
     auto syntax_result = SyntaxAnalyzer(context).analyze(query, columns);
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
+class ReplacingConstantExpressionsMatcher
+{
+public:
+    using Data = Block;
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &)
+    {
+        return true;
+    }
+
+    static void visit(ASTPtr & node, Block & block_with_constants)
+    {
+        if (!node->as<ASTFunction>())
+            return;
+
+        std::string name = node->getColumnName();
+        if (block_with_constants.has(name))
+        {
+            auto result = block_with_constants.getByName(name);
+            if (!isColumnConst(*result.column))
+                return;
+
+            node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
+        }
+    }
+};
+
+void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & columns)
+{
+    auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns);
+    Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
+
+    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
+    visitor.visit(node);
+}
+
+}
+
+
+/// For destruction of std::unique_ptr of type that is incomplete in class definition.
+StorageDistributed::~StorageDistributed() = default;
 
 StorageDistributed::StorageDistributed(
     const StorageID & id_,
@@ -319,13 +353,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     return res;
 }
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
-{
-    auto cluster = getCluster();
-    return getQueryProcessingStage(context, cluster);
-}
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const
+static QueryProcessingStage::Enum getQueryProcessingStageImpl(const Context & context, const ClusterPtr & cluster)
 {
     const Settings & settings = context.getSettingsRef();
 
@@ -338,6 +367,12 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
     else    /// Normal mode.
         return result_size == 1 ? QueryProcessingStage::Complete
                                 : QueryProcessingStage::WithMergeableState;
+}
+
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
+{
+    auto cluster = getCluster();
+    return getQueryProcessingStageImpl(context, cluster);
 }
 
 Pipes StorageDistributed::read(
@@ -368,7 +403,7 @@ Pipes StorageDistributed::read(
         ? ClusterProxy::SelectStreamFactory(
             header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, context.getExternalTables())
         : ClusterProxy::SelectStreamFactory(
-            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
+            header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
     UInt64 force = settings.force_optimize_skip_unused_shards;
     if (settings.optimize_skip_unused_shards)
@@ -378,7 +413,7 @@ Pipes StorageDistributed::read(
 
         if (has_sharding_key)
         {
-            smaller_cluster = skipUnusedShards(cluster, query_info);
+            smaller_cluster = skipUnusedShards(cluster, query_info, context);
 
             if (smaller_cluster)
             {
@@ -392,7 +427,7 @@ Pipes StorageDistributed::read(
         if (!smaller_cluster)
         {
             LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
-                           (has_sharding_key ? "" : "(no sharding key)") << ": "
+                           (has_sharding_key ? "" : " (no sharding key)") << ": "
                            "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
                            "the query will be sent to all shards of the cluster");
 
@@ -469,7 +504,7 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
     checkAlterIsPossible(params, context.getSettingsRef());
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
     setColumns(std::move(metadata.columns));
 }
 
@@ -608,7 +643,7 @@ void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
-ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info)
+ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info, const Context & context)
 {
     const auto & select = query_info.query->as<ASTSelectQuery &>();
 
@@ -627,6 +662,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
     }
 
+    replaceConstantExpressions(condition_ast, context, getColumns().getAllPhysical() /** TODO: sharding_key_column_name */);
     const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
@@ -642,7 +678,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
         if (!block.has(sharding_key_column_name))
             throw Exception("sharding_key_expr should evaluate as a single row", ErrorCodes::TOO_MANY_ROWS);
 
-        const auto result = block.getByName(sharding_key_column_name);
+        const ColumnWithTypeAndName & result = block.getByName(sharding_key_column_name);
         const auto selector = createSelector(cluster, result);
 
         shards.insert(selector.begin(), selector.end());
@@ -663,8 +699,8 @@ void StorageDistributed::flushClusterNodesAllData()
     std::lock_guard lock(cluster_nodes_mutex);
 
     /// TODO: Maybe it should be executed in parallel
-    for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end(); ++it)
-        it->second.flushAllData();
+    for (auto & node : cluster_nodes_data)
+        node.second.flushAllData();
 }
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name,

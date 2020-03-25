@@ -62,21 +62,21 @@ private:
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>
-    bool executeNumber(
+    static bool executeNumber(
         const IColumn & src_data,
         const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
         ColumnArray::Offsets & res_offsets,
         const ColumnNullable * nullable_col);
 
-    bool executeString(
+    static bool executeString(
         const IColumn & src_data,
         const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
         ColumnArray::Offsets & res_offsets,
         const ColumnNullable * nullable_col);
 
-    void executeHashed(
+    static void executeHashed(
         const IColumn & src_data,
         const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
@@ -163,11 +163,10 @@ bool FunctionArrayDistinct::executeNumber(
     ColumnArray::Offset prev_src_offset = 0;
     ColumnArray::Offset res_offset = 0;
 
-    for (ColumnArray::Offset i = 0; i < src_offsets.size(); ++i)
+    for (auto curr_src_offset : src_offsets)
     {
         set.clear();
 
-        ColumnArray::Offset curr_src_offset = src_offsets[i];
         for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
             if (nullable_col && (*src_null_map)[j])
@@ -217,11 +216,10 @@ bool FunctionArrayDistinct::executeString(
     ColumnArray::Offset prev_src_offset = 0;
     ColumnArray::Offset res_offset = 0;
 
-    for (ColumnArray::Offset i = 0; i < src_offsets.size(); ++i)
+    for (auto curr_src_offset : src_offsets)
     {
         set.clear();
 
-        ColumnArray::Offset curr_src_offset = src_offsets[i];
         for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
             if (nullable_col && (*src_null_map)[j])
@@ -264,11 +262,10 @@ void FunctionArrayDistinct::executeHashed(
     ColumnArray::Offset prev_src_offset = 0;
     ColumnArray::Offset res_offset = 0;
 
-    for (ColumnArray::Offset i = 0; i < src_offsets.size(); ++i)
+    for (auto curr_src_offset : src_offsets)
     {
         set.clear();
 
-        ColumnArray::Offset curr_src_offset = src_offsets[i];
         for (ColumnArray::Offset j = prev_src_offset; j < curr_src_offset; ++j)
         {
             if (nullable_col && (*src_null_map)[j])

@@ -34,7 +34,8 @@ InterpreterSelectWithUnionQuery::InterpreterSelectWithUnionQuery(
     const Names & required_result_column_names)
     : options(options_),
     query_ptr(query_ptr_),
-    context(std::make_shared<Context>(context_))
+    context(std::make_shared<Context>(context_)),
+    max_streams(context->getSettingsRef().max_threads)
 {
     const auto & ast = query_ptr->as<ASTSelectWithUnionQuery &>();
 
@@ -196,14 +197,23 @@ BlockInputStreams InterpreterSelectWithUnionQuery::executeWithMultipleStreams(Qu
         parent_pipeline.addInterpreterContext(context);
     }
 
+    /// Update max_streams due to:
+    /// - max_distributed_connections for Distributed() engine
+    /// - max_streams_to_max_threads_ratio
+    ///
+    /// XXX: res.pipeline.getMaxThreads() cannot be used since it is capped to
+    ///      number of streams, which is empty for non-Processors case.
+    max_streams = (*std::min_element(nested_interpreters.begin(), nested_interpreters.end(), [](const auto &a, const auto &b)
+    {
+        return a->getMaxStreams() < b->getMaxStreams();
+    }))->getMaxStreams();
+
     return nested_streams;
 }
 
 
 BlockIO InterpreterSelectWithUnionQuery::execute()
 {
-    const Settings & settings = context->getSettingsRef();
-
     BlockIO res;
     BlockInputStreams nested_streams = executeWithMultipleStreams(res.pipeline);
     BlockInputStreamPtr result_stream;
@@ -219,7 +229,7 @@ BlockIO InterpreterSelectWithUnionQuery::execute()
     }
     else
     {
-        result_stream = std::make_shared<UnionBlockInputStream>(nested_streams, nullptr, settings.max_threads);
+        result_stream = std::make_shared<UnionBlockInputStream>(nested_streams, nullptr, max_streams);
         nested_streams.clear();
     }
 

@@ -8,7 +8,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <common/likely.h>
 #include <common/strong_typedef.h>
 
 #include <Common/Allocator.h>
@@ -156,7 +155,7 @@ protected:
     template <typename ... TAllocatorParams>
     void reserveForNextSize(TAllocatorParams &&... allocator_params)
     {
-        if (size() == 0)
+        if (empty())
         {
             // The allocated memory should be multiplication of ELEMENT_SIZE to hold the element, otherwise,
             // memory issue such as corruption could appear in edge case.
