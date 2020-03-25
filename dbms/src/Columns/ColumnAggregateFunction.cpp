@@ -10,6 +10,8 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 
 #include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
@@ -280,6 +282,25 @@ void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) cons
     WriteBufferFromOwnString wbuf;
     func->serialize(data[n], wbuf);
     hash.update(wbuf.str().c_str(), wbuf.str().size());
+}
+
+void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = data.size();
+    if (hash.getData().size() != data.size())
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    auto & hash_data = hash.getData();
+
+    std::vector<UInt8> v;
+    for (size_t i = 0; i < s; ++i)
+    {
+        WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
+        func->serialize(data[i], wbuf);
+        wbuf.finalize();
+        hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
+    }
 }
 
 /// The returned size is less than real size. The reason is that some parts of

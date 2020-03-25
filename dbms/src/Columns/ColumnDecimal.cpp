@@ -2,6 +2,8 @@
 #include <Common/Arena.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 
 #include <common/unaligned.h>
 
@@ -22,6 +24,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 template <typename T>
@@ -63,6 +66,27 @@ template <typename T>
 void ColumnDecimal<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
+}
+
+template <typename T>
+void ColumnDecimal<T>::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = data.size();
+
+    if (hash.getData().size() != s)
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    const T * begin = data.data();
+    const T * end = begin + s;
+    UInt32 * hash_data = hash.getData().data();
+
+    while (begin < end)
+    {
+        *hash_data = intHashCRC32(*begin, *hash_data);
+        ++begin;
+        ++hash_data;
+    }
 }
 
 template <typename T>
