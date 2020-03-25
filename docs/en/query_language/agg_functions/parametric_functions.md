@@ -238,7 +238,9 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 
 -   `window` — Length of the sliding window in seconds.
 -   `mode` - It is an optional argument.
-    -   `'strict'` - When the `'strict'` is set, the windowFunnel() applies conditions only for the unique values.
+    -   `'strict'` - applies conditions only for the not repeating values.
+    -   `'strict_order`' - doesn't allow interventions of other events. In the case of 'A->B->D->C', it stops finding 'A->B->C' at the 'D' and the max event level is 2.
+    -   `'no_nullify'` - get an exact event-level instead of null.
 -   `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md#data_type-datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it’s value can’t exceed the Int64 maximum, which is 2^63 - 1).
 -   `cond` — Conditions or data describing the chain of events. [UInt8](../../data_types/int_uint.md).
 
@@ -305,6 +307,135 @@ Result:
 │     4 │ 1 │
 └───────┴───┘
 ```
+
+Now let's use optional parameters.
+
+1. Сreate a table to illustrate an example.
+```SQL
+CREATE TABLE funnel_test
+(
+    `dt` DateTime,
+    `user` int,
+    `event` String,
+    `action` Nullable(String)
+)
+ENGINE = Log();
+
+INSERT INTO funnel_test VALUES (1, 1, 'e1', 'a1') (2, 1, 'e2', 'a1') (3, 1, 'e2', 'a2') (4, 1, 'e3', 'a3');
+INSERT INTO funnel_test VALUES (1, 2, 'e1', null) (2, 2, 'e3', null) (3, 2, 'e2', null);
+```
+
+```
+                 dt   user   event   action
+
+1970-01-01 09:00:01      1   e1      a1                                                                                                                                           
+1970-01-01 09:00:02      1   e2      a1
+1970-01-01 09:00:03      1   e2      a2
+1970-01-01 09:00:04      1   e3      a3
+1970-01-01 09:00:01      2   e1      NULL
+1970-01-01 09:00:02      2   e3      NULL
+1970-01-01 09:00:03      2   e2      NULL
+```
+
+2. Group events and actions by user using the windowFunnel function.
+
+```SQL
+SELECT                                                                                                                                                                            
+    user,                                                                                                                                                                         
+    windowFunnel(10)(dt, event = 'e1', event = 'e2', event = 'e3') AS level                                                                                       
+FROM funnel_test                                                                                                                                                                  
+GROUP BY user
+ORDER BY user ASC
+FORMAT PrettySpace 
+```
+
+By default, it allows repeating events of 'e2's in user1, also allows interventions of another event 'e3' in user2.  
+
+```
+user   level
+
+   1       3
+   2       2
+```
+
+3. Use windowFunnel function with `'strict_order'`
+
+```SQL
+SELECT
+    user,
+    windowFunnel(10, 'strict_order')(dt, event = 'e1', event = 'e2', event = 'e3') AS level
+FROM funnel_test
+GROUP BY user
+ORDER BY user ASC
+FORMAT PrettySpace
+```
+
+The `'strict_order`' doesn't allow interventions of other events. So  it doesn't allow interventions of another event 'e3' in user2.  
+
+```
+user   level
+
+   1       3
+   2       1
+```
+
+4. Use windowFunnel function with `'strict`
+
+```SQL
+SELECT
+    user,
+    windowFunnel(10, 'strict')(dt, event = 'e1', event = 'e2', event = 'e3') AS level
+FROM funnel_test
+GROUP BY user
+ORDER BY user ASC
+FORMAT PrettySpace
+```
+
+The `'strict`' doesn't allow repeating events. So  it doesn't allow repeating events of 'e2' in user1.  
+
+```
+user   level
+
+   1       2
+   2       2
+```
+
+5. Use windowFunnel function with `'no_nullify`
+
+We use the action column to explain the behavior of `'no_nullify'`.
+
+```SQL
+SELECT
+    user,
+    windowFunnel(10)(dt, event = 'e1', event = 'e2', action = 'a3') AS level
+FROM funnel_test
+GROUP BY user
+ORDER BY user ASC
+FORMAT PrettySpace
+
+user   level
+
+   1       3
+   2       NULL
+```
+
+The level of user 2 is NULL, but the events and actions of user 2 is `event 'e1' --> event 'e2'`. So the level of user 2 must be 2.
+To get exact level, let's use `'no_nullify'`.
+
+```SQL
+SELECT
+    user,
+    windowFunnel(10, 'no_nullify')(dt, event = 'e1', event = 'e2', action = 'a3') AS level
+FROM funnel_test
+GROUP BY user
+ORDER BY user ASC
+FORMAT PrettySpace
+
+user   level 
+
+   1       3
+   2       2
+``` 
 
 ## retention {#retention}
 
