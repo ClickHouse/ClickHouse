@@ -1,6 +1,7 @@
 {# This file is an entrypoint for mkdocs theme, not an actual website page #}
 
 {% set language = config.theme.language %}
+
 {% if page and page.meta and page.meta.title %}
     {% set title = page.meta.title %}
 {% elif page and page.title and not page.is_homepage and page.title != 'hidden' %}
@@ -10,6 +11,13 @@
 {% else %}
     {% set title = config.site_name %}
 {% endif %}
+
+{% set data_version = config.extra.version_prefix or 'master' %}
+{% set data_single_page = 'true' if config.extra.single_page else 'false' %}
+{% set extra_html_attrs = 'data-version="' + data_version + '" data-single-page="' + data_single_page + '"' %}
+{% set extra_body_attrs = 'data-spy="scroll" data-target="#toc" data-offset="80"' %}
+{% set extra_css = ["https://cdn.jsdelivr.net/npm/docsearch.js@2/dist/cdn/docsearch.min.css"] %}
+{% set extra_js = ["https://cdn.jsdelivr.net/npm/docsearch.js@2/dist/cdn/docsearch.min.js"] %}
 
 {% extends "templates/base.html" %}
 

@@ -17,7 +17,7 @@
             <ul class="navbar-nav ml-auto mt-2 mt-lg-0 justify-content-end">
                 <li class="nav-item">
                      <a class="nav-link" href="#" rel="external nofollow noreferrer">
-                        <img id="dark-mode-switch" src="/images/mkdocs/moon.svg" alt="Light mode" title="Switch dark mode" height="32" />
+                        <img id="dark-mode-switch" src="/images/mkdocs/moon.svg" alt="Light mode" title="Switch dark mode" height="30" />
                     </a>
                 </li>
                 {% if config.extra.single_page %}
@@ -37,7 +37,7 @@
                 </li>
                 <li class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle d-inline-block mt-1 text-muted" href="#" id="lang-dropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-                        <img src="/images/flags/en.svg" alt="English" title="English" width="32" class="d-inline-block mt-n1" />
+                        <img src="/images/flags/{{ language }}.svg" alt="{{ config.extra.languages[language] }}" title="{{ config.extra.languages[language] }}" width="32" class="d-inline-block mt-n1" />
                     </a>
                     <div class="dropdown-menu bg-dark" aria-labelledby="lang-dropdown">
                         {% for code, name in config.extra.languages.items() %}
@@ -52,7 +52,7 @@
         </div>
 
         <form class="form-inline m-0">
-            <div class="input-group">
+            <div id="docsearch-input" class="input-group">
                 <div class="input-group-prepend">
                     <span class="input-group-text bg-secondary-alt text-muted border-0" id="search-icon">
                         <img src="/images/mkdocs/search.svg" />
