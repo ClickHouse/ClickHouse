@@ -27,7 +27,7 @@ public:
         for (size_t i = 1; i < params.size(); ++i)
         {
             U option = params.at(i).safeGet<U>();
-            if (option.compare(expected) == 0)
+            if (option == expected)
                 return true;
         }
         return false;
