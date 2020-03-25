@@ -193,8 +193,10 @@ private:
         CoordinateType b;
         CoordinateType c;
 
+        HalfPlane() = default;
+
         /// Take left half-plane.
-        void fill(const Point & from, const Point & to)
+        HalfPlane(const Point & from, const Point & to)
         {
             a = -(to.y() - from.y());
             b = to.x() - from.x();
@@ -442,14 +444,12 @@ PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
     for (auto i : ext::range(0, outer.size() - 1))
     {
         /// Want to detect is intersection edge was formed from box edge or from polygon edge.
+        /// Only add polygon edges.
         /// If center of the edge closer to box, than don't form the half-plane.
         Segment segment(outer[i], outer[i + 1]);
         Point center((segment.first.x() + segment.second.x()) / 2, (segment.first.y() + segment.second.y()) / 2);
         if (boost::geometry::comparable_distance(center, polygon) < boost::geometry::comparable_distance(center, box))
-        {
-            half_planes.push_back({});
-            half_planes.back().fill(segment.first, segment.second);
-        }
+            half_planes.emplace_back(segment.first, segment.second);
     }
 
     return half_planes;
