@@ -6,16 +6,27 @@ To revoke privileges, use the [REVOKE](revoke.md) statement. Also you can list g
 
 ## Syntax {#grant-syntax}
 
+### Granting privilege to a User Account
+
 ```sql
-GRANT privilege TO user|role [WITH GRANT OPTION]
+GRANT privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
+```
+- `privilege` — Type of privilege.
+- `role` — ClickHouse user role.
+- `user` — ClickHouse user account.
+
+The `WITH GRANT OPTION` clause sets [GRANT OPTION](#grant-option-privilege) privilege for `user` or `role`.
+
+### Assigning Role to a User Account
+
+```sql
+GRANT role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
 ```
 
-- `privilege` — Type of privilege.
-- `user` — ClickHouse user.
 - `role` — ClickHouse user role.
+- `user` — ClickHouse user account.
 
-The `WITH GRANT OPTION` clause sets `GRANT OPTION` privilege for `user`.
-
+The `WITH ADMIN OPTION` clause sets `ADMIN OPTION` privilege for `user` or `role`.
 
 ## Usage {#grant-usage}
 
@@ -92,7 +103,7 @@ This privilege allows `vasya` to perform any `SELECT` query that involves data f
 
 ### INSERT {#grant-insert}
 
-Allows to perform [INSERT](insert.md) queries.
+Allows to perform [INSERT](insert_into.md) queries.
 
 **Description**
 
@@ -268,7 +279,7 @@ Allows using [introspection](../operations/performance/sampling_query_profiler.m
 
 ### dictGet {#grant-dictget}
 
-Allows a user to execute the [dictGet](../functions/ext_dict_functions.md#dictget) function.
+Allows a user to execute the [dictGet](functions/ext_dict_functions.md#dictget) function.
 
 Some kinds of ClickHouse [dictionaries](dicts/index.md) are not stored in a database. Use the `'no_database'` placeholder to grant a privilege to use `dictGet()` with such dictionaries.
 
@@ -303,3 +314,13 @@ Table functions create temporary tables. Another way of creating a temporary tab
 ### ALL {#grant-all}
 
 Grants all the privileges on regulated entity to a user account or a role.
+
+### GRANT OPTION {#grant-option-privilege}
+
+To use `GRANT`, a user account must have the `GRANT OPTION` privilege. User can grant privileges only inside the scope of their account privileges.
+
+### ADMIN OPTION {#admin-option-privilege}
+
+The `ADMIN OPTION` privilege allows user can reassign their role to another user.
+
+[Original article](https://clickhouse.tech/docs/en/query_language/grant/) <!--hide-->

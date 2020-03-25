@@ -495,10 +495,40 @@ A mutation query returns immediately after the mutation entry is added (in case 
 
 Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
 
-## ALTER USER {#alter-user}
+## ALTER USER {#alter-user-statement}
+
+Changes ClickHouse user accounts or roles.
+
+### Syntax
+
+``` sql
+ALTER USER [IF EXISTS] name
+    [RENAME TO new_name]
+    [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
+    [[ADD|REMOVE] HOST {LOCAL | NAME 'name' | NAME REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```  
+
+### Description
+
+To use `ALTER USER` you must have the [CREATE USER](grant.md#grant-create-user) privilege.
+
+
+## ALTER ROLE {#alter-role}
+
+### Syntax
+
+```sql
+ALTER ROLE [IF EXISTS] name
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
 
 
 ## ALTER ROW POLICY {#alter-row-policy}
+
+Changes .
 
 `ALTER ROW POLICY filter ON mydb.mytable ...;`
 

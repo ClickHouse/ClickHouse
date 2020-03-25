@@ -230,9 +230,17 @@ SET profile = 'profile-name-from-the-settings-file'
 
 For more information, see [Settings](../operations/settings/settings.md).
 
-# SET ROLE {#SET ROLE}
+# SET ROLE {#set-role-statement}
 
+```sql
+SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
+```
 
+# SET DEFAULT ROLE {#set-default-role-statement}
+
+```sql
+SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+```
 
 ## TRUNCATE {#truncate-statement}
 

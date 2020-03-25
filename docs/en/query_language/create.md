@@ -299,91 +299,109 @@ Depending on dictionary [layout](dicts/external_dicts_dict_layout.md) one or mor
 
 For more information, see [External Dictionaries](dicts/external_dicts.md) section.
 
-# CREATE USER {#create-user}
+## CREATE USER {#create-user}
 
-Есть способ создавать пользователей. Вот один из простых вариантов:
+Creates a user account.
 
-`CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'`
+ClickHouse allows to configure user accounts in the [user.xml](../operations/settings/settings_users.md) file. The `CREATE USER` statement is an alternative way of creating user accounts.
 
-Создаем пользователя с именем `mira`. Указываем IP, с которого можно коннектится. Указываем пароль. Записали - у нас появился новый пользователь. Оно в какой-то степени зеркалит то, что у нас есть `users.xml`, то есть тут никаких особо сюрпризов. 
+### Syntax
 
-Я написал варианты насчет пароля:
+```sql
+CREATE USER [IF NOT EXISTS | OR REPLACE] name
+    [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
+    [HOST {LOCAL | NAME 'name' | NAME REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...]]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+
+#### Identification
+
+There are some ways of user identification:
 
 - `IDENTIFIED WITH no_password`
-- `IDENTIFIED WITH plaintext_password BY 'qwerty';` -
-- `IDENTIFIED WITH sha256_password BY 'qwerty';`
-- `IDENTIFIED WITH sha256_hash BY 'hash';`
-- `IDENTIFIED WITH double_sha1_password BY 'qwerty';`
-- `IDENTIFIED WITH double_sha1_hash BY 'hash';`
+- `IDENTIFIED WITH plaintext_password BY 'qwerty'`
+- `IDENTIFIED WITH sha256_password BY 'qwerty'`
+- `IDENTIFIED WITH sha256_hash BY 'hash'`
+- `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
+- `IDENTIFIED WITH double_sha1_hash BY 'hash'`
 
-Можно без пароля. Если часть `IDENTIFIED WITH ... BY` не написана вообще, то это будет считаться, что без пароля.
+To create a user account without a password, use the syntax `IDENTIFIED WITH ... BY`.
 
-Можно написать `IDENTIFIED BY ...` (без `WITH`), тогда подразумевается, что используется sha256.
+The syntax `IDENTIFIED BY ...` creates an identification that uses `sha256_password` or `sha256_hash` based on the value specified after `BY`.
 
-Можно писать пароль, можно писать хеш.
+#### User Host
 
-По поводу хоста. Хост тоже можно задавать по-разному:
+Host can be specified in the `HOST` section of query by the following ways:
 
-- `HOST IP '192.168.0.0/16'`
-- `HOST ANY`
-- `HOST LOCAL`
-- `HOST NAME 'mysite.com'`
-- `HOST NAME REGEXP '.*\.mysite\.com'`
-- `HOST LIKE '%'`
+- `HOST IP 'IP_ADDRESS_OR_NETWORK'` — User can connect to ClickHouse server only from the specified IP address. For example, `HOST IP '192.168.0.0/16'`.
+- `HOST ANY` — No limits.
+- `HOST LOCAL` — User can connect only locally.
+- `HOST NAME 'FQDN'` —  The user host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
+- `HOST NAME REGEXP 'regexp'` — You can use regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.
+- `HOST LIKE 'te.mp.la.te'` — Allows use the operator [LIKE](functions/string_search_functions.md#function-like) to specify the user host. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '192.168.%.%'` is equivalent to `HOST IP '192.168.0.0/16'`.
 
-Можно задавать хост - конкретный IP писать. Можно какую-нибудь подсеть выбирать. `ANY` подразумевает любой IP-адрес вообще: коннекся, откуда хочешь. `LOCAL` - локал-хост. Дальше, я думаю, понятно.
+Another way of specifying host is to use `@` syntax with the user name. Examples:
 
-`HOST LIKE`, на самом деле, это я добавил. В `users.xml` этого не было, но мне показалось, это удобно. По сути, это что-то типо `HOST NAME REGEXP`, только другим синтаксисом. То есть `HOST LIKE '%'` - это то же самое, что и `HOST ANY`.
+- `CREATE USER mira@'127.0.0.1'` — Equivalent to the `HOST IP` syntax.
+- `CREATE USER mira@'localhost'` — Equivalent to the `HOST LOCAL` syntax.
+- `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` syntax.
 
-Дальше в MySQL тоже подсмотрел - синтаксис с `@` - у нас такого не было в `users.xml`, я добавил. Можно писать хост прям как бы в имени пользователя:
+!!! info "Warning"
+    ClickHouse treats `user_name@'address'` as a user name as a whole. Thus, technically you can create multiple users with `user_name` and different constructions after `@`. We don't recommend do so.
 
-- `CREATE USER mira@'127.0.0.1' IDENTIFIED BY 'qwerty';`
-- `CREATE USER mira@'localhost';`
-- `CREATE USER mira@'192.168.%.%';`
-- `CREATE USER mira@'%';`
 
-Первое означает локал-хост, по сути. То есть мы пишем имя пользователя, `@` и дальше то же самое, что мы бы написали после `HOST LIKE`, то есть некая строка.
+### Example
 
-Третий вариант означает, соответственно, подсеть. То есть выбирается то же самое, что у меня после `IP`. Достаточно очевидно.
+```sql
+CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
+```
 
-Если взять и выполнить все команды с `CREATE USER` выше, то будут созданы четыре пользователя. Поскольку то, что указано после `@`, тоже становится именем пользователя.
+This query creates the user account `mira` protected by the password `qwerty`. Also user should start client app at the host where the ClickHouse server runs.
 
-Это сделано не столько для совместимости с MySQL, просто мне показалось это удобно и вполне разумно. Можно этим не пользоваться: никто не мешает писать `CREATE USER <имя>` и никакую `@` дальше.
 
-`ALTER` использовать можно. Им можно поменять допустимый IP, можно поменять пароль.
+## CREATE ROLE {#create-role}
 
-Подразумевается, что имя пользователя - это строка, поэтому при использовании `@` именем будет являться вся конструкция, указанная после `NAME`. Допустим, в первом примере (см. выше) именем пользователя будет `mira@'127.0.0.1'`. После первой строчки мы можем выполнить `ALTER` и дать какой-нибудь другой хост.
+Creates a role.
 
-Плохой сценарий - предлагать создать нескольких пользователей с одинаковым префиксом, лучше не рекомендовать. Либо запретить синтаксис с `@`. Либо считать все до `@` именем пользователя.
+### Syntax
 
-Пользователи тоже сериализуются.
+```sql
+CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
 
-# CREATE ROLE {#create-role}
+### Description
 
-Роль - это не пользователь, но некая совокупность прав, которая может пользователю быть дана. В соответствии со стандартом, мы создаем некую роль, даем ей права и даем, соответственно, право использовать эту роль пользователю `mira` (например). То есть три команды:
+Role is a set of [privileges](grant.md#grant-privileges). The user assigned with a role gets all the privileges of this role. 
 
-1. `CREATE ROLE accountant;`
-1. `GRANT SELECT ON db.* TO accountant;`
-1. `GRANT accountant TO mira WITH ADMIN OPTION;`
+A user can be assigned with multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement). The final scope of privileges is a joined set of all the privileges of all the applied roles. Along with the roles privileges a user can have another granted privileges which are active independently of applied roles.
 
-Если они выполнены, то после этого Мира может установить эту роль текущей и, соответственно, выполнить команду, которая требует этих прав (которые даны этой ролью):
+User can have a default role which applies at user login. To set the default role, use the [SET DEFAULT ROLE](misc.md#set-default-role-statement) statement or the [ALTER USER](alter.md#alter-user-statement) statement.
 
-1. `SET ROLE accountant;`
-1. `SELECT * FROM db.*;`
+### Example
 
-`WITH ADMIN OPTION;` напоминает `WITH GRANT OPTION`. Это означает, что пользователь Мира, получив право использовать эту роль, сможет это право передать еще кому-нибудь.
+```sql
+CREATE ROLE accountant;
+GRANT SELECT ON db.* TO accountant;
+```
 
-Роль по умолчанию у пользователя выбирается. Есть другой синтаксис. Если писать так, как выше, то по умолчанию никаких ролей не будет. То есть пользователь должен будет явно написать `SET ROLE <имя роли>`. Понятно, что еще должен об этом как-то узнать, что у него есть эта роль.
+This sequence of queries creates the role `accountant` that has the privilege of reading data from the `accounting` database.
 
-Есть возможность указывать роль по умолчанию. Вот здесь я как раз это отобразил.
+Assigning the role to the user `mira`:
 
-![Роли](roles.png)
+```sql
+GRANT accountant TO mira;
+```
 
-То есть если админ выполняет чуть больше команд и, соответственно, устанавливает дефолтную роль, то чтобы она включилась для пользователя Миры, ей достаточно залогиниться, и роль уже включена.
+After the role is assigned, the user can use it and perform the allowed queries. For example:
 
-Можно дефолтную роль выбирать. Есть либо специальная команда `SET DEFAULT ROLE`, либо `ALTER USER`.
+```sql
+SET ROLE accountant;
+SELECT * FROM db.*;
+```
 
-У пользователя может быть несколько ролей, и он может переключаться между ними. Если у пользователя есть несколько ролей сразу, то он получит права, которые даны всеми этими ролями. В `SET ROLE` можно писать несколько ролей через запятую, и тогда ты получишь все права, которые даны всеми этими ролями.
 
 Можно сделать так, чтобы по умолчанию пользователь использовал все права, которые есть у всех его ролей. Для этого в команде `SET DEFAULT ROLE` после `ROLE` следует указать несколько ролей через запятую. Можно даже написать `SET DEFAULT ROLE ALL FOR mira` - это означает, что дефолтными ролями станут все роли, которые у Миры есть. Как вариант можно подумать над тем, чтобы сделать такую возможность по умолчанию, но пока это не реализовано. А переключение ролей можно вообще отменить (это еще одна грабля).
 
