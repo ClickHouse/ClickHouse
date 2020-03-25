@@ -61,6 +61,7 @@ namespace std
 #include <Processors/Transforms/MergingSortedTransform.h>
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/ConcatProcessor.h>
 
 namespace ProfileEvents
 {
@@ -801,6 +802,15 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreams(
                 query_info.prewhere_info, true, reader_settings, virt_columns, part.part_index_in_query);
 
             res.emplace_back(std::move(source));
+        }
+
+        /// Use ConcatProcessor to concat sources together.
+        /// It is needed to read in parts order (and so in PK order) if single thread is used.
+        if (res.size() > 1)
+        {
+            auto concat = std::make_shared<ConcatProcessor>(res.front().getHeader(), res.size());
+            Pipe pipe(std::move(res), std::move(concat));
+            res = { std::move(pipe) };
         }
     }
 
