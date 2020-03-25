@@ -80,6 +80,9 @@ $(document).ready(function () {
     if (isAndroid) {
         $('select.form-control').removeClass('form-control').css('width', '100%');
     }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)')) {
+        $.fx.off = true;
+    }
 });
 
 {% include "js/index.js" %}

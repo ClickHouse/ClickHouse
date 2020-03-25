@@ -1,9 +1,9 @@
-<nav id="top-nav" class="navbar navbar-expand-lg bg-dark-alt text-white sticky-top">
+<nav id="top-nav" class="navbar navbar-expand-md bg-dark-alt text-white sticky-top">
     <div class="container-fluid">
         <a class="d-block navbar-brand mr-3" href="/">
             <img id="docs-logo-icon" src="/images/logo.svg" alt="ClickHouse logo" title="ClickHouse logo"/>
         </a>
-        <div class="w-100 navbar-text text-left">
+        <div class="w-100 navbar-text text-left d-none d-md-block">
             <h1 class="h3 m-0 p-0 d-inline">
                 <a href="#" class="text-white text-decoration-none">{{ page.title or config.site_name }}</a>
             </h1>
@@ -13,13 +13,8 @@
             <span class="navbar-toggler-icon text-white"></span>
         </button>
 
-        <div class="collapse navbar-collapse" id="navbar-toggle">
+        <div id="navbar-toggle" class="collapse navbar-collapse">
             <ul class="navbar-nav ml-auto mt-2 mt-lg-0 justify-content-end">
-                <li class="nav-item">
-                     <a class="nav-link" href="#" rel="external nofollow noreferrer">
-                        <img id="dark-mode-switch" src="/images/mkdocs/moon.svg" alt="Light mode" title="Switch dark mode" height="30" />
-                    </a>
-                </li>
                 {% if config.extra.single_page %}
                     {% set edit_url = config.repo_url + 'tree/master/docs' %}
                 {% else %}
@@ -35,15 +30,15 @@
                         <img src="/images/index/github.svg" alt="GitHub repository" title="Go to GitHub" height="32" />
                     </a>
                 </li>
-                <li class="nav-item dropdown">
+                <li id="languages-dropdown" class="nav-item dropdown">
                     <a class="nav-link dropdown-toggle d-inline-block mt-1 text-muted" href="#" id="lang-dropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                         <img src="/images/flags/{{ language }}.svg" alt="{{ config.extra.languages[language] }}" title="{{ config.extra.languages[language] }}" width="32" class="d-inline-block mt-n1" />
                     </a>
                     <div class="dropdown-menu bg-dark" aria-labelledby="lang-dropdown">
                         {% for code, name in config.extra.languages.items() %}
                         <a class="dropdown-item{% if language == code %} disabled{% endif %}"
-                           href="/docs/{{ code }}/{{ page.url }}">
-                            <img src="/images/flags/{{ code }}.svg" alt="" title="" width="32" class="d-inline-block mr-2" />{{ name}}
+                           href="/docs/{% if config.extra.version_prefix %}{{ config.extra.version_prefix }}/{% endif %}{{ code }}/{{ page.url }}">
+                            <img src="/images/flags/{{ code }}.svg" alt="" title="" width="32" class="d-inline-block mr-2" />{{ name }}
                         </a>
                         {% endfor %}
                     </div>
@@ -52,13 +47,13 @@
         </div>
 
         <form class="form-inline m-0">
-            <div id="docsearch-input" class="input-group">
+            <div class="input-group">
                 <div class="input-group-prepend">
-                    <span class="input-group-text bg-secondary-alt text-muted border-0" id="search-icon">
+                    <span class="input-group-text bg-secondary-alt text-muted border-0 mr-n1" id="search-icon">
                         <img src="/images/mkdocs/search.svg" />
                     </span>
+                    <input id="docsearch-input" class="form-control bg-secondary-alt text-muted border-0 pl-1" type="search" placeholder="Search" aria-label="Search">
                 </div>
-                <input class="form-control bg-secondary-alt text-muted border-0 pl-0" type="search" placeholder="Search" aria-label="Search">
             </div>
         </form>
     </div>

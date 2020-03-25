@@ -6,6 +6,7 @@ import argparse
 import datetime
 import logging
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -163,6 +164,8 @@ def build_for_lang(lang, args):
 def build_single_page_version(lang, args, cfg):
     logging.info(f'Building single page version for {lang}')
     os.environ['SINGLE_PAGE'] = '1'
+    extra = cfg.data['extra']
+    extra['single_page'] = True
 
     with util.autoremoved_file(os.path.join(args.docs_dir, lang, 'single.md')) as single_md:
         concatenate(lang, args.docs_dir, single_md)
@@ -180,9 +183,7 @@ def build_single_page_version(lang, args, cfg):
                 cfg.load_dict({
                     'docs_dir': docs_temp_lang,
                     'site_dir': site_temp,
-                    'extra': {
-                        'single_page': True
-                    },
+                    'extra': extra,
                     'nav': [
                         {cfg.data.get('site_name'): 'single.md'}
                     ]
@@ -212,12 +213,11 @@ def build_single_page_version(lang, args, cfg):
 
                 if not args.version_prefix:  # maybe enable in future
                     with util.temp_dir() as test_dir:
+                        extra['single_page'] = False
                         cfg.load_dict({
                             'docs_dir': docs_temp_lang,
                             'site_dir': test_dir,
-                            'extra': {
-                                'single_page': False
-                            },
+                            'extra': extra,
                             'nav': [
                                 {cfg.data.get('site_name'): 'single.md'}
                             ]
@@ -284,7 +284,8 @@ def build_docs(args):
     for lang in args.lang.split(','):
         if lang:
             tasks.append((lang, args,))
-    util.run_function_in_parallel(build_for_lang, tasks, threads=False)
+    is_darwin = platform.system() == 'Darwin'  # TODO: better workaround
+    util.run_function_in_parallel(build_for_lang, tasks, threads=is_darwin)
     build_redirects(args)
 
 
@@ -325,6 +326,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--website-dir', default=os.path.join('..', 'website'))
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')
+    arg_parser.add_argument('--stable-releases-limit', type=int, default='10')
     arg_parser.add_argument('--version-prefix', type=str, default='')
     arg_parser.add_argument('--is-stable-release', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')
@@ -349,7 +351,7 @@ if __name__ == '__main__':
     args.docs_output_dir = os.path.join(os.path.abspath(args.output_dir), 'docs')
 
     from github import choose_latest_releases, get_events
-    args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
+    args.stable_releases = choose_latest_releases(args) if args.enable_stable_releases else []
     args.rev = subprocess.check_output('git rev-parse HEAD', shell=True).decode('utf-8').strip()
     args.rev_short = subprocess.check_output('git rev-parse --short HEAD', shell=True).decode('utf-8').strip()
     args.rev_url = f'https://github.com/ClickHouse/ClickHouse/commit/{args.rev}'

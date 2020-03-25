@@ -1,4 +1,4 @@
-<div id="toc" class="col-lg-2 p-3 overflow-auto">
+<div id="toc" class="col-xl-2 d-none d-xl-block d-print-none p-3 overflow-auto{% if single_page %} toc-left{% else %} toc-right{% endif %}">
     {% set toc_ = page.toc %}
     {% if toc_ | first is defined and "\x3ch1 id=" in page.content %}
         {% set toc_ = (toc_ | first).children %}

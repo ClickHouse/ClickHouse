@@ -1,23 +1,21 @@
-.dark-mode {
-    background: #1c1c1c;
-    color: #efefef;
-}
-
 #sidebar {
     position: fixed;
     left: 0;
 }
 
-.dark-mode #sidebar {
-    background: #333;
-}
-
 #toc {
     position: fixed;
+}
+
+#languages-dropdown .disabled {
+    color: #666 !important;
+}
+
+.toc-right {
     right: 0;
 }
 
-#sidebar .nav-link.active {
+#sidebar-nav .nav-link.active {
     font-weight: bold;
 }
 
@@ -33,17 +31,9 @@
     margin-bottom: 1rem;
 }
 
-.dark-mode #content table {
-    border: 1px solid #2a2b2c;
-}
-
 #content thead {
     background: #444451;
     color: #fff;
-}
-
-.dark-mode #content thead {
-    background: #333;
 }
 
 #content td, #content th {
@@ -55,7 +45,7 @@
     border: 1px solid #dee2e6;
 }
 
-#content th, .dark-mode #content td {
+#content th {
     border: 1px solid #444451;
 }
 
@@ -65,23 +55,17 @@
     padding: 2px;
 }
 
-.dark-mode #content code {
-    background: #444;
-    color: #eee;
-}
 
 #content pre {
     background: #eee;
     padding: 1rem;
 }
 
-.dark-mode #content pre {
-    background: #444;
-    color: #eee;
-}
 
-#docsearch-input:focus {
-    color: #efefef;
+
+#docsearch-input:focus, #docsearch-input:active {
+    border: 0;
+    color: #efefef!important;
 }
 
 .algolia-autocomplete .algolia-docsearch-suggestion--subcategory-column {
@@ -124,10 +108,55 @@
   color: #f14600;
 }
 
+#toc .nav-link {
+    color: #333;
+}
 
-@media (prefers-color-scheme: dark) {
-    .dark-mode {
-    background: #1c1c1c;
+.toc-left, #toc.toc-left .nav-link {
     color: #efefef;
 }
+
+.toc-muted {
+    color: #888 !important;
 }
+
+#toc .nav-link:hover {
+    color: #f14600 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+    body[data-spy] {
+        background: #1c1c1c;
+        color: #efefef;
+    }
+
+    #sidebar {
+        background: #333;
+    }
+
+    #content table {
+        border: 1px solid #2a2b2c;
+    }
+
+    #content thead {
+        background: #333;
+    }
+
+    #content td {
+        border: 1px solid #444451;
+    }
+    #content code {
+        background: #444;
+        color: #eee;
+    }
+
+    #content pre {
+        background: #444;
+        color: #eee;
+    }
+
+    #toc .nav-link {
+        color: #b0b0b0;
+    }
+}
+

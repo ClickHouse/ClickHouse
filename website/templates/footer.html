@@ -1,6 +1,6 @@
 {% if not no_footer %}
-<div id="footer" class="bg-dark text-muted">
-    <div class="container py-3">
+<div id="footer" class="{{ footer_class or 'bg-dark text-muted' }}">
+    <div class="container {{ footer_container_class or 'py-3' }}">
         <div class="row">
             <div class="col-lg-8 text-left">
                 <a href="https://github.com/ClickHouse/ClickHouse/blob/master/LICENSE"

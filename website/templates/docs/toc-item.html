@@ -1,7 +1,7 @@
-{% if toc_item.children %}
-<a href="{{ toc_item.url }}" title="{{ toc_item.title }}" class="nav-link text-muted text-wrap">
+<a href="{{ toc_item.url }}" title="{{ toc_item.title }}" class="nav-link text-wrap d-inline-block w-100">
     {{ toc_item.title }}
 </a>
+{% if toc_item.children %}
 <nav id="toc-{{ path }}" class="nav flex-column pl-{{ level }}">
     {% set base = path %}
     {% for toc_item in toc_item.children %}
@@ -10,8 +10,4 @@
         {% include "templates/docs/toc-item.html"  %}
     {% endfor %}
 </nav>
-{% else %}
-<a href="{{ toc_item.url }}" title="{{ toc_item.title }}" class="nav-link text-dark text-wrap d-inline-block w-100">
-    {{ toc_item.title }}
-</a>
 {% endif %}

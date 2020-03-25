@@ -12,11 +12,11 @@ import requests
 import util
 
 
-def choose_latest_releases():
+def choose_latest_releases(args):
     logging.info('Collecting release candidates')
     seen = collections.OrderedDict()
     candidates = []
-    for page in range(1, 10):
+    for page in range(1, args.stable_releases_limit):
         url = 'https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100&page=%d' % page
         candidates += requests.get(url).json()
     logging.info('Collected all release candidates')
@@ -31,7 +31,7 @@ def choose_latest_releases():
             major_version = '.'.join((name.split('.', 2))[:2])
             if major_version not in seen:
                 seen[major_version] = (name, tag.get('tarball_url'),)
-                if len(seen) > 10:
+                if len(seen) > args.stable_releases_limit:
                     break
         else:
             logging.fatal('Unexpected GitHub response: %s', str(candidates))

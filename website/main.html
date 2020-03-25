@@ -1,6 +1,8 @@
 {# This file is an entrypoint for mkdocs theme, not an actual website page #}
 
 {% set language = config.theme.language %}
+{% set single_page = config.extra.single_page %}
+{% set no_footer = True %}
 
 {% if page and page.meta and page.meta.title %}
     {% set title = page.meta.title %}
@@ -21,17 +23,15 @@
 
 {% extends "templates/base.html" %}
 
-{% block pre_body %}
-<script src="/js/dark-mode.js"></script>
-{% endblock %}
-
 {% block content %}
 {% include "templates/docs/nav.html" %}
 <div class="container-fluid">
-    <div class="row justify-content-center">
+    <div class="row justify-content-end justify-content-xl-center">
         {% include "templates/docs/sidebar.html" %}
         {% include "templates/docs/content.html" %}
-        {% include "templates/docs/toc.html" %}
+        {% if not config.extra.single_page %}
+            {% include "templates/docs/toc.html" %}
+        {% endif %}
     </div>
 </div>
 
