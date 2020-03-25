@@ -25,7 +25,6 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/geometries/multi_polygon.hpp>
 #include <boost/geometry/geometries/segment.hpp>
-#include <boost/geometry/io/svg/svg_mapper.hpp>
 
 #include <array>
 #include <vector>
@@ -340,12 +339,6 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
 
             size_t cell_index = getCellIndex(row, col);
 
-            std::cerr << "cell_index: " << cell_index << "\n";
-
-            boost::geometry::svg_mapper<Point> mapper(std::cerr, 400, 400);
-            mapper.add(intersection);
-            mapper.map(intersection, "fill-opacity:0.5;fill:rgb(153,204,0);stroke:rgb(153,204,0);stroke-width:2", 5);
-
             if (intersection.empty())
                 addCell(cell_index, cell_box);
             else if (intersection.size() == 1)
@@ -375,12 +368,8 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
     int row = std::min<int>(float_row, grid_size - 1);
     int col = std::min<int>(float_col, grid_size - 1);
 
-    std::cerr << "row: " << row << ", col: " << col << "\n";
-
     int index = getCellIndex(row, col);
     const auto & cell = cells[index];
-
-    std::cerr << "index: " << index << ", type: " << int(cell.type) << "\n";
 
     switch (cell.type)
     {
@@ -459,7 +448,6 @@ PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
         if (! ((x1 == x2 && (x1 == box_x1 || x2 == box_x2))
             || (y1 == y2 && (y1 == box_y1 || y2 == box_y2))))
         {
-            std::cerr << x1 << ", " << y1 << "; " << x2 << ", " << y2 << "\n";
             half_planes.emplace_back(Point(x1, y1), Point(x2, y2));
         }
     }
@@ -515,8 +503,6 @@ void PointInPolygonWithGrid<CoordinateType>::addCell(
         addComplexPolygonCell(index, box);
 
     auto half_planes = findHalfPlanes(box, intersection);
-
-    std::cerr << "half_planes: " << half_planes.size() << "\n";
 
     if (half_planes.empty())
     {
