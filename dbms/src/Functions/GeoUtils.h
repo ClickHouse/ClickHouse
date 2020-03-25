@@ -80,7 +80,7 @@ UInt64 getMultiPolygonAllocatedBytes(const MultiPolygon & multi_polygon)
     return size;
 }
 
-template <typename CoordinateType = Float32>
+template <typename CoordinateType>
 class PointInPolygonWithGrid
 {
 public:
@@ -506,7 +506,7 @@ void PointInPolygonWithGrid<CoordinateType>::addCell(
 }
 
 
-template <typename Strategy, typename CoordinateType = Float32>
+template <typename Strategy, typename CoordinateType>
 class PointInPolygon
 {
 public:

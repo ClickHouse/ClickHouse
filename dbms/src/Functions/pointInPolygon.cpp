@@ -41,7 +41,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace FunctionPointInPolygonDetail
+namespace
 {
 
 template <typename Polygon, typename PointInPolygonImpl>
@@ -79,16 +79,15 @@ ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, Polygon &
 
 }
 
-template <template <typename> typename PointInPolygonImpl, bool use_object_pool>
+template <typename PointInPolygonImpl, bool use_object_pool>
 class FunctionPointInPolygon : public IFunction
 {
 public:
-    template <typename Type>
-    using Point = boost::geometry::model::d2::point_xy<Type>;
-    template <typename Type>
-    using Polygon = boost::geometry::model::polygon<Point<Type>, false>;
-    template <typename Type>
-    using Box = boost::geometry::model::box<Point<Type>>;
+    using CoordinateType = Float64;
+
+    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
+    using Polygon = boost::geometry::model::polygon<Point, false>;
+    using Box = boost::geometry::model::box<Point>;
 
     static inline const char * name = "pointInPolygon";
 
@@ -160,22 +159,13 @@ public:
         auto tuple_col = checkAndGetColumn<ColumnTuple>(point_col);
 
         if (!tuple_col)
-        {
             throw Exception("First argument for function " + getName() + " must be constant array of tuples.",
                             ErrorCodes::ILLEGAL_COLUMN);
-        }
-
-        const auto & tuple_columns = tuple_col->getColumns();
-        const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type).getElements();
-
-        bool use_float64 = WhichDataType(tuple_types[0]).isFloat64() || WhichDataType(tuple_types[1]).isFloat64();
 
         auto & result_column = block.safeGetByPosition(result).column;
 
-        if (use_float64)
-            result_column = executeForType<Float64>(*tuple_columns[0], *tuple_columns[1], block, arguments);
-        else
-            result_column = executeForType<Float32>(*tuple_columns[0], *tuple_columns[1], block, arguments);
+        const auto & tuple_columns = tuple_col->getColumns();
+        result_column = executeForType(*tuple_columns[0], *tuple_columns[1], block, arguments);
 
         if (const_tuple_col)
             result_column = ColumnConst::create(result_column, const_tuple_col->size());
@@ -184,28 +174,9 @@ public:
 private:
     bool validate;
 
-    Float64 getCoordinateFromField(const Field & field)
-    {
-        switch (field.getType())
-        {
-            case Field::Types::Float64:
-                return field.get<Float64>();
-            case Field::Types::Int64:
-                return field.get<Int64>();
-            case Field::Types::UInt64:
-                return field.get<UInt64>();
-            default:
-            {
-                std::string msg = "Expected numeric field, but got ";
-                throw Exception(msg + Field::Types::toString(field.getType()), ErrorCodes::LOGICAL_ERROR);
-            }
-        }
-    }
-
-    template <typename Type>
     ColumnPtr executeForType(const IColumn & x, const IColumn & y, Block & block, const ColumnNumbers & arguments)
     {
-        Polygon<Type> polygon;
+        Polygon polygon;
 
         auto get_message_prefix = [this](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
 
@@ -234,9 +205,9 @@ private:
 
             for (auto j : ext::range(0, size))
             {
-                Type x_coord = getCoordinateFromField((*column_x)[j]);
-                Type y_coord = getCoordinateFromField((*column_y)[j]);
-                container.push_back(Point<Type>(x_coord, y_coord));
+                CoordinateType x_coord = column_x->getFloat64(j);
+                CoordinateType y_coord = column_y->getFloat64(j);
+                container.push_back(Point(x_coord, y_coord));
             }
         }
 
@@ -253,23 +224,17 @@ private:
 #endif
 
         auto call_impl = use_object_pool
-            ? FunctionPointInPolygonDetail::callPointInPolygonImplWithPool<Polygon<Type>, PointInPolygonImpl<Type>>
-            : FunctionPointInPolygonDetail::callPointInPolygonImpl<Polygon<Type>, PointInPolygonImpl<Type>>;
+            ? callPointInPolygonImplWithPool<Polygon, PointInPolygonImpl>
+            : callPointInPolygonImpl<Polygon, PointInPolygonImpl>;
 
         return call_impl(x, y, polygon);
     }
 };
 
 
-template <typename Type>
-using Point = boost::geometry::model::d2::point_xy<Type>;
-
-template <typename Type>
-using PointInPolygonWithGrid = GeoUtils::PointInPolygonWithGrid<Type>;
-
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid, true>>();
+    factory.registerFunction<FunctionPointInPolygon<GeoUtils::PointInPolygonWithGrid<Float64>, true>>();
 }
 
 }
