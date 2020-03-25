@@ -64,17 +64,17 @@ ColumnPtr callPointInPolygonImplWithPool(const IColumn & x, const IColumn & y, P
         return ptr.release();
     };
 
-    std::string serialized_polygon = GeoUtils::serialize(polygon);
+    std::string serialized_polygon = serialize(polygon);
     auto impl = known_polygons.get(serialized_polygon, factory);
 
-    return GeoUtils::pointInPolygon(x, y, *impl);
+    return pointInPolygon(x, y, *impl);
 }
 
 template <typename Polygon, typename PointInPolygonImpl>
 ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, Polygon & polygon)
 {
     PointInPolygonImpl impl(polygon);
-    return GeoUtils::pointInPolygon(x, y, impl);
+    return pointInPolygon(x, y, impl);
 }
 
 }
@@ -234,7 +234,7 @@ private:
 
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPointInPolygon<GeoUtils::PointInPolygonWithGrid<Float64>, true>>();
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>, true>>();
 }
 
 }
