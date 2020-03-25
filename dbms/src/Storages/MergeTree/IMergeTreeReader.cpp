@@ -30,6 +30,7 @@ IMergeTreeReader::IMergeTreeReader(const MergeTreeData::DataPartPtr & data_part_
     , columns(columns_), uncompressed_cache(uncompressed_cache_), mark_cache(mark_cache_)
     , settings(settings_), storage(data_part_->storage)
     , all_mark_ranges(all_mark_ranges_)
+    , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
 }
 
@@ -61,6 +62,11 @@ static bool arrayHasNoElementsRead(const IColumn & column)
     return last_offset != 0;
 }
 
+
+//void IMergeTreeReader::renameColumnsWithAlters(Columns & res_columns)
+//{
+//
+//}
 
 void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows)
 {
