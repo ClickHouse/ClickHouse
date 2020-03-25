@@ -25,6 +25,7 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/geometries/multi_polygon.hpp>
 #include <boost/geometry/geometries/segment.hpp>
+#include <boost/geometry/io/svg/svg_mapper.hpp>
 
 #include <array>
 #include <vector>
@@ -254,11 +255,6 @@ private:
 
     /// Check that polygon.outer() is convex.
     inline bool isConvex(const Polygon & polygon);
-
-    using Distance = typename boost::geometry::default_comparable_distance_result<Point, Segment>::type;
-
-    /// min(distance(point, edge) : edge in polygon)
-    inline Distance distance(const Point & point, const Polygon & polygon);
 };
 
 
@@ -342,6 +338,12 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
 
             size_t cell_index = getCellIndex(row, col);
 
+            std::cerr << "cell_index: " << cell_index << "\n";
+
+            boost::geometry::svg_mapper<Point> mapper(std::cerr, 400, 400);
+            mapper.add(intersection);
+            mapper.map(intersection, "fill-opacity:0.5;fill:rgb(153,204,0);stroke:rgb(153,204,0);stroke-width:2", 5);
+
             if (intersection.empty())
                 addCell(cell_index, cell_box);
             else if (intersection.size() == 1)
@@ -398,22 +400,6 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
     __builtin_unreachable();
 }
 
-template <typename CoordinateType>
-typename PointInPolygonWithGrid<CoordinateType>::Distance
-PointInPolygonWithGrid<CoordinateType>::distance(
-        const PointInPolygonWithGrid<CoordinateType>::Point & point,
-        const PointInPolygonWithGrid<CoordinateType>::Polygon & poly)
-{
-    const auto & outer = poly.outer();
-    Distance distance = 0;
-    for (auto i : ext::range(0, outer.size() - 1))
-    {
-        Segment segment(outer[i], outer[i + 1]);
-        Distance current = boost::geometry::comparable_distance(point, segment);
-        distance = i ? std::min(current, distance) : current;
-    }
-    return distance;
-}
 
 template <typename CoordinateType>
 bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGrid<CoordinateType>::Polygon & poly)
@@ -451,8 +437,6 @@ PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
         const PointInPolygonWithGrid<CoordinateType>::Polygon & intersection)
 {
     std::vector<HalfPlane> half_planes;
-    Polygon bound;
-    boost::geometry::convert(box, bound);
     const auto & outer = intersection.outer();
 
     for (auto i : ext::range(0, outer.size() - 1))
@@ -461,7 +445,7 @@ PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
         /// If center of the edge closer to box, than don't form the half-plane.
         Segment segment(outer[i], outer[i + 1]);
         Point center((segment.first.x() + segment.second.x()) / 2, (segment.first.y() + segment.second.y()) / 2);
-        if (distance(center, polygon) < distance(center, bound))
+        if (boost::geometry::comparable_distance(center, polygon) < boost::geometry::comparable_distance(center, box))
         {
             half_planes.push_back({});
             half_planes.back().fill(segment.first, segment.second);
@@ -487,11 +471,8 @@ void PointInPolygonWithGrid<CoordinateType>::addComplexPolygonCell(
     Point max_corner(box.max_corner().x() + x_eps, box.max_corner().y() + y_eps);
     Box box_with_eps_bound(min_corner, max_corner);
 
-    Polygon bound;
-    boost::geometry::convert(box_with_eps_bound, bound);
-
     MultiPolygon intersection;
-    boost::geometry::intersection(polygon, bound, intersection);
+    boost::geometry::intersection(polygon, box_with_eps_bound, intersection);
 
     polygons.push_back(intersection);
 }
