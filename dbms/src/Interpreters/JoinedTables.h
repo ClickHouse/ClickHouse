@@ -37,6 +37,8 @@ public:
 
     const StorageID & leftTableID() const { return table_id; }
 
+    void rewriteDistributedInAndJoins(ASTPtr & query);
+
     std::unique_ptr<InterpreterSelectWithUnionQuery> makeLeftTableSubquery(const SelectQueryOptions & select_options);
 
 private:

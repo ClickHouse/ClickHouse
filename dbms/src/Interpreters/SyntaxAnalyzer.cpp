@@ -2,7 +2,6 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -818,9 +817,6 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_column_names);
-
-    /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
-    InJoinSubqueriesPreprocessor(context).visit(query);
 
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
