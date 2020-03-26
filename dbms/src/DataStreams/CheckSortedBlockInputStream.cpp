@@ -39,7 +39,7 @@ struct SortingLessComparator
 {
     const SortDescriptionsWithPositions & sort_description;
 
-    SortingLessComparator(const SortDescriptionsWithPositions & sort_description_)
+    explicit SortingLessComparator(const SortDescriptionsWithPositions & sort_description_)
         : sort_description(sort_description_) {}
 
     bool operator()(const Columns & left, size_t left_index, const Columns & right, size_t right_index) const
