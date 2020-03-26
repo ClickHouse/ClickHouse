@@ -1,38 +1,34 @@
 #pragma once
 
 #include <Processors/IProcessor.h>
-#include <Core/SortDescription.h>
-#include <Core/SortCursor.h>
-
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
 
-class MergingSortedTransform : public IProcessor
+/// Base class for merging transforms.
+class IMergingTransform : public IProcessor
 {
 public:
-    MergingSortedTransform(
-        const Block & header,
-        size_t num_inputs,
-        const SortDescription & description_,
-        size_t max_block_size,
-        UInt64 limit = 0,
-        bool quiet = false,
-        bool have_all_inputs = true);
+    IMergingTransform(size_t num_inputs, const Block & input_header, const Block & output_header, bool have_all_inputs);
 
-    String getName() const override { return "MergingSortedTransform"; }
-    Status prepare() override;
-    void work() override;
-
+    /// Methods to add additional input port. It is possible to do only before the first call of `prepare`.
     void addInput();
+    /// Need to be called after all inputs are added. (only if have_all_inputs was not specified).
     void setHaveAllInputs();
+
+    Status prepare() override;
 
 protected:
 
+    virtual void onNewInput(); /// Is called when new input is added. To initialize input's data.
+    virtual void initializeInputs() = 0; /// Is called after first chunk was read for every input.
+    virtual void consume(Chunk chunk, size_t input_number) = 0; /// Is called after chunk was consumed from input.
+
+    void requestDataForInput(size_t input_number); /// Call it to say that next chunk of data is required for input.
+    void finish() { is_finished = true; } /// Call it when all data was inserted to merged_data.
+
+    /// Struct which represents current merging chunk of data.
+    /// Also it calculates the number of merged rows.
     class MergedData
     {
     public:
@@ -96,65 +92,30 @@ protected:
         MutableColumns columns;
     };
 
-    /// Settings
-    SortDescription description;
-    const size_t max_block_size;
-    UInt64 limit;
-    bool has_collation = false;
-    bool quiet = false;
-
-    std::atomic<bool> have_all_inputs;
-
     MergedData merged_data;
 
-    /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
-    /// If it is not nullptr then it should be populated during execution
-    WriteBuffer * out_row_sources_buf = nullptr;
-
-    /// Chunks currently being merged.
-    std::vector<Chunk> source_chunks;
-
-    SortCursorImpls cursors;
-
-    SortingHeap<SortCursor> queue_without_collation;
-    SortingHeap<SortCursorWithCollation> queue_with_collation;
-
 private:
-
     /// Processor state.
     bool is_initialized = false;
     bool is_finished = false;
+
     bool need_data = false;
     size_t next_input_to_read = 0;
 
-    template <typename TSortingHeap>
-    void merge(TSortingHeap & queue);
+    std::atomic<bool> have_all_inputs;
 
-    void insertFromChunk(size_t source_num);
-
-    void updateCursor(Chunk chunk, size_t source_num)
+    struct InputState
     {
-        auto num_rows = chunk.getNumRows();
-        auto columns = chunk.detachColumns();
-        for (auto & column : columns)
-            column = column->convertToFullColumnIfConst();
+        explicit InputState(InputPort & port_) : port(port_) {}
 
-        chunk.setColumns(std::move(columns), num_rows);
+        InputPort & port;
+        bool is_initialized = false;
+    };
 
-        auto & source_chunk = source_chunks[source_num];
+    std::vector<InputState> input_states;
 
-        if (source_chunk.empty())
-        {
-            source_chunk = std::move(chunk);
-            cursors[source_num] = SortCursorImpl(source_chunk.getColumns(), description, source_num);
-            has_collation |= cursors[source_num].has_collation;
-        }
-        else
-        {
-            source_chunk = std::move(chunk);
-            cursors[source_num].reset(source_chunk.getColumns(), {});
-        }
-    }
+    Status prepareSingleInput();
+    Status prepareInitializeInputs();
 };
 
 }

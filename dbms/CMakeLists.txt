@@ -299,6 +299,7 @@ add_object_library(clickhouse_processors_formats src/Processors/Formats)
 add_object_library(clickhouse_processors_formats_impl src/Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms src/Processors/Transforms)
 add_object_library(clickhouse_processors_sources src/Processors/Sources)
+add_object_library(clickhouse_processors_sources src/Processors/Merges)
 
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
