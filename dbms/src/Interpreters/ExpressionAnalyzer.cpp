@@ -957,7 +957,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     const ASTSelectQuery & query = *query_analyzer.getSelectQuery();
     const Context & context = query_analyzer.context;
     const Settings & settings = context.getSettingsRef();
-    const StoragePtr & storage = query_analyzer.storage();
+    const ConstStoragePtr & storage = query_analyzer.storage();
 
     bool finalized = false;
     size_t where_step_num = 0;
