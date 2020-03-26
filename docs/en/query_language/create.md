@@ -380,6 +380,10 @@ A user can be assigned with multiple roles. Users can apply their assigned roles
 
 User can have a default role which applies at user login. To set the default role, use the [SET DEFAULT ROLE](misc.md#set-default-role-statement) statement or the [ALTER USER](alter.md#alter-user-statement) statement.
 
+To revoke a role, use the [REVOKE](revoke.md) statement.
+
+To delete role, use the [DROP ROLE](misc.md#drop-role) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
+
 ### Example
 
 ```sql
@@ -402,71 +406,42 @@ SET ROLE accountant;
 SELECT * FROM db.*;
 ```
 
-
-Можно сделать так, чтобы по умолчанию пользователь использовал все права, которые есть у всех его ролей. Для этого в команде `SET DEFAULT ROLE` после `ROLE` следует указать несколько ролей через запятую. Можно даже написать `SET DEFAULT ROLE ALL FOR mira` - это означает, что дефолтными ролями станут все роли, которые у Миры есть. Как вариант можно подумать над тем, чтобы сделать такую возможность по умолчанию, но пока это не реализовано. А переключение ролей можно вообще отменить (это еще одна грабля).
-
-Можно роль давать пользователю, можно роль отнимать у пользователя: `REVOKE worker FROM mira;`.
-
-Роль также можно дропнуть: `DROP ROLE worker;`. Если роль дропнута, то, соответственно, все пользователи, у которых она была, ее теряют.
-
 ## CREATE ROW POLICY {#create-row-policy}
 
-ROW-LEVEL SECURITY у нас было в какой-то степени, я для этого добавил sql-язык.
+Creates a filter for rows, which a user can read from a table. Also, you can create row filters in the [user settings](../operations/settings/settings_users.md#user-databases-settings).
 
+### Syntax {#create-row-policy-syntax}
+
+``` sql
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [db.]table
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR SELECT]
+    [USING condition]
+    [WITH CHECK condition] [,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
-CREATE ROLE POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant;
-```
 
-Такой командой мы задаем фильтр, который будет применяться. После `TO` пишется роль, к которой применяется данный фильтр. То есть написано, соответственно:
+#### Section AS {#create-row-policy-as}
 
-- `filter` - имя политики;
-- `mydb.mytable` - имя таблицы;
-- после `FOR` - для какой операции (в данном случае - `SELECT`).
+Using this section you can create permissive or restrictive policies.
 
-Дальше, понятно, сам фильтр.
+Permissive policy grants access to rows. Permissive policies which apply to the same table are combined together using the boolean `OR` operator. Policies are permissive by default.
 
-У политик управления доступом к строчкам получаются вот такие составные имена. Здесь я привел несколько других вариантов, как это можно написать:
+Restrictive policy restricts access to row. Restrictive policies which apply to the same table are combined together using the boolean `AND` operator.
 
-- (2) `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL;`
-- (3) `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant, vasya@localhost;`
-- (4) `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira;`
+Restrictive policies apply to rows that passed the permissive filters. If you set restrictive policies but no permissive policies, the user can't get any row from the table.
 
-Второй, например, вариант задает фильтр для всех пользователей, в том числе для текущего.
+#### Section TO {#create-row-policy-to}
 
-Можно написать список пользователей, список пользователей и ролей, можно смешать его. Можно написать `ALL EXCEPT <список>`. <span style="color: red;">Можно написать `TO ALL EXCEPT kind user` - кажется, имеет смысл, чтобы админ не ограничил сам себя, например.</span>
+In the section `TO` you can give a mixed list of roles and users, for example, `CREATE ROW POLICY ... TO accountant, vasya@localhost`.
 
-Сейчас использовать после `FOR` что-то, кроме `SELECT`, смысла не имеет.
+Keyword `ALL` means all the ClickHouse users including current user. Keywords `ALL EXCEPT` allow to to exclude some users from the all users list, for example `CREATE ROW POLICY ... TO ALL EXCEPT accountant, vasya@localhost`
 
-`USING a<1000` означает, что ты увидишь строчки, для которых `a<1000`. `a` - это, видимо, столбец какой-то.
 
-Политика - она дается для роли, указанной после `TO`. Можно, допустим, написать для `TO ALL` несколько команд сразу, для одной и той же таблицы, например. Это означает, что они будут объединяться при распределении. И есть вариант (я подсмотрел его в Postgres-е) прописать в команде `CREATE ROW POLICY` опциональную часть `AS PERMISSIVE`/`AS RESTRICTIVE` - ее можно задать при объединении этих политик, она будет расширять эти права или ограничивать. Но здесь я этот вариант не отобразил.
+### Examples
 
-Когда объединяются политики, там считается, что есть эти фильтры, `PERMISSIVE` и `RESTRICTIVE`. Соответственно, чтобы пользователь увидел строчку, там применяется:
-
-- `OR` ко всем `PERMISSIVE`;
-- `AND` ко всем `RESTRICTIVE`.
-
-Первой командой мы получили, что для всех пользователей, у которых есть роль `accountant`, будет использован фильтр `a<1000`. Пользователей, у которых этой роли нет, ничего не увидят. Пользователи с ролью `accountant` смогут прочитать `a=0`, поскольку `a<1000`. Фильтр задает то, что ты сможешь увидеть.
-
-Сделать запись другой, в формате `GRANT SELECT ON mydb.mytable WHERE a<1000`, допустимо. Я же подсмотрел это все в Postgress, но можно было написать и другой синтаксис.
-
-У `CREATE ROW POLICY` также есть `SHOW`, `ALTER` и `DROP`:
-
-- `SHOW CREATE ROW POLICY filter ON mydb.mytable;`
-- `ALTER ROW POLICY filter ON mydb.mytable ...;`
-- `DROP ROW POLICY filter ON mydb.mytable;`
-
-Есть еще синтаксис `FOR INSERT`, `FOR UPDATE`, `FOR DELETE`:
-
-- `CREATE ROW POLICY filter ON mydb.mytable FOR INSERT USING a<1000 TO accountant;`
-- `CREATE ROW POLICY filter ON mydb.mytable FOR UPDATE USING a<1000 TO accountant;`
-- `CREATE ROW POLICY filter ON mydb.mytable FOR DELETE USING a<1000 TO accountant;`
-
-Но он не работает. В том плане, что задать такую политику можно, но толку в ней нет никакого. Потому что фильтр не будет применен: это не реализовано. Возможно, стоит реализовать. Если не стоит, то можно синтаксис выпилить тоже.
-
-`INSERT` через `CONSTRAINT` сделать нельзя, потому что `CONSTRAINT` - это немножко другое, он будет привязан к таблице. А эта сущность будет привязана к пользователям и ролям, то есть похоже, но не совсем то.
-
-Используя `FOR DELETE`, ты можешь задать то, что ты можешь иметь право удалять.
+- `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant, vasya@localhost`
+- `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira`
 
 
 [Original article](https://clickhouse.tech/docs/en/query_language/create/) <!--hide-->

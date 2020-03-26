@@ -528,9 +528,17 @@ ALTER ROLE [IF EXISTS] name
 
 ## ALTER ROW POLICY {#alter-row-policy}
 
-Changes .
+``` sql
+ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
+    [RENAME TO new_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR {SELECT | INSERT | UPDATE | DELETE | ALL}]
+    [USING {condition | NONE}]
+    [WITH CHECK {condition | NONE}] [,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
 
 `ALTER ROW POLICY filter ON mydb.mytable ...;`
-
+`ALTER ROW POLICY filter ON mydb.mytable ...;`
 
 [Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

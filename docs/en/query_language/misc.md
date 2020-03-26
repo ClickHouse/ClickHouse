@@ -110,7 +110,7 @@ If `IF EXISTS` is specified, it doesn’t return an error if the table doesn’t
 
 ## DROP ROLE {#drop-role}
 
-## DROP ROW POLICY{#drop-row-policy}
+## DROP ROW POLICY {#drop-row-policy}
 
 `DROP ROW POLICY filter ON mydb.mytable;`
 
