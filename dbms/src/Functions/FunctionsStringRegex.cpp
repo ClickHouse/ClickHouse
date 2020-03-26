@@ -277,14 +277,16 @@ struct MatchImpl
                         next_pos += n;
                         ++i;
                     }
+                    next_pos += n;
 
                     /// We check that the entry does not pass through the boundaries of strings.
-                    if (pos + strstr_pattern.size() < next_pos)
+                    if (pos + strstr_pattern.size() <= next_pos)
                         res[i] = !revert;
                     else
                         res[i] = revert;
 
                     pos = next_pos;
+                    ++i;
                 }
             }
 
@@ -355,8 +357,9 @@ struct MatchImpl
                             next_pos += n;
                             ++i;
                         }
+                        next_pos += n;
 
-                        if (pos + strstr_pattern.size() < next_pos)
+                        if (pos + strstr_pattern.size() <= next_pos)
                         {
                             /// And if it does not, if necessary, we check the regexp.
 
@@ -390,6 +393,7 @@ struct MatchImpl
                             res[i] = revert;
 
                         pos = next_pos;
+                        ++i;
                     }
                 }
 
