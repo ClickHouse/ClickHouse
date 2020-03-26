@@ -5,7 +5,7 @@
         {% endif %}
 
         {% if single_page and page.content %}
-        <script defer type="text/javascript">
+        <script async type="text/javascript">
             {% for chunk in page.content|chunks %}
             document.write({{ chunk|tojson|safe }});
             {% endfor %}

@@ -28,7 +28,7 @@ $(document).ready(function () {
             var offset = 0;
 
             if (selector !== '#') {
-                offset = $(selector).offset().top - navbar_toggle.height() * 1.5;
+                offset = $(selector).offset().top - $('#top-nav').height() * 1.5;
                 dst += selector;
             }
             $('html, body').animate({

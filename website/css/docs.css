@@ -26,10 +26,15 @@
     margin-left: .5rem;
 }
 
+#content {
+    overflow-x: hidden;
+}
+
 #content table {
     border: 1px solid #dee2e6;
     width: 100%;
     margin-bottom: 1rem;
+    overflow-x: auto;
 }
 
 #content thead {
