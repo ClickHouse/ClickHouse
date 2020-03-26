@@ -116,7 +116,7 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
             return false;
         }
 
-        return merged_data.hasEnoughRows();
+        return !merged_data.hasEnoughRows();
     };
 
     /// Take rows in required order and put them into `merged_data`, while the rows are no more than `max_block_size`
@@ -218,7 +218,7 @@ void MergingSortedTransform::onFinish()
     if (quiet)
         return;
 
-    auto * log = &Logger::get("MergingSortedBlockInputStream");
+    auto * log = &Logger::get("MergingSortedTransform");
 
     double seconds = total_stopwatch.elapsedSeconds();
 
