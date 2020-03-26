@@ -1,0 +1,84 @@
+# Chinese translations for PROJECT.
+# Copyright (C) 2020 ORGANIZATION
+# This file is distributed under the same license as the PROJECT project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2020.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: PROJECT VERSION\n"
+"Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
+"POT-Creation-Date: 2020-03-26 10:03+0300\n"
+"PO-Revision-Date: 2020-03-26 10:19+0300\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language: zh\n"
+"Language-Team: zh <LL@li.org>\n"
+"Plural-Forms: nplurals=1; plural=0\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.8.0\n"
+
+#: ../website/templates/common_meta.html:5
+#: ../website/templates/common_meta.html:9
+#: ../website/templates/common_meta.html:17
+msgid "ClickHouse DBMS"
+msgstr ""
+
+#: ../website/templates/common_meta.html:11
+msgid ""
+"ClickHouse is an open source column-oriented database management system "
+"that allows generating analytical data reports in real time using SQL "
+"queries."
+msgstr ""
+
+#: ../website/templates/common_meta.html:20
+msgid ""
+"ClickHouse is an open source distributed column-oriented database "
+"management system that allows generating analytical data reports in real "
+"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
+"large volumes of data in a stable and sustainable manner."
+msgstr ""
+
+#: ../website/templates/footer.html:8
+msgid "ClickHouse source code is published under the Apache 2.0 License."
+msgstr ""
+
+#: ../website/templates/footer.html:8
+msgid ""
+"Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR "
+"CONDITIONS OF ANY KIND, either express or implied."
+msgstr ""
+
+#: ../website/templates/footer.html:11
+msgid "Yandex LLC"
+msgstr ""
+
+#: ../website/templates/docs/content.html:6
+msgid "Built from"
+msgstr ""
+
+#: ../website/templates/docs/sidebar.html:4
+msgid "Multi-page version"
+msgstr ""
+
+#: ../website/templates/docs/sidebar.html:7
+msgid "Single-page version"
+msgstr ""
+
+#: ../website/templates/docs/sidebar.html:12
+msgid "Version"
+msgstr ""
+
+#: ../website/templates/docs/sidebar.html:12
+#: ../website/templates/docs/sidebar.html:18
+msgid "latest"
+msgstr ""
+
+#: ../website/templates/docs/sidebar.html:35
+msgid "PDF version"
+msgstr ""
+
+#: ../website/templates/docs/toc.html:8
+msgid "Table of Contents"
+msgstr ""
+
