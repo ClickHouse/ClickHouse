@@ -314,7 +314,7 @@ public:
         size_t result_size = pattern_to_fill.size();
 
         const DateLUTImpl * time_zone_tmp = nullptr;
-        if (arguments.size() == 3)
+        if (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
         else
             time_zone_tmp = &DateLUT::instance();
