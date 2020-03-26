@@ -1,5 +1,5 @@
 function onResize() {
-    $('#sidebar, #toc').css({
+    $('#sidebar, #toc.toc-right').css({
         'height': ($(window).height() - $('#top-nav').height()) + 'px'
     });
     $('body').attr('data-offset', $(window).height().toString());
@@ -23,6 +23,7 @@ function onResize() {
     }
 }
 $(document).ready(function () {
+    onResize();
     $('#sidebar .nav-link.active').parents('.collapse').each(function() {
         var current = $(this);
         if (current.attr('id') !== 'sidebar') {
@@ -31,7 +32,6 @@ $(document).ready(function () {
             current.css('transition-duration', '0.4s');
         }
     });
-    onResize();
     $(window).resize(onResize);
     $(window).on('activate.bs.scrollspy', function () {
         var maxActiveOffset = 0;
