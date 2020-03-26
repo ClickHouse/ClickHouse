@@ -99,7 +99,7 @@ IProcessor::Status IMergingTransform::prepareInitializeInputs()
         if (input.isFinished())
             continue;
 
-        if (!input_states[i].is_initialized)
+        if (input_states[i].is_initialized)
         {
             // input.setNotNeeded();
             continue;
