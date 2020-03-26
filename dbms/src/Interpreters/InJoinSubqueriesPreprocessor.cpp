@@ -98,8 +98,8 @@ private:
                 throw Exception("Distributed table should have an alias when distributed_product_mode set to local.",
                                 ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
 
-            database_and_table = createTableIdentifier(database, table);
-            database_and_table->setAlias(alias);
+            auto & identifier = database_and_table->as<ASTIdentifier &>();
+            identifier.resetTable(database, table);
         }
         else
             throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting",
