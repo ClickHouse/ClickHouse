@@ -36,14 +36,14 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     , topics(_topics)
 {
     // called (synchroniously, during poll) when we enter the consumer group
-    consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList& topic_partitions)
+    consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
         LOG_TRACE(log, "Topics/partitions assigned: " << topic_partitions);
         assignment = topic_partitions;
     });
 
     // called (synchroniously, during poll) when we leave the consumer group
-    consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList& topic_partitions)
+    consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
         // Rebalance is happening now, and now we have a chance to finish the work
         // with topics/partitions we were working with before rebalance
@@ -149,7 +149,7 @@ void ReadBufferFromKafkaConsumer::commit()
         size_t max_retries = 5;
         bool commited = false;
 
-        while (!commited && max_retries>0)
+        while (!commited && max_retries > 0)
         {
             try
             {
@@ -165,7 +165,7 @@ void ReadBufferFromKafkaConsumer::commit()
             {
                 LOG_ERROR(log, "Exception during commit attempt: " << e.what());
             }
-            max_retries--;
+            --max_retries;
         }
 
         if (!commited)
