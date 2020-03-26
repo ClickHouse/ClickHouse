@@ -365,6 +365,11 @@ using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
 } /// namelesspace
 
 
+bool JoinToSubqueryTransformMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
+{
+    return !node->as<ASTSubquery>();
+}
+
 void JoinToSubqueryTransformMatcher::visit(ASTPtr & ast, Data & data)
 {
     if (auto * t = ast->as<ASTSelectQuery>())
