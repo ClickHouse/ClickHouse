@@ -366,9 +366,7 @@ void BaseDaemon::reloadConfiguration()
 }
 
 
-BaseDaemon::BaseDaemon()
-{
-}
+BaseDaemon::BaseDaemon() = default;
 
 
 BaseDaemon::~BaseDaemon()
