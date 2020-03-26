@@ -3,6 +3,7 @@ LIBRARY()
 ADDINCL(
     # public
     GLOBAL clickhouse/base
+    GLOBAL clickhouse/contrib/cityhash
     GLOBAL clickhouse/dbms/src
 
     # private
@@ -14,10 +15,16 @@ PEERDIR(
     contrib/libs/cxxsupp/libcxx-filesystem
     contrib/libs/poco/Net
     contrib/libs/poco/Util
-    contrib/restricted/boost
+    contrib/restricted/boost/libs
 )
 
-CFLAGS (GLOBAL -DARCADIA_BUILD)
+CFLAGS(
+    GLOBAL -DARCADIA_BUILD
+)
+
+CXXFLAGS(
+    GLOBAL -std=c++20
+)
 
 IF (OS_DARWIN)
     CFLAGS (GLOBAL -DOS_DARWIN)
@@ -44,7 +51,6 @@ SRCS(
     setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp
-    StringRef.cpp
     terminalColors.cpp
 )
 

@@ -1,11 +1,94 @@
 LIBRARY()
 
 PEERDIR(
+    clickhouse/contrib/croaring
+    clickhouse/contrib/murmurhash
     clickhouse/dbms/src/Common
+    clickhouse/dbms/src/Dictionaries
+    contrib/libs/farmhash
+    contrib/libs/hyperscan
+    contrib/libs/metrohash
+    contrib/libs/rapidjson
+    contrib/libs/xxhash
 )
 
 SRCS(
+    array/array.cpp
+    array/arrayConcat.cpp
+    array/arrayDistinct.cpp
+    array/arrayElement.cpp
+    array/arrayEnumerate.cpp
+    array/arrayEnumerateDense.cpp
+    array/arrayEnumerateDenseRanked.cpp
+    array/arrayEnumerateUniq.cpp
+    array/arrayEnumerateUniqRanked.cpp
+    array/arrayFlatten.cpp
+    array/arrayIntersect.cpp
+    array/arrayPopBack.cpp
+    array/arrayPopFront.cpp
+    array/arrayPushBack.cpp
+    array/arrayPushFront.cpp
+    array/arrayReduce.cpp
+    array/arrayResize.cpp
+    array/arrayReverse.cpp
+    array/arraySlice.cpp
+    array/arrayUniq.cpp
+    array/arrayWithConstant.cpp
+    array/arrayZip.cpp
+    array/countEqual.cpp
+    array/emptyArray.cpp
+    array/emptyArrayToSingle.cpp
+    array/has.cpp
+    array/hasAll.cpp
+    array/hasAny.cpp
+    array/indexOf.cpp
+    array/range.cpp
+    array/registerFunctionsArray.cpp
+    FunctionFactory.cpp
+    FunctionsBitmap.cpp
+    FunctionsCoding.cpp
+    FunctionsConversion.cpp
+    FunctionsEmbeddedDictionaries.cpp
+    FunctionsExternalDictionaries.cpp
+    FunctionsExternalModels.cpp
+    FunctionsFormatting.cpp
+    FunctionsHashing.cpp
+    FunctionHelpers.cpp
+    FunctionsJSON.cpp
+    FunctionsLogical.cpp
+    FunctionsRound.cpp
+    FunctionsStringArray.cpp
+    FunctionsStringRegex.cpp
+    FunctionsStringSearch.cpp
+    FunctionsStringSimilarity.cpp
+    GatherUtils/createArraySink.cpp
+    GatherUtils/createArraySource.cpp
+    GatherUtils/has.cpp
+    GatherUtils/sliceDynamicOffsetBounded.cpp
+    GatherUtils/sliceDynamicOffsetUnbounded.cpp
+    GatherUtils/sliceFromLeftConstantOffsetBounded.cpp
+    GatherUtils/sliceFromLeftConstantOffsetUnbounded.cpp
+    GatherUtils/sliceFromRightConstantOffsetBounded.cpp
+    GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
+    IFunction.cpp
     registerFunctions.cpp
+    registerFunctionsArithmetic.cpp
+    registerFunctionsComparison.cpp
+    registerFunctionsConditional.cpp
+    registerFunctionsConsistentHashing.cpp
+    registerFunctionsDateTime.cpp
+    registerFunctionsGeo.cpp
+    registerFunctionsHigherOrder.cpp
+    registerFunctionsIntrospection.cpp
+    registerFunctionsMath.cpp
+    registerFunctionsMiscellaneous.cpp
+    registerFunctionsNull.cpp
+    registerFunctionsRandom.cpp
+    registerFunctionsReinterpret.cpp
+    registerFunctionsString.cpp
+    registerFunctionsTuple.cpp
+    registerFunctionsVisitParam.cpp
+    URL/registerFunctionsURL.cpp
 )
 
 END()

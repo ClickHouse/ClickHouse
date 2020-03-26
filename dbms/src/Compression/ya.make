@@ -1,5 +1,10 @@
 LIBRARY()
 
+ADDINCL(
+    contrib/libs/lz4
+    contrib/libs/zstd
+)
+
 PEERDIR(
     clickhouse/dbms/src/Common
     contrib/libs/lz4
@@ -18,8 +23,10 @@ SRCS(
     CompressionFactory.cpp
     CompressedReadBuffer.cpp
     CompressedReadBufferBase.cpp
+    CompressedReadBufferFromFile.cpp
     CompressedWriteBuffer.cpp
     ICompressionCodec.cpp
+    LZ4_decompress_faster.cpp
 )
 
 END()

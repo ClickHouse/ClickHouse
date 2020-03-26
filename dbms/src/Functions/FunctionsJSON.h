@@ -5,7 +5,11 @@
 #include <Functions/DummyJSONParser.h>
 #include <Functions/SimdJSONParser.h>
 #include <Functions/RapidJSONParser.h>
-#include "config_functions.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
 #include <Common/CpuId.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>

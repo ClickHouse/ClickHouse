@@ -16,7 +16,6 @@
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"
 
-#include <Common/config.h>
 #include "registerDictionaries.h"
 
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC

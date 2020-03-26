@@ -1,6 +1,8 @@
 LIBRARY()
 
 PEERDIR(
+    clickhouse/contrib/croaring
+    clickhouse/contrib/pcg-random
     clickhouse/dbms/src/Common
 )
 

@@ -1,19 +1,52 @@
 LIBRARY()
 
+NO_COMPILER_WARNINGS()
+
 PEERDIR(
+    clickhouse/contrib/btrie
     clickhouse/dbms/src/Common
+    contrib/libs/poco/Data
+    contrib/libs/poco/Data/ODBC
     contrib/libs/poco/MongoDB
     contrib/libs/poco/Redis
+    contrib/libs/sparsehash
 )
 
 SRCS(
+    CacheDictionary.cpp
+    CacheDictionary_generate1.cpp
+    CacheDictionary_generate2.cpp
     ClickHouseDictionarySource.cpp
+    ComplexKeyCacheDictionary.cpp
+    ComplexKeyCacheDictionary_createAttributeWithType.cpp
+    ComplexKeyCacheDictionary_generate1.cpp
+    ComplexKeyCacheDictionary_generate2.cpp
+    ComplexKeyCacheDictionary_setAttributeValue.cpp
+    ComplexKeyCacheDictionary_setDefaultAttributeValue.cpp
+    ComplexKeyHashedDictionary.cpp
+    DictionaryBlockInputStreamBase.cpp
+    DictionaryFactory.cpp
     DictionarySourceFactory.cpp
+    DictionarySourceHelpers.cpp
+    DictionaryStructure.cpp
+    ExecutableDictionarySource.cpp
+    ExternalQueryBuilder.cpp
     FileDictionarySource.cpp
+    FlatDictionary.cpp
+    getDictionaryConfigurationFromAST.cpp
+    HashedDictionary.cpp
+    HTTPDictionarySource.cpp
+    LibraryDictionarySource.cpp
+    LibraryDictionarySourceExternal.cpp
     MongoDBDictionarySource.cpp
     MySQLDictionarySource.cpp
+    PolygonDictionary.cpp
+    RangeHashedDictionary.cpp
+    readInvalidateQuery.cpp
     RedisDictionarySource.cpp
     registerDictionaries.cpp
+    TrieDictionary.cpp
+    writeParenthesisedString.cpp
     XDBCDictionarySource.cpp
 )
 

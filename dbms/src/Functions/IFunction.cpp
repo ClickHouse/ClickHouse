@@ -1,6 +1,9 @@
 #include <Functions/IFunctionAdaptors.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <Common/LRUCache.h>

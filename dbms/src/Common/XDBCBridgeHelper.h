@@ -12,7 +12,11 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
-#include <Common/config.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #include <common/logger_useful.h>
 #include <ext/range.h>
 

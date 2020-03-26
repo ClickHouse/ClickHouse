@@ -6,6 +6,7 @@ PEERDIR(
 
 SRCS(
     AsynchronousMetrics.cpp
+    castColumn.cpp
     ClientInfo.cpp
     Context.cpp
     convertFieldToType.cpp
@@ -15,6 +16,7 @@ SRCS(
     executeQuery.cpp
     ExternalLoader.cpp
     ExternalLoaderXMLConfigRepository.cpp
+    IExternalLoadable.cpp
     InternalTextLogsQueue.cpp
     InterpreterCreateQuotaQuery.cpp
     InterpreterCreateRoleQuery.cpp
@@ -25,6 +27,7 @@ SRCS(
     InterpreterShowGrantsQuery.cpp
     loadMetadata.cpp
     ProcessList.cpp
+    StorageID.cpp
     TablesStatus.cpp
     ThreadStatusExt.cpp
 )

@@ -1,7 +1,15 @@
 LIBRARY()
 
+ADDINCL(
+    clickhouse/contrib/cityhash
+    contrib/libs/libunwind/include
+)
+
 PEERDIR(
     clickhouse/base/common
+    clickhouse/contrib/cityhash
+    clickhouse/contrib/pcg-random
+    clickhouse/contrib/ryu
     contrib/libs/libcpuid
     contrib/libs/re2
 )
@@ -22,6 +30,7 @@ SRCS(
     AlignedBuffer.cpp
     Config/ConfigProcessor.cpp
     Config/ConfigReloader.cpp
+    createHardLink.cpp
     CurrentMetrics.cpp
     CurrentThread.cpp
     DNSResolver.cpp
@@ -39,16 +48,21 @@ SRCS(
     getNumberOfPhysicalCPUCores.cpp
     hasLinuxCapability.cpp
     hex.cpp
+    IntervalKind.cpp
+    isLocalAddress.cpp
     Macros.cpp
     MemoryTracker.cpp
     PipeFDs.cpp
     PODArray.cpp
     ProfileEvents.cpp
     randomSeed.cpp
+    RemoteHostFilter.cpp
     QueryProfiler.cpp
     quoteString.cpp
     SensitiveDataMasker.cpp
     setThreadName.cpp
+    SharedLibrary.cpp
+    ShellCommand.cpp
     StackTrace.cpp
     StatusFile.cpp
     SymbolIndex.cpp
@@ -61,6 +75,7 @@ SRCS(
     ZooKeeper/IKeeper.cpp
     ZooKeeper/TestKeeper.cpp
     ZooKeeper/ZooKeeper.cpp
+    ZooKeeper/ZooKeeperImpl.cpp
     ZooKeeper/ZooKeeperNodeCache.cpp
 )
 

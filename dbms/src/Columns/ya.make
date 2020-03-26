@@ -1,10 +1,15 @@
 LIBRARY()
 
+NO_COMPILER_WARNINGS()
+
 PEERDIR(
+    clickhouse/contrib/pdqsort
     clickhouse/dbms/src/Common
+    contrib/libs/icu
 )
 
 SRCS(
+    Collator.cpp
     ColumnAggregateFunction.cpp
     ColumnArray.cpp
     ColumnConst.cpp

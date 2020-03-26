@@ -1,6 +1,9 @@
 #pragma once
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_EMBEDDED_COMPILER
 
 #include <Common/typeid_cast.h>

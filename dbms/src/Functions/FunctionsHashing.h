@@ -10,12 +10,18 @@
 #include <Common/typeid_cast.h>
 #include <Common/HashTable/Hash.h>
 
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
 #if USE_XXHASH
 #   include <xxhash.h>
 #endif
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_SSL
 #   include <openssl/md5.h>
 #   include <openssl/sha.h>

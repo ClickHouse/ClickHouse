@@ -29,7 +29,9 @@ SRCS(
     DataTypeString.cpp
     DataTypeTuple.cpp
     DataTypeUUID.cpp
+    getLeastSupertype.cpp
     IDataType.cpp
+    NestedUtils.cpp
 )
 
 END()

@@ -1,5 +1,9 @@
 #include <algorithm>
-#include <Common/config.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>

@@ -156,8 +156,14 @@ private:
     template <typename Value>
     using CollectionPtrType = std::unique_ptr<CollectionType<Value>>;
 
+#if !defined(ARCADIA_BUILD)
     template <typename Value>
     using SparseCollectionType = google::sparse_hash_map<UInt64, Value, DefaultHash<UInt64>>;
+#else
+    template <typename Value>
+    using SparseCollectionType = google::sparsehash::sparse_hash_map<UInt64, Value, DefaultHash<UInt64>>;
+#endif
+
     template <typename Value>
     using SparseCollectionPtrType = std::unique_ptr<SparseCollectionType<Value>>;
 

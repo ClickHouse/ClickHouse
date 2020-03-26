@@ -1,13 +1,16 @@
 LIBRARY()
 
 PEERDIR(
-    clickhouse/base/common
+    clickhouse/dbms/src/Common
+    contrib/libs/poco/NetSSL_OpenSSL
 )
 
 SRCS(
     CascadeWriteBuffer.cpp
     CompressionMethod.cpp
     copyData.cpp
+    createReadBufferFromFileBase.cpp
+    createWriteBufferFromFileBase.cpp
     DoubleConverter.cpp
     HTTPCommon.cpp
     LimitReadBuffer.cpp
@@ -25,9 +28,11 @@ SRCS(
     ReadHelpers.cpp
     UseSSL.cpp
     WriteBufferFromFile.cpp
+    WriteBufferFromFileBase.cpp
     WriteBufferFromFileDescriptor.cpp
     WriteBufferFromFileDescriptorDiscardOnFailure.cpp
     WriteBufferFromHTTPServerResponse.cpp
+    WriteBufferFromOStream.cpp
     WriteBufferFromPocoSocket.cpp
     WriteBufferFromTemporaryFile.cpp
     WriteHelpers.cpp

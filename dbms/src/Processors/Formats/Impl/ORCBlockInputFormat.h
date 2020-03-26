@@ -1,6 +1,9 @@
 #pragma once
 
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
+
 #include <DataStreams/IBlockInputStream.h>
 #include <Processors/Chunk.h>
 #include <Processors/Formats/IInputFormat.h>

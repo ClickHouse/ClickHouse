@@ -6,6 +6,9 @@ PEERDIR(
 )
 
 SRCS(
+    FormatFactory.cpp
+    NativeFormat.cpp
+    NullFormat.cpp
 )
 
 END()

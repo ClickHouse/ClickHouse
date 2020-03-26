@@ -14,14 +14,12 @@
 #include <Common/ProfileEvents.h>
 #include <common/StringRef.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
-#include "config_functions.h"
 #if USE_HYPERSCAN
-#    if __has_include(<hs/hs.h>)
-#        include <hs/hs.h>
-#    else
-#        include <hs.h>
-#    endif
+#    include <hs.h>
 #endif
 
 namespace ProfileEvents

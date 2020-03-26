@@ -1,6 +1,9 @@
 #pragma once
 
-#include "config_functions.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
+
 #if USE_SIMDJSON
 
 #include <common/StringRef.h>

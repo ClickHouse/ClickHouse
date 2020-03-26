@@ -2,12 +2,55 @@ LIBRARY()
 
 PEERDIR(
     clickhouse/dbms/src/Common
+    contrib/libs/protobuf_std
 )
 
 SRCS(
+    Chunk.cpp
+    ConcatProcessor.cpp
     Executors/PipelineExecutor.cpp
+    Formats/IInputFormat.cpp
+    Formats/Impl/AvroRowInputFormat.cpp
+    Formats/Impl/AvroRowOutputFormat.cpp
+    Formats/Impl/BinaryRowInputFormat.cpp
+    Formats/Impl/BinaryRowOutputFormat.cpp
+    Formats/Impl/CapnProtoRowInputFormat.cpp
+    Formats/Impl/CSVRowInputFormat.cpp
+    Formats/Impl/CSVRowOutputFormat.cpp
+    Formats/Impl/JSONCompactEachRowRowInputFormat.cpp
+    Formats/Impl/JSONCompactEachRowRowOutputFormat.cpp
+    Formats/Impl/JSONCompactRowOutputFormat.cpp
+    Formats/Impl/JSONEachRowRowInputFormat.cpp
+    Formats/Impl/JSONEachRowRowOutputFormat.cpp
+    Formats/Impl/JSONEachRowWithProgressRowOutputFormat.cpp
+    Formats/Impl/JSONRowOutputFormat.cpp
+    Formats/Impl/MySQLOutputFormat.cpp
+    Formats/Impl/NativeFormat.cpp
+    Formats/Impl/NullFormat.cpp
+    Formats/Impl/ODBCDriverBlockOutputFormat.cpp
+    Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
+    Formats/Impl/ORCBlockInputFormat.cpp
+    Formats/Impl/ParquetBlockInputFormat.cpp
+    Formats/Impl/ParquetBlockOutputFormat.cpp
+    Formats/Impl/PrettyBlockOutputFormat.cpp
+    Formats/Impl/PrettyCompactBlockOutputFormat.cpp
+    Formats/Impl/PrettySpaceBlockOutputFormat.cpp
+    Formats/Impl/ProtobufRowInputFormat.cpp
+    Formats/Impl/ProtobufRowOutputFormat.cpp
+    Formats/Impl/TabSeparatedRowInputFormat.cpp
+    Formats/Impl/TabSeparatedRowOutputFormat.cpp
+    Formats/Impl/TemplateBlockOutputFormat.cpp
+    Formats/Impl/TemplateRowInputFormat.cpp
+    Formats/Impl/TSKVRowInputFormat.cpp
+    Formats/Impl/TSKVRowOutputFormat.cpp
+    Formats/Impl/ValuesBlockInputFormat.cpp
+    Formats/Impl/ValuesRowOutputFormat.cpp
+    Formats/Impl/VerticalRowOutputFormat.cpp
+    Formats/Impl/XMLRowOutputFormat.cpp
     Formats/IOutputFormat.cpp
     Formats/LazyOutputFormat.cpp
+    Formats/OutputStreamToOutputFormat.cpp
+    IProcessor.cpp
     ISink.cpp
     ISource.cpp
     Pipe.cpp
@@ -15,6 +58,7 @@ SRCS(
     QueryPipeline.cpp
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
+    Sources/SourceWithProgress.cpp
 )
 
 END()

@@ -520,7 +520,7 @@ public:
                     ans.push_back(val);
                 }
             }
-            sort(ans.begin(), ans.end());
+            std::sort(ans.begin(), ans.end());
             if (limit > ans.size())
                 limit = ans.size();
             for (size_t i = 0; i < limit; ++i)
