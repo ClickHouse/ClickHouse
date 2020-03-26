@@ -273,7 +273,6 @@ private:
     void executeSingleThread(size_t thread_num, size_t num_threads);
     void finish();
 
-public:
     String dumpPipeline() const;
 };
 
