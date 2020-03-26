@@ -4,6 +4,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Columns/ColumnArray.h>
@@ -20,8 +21,8 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
 }
 
-MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_)
-    : IRowOutputFormat(header_, out_, callback), settings(settings_), packer(out_) {}
+MsgPackRowOutputFormat::MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback)
+    : IRowOutputFormat(header_, out_, callback), packer(out_) {}
 
 void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num)
 {
@@ -32,11 +33,13 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             packer.pack_uint8(assert_cast<const ColumnUInt8 &>(column).getElement(row_num));
             return;
         }
+        case TypeIndex::Date: [[fallthrough]];
         case TypeIndex::UInt16:
         {
             packer.pack_uint16(assert_cast<const ColumnUInt16 &>(column).getElement(row_num));
             return;
         }
+        case TypeIndex::DateTime: [[fallthrough]];
         case TypeIndex::UInt32:
         {
             packer.pack_uint32(assert_cast<const ColumnUInt32 &>(column).getElement(row_num));
@@ -77,27 +80,13 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             packer.pack_double(assert_cast<const ColumnFloat64 &>(column).getElement(row_num));
             return;
         }
-        case TypeIndex::Date:
+        case TypeIndex::DateTime64:
         {
-            packer.pack_uint16(assert_cast<const ColumnUInt16 &>(column).getElement(row_num));
+            packer.pack_uint64(assert_cast<const DataTypeDateTime64::ColumnType &>(column).getElement(row_num));
             return;
         }
-        case TypeIndex::DateTime:
-        {
-            UInt32 datetime = assert_cast<const ColumnUInt32 &>(column).getElement(row_num);
-            // Timestamp extension type in MsgPack is -1.
-            packer.pack_ext(sizeof(datetime), -1);
-            packer.pack_ext_body(reinterpret_cast<const char *>(&datetime), sizeof(datetime));
-            return;
-        }
+        case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::String:
-        {
-            const StringRef & string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
-            packer.pack_str(string.size);
-            packer.pack_str_body(string.data, string.size);
-            return;
-        }
-        case TypeIndex::FixedString:
         {
             const StringRef & string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
             packer.pack_str(string.size);
@@ -155,9 +144,9 @@ void registerOutputFormatProcessorMsgPack(FormatFactory & factory)
             WriteBuffer & buf,
             const Block & sample,
             FormatFactory::WriteCallback callback,
-            const FormatSettings & settings)
+            const FormatSettings &)
     {
-        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, callback, settings);
+        return std::make_shared<MsgPackRowOutputFormat>(buf, sample, callback);
     });
 }
 

@@ -352,6 +352,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorAvro(*this);
     registerInputFormatProcessorTemplate(*this);
     registerOutputFormatProcessorTemplate(*this);
+    registerInputFormatProcessorMsgPack(*this);
     registerOutputFormatProcessorMsgPack(*this);
 
     registerFileSegmentationEngineTabSeparated(*this);
