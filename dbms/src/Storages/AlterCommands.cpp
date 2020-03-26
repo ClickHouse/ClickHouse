@@ -34,7 +34,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
@@ -86,16 +85,18 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::DROP_COLUMN && !command_ast->partition)
+    else if (command_ast->type == ASTAlterCommand::DROP_COLUMN)
     {
-        if (command_ast->clear_column)
-            throw Exception(R"("ALTER TABLE table CLEAR COLUMN column" queries are not supported yet. Use "CLEAR COLUMN column IN PARTITION".)", ErrorCodes::NOT_IMPLEMENTED);
-
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::DROP_COLUMN;
         command.column_name = getIdentifierName(command_ast->column);
         command.if_exists = command_ast->if_exists;
+        if (command_ast->clear_column)
+            command.clear = true;
+
+        if (command_ast->partition)
+            command.partition = command_ast->partition;
         return command;
     }
     else if (command_ast->type == ASTAlterCommand::MODIFY_COLUMN)
@@ -186,11 +187,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT && !command_ast->partition)
+    else if (command_ast->type == ASTAlterCommand::DROP_CONSTRAINT)
     {
-        if (command_ast->clear_column)
-            throw Exception(R"("ALTER TABLE table CLEAR COLUMN column" queries are not supported yet. Use "CLEAR COLUMN column IN PARTITION".)", ErrorCodes::NOT_IMPLEMENTED);
-
         AlterCommand command;
         command.ast = command_ast->clone();
         command.if_exists = command_ast->if_exists;
@@ -199,16 +197,18 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
-    else if (command_ast->type == ASTAlterCommand::DROP_INDEX && !command_ast->partition)
+    else if (command_ast->type == ASTAlterCommand::DROP_INDEX)
     {
-        if (command_ast->clear_column)
-            throw Exception(R"("ALTER TABLE table CLEAR INDEX index" queries are not supported yet. Use "CLEAR INDEX index IN PARTITION".)", ErrorCodes::NOT_IMPLEMENTED);
-
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::DROP_INDEX;
         command.index_name = command_ast->index->as<ASTIdentifier &>().name;
         command.if_exists = command_ast->if_exists;
+        if (command_ast->clear_index)
+            command.clear = true;
+
+        if (command_ast->partition)
+            command.partition = command_ast->partition;
 
         return command;
     }
@@ -263,7 +263,9 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
     }
     else if (type == DROP_COLUMN)
     {
-        metadata.columns.remove(column_name);
+        /// Otherwise just clear data on disk
+        if (!clear && !partition)
+            metadata.columns.remove(column_name);
     }
     else if (type == MODIFY_COLUMN)
     {
@@ -354,23 +356,25 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
     }
     else if (type == DROP_INDEX)
     {
-        auto erase_it = std::find_if(
-                metadata.indices.indices.begin(),
-                metadata.indices.indices.end(),
-                [this](const ASTPtr & index_ast)
-                {
-                    return index_ast->as<ASTIndexDeclaration &>().name == index_name;
-                });
-
-        if (erase_it == metadata.indices.indices.end())
+        if (!partition && !clear)
         {
-            if (if_exists)
-                return;
-            throw Exception("Wrong index name. Cannot find index " + backQuote(index_name) + " to drop.",
-                            ErrorCodes::BAD_ARGUMENTS);
-        }
+            auto erase_it = std::find_if(
+                    metadata.indices.indices.begin(),
+                    metadata.indices.indices.end(),
+                    [this](const ASTPtr & index_ast)
+                    {
+                        return index_ast->as<ASTIndexDeclaration &>().name == index_name;
+                    });
 
-        metadata.indices.indices.erase(erase_it);
+            if (erase_it == metadata.indices.indices.end())
+            {
+                if (if_exists)
+                    return;
+                throw Exception("Wrong index name. Cannot find index " + backQuote(index_name) + " to drop.", ErrorCodes::BAD_ARGUMENTS);
+            }
+
+            metadata.indices.indices.erase(erase_it);
+        }
     }
     else if (type == ADD_CONSTRAINT)
     {
@@ -515,7 +519,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (ignore)
         return false;
 
-    if (type == DROP_COLUMN)
+    if (type == DROP_COLUMN || type == DROP_INDEX)
         return true;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
@@ -564,12 +568,21 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(const S
     {
         result.type = MutationCommand::Type::DROP_COLUMN;
         result.column_name = column_name;
+        if (clear)
+            result.clear = true;
+        if (partition)
+            result.partition = partition;
         result.predicate = nullptr;
     }
     else if (type == DROP_INDEX)
     {
         result.type = MutationCommand::Type::DROP_INDEX;
-        result.column_name = column_name;
+        result.column_name = index_name;
+        if (clear)
+            result.clear = true;
+        if (partition)
+            result.partition = partition;
+
         result.predicate = nullptr;
     }
 

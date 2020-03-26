@@ -409,7 +409,7 @@ static void test3()
 
         Array arr2{std::move(arr)};
 
-        ASSERT_CHECK((arr.empty()), res);
+        ASSERT_CHECK((arr.empty()), res); // NOLINT
 
         ASSERT_CHECK((arr2.size() == 3), res);
         ASSERT_CHECK((arr2[0] == 1), res);
@@ -428,7 +428,7 @@ static void test3()
 
         Array arr2{std::move(arr)};
 
-        ASSERT_CHECK((arr.empty()), res);
+        ASSERT_CHECK((arr.empty()), res); // NOLINT
 
         ASSERT_CHECK((arr2.size() == 5), res);
         ASSERT_CHECK((arr2[0] == 1), res);

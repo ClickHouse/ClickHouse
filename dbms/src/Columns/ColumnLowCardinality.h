@@ -90,6 +90,8 @@ public:
         return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
 
+    void updateWeakHash32(WeakHash32 & hash) const override;
+
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().filter(filt, result_size_hint));
@@ -230,6 +232,8 @@ public:
 
         bool containsDefault() const;
 
+        void updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const;
+
     private:
         WrappedPtr positions;
         size_t size_of_type = 0;
@@ -275,8 +279,6 @@ private:
     private:
         WrappedPtr column_unique;
         bool shared = false;
-
-        void checkColumn(const IColumn & column);
     };
 
     Dictionary dictionary;

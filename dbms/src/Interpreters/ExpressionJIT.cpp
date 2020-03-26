@@ -137,7 +137,7 @@ struct SymbolResolver : public llvm::orc::SymbolResolver
 {
     llvm::LegacyJITSymbolResolver & impl;
 
-    SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
+    explicit SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
 
     llvm::orc::SymbolNameSet getResponsibilitySet(const llvm::orc::SymbolNameSet & symbols) final
     {
@@ -528,27 +528,27 @@ bool LLVMFunction::hasInformationAboutMonotonicity() const
 
 LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const
 {
-    const IDataType * type_ = &type;
-    Field left_ = left;
-    Field right_ = right;
+    const IDataType * type_ptr = &type;
+    Field left_mut = left;
+    Field right_mut = right;
     Monotonicity result(true, true, true);
     /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
     for (size_t i = 0; i < originals.size(); ++i)
     {
-        Monotonicity m = originals[i]->getMonotonicityForRange(*type_, left_, right_);
+        Monotonicity m = originals[i]->getMonotonicityForRange(*type_ptr, left_mut, right_mut);
         if (!m.is_monotonic)
             return m;
         result.is_positive ^= !m.is_positive;
         result.is_always_monotonic &= m.is_always_monotonic;
         if (i + 1 < originals.size())
         {
-            if (left_ != Field())
-                applyFunction(*originals[i], left_);
-            if (right_ != Field())
-                applyFunction(*originals[i], right_);
+            if (left_mut != Field())
+                applyFunction(*originals[i], left_mut);
+            if (right_mut != Field())
+                applyFunction(*originals[i], right_mut);
             if (!m.is_positive)
-                std::swap(left_, right_);
-            type_ = originals[i]->getReturnType().get();
+                std::swap(left_mut, right_mut);
+            type_ptr = originals[i]->getReturnType().get();
         }
     }
     return result;

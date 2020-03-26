@@ -17,7 +17,7 @@ namespace DB
  *  It doesn't make any manipulations with filesystem.
  *  All tables are created by calling code after real-time pull-out structure from remote MySQL
  */
-class DatabaseMySQL : public IDatabase
+class DatabaseMySQL final : public IDatabase
 {
 public:
     ~DatabaseMySQL() override;
@@ -30,7 +30,7 @@ public:
 
     bool empty(const Context & context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
 
     ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const override;
 

@@ -26,8 +26,8 @@ namespace
 
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
-    DatabaseAndTableWithAlias db_and_table(database_and_table);
-    return context.tryGetTable(db_and_table.database, db_and_table.table);
+    auto table_id = context.resolveStorageID(database_and_table);
+    return DatabaseCatalog::instance().tryGetTable(table_id);
 }
 
 using CheckShardsAndTables = InJoinSubqueriesPreprocessor::CheckShardsAndTables;
@@ -98,8 +98,8 @@ private:
                 throw Exception("Distributed table should have an alias when distributed_product_mode set to local.",
                                 ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
 
-            database_and_table = createTableIdentifier(database, table);
-            database_and_table->setAlias(alias);
+            auto & identifier = database_and_table->as<ASTIdentifier &>();
+            identifier.resetTable(database, table);
         }
         else
             throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting",

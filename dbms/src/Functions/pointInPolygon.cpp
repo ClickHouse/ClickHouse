@@ -121,28 +121,28 @@ public:
             throw Exception("Too few arguments", ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION);
         }
 
-        auto getMsgPrefix = [this](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
+        auto get_message_prefix = [this](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
             auto * array = checkAndGetDataType<DataTypeArray>(arguments[i].get());
             if (array == nullptr && i != 1)
-                throw Exception(getMsgPrefix(i) + " must be array of tuples.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(get_message_prefix(i) + " must be array of tuples.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             auto * tuple = checkAndGetDataType<DataTypeTuple>(array ? array->getNestedType().get() : arguments[i].get());
             if (tuple == nullptr)
-                throw Exception(getMsgPrefix(i) + " must contains tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+                throw Exception(get_message_prefix(i) + " must contains tuple.", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
             const DataTypes & elements = tuple->getElements();
 
             if (elements.size() != 2)
-                throw Exception(getMsgPrefix(i) + " must have exactly two elements.", ErrorCodes::BAD_ARGUMENTS);
+                throw Exception(get_message_prefix(i) + " must have exactly two elements.", ErrorCodes::BAD_ARGUMENTS);
 
             for (auto j : ext::range(0, elements.size()))
             {
                 if (!isNativeNumber(elements[j]))
                 {
-                    throw Exception(getMsgPrefix(i) + " must contains numeric tuple at position " + toString(j + 1),
+                    throw Exception(get_message_prefix(i) + " must contains numeric tuple at position " + toString(j + 1),
                                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
                 }
             }
@@ -153,7 +153,6 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-
         const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
         auto const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
         if (const_tuple_col)
@@ -207,7 +206,7 @@ private:
     {
         Polygon<Type> polygon;
 
-        auto getMsgPrefix = [this](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
+        auto get_message_prefix = [this](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
@@ -216,7 +215,7 @@ private:
             auto tuple_col = array_col ? checkAndGetColumn<ColumnTuple>(&array_col->getData()) : nullptr;
 
             if (!tuple_col)
-                throw Exception(getMsgPrefix(i) + " must be constant array of tuples.", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(get_message_prefix(i) + " must be constant array of tuples.", ErrorCodes::ILLEGAL_COLUMN);
 
             const auto & tuple_columns = tuple_col->getColumns();
             const auto & column_x = tuple_columns[0];
@@ -230,7 +229,7 @@ private:
             auto size = column_x->size();
 
             if (size == 0)
-                throw Exception(getMsgPrefix(i) + " shouldn't be empty.", ErrorCodes::ILLEGAL_COLUMN);
+                throw Exception(get_message_prefix(i) + " shouldn't be empty.", ErrorCodes::ILLEGAL_COLUMN);
 
             for (auto j : ext::range(0, size))
             {
@@ -244,13 +243,12 @@ private:
                 container.push_back(container.front());
         }
 
-        auto callImpl = use_object_pool
+        auto call_impl = use_object_pool
             ? FunctionPointInPolygonDetail::callPointInPolygonImplWithPool<Polygon<Type>, PointInPolygonImpl<Type>>
             : FunctionPointInPolygonDetail::callPointInPolygonImpl<Polygon<Type>, PointInPolygonImpl<Type>>;
 
-        return callImpl(x, y, polygon);
+        return call_impl(x, y, polygon);
     }
-
 };
 
 

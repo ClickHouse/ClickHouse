@@ -106,7 +106,7 @@ private:
     UInt64 block_size;
     UInt64 max_counter;
 
-    Block createHeader() const
+    static Block createHeader()
     {
         return { ColumnWithTypeAndName(ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number") };
     }
@@ -115,8 +115,8 @@ private:
 }
 
 
-StorageSystemNumbers::StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_, bool even_distribution_)
-    : IStorage({"system", name_}), multithreaded(multithreaded_), even_distribution(even_distribution_), limit(limit_), offset(offset_)
+StorageSystemNumbers::StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, std::optional<UInt64> limit_, UInt64 offset_, bool even_distribution_)
+    : IStorage(table_id), multithreaded(multithreaded_), even_distribution(even_distribution_), limit(limit_), offset(offset_)
 {
     setColumns(ColumnsDescription({{"number", std::make_shared<DataTypeUInt64>()}}));
 }
@@ -167,7 +167,7 @@ Pipes StorageSystemNumbers::read(
         {
             /// This formula is how to split 'limit' elements to 'num_streams' chunks almost uniformly.
             res.back().addSimpleTransform(std::make_shared<LimitTransform>(
-                    res.back().getHeader(), *limit * (i + 1) / num_streams - *limit * i / num_streams, 0, false));
+                    res.back().getHeader(), *limit * (i + 1) / num_streams - *limit * i / num_streams, 0));
         }
     }
 

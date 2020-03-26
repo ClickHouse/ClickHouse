@@ -958,8 +958,8 @@ std::string ExpressionActions::dumpActions() const
 
 void ExpressionActions::optimizeArrayJoin()
 {
-    const size_t NONE = actions.size();
-    size_t first_array_join = NONE;
+    const size_t none = actions.size();
+    size_t first_array_join = none;
 
     /// Columns that need to be evaluated for arrayJoin.
     /// Actions for adding them can not be moved to the left of the arrayJoin.
@@ -985,7 +985,7 @@ void ExpressionActions::optimizeArrayJoin()
         }
         else
         {
-            if (first_array_join == NONE)
+            if (first_array_join == none)
                 continue;
 
             needed = actions[i].getNeededColumns();
@@ -1002,7 +1002,7 @@ void ExpressionActions::optimizeArrayJoin()
 
         if (depends_on_array_join)
         {
-            if (first_array_join == NONE)
+            if (first_array_join == none)
                 first_array_join = i;
 
             if (!actions[i].result_name.empty())

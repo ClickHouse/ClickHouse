@@ -1,8 +1,5 @@
 #pragma once
 
-#include <boost/smart_ptr/intrusive_ptr.hpp>
-
-#include <common/logger_useful.h>
 #include <Common/SharedBlockRowRef.h>
 
 #include <Core/Row.h>
@@ -12,6 +9,9 @@
 #include <IO/WriteHelpers.h>
 
 #include <DataStreams/IBlockInputStream.h>
+
+
+namespace Poco { class Logger; }
 
 
 namespace DB
@@ -176,7 +176,7 @@ private:
     template <typename TSortingHeap>
     void merge(MutableColumns & merged_columns, TSortingHeap & queue);
 
-    Logger * log = &Logger::get("MergingSortedBlockInputStream");
+    Poco::Logger * log;
 
     /// Read is finished.
     bool finished = false;
