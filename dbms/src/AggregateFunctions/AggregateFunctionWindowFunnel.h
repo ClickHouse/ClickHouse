@@ -229,9 +229,6 @@ public:
                 strict = 1;
             else if (option.compare("strict_order") == 0)
                 strict_order = 1;
-            else if (option.compare("no_nullify") == 0)
-                // The no_nullify is used in AggreagteFunctionNull to decide a nullification behavior.
-                continue;
             else
                 throw Exception{"Aggregate function " + getName() + " doesn't support a parameter: " + option, ErrorCodes::BAD_ARGUMENTS};
         }

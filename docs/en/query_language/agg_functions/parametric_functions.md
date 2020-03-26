@@ -240,7 +240,6 @@ windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 -   `mode` - It is an optional argument.
     -   `'strict'` - applies conditions only for the not repeating values.
     -   `'strict_order`' - doesn't allow interventions of other events. In the case of 'A->B->D->C', it stops finding 'A->B->C' at the 'D' and the max event level is 2.
-    -   `'no_nullify'` - get an exact event-level instead of null.
 -   `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../data_types/date.md), [DateTime](../../data_types/datetime.md#data_type-datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it’s value can’t exceed the Int64 maximum, which is 2^63 - 1).
 -   `cond` — Conditions or data describing the chain of events. [UInt8](../../data_types/int_uint.md).
 
@@ -308,7 +307,7 @@ Result:
 └───────┴───┘
 ```
 
-Now let's use optional parameters.
+Now let's use optional parameters and use conditions over multiple columns.
 
 1. Сreate a table to illustrate an example.
 ```SQL
@@ -400,9 +399,9 @@ user   level
    2       2
 ```
 
-5. Use windowFunnel function with `'no_nullify`
+5. Use windowFunnel function with conditions over multiple columns
 
-We use the action column to explain the behavior of `'no_nullify'`.
+We use the event and action column to explain conditions over multiple columns.
 
 ```SQL
 SELECT
@@ -416,26 +415,11 @@ FORMAT PrettySpace
 user   level
 
    1       3
-   2       NULL
+   2       2
 ```
 
-The level of user 2 is NULL, but the events and actions of user 2 is `event 'e1' --> event 'e2'`. So the level of user 2 must be 2.
-To get exact level, let's use `'no_nullify'`.
-
-```SQL
-SELECT
-    user,
-    windowFunnel(10, 'no_nullify')(dt, event = 'e1', event = 'e2', action = 'a3') AS level
-FROM funnel_test
-GROUP BY user
-ORDER BY user ASC
-FORMAT PrettySpace
-
-user   level 
-
-   1       3
-   2       2
-``` 
+Notice that the last condition references the action column not event column.
+The level of user 1 is 3, the events and actions of user 1 is `event 'e1' --> event 'e2' --> action 'a3'`.
 
 ## retention {#retention}
 
