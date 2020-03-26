@@ -1181,7 +1181,7 @@ TestResult check(const TestEntry & entry)
 
         try
         {
-            std::vector<ASTPtr> renamed;
+            DB::InJoinSubqueriesPreprocessor::SubqueryTables renamed;
             DB::InJoinSubqueriesPreprocessor(context, renamed, std::make_unique<CheckShardsAndTablesMock>()).visit(ast_input);
         }
         catch (const DB::Exception & ex)
