@@ -1,5 +1,6 @@
 #include <signal.h>
 #include <setjmp.h>
+#include <unistd.h>
 
 #include <new>
 #include <iostream>
@@ -134,7 +135,7 @@ enum class InstructionFail
     AVX512 = 7
 };
 
-std::string instructionFailToString(InstructionFail fail)
+const char * instructionFailToString(InstructionFail fail)
 {
     switch (fail)
     {
@@ -209,9 +210,26 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
     fail = InstructionFail::NONE;
 }
 
-/// Check SSE and others instructions availability
-/// Calls exit on fail
-/// This function must be called as early inside main as possible.
+/// This function is safe to use in static initializers.
+void writeError(const char * data, size_t size)
+{
+    while (size != 0)
+    {
+        ssize_t res = ::write(STDERR_FILENO, data, size);
+
+        if ((-1 == res || 0 == res) && errno != EINTR)
+            _Exit(1);
+
+        if (res > 0)
+        {
+            data += res;
+            size -= res;
+        }
+    }
+}
+
+/// Check SSE and others instructions availability. Calls exit on fail.
+/// This function must be called as early as possible, even before main, because static initializers may use unavailable instructions.
 void checkRequiredInstructions()
 {
     struct sigaction sa{};
@@ -223,26 +241,39 @@ void checkRequiredInstructions()
         || sigaddset(&sa.sa_mask, signal) != 0
         || sigaction(signal, &sa, &sa_old) != 0)
     {
-        std::cerr << "Can not set signal handler\n";
-        exit(1);
+        /// You may wonder about strlen.
+        /// Typical implementation of strlen is using SSE4.2 or AVX2.
+        /// But this is not the case because it's compiler builtin and is executed at compile time.
+
+        const char * msg = "Can not set signal handler\n";
+        writeError(msg, strlen(msg));
+        _Exit(1);
     }
 
     volatile InstructionFail fail = InstructionFail::NONE;
 
     if (sigsetjmp(jmpbuf, 1))
     {
-        std::cerr << "Instruction check fail. There is no " << instructionFailToString(fail) << " instruction set\n";
-        exit(1);
+        const char * msg1 = "Instruction check fail. The CPU does not support ";
+        writeError(msg1, strlen(msg1));
+        const char * msg2 = instructionFailToString(fail);
+        writeError(msg2, strlen(msg2));
+        const char * msg3 = " instruction set.\n";
+        writeError(msg3, strlen(msg3));
+        _Exit(1);
     }
 
     checkRequiredInstructionsImpl(fail);
 
     if (sigaction(signal, &sa_old, nullptr))
     {
-        std::cerr << "Can not set signal handler\n";
-        exit(1);
+        const char * msg = "Can not set signal handler\n";
+        writeError(msg, strlen(msg));
+        _Exit(1);
     }
 }
+
+struct Checker { Checker() { checkRequiredInstructions(); } } checker;
 
 }
 
@@ -257,8 +288,6 @@ bool inside_main = false;
 
 int main(int argc_, char ** argv_)
 {
-    checkRequiredInstructions();
-
     inside_main = true;
     SCOPE_EXIT({ inside_main = false; });
 
