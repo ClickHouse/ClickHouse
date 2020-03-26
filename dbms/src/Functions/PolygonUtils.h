@@ -36,6 +36,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 
 template <typename Polygon>
 UInt64 getPolygonAllocatedBytes(const Polygon & polygon)
