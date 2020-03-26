@@ -21,8 +21,8 @@ MergingSortedTransform::MergingSortedTransform(
     UInt64 limit_,
     bool quiet_,
     bool use_average_block_sizes,
-    bool have_all_inputs)
-    : IMergingTransform(num_inputs, header, header, max_block_size, use_average_block_sizes, have_all_inputs)
+    bool have_all_inputs_)
+    : IMergingTransform(num_inputs, header, header, max_block_size, use_average_block_sizes, have_all_inputs_)
     , description(std::move(description_))
     , limit(limit_)
     , quiet(quiet_)

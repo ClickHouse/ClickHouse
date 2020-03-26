@@ -20,7 +20,7 @@ public:
         UInt64 limit_ = 0,
         bool quiet_ = false,
         bool use_average_block_sizes = false,
-        bool have_all_inputs = true);
+        bool have_all_inputs_ = true);
 
     String getName() const override { return "MergingSortedTransform"; }
     void work() override;
