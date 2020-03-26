@@ -10,9 +10,15 @@ namespace ErrorCodes
 }
 
 IMergingTransform::IMergingTransform(
-    size_t num_inputs, const Block & input_header, const Block & output_header, bool have_all_inputs_)
+    size_t num_inputs,
+    const Block & input_header,
+    const Block & output_header,
+    size_t max_block_size,
+    bool use_average_block_size,
+    bool have_all_inputs_)
     : IProcessor(InputPorts(num_inputs, input_header), {output_header})
-    , merged_data(output_header), have_all_inputs(have_all_inputs_)
+    , merged_data(output_header, use_average_block_size, max_block_size)
+    , have_all_inputs(have_all_inputs_)
 {
 }
 
@@ -57,6 +63,7 @@ IProcessor::Status IMergingTransform::prepareSingleInput()
     if (input.isFinished())
     {
         output.finish();
+        onFinish();
         return Status::Finished;
     }
 
@@ -141,6 +148,7 @@ IProcessor::Status IMergingTransform::prepare()
     if (inputs.empty())
     {
         output.finish();
+        onFinish();
         return Status::Finished;
     }
 
@@ -151,6 +159,7 @@ IProcessor::Status IMergingTransform::prepare()
         for (auto & in : inputs)
             in.close();
 
+        onFinish();
         return Status::Finished;
     }
 
@@ -162,8 +171,17 @@ IProcessor::Status IMergingTransform::prepare()
     bool is_port_full = !output.canPush();
 
     /// Push if has data.
-    if (merged_data.mergedRows() && !is_port_full)
-        output.push(merged_data.pull());
+    bool has_data_to_push = (is_finished && merged_data.mergedRows()) || merged_data.hasEnoughRows();
+    if (has_data_to_push && !is_port_full)
+    {
+        auto chunk = merged_data.pull();
+
+        ++total_chunks;
+        total_rows += chunk.getNumRows();
+        total_bytes += chunk.allocatedBytes();
+
+        output.push(std::move(chunk));
+    }
 
     if (!is_initialized)
         return prepareInitializeInputs();
@@ -179,6 +197,7 @@ IProcessor::Status IMergingTransform::prepare()
 
         outputs.front().finish();
 
+        onFinish();
         return Status::Finished;
     }
 

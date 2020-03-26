@@ -191,6 +191,7 @@ void MergeSortingTransform::consume(Chunk chunk)
         {
             bool quiet = false;
             bool have_all_inputs = false;
+            bool use_average_block_sizes = false;
 
             external_merging_sorted = std::make_shared<MergingSortedTransform>(
                     header_without_constants,
@@ -199,6 +200,7 @@ void MergeSortingTransform::consume(Chunk chunk)
                     max_merged_block_size,
                     limit,
                     quiet,
+                    use_average_block_sizes,
                     have_all_inputs);
 
             processors.emplace_back(external_merging_sorted);

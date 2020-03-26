@@ -17,22 +17,23 @@ public:
         size_t num_inputs,
         SortDescription description,
         size_t max_block_size,
-        UInt64 limit = 0,
-        bool quiet = false,
+        UInt64 limit_ = 0,
+        bool quiet_ = false,
+        bool use_average_block_sizes = false,
         bool have_all_inputs = true);
 
     String getName() const override { return "MergingSortedTransform"; }
     void work() override;
 
-protected:
+private:
 
     void onNewInput() override;
     void initializeInputs() override;
     void consume(Chunk chunk, size_t input_number) override;
+    void onFinish() override;
 
     /// Settings
     SortDescription description;
-    const size_t max_block_size;
     UInt64 limit;
     bool has_collation = false;
     bool quiet = false;
@@ -49,8 +50,6 @@ protected:
     SortingHeap<SortCursor> queue_without_collation;
     SortingHeap<SortCursorWithCollation> queue_with_collation;
     bool is_queue_initialized = false;
-
-private:
 
     template <typename TSortingHeap>
     void merge(TSortingHeap & queue);
