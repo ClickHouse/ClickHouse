@@ -52,12 +52,15 @@ public:
         if (!has_nullable_types)
             throw Exception("Aggregate function combinator 'Null' requires at least one argument to be Nullable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-        /// Special case for 'count' function. It could be called with Nullable arguments
-        /// - that means - count number of calls, when all arguments are not NULL.
-        if (nested_function && nested_function->getName() == "count")
-            return std::make_shared<AggregateFunctionCountNotNullUnary>(arguments[0], params);
-        else if (nested_function && nested_function->getName() == "windowFunnel")
-            return std::make_shared<AggregateFunctionWindowFunnelNoNullifyVariadic>(nested_function, arguments, params);
+        if (nested_function)
+        {
+            /// Special case for 'count' function. It could be called with Nullable arguments
+            /// - that means - count number of calls, when all arguments are not NULL.
+            if (nested_function->getName() == "count")
+                return std::make_shared<AggregateFunctionCountNotNullUnary>(arguments[0], params);
+            else if (nested_function->getName() == "windowFunnel")
+                return std::make_shared<AggregateFunctionWindowFunnelNoNullifyVariadic>(nested_function, arguments, params);
+        }
 
         if (has_null_types)
             return std::make_shared<AggregateFunctionNothing>(arguments, params);
