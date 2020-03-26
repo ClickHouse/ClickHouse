@@ -165,12 +165,14 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
     return true;
 }
 
-void registerInputFormatProcessorMsgPack(FormatFactory & factory) {
+void registerInputFormatProcessorMsgPack(FormatFactory & factory)
+{
     factory.registerInputFormatProcessor("MsgPack", [](
             ReadBuffer &buf,
             const Block &sample,
             const RowInputFormatParams &params,
-            const FormatSettings &) {
+            const FormatSettings &)
+    {
         return std::make_shared<MsgPackRowInputFormat>(sample, buf, params);
     });
 }
