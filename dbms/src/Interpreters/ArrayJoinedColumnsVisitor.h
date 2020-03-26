@@ -60,7 +60,7 @@ public:
 private:
     static void visit(const ASTSelectQuery & node, ASTPtr &, Data & data)
     {
-        ASTPtr array_join_expression_list = node.array_join_expression_list();
+        ASTPtr array_join_expression_list = node.arrayJoinExpressionList();
         if (!array_join_expression_list)
             throw Exception("Logical error: no ARRAY JOIN", ErrorCodes::LOGICAL_ERROR);
 

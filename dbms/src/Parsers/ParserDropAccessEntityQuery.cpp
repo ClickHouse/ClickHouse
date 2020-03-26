@@ -4,7 +4,6 @@
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/parseDatabaseAndTableName.h>
 #include <Parsers/parseUserName.h>
-#include <Access/Quota.h>
 
 
 namespace DB
@@ -90,6 +89,8 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
         kind = Kind::QUOTA;
     else if (ParserKeyword{"POLICY"}.ignore(pos, expected) || ParserKeyword{"ROW POLICY"}.ignore(pos, expected))
         kind = Kind::ROW_POLICY;
+    else if (ParserKeyword{"SETTINGS PROFILE"}.ignore(pos, expected) || ParserKeyword{"PROFILE"}.ignore(pos, expected))
+        kind = Kind::SETTINGS_PROFILE;
     else
         return false;
 
@@ -112,7 +113,6 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
     }
     else
     {
-        assert(kind == Kind::QUOTA);
         if (!parseNames(pos, expected, names))
             return false;
     }

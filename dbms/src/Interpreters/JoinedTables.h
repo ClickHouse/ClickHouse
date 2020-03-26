@@ -35,8 +35,7 @@ public:
     bool isLeftTableFunction() const;
     size_t tablesCount() const { return table_expressions.size(); }
 
-    const String & leftTableDatabase() const { return database_name; }
-    const String & leftTableName() const { return table_name; }
+    const StorageID & leftTableID() const { return table_id; }
 
     std::unique_ptr<InterpreterSelectWithUnionQuery> makeLeftTableSubquery(const SelectQueryOptions & select_options);
 
@@ -50,8 +49,7 @@ private:
     std::optional<DatabaseAndTableWithAlias> left_db_and_table;
 
     /// left_db_and_table or 'system.one'
-    String database_name;
-    String table_name;
+    StorageID table_id = StorageID::createEmpty();
 };
 
 }

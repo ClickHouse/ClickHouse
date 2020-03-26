@@ -121,12 +121,8 @@ endif ()
 
 option (ENABLE_TESTS "Enables tests" ON)
 
-if (ARCH_AMD64)
-    option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
-endif ()
-
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
-    option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
+    option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies ENABLE_FASTMEMCPY." ON)
 endif ()
 
 if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
@@ -190,11 +186,13 @@ if (COMPILER_GCC OR COMPILER_CLANG)
 endif ()
 
 option(WITH_COVERAGE "Build with coverage." 0)
+
 if(WITH_COVERAGE AND COMPILER_CLANG)
    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
    # If we want to disable coverage for specific translation units
    set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
 endif()
+
 if(WITH_COVERAGE AND COMPILER_GCC)
    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
    set(COVERAGE_OPTION "-lgcov")
@@ -216,7 +214,7 @@ if (COMPILER_CLANG)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
     if (OS_DARWIN)
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-U,_inside_main")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -Wl,-U,_inside_main")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-U,_inside_main")
     endif()
 endif ()
@@ -336,7 +334,6 @@ include (cmake/find/grpc.cmake)
 include (cmake/find/pdqsort.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/s3.cmake)
-include (cmake/find/consistent-hashing.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
 include (cmake/find/hyperscan.cmake)
@@ -358,7 +355,6 @@ endif ()
 
 # Need to process before "contrib" dir:
 include (cmake/find/jemalloc.cmake)
-include (cmake/find/cctz.cmake)
 include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.

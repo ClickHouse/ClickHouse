@@ -67,7 +67,7 @@ static void processWatchesImpl(const String & path, TestKeeper::Watches & watche
 struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 {
     TestKeeperCreateRequest() = default;
-    TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
+    explicit TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 
@@ -80,7 +80,7 @@ struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
 {
     TestKeeperRemoveRequest() = default;
-    TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
+    explicit TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
     bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
@@ -107,7 +107,7 @@ struct TestKeeperGetRequest final : GetRequest, TestKeeperRequest
 struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 {
     TestKeeperSetRequest() = default;
-    TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
+    explicit TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
     bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
@@ -127,14 +127,14 @@ struct TestKeeperListRequest final : ListRequest, TestKeeperRequest
 struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
 {
     TestKeeperCheckRequest() = default;
-    TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
+    explicit TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 {
-    TestKeeperMultiRequest(const Requests & generic_requests)
+    explicit TestKeeperMultiRequest(const Requests & generic_requests)
     {
         requests.reserve(generic_requests.size());
 

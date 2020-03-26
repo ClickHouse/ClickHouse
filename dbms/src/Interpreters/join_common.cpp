@@ -98,34 +98,31 @@ void removeLowCardinalityInplace(Block & block)
     }
 }
 
-ColumnRawPtrs extractKeysForJoin(const Names & key_names_right, const Block & right_sample_block,
-                                 Block & sample_block_with_keys, Block & sample_block_with_columns_to_add)
+void splitAdditionalColumns(const Block & sample_block, const Names & key_names, Block & block_keys, Block & block_others)
 {
-    size_t keys_size = key_names_right.size();
-    ColumnRawPtrs key_columns(keys_size);
+    block_others = materializeBlock(sample_block);
 
-    sample_block_with_columns_to_add = materializeBlock(right_sample_block);
+    for (const String & column_name : key_names)
+    {
+        /// Extract right keys with correct keys order. There could be the same key names.
+        if (!block_keys.has(column_name))
+        {
+            auto & col = block_others.getByName(column_name);
+            block_keys.insert(col);
+            block_others.erase(column_name);
+        }
+    }
+}
+
+ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names)
+{
+    size_t keys_size = key_names.size();
+    ColumnRawPtrs key_columns(keys_size);
 
     for (size_t i = 0; i < keys_size; ++i)
     {
-        const String & column_name = key_names_right[i];
-
-        /// there could be the same key names
-        if (sample_block_with_keys.has(column_name))
-        {
-            key_columns[i] = sample_block_with_keys.getByName(column_name).column.get();
-            continue;
-        }
-
-        auto & col = sample_block_with_columns_to_add.getByName(column_name);
-        col.column = recursiveRemoveLowCardinality(col.column);
-        col.type = recursiveRemoveLowCardinality(col.type);
-
-        /// Extract right keys with correct keys order.
-        sample_block_with_keys.insert(col);
-        sample_block_with_columns_to_add.erase(column_name);
-
-        key_columns[i] = sample_block_with_keys.getColumns().back().get();
+        const String & column_name = key_names[i];
+        key_columns[i] = block_keys.getByName(column_name).column.get();
 
         /// We will join only keys, where all components are not NULL.
         if (auto * nullable = checkAndGetColumn<ColumnNullable>(*key_columns[i]))

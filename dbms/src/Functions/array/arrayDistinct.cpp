@@ -62,21 +62,21 @@ private:
     static constexpr size_t INITIAL_SIZE_DEGREE = 9;
 
     template <typename T>
-    bool executeNumber(
+    static bool executeNumber(
         const IColumn & src_data,
         const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
         ColumnArray::Offsets & res_offsets,
         const ColumnNullable * nullable_col);
 
-    bool executeString(
+    static bool executeString(
         const IColumn & src_data,
         const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,
         ColumnArray::Offsets & res_offsets,
         const ColumnNullable * nullable_col);
 
-    void executeHashed(
+    static void executeHashed(
         const IColumn & src_data,
         const ColumnArray::Offsets & src_offsets,
         IColumn & res_data_col,

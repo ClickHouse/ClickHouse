@@ -126,6 +126,7 @@ private:
     };
     bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
+    bool send_logs    = false;           /// send_logs_level passed, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
@@ -220,16 +221,15 @@ private:
 
         configReadClient(config(), home_path);
 
-        context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
         context.setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-        for (auto && setting : context.getSettingsRef())
+        for (const auto & setting : context.getSettingsRef())
         {
             const String & name = setting.getName().toString();
             if (config().has(name) && !setting.isChanged())
-                setting.setValue(config().getString(name));
+                context.setSetting(name, config().getString(name));
         }
 
         /// Set path for format schema files
@@ -281,7 +281,7 @@ private:
     }
 
     /// Should we celebrate a bit?
-    bool isNewYearMode()
+    static bool isNewYearMode()
     {
         time_t current_time = time(nullptr);
 
@@ -294,7 +294,7 @@ private:
             || (now.month() == 1 && now.day() <= 5);
     }
 
-    bool isChineseNewYearMode(const String & local_tz)
+    static bool isChineseNewYearMode(const String & local_tz)
     {
         /// Days of Dec. 20 in Chinese calendar starting from year 2019 to year 2105
         static constexpr UInt16 chineseNewYearIndicators[]
@@ -481,8 +481,6 @@ private:
 
             if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
             {
-                if (config().has("case_insensitive_suggestion"))
-                    Suggest::instance().setCaseInsensitive();
                 /// Load suggestion data from the server.
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
             }
@@ -817,6 +815,8 @@ private:
 
             connection->forceConnected(connection_parameters.timeouts);
 
+            send_logs = context.getSettingsRef().send_logs_level != LogsLevel::none;
+
             ASTPtr input_function;
             if (insert && insert->select)
                 insert->tryFindInputFunction(input_function);
@@ -1122,7 +1122,7 @@ private:
                 /// to avoid losing sync.
                 if (!cancelled)
                 {
-                    auto cancelQuery = [&] {
+                    auto cancel_query = [&] {
                         connection->sendCancel();
                         cancelled = true;
                         if (is_interactive)
@@ -1134,7 +1134,7 @@ private:
 
                     if (interrupt_listener.check())
                     {
-                        cancelQuery();
+                        cancel_query();
                     }
                     else
                     {
@@ -1145,7 +1145,7 @@ private:
                                       << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
                                       << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
 
-                            cancelQuery();
+                            cancel_query();
                         }
                     }
                 }
@@ -1435,7 +1435,8 @@ private:
     void clearProgress()
     {
         written_progress_chars = 0;
-        std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+        if (!send_logs)
+            std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
     }
 
 
@@ -1460,10 +1461,13 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        if (written_progress_chars)
-            message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
-        else
-            message << SAVE_CURSOR_POSITION;
+        if (!send_logs)
+        {
+            if (written_progress_chars)
+                message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+            else
+                message << SAVE_CURSOR_POSITION;
+        }
 
         message << DISABLE_LINE_WRAPPING;
 
@@ -1518,6 +1522,9 @@ private:
         }
 
         message << ENABLE_LINE_WRAPPING;
+        if (send_logs)
+            message << '\n';
+
         ++increment;
 
         message.next();
@@ -1585,7 +1592,7 @@ private:
             std::cout << "Ok." << std::endl;
     }
 
-    void showClientVersion()
+    static void showClientVersion()
     {
         std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
@@ -1711,7 +1718,6 @@ public:
             ("always_load_suggestion_data", "Load suggestion data even if clickhouse-client is run in non-interactive mode. Used for testing.")
             ("suggestion_limit", po::value<int>()->default_value(10000),
                 "Suggestion limit for how many databases, tables and columns to fetch.")
-            ("case_insensitive_suggestion", "Case sensitive suggestions.")
             ("multiline,m", "multiline")
             ("multiquery,n", "multiquery")
             ("format,f", po::value<std::string>(), "default output format")
@@ -1730,7 +1736,8 @@ public:
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
 
-        context.getSettingsRef().addProgramOptions(main_description);
+        Settings cmd_settings;
+        cmd_settings.addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
         po::options_description external_description = createOptionsDescription("External tables options", terminal_width);
@@ -1797,6 +1804,9 @@ public:
                 exit(e.code());
             }
         }
+
+        context.makeGlobalContext();
+        context.setSettings(cmd_settings);
 
         /// Copy settings-related program options to config.
         /// TODO: Is this code necessary?

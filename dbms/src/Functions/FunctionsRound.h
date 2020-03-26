@@ -32,7 +32,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -394,8 +393,8 @@ public:
             case 1000000000000000000ULL: return applyImpl<1000000000000000000ULL>(in, out);
             case 10000000000000000000ULL: return applyImpl<10000000000000000000ULL>(in, out);
             default:
-                throw Exception("Logical error: unexpected 'scale' parameter passed to function IntegerRoundingComputation::compute",
-                    ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Unexpected 'scale' parameter passed to function",
+                    ErrorCodes::BAD_ARGUMENTS);
         }
     }
 };

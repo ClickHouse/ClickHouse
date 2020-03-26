@@ -516,7 +516,7 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
                   * - in this case `n - 1` elements are added (where `n` is the number of arguments).
                   */
                 if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
-                    rpn.emplace_back(std::move(element));
+                    rpn.emplace_back(element);
             }
 
             return;

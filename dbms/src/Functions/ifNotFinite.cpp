@@ -15,7 +15,7 @@ class FunctionIfNotFinite : public IFunction
 public:
     static constexpr auto name = "ifNotFinite";
 
-    FunctionIfNotFinite(const Context & context_) : context(context_) {}
+    explicit FunctionIfNotFinite(const Context & context_) : context(context_) {}
 
     static FunctionPtr create(const Context & context)
     {

@@ -6,6 +6,7 @@
 #include <ext/range.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
 #include <Core/Field.h>
 
 
@@ -17,6 +18,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_INSERT_VALUE_OF_DIFFERENT_SIZE_INTO_TUPLE;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -178,6 +180,18 @@ void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
 {
     for (auto & column : columns)
         column->updateHashWithValue(n, hash);
+}
+
+void ColumnTuple::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = size();
+
+    if (hash.getData().size() != s)
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    for (auto & column : columns)
+        column->updateWeakHash32(hash);
 }
 
 void ColumnTuple::insertRangeFrom(const IColumn & src, size_t start, size_t length)

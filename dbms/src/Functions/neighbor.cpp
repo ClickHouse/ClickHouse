@@ -29,7 +29,7 @@ public:
     static constexpr auto name = "neighbor";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbor>(context); }
 
-    FunctionNeighbor(const Context & context_) : context(context_) {}
+    explicit FunctionNeighbor(const Context & context_) : context(context_) {}
 
     /// Get the name of the function.
     String getName() const override { return name; }

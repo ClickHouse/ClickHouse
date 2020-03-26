@@ -98,12 +98,21 @@ def get_processlist(client_cmd):
         return "" #  server seems dead
 
 
-def get_stacktraces(server_pid):
+# collect server stacktraces using gdb
+def get_stacktraces_from_gdb(server_pid):
     cmd = "gdb -batch -ex 'thread apply all backtrace' -p {}".format(server_pid)
     try:
         return subprocess.check_output(cmd, shell=True)
     except Exception as ex:
-        return "Error occured while receiving stack traces {}".format(str(ex))
+        return "Error occured while receiving stack traces from gdb: {}".format(str(ex))
+
+
+# collect server stacktraces from system.stack_trace table
+def get_stacktraces_from_clickhouse(client):
+    try:
+        return subprocess.check_call("{} --allow_introspection_functions=1 --query \"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace FROM system.stack_trace format Vertical\"".format(client), shell=True)
+    except Exception as ex:
+        return "Error occured while receiving stack traces from client: {}".format(str(ex))
 
 
 def get_server_pid(server_tcp_port):
@@ -111,7 +120,7 @@ def get_server_pid(server_tcp_port):
     try:
         output = subprocess.check_output(cmd, shell=True)
         if output:
-            return int(output[1:])
+            return int(output)
         else:
             return None # server dead
     except Exception as ex:
@@ -459,8 +468,10 @@ def main(args):
             server_pid = get_server_pid(clickhouse_tcp_port)
             if server_pid:
                 print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
-                print("\nCollecting stacktraces from all running threads:")
-                print(get_stacktraces(server_pid))
+                print("\nCollecting stacktraces from system.stacktraces table:")
+                print(get_stacktraces_from_clickhouse(args.client))
+                print("\nCollecting stacktraces from all running threads with gdb:")
+                print(get_stacktraces_from_gdb(server_pid))
             else:
                 print(
                     colored(
@@ -523,7 +534,7 @@ if __name__ == '__main__':
     parser.add_argument('test', nargs='*', help='Optional test case name regex')
     parser.add_argument('-d', '--disabled', action='store_true', default=False, help='Also run disabled tests')
     parser.add_argument('--stop', action='store_true', default=None, dest='stop', help='Stop on network errors')
-    parser.add_argument('--order', default='desc', help='Run order (asc, desc, random)')
+    parser.add_argument('--order', default='desc', choices=['asc', 'desc', 'random'], help='Run order')
     parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
     parser.add_argument('--hung-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)

@@ -30,15 +30,15 @@ static void dummyFunctionForInterposing() __attribute__((used));
 static void dummyFunctionForInterposing()
 {
     void* dummy;
-    /// Suppression for PVS-Studio.
-    free(nullptr); // -V575
-    ignore(malloc(0)); // -V575
-    ignore(calloc(0, 0)); // -V575
-    ignore(realloc(nullptr, 0)); // -V575
-    ignore(posix_memalign(&dummy, 0, 0)); // -V575
-    ignore(aligned_alloc(0, 0)); // -V575
-    ignore(valloc(0)); // -V575
-    ignore(memalign(0, 0)); // -V575
-    ignore(pvalloc(0)); // -V575
+    /// Suppression for PVS-Studio and clang-tidy.
+    free(nullptr); // -V575 NOLINT
+    ignore(malloc(0)); // -V575 NOLINT
+    ignore(calloc(0, 0)); // -V575 NOLINT
+    ignore(realloc(nullptr, 0)); // -V575 NOLINT
+    ignore(posix_memalign(&dummy, 0, 0)); // -V575 NOLINT
+    ignore(aligned_alloc(0, 0)); // -V575 NOLINT
+    ignore(valloc(0)); // -V575 NOLINT
+    ignore(memalign(0, 0)); // -V575 NOLINT
+    ignore(pvalloc(0)); // -V575 NOLINT
 }
 #endif

@@ -1,16 +1,15 @@
-
-# 航班飞行数据
+# 航班飞行数据 {#hang-ban-fei-xing-shu-ju}
 
 航班飞行数据有以下两个方式获取：
 
-- 从原始数据导入
-- 下载预处理好的分区数据
+-   从原始数据导入
+-   下载预处理好的分区数据
 
-## 从原始数据导入
+## 从原始数据导入 {#cong-yuan-shi-shu-ju-dao-ru}
 
 下载数据：
 
-```bash
+``` bash
 for s in `seq 1987 2018`
 do
 for m in `seq 1 12`
@@ -20,11 +19,11 @@ done
 done
 ```
 
-(引用 <https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh> )
+(引用 https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
 
 创建表结构：
 
-```sql
+``` sql
 CREATE TABLE `ontime` (
   `Year` UInt16,
   `Quarter` UInt8,
@@ -135,33 +134,37 @@ CREATE TABLE `ontime` (
   `Div5LongestGTime` String,
   `Div5WheelsOff` String,
   `Div5TailNum` String
-) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192)
+) ENGINE = MergeTree
+PARTITION BY Year
+ORDER BY (Carrier, FlightDate)
+SETTINGS index_granularity = 8192;
 ```
 
 加载数据：
 
-```bash
+``` bash
 $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-## 下载预处理好的分区数据
+## 下载预处理好的分区数据 {#xia-zai-yu-chu-li-hao-de-fen-qu-shu-ju}
 
-```bash
+``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
 $ # check permissions of unpacked data, fix if required
 $ sudo service clickhouse-server restart
 $ clickhouse-client --query "select count(*) from datasets.ontime"
 ```
-!!!info
-    如果要运行下面的SQL查询，必须使用完整的表名，
-    `datasets.ontime`。
 
-## 查询：
+!!! info "Info"
+    如果要运行下面的SQL查询，必须使用完整的表名，
+`datasets.ontime`。
+
+## 查询： {#cha-xun}
 
 Q0.
 
-```sql
+``` sql
 SELECT avg(c1)
 FROM
 (
@@ -173,7 +176,7 @@ FROM
 
 Q1. 查询从2000年到2008年每天的航班数
 
-```sql
+``` sql
 SELECT DayOfWeek, count(*) AS c
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
@@ -183,7 +186,7 @@ ORDER BY c DESC;
 
 Q2. 查询从2000年到2008年每周延误超过10分钟的航班数。
 
-```sql
+``` sql
 SELECT DayOfWeek, count(*) AS c
 FROM ontime
 WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
@@ -193,7 +196,7 @@ ORDER BY c DESC;
 
 Q3. 查询2000年到2008年每个机场延误超过10分钟以上的次数
 
-```sql
+``` sql
 SELECT Origin, count(*) AS c
 FROM ontime
 WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
@@ -204,7 +207,7 @@ LIMIT 10;
 
 Q4. 查询2007年各航空公司延误超过10分钟以上的次数
 
-```sql
+``` sql
 SELECT Carrier, count(*)
 FROM ontime
 WHERE DepDelay>10 AND Year=2007
@@ -214,7 +217,7 @@ ORDER BY count(*) DESC;
 
 Q5. 查询2007年各航空公司延误超过10分钟以上的百分比
 
-```sql
+``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
@@ -226,7 +229,7 @@ FROM
         AND Year=2007
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -240,17 +243,17 @@ ORDER BY c3 DESC;
 
 更好的查询版本：
 
-```sql
+``` sql
 SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year=2007
 GROUP BY Carrier
-ORDER BY Carrier
+ORDER BY c3 DESC
 ```
 
 Q6. 同上一个查询一致,只是查询范围扩大到2000年到2008年
 
-```sql
+``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
@@ -262,7 +265,7 @@ FROM
         AND Year>=2000 AND Year<=2008
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -276,17 +279,17 @@ ORDER BY c3 DESC;
 
 更好的查询版本：
 
-```sql
+``` sql
 SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
 GROUP BY Carrier
-ORDER BY Carrier;
+ORDER BY c3 DESC;
 ```
 
 Q7. 每年航班延误超过10分钟的百分比
 
-```sql
+``` sql
 SELECT Year, c1/c2
 FROM
 (
@@ -297,7 +300,7 @@ FROM
     WHERE DepDelay>10
     GROUP BY Year
 )
-ANY INNER JOIN
+JOIN
 (
     select
         Year,
@@ -310,8 +313,8 @@ ORDER BY Year;
 
 更好的查询版本：
 
-```sql
-SELECT Year, avg(DepDelay>10)
+``` sql
+SELECT Year, avg(DepDelay>10)*100
 FROM ontime
 GROUP BY Year
 ORDER BY Year;
@@ -319,7 +322,7 @@ ORDER BY Year;
 
 Q8. 每年更受人们喜爱的目的地
 
-```sql
+``` sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u
 FROM ontime
 WHERE Year >= 2000 and Year <= 2010
@@ -329,7 +332,7 @@ ORDER BY u DESC LIMIT 10;
 
 Q9.
 
-```sql
+``` sql
 SELECT Year, count(*) AS c1
 FROM ontime
 GROUP BY Year;
@@ -337,7 +340,7 @@ GROUP BY Year;
 
 Q10.
 
-```sql
+``` sql
 SELECT
    min(Year), max(Year), Carrier, count(*) AS cnt,
    sum(ArrDelayMinutes>30) AS flights_delayed,
@@ -355,7 +358,7 @@ LIMIT 1000;
 
 Bonus:
 
-```sql
+``` sql
 SELECT avg(cnt)
 FROM
 (
@@ -393,9 +396,9 @@ LIMIT 10;
 
 这个性能测试由Vadim Tkachenko提供。参考：
 
-- <https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/>
-- <https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/>
-- <https://www.percona.com/blog/2009/11/02/air-traffic-queries-in-infinidb-early-alpha/>
-- <https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/>
-- <https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/>
-- <http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html>
+-   https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/
+-   https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/
+-   https://www.percona.com/blog/2009/11/02/air-traffic-queries-in-infinidb-early-alpha/
+-   https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/
+-   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
+-   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html

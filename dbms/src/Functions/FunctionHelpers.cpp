@@ -137,13 +137,13 @@ void validateArgumentsImpl(const IFunction & func,
 
         const auto & arg = arguments[i + argument_offset];
         const auto descriptor = descriptors[i];
-        if (int errorCode = descriptor.isValid(arg.type, arg.column); errorCode != 0)
+        if (int error_code = descriptor.isValid(arg.type, arg.column); error_code != 0)
             throw Exception("Illegal type of argument #" + std::to_string(i)
                             + (descriptor.argument_name ? " '" + std::string(descriptor.argument_name) + "'" : String{})
                             + " of function " + func.getName()
                             + (descriptor.expected_type_description ? String(", expected ") + descriptor.expected_type_description : String{})
                             + (arg.type ? ", got " + arg.type->getName() : String{}),
-                            errorCode);
+                            error_code);
     }
 }
 
@@ -167,7 +167,7 @@ void validateFunctionArgumentTypes(const IFunction & func,
 {
     if (arguments.size() < mandatory_args.size() || arguments.size() > mandatory_args.size() + optional_args.size())
     {
-        auto joinArgumentTypes = [](const auto & args, const String sep = ", ") -> String
+        auto join_argument_types = [](const auto & args, const String sep = ", ")
         {
             String result;
             for (const auto & a : args)
@@ -194,11 +194,11 @@ void validateFunctionArgumentTypes(const IFunction & func,
 
         throw Exception("Incorrect number of arguments for function " + func.getName()
                         + " provided " + std::to_string(arguments.size())
-                        + (!arguments.empty() ? " (" + joinArgumentTypes(arguments) + ")" : String{})
+                        + (!arguments.empty() ? " (" + join_argument_types(arguments) + ")" : String{})
                         + ", expected " + std::to_string(mandatory_args.size())
                         + (!optional_args.empty() ? " to " + std::to_string(mandatory_args.size() + optional_args.size()) : "")
-                        + " (" + joinArgumentTypes(mandatory_args)
-                        + (!optional_args.empty() ? ", [" + joinArgumentTypes(optional_args) + "]" : "")
+                        + " (" + join_argument_types(mandatory_args)
+                        + (!optional_args.empty() ? ", [" + join_argument_types(optional_args) + "]" : "")
                         + ")",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }

@@ -129,7 +129,7 @@ select
 from
     lineitem
 where
-    l_shipdate <= toDate('1998-12-01') - interval 90 day
+    l_shipdate <= date '1998-12-01' - interval 90 day
 group by
     l_returnflag,
     l_linestatus
@@ -137,51 +137,51 @@ order by
     l_returnflag,
     l_linestatus;
 
--- select 2; -- rewrite fail
--- select
---     s_acctbal,
---     s_name,
---     n_name,
---     p_partkey,
---     p_mfgr,
---     s_address,
---     s_phone,
---     s_comment
--- from
---     part,
---     supplier,
---     partsupp,
---     nation,
---     region
--- where
---     p_partkey = ps_partkey
---     and s_suppkey = ps_suppkey
---     and p_size = 15
---     and p_type like '%BRASS'
---     and s_nationkey = n_nationkey
---     and n_regionkey = r_regionkey
---     and r_name = 'EUROPE'
---     and ps_supplycost = (
---         select
---             min(ps_supplycost)
---         from
---             partsupp,
---             supplier,
---             nation,
---             region
---         where
---             p_partkey = ps_partkey
---             and s_suppkey = ps_suppkey
---             and s_nationkey = n_nationkey
---             and n_regionkey = r_regionkey
---             and r_name = 'EUROPE'
---     )
--- order by
---     s_acctbal desc,
---     n_name,
---     s_name,
---     p_partkey
--- limit 100;
+select 2, 'fail: correlated subquery'; -- TODO: Missing columns: 'p_partkey'
+select
+    s_acctbal,
+    s_name,
+    n_name,
+    p_partkey,
+    p_mfgr,
+    s_address,
+    s_phone,
+    s_comment
+from
+    part,
+    supplier,
+    partsupp,
+    nation,
+    region
+where
+    p_partkey = ps_partkey
+    and s_suppkey = ps_suppkey
+    and p_size = 15
+    and p_type like '%BRASS'
+    and s_nationkey = n_nationkey
+    and n_regionkey = r_regionkey
+    and r_name = 'EUROPE'
+    and ps_supplycost = (
+        select
+            min(ps_supplycost)
+        from
+            partsupp,
+            supplier,
+            nation,
+            region
+        where
+            p_partkey = ps_partkey
+            and s_suppkey = ps_suppkey
+            and s_nationkey = n_nationkey
+            and n_regionkey = r_regionkey
+            and r_name = 'EUROPE'
+    )
+order by
+    s_acctbal desc,
+    n_name,
+    s_name,
+    p_partkey
+limit 100; -- { serverError 47 }
 
 select 3;
 select
@@ -197,8 +197,8 @@ where
     c_mktsegment = 'BUILDING'
     and c_custkey = o_custkey
     and l_orderkey = o_orderkey
-    and o_orderdate < toDate('1995-03-15')
-    and l_shipdate > toDate('1995-03-15')
+    and o_orderdate < date '1995-03-15'
+    and l_shipdate > date '1995-03-15'
 group by
     l_orderkey,
     o_orderdate,
@@ -208,15 +208,15 @@ order by
     o_orderdate
 limit 10;
 
--- select 4;
+select 4, 'fail: exists'; -- TODO
 -- select
 --     o_orderpriority,
 --     count(*) as order_count
 -- from
 --     orders
 -- where
---     o_orderdate >= toDate('1993-07-01')
---     and o_orderdate < toDate('1993-07-01') + interval '3' month
+--     o_orderdate >= date '1993-07-01'
+--     and o_orderdate < date '1993-07-01' + interval '3' month
 --     and exists (
 --         select
 --             *
@@ -250,8 +250,8 @@ where
     and s_nationkey = n_nationkey
     and n_regionkey = r_regionkey
     and r_name = 'ASIA'
-    and o_orderdate >= toDate('1994-01-01')
-    and o_orderdate < toDate('1994-01-01') + interval '1' year
+    and o_orderdate >= date '1994-01-01'
+    and o_orderdate < date '1994-01-01' + interval '1' year
 group by
     n_name
 order by
@@ -263,91 +263,91 @@ select
 from
     lineitem
 where
-    l_shipdate >= toDate('1994-01-01')
-    and l_shipdate < toDate('1994-01-01') + interval '1' year
+    l_shipdate >= date '1994-01-01'
+    and l_shipdate < date '1994-01-01' + interval '1' year
     and l_discount between toDecimal32(0.06, 2) - toDecimal32(0.01, 2) 
         and toDecimal32(0.06, 2) + toDecimal32(0.01, 2)
     and l_quantity < 24;
 
--- select 7;
--- select
---     supp_nation,
---     cust_nation,
---     l_year,
---     sum(volume) as revenue
--- from
---     (
---         select
---             n1.n_name as supp_nation,
---             n2.n_name as cust_nation,
---             extract(year from l_shipdate) as l_year,
---             l_extendedprice * (1 - l_discount) as volume
---         from
---             supplier,
---             lineitem,
---             orders,
---             customer,
---             nation n1,
---             nation n2
---         where
---             s_suppkey = l_suppkey
---             and o_orderkey = l_orderkey
---             and c_custkey = o_custkey
---             and s_nationkey = n1.n_nationkey
---             and c_nationkey = n2.n_nationkey
---             and (
---                 (n1.n_name = 'FRANCE' and n2.n_name = 'GERMANY')
---                 or (n1.n_name = 'GERMANY' and n2.n_name = 'FRANCE')
---             )
---             and l_shipdate between toDate('1995-01-01') and toDate('1996-12-31')
---     ) as shipping
--- group by
---     supp_nation,
---     cust_nation,
---     l_year
--- order by
---     supp_nation,
---     cust_nation,
---     l_year;
+select 7;
+select
+    supp_nation,
+    cust_nation,
+    l_year,
+    sum(volume) as revenue
+from
+    (
+        select
+            n1.n_name as supp_nation,
+            n2.n_name as cust_nation,
+            extract(year from l_shipdate) as l_year,
+            l_extendedprice * (1 - l_discount) as volume
+        from
+            supplier,
+            lineitem,
+            orders,
+            customer,
+            nation n1,
+            nation n2
+        where
+            s_suppkey = l_suppkey
+            and o_orderkey = l_orderkey
+            and c_custkey = o_custkey
+            and s_nationkey = n1.n_nationkey
+            and c_nationkey = n2.n_nationkey
+            and (
+                (n1.n_name = 'FRANCE' and n2.n_name = 'GERMANY')
+                or (n1.n_name = 'GERMANY' and n2.n_name = 'FRANCE')
+            )
+            and l_shipdate between date '1995-01-01' and date '1996-12-31'
+    ) as shipping
+group by
+    supp_nation,
+    cust_nation,
+    l_year
+order by
+    supp_nation,
+    cust_nation,
+    l_year;
 
--- select 8;
--- select
---     o_year,
---     sum(case
---         when nation = 'BRAZIL' then volume
---         else 0
---     end) / sum(volume) as mkt_share
--- from
---     (
---         select
---             extract(year from o_orderdate) as o_year,
---             l_extendedprice * (1 - l_discount) as volume,
---             n2.n_name as nation
---         from
---             part,
---             supplier,
---             lineitem,
---             orders,
---             customer,
---             nation n1,
---             nation n2,
---             region
---         where
---             p_partkey = l_partkey
---             and s_suppkey = l_suppkey
---             and l_orderkey = o_orderkey
---             and o_custkey = c_custkey
---             and c_nationkey = n1.n_nationkey
---             and n1.n_regionkey = r_regionkey
---             and r_name = 'AMERICA'
---             and s_nationkey = n2.n_nationkey
---             and o_orderdate between toDate('1995-01-01') and toDate('1996-12-31')
---             and p_type = 'ECONOMY ANODIZED STEEL'
---     ) as all_nations
--- group by
---     o_year
--- order by
---     o_year;
+select 8;
+select
+    o_year,
+    sum(case
+        when nation = 'BRAZIL' then volume
+        else 0
+    end) / sum(volume) as mkt_share
+from
+    (
+        select
+            extract(year from o_orderdate) as o_year,
+            l_extendedprice * (1 - l_discount) as volume,
+            n2.n_name as nation
+        from
+            part,
+            supplier,
+            lineitem,
+            orders,
+            customer,
+            nation n1,
+            nation n2,
+            region
+        where
+            p_partkey = l_partkey
+            and s_suppkey = l_suppkey
+            and l_orderkey = o_orderkey
+            and o_custkey = c_custkey
+            and c_nationkey = n1.n_nationkey
+            and n1.n_regionkey = r_regionkey
+            and r_name = 'AMERICA'
+            and s_nationkey = n2.n_nationkey
+            and o_orderdate between date '1995-01-01' and date '1996-12-31'
+            and p_type = 'ECONOMY ANODIZED STEEL'
+    ) as all_nations
+group by
+    o_year
+order by
+    o_year;
 
 select 9;
 select
@@ -401,8 +401,8 @@ from
 where
     c_custkey = o_custkey
     and l_orderkey = o_orderkey
-    and o_orderdate >= toDate('1993-10-01')
-    and o_orderdate < toDate('1993-10-01') + interval '3' month
+    and o_orderdate >= date '1993-10-01'
+    and o_orderdate < date '1993-10-01' + interval '3' month
     and l_returnflag = 'R'
     and c_nationkey = n_nationkey
 group by
@@ -417,37 +417,37 @@ order by
     revenue desc
 limit 20;
 
--- select 11; -- rewrite fail
--- select
---     ps_partkey,
---     sum(ps_supplycost * ps_availqty) as value
--- from
---     partsupp,
---     supplier,
---     nation
--- where
---     ps_suppkey = s_suppkey
---     and s_nationkey = n_nationkey
---     and n_name = 'GERMANY'
--- group by
---     ps_partkey having
---         sum(ps_supplycost * ps_availqty) > (
---             select
---                 sum(ps_supplycost * ps_availqty) * 0.0100000000
---             --                                     ^^^^^^^^^^^^
---             -- The above constant needs to be adjusted according
---             -- to the scale factor (SF): constant = 0.0001 / SF.
---             from
---                 partsupp,
---                 supplier,
---                 nation
---             where
---                 ps_suppkey = s_suppkey
---                 and s_nationkey = n_nationkey
---                 and n_name = 'GERMANY'
---         )
--- order by
---     value desc;
+select 11; -- TODO: remove toDecimal()
+select
+    ps_partkey,
+    sum(ps_supplycost * ps_availqty) as value
+from
+    partsupp,
+    supplier,
+    nation
+where
+    ps_suppkey = s_suppkey
+    and s_nationkey = n_nationkey
+    and n_name = 'GERMANY'
+group by
+    ps_partkey having
+        sum(ps_supplycost * ps_availqty) > (
+            select
+                sum(ps_supplycost * ps_availqty) * toDecimal64('0.0100000000', 2)
+            --                                                  ^^^^^^^^^^^^
+            -- The above constant needs to be adjusted according
+            -- to the scale factor (SF): constant = 0.0001 / SF.
+            from
+                partsupp,
+                supplier,
+                nation
+            where
+                ps_suppkey = s_suppkey
+                and s_nationkey = n_nationkey
+                and n_name = 'GERMANY'
+        )
+order by
+    value desc;
 
 select 12;
 select
@@ -472,34 +472,34 @@ where
     and l_shipmode in ('MAIL', 'SHIP')
     and l_commitdate < l_receiptdate
     and l_shipdate < l_commitdate
-    and l_receiptdate >= toDate('1994-01-01')
-    and l_receiptdate < toDate('1994-01-01') + interval '1' year
+    and l_receiptdate >= date '1994-01-01'
+    and l_receiptdate < date '1994-01-01' + interval '1' year
 group by
     l_shipmode
 order by
     l_shipmode;
 
--- select 13; -- rewrite fail
--- select
---     c_count,
---     count(*) as custdist
--- from
---     (
---         select
---             c_custkey,
---             count(o_orderkey)
---         from
---             customer left outer join orders on
---                 c_custkey = o_custkey
---                 and o_comment not like '%special%requests%'
---         group by
---             c_custkey
---     ) as c_orders
--- group by
---     c_count
--- order by
---     custdist desc,
---     c_count desc;
+select 13, 'fail: join predicates'; -- TODO: Invalid expression for JOIN ON
+select
+    c_count,
+    count(*) as custdist
+from
+    (
+        select
+            c_custkey,
+            count(o_orderkey)
+        from
+            customer left outer join orders on
+                c_custkey = o_custkey
+                and o_comment not like '%special%requests%'
+        group by
+            c_custkey
+    ) as c_orders
+group by
+    c_count
+order by
+    custdist desc,
+    c_count desc; -- { serverError 403 }
 
 select 14;
 select
@@ -513,42 +513,43 @@ from
     part
 where
     l_partkey = p_partkey
-    and l_shipdate >= toDate('1995-09-01')
-    and l_shipdate < toDate('1995-09-01') + interval '1' month;
+    and l_shipdate >= date '1995-09-01'
+    and l_shipdate < date '1995-09-01' + interval '1' month;
 
--- select 15;
--- create view revenue0 as
---     select
---         l_suppkey,
---         sum(l_extendedprice * (1 - l_discount))
---     from
---         lineitem
---     where
---         l_shipdate >= toDate('1996-01-01')
---         and l_shipdate < toDate('1996-01-01') + interval '3' month
---     group by
---         l_suppkey;
--- select
---     s_suppkey,
---     s_name,
---     s_address,
---     s_phone,
---     total_revenue
--- from
---     supplier,
---     revenue0
--- where
---     s_suppkey = supplier_no
---     and total_revenue = (
---         select
---             max(total_revenue)
---         from
---             revenue0
---     )
--- order by
---     s_suppkey;
--- drop view revenue0;
-    
+select 15, 'fail: correlated subquery'; -- TODO: Missing columns: 'total_revenue'
+drop view if exists revenue0;
+create view revenue0 as
+    select
+        l_suppkey,
+        sum(l_extendedprice * (1 - l_discount))
+    from
+        lineitem
+    where
+        l_shipdate >= date '1996-01-01'
+        and l_shipdate < date '1996-01-01' + interval '3' month
+    group by
+        l_suppkey;
+select
+    s_suppkey,
+    s_name,
+    s_address,
+    s_phone,
+    total_revenue
+from
+    supplier,
+    revenue0
+where
+    s_suppkey = supplier_no
+    and total_revenue = (
+        select
+            max(total_revenue)
+        from
+            revenue0
+    )
+order by
+    s_suppkey; -- { serverError 47 }
+drop view revenue0;
+
 select 16;
 select
     p_brand,
@@ -580,25 +581,25 @@ order by
     p_brand,
     p_type,
     p_size;
-    
--- select 17;
--- select
---     sum(l_extendedprice) / 7.0 as avg_yearly
--- from
---     lineitem,
---     part
--- where
---     p_partkey = l_partkey
---     and p_brand = 'Brand#23'
---     and p_container = 'MED BOX'
---     and l_quantity < (
---         select
---             0.2 * avg(l_quantity)
---         from
---             lineitem
---         where
---             l_partkey = p_partkey
---     );
+
+select 17, 'fail: correlated subquery'; -- TODO: Missing columns: 'p_partkey'
+select
+    sum(l_extendedprice) / 7.0 as avg_yearly
+from
+    lineitem,
+    part
+where
+    p_partkey = l_partkey
+    and p_brand = 'Brand#23'
+    and p_container = 'MED BOX'
+    and l_quantity < (
+        select
+            0.2 * avg(l_quantity)
+        from
+            lineitem
+        where
+            l_partkey = p_partkey
+    ); -- { serverError 47 }
 
 select 18;
 select
@@ -672,46 +673,46 @@ where
         and l_shipinstruct = 'DELIVER IN PERSON'
     );
     
--- select 20;
--- select
---     s_name,
---     s_address
--- from
---     supplier,
---     nation
--- where
---     s_suppkey in (
---         select
---             ps_suppkey
---         from
---             partsupp
---         where
---             ps_partkey in (
---                 select
---                     p_partkey
---                 from
---                     part
---                 where
---                     p_name like 'forest%'
---             )
---             and ps_availqty > (
---                 select
---                     0.5 * sum(l_quantity)
---                 from
---                     lineitem
---                 where
---                     l_partkey = ps_partkey
---                     and l_suppkey = ps_suppkey
---                     and l_shipdate >= toDate('1994-01-01')
---                     and l_shipdate < toDate('1994-01-01') + interval '1' year
---             )
---     )
---     and s_nationkey = n_nationkey
---     and n_name = 'CANADA'
--- order by
---     s_name;
+select 20, 'fail: correlated subquery'; -- TODO: Missing columns: 'ps_suppkey' 'ps_partkey'
+select
+    s_name,
+    s_address
+from
+    supplier,
+    nation
+where
+    s_suppkey in (
+        select
+            ps_suppkey
+        from
+            partsupp
+        where
+            ps_partkey in (
+                select
+                    p_partkey
+                from
+                    part
+                where
+                    p_name like 'forest%'
+            )
+            and ps_availqty > (
+                select
+                    0.5 * sum(l_quantity)
+                from
+                    lineitem
+                where
+                    l_partkey = ps_partkey
+                    and l_suppkey = ps_suppkey
+                    and l_shipdate >= date '1994-01-01'
+                    and l_shipdate < date '1994-01-01' + interval '1' year
+            )
+    )
+    and s_nationkey = n_nationkey
+    and n_name = 'CANADA'
+order by
+    s_name; -- { serverError 47 }
 
--- select 21;
+select 21, 'fail: exists, not exists'; -- TODO
 -- select
 --     s_name,
 --     count(*) as numwait
@@ -753,7 +754,7 @@ where
 --     s_name
 -- limit 100;
 
--- select 22;
+select 22, 'fail: not exists'; -- TODO
 -- select
 --     cntrycode,
 --     count(*) as numcust,

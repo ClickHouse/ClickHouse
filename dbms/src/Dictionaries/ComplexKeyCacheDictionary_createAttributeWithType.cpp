@@ -11,8 +11,8 @@ ComplexKeyCacheDictionary::createAttributeWithType(const AttributeUnderlyingType
     {
 #define DISPATCH(TYPE) \
     case AttributeUnderlyingType::ut##TYPE: \
-        attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); \
-        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); \
+        attr.null_values = TYPE(null_value.get<NearestFieldType<TYPE>>()); /* NOLINT */ \
+        attr.arrays = std::make_unique<ContainerType<TYPE>>(size); /* NOLINT */ \
         bytes_allocated += size * sizeof(TYPE); \
         break;
         DISPATCH(UInt8)

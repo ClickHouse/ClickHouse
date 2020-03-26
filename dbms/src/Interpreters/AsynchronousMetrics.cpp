@@ -1,5 +1,6 @@
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ExpressionJIT.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
@@ -131,7 +132,7 @@ void AsynchronousMetrics::update()
     set("Uptime", context.getUptimeSeconds());
 
     {
-        auto databases = context.getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases();
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;

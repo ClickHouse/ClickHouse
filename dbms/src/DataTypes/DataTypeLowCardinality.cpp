@@ -77,7 +77,7 @@ struct KeysSerializationVersion
             throw Exception("Invalid version for DataTypeLowCardinality key column.", ErrorCodes::LOGICAL_ERROR);
     }
 
-    KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
+    explicit KeysSerializationVersion(UInt64 version) : value(static_cast<Value>(version)) { checkVersion(version); }
 };
 
 /// Version is stored at the start of each granule. It's used to store indexes type and flags.
@@ -604,7 +604,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     auto * low_cardinality_state = checkAndGetLowCardinalityDeserializeState(state);
     KeysSerializationVersion::checkVersion(low_cardinality_state->key_version.value);
 
-    auto readDictionary = [this, low_cardinality_state, keys_stream]()
+    auto read_dictionary = [this, low_cardinality_state, keys_stream]()
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *keys_stream);
@@ -617,7 +617,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         low_cardinality_state->global_dictionary = std::move(column_unique);
     };
 
-    auto readAdditionalKeys = [this, low_cardinality_state, indexes_stream]()
+    auto read_additional_keys = [this, low_cardinality_state, indexes_stream]()
     {
         UInt64 num_keys;
         readIntBinary(num_keys, *indexes_stream);
@@ -636,7 +636,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         }
     };
 
-    auto readIndexes = [this, low_cardinality_state, indexes_stream, &low_cardinality_column](UInt64 num_rows)
+    auto read_indexes = [this, low_cardinality_state, indexes_stream, &low_cardinality_column](UInt64 num_rows)
     {
         auto indexes_type = low_cardinality_state->index_type.getDataType();
         MutableColumnPtr indexes_column = indexes_type->createColumn();
@@ -715,12 +715,12 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
                 !global_dictionary || index_type.need_update_dictionary || low_cardinality_state->need_update_dictionary;
             if (index_type.need_global_dictionary && need_update_dictionary)
             {
-                readDictionary();
+                read_dictionary();
                 low_cardinality_state->need_update_dictionary = false;
             }
 
             if (low_cardinality_state->index_type.has_additional_keys)
-                readAdditionalKeys();
+                read_additional_keys();
             else
                 low_cardinality_state->additional_keys = nullptr;
 
@@ -728,7 +728,7 @@ void DataTypeLowCardinality::deserializeBinaryBulkWithMultipleStreams(
         }
 
         size_t num_rows_to_read = std::min<UInt64>(limit, low_cardinality_state->num_pending_rows);
-        readIndexes(num_rows_to_read);
+        read_indexes(num_rows_to_read);
         limit -= num_rows_to_read;
         low_cardinality_state->num_pending_rows -= num_rows_to_read;
     }

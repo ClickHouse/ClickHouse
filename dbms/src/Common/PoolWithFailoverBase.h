@@ -5,7 +5,7 @@
 #include <climits>
 #include <random>
 #include <functional>
-#include <common/Types.h>
+#include <common/types.h>
 #include <ext/scope_guard.h>
 #include <Core/Types.h>
 #include <Common/PoolBase.h>

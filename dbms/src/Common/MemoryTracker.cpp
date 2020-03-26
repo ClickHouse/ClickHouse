@@ -5,7 +5,6 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/formatReadable.h>
-#include <common/likely.h>
 #include <common/logger_useful.h>
 
 #include <atomic>
@@ -94,7 +93,7 @@ void MemoryTracker::alloc(Int64 size)
         free(size);
 
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        auto untrack_lock = blocker.cancel();
+        auto untrack_lock = blocker.cancel(); // NOLINT
 
         std::stringstream message;
         message << "Memory tracker";
@@ -119,7 +118,7 @@ void MemoryTracker::alloc(Int64 size)
         free(size);
 
         /// Prevent recursion. Exception::ctor -> std::string -> new[] -> MemoryTracker::alloc
-        auto untrack_lock = blocker.cancel();
+        auto untrack_lock = blocker.cancel(); // NOLINT
 
         std::stringstream message;
         message << "Memory limit";
