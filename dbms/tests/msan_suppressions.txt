@@ -19,4 +19,5 @@ fun:BN_cmp
 src:*/contrib/zlib-ng/*
 src:*/contrib/openssl/*
 src:*/contrib/simdjson/*
+src:*/contrib/lz4/*
 
