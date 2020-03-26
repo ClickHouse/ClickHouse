@@ -3,6 +3,8 @@
 #include <IO/WriteBuffer.h>
 #include <DataStreams/materializeBlock.h>
 
+#include <common/logger_useful.h>
+
 namespace DB
 {
 
@@ -15,13 +17,17 @@ MergingSortedTransform::MergingSortedTransform(
     const Block & header,
     size_t num_inputs,
     SortDescription  description_,
-    size_t max_block_size_,
+    size_t max_block_size,
     UInt64 limit_,
     bool quiet_,
-    bool have_all_inputs_)
-    : IMergingTransform(num_inputs, header, header, have_all_inputs_)
-    , description(std::move(description_)), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
-    , source_chunks(num_inputs), cursors(num_inputs)
+    bool use_average_block_sizes,
+    bool have_all_inputs)
+    : IMergingTransform(num_inputs, header, header, max_block_size, use_average_block_sizes, have_all_inputs)
+    , description(std::move(description_))
+    , limit(limit_)
+    , quiet(quiet_)
+    , source_chunks(num_inputs)
+    , cursors(num_inputs)
 {
     auto & sample = outputs.front().getHeader();
     /// Replace column names in description to positions.
@@ -110,16 +116,12 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
             return false;
         }
 
-        return merged_data.mergedRows() < max_block_size;
+        return merged_data.hasEnoughRows();
     };
 
     /// Take rows in required order and put them into `merged_data`, while the rows are no more than `max_block_size`
-    while (queue.isValid())
+    while (queue.isValid() && can_read_another_row())
     {
-        /// Shouldn't happen at first iteration, but check just in case.
-        if (!can_read_another_row())
-            return;
-
         auto current = queue.current();
 
         /** And what if the block is totally less or equal than the rest for the current cursor?
@@ -147,7 +149,7 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
 
         //std::cerr << "total_merged_rows: " << total_merged_rows << ", merged_rows: " << merged_rows << "\n";
         //std::cerr << "Inserting row\n";
-        merged_data.insertRow(current->all_columns, current->pos);
+        merged_data.insertRow(current->all_columns, current->pos, current->rows);
 
         if (out_row_sources_buf)
         {
@@ -209,6 +211,28 @@ void MergingSortedTransform::insertFromChunk(size_t source_num)
         for (size_t i = 0; i < num_rows; ++i)
             out_row_sources_buf->write(row_source.data);
     }
+}
+
+void MergingSortedTransform::onFinish()
+{
+    if (quiet)
+        return;
+
+    auto * log = &Logger::get("MergingSortedBlockInputStream");
+
+    double seconds = total_stopwatch.elapsedSeconds();
+
+    std::stringstream message;
+    message << std::fixed << std::setprecision(2)
+            << "Merge sorted " << total_chunks << " blocks, " << total_rows << " rows"
+            << " in " << seconds << " sec.";
+
+    if (seconds != 0)
+        message << ", "
+                << total_rows / seconds << " rows/sec., "
+                << total_bytes / 1000000.0 / seconds << " MB/sec.";
+
+    LOG_DEBUG(log, message.str());
 }
 
 }
