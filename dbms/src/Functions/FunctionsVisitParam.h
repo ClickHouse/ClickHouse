@@ -130,6 +130,12 @@ struct ExtractParamImpl
     {
         throw Exception("Functions 'visitParamHas' and 'visitParamExtract*' doesn't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
+
+    template <typename... Args>
+    static void vectorFixedConstant(Args &&...)
+    {
+        throw Exception("Functions 'visitParamHas' don't support FixedString haystack argument", ErrorCodes::ILLEGAL_COLUMN);
+    }
 };
 
 
