@@ -15,7 +15,6 @@
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartTTLInfo.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
-#include <Storages/MergeTree/AlterAnalysisResult.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Columns/IColumn.h>
 
@@ -93,24 +92,18 @@ public:
     virtual bool supportsVerticalMerge() const { return false; }
 
     /// NOTE: Returns zeros if column files are not found in checksums.
-    /// NOTE: You must ensure that no ALTERs are in progress when calculating ColumnSizes.
-    ///   (either by locking columns_lock, or by locking table structure).
-    virtual ColumnSize getColumnSize(const String & /* name */, const IDataType & /* type */) const { return {}; }
+    /// Otherwise return information about column size on disk.
+    ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
 
-    virtual ColumnSize getTotalColumnsSize() const { return {}; }
+    /// Return information about column size on disk for all columns in part
+    ColumnSize getTotalColumnsSize() const { return total_columns_size; }
 
     virtual String getFileNameForColumn(const NameAndTypePair & column) const = 0;
-
-    /// Returns rename map of column files for the alter converting expression onto new table files.
-    /// Files to be deleted are mapped to an empty string in rename map.
-    virtual NameToNameMap createRenameMapForAlter(
-        AlterAnalysisResult & /* analysis_result */,
-        const NamesAndTypesList & /* old_columns */) const { return {}; }
 
     virtual ~IMergeTreeDataPart();
 
     using ColumnToSize = std::map<std::string, UInt64>;
-    virtual void accumulateColumnSizes(ColumnToSize & /* column_to_size */) const {}
+    void accumulateColumnSizes(ColumnToSize & /* column_to_size */) const;
 
     Type getType() const { return part_type; }
 
@@ -165,9 +158,6 @@ public:
 
     size_t rows_count = 0;
 
-    std::atomic<UInt64> bytes_on_disk {0};  /// 0 - if not counted;
-                                            /// Is used from several threads without locks (it is changed with ALTER).
-                                            /// May not contain size of checksums.txt and columns.txt
 
     time_t modification_time = 0;
     /// When the part is removed from the working set. Changes once.
@@ -283,15 +273,13 @@ public:
     /// Columns with values, that all have been zeroed by expired ttl
     NameSet expired_columns;
 
-    /** It is blocked for writing when changing columns, checksums or any part files.
-        * Locked to read when reading columns, checksums or any part files.
-        */
-    mutable std::shared_mutex columns_lock;
-
     /// For data in RAM ('index')
     UInt64 getIndexSizeInBytes() const;
     UInt64 getIndexSizeInAllocatedBytes() const;
     UInt64 getMarksCount() const;
+
+    UInt64 getBytesOnDisk() const { return bytes_on_disk; }
+    void setBytesOnDisk(UInt64 bytes_on_disk_) { bytes_on_disk = bytes_on_disk_; }
 
     size_t getFileSizeOrZero(const String & file_name) const;
     String getFullRelativePath() const;
@@ -307,9 +295,20 @@ public:
     virtual bool hasColumnFiles(const String & /* column */, const IDataType & /* type */) const{ return false; }
 
     static UInt64 calculateTotalSizeOnDisk(const DiskPtr & disk_, const String & from);
+    void calculateColumnsSizesOnDisk();
 
 protected:
-    /// Columns description.
+    /// Total size of all columns, calculated once in calcuateColumnSizesOnDisk
+    ColumnSize total_columns_size;
+
+    /// Size for each column, calculated once in calcuateColumnSizesOnDisk
+    ColumnSizeByName columns_sizes;
+
+    /// Total size on disk, not only columns. May not contain size of
+    /// checksums.txt and columns.txt. 0 - if not counted;
+    UInt64 bytes_on_disk{0};
+
+    /// Columns description. Cannot be changed, after part initialiation.
     NamesAndTypesList columns;
     const Type part_type;
 
@@ -317,6 +316,10 @@ protected:
 
     virtual void checkConsistency(bool require_part_metadata) const = 0;
     void checkConsistencyBase() const;
+
+    /// Fill each_columns_size and total_size with sizes from columns files on
+    /// disk using columns and checksums.
+    virtual void calculateEachColumnSizesOnDisk(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const = 0;
 
 private:
     /// In compact parts order of columns is necessary

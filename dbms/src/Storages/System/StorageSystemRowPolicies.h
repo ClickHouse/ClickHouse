@@ -11,7 +11,7 @@ class Context;
 
 
 /// Implements `row_policies` system table, which allows you to get information about row policies.
-class StorageSystemRowPolicies : public ext::shared_ptr_helper<StorageSystemRowPolicies>, public IStorageSystemOneBlock<StorageSystemRowPolicies>
+class StorageSystemRowPolicies final : public ext::shared_ptr_helper<StorageSystemRowPolicies>, public IStorageSystemOneBlock<StorageSystemRowPolicies>
 {
 public:
     std::string getName() const override { return "SystemRowPolicies"; }

@@ -51,7 +51,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     size_t arg_num = 0;
 
-    auto getStringLiteral = [](const IAST & node, const char * description)
+    auto get_string_literal = [](const IAST & node, const char * description)
     {
         const auto * lit = node.as<ASTLiteral>();
         if (!lit)
@@ -71,7 +71,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     else
     {
         if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
-            cluster_description = getStringLiteral(*args[arg_num], "Hosts pattern");
+            cluster_description = get_string_literal(*args[arg_num], "Hosts pattern");
     }
     ++arg_num;
 
@@ -116,7 +116,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     {
         if (arg_num < args.size())
         {
-            username = getStringLiteral(*args[arg_num], "Username");
+            username = get_string_literal(*args[arg_num], "Username");
             ++arg_num;
         }
         else
@@ -124,7 +124,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
         if (arg_num < args.size())
         {
-            password = getStringLiteral(*args[arg_num], "Password");
+            password = get_string_literal(*args[arg_num], "Password");
             ++arg_num;
         }
     }
@@ -155,6 +155,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
         std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
         std::vector<std::vector<String>> names;
+        names.reserve(shards.size());
         for (const auto & shard : shards)
             names.push_back(parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses));
 
@@ -188,17 +189,20 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
             secure);
     }
 
-    auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_database, remote_table, context, remote_table_function_ptr);
+    auto remote_table_id = StorageID::createEmpty();
+    remote_table_id.database_name = remote_database;
+    remote_table_id.table_name = remote_table;
+    auto structure_remote_table = getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
 
     StoragePtr res = remote_table_function_ptr
         ? StorageDistributed::createWithOwnCluster(
-            StorageID("", table_name),
+            StorageID(getDatabaseName(), table_name),
             structure_remote_table,
             remote_table_function_ptr,
             cluster,
             context)
         : StorageDistributed::createWithOwnCluster(
-            StorageID("", table_name),
+            StorageID(getDatabaseName(), table_name),
             structure_remote_table,
             remote_database,
             remote_table,

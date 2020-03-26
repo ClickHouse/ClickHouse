@@ -192,7 +192,7 @@ std::string HTTPDictionarySource::toString() const
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 {
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -206,7 +206,7 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
             dict_struct, config, config_prefix + ".http",
             sample_block, context, check_config);
     };
-    factory.registerSource("http", createTableSource);
+    factory.registerSource("http", create_table_source);
 }
 
 }

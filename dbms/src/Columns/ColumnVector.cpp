@@ -9,6 +9,8 @@
 #include <Common/NaNUtils.h>
 #include <Common/RadixSort.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnsCommon.h>
@@ -27,6 +29,7 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -49,6 +52,27 @@ template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
+}
+
+template <typename T>
+void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = data.size();
+
+    if (hash.getData().size() != s)
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    const T * begin = data.data();
+    const T * end = begin + s;
+    UInt32 * hash_data = hash.getData().data();
+
+    while (begin < end)
+    {
+        *hash_data = intHashCRC32(*begin, *hash_data);
+        ++begin;
+        ++hash_data;
+    }
 }
 
 template <typename T>
@@ -118,7 +142,7 @@ void ColumnVector<T>::getPermutation(bool reverse, size_t limit, int nan_directi
             if (s >= 256 && s <= std::numeric_limits<UInt32>::max())
             {
                 PaddedPODArray<ValueWithIndex<T>> pairs(s);
-                for (UInt32 i = 0; i < s; ++i)
+                for (UInt32 i = 0; i < UInt32(s); ++i)
                     pairs[i] = {data[i], i};
 
                 RadixSort<RadixSortTraits<T>>::executeLSD(pairs.data(), s);

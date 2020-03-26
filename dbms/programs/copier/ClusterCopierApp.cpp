@@ -43,11 +43,11 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
 
 void ClusterCopierApp::handleHelp(const std::string &, const std::string &)
 {
-    Poco::Util::HelpFormatter helpFormatter(options());
-    helpFormatter.setCommand(commandName());
-    helpFormatter.setHeader("Copies tables from one cluster to another");
-    helpFormatter.setUsage("--config-file <config-file> --task-path <task-path>");
-    helpFormatter.format(std::cerr);
+    Poco::Util::HelpFormatter help_formatter(options());
+    help_formatter.setCommand(commandName());
+    help_formatter.setHeader("Copies tables from one cluster to another");
+    help_formatter.setUsage("--config-file <config-file> --task-path <task-path>");
+    help_formatter.format(std::cerr);
 
     stopOptionsProcessing();
 }
@@ -106,7 +106,7 @@ void ClusterCopierApp::mainImpl()
     registerDisks();
 
     static const std::string default_database = "_local";
-    context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
 
     /// Initialize query scope just in case.

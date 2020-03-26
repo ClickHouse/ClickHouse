@@ -2,7 +2,7 @@
 
 #include <Poco/Net/TCPServerConnection.h>
 
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Stopwatch.h>
 #include <Core/Protocol.h>
@@ -171,7 +171,7 @@ private:
     /// Process a request that does not require the receiving of data blocks from the client
     void processOrdinaryQuery();
 
-    void processOrdinaryQueryWithProcessors(size_t num_threads);
+    void processOrdinaryQueryWithProcessors();
 
     void processTablesStatusRequest();
 

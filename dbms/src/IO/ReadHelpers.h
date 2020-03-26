@@ -1009,7 +1009,7 @@ readTextWithSizeSuffix(T & x, ReadBuffer & buf)
         }
         else if (*buf.position() == 'i')
         {
-            x = (x << power_of_two); /// For binary suffixes, such as ki, Mi, Gi, etc.
+            x = (x << power_of_two); // NOLINT /// For binary suffixes, such as ki, Mi, Gi, etc.
             ++buf.position();
         }
         return;

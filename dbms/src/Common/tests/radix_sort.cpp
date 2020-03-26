@@ -1,6 +1,7 @@
 #if !defined(__APPLE__) && !defined(__FreeBSD__)
 #include <malloc.h>
 #endif
+#include <pcg_random.hpp>
 #include <ext/bit_cast.h>
 #include <Common/RadixSort.h>
 #include <Common/Stopwatch.h>
@@ -31,6 +32,8 @@ static void NO_INLINE sort3(Key * data, size_t size)
 
 int main(int argc, char ** argv)
 {
+    pcg64 rng;
+
     if (argc < 3)
     {
         std::cerr << "Usage: program n method\n";
@@ -48,7 +51,7 @@ int main(int argc, char ** argv)
         Stopwatch watch;
 
         for (auto & elem : data)
-            elem = rand();
+            elem = rng();
 
         watch.stop();
         double elapsed = watch.elapsedSeconds();

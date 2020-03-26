@@ -4,6 +4,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/StorageID.h>
 
 
 namespace DB
@@ -100,13 +101,30 @@ void ASTIdentifier::appendColumnNameImpl(WriteBuffer & ostr) const
     writeString(name, ostr);
 }
 
+void ASTIdentifier::resetTable(const String & database_name, const String & table_name)
+{
+    auto ast = createTableIdentifier(database_name, table_name);
+    auto & ident = ast->as<ASTIdentifier &>();
+    name.swap(ident.name);
+    name_parts.swap(ident.name_parts);
+    uuid = ident.uuid;
+}
+
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name)
 {
-    if (database_name.empty())
-        return ASTIdentifier::createSpecial(table_name);
+    assert(database_name != "_temporary_and_external_tables");
+    return createTableIdentifier(StorageID(database_name, table_name));
+}
 
-    ASTPtr database_and_table = ASTIdentifier::createSpecial(database_name + "." + table_name, {database_name, table_name});
-    return database_and_table;
+ASTPtr createTableIdentifier(const StorageID & table_id)
+{
+    std::shared_ptr<ASTIdentifier> res;
+    if (table_id.database_name.empty())
+        res = ASTIdentifier::createSpecial(table_id.table_name);
+    else
+        res = ASTIdentifier::createSpecial(table_id.database_name + "." + table_id.table_name, {table_id.database_name, table_id.table_name});
+    res->uuid = table_id.uuid;
+    return res;
 }
 
 String getIdentifierName(const IAST * ast)

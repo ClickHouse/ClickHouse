@@ -59,7 +59,6 @@
 
 #include <Interpreters/ActionsVisitor.h>
 
-#include <Interpreters/ExternalTablesVisitor.h>
 #include <Interpreters/GlobalSubqueriesVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 
@@ -164,7 +163,7 @@ void ExpressionAnalyzer::analyzeAggregation()
     if (select_query)
     {
         bool is_array_join_left;
-        ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
+        ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList(is_array_join_left);
         if (array_join_expression_list)
         {
             getRootActionsNoMakeSet(array_join_expression_list, true, temp_actions, false);
@@ -258,10 +257,6 @@ void ExpressionAnalyzer::analyzeAggregation()
 
 void ExpressionAnalyzer::initGlobalSubqueriesAndExternalTables(bool do_global)
 {
-    /// Adds existing external tables (not subqueries) to the external_tables dictionary.
-    ExternalTablesVisitor::Data tables_data{context, external_tables};
-    ExternalTablesVisitor(tables_data).visit(query);
-
     if (do_global)
     {
         GlobalSubqueriesVisitor::Data subqueries_data(context, subquery_depth, isRemoteStorage(),
@@ -319,8 +314,8 @@ SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr &
     const auto * table = subquery_or_table_name->as<ASTIdentifier>();
     if (!table)
         return nullptr;
-    const DatabaseAndTableWithAlias database_table(*table);
-    const auto storage = context.getTable(database_table.database, database_table.table);
+    auto table_id = context.resolveStorageID(subquery_or_table_name);
+    const auto storage = DatabaseCatalog::instance().getTable(table_id);
     if (storage->getName() != "Set")
         return nullptr;
     const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
@@ -473,7 +468,7 @@ bool SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & cha
     const auto * select_query = getSelectQuery();
 
     bool is_array_join_left;
-    ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
+    ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList(is_array_join_left);
     if (!array_join_expression_list)
         return false;
 
@@ -516,8 +511,8 @@ static JoinPtr tryGetStorageJoin(const ASTTablesInSelectQueryElement & join_elem
     /// TODO This syntax does not support specifying a database name.
     if (table_to_join.database_and_table_name)
     {
-        DatabaseAndTableWithAlias database_table(table_to_join.database_and_table_name);
-        StoragePtr table = context.tryGetTable(database_table.database, database_table.table);
+        auto table_id = context.resolveStorageID(table_to_join.database_and_table_name);
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(table_id);
 
         if (table)
         {
@@ -967,7 +962,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     bool finalized = false;
     size_t where_step_num = 0;
 
-    auto finalizeChain = [&](ExpressionActionsChain & chain)
+    auto finalize_chain = [&](ExpressionActionsChain & chain)
     {
         if (!finalized)
         {
@@ -982,7 +977,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         ExpressionActionsChain chain(context);
         Names additional_required_columns_after_prewhere;
 
-        if (storage && (query.sample_size() || settings.parallel_replicas_count > 1))
+        if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
         {
             Names columns_for_sampling = storage->getColumnsRequiredForSampling();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
@@ -1061,7 +1056,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();
 
-            finalizeChain(chain);
+            finalize_chain(chain);
 
             if (query_analyzer.appendHaving(chain, only_types || !second_stage))
             {
@@ -1095,7 +1090,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         query_analyzer.appendProjectResult(chain);
         final_projection = chain.getLastActions();
 
-        finalizeChain(chain);
+        finalize_chain(chain);
     }
 
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).

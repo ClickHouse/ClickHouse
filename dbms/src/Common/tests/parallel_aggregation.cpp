@@ -32,7 +32,7 @@ struct SmallLock
 {
     std::atomic<int> locked {false};
 
-    bool try_lock()
+    bool tryLock()
     {
         int expected = 0;
         return locked.compare_exchange_strong(expected, 1, std::memory_order_acquire);
@@ -82,6 +82,7 @@ static void aggregate12(Map & map, Source::const_iterator begin, Source::const_i
     {
         if (prev_it != end && *it == *prev_it)
         {
+            assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
@@ -89,6 +90,7 @@ static void aggregate12(Map & map, Source::const_iterator begin, Source::const_i
 
         bool inserted;
         map.emplace(*it, found, inserted);
+        assert(found != nullptr);
         ++found->getMapped();
     }
 }
@@ -107,6 +109,7 @@ static void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source:
     {
         if (*it == *prev_it)
         {
+            assert(found != nullptr);
             ++found->getMapped();
             continue;
         }
@@ -114,6 +117,7 @@ static void aggregate22(MapTwoLevel & map, Source::const_iterator begin, Source:
 
         bool inserted;
         map.emplace(*it, found, inserted);
+        assert(found != nullptr);
         ++found->getMapped();
     }
 }
@@ -246,9 +250,9 @@ void aggregate5(Map & local_map, MapSmallLocks & global_map, Source::const_itera
 
 int main(int argc, char ** argv)
 {
-    size_t n = atoi(argv[1]);
-    size_t num_threads = atoi(argv[2]);
-    size_t method = argc <= 3 ? 0 : atoi(argv[3]);
+    size_t n = std::stol(argv[1]);
+    size_t num_threads = std::stol(argv[2]);
+    size_t method = argc <= 3 ? 0 : std::stol(argv[3]);
 
     std::cerr << std::fixed << std::setprecision(2);
 
