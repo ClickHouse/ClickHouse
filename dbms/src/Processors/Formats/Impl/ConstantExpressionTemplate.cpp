@@ -1,5 +1,4 @@
 #include <Columns/ColumnConst.h>
-#include <Common/typeid_cast.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/FieldToDataType.h>
@@ -35,7 +34,7 @@ namespace ErrorCodes
 struct SpecialParserType
 {
     SpecialParserType() = default;
-    SpecialParserType(Field::Types::Which main_type_) : main_type(main_type_) {}
+    explicit SpecialParserType(Field::Types::Which main_type_) : main_type(main_type_) {}
 
     Field::Types::Which main_type = Field::Types::String;
     bool is_nullable = false;
