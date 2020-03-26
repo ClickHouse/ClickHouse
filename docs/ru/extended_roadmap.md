@@ -35,9 +35,9 @@ Q1. И полностью immutable куски. Делает [Александр
 
 Upd. Большая часть задачи реализована и добавлена в master. Есть незначительные технические долги. Остаётся реализация неблокирующего изменения метаданных таблицы.
 
-### 1.4. Нетранзитивные ALTER столбцов. {#netranzitivnye-alter-stolbtsov}
+### 1.4. + Нетранзитивные ALTER столбцов. {#netranzitivnye-alter-stolbtsov}
 
-Требует 1.3. Будет делать [Александр Сапин](https://github.com/alesapin).
+Требует 1.3. Будет делать [Александр Сапин](https://github.com/alesapin). Ура, сделано.
 
 ### 1.5. ALTER RENAME COLUMN. {#alter-rename-column}
 
