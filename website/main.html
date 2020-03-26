@@ -26,7 +26,7 @@
 {% block content %}
 {% include "templates/docs/nav.html" %}
 <div class="container-fluid">
-    <div class="row justify-content-end justify-content-xl-center">
+    <div class="row justify-content-end{% if not single_page %} justify-content-xl-center{% endif %}">
         {% include "templates/docs/sidebar.html" %}
         {% include "templates/docs/content.html" %}
         {% if not config.extra.single_page %}

@@ -73,7 +73,7 @@ $(document).ready(function () {
             current.addClass('alert-secondary');
         }
     });
-    $('.admonition-title').addClass('admonition-heading').addClass('display-4');
+    $('.admonition-title').addClass('alert-heading').addClass('display-5').addClass('mb-2');
 
     if ($('#docsearch-input').length) {
         docsearch({

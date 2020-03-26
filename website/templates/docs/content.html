@@ -1,9 +1,20 @@
-<div id="content" class="col-md-8 p-5">
-    {{ page.content }}
+<div id="content-wrapper" class="{% if single_page %}col-md-10{% else %}col-md-8{% endif %} p-5">
+    <div id="content">
+        {% if not single_page %}
+            {{ page.content }}
+        {% endif %}
 
-    <div class="text-muted  pt-5">
+        {% if single_page and page.content %}
+        <script defer type="text/javascript">
+            {% for chunk in page.content|chunks %}
+            document.write({{ chunk|tojson|safe }});
+            {% endfor %}
+        </script>
+        {% endif %}
+    </div>
+
+    <div id="content-footer" class="text-muted pt-5{% if single_page %} d-none{% endif %}">
         <div class="float-right">{{ config.copyright }}</div>
         <div>{{ _('Built from') }} <a href="{{ config.extra.rev_url }}" rel="external nofollow noreferrer" target="_blank" class="text-reset">{{ config.extra.rev_short }}</a></div>
-
     </div>
 </div>

@@ -61,11 +61,6 @@ $(document).ready(function () {
             d.addEventListener("DOMContentLoaded", f, false);
         } else { f(); }
     })(document, window, "yandex_metrika_callbacks2");
-    var nua = navigator.userAgent;
-    var isAndroid = (nua.indexOf('Mozilla/5.0') > -1 && nua.indexOf('Android ') > -1 && nua.indexOf('AppleWebKit') > -1 && nua.indexOf('Chrome') === -1);
-    if (isAndroid) {
-        $('select.form-control').removeClass('form-control').css('width', '100%');
-    }
     var beforePrint = function() {
         var details = document.getElementsByTagName("details");
         for (var i = 0; i < details.length; ++i) {

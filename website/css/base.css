@@ -20,6 +20,12 @@ a:hover, a:active {
     margin-left: 12px;
 }
 
+.display-5 {
+    font-size: 2rem;
+    font-weight: 300;
+    line-height: 1.2;
+}
+
 .bg-dark-alt {
     background: #36363F;
 }

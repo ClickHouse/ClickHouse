@@ -123,12 +123,24 @@
     color: #efefef;
 }
 
+.toc-left .nav {
+    flex-wrap: nowrap !important;
+}
+
 .toc-muted {
     color: #888 !important;
 }
 
 #toc .nav-link:hover {
     color: #f14600 !important;
+}
+
+@media print {
+    #content-wrapper {
+        -ms-flex: 0 0 100%;
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
 }
 
 @media (prefers-color-scheme: dark) {
