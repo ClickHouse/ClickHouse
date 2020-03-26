@@ -6,7 +6,7 @@ function onResize() {
     var sidebar = $('#sidebar');
     var languages = $('#languages-dropdown')
     var single_page_switch = $('#single-page-switch');
-    if (sidebar.width() >= 248) {
+    if ((sidebar.width() - single_page_switch.width() - sidebar.find('.dropdown-toggle').width()) >= 36) {
         single_page_switch.addClass('float-right');
     } else {
         single_page_switch.removeClass('float-right');

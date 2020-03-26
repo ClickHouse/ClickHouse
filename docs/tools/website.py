@@ -7,6 +7,8 @@ import htmlmin
 import jinja2
 import jsmin
 
+import mdx_clickhouse
+
 
 def copy_icons(args):
     logging.info('Copying icons')
@@ -27,9 +29,17 @@ def build_website(args):
     logging.info('Building website')
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(args.website_dir),
-        extensions=['jinja2_highlight.HighlightExtension']
+        extensions=[
+            'jinja2.ext.i18n',
+            'jinja2_highlight.HighlightExtension'
+        ]
     )
     env.extend(jinja2_highlight_cssclass='syntax p-3 my-3')
+    translations_dir = os.path.join(args.website_dir, 'locale')
+    env.install_gettext_translations(
+        mdx_clickhouse.get_translations(translations_dir, 'en'),
+        newstyle=True
+    )
 
     shutil.copytree(
         args.website_dir,

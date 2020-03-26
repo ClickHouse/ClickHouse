@@ -11,7 +11,6 @@ import macros.plugin
 
 import slugify as slugify_impl
 
-
 class ClickHouseLinkMixin(object):
 
     def handleMatch(self, m, data):
@@ -70,6 +69,14 @@ def slugify(value, separator):
     return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)
 
 
+def get_translations(dirname, lang):
+    import babel.support
+    return babel.support.Translations.load(
+        dirname=dirname,
+        locales=[lang, 'en']
+    )
+
+
 class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
     def on_config(self, config):
         super(PatchedMacrosPlugin, self).on_config(config)
@@ -78,19 +85,13 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
 
     def on_env(self, env, config, files):
         env.add_extension('jinja2.ext.i18n')
+        dirname = os.path.join(config.data['theme'].dirs[0], 'locale')
+        lang = config.data['theme']['language']
         env.install_gettext_translations(
-            self.get_translations(config),
+            get_translations(dirname, lang),
             newstyle=True
         )
         return env
-
-    @staticmethod
-    def get_translations(config):
-        import babel.support
-        return babel.support.Translations.load(
-            dirname=os.path.join(config.data['theme'].dirs[0], 'locale'),
-            locales=[config.data['theme']['language'], 'en']
-        )
 
 
 macros.plugin.MacrosPlugin = PatchedMacrosPlugin

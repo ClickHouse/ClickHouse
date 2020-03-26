@@ -7,8 +7,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-03-26 00:09+0300\n"
-"PO-Revision-Date: 2020-03-26 00:10+0300\n"
+"POT-Creation-Date: 2020-03-26 10:03+0300\n"
+"PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
 "Language-Team: ru <LL@li.org>\n"
@@ -19,7 +19,76 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Generated-By: Babel 2.8.0\n"
 
-#: templates/docs/content.html:6
+#: ../website/templates/common_meta.html:5
+#: ../website/templates/common_meta.html:9
+#: ../website/templates/common_meta.html:17
+msgid "ClickHouse DBMS"
+msgstr "СУБД ClickHouse"
+
+#: ../website/templates/common_meta.html:11
+msgid ""
+"ClickHouse is an open source column-oriented database management system "
+"that allows generating analytical data reports in real time using SQL "
+"queries."
+msgstr ""
+"ClickHouse - это ориентированная на столбцы система управления базами "
+"данных с открытым исходным кодом, позволяющая создавать аналитические "
+"отчеты о данных в режиме реального времени с использованием SQL-запросов."
+
+#: ../website/templates/common_meta.html:20
+msgid ""
+"ClickHouse is an open source distributed column-oriented database "
+"management system that allows generating analytical data reports in real "
+"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
+"large volumes of data in a stable and sustainable manner."
+msgstr ""
+"ClickHouse is an open source distributed column-oriented database "
+"management system that allows generating analytical data reports in real "
+"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
+"large volumes of data in a stable and sustainable manner."
+
+#: ../website/templates/footer.html:8
+msgid "ClickHouse source code is published under the Apache 2.0 License."
+msgstr "Исходный код ClickHouse публикуется под лицензией Apache 2.0."
+
+#: ../website/templates/footer.html:8
+msgid ""
+"Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR "
+"CONDITIONS OF ANY KIND, either express or implied."
+msgstr ""
+"Программное обеспечение распространяется на условиях \"как есть\", без "
+"каких-либо гарантий или условий, явных или подразумеваемых."
+
+#: ../website/templates/footer.html:11
+msgid "Yandex LLC"
+msgstr "ООО «Яндекс»"
+
+#: ../website/templates/docs/content.html:6
 msgid "Built from"
-msgstr "Собрано из"
+msgstr "Собранный из"
+
+#: ../website/templates/docs/sidebar.html:4
+msgid "Multi-page version"
+msgstr "Многостраничная версия"
+
+#: ../website/templates/docs/sidebar.html:7
+msgid "Single-page version"
+msgstr "Одностраничная версия"
+
+#: ../website/templates/docs/sidebar.html:12
+msgid "Version"
+msgstr "Версия"
+
+#: ../website/templates/docs/sidebar.html:12
+#: ../website/templates/docs/sidebar.html:18
+msgid "latest"
+msgstr "последняя"
+
+#: ../website/templates/docs/sidebar.html:35
+msgid "PDF version"
+msgstr "PDF-версия"
+
+#: ../website/templates/docs/toc.html:8
+msgid "Table of Contents"
+msgstr "Cодержание"
 

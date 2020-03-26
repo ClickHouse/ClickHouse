@@ -22,7 +22,7 @@ msgstr ""
 #: ../website/templates/common_meta.html:9
 #: ../website/templates/common_meta.html:17
 msgid "ClickHouse DBMS"
-msgstr ""
+msgstr "خانه عروسکی"
 
 #: ../website/templates/common_meta.html:11
 msgid ""
@@ -30,6 +30,9 @@ msgid ""
 "that allows generating analytical data reports in real time using SQL "
 "queries."
 msgstr ""
+"در تاتر یک منبع ستون گرا سیستم مدیریت پایگاه داده باز است که اجازه می دهد"
+" تا تولید گزارش داده تحلیلی در زمان واقعی با استفاده از پرس و جو گذاشتن "
+"است."
 
 #: ../website/templates/common_meta.html:20
 msgid ""
@@ -38,47 +41,53 @@ msgid ""
 "time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
 "large volumes of data in a stable and sustainable manner."
 msgstr ""
+"ClickHouse is an open source distributed column-oriented database "
+"management system that allows generating analytical data reports in real "
+"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
+"large volumes of data in a stable and sustainable manner."
 
 #: ../website/templates/footer.html:8
 msgid "ClickHouse source code is published under the Apache 2.0 License."
-msgstr ""
+msgstr "کد منبع را کلیک کنیدهاوس تحت گواهی 2.0 منتشر شده است."
 
 #: ../website/templates/footer.html:8
 msgid ""
 "Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR "
 "CONDITIONS OF ANY KIND, either express or implied."
 msgstr ""
+"نرم افزار بر اساس \"به عنوان\" توزیع, بدون ضمانت یا شرایط از هر نوع, هم "
+"بیان یا ضمنی."
 
 #: ../website/templates/footer.html:11
 msgid "Yandex LLC"
-msgstr ""
+msgstr "Yandex, LLC"
 
 #: ../website/templates/docs/content.html:6
 msgid "Built from"
-msgstr ""
+msgstr "ساخته شده از"
 
 #: ../website/templates/docs/sidebar.html:4
 msgid "Multi-page version"
-msgstr ""
+msgstr "نسخه چند صفحه ای"
 
 #: ../website/templates/docs/sidebar.html:7
 msgid "Single-page version"
-msgstr ""
+msgstr "نسخه تک صفحه ای"
 
 #: ../website/templates/docs/sidebar.html:12
 msgid "Version"
-msgstr ""
+msgstr "نسخه"
 
 #: ../website/templates/docs/sidebar.html:12
 #: ../website/templates/docs/sidebar.html:18
 msgid "latest"
-msgstr ""
+msgstr "جدیدترین"
 
 #: ../website/templates/docs/sidebar.html:35
 msgid "PDF version"
-msgstr ""
+msgstr "نسخه PDF"
 
 #: ../website/templates/docs/toc.html:8
 msgid "Table of Contents"
-msgstr ""
+msgstr "جدول محتویات"
 

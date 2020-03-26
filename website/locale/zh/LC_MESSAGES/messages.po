@@ -22,14 +22,14 @@ msgstr ""
 #: ../website/templates/common_meta.html:9
 #: ../website/templates/common_meta.html:17
 msgid "ClickHouse DBMS"
-msgstr ""
+msgstr "ﾂ环板msｮﾂ嘉ｯﾂ偲"
 
 #: ../website/templates/common_meta.html:11
 msgid ""
 "ClickHouse is an open source column-oriented database management system "
 "that allows generating analytical data reports in real time using SQL "
 "queries."
-msgstr ""
+msgstr "ClickHouse是一个开源的面向列的数据库管理系统，允许使用SQL查询实时生成分析数据报告。"
 
 #: ../website/templates/common_meta.html:20
 msgid ""
@@ -38,47 +38,51 @@ msgid ""
 "time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
 "large volumes of data in a stable and sustainable manner."
 msgstr ""
+"ClickHouse is an open source distributed column-oriented database "
+"management system that allows generating analytical data reports in real "
+"time using SQL queries. Сreated by Yandex ClickHouse manages extremely "
+"large volumes of data in a stable and sustainable manner."
 
 #: ../website/templates/footer.html:8
 msgid "ClickHouse source code is published under the Apache 2.0 License."
-msgstr ""
+msgstr "ClickHouse源代码是在Apache2.0许可下发布的。"
 
 #: ../website/templates/footer.html:8
 msgid ""
 "Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR "
 "CONDITIONS OF ANY KIND, either express or implied."
-msgstr ""
+msgstr "软件按\"原样\"分发，不附带任何明示或暗示的担保或条件。"
 
 #: ../website/templates/footer.html:11
 msgid "Yandex LLC"
-msgstr ""
+msgstr "Yandex LLC"
 
 #: ../website/templates/docs/content.html:6
 msgid "Built from"
-msgstr ""
+msgstr "建于"
 
 #: ../website/templates/docs/sidebar.html:4
 msgid "Multi-page version"
-msgstr ""
+msgstr "多页版本"
 
 #: ../website/templates/docs/sidebar.html:7
 msgid "Single-page version"
-msgstr ""
+msgstr "单页版本"
 
 #: ../website/templates/docs/sidebar.html:12
 msgid "Version"
-msgstr ""
+msgstr "版本"
 
 #: ../website/templates/docs/sidebar.html:12
 #: ../website/templates/docs/sidebar.html:18
 msgid "latest"
-msgstr ""
+msgstr "最新消息"
 
 #: ../website/templates/docs/sidebar.html:35
 msgid "PDF version"
-msgstr ""
+msgstr "PDF版本"
 
 #: ../website/templates/docs/toc.html:8
 msgid "Table of Contents"
-msgstr ""
+msgstr "目录"
 

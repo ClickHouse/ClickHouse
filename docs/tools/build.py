@@ -68,8 +68,6 @@ def build_for_lang(lang, args):
             'font': False,
             'logo': 'images/logo.svg',
             'favicon': 'assets/images/favicon.ico',
-            'include_search_page': False,
-            'search_index_only': False,
             'static_templates': ['404.html'],
             'extra': {
                 'now': int(time.mktime(datetime.datetime.now().timetuple()))  # TODO better way to avoid caching
@@ -119,7 +117,7 @@ def build_for_lang(lang, args):
             }
         ]
 
-        plugins = ['search']
+        plugins = []
         if not args.no_docs_macros:
             plugins.append('macros')
         if args.htmlproofer:
@@ -278,8 +276,7 @@ def build_docs(args):
     for lang in args.lang.split(','):
         if lang:
             tasks.append((lang, args,))
-    is_darwin = platform.system() == 'Darwin'  # TODO: better workaround
-    util.run_function_in_parallel(build_for_lang, tasks, threads=is_darwin)
+    util.run_function_in_parallel(build_for_lang, tasks, threads=False)
     build_redirects(args)
 
 
