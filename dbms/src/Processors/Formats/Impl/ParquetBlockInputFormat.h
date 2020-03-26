@@ -16,7 +16,10 @@ class Context;
 class ParquetBlockInputFormat: public IInputFormat
 {
 public:
-    ParquetBlockInputFormat(ReadBuffer & in_, Block header_, const Context & context_);
+    ParquetBlockInputFormat(ReadBuffer & in_, Block header_);
+
+    void resetParser() override;
+
 
     String getName() const override { return "ParquetBlockInputFormat"; }
 
@@ -24,15 +27,10 @@ protected:
     Chunk generate() override;
 
 private:
-
-    // TODO: check that this class implements every part of its parent
-
-    const Context & context;
-
     std::unique_ptr<parquet::arrow::FileReader> file_reader;
-    std::string file_data;
-    std::unique_ptr<arrow::Buffer> buffer;
     int row_group_total = 0;
+    // indices of columns to read from Parquet file
+    std::vector<int> column_indices;
     int row_group_current = 0;
 };
 

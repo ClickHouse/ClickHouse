@@ -4,6 +4,7 @@
 #include <functional>
 #include <optional>
 #include <Formats/FormatSchemaInfo.h>
+#include <Formats/FormatSettings.h>
 
 namespace DB
 {
@@ -49,8 +50,8 @@ struct ParsedTemplateFormatString
     String dump() const;
     [[noreturn]] void throwInvalidFormat(const String & message, size_t column) const;
 
-    static ParsedTemplateFormatString setupCustomSeparatedResultsetFormat(const Context & context);
-    static ParsedTemplateFormatString setupCustomSeparatedRowFormat(const Context & context, const Block & sample);
+    static ParsedTemplateFormatString setupCustomSeparatedResultsetFormat(const FormatSettings::Custom & settings);
+    static ParsedTemplateFormatString setupCustomSeparatedRowFormat(const FormatSettings::Custom & settings, const Block & sample);
 };
 
 }

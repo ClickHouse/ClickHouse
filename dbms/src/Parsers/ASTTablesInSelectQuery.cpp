@@ -11,11 +11,11 @@ do \
 { \
     if (member) \
     { \
-        res->member = member->clone(); \
+        res->member = (member)->clone(); \
         res->children.push_back(res->member); \
     } \
 } \
-while (0)
+while (false)
 
 
 ASTPtr ASTTableExpression::clone() const
@@ -140,6 +140,7 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
         {
             case Strictness::Unspecified:
                 break;
+            case Strictness::RightAny:
             case Strictness::Any:
                 settings.ostr << "ANY ";
                 break;
@@ -148,6 +149,12 @@ void ASTTableJoin::formatImplBeforeTable(const FormatSettings & settings, Format
                 break;
             case Strictness::Asof:
                 settings.ostr << "ASOF ";
+                break;
+            case Strictness::Semi:
+                settings.ostr << "SEMI ";
+                break;
+            case Strictness::Anti:
+                settings.ostr << "ANTI ";
                 break;
         }
     }

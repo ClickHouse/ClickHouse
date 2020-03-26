@@ -20,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_TYPE_OF_FIELD;
     extern const int SYNTAX_ERROR;
     extern const int EMPTY_DATA_PASSED;
     extern const int UNEXPECTED_AST_STRUCTURE;
@@ -127,7 +128,7 @@ void DataTypeEnum<Type>::serializeBinary(const IColumn & column, size_t row_num,
 template <typename Type>
 void DataTypeEnum<Type>::deserializeBinary(IColumn & column, ReadBuffer & istr) const
 {
-    typename ColumnType::value_type x;
+    typename ColumnType::ValueType x;
     readBinary(x, istr);
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }

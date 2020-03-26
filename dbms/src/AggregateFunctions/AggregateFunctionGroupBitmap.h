@@ -52,8 +52,6 @@ public:
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 
@@ -119,8 +117,6 @@ public:
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).rbs.size());
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 template <typename Data>

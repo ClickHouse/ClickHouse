@@ -31,6 +31,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -178,8 +179,6 @@ public:
                 static_cast<ColVecType &>(to).getData().push_back(data.get(level));
         }
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 
     static void assertSecondArg(const DataTypes & types)
     {

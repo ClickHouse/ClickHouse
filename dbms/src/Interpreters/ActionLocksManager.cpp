@@ -22,7 +22,7 @@ namespace ActionLocks
 template <typename F>
 inline void forEachTable(Context & context, F && f)
 {
-    for (auto & elem : context.getDatabases())
+    for (auto & elem : DatabaseCatalog::instance().getDatabases())
         for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
             f(iterator->table());
 
@@ -30,29 +30,23 @@ inline void forEachTable(Context & context, F && f)
 
 void ActionLocksManager::add(StorageActionBlockType action_type)
 {
-    forEachTable(global_context, [&] (const StoragePtr & table)
-    {
-        ActionLock action_lock = table->getActionLock(action_type);
-
-        if (!action_lock.expired())
-        {
-            std::lock_guard lock(mutex);
-            storage_locks[table.get()][action_type] = std::move(action_lock);
-        }
-    });
+    forEachTable(global_context, [&](const StoragePtr & table) { add(table, action_type); });
 }
 
-void ActionLocksManager::add(const String & database_name, const String & table_name, StorageActionBlockType action_type)
+void ActionLocksManager::add(const StorageID & table_id, StorageActionBlockType action_type)
 {
-    if (auto table = global_context.tryGetTable(database_name, table_name))
-    {
-        ActionLock action_lock = table->getActionLock(action_type);
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id))
+        add(table, action_type);
+}
 
-        if (!action_lock.expired())
-        {
-            std::lock_guard lock(mutex);
-            storage_locks[table.get()][action_type] = std::move(action_lock);
-        }
+void ActionLocksManager::add(const StoragePtr & table, StorageActionBlockType action_type)
+{
+    ActionLock action_lock = table->getActionLock(action_type);
+
+    if (!action_lock.expired())
+    {
+        std::lock_guard lock(mutex);
+        storage_locks[table.get()][action_type] = std::move(action_lock);
     }
 }
 
@@ -64,15 +58,18 @@ void ActionLocksManager::remove(StorageActionBlockType action_type)
         storage_elem.second.erase(action_type);
 }
 
-void ActionLocksManager::remove(const String & database_name, const String & table_name, StorageActionBlockType action_type)
+void ActionLocksManager::remove(const StorageID & table_id, StorageActionBlockType action_type)
 {
-    if (auto table = global_context.tryGetTable(database_name, table_name))
-    {
-        std::lock_guard lock(mutex);
+    if (auto table = DatabaseCatalog::instance().tryGetTable(table_id))
+        remove(table, action_type);
+}
 
-        if (storage_locks.count(table.get()))
-            storage_locks[table.get()].erase(action_type);
-    }
+void ActionLocksManager::remove(const StoragePtr & table, StorageActionBlockType action_type)
+{
+    std::lock_guard lock(mutex);
+
+    if (storage_locks.count(table.get()))
+        storage_locks[table.get()].erase(action_type);
 }
 
 void ActionLocksManager::cleanExpired()

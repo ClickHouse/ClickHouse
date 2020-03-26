@@ -1,6 +1,7 @@
 #include <DataStreams/ExpressionBlockInputStream.h>
 #include <DataStreams/CheckConstraintsBlockOutputStream.h>
 #include <Parsers/formatAST.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
@@ -18,12 +19,12 @@ namespace ErrorCodes
 
 
 CheckConstraintsBlockOutputStream::CheckConstraintsBlockOutputStream(
-    const String & table_,
+    const StorageID & table_id_,
     const BlockOutputStreamPtr & output_,
     const Block & header_,
     const ConstraintsDescription & constraints_,
     const Context & context_)
-    : table(table_),
+    : table_id(table_id_),
     output(output_),
     header(header_),
     constraints(constraints_),
@@ -61,7 +62,7 @@ void CheckConstraintsBlockOutputStream::write(const Block & block)
                 std::stringstream exception_message;
 
                 exception_message << "Constraint " << backQuote(constraints.constraints[i]->name)
-                    << " for table " << backQuote(table)
+                    << " for table " << table_id.getNameForLogs()
                     << " is violated at row " << (rows_written + row_idx + 1)
                     << ". Expression: (" << serializeAST(*(constraints.constraints[i]->expr), true) << ")"
                     << ". Column values";

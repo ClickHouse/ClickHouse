@@ -1,13 +1,19 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
+
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 template <typename A, typename B>
 struct BitAndImpl
 {
     using ResultType = typename NumberTraits::ResultOfBit<A, B>::Type;
+    static constexpr const bool allow_fixed_string = true;
 
     template <typename Result = ResultType>
     static inline Result apply(A a, B b)
@@ -28,7 +34,7 @@ struct BitAndImpl
 };
 
 struct NameBitAnd { static constexpr auto name = "bitAnd"; };
-using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl, NameBitAnd>;
+using FunctionBitAnd = FunctionBinaryArithmetic<BitAndImpl, NameBitAnd, true>;
 
 void registerFunctionBitAnd(FunctionFactory & factory)
 {

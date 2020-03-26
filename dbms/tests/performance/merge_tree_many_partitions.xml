@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
 
     <create_query>CREATE TABLE bad_partitions (x UInt64) ENGINE = MergeTree PARTITION BY x ORDER BY x</create_query>
     <fill_query>INSERT INTO bad_partitions SELECT * FROM numbers(10000)</fill_query>
@@ -15,9 +14,6 @@
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 
     <settings>
         <max_partitions_per_insert_block>0</max_partitions_per_insert_block>

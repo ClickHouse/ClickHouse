@@ -10,7 +10,7 @@
 using namespace DB;
 
 
-void NO_INLINE write(WriteBuffer & out, size_t size)
+static void NO_INLINE write(WriteBuffer & out, size_t size)
 {
     for (size_t i = 0; i < size; ++i)
     {

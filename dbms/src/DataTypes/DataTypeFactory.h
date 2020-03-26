@@ -56,7 +56,6 @@ private:
     DataTypesDictionary case_insensitive_data_types;
 
     DataTypeFactory();
-    ~DataTypeFactory() override;
 
     const DataTypesDictionary & getCreatorMap() const override { return data_types; }
 
@@ -64,5 +63,25 @@ private:
 
     String getFactoryName() const override { return "DataTypeFactory"; }
 };
+
+void registerDataTypeNumbers(DataTypeFactory & factory);
+void registerDataTypeDecimal(DataTypeFactory & factory);
+void registerDataTypeDate(DataTypeFactory & factory);
+void registerDataTypeDateTime(DataTypeFactory & factory);
+void registerDataTypeString(DataTypeFactory & factory);
+void registerDataTypeFixedString(DataTypeFactory & factory);
+void registerDataTypeEnum(DataTypeFactory & factory);
+void registerDataTypeArray(DataTypeFactory & factory);
+void registerDataTypeTuple(DataTypeFactory & factory);
+void registerDataTypeNullable(DataTypeFactory & factory);
+void registerDataTypeNothing(DataTypeFactory & factory);
+void registerDataTypeUUID(DataTypeFactory & factory);
+void registerDataTypeAggregateFunction(DataTypeFactory & factory);
+void registerDataTypeNested(DataTypeFactory & factory);
+void registerDataTypeInterval(DataTypeFactory & factory);
+void registerDataTypeLowCardinality(DataTypeFactory & factory);
+void registerDataTypeDomainIPv4AndIPv6(DataTypeFactory & factory);
+void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory);
+void registerDataTypeDateTime64(DataTypeFactory & factory);
 
 }

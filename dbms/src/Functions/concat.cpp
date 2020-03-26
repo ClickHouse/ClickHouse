@@ -8,7 +8,7 @@
 #include <Functions/GatherUtils/Sinks.h>
 #include <Functions/GatherUtils/Slices.h>
 #include <Functions/GatherUtils/Sources.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 #include <ext/map.h>
 #include <ext/range.h>
@@ -32,7 +32,7 @@ class ConcatImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    ConcatImpl(const Context & context_) : context(context_) {}
+    explicit ConcatImpl(const Context & context_) : context(context_) {}
     static FunctionPtr create(const Context & context) { return std::make_shared<ConcatImpl>(context); }
 
     String getName() const override { return name; }
@@ -119,7 +119,7 @@ private:
         auto c_res = ColumnString::create();
         std::vector<const ColumnString::Chars *> data(arguments.size());
         std::vector<const ColumnString::Offsets *> offsets(arguments.size());
-        std::vector<size_t> fixed_string_N(arguments.size());
+        std::vector<size_t> fixed_string_sizes(arguments.size());
         std::vector<String> constant_strings(arguments.size());
         bool has_column_string = false;
         bool has_column_fixed_string = false;
@@ -136,7 +136,7 @@ private:
             {
                 has_column_fixed_string = true;
                 data[i] = &fixed_col->getChars();
-                fixed_string_N[i] = fixed_col->getN();
+                fixed_string_sizes[i] = fixed_col->getN();
             }
             else if (const ColumnConst * const_col = checkAndGetColumnConstStringOrFixedString(column.get()))
             {
@@ -159,7 +159,7 @@ private:
             std::move(pattern),
             data,
             offsets,
-            fixed_string_N,
+            fixed_string_sizes,
             constant_strings,
             c_res->getChars(),
             c_res->getOffsets(),
@@ -184,29 +184,30 @@ using FunctionConcatAssumeInjective = ConcatImpl<NameConcatAssumeInjective, true
 
 
 /// Also works with arrays.
-class FunctionBuilderConcat : public FunctionBuilderImpl
+class ConcatOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "concat";
-    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderConcat>(context); }
+    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<ConcatOverloadResolver>(context); }
 
-    FunctionBuilderConcat(const Context & context_) : context(context_) {}
+    explicit ConcatOverloadResolver(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 0; }
     bool isVariadic() const override { return true; }
 
-protected:
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return FunctionFactory::instance().get("arrayConcat", context)->build(arguments);
+        {
+            return FunctionOverloadResolverAdaptor(FunctionFactory::instance().getImpl("arrayConcat", context)).buildImpl(arguments);
+        }
         else
-            return std::make_shared<DefaultFunction>(
+            return std::make_unique<DefaultFunction>(
                 FunctionConcat::create(context), ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }), return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnType(const DataTypes & arguments) const override
     {
         if (arguments.size() < 2)
             throw Exception(
@@ -225,7 +226,7 @@ private:
 
 void registerFunctionsConcat(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderConcat>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ConcatOverloadResolver>(FunctionFactory::CaseInsensitive);
     factory.registerFunction<FunctionConcatAssumeInjective>();
 }
 

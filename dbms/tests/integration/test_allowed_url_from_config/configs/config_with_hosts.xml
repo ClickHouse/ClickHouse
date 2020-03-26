@@ -1,0 +1,7 @@
+<yandex>
+    <remote_url_allow_hosts>
+        <host>host:80</host>
+        <host_regexp>^[a-z]*\.ru$</host_regexp>
+    </remote_url_allow_hosts>
+</yandex>
+

@@ -1,13 +1,16 @@
 #pragma once
+
 #include <Processors/IProcessor.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
-#include <Processors/SharedChunk.h>
 
-#include <queue>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class MergingSortedTransform : public IProcessor
 {
@@ -59,8 +62,11 @@ protected:
             auto num_rows = chunk.getNumRows();
             columns = chunk.mutateColumns();
             if (limit_rows && num_rows > limit_rows)
+            {
+                num_rows = limit_rows;
                 for (auto & column : columns)
-                    column = (*column->cut(0, limit_rows)->convertToFullColumnIfConst()).mutate();
+                    column = (*column->cut(0, num_rows)).mutate();
+            }
 
             total_merged_rows += num_rows;
             merged_rows = num_rows;
@@ -106,16 +112,12 @@ protected:
     WriteBuffer * out_row_sources_buf = nullptr;
 
     /// Chunks currently being merged.
-    std::vector<SharedChunkPtr> source_chunks;
+    std::vector<Chunk> source_chunks;
 
-    using CursorImpls = std::vector<SortCursorImpl>;
-    CursorImpls cursors;
+    SortCursorImpls cursors;
 
-    using Queue = std::priority_queue<SortCursor>;
-    Queue queue_without_collation;
-
-    using QueueWithCollation = std::priority_queue<SortCursorWithCollation>;
-    QueueWithCollation queue_with_collation;
+    SortingHeap<SortCursor> queue_without_collation;
+    SortingHeap<SortCursorWithCollation> queue_with_collation;
 
 private:
 
@@ -125,8 +127,8 @@ private:
     bool need_data = false;
     size_t next_input_to_read = 0;
 
-    template <typename TSortCursor>
-    void merge(std::priority_queue<TSortCursor> & queue);
+    template <typename TSortingHeap>
+    void merge(TSortingHeap & queue);
 
     void insertFromChunk(size_t source_num);
 
@@ -139,38 +141,19 @@ private:
 
         chunk.setColumns(std::move(columns), num_rows);
 
-        auto & shared_chunk_ptr = source_chunks[source_num];
+        auto & source_chunk = source_chunks[source_num];
 
-        if (!shared_chunk_ptr)
+        if (source_chunk.empty())
         {
-            shared_chunk_ptr = new detail::SharedChunk(std::move(chunk));
-            cursors[source_num] = SortCursorImpl(shared_chunk_ptr->getColumns(), description, source_num);
+            source_chunk = std::move(chunk);
+            cursors[source_num] = SortCursorImpl(source_chunk.getColumns(), description, source_num);
             has_collation |= cursors[source_num].has_collation;
         }
         else
         {
-            *shared_chunk_ptr = std::move(chunk);
-            cursors[source_num].reset(shared_chunk_ptr->getColumns(), {});
+            source_chunk = std::move(chunk);
+            cursors[source_num].reset(source_chunk.getColumns(), {});
         }
-
-        shared_chunk_ptr->all_columns = cursors[source_num].all_columns;
-        shared_chunk_ptr->sort_columns = cursors[source_num].sort_columns;
-    }
-
-    void pushToQueue(size_t source_num)
-    {
-        if (has_collation)
-            queue_with_collation.push(SortCursorWithCollation(&cursors[source_num]));
-        else
-            queue_without_collation.push(SortCursor(&cursors[source_num]));
-    }
-
-    template <typename TSortCursor>
-    void initQueue(std::priority_queue<TSortCursor> & queue)
-    {
-        for (auto & cursor : cursors)
-            if (!cursor.empty())
-                queue.push(TSortCursor(&cursor));
     }
 };
 

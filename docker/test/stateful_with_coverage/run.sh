@@ -1,11 +1,17 @@
 #!/bin/bash
 
 kill_clickhouse () {
-    while kill -0 `pgrep -u clickhouse`;
+    kill `pgrep -u clickhouse` 2>/dev/null
+
+    for i in {1..10}
     do
-        kill `pgrep -u clickhouse` 2>/dev/null
-        echo "Process" `pgrep -u clickhouse` "still alive"
-        sleep 10
+        if ! kill -0 `pgrep -u clickhouse`; then
+            echo "No clickhouse process"
+            break
+        else
+            echo "Process" `pgrep -u clickhouse` "still alive"
+            sleep 10
+        fi
     done
 }
 
@@ -16,7 +22,7 @@ start_clickhouse () {
 wait_llvm_profdata () {
     while kill -0 `pgrep llvm-profdata-9`;
     do
-        echo "Waiting for profdata " `pgrep llvm-profdata-9` "still alive"
+        echo "Waiting for profdata" `pgrep llvm-profdata-9` "still alive"
         sleep 3
     done
 }
@@ -65,7 +71,11 @@ start_clickhouse
 
 sleep 5
 
-/s3downloader --dataset-names $DATASETS
+if ! /s3downloader --dataset-names $DATASETS; then
+    echo "Cannot download datatsets"
+    exit 1
+fi
+
 
 chmod 777 -R /var/lib/clickhouse
 
@@ -75,7 +85,7 @@ while /bin/true; do
 done &
 
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW DATABASES"
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "CREATE DATABASE datasets"
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "ATTACH DATABASE datasets ENGINE = Ordinary"
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "CREATE DATABASE test"
 
 kill_clickhouse
@@ -88,7 +98,7 @@ LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABL
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TABLE datasets.hits_v1 TO test.hits"
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "RENAME TABLE datasets.visits_v1 TO test.visits"
 LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-client --query "SHOW TABLES FROM test"
-LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-test --testname --shard --zookeeper --no-stateless $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
+LLVM_PROFILE_FILE='client_%h_%p_%m.profraw' clickhouse-test --testname --shard --zookeeper --no-stateless $ADDITIONAL_OPTIONS $SKIP_TESTS_OPTION 2>&1 | ts '%Y-%m-%d %H:%M:%S' | tee test_output/test_result.txt
 
 kill_clickhouse
 

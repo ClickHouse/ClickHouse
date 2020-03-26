@@ -25,7 +25,7 @@ namespace DB
   *  SAMPLE 1000000
   *
   * Table expressions may be combined with JOINs of following kinds:
-  *  [GLOBAL] [ANY|ALL|] INNER|LEFT|RIGHT|FULL [OUTER] JOIN table_expr
+  *  [GLOBAL] [ANY|ALL|ASOF|SEMI] [INNER|LEFT|RIGHT|FULL] [OUTER] JOIN table_expr
   *  CROSS JOIN
   *  , (comma)
   *
@@ -74,9 +74,12 @@ struct ASTTableJoin : public IAST
     enum class Strictness
     {
         Unspecified,
-        Any,    /// If there are many suitable rows to join, use any from them (also known as unique JOIN).
+        RightAny, /// Old ANY JOIN. If there are many suitable rows in right table, use any from them to join.
+        Any,    /// Semi Join with any value from filtering table. For LEFT JOIN with Any and RightAny are the same.
         All,    /// If there are many suitable rows to join, use all of them and replicate rows of "left" table (usual semantic of JOIN).
         Asof,   /// For the last JOIN column, pick the latest value
+        Semi,   /// LEFT or RIGHT. SEMI LEFT JOIN filters left table by values exists in right table. SEMI RIGHT - otherwise.
+        Anti,   /// LEFT or RIGHT. Same as SEMI JOIN but filter values that are NOT exists in other table.
     };
 
     /// Join method.
@@ -164,6 +167,5 @@ struct ASTTablesInSelectQuery : public IAST
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
-
 
 }

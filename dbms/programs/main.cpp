@@ -14,10 +14,6 @@
 #include "config_core.h"
 #endif
 
-#if USE_TCMALLOC
-#include <gperftools/malloc_extension.h>
-#endif
-
 #include <Common/StringUtils/StringUtils.h>
 
 #include <common/phdr_cache.h>
@@ -36,9 +32,6 @@ int mainEntryClickHouseLocal(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_BENCHMARK || !defined(ENABLE_CLICKHOUSE_BENCHMARK)
 int mainEntryClickHouseBenchmark(int argc, char ** argv);
-#endif
-#if ENABLE_CLICKHOUSE_PERFORMANCE_TEST || !defined(ENABLE_CLICKHOUSE_PERFORMANCE_TEST)
-int mainEntryClickHousePerformanceTest(int argc, char ** argv);
 #endif
 #if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
 int mainEntryClickHouseExtractFromConfig(int argc, char ** argv);
@@ -77,9 +70,6 @@ std::pair<const char *, MainFunc> clickhouse_applications[] =
 #endif
 #if ENABLE_CLICKHOUSE_SERVER || !defined(ENABLE_CLICKHOUSE_SERVER)
     {"server", mainEntryClickHouseServer},
-#endif
-#if ENABLE_CLICKHOUSE_PERFORMANCE_TEST || !defined(ENABLE_CLICKHOUSE_PERFORMANCE_TEST)
-    {"performance-test", mainEntryClickHousePerformanceTest},
 #endif
 #if ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG || !defined(ENABLE_CLICKHOUSE_EXTRACT_FROM_CONFIG)
     {"extract-from-config", mainEntryClickHouseExtractFromConfig},
@@ -152,14 +142,6 @@ int main(int argc_, char ** argv_)
     /// It also speed up exception handling, but exceptions from dynamically loaded libraries (dlopen)
     ///  will work only after additional call of this function.
     updatePHDRCache();
-
-#if USE_TCMALLOC
-    /** Without this option, tcmalloc returns memory to OS too frequently for medium-sized memory allocations
-      *  (like IO buffers, column vectors, hash tables, etc.),
-      *  that lead to page faults and significantly hurts performance.
-      */
-    MallocExtension::instance()->SetNumericProperty("tcmalloc.aggressive_memory_decommit", false);
-#endif
 
     std::vector<char *> argv(argv_, argv_ + argc_);
 

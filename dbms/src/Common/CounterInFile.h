@@ -5,18 +5,19 @@
 
 #include <string>
 #include <iostream>
+#include <mutex>
 
 #include <Poco/File.h>
 #include <Poco/Exception.h>
-#include <mutex>
 
-#include <Common/Exception.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
-#include <common/Types.h>
+#include <Common/Exception.h>
+#include <common/types.h>
+
 
 namespace DB
 {
@@ -65,7 +66,7 @@ public:
             "You must create it manulally with appropriate value or 0 for first start.");
         }
 
-        int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0666);
+        int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
         if (-1 == fd)
             DB::throwFromErrnoWithPath("Cannot open file " + path, path, DB::ErrorCodes::CANNOT_OPEN_FILE);
 
@@ -99,8 +100,8 @@ public:
                 res += delta;
 
                 DB::WriteBufferFromFileDescriptor wb(fd, SMALL_READ_WRITE_BUFFER_SIZE);
-                wb.seek(0);
-                wb.truncate();
+                wb.seek(0, SEEK_SET);
+                wb.truncate(0);
                 DB::writeIntText(res, wb);
                 DB::writeChar('\n', wb);
                 wb.sync();
@@ -139,7 +140,7 @@ public:
     {
         bool file_exists = Poco::File(path).exists();
 
-        int fd = ::open(path.c_str(), O_RDWR | O_CREAT, 0666);
+        int fd = ::open(path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0666);
         if (-1 == fd)
             DB::throwFromErrnoWithPath("Cannot open file " + path, path, DB::ErrorCodes::CANNOT_OPEN_FILE);
 
@@ -169,8 +170,8 @@ public:
             if (broken)
             {
                 DB::WriteBufferFromFileDescriptor wb(fd, SMALL_READ_WRITE_BUFFER_SIZE);
-                wb.seek(0);
-                wb.truncate();
+                wb.seek(0, SEEK_SET);
+                wb.truncate(0);
                 DB::writeIntText(value, wb);
                 DB::writeChar('\n', wb);
                 wb.sync();

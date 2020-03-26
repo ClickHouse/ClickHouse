@@ -7,7 +7,6 @@
         <table_exists>test.hits</table_exists>
     </preconditions>
 
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>
@@ -22,7 +21,4 @@
 
     <query><![CDATA[SELECT count() FROM test.hits WHERE ClientIP6 < RemoteIP6]]></query>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 </test>

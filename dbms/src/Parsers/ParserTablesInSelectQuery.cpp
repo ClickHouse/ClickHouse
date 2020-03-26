@@ -137,6 +137,10 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 table_join->strictness = ASTTableJoin::Strictness::All;
             else if (ParserKeyword("ASOF").ignore(pos))
                 table_join->strictness = ASTTableJoin::Strictness::Asof;
+            else if (ParserKeyword("SEMI").ignore(pos))
+                table_join->strictness = ASTTableJoin::Strictness::Semi;
+            else if (ParserKeyword("ANTI").ignore(pos) || ParserKeyword("ONLY").ignore(pos))
+                table_join->strictness = ASTTableJoin::Strictness::Anti;
             else
                 table_join->strictness = ASTTableJoin::Strictness::Unspecified;
 
@@ -153,12 +157,20 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
             else
             {
                 /// Use INNER by default as in another DBMS.
-                table_join->kind = ASTTableJoin::Kind::Inner;
+                if (table_join->strictness == ASTTableJoin::Strictness::Semi ||
+                    table_join->strictness == ASTTableJoin::Strictness::Anti)
+                    table_join->kind = ASTTableJoin::Kind::Left;
+                else
+                    table_join->kind = ASTTableJoin::Kind::Inner;
             }
 
             if (table_join->strictness != ASTTableJoin::Strictness::Unspecified
                 && table_join->kind == ASTTableJoin::Kind::Cross)
                 throw Exception("You must not specify ANY or ALL for CROSS JOIN.", ErrorCodes::SYNTAX_ERROR);
+
+            if ((table_join->strictness == ASTTableJoin::Strictness::Semi || table_join->strictness == ASTTableJoin::Strictness::Anti) &&
+                (table_join->kind != ASTTableJoin::Kind::Left && table_join->kind != ASTTableJoin::Kind::Right))
+                throw Exception("SEMI|ANTI JOIN should be LEFT or RIGHT.", ErrorCodes::SYNTAX_ERROR);
 
             /// Optional OUTER keyword for outer joins.
             if (table_join->kind == ASTTableJoin::Kind::Left

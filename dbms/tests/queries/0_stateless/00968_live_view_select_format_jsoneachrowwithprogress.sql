@@ -1,14 +1,14 @@
 SET allow_experimental_live_view = 1;
 
-DROP TABLE IF EXISTS test.lv;
-DROP TABLE IF EXISTS test.mt;
+DROP TABLE IF EXISTS lv;
+DROP TABLE IF EXISTS mt;
 
-CREATE TABLE test.mt (a Int32) Engine=MergeTree order by tuple();
-CREATE LIVE VIEW test.lv AS SELECT * FROM test.mt;
+CREATE TABLE mt (a Int32) Engine=MergeTree order by tuple();
+CREATE LIVE VIEW lv AS SELECT * FROM mt;
 
-INSERT INTO test.mt VALUES (1),(2),(3);
+INSERT INTO mt VALUES (1),(2),(3);
 
-SELECT * FROM test.lv FORMAT JSONEachRowWithProgress;
+SELECT * FROM lv FORMAT JSONEachRowWithProgress;
 
-DROP TABLE test.lv;
-DROP TABLE test.mt;
+DROP TABLE lv;
+DROP TABLE mt;

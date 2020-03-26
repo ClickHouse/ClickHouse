@@ -7,15 +7,13 @@
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeEnum.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Interpreters/PartLog.h>
 
 
 namespace DB
 {
-
-template <> struct NearestFieldTypeImpl<PartLogElement::Type> { using Type = UInt64; };
 
 Block PartLogElement::createBlock()
 {
@@ -52,6 +50,7 @@ Block PartLogElement::createBlock()
         {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "bytes_uncompressed"}, // Result bytes
         {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "read_rows"},
         {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "read_bytes"},
+        {ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(),   "peak_memory_usage"},
 
         /// Is there an error during the execution or commit
         {ColumnUInt16::create(), std::make_shared<DataTypeUInt16>(),   "error"},
@@ -89,6 +88,7 @@ void PartLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(bytes_uncompressed);
     columns[i++]->insert(rows_read);
     columns[i++]->insert(bytes_read_uncompressed);
+    columns[i++]->insert(peak_memory_usage);
 
     columns[i++]->insert(error);
     columns[i++]->insert(exception);
@@ -112,7 +112,8 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
 
     try
     {
-        part_log = current_context.getPartLog(parts.front()->storage.getDatabaseName()); // assume parts belong to the same table
+        auto table_id = parts.front()->storage.getStorageID();
+        part_log = current_context.getPartLog(table_id.database_name); // assume parts belong to the same table
         if (!part_log)
             return false;
 
@@ -124,13 +125,13 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
             elem.event_time = time(nullptr);
             elem.duration_ms = elapsed_ns / 1000000;
 
-            elem.database_name = part->storage.getDatabaseName();
-            elem.table_name = part->storage.getTableName();
+            elem.database_name = table_id.database_name;
+            elem.table_name = table_id.table_name;
             elem.partition_id = part->info.partition_id;
             elem.part_name = part->name;
             elem.path_on_disk = part->getFullPath();
 
-            elem.bytes_compressed_on_disk = part->bytes_on_disk;
+            elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             elem.rows = part->rows_count;
 
             elem.error = static_cast<UInt16>(execution_status.code);

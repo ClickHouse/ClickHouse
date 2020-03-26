@@ -9,9 +9,11 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 
 namespace DB
@@ -19,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_DROPPED;
 }
 
@@ -70,8 +73,11 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
     MutableColumnPtr engine_column_mut = ColumnString::create();
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
 
+    const auto access = context.getAccess();
+    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
+
     {
-        Databases databases = context.getDatabases();
+        Databases databases = DatabaseCatalog::instance().getDatabases();
 
         /// Add column 'database'.
         MutableColumnPtr database_column_mut = ColumnString::create();
@@ -79,7 +85,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         {
             /// Lazy database can not contain MergeTree tables
             /// and it's unnecessary to load all tables of Lazy database just to filter all of them.
-            if (context.hasDatabaseAccessRights(database.first) && database.second->getEngineName() != "Lazy")
+            if (database.second->getEngineName() != "Lazy")
                 database_column_mut->insert(database.first);
         }
         block_to_filter.insert(ColumnWithTypeAndName(
@@ -90,7 +96,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         rows = block_to_filter.rows();
 
         /// Block contains new columns, update database_column.
-        ColumnPtr database_column_ = block_to_filter.getByName("database").column;
+        ColumnPtr database_column_for_filter = block_to_filter.getByName("database").column;
 
         if (rows)
         {
@@ -100,7 +106,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
 
             for (size_t i = 0; i < rows; ++i)
             {
-                String database_name = (*database_column_)[i].get<String>();
+                String database_name = (*database_column_for_filter)[i].get<String>();
                 const DatabasePtr database = databases.at(database_name);
 
                 offsets[i] = i ? offsets[i - 1] : 0;
@@ -111,6 +117,9 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                     String engine_name = storage->getName();
 
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
+                        continue;
+
+                    if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                         continue;
 
                     storages[std::make_pair(database_name, iterator->name())] = storage;
@@ -162,7 +171,7 @@ StoragesInfo StoragesInfoStream::next()
         info.database = (*database_column)[next_row].get<String>();
         info.table = (*table_column)[next_row].get<String>();
 
-        auto isSameTable = [&info, this] (size_t row) -> bool
+        auto is_same_table = [&info, this] (size_t row) -> bool
         {
             return (*database_column)[row].get<String>() == info.database &&
                    (*table_column)[row].get<String>() == info.table;
@@ -171,7 +180,7 @@ StoragesInfo StoragesInfoStream::next()
         /// We may have two rows per table which differ in 'active' value.
         /// If rows with 'active = 0' were not filtered out, this means we
         /// must collect the inactive parts. Remember this fact in StoragesInfo.
-        for (; next_row < rows && isSameTable(next_row); ++next_row)
+        for (; next_row < rows && is_same_table(next_row); ++next_row)
         {
             const auto active = (*active_column)[next_row].get<UInt64>();
             if (active == 0)
@@ -210,7 +219,7 @@ StoragesInfo StoragesInfoStream::next()
     return {};
 }
 
-BlockInputStreams StorageSystemPartsBase::read(
+Pipes StorageSystemPartsBase::read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -233,11 +242,17 @@ BlockInputStreams StorageSystemPartsBase::read(
         processNextStorage(res_columns, info, has_state_column);
     }
 
-    Block block = getSampleBlock();
+    Block header = getSampleBlock();
     if (has_state_column)
-        block.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
+        header.insert(ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "_state"));
 
-    return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(block.cloneWithColumns(std::move(res_columns))));
+    UInt64 num_rows = res_columns.at(0)->size();
+    Chunk chunk(std::move(res_columns), num_rows);
+
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::move(header), std::move(chunk)));
+
+    return pipes;
 }
 
 NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) const
@@ -257,7 +272,7 @@ bool StorageSystemPartsBase::hasColumn(const String & column_name) const
 }
 
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
-    : name(std::move(name_))
+    : IStorage({"system", name_})
 {
     ColumnsDescription tmp_columns(std::move(columns_));
 

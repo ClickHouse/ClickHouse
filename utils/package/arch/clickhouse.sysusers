@@ -1,0 +1,3 @@
+u clickhouse - "ClickHouse user" /nonexistent /bin/false
+g clickhouse - "ClickHouse group"
+m clickhouse clickhouse

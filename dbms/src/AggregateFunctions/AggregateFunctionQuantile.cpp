@@ -4,13 +4,14 @@
 #include <AggregateFunctions/Helpers.h>
 
 #include <Core/Field.h>
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 namespace

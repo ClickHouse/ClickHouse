@@ -1,4 +1,4 @@
-#include "IFunction.h"
+#include <Functions/IFunctionAdaptors.h>
 
 #include <Common/config.h>
 #include <Common/typeid_cast.h>
@@ -37,6 +37,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
@@ -45,7 +46,7 @@ namespace ErrorCodes
 /// Cache for functions result if it was executed on low cardinality column.
 /// It's LRUCache which stores function result executed on dictionary and index mapping.
 /// It's expected that cache_size is a number of reading streams (so, will store single cached value per thread).
-class PreparedFunctionLowCardinalityResultCache
+class ExecutableFunctionLowCardinalityResultCache
 {
 public:
     /// Will assume that dictionaries with same hash has the same keys.
@@ -81,7 +82,7 @@ public:
 
     using CachedValuesPtr = std::shared_ptr<CachedValues>;
 
-    explicit PreparedFunctionLowCardinalityResultCache(size_t cache_size) : cache(cache_size) {}
+    explicit ExecutableFunctionLowCardinalityResultCache(size_t cache_size) : cache(cache_size) {}
 
     CachedValuesPtr get(const DictionaryKey & key) { return cache.get(key); }
     void set(const DictionaryKey & key, const CachedValuesPtr & mapped) { cache.set(key, mapped); }
@@ -96,10 +97,10 @@ private:
 };
 
 
-void PreparedFunctionImpl::createLowCardinalityResultCache(size_t cache_size)
+void ExecutableFunctionAdaptor::createLowCardinalityResultCache(size_t cache_size)
 {
     if (!low_cardinality_result_cache)
-        low_cardinality_result_cache = std::make_shared<PreparedFunctionLowCardinalityResultCache>(cache_size);
+        low_cardinality_result_cache = std::make_shared<ExecutableFunctionLowCardinalityResultCache>(cache_size);
 }
 
 
@@ -126,7 +127,11 @@ ColumnPtr wrapInNullable(const ColumnPtr & src, const Block & block, const Colum
 
         /// Const Nullable that are NULL.
         if (elem.column->onlyNull())
-            return block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
+        {
+            auto result_type = block.getByPosition(result).type;
+            assert(result_type->isNullable());
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+        }
 
         if (isColumnConst(*elem.column))
             continue;
@@ -211,17 +216,17 @@ bool allArgumentsAreConstants(const Block & block, const ColumnNumbers & args)
 }
 }
 
-bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & block, const ColumnNumbers & args, size_t result,
-                                                                     size_t input_rows_count, bool dry_run)
+bool ExecutableFunctionAdaptor::defaultImplementationForConstantArguments(
+    Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run)
 {
-    ColumnNumbers arguments_to_remain_constants = getArgumentsThatAreAlwaysConstant();
+    ColumnNumbers arguments_to_remain_constants = impl->getArgumentsThatAreAlwaysConstant();
 
     /// Check that these arguments are really constant.
     for (auto arg_num : arguments_to_remain_constants)
         if (arg_num < args.size() && !isColumnConst(*block.getByPosition(args[arg_num]).column))
             throw Exception("Argument at index " + toString(arg_num) + " for function " + getName() + " must be constant", ErrorCodes::ILLEGAL_COLUMN);
 
-    if (args.empty() || !useDefaultImplementationForConstants() || !allArgumentsAreConstants(block, args))
+    if (args.empty() || !impl->useDefaultImplementationForConstants() || !allArgumentsAreConstants(block, args))
         return false;
 
     Block temporary_block;
@@ -271,17 +276,23 @@ bool PreparedFunctionImpl::defaultImplementationForConstantArguments(Block & blo
 }
 
 
-bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const ColumnNumbers & args, size_t result,
-                                                         size_t input_rows_count, bool dry_run)
+bool ExecutableFunctionAdaptor::defaultImplementationForNulls(
+    Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run)
 {
-    if (args.empty() || !useDefaultImplementationForNulls())
+    if (args.empty() || !impl->useDefaultImplementationForNulls())
         return false;
 
     NullPresence null_presence = getNullPresense(block, args);
 
     if (null_presence.has_null_constant)
     {
-        block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(input_rows_count, Null());
+        auto & result_column = block.getByPosition(result).column;
+        auto result_type = block.getByPosition(result).type;
+        // Default implementation for nulls returns null result for null arguments,
+        // so the result type must be nullable.
+        assert(result_type->isNullable());
+
+        result_column = result_type->createColumnConstWithDefaultValue(input_rows_count);
         return true;
     }
 
@@ -297,8 +308,8 @@ bool PreparedFunctionImpl::defaultImplementationForNulls(Block & block, const Co
     return false;
 }
 
-void PreparedFunctionImpl::executeWithoutLowCardinalityColumns(Block & block, const ColumnNumbers & args, size_t result,
-                                                               size_t input_rows_count, bool dry_run)
+void ExecutableFunctionAdaptor::executeWithoutLowCardinalityColumns(
+    Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run)
 {
     if (defaultImplementationForConstantArguments(block, args, result, input_rows_count, dry_run))
         return;
@@ -307,9 +318,9 @@ void PreparedFunctionImpl::executeWithoutLowCardinalityColumns(Block & block, co
         return;
 
     if (dry_run)
-        executeImplDryRun(block, args, result, input_rows_count);
+        impl->executeDryRun(block, args, result, input_rows_count);
     else
-        executeImpl(block, args, result, input_rows_count);
+        impl->execute(block, args, result, input_rows_count);
 }
 
 static const ColumnLowCardinality * findLowCardinalityArgument(const Block & block, const ColumnNumbers & args)
@@ -402,23 +413,23 @@ static void convertLowCardinalityColumnsToFull(Block & block, const ColumnNumber
     }
 }
 
-void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run)
+void ExecutableFunctionAdaptor::execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run)
 {
-    if (useDefaultImplementationForLowCardinalityColumns())
+    if (impl->useDefaultImplementationForLowCardinalityColumns())
     {
         auto & res = block.safeGetByPosition(result);
         Block block_without_low_cardinality = block.cloneWithoutColumns();
 
-        for (auto arg : args)
+        for (auto arg : arguments)
             block_without_low_cardinality.safeGetByPosition(arg).column = block.safeGetByPosition(arg).column;
 
         if (auto * res_low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(res.type.get()))
         {
-            const auto * low_cardinality_column = findLowCardinalityArgument(block, args);
-            bool can_be_executed_on_default_arguments = canBeExecutedOnDefaultArguments();
+            const auto * low_cardinality_column = findLowCardinalityArgument(block, arguments);
+            bool can_be_executed_on_default_arguments = impl->canBeExecutedOnDefaultArguments();
             bool use_cache = low_cardinality_result_cache && can_be_executed_on_default_arguments
                              && low_cardinality_column && low_cardinality_column->isSharedDictionary();
-            PreparedFunctionLowCardinalityResultCache::DictionaryKey key;
+            ExecutableFunctionLowCardinalityResultCache::DictionaryKey key;
 
             if (use_cache)
             {
@@ -436,9 +447,9 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
 
             block_without_low_cardinality.safeGetByPosition(result).type = res_low_cardinality_type->getDictionaryType();
             ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-                    block_without_low_cardinality, args, can_be_executed_on_default_arguments, input_rows_count);
+                    block_without_low_cardinality, arguments, can_be_executed_on_default_arguments, input_rows_count);
 
-            executeWithoutLowCardinalityColumns(block_without_low_cardinality, args, result, block_without_low_cardinality.rows(), dry_run);
+            executeWithoutLowCardinalityColumns(block_without_low_cardinality, arguments, result, block_without_low_cardinality.rows(), dry_run);
 
             auto keys = block_without_low_cardinality.safeGetByPosition(result).column->convertToFullColumnIfConst();
 
@@ -450,7 +461,7 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
             {
                 if (use_cache)
                 {
-                    auto cache_values = std::make_shared<PreparedFunctionLowCardinalityResultCache::CachedValues>();
+                    auto cache_values = std::make_shared<ExecutableFunctionLowCardinalityResultCache::CachedValues>();
                     cache_values->dictionary_holder = low_cardinality_column->getDictionaryPtr();
                     cache_values->function_result = res_dictionary;
                     cache_values->index_mapping = res_indexes;
@@ -469,16 +480,16 @@ void PreparedFunctionImpl::execute(Block & block, const ColumnNumbers & args, si
         }
         else
         {
-            convertLowCardinalityColumnsToFull(block_without_low_cardinality, args);
-            executeWithoutLowCardinalityColumns(block_without_low_cardinality, args, result, input_rows_count, dry_run);
+            convertLowCardinalityColumnsToFull(block_without_low_cardinality, arguments);
+            executeWithoutLowCardinalityColumns(block_without_low_cardinality, arguments, result, input_rows_count, dry_run);
             res.column = block_without_low_cardinality.safeGetByPosition(result).column;
         }
     }
     else
-        executeWithoutLowCardinalityColumns(block, args, result, input_rows_count, dry_run);
+        executeWithoutLowCardinalityColumns(block, arguments, result, input_rows_count, dry_run);
 }
 
-void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) const
+void FunctionOverloadResolverAdaptor::checkNumberOfArguments(size_t number_of_arguments) const
 {
     if (isVariadic())
         return;
@@ -491,11 +502,11 @@ void FunctionBuilderImpl::checkNumberOfArguments(size_t number_of_arguments) con
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
-DataTypePtr FunctionBuilderImpl::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr FunctionOverloadResolverAdaptor::getReturnTypeWithoutLowCardinality(const ColumnsWithTypeAndName & arguments) const
 {
     checkNumberOfArguments(arguments.size());
 
-    if (!arguments.empty() && useDefaultImplementationForNulls())
+    if (!arguments.empty() && impl->useDefaultImplementationForNulls())
     {
         NullPresence null_presence = getNullPresense(arguments);
 
@@ -506,13 +517,13 @@ DataTypePtr FunctionBuilderImpl::getReturnTypeWithoutLowCardinality(const Column
         if (null_presence.has_nullable)
         {
             Block nested_block = createBlockWithNestedColumns(Block(arguments), ext::collection_cast<ColumnNumbers>(ext::range(0, arguments.size())));
-            auto return_type = getReturnTypeImpl(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
+            auto return_type = impl->getReturnType(ColumnsWithTypeAndName(nested_block.begin(), nested_block.end()));
             return makeNullable(return_type);
 
         }
     }
 
-    return getReturnTypeImpl(arguments);
+    return impl->getReturnType(arguments);
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -581,9 +592,9 @@ llvm::Value * IFunction::compile(llvm::IRBuilderBase & builder, const DataTypes 
 
 #endif
 
-DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & arguments) const
+DataTypePtr FunctionOverloadResolverAdaptor::getReturnType(const ColumnsWithTypeAndName & arguments) const
 {
-    if (useDefaultImplementationForLowCardinalityColumns())
+    if (impl->useDefaultImplementationForLowCardinalityColumns())
     {
         bool has_low_cardinality = false;
         size_t num_full_low_cardinality_columns = 0;
@@ -617,7 +628,7 @@ DataTypePtr FunctionBuilderImpl::getReturnType(const ColumnsWithTypeAndName & ar
 
         auto type_without_low_cardinality = getReturnTypeWithoutLowCardinality(args_without_low_cardinality);
 
-        if (canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality
+        if (impl->canBeExecutedOnLowCardinalityDictionary() && has_low_cardinality
             && num_full_low_cardinality_columns <= 1 && num_full_ordinary_columns == 0
             && type_without_low_cardinality->canBeInsideLowCardinality())
             return std::make_shared<DataTypeLowCardinality>(type_without_low_cardinality);

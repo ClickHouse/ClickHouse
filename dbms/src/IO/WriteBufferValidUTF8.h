@@ -11,7 +11,7 @@ namespace DB
     * If the valid UTF-8 is already written, it works faster.
     * Note: before using the resulting string, destroy this object.
     */
-class WriteBufferValidUTF8 : public BufferWithOwnMemory<WriteBuffer>
+class WriteBufferValidUTF8 final : public BufferWithOwnMemory<WriteBuffer>
 {
 private:
     WriteBuffer & output_buffer;
@@ -35,10 +35,7 @@ public:
         const char * replacement_ = "\xEF\xBF\xBD",
         size_t size = DEFAULT_SIZE);
 
-    virtual ~WriteBufferValidUTF8() override
-    {
-        finish();
-    }
+    ~WriteBufferValidUTF8() override;
 };
 
 }

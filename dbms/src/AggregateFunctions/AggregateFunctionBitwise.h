@@ -78,8 +78,6 @@ public:
     {
         assert_cast<ColumnVector<T> &>(to).getData().push_back(this->data(place).value);
     }
-
-    const char * getHeaderFilePath() const override { return __FILE__; }
 };
 
 

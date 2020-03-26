@@ -12,19 +12,22 @@
 #include <common/find_symbols.h>
 #include <common/StringRef.h>
 
+#include <Core/DecimalFunctions.h>
 #include <Core/Types.h>
 #include <Core/UUID.h>
 
 #include <Common/Exception.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/UInt128.h>
-#include <Common/intExp.h>
 
+#include <IO/CompressionMethod.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteIntText.h>
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
+
+#include <ryu/ryu.h>
 
 #include <Formats/FormatSettings.h>
 
@@ -114,21 +117,108 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
     writeChar(x ? '1' : '0', buf);
 }
 
-template <typename T>
-inline size_t writeFloatTextFastPath(T x, char * buffer, int len)
+
+struct DecomposedFloat64
 {
-    using Converter = DoubleConverter<false>;
-    double_conversion::StringBuilder builder{buffer, len};
+    DecomposedFloat64(double x)
+    {
+        memcpy(&x_uint, &x, sizeof(x));
+    }
 
-    bool result = false;
+    uint64_t x_uint;
+
+    bool sign() const
+    {
+        return x_uint >> 63;
+    }
+
+    uint16_t exponent() const
+    {
+        return (x_uint >> 52) & 0x7FF;
+    }
+
+    int16_t normalized_exponent() const
+    {
+        return int16_t(exponent()) - 1023;
+    }
+
+    uint64_t mantissa() const
+    {
+        return x_uint & 0x5affffffffffffful;
+    }
+
+    /// NOTE Probably floating point instructions can be better.
+    bool is_inside_int64() const
+    {
+        return x_uint == 0
+            || (normalized_exponent() >= 0 && normalized_exponent() <= 52
+                && ((mantissa() & ((1ULL << (52 - normalized_exponent())) - 1)) == 0));
+    }
+};
+
+struct DecomposedFloat32
+{
+    DecomposedFloat32(float x)
+    {
+        memcpy(&x_uint, &x, sizeof(x));
+    }
+
+    uint32_t x_uint;
+
+    bool sign() const
+    {
+        return x_uint >> 31;
+    }
+
+    uint16_t exponent() const
+    {
+        return (x_uint >> 23) & 0xFF;
+    }
+
+    int16_t normalized_exponent() const
+    {
+        return int16_t(exponent()) - 127;
+    }
+
+    uint32_t mantissa() const
+    {
+        return x_uint & 0x7fffff;
+    }
+
+    bool is_inside_int32() const
+    {
+        return x_uint == 0
+            || (normalized_exponent() >= 0 && normalized_exponent() <= 23
+                && ((mantissa() & ((1ULL << (23 - normalized_exponent())) - 1)) == 0));
+    }
+};
+
+template <typename T>
+inline size_t writeFloatTextFastPath(T x, char * buffer)
+{
+    int result = 0;
+
     if constexpr (std::is_same_v<T, double>)
-        result = Converter::instance().ToShortest(x, &builder);
-    else
-        result = Converter::instance().ToShortestSingle(x, &builder);
+    {
+        /// The library Ryu has low performance on integers.
+        /// This workaround improves performance 6..10 times.
 
-    if (!result)
+        if (DecomposedFloat64(x).is_inside_int64())
+            result = itoa(Int64(x), buffer) - buffer;
+        else
+            result = d2s_buffered_n(x, buffer);
+    }
+    else
+    {
+        if (DecomposedFloat32(x).is_inside_int32())
+            result = itoa(Int32(x), buffer) - buffer;
+        else
+            result = f2s_buffered_n(x, buffer);
+    }
+
+    if (result <= 0)
         throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-    return builder.position();
+    return result;
 }
 
 template <typename T>
@@ -139,30 +229,15 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
     {
-        buf.position() += writeFloatTextFastPath(x, buf.position(), Converter::MAX_REPRESENTATION_LENGTH);
+        buf.position() += writeFloatTextFastPath(x, buf.position());
         return;
     }
 
     Converter::BufferType buffer;
-    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
-
-    bool result = false;
-    if constexpr (std::is_same_v<T, double>)
-        result = Converter::instance().ToShortest(x, &builder);
-    else
-        result = Converter::instance().ToShortestSingle(x, &builder);
-
-    if (!result)
-        throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-
-    buf.write(buffer, builder.position());
+    size_t result = writeFloatTextFastPath(x, buffer);
+    buf.write(buffer, result);
 }
 
-
-inline void writeString(const String & s, WriteBuffer & buf)
-{
-    buf.write(s.data(), s.size());
-}
 
 inline void writeString(const char * data, size_t size, WriteBuffer & buf)
 {
@@ -384,7 +459,6 @@ void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & bu
 }
 
 
-
 template <char quote_character>
 void writeAnyQuotedString(const String & s, WriteBuffer & buf)
 {
@@ -430,40 +504,10 @@ inline void writeBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
 }
 
 
-/// The same, but quotes apply only if there are characters that do not match the identifier without quotes.
-template <typename F>
-inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffer & buf, F && write_quoted_string)
-{
-    if (!s.size || !isValidIdentifierBegin(s.data[0]))
-        write_quoted_string(s, buf);
-    else
-    {
-        const char * pos = s.data + 1;
-        const char * end = s.data + s.size;
-        for (; pos < end; ++pos)
-            if (!isWordCharASCII(*pos))
-                break;
-        if (pos != end)
-            write_quoted_string(s, buf);
-        else
-            writeString(s, buf);
-    }
-}
-
-inline void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf)
-{
-    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
-}
-
-inline void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
-{
-    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
-}
-
-inline void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
-{
-    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
-}
+/// Write quoted if the string doesn't look like and identifier.
+void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf);
+void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf);
+void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf);
 
 
 /** Outputs the string in for the CSV format.
@@ -556,7 +600,7 @@ inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 void formatUUID(const UInt8 * src16, UInt8 * dst36);
-void formatUUID(std::reverse_iterator<const UInt8 *> dst16, UInt8 * dst36);
+void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
@@ -566,45 +610,46 @@ inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
     buf.write(s, sizeof(s));
 }
 
+
+static const char digits100[201] =
+    "00010203040506070809"
+    "10111213141516171819"
+    "20212223242526272829"
+    "30313233343536373839"
+    "40414243444546474849"
+    "50515253545556575859"
+    "60616263646566676869"
+    "70717273747576777879"
+    "80818283848586878889"
+    "90919293949596979899";
+
 /// in YYYY-MM-DD format
 template <char delimiter = '-'>
 inline void writeDateText(const LocalDate & date, WriteBuffer & buf)
 {
-    static const char digits[201] =
-        "00010203040506070809"
-        "10111213141516171819"
-        "20212223242526272829"
-        "30313233343536373839"
-        "40414243444546474849"
-        "50515253545556575859"
-        "60616263646566676869"
-        "70717273747576777879"
-        "80818283848586878889"
-        "90919293949596979899";
-
     if (buf.position() + 10 <= buf.buffer().end())
     {
-        memcpy(buf.position(), &digits[date.year() / 100 * 2], 2);
+        memcpy(buf.position(), &digits100[date.year() / 100 * 2], 2);
         buf.position() += 2;
-        memcpy(buf.position(), &digits[date.year() % 100 * 2], 2);
-        buf.position() += 2;
-        *buf.position() = delimiter;
-        ++buf.position();
-        memcpy(buf.position(), &digits[date.month() * 2], 2);
+        memcpy(buf.position(), &digits100[date.year() % 100 * 2], 2);
         buf.position() += 2;
         *buf.position() = delimiter;
         ++buf.position();
-        memcpy(buf.position(), &digits[date.day() * 2], 2);
+        memcpy(buf.position(), &digits100[date.month() * 2], 2);
+        buf.position() += 2;
+        *buf.position() = delimiter;
+        ++buf.position();
+        memcpy(buf.position(), &digits100[date.day() * 2], 2);
         buf.position() += 2;
     }
     else
     {
-        buf.write(&digits[date.year() / 100 * 2], 2);
-        buf.write(&digits[date.year() % 100 * 2], 2);
+        buf.write(&digits100[date.year() / 100 * 2], 2);
+        buf.write(&digits100[date.year() % 100 * 2], 2);
         buf.write(delimiter);
-        buf.write(&digits[date.month() * 2], 2);
+        buf.write(&digits100[date.month() * 2], 2);
         buf.write(delimiter);
-        buf.write(&digits[date.day() * 2], 2);
+        buf.write(&digits100[date.day() * 2], 2);
     }
 }
 
@@ -626,59 +671,47 @@ inline void writeDateText(DayNum date, WriteBuffer & buf)
 template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' '>
 inline void writeDateTimeText(const LocalDateTime & datetime, WriteBuffer & buf)
 {
-    static const char digits[201] =
-        "00010203040506070809"
-        "10111213141516171819"
-        "20212223242526272829"
-        "30313233343536373839"
-        "40414243444546474849"
-        "50515253545556575859"
-        "60616263646566676869"
-        "70717273747576777879"
-        "80818283848586878889"
-        "90919293949596979899";
-
     if (buf.position() + 19 <= buf.buffer().end())
     {
-        memcpy(buf.position(), &digits[datetime.year() / 100 * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.year() / 100 * 2], 2);
         buf.position() += 2;
-        memcpy(buf.position(), &digits[datetime.year() % 100 * 2], 2);
-        buf.position() += 2;
-        *buf.position() = date_delimeter;
-        ++buf.position();
-        memcpy(buf.position(), &digits[datetime.month() * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.year() % 100 * 2], 2);
         buf.position() += 2;
         *buf.position() = date_delimeter;
         ++buf.position();
-        memcpy(buf.position(), &digits[datetime.day() * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.month() * 2], 2);
+        buf.position() += 2;
+        *buf.position() = date_delimeter;
+        ++buf.position();
+        memcpy(buf.position(), &digits100[datetime.day() * 2], 2);
         buf.position() += 2;
         *buf.position() = between_date_time_delimiter;
         ++buf.position();
-        memcpy(buf.position(), &digits[datetime.hour() * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.hour() * 2], 2);
         buf.position() += 2;
         *buf.position() = time_delimeter;
         ++buf.position();
-        memcpy(buf.position(), &digits[datetime.minute() * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.minute() * 2], 2);
         buf.position() += 2;
         *buf.position() = time_delimeter;
         ++buf.position();
-        memcpy(buf.position(), &digits[datetime.second() * 2], 2);
+        memcpy(buf.position(), &digits100[datetime.second() * 2], 2);
         buf.position() += 2;
     }
     else
     {
-        buf.write(&digits[datetime.year() / 100 * 2], 2);
-        buf.write(&digits[datetime.year() % 100 * 2], 2);
+        buf.write(&digits100[datetime.year() / 100 * 2], 2);
+        buf.write(&digits100[datetime.year() % 100 * 2], 2);
         buf.write(date_delimeter);
-        buf.write(&digits[datetime.month() * 2], 2);
+        buf.write(&digits100[datetime.month() * 2], 2);
         buf.write(date_delimeter);
-        buf.write(&digits[datetime.day() * 2], 2);
+        buf.write(&digits100[datetime.day() * 2], 2);
         buf.write(between_date_time_delimiter);
-        buf.write(&digits[datetime.hour() * 2], 2);
+        buf.write(&digits100[datetime.hour() * 2], 2);
         buf.write(time_delimeter);
-        buf.write(&digits[datetime.minute() * 2], 2);
+        buf.write(&digits100[datetime.minute() * 2], 2);
         buf.write(time_delimeter);
-        buf.write(&digits[datetime.second() * 2], 2);
+        buf.write(&digits100[datetime.second() * 2], 2);
     }
 }
 
@@ -702,6 +735,74 @@ inline void writeDateTimeText(time_t datetime, WriteBuffer & buf, const DateLUTI
     writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
         LocalDateTime(values.year, values.month, values.day_of_month,
             date_lut.toHour(datetime), date_lut.toMinute(datetime), date_lut.toSecond(datetime)), buf);
+}
+
+/// In the format YYYY-MM-DD HH:MM:SS.NNNNNNNNN, according to the specified time zone.
+template <char date_delimeter = '-', char time_delimeter = ':', char between_date_time_delimiter = ' ', char fractional_time_delimiter = '.'>
+inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+{
+    static constexpr UInt32 MaxScale = DecimalUtils::maxPrecision<DateTime64>();
+    scale = scale > MaxScale ? MaxScale : scale;
+    if (unlikely(!datetime64))
+    {
+        static const char s[] =
+        {
+            '0', '0', '0', '0', date_delimeter, '0', '0', date_delimeter, '0', '0',
+            between_date_time_delimiter,
+            '0', '0', time_delimeter, '0', '0', time_delimeter, '0', '0',
+            fractional_time_delimiter,
+            // Exactly MaxScale zeroes
+            '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
+        };
+        buf.write(s, sizeof(s) - (MaxScale - scale)
+                  + (scale == 0 ? -1 : 0)); // if scale is zero, also remove the fractional_time_delimiter.
+        return;
+    }
+    auto c = DecimalUtils::split(datetime64, scale);
+    const auto & values = date_lut.getValues(c.whole);
+    writeDateTimeText<date_delimeter, time_delimeter, between_date_time_delimiter>(
+        LocalDateTime(values.year, values.month, values.day_of_month,
+            date_lut.toHour(c.whole), date_lut.toMinute(c.whole), date_lut.toSecond(c.whole)), buf);
+
+    if (scale > 0)
+    {
+        buf.write(fractional_time_delimiter);
+
+        char data[20] = {'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'};
+        static_assert(sizeof(data) >= MaxScale);
+
+        auto fractional = c.fractional;
+        for (Int32 pos = scale - 1; pos >= 0 && fractional; --pos, fractional /= DateTime64(10))
+            data[pos] += fractional % DateTime64(10);
+
+        writeString(&data[0], static_cast<size_t>(scale), buf);
+    }
+}
+
+/// In the RFC 1123 format: "Tue, 03 Dec 2019 00:11:50 GMT". You must provide GMT DateLUT.
+/// This is needed for HTTP requests.
+inline void writeDateTimeTextRFC1123(time_t datetime, WriteBuffer & buf, const DateLUTImpl & date_lut)
+{
+    const auto & values = date_lut.getValues(datetime);
+
+    static const char week_days[3 * 8 + 1] = "XXX" "Mon" "Tue" "Wed" "Thu" "Fri" "Sat" "Sun";
+    static const char months[3 * 13 + 1] = "XXX" "Jan" "Feb" "Mar" "Apr" "May" "Jun" "Jul" "Aug" "Sep" "Oct" "Nov" "Dec";
+
+    buf.write(&week_days[values.day_of_week * 3], 3);
+    buf.write(", ", 2);
+    buf.write(&digits100[values.day_of_month * 2], 2);
+    buf.write(' ');
+    buf.write(&months[values.month * 3], 3);
+    buf.write(' ');
+    buf.write(&digits100[values.year / 100 * 2], 2);
+    buf.write(&digits100[values.year % 100 * 2], 2);
+    buf.write(' ');
+    buf.write(&digits100[date_lut.toHour(datetime) * 2], 2);
+    buf.write(':');
+    buf.write(&digits100[date_lut.toMinute(datetime) * 2], 2);
+    buf.write(':');
+    buf.write(&digits100[date_lut.toSecond(datetime) * 2], 2);
+    buf.write(" GMT", 4);
 }
 
 
@@ -746,12 +847,6 @@ inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTim
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
 
-template <typename T> inline T decimalScaleMultiplier(UInt32 scale);
-template <> inline Int32 decimalScaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
-template <> inline Int64 decimalScaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
-template <> inline Int128 decimalScaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
-
-
 template <typename T>
 void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 {
@@ -761,9 +856,7 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
         writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
     }
 
-    T whole_part = value;
-    if (scale)
-        whole_part = value / decimalScaleMultiplier<T>(scale);
+    const T whole_part = DecimalUtils::getWholePart(value, scale);
 
     writeIntText(whole_part, ostr);
     if (scale)
@@ -892,7 +985,6 @@ void writeText(const std::vector<T> & x, WriteBuffer & buf)
 }
 
 
-
 /// Serialize exception (so that it can be transferred over the network)
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace);
 
@@ -905,4 +997,5 @@ inline String toString(const T & x)
     writeText(x, buf);
     return buf.str();
 }
+
 }

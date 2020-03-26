@@ -14,7 +14,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
 }
 
 /// PaddedPODArray extended by Decimal scale
@@ -66,6 +65,7 @@ private:
     friend class COWHelper<ColumnVectorHelper, Self>;
 
 public:
+    using ValueType = T;
     using Container = DecimalPaddedPODArray<T>;
 
 private:
@@ -94,8 +94,9 @@ public:
     void reserve(size_t n) override { data.reserve(n); }
 
     void insertFrom(const IColumn & src, size_t n) override { data.push_back(static_cast<const Self &>(src).getData()[n]); }
-    void insertData(const char * pos, size_t /*length*/) override;
+    void insertData(const char * src, size_t /*length*/) override;
     void insertDefault() override { data.push_back(T()); }
+    virtual void insertManyDefaults(size_t length) override { data.resize_fill(data.size() + length); }
     void insert(const Field & x) override { data.push_back(DB::get<NearestFieldType<T>>(x)); }
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
@@ -104,6 +105,7 @@ public:
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
     const char * deserializeAndInsertFromArena(const char * pos) override;
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+    void updateWeakHash32(WeakHash32 & hash) const override;
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const override;
     void getPermutation(bool reverse, size_t limit, int nan_direction_hint, IColumn::Permutation & res) const override;
 
@@ -144,7 +146,7 @@ public:
     }
 
 
-    void insert(const T value) { data.push_back(value); }
+    void insertValue(const T value) { data.push_back(value); }
     Container & getData() { return data; }
     const Container & getData() const { return data; }
     const T & getElement(size_t n) const { return data[n]; }

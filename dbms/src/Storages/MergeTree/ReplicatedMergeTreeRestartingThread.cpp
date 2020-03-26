@@ -40,7 +40,7 @@ static String generateActiveNodeIdentifier()
 
 ReplicatedMergeTreeRestartingThread::ReplicatedMergeTreeRestartingThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
-    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreeRestartingThread)")
+    , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreeRestartingThread)")
     , log(&Logger::get(log_name))
     , active_node_identifier(generateActiveNodeIdentifier())
 {
@@ -180,6 +180,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
         /// because cleanup_thread doesn't delete log_pointer of active replicas.
         storage.queue.pullLogsToQueue(zookeeper);
+        storage.queue.removeCurrentPartsFromMutations();
         storage.last_queue_update_finish_time.store(time(nullptr));
 
         updateQuorumIfWeHavePart();
@@ -199,7 +200,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.mutations_updating_task->activateAndSchedule();
         storage.mutations_finalizing_task->activateAndSchedule();
         storage.cleanup_thread.start();
-        storage.alter_thread.start();
         storage.part_check_thread.start();
 
         return true;
@@ -214,7 +214,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         }
         catch (const Coordination::Exception & e)
         {
-            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n" << e.getStackTrace().toString());
+            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ". " << DB::getCurrentExceptionMessage(true));
             return false;
         }
         catch (const Exception & e)
@@ -222,7 +222,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
             if (e.code() != ErrorCodes::REPLICA_IS_ALREADY_ACTIVE)
                 throw;
 
-            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ", " << e.displayText() << ", stack trace:\n" << e.getStackTrace().toString());
+            LOG_ERROR(log, "Couldn't start replication: " << e.what() << ". " << DB::getCurrentExceptionMessage(true));
             return false;
         }
     }
@@ -240,7 +240,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
     /// Firstly, remove parts from ZooKeeper
     storage.tryRemovePartsFromZooKeeperWithRetries(failed_parts);
 
-    for (auto part_name : failed_parts)
+    for (const auto & part_name : failed_parts)
     {
         auto part = storage.getPartIfExists(
             part_name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
@@ -346,7 +346,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.mutations_finalizing_task->deactivate();
 
     storage.cleanup_thread.stop();
-    storage.alter_thread.stop();
     storage.part_check_thread.stop();
 
     LOG_TRACE(log, "Threads finished");

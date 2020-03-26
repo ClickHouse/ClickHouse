@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <DataTypes/DataTypeString.h>
@@ -33,7 +33,7 @@ public:
         return std::make_shared<FunctionGetMacro>(context.getMacros());
     }
 
-    FunctionGetMacro(MultiVersion<Macros>::Version macros_) : macros(std::move(macros_)) {}
+    explicit FunctionGetMacro(MultiVersion<Macros>::Version macros_) : macros(std::move(macros_)) {}
 
     String getName() const override
     {

@@ -12,7 +12,7 @@ options {
 // 4. правило для expr переписано чтобы понизить глубину AST и сразу выходить на уровень expr - al
 
 parse
- : ( query | error ) EOF
+ : ( query | err ) EOF
  ;
 
 query
@@ -41,7 +41,7 @@ select_query
  ;
 
 select_query_main
- :  select_with_step
+ :  select_with_step?
     select_select_step select_from_step?
     K_FINAL? select_sample_step?
     select_array_join_step? select_join_step?
@@ -575,7 +575,7 @@ literal
  |    STRING_LITERAL
  ;
 
-error
+err
  : UNEXPECTED_CHAR
    {
      throw new RuntimeException("UNEXPECTED_CHAR=" + $UNEXPECTED_CHAR.text);

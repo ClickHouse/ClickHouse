@@ -1,7 +1,10 @@
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypeDate.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/DateTimeTransforms.h>
@@ -11,6 +14,7 @@
 
 #include <common/DateLUTImpl.h>
 #include <common/find_symbols.h>
+#include <Core/DecimalFunctions.h>
 
 #include <type_traits>
 
@@ -27,6 +31,16 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+// in private namespace to avoid GCC 9 error: "explicit specialization in non-namespace scope"
+template <typename DataType> struct ActionaValueTypeMap {};
+template <> struct ActionaValueTypeMap<DataTypeDate>       { using ActionValueType = UInt16; };
+template <> struct ActionaValueTypeMap<DataTypeDateTime>   { using ActionValueType = UInt32; };
+// TODO(vnemkov): once there is support for Int64 in LUT, make that Int64.
+// TODO(vnemkov): to add sub-second format instruction, make that DateTime64 and do some math in Action<T>.
+template <> struct ActionaValueTypeMap<DataTypeDateTime64> { using ActionValueType = UInt32; };
+}
 
 /** formatDateTime(time, 'pattern')
   * Performs formatting of time, according to provided pattern.
@@ -79,7 +93,7 @@ private:
         Func func;
         size_t shift;
 
-        Action(Func func_, size_t shift_ = 0) : func(func_), shift(shift_) {}
+        explicit Action(Func func_, size_t shift_ = 0) : func(func_), shift(shift_) {}
 
         void perform(char *& target, Time source, const DateLUTImpl & timezone)
         {
@@ -91,19 +105,7 @@ private:
         template <typename T>
         static inline void writeNumber2(char * p, T v)
         {
-            static const char digits[201] =
-                "00010203040506070809"
-                "10111213141516171819"
-                "20212223242526272829"
-                "30313233343536373839"
-                "40414243444546474849"
-                "50515253545556575859"
-                "60616263646566676869"
-                "70717273747576777879"
-                "80818283848586878889"
-                "90919293949596979899";
-
-            memcpy(p, &digits[v * 2], 2);
+            memcpy(p, &digits100[v * 2], 2);
         }
 
         template <typename T>
@@ -153,7 +155,7 @@ private:
                 writeNumber2(target, day);
         }
 
-        static void ISO8601Date(char * target, Time source, const DateLUTImpl & timezone)
+        static void ISO8601Date(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber4(target, ToYearImpl::execute(source, timezone));
             writeNumber2(target + 5, ToMonthImpl::execute(source, timezone));
@@ -181,7 +183,7 @@ private:
             *target += (day == 7 ? 0 : day);
         }
 
-        static void ISO8601Week(char * target, Time source, const DateLUTImpl & timezone)
+        static void ISO8601Week(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber2(target, ToISOWeekImpl::execute(source, timezone));
         }
@@ -212,7 +214,7 @@ private:
             writeNumber2(target, ToMinuteImpl::execute(source, timezone));
         }
 
-        static void AMPM(char * target, Time source, const DateLUTImpl & timezone)
+        static void AMPM(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
         {
             auto hour = ToHourImpl::execute(source, timezone);
             if (hour >= 12)
@@ -230,7 +232,7 @@ private:
             writeNumber2(target, ToSecondImpl::execute(source, timezone));
         }
 
-        static void ISO8601Time(char * target, Time source, const DateLUTImpl & timezone)
+        static void ISO8601Time(char * target, Time source, const DateLUTImpl & timezone) // NOLINT
         {
             writeNumber2(target, ToHourImpl::execute(source, timezone));
             writeNumber2(target + 3, ToMinuteImpl::execute(source, timezone));
@@ -282,86 +284,105 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        if (!executeType<UInt32>(block, arguments, result)
-            && !executeType<UInt16>(block, arguments, result))
+        if (!executeType<DataTypeDate>(block, arguments, result)
+            && !executeType<DataTypeDateTime>(block, arguments, result)
+            && !executeType<DataTypeDateTime64>(block, arguments, result))
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                             + " of function " + getName() + ", must be Date or DateTime",
                             ErrorCodes::ILLEGAL_COLUMN);
     }
 
-    template <typename T>
+    template <typename DataType>
     bool executeType(Block & block, const ColumnNumbers & arguments, size_t result)
     {
-        if (auto * times = checkAndGetColumn<ColumnVector<T>>(block.getByPosition(arguments[0]).column.get()))
+        auto * times = checkAndGetColumn<typename DataType::ColumnType>(block.getByPosition(arguments[0]).column.get());
+        if (!times)
+            return false;
+
+        const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+        if (!pattern_column)
+            throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
+                            + " of second ('format') argument of function " + getName()
+                            + ". Must be constant string.",
+                            ErrorCodes::ILLEGAL_COLUMN);
+
+        String pattern = pattern_column->getValue<String>();
+
+        using T = typename ActionaValueTypeMap<DataType>::ActionValueType;
+        std::vector<Action<T>> instructions;
+        String pattern_to_fill = parsePattern(pattern, instructions);
+        size_t result_size = pattern_to_fill.size();
+
+        const DateLUTImpl * time_zone_tmp = nullptr;
+        if (arguments.size() == 3)
+            time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
+        else
+            time_zone_tmp = &DateLUT::instance();
+
+        const DateLUTImpl & time_zone = *time_zone_tmp;
+
+        const auto & vec = times->getData();
+
+        UInt32 scale [[maybe_unused]] = 0;
+        if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
         {
-            const ColumnConst * pattern_column = checkAndGetColumnConst<ColumnString>(block.getByPosition(arguments[1]).column.get());
+            scale = vec.getScale();
+        }
 
-            if (!pattern_column)
-                throw Exception("Illegal column " + block.getByPosition(arguments[1]).column->getName()
-                                + " of second ('format') argument of function " + getName()
-                                + ". Must be constant string.",
-                                ErrorCodes::ILLEGAL_COLUMN);
+        auto col_res = ColumnString::create();
+        auto & dst_data = col_res->getChars();
+        auto & dst_offsets = col_res->getOffsets();
+        dst_data.resize(vec.size() * (result_size + 1));
+        dst_offsets.resize(vec.size());
 
-            String pattern = pattern_column->getValue<String>();
+        /// Fill result with literals.
+        {
+            UInt8 * begin = dst_data.data();
+            UInt8 * end = begin + dst_data.size();
+            UInt8 * pos = begin;
 
-            std::vector<Action<T>> instructions;
-            String pattern_to_fill = parsePattern(pattern, instructions);
-            size_t result_size = pattern_to_fill.size();
-
-            const DateLUTImpl * time_zone_tmp = nullptr;
-            if (arguments.size() == 3)
-                time_zone_tmp = &extractTimeZoneFromFunctionArguments(block, arguments, 2, 0);
-            else
-                time_zone_tmp = &DateLUT::instance();
-
-            const DateLUTImpl & time_zone = *time_zone_tmp;
-
-            const typename ColumnVector<T>::Container & vec = times->getData();
-
-            auto col_res = ColumnString::create();
-            auto & dst_data = col_res->getChars();
-            auto & dst_offsets = col_res->getOffsets();
-            dst_data.resize(vec.size() * (result_size + 1));
-            dst_offsets.resize(vec.size());
-
-            /// Fill result with literals.
+            if (pos < end)
             {
-                UInt8 * begin = dst_data.data();
-                UInt8 * end = begin + dst_data.size();
-                UInt8 * pos = begin;
-
-                if (pos < end)
-                {
-                    memcpy(pos, pattern_to_fill.data(), result_size + 1);   /// With zero terminator.
-                    pos += result_size + 1;
-                }
-
-                /// Fill by copying exponential growing ranges.
-                while (pos < end)
-                {
-                    size_t bytes_to_copy = std::min(pos - begin, end - pos);
-                    memcpy(pos, begin, bytes_to_copy);
-                    pos += bytes_to_copy;
-                }
+                memcpy(pos, pattern_to_fill.data(), result_size + 1);   /// With zero terminator.
+                pos += result_size + 1;
             }
 
-            auto begin = reinterpret_cast<char *>(dst_data.data());
-            auto pos = begin;
+            /// Fill by copying exponential growing ranges.
+            while (pos < end)
+            {
+                size_t bytes_to_copy = std::min(pos - begin, end - pos);
+                memcpy(pos, begin, bytes_to_copy);
+                pos += bytes_to_copy;
+            }
+        }
 
-            for (size_t i = 0; i < vec.size(); ++i)
+        auto begin = reinterpret_cast<char *>(dst_data.data());
+        auto pos = begin;
+
+        for (size_t i = 0; i < vec.size(); ++i)
+        {
+            if constexpr (std::is_same_v<DataType, DataTypeDateTime64>)
+            {
+                for (auto & instruction : instructions)
+                {
+                    // since right now LUT does not support Int64-values and not format instructions for subsecond parts,
+                    // treat DatTime64 values just as DateTime values by ignoring fractional and casting to UInt32.
+                    const auto c = DecimalUtils::split(vec[i], scale);
+                    instruction.perform(pos, static_cast<UInt32>(c.whole), time_zone);
+                }
+            }
+            else
             {
                 for (auto & instruction : instructions)
                     instruction.perform(pos, vec[i], time_zone);
-
-                dst_offsets[i] = pos - begin;
             }
 
-            dst_data.resize(pos - begin);
-            block.getByPosition(result).column = std::move(col_res);
-            return true;
+            dst_offsets[i] = pos - begin;
         }
 
-        return false;
+        dst_data.resize(pos - begin);
+        block.getByPosition(result).column = std::move(col_res);
+        return true;
     }
 
     template <typename T>
@@ -373,7 +394,7 @@ public:
         const char * end = pos + pattern.size();
 
         /// Add shift to previous action; or if there were none, add noop action with shift.
-        auto addShift = [&](size_t amount)
+        auto add_shift = [&](size_t amount)
         {
             if (instructions.empty())
                 instructions.emplace_back(&Action<T>::noop);
@@ -381,12 +402,12 @@ public:
         };
 
         /// If the argument was DateTime, add instruction for printing. If it was date, just shift (the buffer is pre-filled with default values).
-        auto addInstructionOrShift = [&](typename Action<T>::Func func [[maybe_unused]], size_t shift)
+        auto add_instruction_or_shift = [&](typename Action<T>::Func func [[maybe_unused]], size_t shift)
         {
             if constexpr (std::is_same_v<T, UInt32>)
                 instructions.emplace_back(func, shift);
             else
-                addShift(shift);
+                add_shift(shift);
         };
 
         while (true)
@@ -398,7 +419,7 @@ public:
                 if (pos < percent_pos)
                 {
                     result.append(pos, percent_pos);
-                    addShift(percent_pos - pos);
+                    add_shift(percent_pos - pos);
                 }
 
                 pos = percent_pos + 1;
@@ -484,58 +505,58 @@ public:
 
                     // Minute (00-59)
                     case 'M':
-                        addInstructionOrShift(&Action<T>::minute, 2);
+                        add_instruction_or_shift(&Action<T>::minute, 2);
                         result.append("00");
                         break;
 
                     // AM or PM
                     case 'p':
-                        addInstructionOrShift(&Action<T>::AMPM, 2);
+                        add_instruction_or_shift(&Action<T>::AMPM, 2);
                         result.append("AM");
                         break;
 
                     // 24-hour HH:MM time, equivalent to %H:%M 14:55
                     case 'R':
-                        addInstructionOrShift(&Action<T>::hhmm24, 5);
+                        add_instruction_or_shift(&Action<T>::hhmm24, 5);
                         result.append("00:00");
                         break;
 
                     // Seconds
                     case 'S':
-                        addInstructionOrShift(&Action<T>::second, 2);
+                        add_instruction_or_shift(&Action<T>::second, 2);
                         result.append("00");
                         break;
 
                     // ISO 8601 time format (HH:MM:SS), equivalent to %H:%M:%S 14:55:02
                     case 'T':
-                        addInstructionOrShift(&Action<T>::ISO8601Time, 8);
+                        add_instruction_or_shift(&Action<T>::ISO8601Time, 8);
                         result.append("00:00:00");
                         break;
 
                     // Hour in 24h format (00-23)
                     case 'H':
-                        addInstructionOrShift(&Action<T>::hour24, 2);
+                        add_instruction_or_shift(&Action<T>::hour24, 2);
                         result.append("00");
                         break;
 
                     // Hour in 12h format (01-12)
                     case 'I':
-                        addInstructionOrShift(&Action<T>::hour12, 2);
+                        add_instruction_or_shift(&Action<T>::hour12, 2);
                         result.append("12");
                         break;
 
                     /// Escaped literal characters.
                     case '%':
                         result += '%';
-                        addShift(1);
+                        add_shift(1);
                         break;
                     case 't':
                         result += '\t';
-                        addShift(1);
+                        add_shift(1);
                         break;
                     case 'n':
                         result += '\n';
-                        addShift(1);
+                        add_shift(1);
                         break;
 
                     // Unimplemented
@@ -554,7 +575,7 @@ public:
             else
             {
                 result.append(pos, end);
-                addShift(end + 1 - pos); /// including zero terminator
+                add_shift(end + 1 - pos); /// including zero terminator
                 break;
             }
         }

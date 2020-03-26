@@ -1,19 +1,9 @@
 <test>
-    <type>once</type>
-
     <stop_conditions>
         <any_of>
-            <average_speed_not_changing_for_ms>4000</average_speed_not_changing_for_ms>
             <total_time_ms>10000</total_time_ms>
         </any_of>
     </stop_conditions>
-
-    <main_metric>
-        <max_rows_per_second />
-        <max_bytes_per_second />
-        <avg_rows_per_second />
-        <avg_bytes_per_second />
-    </main_metric>
 
     <substitutions>
         <substitution>
@@ -26,5 +16,5 @@
        </substitution>
     </substitutions>
 
-    <query>SELECT count() FROM system.numbers WHERE NOT ignore(visitParamExtractRaw(materialize({param}), 'myparam'))</query>
+    <query>SELECT count() FROM zeros(2000000) WHERE NOT ignore(visitParamExtractRaw(materialize({param}), 'myparam'))</query>
 </test>

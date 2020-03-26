@@ -26,6 +26,8 @@ public:
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
 
+    void resetParser() override;
+
 private:
     bool with_names;
     bool with_types;
@@ -45,7 +47,7 @@ private:
 
     void addInputColumn(const String & column_name);
     void setupAllColumnsByTableSchema();
-    void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension& ext);
+    void fillUnreadColumnsWithDefaults(MutableColumns & columns, RowReadExtension & row_read_extension);
 
     bool parseRowAndPrintDiagnosticInfo(MutableColumns & columns, WriteBuffer & out) override;
     void tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,

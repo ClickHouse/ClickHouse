@@ -6,30 +6,22 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Common/typeid_cast.h>
 #include <ext/range.h>
 
-
-extern "C"
-{
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdocumentation"
+#if __has_include(<h3/h3api.h>)
+#    include <h3/h3api.h>
+#else
+#    include <h3api.h>
 #endif
 
-#include <h3api.h>
-
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-}
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
 /// Implements the function geoToH3 which takes 3 arguments (latitude, longitude and h3 resolution)
@@ -86,10 +78,10 @@ public:
             const UInt8 res = col_res->getUInt(row);
 
             GeoCoord coord;
-            coord.lon = H3_EXPORT(degsToRads)(lon);
-            coord.lat = H3_EXPORT(degsToRads)(lat);
+            coord.lon = degsToRads(lon);
+            coord.lat = degsToRads(lat);
 
-            H3Index hindex = H3_EXPORT(geoToH3)(&coord, res);
+            H3Index hindex = geoToH3(&coord, res);
 
             dst_data[row] = hindex;
         }

@@ -24,7 +24,7 @@ static const auto PART_CHECK_ERROR_SLEEP_MS = 5 * 1000;
 
 ReplicatedMergeTreePartCheckThread::ReplicatedMergeTreePartCheckThread(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
-    , log_name(storage.database_name + "." + storage.table_name + " (ReplicatedMergeTreePartCheckThread)")
+    , log_name(storage.getStorageID().getFullTableName() + " (ReplicatedMergeTreePartCheckThread)")
     , log(&Logger::get(log_name))
 {
     task = storage.global_context.getSchedulePool().createTask(log_name, [this] { run(); });
@@ -206,7 +206,7 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
         auto table_lock = storage.lockStructureForShare(false, RWLockImpl::NO_QUERY);
 
         auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
-            part->columns, part->checksums);
+            part->getColumns(), part->checksums);
 
         String part_path = storage.replica_path + "/parts/" + part_name;
         String part_znode;
@@ -236,8 +236,6 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
                 checkDataPart(
                     part,
                     true,
-                    storage.primary_key_data_types,
-                    storage.skip_indices,
                     [this] { return need_stop.load(); });
 
                 if (need_stop)

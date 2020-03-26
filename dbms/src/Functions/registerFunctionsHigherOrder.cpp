@@ -3,21 +3,21 @@ namespace DB
 
 class FunctionFactory;
 
-void registerFunctionArrayMap(FunctionFactory &);
-void registerFunctionArrayFilter(FunctionFactory &);
-void registerFunctionArrayCount(FunctionFactory &);
-void registerFunctionArrayExists(FunctionFactory &);
-void registerFunctionArrayAll(FunctionFactory &);
-void registerFunctionArrayCompact(FunctionFactory &);
-void registerFunctionArraySum(FunctionFactory &);
-void registerFunctionArrayFirst(FunctionFactory &);
-void registerFunctionArrayFirstIndex(FunctionFactory &);
-void registerFunctionsArrayFill(FunctionFactory &);
-void registerFunctionsArraySplit(FunctionFactory &);
-void registerFunctionsArraySort(FunctionFactory &);
-void registerFunctionArrayCumSum(FunctionFactory &);
-void registerFunctionArrayCumSumNonNegative(FunctionFactory &);
-void registerFunctionArrayDifference(FunctionFactory &);
+void registerFunctionArrayMap(FunctionFactory & factory);
+void registerFunctionArrayFilter(FunctionFactory & factory);
+void registerFunctionArrayCount(FunctionFactory & factory);
+void registerFunctionArrayExists(FunctionFactory & factory);
+void registerFunctionArrayAll(FunctionFactory & factory);
+void registerFunctionArrayCompact(FunctionFactory & factory);
+void registerFunctionArraySum(FunctionFactory & factory);
+void registerFunctionArrayFirst(FunctionFactory & factory);
+void registerFunctionArrayFirstIndex(FunctionFactory & factory);
+void registerFunctionsArrayFill(FunctionFactory & factory);
+void registerFunctionsArraySplit(FunctionFactory & factory);
+void registerFunctionsArraySort(FunctionFactory & factory);
+void registerFunctionArrayCumSum(FunctionFactory & factory);
+void registerFunctionArrayCumSumNonNegative(FunctionFactory & factory);
+void registerFunctionArrayDifference(FunctionFactory & factory);
 
 void registerFunctionsHigherOrder(FunctionFactory & factory)
 {

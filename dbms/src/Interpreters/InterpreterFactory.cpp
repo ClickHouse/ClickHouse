@@ -1,6 +1,12 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCheckQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateUserQuery.h>
+#include <Parsers/ASTCreateRoleQuery.h>
+#include <Parsers/ASTCreateQuotaQuery.h>
+#include <Parsers/ASTCreateRowPolicyQuery.h>
+#include <Parsers/ASTCreateSettingsProfileQuery.h>
+#include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -9,18 +15,30 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTSetRoleQuery.h>
+#include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTShowProcesslistQuery.h>
+#include <Parsers/ASTShowGrantsQuery.h>
+#include <Parsers/ASTShowQuotasQuery.h>
+#include <Parsers/ASTShowRowPoliciesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTUseQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/TablePropertiesQueriesASTs.h>
 #include <Parsers/ASTWatchQuery.h>
+#include <Parsers/ASTGrantQuery.h>
 
 #include <Interpreters/InterpreterAlterQuery.h>
 #include <Interpreters/InterpreterCheckQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterCreateUserQuery.h>
+#include <Interpreters/InterpreterCreateRoleQuery.h>
+#include <Interpreters/InterpreterCreateQuotaQuery.h>
+#include <Interpreters/InterpreterCreateRowPolicyQuery.h>
+#include <Interpreters/InterpreterCreateSettingsProfileQuery.h>
 #include <Interpreters/InterpreterDescribeQuery.h>
 #include <Interpreters/InterpreterExplainQuery.h>
+#include <Interpreters/InterpreterDropAccessEntityQuery.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterFactory.h>
@@ -31,12 +49,18 @@
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
+#include <Interpreters/InterpreterSetRoleQuery.h>
+#include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 #include <Interpreters/InterpreterShowProcesslistQuery.h>
+#include <Interpreters/InterpreterShowGrantsQuery.h>
+#include <Interpreters/InterpreterShowQuotasQuery.h>
+#include <Interpreters/InterpreterShowRowPoliciesQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/InterpreterUseQuery.h>
 #include <Interpreters/InterpreterWatchQuery.h>
+#include <Interpreters/InterpreterGrantQuery.h>
 
 #include <Parsers/ASTSystemQuery.h>
 
@@ -56,25 +80,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int READONLY;
     extern const int UNKNOWN_TYPE_OF_QUERY;
-    extern const int QUERY_IS_PROHIBITED;
-}
-
-
-static void throwIfNoAccess(Context & context)
-{
-    if (context.getSettingsRef().readonly)
-    {
-        const auto & client_info = context.getClientInfo();
-        if (client_info.interface == ClientInfo::Interface::HTTP && client_info.http_method == ClientInfo::HTTPMethod::GET)
-            throw Exception("Cannot execute query in readonly mode. "
-                "For queries over HTTP, method GET implies readonly. You should use method POST for modifying queries.", ErrorCodes::READONLY);
-        else
-            throw Exception("Cannot execute query in readonly mode", ErrorCodes::READONLY);
-    }
-    else if (!context.getSettingsRef().allow_ddl)
-        throw Exception("Cannot execute query. DDL queries are prohibited for the user", ErrorCodes::QUERY_IS_PROHIBITED);
 }
 
 
@@ -96,23 +102,19 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTInsertQuery>())
     {
         ProfileEvents::increment(ProfileEvents::InsertQuery);
-        /// readonly is checked inside InterpreterInsertQuery
         bool allow_materialized = static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns);
         return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);
     }
     else if (query->as<ASTCreateQuery>())
     {
-        /// readonly and allow_ddl are checked inside InterpreterCreateQuery
         return std::make_unique<InterpreterCreateQuery>(query, context);
     }
     else if (query->as<ASTDropQuery>())
     {
-        /// readonly and allow_ddl are checked inside InterpreterDropQuery
         return std::make_unique<InterpreterDropQuery>(query, context);
     }
     else if (query->as<ASTRenameQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterRenameQuery>(query, context);
     }
     else if (query->as<ASTShowTablesQuery>())
@@ -128,9 +130,12 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
         /// readonly is checked inside InterpreterSetQuery
         return std::make_unique<InterpreterSetQuery>(query, context);
     }
+    else if (query->as<ASTSetRoleQuery>())
+    {
+        return std::make_unique<InterpreterSetRoleQuery>(query, context);
+    }
     else if (query->as<ASTOptimizeQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterOptimizeQuery>(query, context);
     }
     else if (query->as<ASTExistsTableQuery>())
@@ -167,7 +172,6 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (query->as<ASTAlterQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterAlterQuery>(query, context);
     }
     else if (query->as<ASTCheckQuery>())
@@ -180,12 +184,55 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     }
     else if (query->as<ASTSystemQuery>())
     {
-        throwIfNoAccess(context);
         return std::make_unique<InterpreterSystemQuery>(query, context);
     }
     else if (query->as<ASTWatchQuery>())
     {
         return std::make_unique<InterpreterWatchQuery>(query, context);
+    }
+    else if (query->as<ASTCreateUserQuery>())
+    {
+        return std::make_unique<InterpreterCreateUserQuery>(query, context);
+    }
+    else if (query->as<ASTCreateRoleQuery>())
+    {
+        return std::make_unique<InterpreterCreateRoleQuery>(query, context);
+    }
+    else if (query->as<ASTCreateQuotaQuery>())
+    {
+        return std::make_unique<InterpreterCreateQuotaQuery>(query, context);
+    }
+    else if (query->as<ASTCreateRowPolicyQuery>())
+    {
+        return std::make_unique<InterpreterCreateRowPolicyQuery>(query, context);
+    }
+    else if (query->as<ASTCreateSettingsProfileQuery>())
+    {
+        return std::make_unique<InterpreterCreateSettingsProfileQuery>(query, context);
+    }
+    else if (query->as<ASTDropAccessEntityQuery>())
+    {
+        return std::make_unique<InterpreterDropAccessEntityQuery>(query, context);
+    }
+    else if (query->as<ASTGrantQuery>())
+    {
+        return std::make_unique<InterpreterGrantQuery>(query, context);
+    }
+    else if (query->as<ASTShowCreateAccessEntityQuery>())
+    {
+        return std::make_unique<InterpreterShowCreateAccessEntityQuery>(query, context);
+    }
+    else if (query->as<ASTShowGrantsQuery>())
+    {
+        return std::make_unique<InterpreterShowGrantsQuery>(query, context);
+    }
+    else if (query->as<ASTShowQuotasQuery>())
+    {
+        return std::make_unique<InterpreterShowQuotasQuery>(query, context);
+    }
+    else if (query->as<ASTShowRowPoliciesQuery>())
+    {
+        return std::make_unique<InterpreterShowRowPoliciesQuery>(query, context);
     }
     else
         throw Exception("Unknown type of query: " + query->getID(), ErrorCodes::UNKNOWN_TYPE_OF_QUERY);

@@ -8,6 +8,7 @@ template <typename A>
 struct RoundAgeImpl
 {
     using ResultType = UInt8;
+    static constexpr const bool allow_fixed_string = false;
 
     static inline ResultType apply(A x)
     {

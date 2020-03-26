@@ -37,10 +37,10 @@ class Context;
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
+class StorageBuffer final : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageBuffer>;
-friend class BufferBlockInputStream;
+friend class BufferSource;
 friend class BufferBlockOutputStream;
 
 public:
@@ -53,12 +53,10 @@ public:
     };
 
     std::string getName() const override { return "Buffer"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -73,18 +71,12 @@ public:
     void shutdown() override;
     bool optimize(const ASTPtr & query, const ASTPtr & partition, bool final, bool deduplicate, const Context & context) override;
 
-    void rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override
-    {
-        table_name = new_table_name;
-        database_name = new_database_name;
-    }
-
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override
     {
-        if (no_destination)
+        if (!destination_id)
             return false;
-        auto dest = global_context.tryGetTable(destination_database, destination_table);
+        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id);
         if (dest && dest.get() != this)
             return dest->supportsPrewhere();
         return false;
@@ -94,16 +86,14 @@ public:
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override;
 
-    /// The structure of the subordinate table is not checked and does not change.
-    void alter(
-        const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
+
+     /// The structure of the subordinate table is not checked and does not change.
+     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
     ~StorageBuffer() override;
 
 private:
-    String table_name;
-    String database_name;
-
     Context global_context;
 
     struct Buffer
@@ -120,9 +110,7 @@ private:
     const Thresholds min_thresholds;
     const Thresholds max_thresholds;
 
-    const String destination_database;
-    const String destination_table;
-    bool no_destination;    /// If set, do not write data from the buffer, but simply empty the buffer.
+    StorageID destination_id;
     bool allow_materialized;
 
     Poco::Logger * log;
@@ -146,11 +134,16 @@ protected:
     /** num_shards - the level of internal parallelism (the number of independent buffers)
       * The buffer is flushed if all minimum thresholds or at least one of the maximum thresholds are exceeded.
       */
-    StorageBuffer(const std::string & database_name_, const std::string & table_name_,
-        const ColumnsDescription & columns_, const ConstraintsDescription & constraints_,
+    StorageBuffer(
+        const StorageID & table_id_,
+        const ColumnsDescription & columns_,
+        const ConstraintsDescription & constraints_,
         Context & context_,
-        size_t num_shards_, const Thresholds & min_thresholds_, const Thresholds & max_thresholds_,
-        const String & destination_database_, const String & destination_table_, bool allow_materialized_);
+        size_t num_shards_,
+        const Thresholds & min_thresholds_,
+        const Thresholds & max_thresholds_,
+        const StorageID & destination_id,
+        bool allow_materialized_);
 };
 
 }

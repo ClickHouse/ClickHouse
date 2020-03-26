@@ -6,6 +6,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 template <bool reverse>
 struct ArraySplitImpl
@@ -37,20 +41,22 @@ struct ArraySplitImpl
 
             size_t pos = 0;
 
-            out_offsets_2.reserve(in_offsets.size()); // the actual size would be equal or larger
+            out_offsets_2.reserve(in_offsets.size()); // assume the actual size to be equal or larger
             out_offsets_1.reserve(in_offsets.size());
 
-            for (size_t i = 0; i < in_offsets.size(); ++i)
+            for (auto in_offset : in_offsets)
             {
-                pos += !reverse;
-                for (; pos < in_offsets[i] - reverse; ++pos)
+                if (pos < in_offset)
                 {
-                    if (cut[pos])
-                        out_offsets_2.push_back(pos + reverse);
-                }
-                pos += reverse;
+                    pos += !reverse;
+                    for (; pos < in_offset - reverse; ++pos)
+                        if (cut[pos])
+                            out_offsets_2.push_back(pos + reverse);
+                    pos += reverse;
 
-                out_offsets_2.push_back(pos);
+                    out_offsets_2.push_back(pos);
+                }
+
                 out_offsets_1.push_back(out_offsets_2.size());
             }
         }
@@ -68,18 +74,25 @@ struct ArraySplitImpl
 
                 for (size_t i = 0; i < in_offsets.back(); ++i)
                     out_offsets_2.push_back(i + 1);
-                for (size_t i = 0; i < in_offsets.size(); ++i)
-                    out_offsets_1.push_back(in_offsets[i]);
+                for (auto in_offset : in_offsets)
+                    out_offsets_1.push_back(in_offset);
             }
             else
             {
+                size_t pos = 0;
+
                 out_offsets_2.reserve(in_offsets.size());
                 out_offsets_1.reserve(in_offsets.size());
 
-                for (size_t i = 0; i < in_offsets.size(); ++i)
+                for (auto in_offset : in_offsets)
                 {
-                    out_offsets_2.push_back(in_offsets[i]);
-                    out_offsets_1.push_back(i + 1);
+                    if (pos < in_offset)
+                    {
+                        pos = in_offset;
+                        out_offsets_2.push_back(pos);
+                    }
+
+                    out_offsets_1.push_back(out_offsets_2.size());
                 }
             }
         }

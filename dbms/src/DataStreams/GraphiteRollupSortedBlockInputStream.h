@@ -225,11 +225,11 @@ private:
     UInt32 selectPrecision(const Graphite::Retentions & retentions, time_t time) const;
 
 
-    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
+    void merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue);
 
     /// Insert the values into the resulting columns, which will not be changed in the future.
     template <typename TSortCursor>
-    void startNextGroup(MutableColumns & merged_columns, TSortCursor & cursor, Graphite::RollupRule next_pattern);
+    void startNextGroup(MutableColumns & merged_columns, TSortCursor & cursor, Graphite::RollupRule next_rule);
 
     /// Insert the calculated `time`, `value`, `version` values into the resulting columns by the last group of rows.
     void finishCurrentGroup(MutableColumns & merged_columns);

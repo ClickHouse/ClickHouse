@@ -5,6 +5,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/registerStorages.h>
 #include <unordered_map>
 
 
@@ -14,6 +15,7 @@ namespace DB
 class Context;
 class ASTCreateQuery;
 class ASTStorage;
+struct StorageID;
 
 
 /** Allows to create a table by the name and parameters of the engine.
@@ -32,9 +34,10 @@ public:
         ASTs & engine_args;
         ASTStorage * storage_def;
         const ASTCreateQuery & query;
-        const String & data_path;
-        const String & table_name;
-        const String & database_name;
+        /// Path to table data.
+        /// Relative to <path> from server config (possibly <path> of some <disk> of some <volume> for *MergeTree)
+        const String & relative_data_path;
+        const StorageID & table_id;
         Context & local_context;
         Context & context;
         const ColumnsDescription & columns;
@@ -43,25 +46,46 @@ public:
         bool has_force_restore_data_flag;
     };
 
-    using Creator = std::function<StoragePtr(const Arguments & arguments)>;
+    struct StorageFeatures
+    {
+        bool supports_settings = false;
+        bool supports_skipping_indices = false;
+        bool supports_sort_order = false;
+        bool supports_ttl = false;
+        bool supports_replication = false;
+        bool supports_deduplication = false;
+    };
+
+    using CreatorFn = std::function<StoragePtr(const Arguments & arguments)>;
+    struct Creator
+    {
+        CreatorFn creator_fn;
+        StorageFeatures features;
+    };
+
+    using Storages = std::unordered_map<std::string, Creator>;
 
     StoragePtr get(
-        ASTCreateQuery & query,
-        const String & data_path,
-        const String & table_name,
-        const String & database_name,
+        const ASTCreateQuery & query,
+        const String & relative_data_path,
         Context & local_context,
         Context & context,
         const ColumnsDescription & columns,
         const ConstraintsDescription & constraints,
-        bool attach,
         bool has_force_restore_data_flag) const;
 
     /// Register a table engine by its name.
     /// No locking, you must register all engines before usage of get.
-    void registerStorage(const std::string & name, Creator creator);
+    void registerStorage(const std::string & name, CreatorFn creator_fn, StorageFeatures features = StorageFeatures{
+        .supports_settings = false,
+        .supports_skipping_indices = false,
+        .supports_sort_order = false,
+        .supports_ttl = false,
+        .supports_replication = false,
+        .supports_deduplication = false,
+    });
 
-    const auto & getAllStorages() const
+    const Storages & getAllStorages() const
     {
         return storages;
     }
@@ -74,8 +98,18 @@ public:
         return result;
     }
 
+    using FeatureMatcherFn = std::function<bool(StorageFeatures)>;
+    std::vector<String> getAllRegisteredNamesByFeatureMatcherFn(FeatureMatcherFn feature_matcher_fn) const
+    {
+        std::vector<String> result;
+        for (const auto& pair : storages)
+            if (feature_matcher_fn(pair.second.features))
+                result.push_back(pair.first);
+        return result;
+    }
+
+
 private:
-    using Storages = std::unordered_map<std::string, Creator>;
     Storages storages;
 };
 

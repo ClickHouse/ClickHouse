@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -26,7 +26,7 @@ public:
         return std::make_shared<FunctionCoalesce>(context);
     }
 
-    FunctionCoalesce(const Context & context_) : context(context_) {}
+    explicit FunctionCoalesce(const Context & context_) : context(context_) {}
 
     std::string getName() const override
     {

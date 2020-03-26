@@ -1,7 +1,7 @@
 #pragma once
 #include <DataStreams/IBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Core/Block.h>
 
 #include <common/DateLUT.h>
@@ -39,8 +39,8 @@ private:
     time_t current_time;
     bool force;
 
-    MergeTreeDataPart::TTLInfos old_ttl_infos;
-    MergeTreeDataPart::TTLInfos new_ttl_infos;
+    IMergeTreeDataPart::TTLInfos old_ttl_infos;
+    IMergeTreeDataPart::TTLInfos new_ttl_infos;
     NameSet empty_columns;
 
     size_t rows_removed = 0;
@@ -57,6 +57,9 @@ private:
 
     /// Removes rows with expired table ttl and computes new ttl_infos for part
     void removeRowsWithExpiredTableTTL(Block & block);
+
+    /// Updates TTL for moves
+    void updateMovesTTL(Block & block);
 
     UInt32 getTimestampByIndex(const IColumn * column, size_t ind);
     bool isTTLExpired(time_t ttl);

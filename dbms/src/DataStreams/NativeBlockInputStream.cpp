@@ -20,7 +20,6 @@ namespace ErrorCodes
     extern const int INCORRECT_INDEX;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -57,6 +56,20 @@ NativeBlockInputStream::NativeBlockInputStream(ReadBuffer & istr_, UInt64 server
     }
 }
 
+// also resets few vars from IBlockInputStream (I didn't want to propagate resetParser upthere)
+void NativeBlockInputStream::resetParser()
+{
+    istr_concrete = nullptr;
+    use_index = false;
+
+#ifndef NDEBUG
+    read_prefix_is_called = false;
+    read_suffix_is_called = false;
+#endif
+
+    is_cancelled.store(false);
+    is_killed.store(false);
+}
 
 void NativeBlockInputStream::readData(const IDataType & type, IColumn & column, ReadBuffer & istr, size_t rows, double avg_value_size_hint)
 {
@@ -159,7 +172,7 @@ Block NativeBlockInputStream::readImpl()
             auto & header_column = header.getByName(column.name);
             if (!header_column.type->equals(*column.type))
             {
-                column.column = recursiveLowCardinalityConversion(column.column, column.type, header.getByPosition(i).type);
+                column.column = recursiveTypeConversion(column.column, column.type, header.getByPosition(i).type);
                 column.type = header.getByPosition(i).type;
             }
         }

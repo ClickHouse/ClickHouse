@@ -20,14 +20,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NO_REMOTE_SHARD_FOUND;
 }
 
 
 ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
-    const std::string & database,
-    const std::string & table,
+    const StorageID & table_id,
     const Context & context,
     const ASTPtr & table_func_ptr)
 {
@@ -51,10 +49,10 @@ ColumnsDescription getStructureOfRemoteTable(
     else
     {
         if (shard_info.isLocal())
-            return context.getTable(database, table)->getColumns();
+            return DatabaseCatalog::instance().getTable(table_id)->getColumns();
 
         /// Request for a table description
-        query = "DESC TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
+        query = "DESC TABLE " + table_id.getFullTableName();
     }
 
     ColumnsDescription res;
@@ -74,7 +72,7 @@ ColumnsDescription getStructureOfRemoteTable(
     auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, new_context);
     input->setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
-        input->setMainTable(QualifiedTableName{database, table});
+        input->setMainTable(table_id);
     input->readPrefix();
 
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();

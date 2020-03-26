@@ -28,7 +28,9 @@ struct MergeInfo
     std::string database;
     std::string table;
     std::string result_part_name;
+    std::string result_part_path;
     Array source_part_names;
+    Array source_part_paths;
     std::string partition_id;
     bool is_mutation;
     Float64 elapsed;
@@ -43,7 +45,7 @@ struct MergeInfo
     UInt64 rows_written;
     UInt64 columns_written;
     UInt64 memory_usage;
-    UInt64 thread_number;
+    UInt64 thread_id;
 };
 
 struct FutureMergedMutatedPart;
@@ -55,11 +57,13 @@ struct MergeListElement : boost::noncopyable
     std::string partition_id;
 
     const std::string result_part_name;
+    const std::string result_part_path;
     Int64 result_data_version{};
     bool is_mutation{};
 
     UInt64 num_parts{};
     Names source_part_names;
+    Names source_part_paths;
     Int64 source_data_version{};
 
     Stopwatch watch;
@@ -83,8 +87,7 @@ struct MergeListElement : boost::noncopyable
     MemoryTracker * background_thread_memory_tracker;
     MemoryTracker * background_thread_memory_tracker_prev_parent = nullptr;
 
-    /// Poco thread number used in logs
-    UInt32 thread_number;
+    UInt64 thread_id;
 
 
     MergeListElement(const std::string & database, const std::string & table, const FutureMergedMutatedPart & future_part);

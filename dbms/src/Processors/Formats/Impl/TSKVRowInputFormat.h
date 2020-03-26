@@ -30,6 +30,8 @@ public:
     bool readRow(MutableColumns & columns, RowReadExtension &) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+    void resetParser() override;
+
 
 private:
     const FormatSettings format_settings;

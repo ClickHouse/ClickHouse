@@ -5,7 +5,7 @@
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 
-#include <deque>
+#include <queue>
 
 
 namespace DB
@@ -204,7 +204,7 @@ private:
     /// Sources of rows for VERTICAL merge algorithm. Size equals to (size + number of gaps) in current_keys.
     std::queue<RowSourcePart> current_row_sources;
 
-    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
+    void merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue);
 
     /// Output to result row for the current primary key.
     void insertRow(size_t skip_rows, const SharedBlockRowRef & row, MutableColumns & merged_columns);

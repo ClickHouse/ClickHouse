@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionCombinatorFactory.h>
 #include <Common/typeid_cast.h>
+#include "registerAggregateFunctions.h"
 
 namespace DB
 {
@@ -18,7 +19,7 @@ public:
 
     DataTypes transformArguments(const DataTypes & arguments) const override
     {
-        if (0 == arguments.size())
+        if (arguments.empty())
             throw Exception("-Array aggregate functions require at least one argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
         DataTypes nested_arguments;

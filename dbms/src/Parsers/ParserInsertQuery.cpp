@@ -35,7 +35,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserToken s_rparen(TokenType::ClosingRoundBracket);
     ParserIdentifier name_p;
     ParserList columns_p(std::make_unique<ParserCompoundIdentifier>(), std::make_unique<ParserToken>(TokenType::Comma), false);
-    ParserFunction table_function_p;
+    ParserFunction table_function_p{false};
 
     ASTPtr database;
     ASTPtr table;
@@ -151,8 +151,8 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     else
     {
-        tryGetIdentifierNameInto(database, query->database);
-        tryGetIdentifierNameInto(table, query->table);
+        tryGetIdentifierNameInto(database, query->table_id.database_name);
+        tryGetIdentifierNameInto(table, query->table_id.table_name);
     }
 
     tryGetIdentifierNameInto(format, query->format);

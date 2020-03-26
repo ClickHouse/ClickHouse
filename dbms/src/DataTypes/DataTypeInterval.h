@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/DataTypeNumberBase.h>
+#include <Common/IntervalKind.h>
 
 
 namespace DB
@@ -11,52 +12,22 @@ namespace DB
   * Mostly the same as Int64.
   * But also tagged with interval kind.
   *
-  * Intended isage is for temporary elements in expressions,
+  * Intended usage is for temporary elements in expressions,
   *  not for storing values in tables.
   */
 class DataTypeInterval final : public DataTypeNumberBase<Int64>
 {
-public:
-    enum Kind
-    {
-        Second,
-        Minute,
-        Hour,
-        Day,
-        Week,
-        Month,
-        Quarter,
-        Year
-    };
-
 private:
-    Kind kind;
+    IntervalKind kind;
 
 public:
     static constexpr bool is_parametric = true;
 
-    Kind getKind() const { return kind; }
+    IntervalKind getKind() const { return kind; }
 
-    const char * kindToString() const
-    {
-        switch (kind)
-        {
-            case Second: return "Second";
-            case Minute: return "Minute";
-            case Hour: return "Hour";
-            case Day: return "Day";
-            case Week: return "Week";
-            case Month: return "Month";
-            case Quarter: return "Quarter";
-            case Year: return "Year";
-        }
+    DataTypeInterval(IntervalKind kind_) : kind(kind_) {}
 
-        __builtin_unreachable();
-    }
-
-    DataTypeInterval(Kind kind_) : kind(kind_) {}
-
-    std::string doGetName() const override { return std::string("Interval") + kindToString(); }
+    std::string doGetName() const override { return std::string("Interval") + kind.toString(); }
     const char * getFamilyName() const override { return "Interval"; }
     TypeIndex getTypeId() const override { return TypeIndex::Interval; }
 

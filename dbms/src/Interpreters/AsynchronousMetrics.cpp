@@ -1,5 +1,6 @@
 #include <Interpreters/AsynchronousMetrics.h>
 #include <Interpreters/ExpressionJIT.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
@@ -14,19 +15,6 @@
 
 #if __has_include(<common/config_common.h>)
 #include <common/config_common.h>
-#endif
-
-#if USE_TCMALLOC
-    #include <gperftools/malloc_extension.h>
-
-    /// Initializing malloc extension in global constructor as required.
-    struct MallocExtensionInitializer
-    {
-        MallocExtensionInitializer()
-        {
-            MallocExtension::Initialize();
-        }
-    } malloc_extension_initializer;
 #endif
 
 #if USE_JEMALLOC
@@ -85,9 +73,6 @@ void AsynchronousMetrics::run()
 
     while (true)
     {
-        if (wait_cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
-            break;
-
         try
         {
             update();
@@ -96,6 +81,9 @@ void AsynchronousMetrics::run()
         {
             tryLogCurrentException(__PRETTY_FUNCTION__);
         }
+
+        if (wait_cond.wait_until(lock, get_next_minute(), [this] { return quit; }))
+            break;
     }
 }
 
@@ -144,7 +132,7 @@ void AsynchronousMetrics::update()
     set("Uptime", context.getUptimeSeconds());
 
     {
-        auto databases = context.getDatabases();
+        auto databases = DatabaseCatalog::instance().getDatabases();
 
         size_t max_queue_size = 0;
         size_t max_inserts_in_queue = 0;
@@ -228,33 +216,6 @@ void AsynchronousMetrics::update()
         set("NumberOfTables", total_number_of_tables);
     }
 
-#if USE_TCMALLOC
-    {
-        /// tcmalloc related metrics. Remove if you switch to different allocator.
-
-        MallocExtension & malloc_extension = *MallocExtension::instance();
-
-        auto malloc_metrics =
-        {
-            "generic.current_allocated_bytes",
-            "generic.heap_size",
-            "tcmalloc.current_total_thread_cache_bytes",
-            "tcmalloc.central_cache_free_bytes",
-            "tcmalloc.transfer_cache_free_bytes",
-            "tcmalloc.thread_cache_free_bytes",
-            "tcmalloc.pageheap_free_bytes",
-            "tcmalloc.pageheap_unmapped_bytes",
-        };
-
-        for (auto malloc_metric : malloc_metrics)
-        {
-            size_t value = 0;
-            if (malloc_extension.GetNumericProperty(malloc_metric, &value))
-                set(malloc_metric, value);
-        }
-    }
-#endif
-
 #if USE_JEMALLOC
     {
     #define FOR_EACH_METRIC(M) \
@@ -276,7 +237,7 @@ void AsynchronousMetrics::update()
             size_t size = sizeof(value); \
             mallctl("stats." NAME, &value, &size, nullptr, 0); \
             set("jemalloc." NAME, value); \
-        } while (0);
+        } while (false);
 
         FOR_EACH_METRIC(GET_METRIC)
 

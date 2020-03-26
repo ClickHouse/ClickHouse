@@ -1,6 +1,7 @@
 #pragma once
 
 #include "IDictionary.h"
+#include "registerDictionaries.h"
 #include <Parsers/ASTCreateQuery.h>
 
 
@@ -22,18 +23,24 @@ namespace DB
 
 class Context;
 
+/** Create dictionary according to its layout.
+  */
 class DictionaryFactory : private boost::noncopyable
 {
 public:
 
     static DictionaryFactory & instance();
 
+    /// Create dictionary from AbstractConfiguration parsed
+    /// from xml-file on filesystem.
     DictionaryPtr create(
         const std::string & name,
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        const Context & context) const;
+        const Context & context,
+        bool check_source_config = false) const;
 
+    /// Create dictionary from DDL-query
     DictionaryPtr create(const std::string & name,
         const ASTCreateQuery & ast,
         const Context & context) const;
@@ -45,7 +52,7 @@ public:
         const std::string & config_prefix,
         DictionarySourcePtr source_ptr)>;
 
-    bool isComplex(const std::string & layout_type) const { return layout_complexity.at(layout_type); }
+    bool isComplex(const std::string & layout_type) const;
 
     void registerLayout(const std::string & layout_type, Creator create_layout, bool is_complex);
 

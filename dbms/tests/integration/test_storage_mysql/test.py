@@ -9,8 +9,8 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql = True)
-create_table_sql_template =   """
+node1 = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
+create_table_sql_template = """
     CREATE TABLE `clickhouse`.`{}` (
     `id` int(11) NOT NULL,
     `name` varchar(50) NOT NULL,
@@ -18,6 +18,7 @@ create_table_sql_template =   """
     `money` int NOT NULL default 0,
     PRIMARY KEY (`id`)) ENGINE=InnoDB;
     """
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -76,6 +77,7 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
     assert node1.query("SELECT sum(money) FROM {}".format(table_name)).rstrip() == '60000'
     conn.close()
 
+
 def test_where(started_cluster):
     table_name = 'test_where'
     conn = get_mysql_conn()
@@ -92,14 +94,36 @@ CREATE TABLE {}(id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL
     assert node1.query("SELECT count() FROM {} WHERE name LIKE concat('name_', toString(1))".format(table_name)).rstrip() == '1'
     conn.close()
 
+
+def test_table_function(started_cluster):
+    conn = get_mysql_conn()
+    create_mysql_table(conn, 'table_function')
+    table_function = "mysql('mysql1:3306', 'clickhouse', '{}', 'root', 'clickhouse')".format('table_function')
+    assert node1.query("SELECT count() FROM {}".format(table_function)).rstrip() == '0'
+    node1.query("INSERT INTO {} (id, name, money) select number, concat('name_', toString(number)), 3 from numbers(10000)".format(
+        'TABLE FUNCTION ' + table_function))
+    assert node1.query("SELECT count() FROM {}".format(table_function)).rstrip() == '10000'
+    assert node1.query("SELECT sum(c) FROM ("
+                       "SELECT count() as c FROM {} WHERE id % 3 == 0"
+                       " UNION ALL SELECT count() as c FROM {} WHERE id % 3 == 1"
+                       " UNION ALL SELECT count() as c FROM {} WHERE id % 3 == 2)".format(table_function, table_function,
+                                                                                          table_function)).rstrip() == '10000'
+    assert node1.query("SELECT sum(`money`) FROM {}".format(table_function)).rstrip() == '30000'
+    node1.query("INSERT INTO {} SELECT id + 100000, name, age, money FROM {}".format('TABLE FUNCTION ' + table_function, table_function))
+    assert node1.query("SELECT sum(`money`) FROM {}".format(table_function)).rstrip() == '60000'
+    conn.close()
+
+
 def get_mysql_conn():
     conn = pymysql.connect(user='root', password='clickhouse', host='127.0.0.1', port=3308)
     return conn
+
 
 def create_mysql_db(conn, name):
     with conn.cursor() as cursor:
         cursor.execute(
             "CREATE DATABASE {} DEFAULT CHARACTER SET 'utf8'".format(name))
+
 
 def create_mysql_table(conn, tableName):
     with conn.cursor() as cursor:

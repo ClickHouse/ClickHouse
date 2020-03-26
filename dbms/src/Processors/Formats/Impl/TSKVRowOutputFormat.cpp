@@ -4,7 +4,6 @@
 #include <Formats/FormatFactory.h>
 
 
-
 namespace DB
 {
 
@@ -45,7 +44,6 @@ void registerOutputFormatProcessorTSKV(FormatFactory & factory)
     factory.registerOutputFormatProcessor("TSKV", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback callback,
         const FormatSettings & settings)
     {

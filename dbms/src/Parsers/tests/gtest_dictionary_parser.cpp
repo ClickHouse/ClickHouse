@@ -17,7 +17,9 @@
 
 using namespace DB;
 
-String astToString(IAST * ast)
+#pragma GCC diagnostic ignored "-Wunused-function"
+
+static String astToString(IAST * ast)
 {
     std::ostringstream oss;
     dumpAST(*ast, oss);
@@ -269,7 +271,6 @@ TEST(ParserDictionaryDDL, NestedSource)
     EXPECT_EQ(children[4]->as<ASTPair>()->first, "password");
     EXPECT_EQ(children[4]->as<ASTPair>()->second->as<ASTLiteral>()->value.get<String>(), "");
 }
-
 
 
 TEST(ParserDictionaryDDL, Formatting)

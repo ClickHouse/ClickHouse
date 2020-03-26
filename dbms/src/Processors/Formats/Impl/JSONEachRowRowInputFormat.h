@@ -24,9 +24,13 @@ public:
 
     String getName() const override { return "JSONEachRowRowInputFormat"; }
 
+    void readPrefix() override;
+    void readSuffix() override;
+
     bool readRow(MutableColumns & columns, RowReadExtension & ext) override;
     bool allowSyncAfterError() const override { return true; }
     void syncAfterError() override;
+    void resetParser() override;
 
 private:
     const String & columnName(size_t i) const;
@@ -37,8 +41,6 @@ private:
     void readField(size_t index, MutableColumns & columns);
     void readJSONObject(MutableColumns & columns);
     void readNestedData(const String & name, MutableColumns & columns);
-
-private:
 
     const FormatSettings format_settings;
 
@@ -68,6 +70,11 @@ private:
 
     /// Cached search results for previous row (keyed as index in JSON object) - used as a hint.
     std::vector<NameMap::LookupResult> prev_positions;
+
+    /// This flag is needed to know if data is in square brackets.
+    bool data_in_square_brackets = false;
+
+    bool allow_new_rows = true;
 };
 
 }

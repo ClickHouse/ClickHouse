@@ -28,7 +28,7 @@ namespace DB
 
 
 /// Simplified version of the StorageDistributed class.
-class StorageDistributedFake : public ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
+class StorageDistributedFake final : public ext::shared_ptr_helper<StorageDistributedFake>, public DB::IStorage
 {
     friend struct ext::shared_ptr_helper<StorageDistributedFake>;
 public:
@@ -38,12 +38,9 @@ public:
     std::string getRemoteDatabaseName() const { return remote_database; }
     std::string getRemoteTableName() const { return remote_table; }
 
-    std::string getTableName() const override { return ""; }
-    std::string getDatabaseName() const override { return ""; }
-
 protected:
     StorageDistributedFake(const std::string & remote_database_, const std::string & remote_table_, size_t shard_count_)
-        : remote_database(remote_database_), remote_table(remote_table_), shard_count(shard_count_)
+        : IStorage({"", ""}), remote_database(remote_database_), remote_table(remote_table_), shard_count(shard_count_)
     {
     }
 
@@ -1131,7 +1128,7 @@ TestEntries entries =
 };
 
 
-bool run()
+static bool run()
 {
     unsigned int count = 0;
     unsigned int i = 1;
@@ -1169,13 +1166,11 @@ TestResult check(const TestEntry & entry)
         auto storage_distributed_hits = StorageDistributedFake::create("distant_db", "distant_hits", entry.shard_count);
 
         DB::DatabasePtr database = std::make_shared<DB::DatabaseOrdinary>("test", "./metadata/test/", context);
-        context.addDatabase("test", database);
+        DB::DatabaseCatalog::instance().attachDatabase("test", database);
         database->attachTable("visits_all", storage_distributed_visits);
         database->attachTable("hits_all", storage_distributed_hits);
         context.setCurrentDatabase("test");
-
-        auto & settings = context.getSettingsRef();
-        settings.distributed_product_mode = entry.mode;
+        context.setSetting("distributed_product_mode", entry.mode);
 
         /// Parse and process the incoming query.
         DB::ASTPtr ast_input;
@@ -1212,12 +1207,12 @@ TestResult check(const TestEntry & entry)
         bool res = equals(ast_input, ast_expected);
         std::string output = DB::queryToString(ast_input);
 
-        context.detachDatabase("test");
+        DB::DatabaseCatalog::instance().detachDatabase("test");
         return TestResult(res, output);
     }
     catch (DB::Exception & e)
     {
-        context.detachDatabase("test");
+        DB::DatabaseCatalog::instance().detachDatabase("test");
         return TestResult(false, e.displayText());
     }
 }

@@ -275,8 +275,39 @@ function make_tgz {
     PACKAGE_DIR=${PACKAGE_DIR=../}
 
     for PACKAGE in clickhouse-server clickhouse-client clickhouse-test clickhouse-common-static clickhouse-common-static-dbg; do
-        alien --verbose --to-tgz ${PACKAGE_DIR}${PACKAGE}_${VERSION_FULL}_*.deb
+        alien --verbose --scripts --generate --to-tgz ${PACKAGE_DIR}${PACKAGE}_${VERSION_FULL}_*.deb
+        PKGDIR="./${PACKAGE}-${VERSION_FULL}"
+        if [ ! -d "$PKGDIR/install" ]; then
+            mkdir "$PKGDIR/install"
+        fi
+
+        if [ ! -f "$PKGDIR/install/doinst.sh" ]; then
+            echo '#!/bin/sh' > "$PKGDIR/install/doinst.sh"
+            echo 'set -e' >> "$PKGDIR/install/doinst.sh"
+        fi
+
+        SCRIPT_TEXT='
+SCRIPTPATH="$( cd "$(dirname "$0")" ; pwd -P )"
+for filepath in `find $SCRIPTPATH/.. -type f -or -type l | grep -v "\.\./install/"`; do
+    destpath=${filepath##$SCRIPTPATH/..}
+    mkdir -p $(dirname "$destpath")
+    cp -r "$filepath" "$destpath"
+done
+'
+
+        echo "$SCRIPT_TEXT" | sed -i "2r /dev/stdin" "$PKGDIR/install/doinst.sh"
+
+        chmod +x "$PKGDIR/install/doinst.sh"
+
+        if [ -f "/usr/bin/pigz" ]; then
+            tar --use-compress-program=pigz -cf "${PACKAGE}-${VERSION_FULL}.tgz" "$PKGDIR"
+        else
+            tar -czf "${PACKAGE}-${VERSION_FULL}.tgz" "$PKGDIR"
+        fi
+
+        rm -r $PKGDIR
     done
+
 
     mv clickhouse-*-${VERSION_FULL}.tgz ${PACKAGE_DIR}
 }

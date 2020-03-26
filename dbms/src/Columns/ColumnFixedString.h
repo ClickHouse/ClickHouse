@@ -92,6 +92,11 @@ public:
         chars.resize_fill(chars.size() + n);
     }
 
+    virtual void insertManyDefaults(size_t length) override
+    {
+        chars.resize_fill(chars.size() + n * length);
+    }
+
     void popBack(size_t elems) override
     {
         chars.resize_assume_reserved(chars.size() - n * elems);
@@ -102,6 +107,8 @@ public:
     const char * deserializeAndInsertFromArena(const char * pos) override;
 
     void updateHashWithValue(size_t index, SipHash & hash) const override;
+
+    void updateWeakHash32(WeakHash32 & hash) const override;
 
     int compareAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const override
     {

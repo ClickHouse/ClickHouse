@@ -5,7 +5,7 @@
 namespace DB
 {
 
-/// Class contains information about index granularity in rows of MergeTreeDataPart
+/// Class contains information about index granularity in rows of IMergeTreeDataPart
 /// Inside it contains vector of partial sums of rows after mark:
 /// |-----|---|----|----|
 /// |  5  | 8 | 12 | 16 |
@@ -42,6 +42,9 @@ public:
     size_t getMarksCount() const;
     /// Total rows
     size_t getTotalRows() const;
+
+    /// Total number marks without final mark if it exists
+    size_t getMarksCountWithoutFinal() const { return getMarksCount() - hasFinalMark(); }
 
     /// Rows after mark to next mark
     inline size_t getMarkRows(size_t mark_index) const
@@ -91,6 +94,12 @@ public:
     }
     /// Add new mark with rows_count
     void appendMark(size_t rows_count);
+
+    /// Extends last mark by rows_count.
+    void addRowsToLastMark(size_t rows_count);
+
+    /// Drops last mark if any exists.
+    void popMark();
 
     /// Add `size` of marks with `fixed_granularity` rows
     void resizeWithFixedGranularity(size_t size, size_t fixed_granularity);

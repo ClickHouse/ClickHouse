@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int EMPTY_DATA_PASSED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int DUPLICATE_COLUMN;
@@ -63,7 +64,6 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
             throw Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
     }
 }
-
 
 
 std::string DataTypeTuple::doGetName() const

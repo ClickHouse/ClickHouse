@@ -4,6 +4,7 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include "registerAggregateFunctions.h"
 
 #define TOP_K_MAX_SIZE 0xFFFFFF
 

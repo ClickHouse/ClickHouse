@@ -2,7 +2,7 @@
 
 #include <Core/Field.h>
 #include <Interpreters/ProcessList.h>
-#include <Interpreters/Quota.h>
+#include <Access/EnabledQuota.h>
 #include <Common/CurrentThread.h>
 #include <common/sleep.h>
 
@@ -17,13 +17,12 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int QUERY_WAS_CANCELLED;
+    extern const int OUTPUT_IS_NOT_SORTED;
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
     extern const int TOO_MANY_ROWS_OR_BYTES;
-    extern const int TIMEOUT_EXCEEDED;
-    extern const int TOO_SLOW;
     extern const int LOGICAL_ERROR;
-    extern const int BLOCKS_HAVE_DIFFERENT_STRUCTURE;
     extern const int TOO_DEEP_PIPELINE;
 }
 
@@ -70,7 +69,7 @@ Block IBlockInputStream::read()
         if (limits.mode == LIMITS_CURRENT && !limits.size_limits.check(info.rows, info.bytes, "result", ErrorCodes::TOO_MANY_ROWS_OR_BYTES))
             limit_exceeded_need_break = true;
 
-        if (quota != nullptr)
+        if (quota)
             checkQuota(res);
     }
     else
@@ -203,30 +202,9 @@ void IBlockInputStream::updateExtremes(Block & block)
 }
 
 
-static bool handleOverflowMode(OverflowMode mode, const String & message, int code)
-{
-    switch (mode)
-    {
-        case OverflowMode::THROW:
-            throw Exception(message, code);
-        case OverflowMode::BREAK:
-            return false;
-        default:
-            throw Exception("Logical error: unknown overflow mode", ErrorCodes::LOGICAL_ERROR);
-    }
-}
-
-
 bool IBlockInputStream::checkTimeLimit()
 {
-    if (limits.speed_limits.max_execution_time != 0
-        && info.total_stopwatch.elapsed() > static_cast<UInt64>(limits.speed_limits.max_execution_time.totalMicroseconds()) * 1000)
-        return handleOverflowMode(limits.timeout_overflow_mode,
-            "Timeout exceeded: elapsed " + toString(info.total_stopwatch.elapsedSeconds())
-                + " seconds, maximum: " + toString(limits.speed_limits.max_execution_time.totalMicroseconds() / 1000000.0),
-            ErrorCodes::TIMEOUT_EXCEEDED);
-
-    return true;
+    return limits.speed_limits.checkTimeLimit(info.total_stopwatch.elapsed(), limits.timeout_overflow_mode);
 }
 
 
@@ -240,12 +218,8 @@ void IBlockInputStream::checkQuota(Block & block)
 
         case LIMITS_CURRENT:
         {
-            time_t current_time = time(nullptr);
-            double total_elapsed = info.total_stopwatch.elapsedSeconds();
-
-            quota->checkAndAddResultRowsBytes(current_time, block.rows(), block.bytes());
-            quota->checkAndAddExecutionTime(current_time, Poco::Timespan((total_elapsed - prev_elapsed) * 1000000.0));
-
+            UInt64 total_elapsed = info.total_stopwatch.elapsedNanoseconds();
+            quota->used({Quota::RESULT_ROWS, block.rows()}, {Quota::RESULT_BYTES, block.bytes()}, {Quota::EXECUTION_TIME, total_elapsed - prev_elapsed});
             prev_elapsed = total_elapsed;
             break;
         }
@@ -291,10 +265,8 @@ void IBlockInputStream::progressImpl(const Progress & value)
 
         limits.speed_limits.throttle(progress.read_rows, progress.read_bytes, total_rows, total_elapsed_microseconds);
 
-        if (quota != nullptr && limits.mode == LIMITS_TOTAL)
-        {
-            quota->checkAndAddReadRowsBytes(time(nullptr), value.read_rows, value.read_bytes);
-        }
+        if (quota && limits.mode == LIMITS_TOTAL)
+            quota->used({Quota::READ_ROWS, value.read_rows}, {Quota::READ_BYTES, value.read_bytes});
     }
 }
 
@@ -364,9 +336,7 @@ Block IBlockInputStream::getTotals()
     forEachChild([&] (IBlockInputStream & child)
     {
         res = child.getTotals();
-        if (res)
-            return true;
-        return false;
+        return bool(res);
     });
     return res;
 }
@@ -381,9 +351,7 @@ Block IBlockInputStream::getExtremes()
     forEachChild([&] (IBlockInputStream & child)
     {
         res = child.getExtremes();
-        if (res)
-            return true;
-        return false;
+        return bool(res);
     });
     return res;
 }
@@ -419,9 +387,9 @@ size_t IBlockInputStream::checkDepthImpl(size_t max_depth, size_t level) const
         throw Exception("Query pipeline is too deep. Maximum: " + toString(max_depth), ErrorCodes::TOO_DEEP_PIPELINE);
 
     size_t res = 0;
-    for (BlockInputStreams::const_iterator it = children.begin(); it != children.end(); ++it)
+    for (const auto & child : children)
     {
-        size_t child_depth = (*it)->checkDepth(level + 1);
+        size_t child_depth = child->checkDepth(level + 1);
         if (child_depth > res)
             res = child_depth;
     }

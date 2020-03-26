@@ -54,6 +54,8 @@ void CSVRowOutputFormat::writeFieldDelimiter()
 
 void CSVRowOutputFormat::writeRowEndDelimiter()
 {
+    if (format_settings.csv.crlf_end_of_line)
+        writeChar('\r', out);
     writeChar('\n', out);
 }
 
@@ -68,7 +70,6 @@ void CSVRowOutputFormat::writeBeforeExtremes()
 }
 
 
-
 void registerOutputFormatProcessorCSV(FormatFactory & factory)
 {
     for (bool with_names : {false, true})
@@ -76,7 +77,6 @@ void registerOutputFormatProcessorCSV(FormatFactory & factory)
         factory.registerOutputFormatProcessor(with_names ? "CSVWithNames" : "CSV", [=](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & format_settings)
         {

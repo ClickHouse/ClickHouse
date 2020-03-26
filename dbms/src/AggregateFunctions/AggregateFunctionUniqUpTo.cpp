@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
@@ -12,7 +13,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ARGUMENT_OUT_OF_BOUND;
 }
@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-static constexpr UInt8 uniq_upto_max_threshold = 100;
+constexpr UInt8 uniq_upto_max_threshold = 100;
 
 
 AggregateFunctionPtr createAggregateFunctionUniqUpTo(const std::string & name, const DataTypes & argument_types, const Array & params)

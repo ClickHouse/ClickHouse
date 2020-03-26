@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from __future__ import print_function
 import sys
 import os
 import os.path
@@ -72,16 +73,18 @@ def run_single_test(args, ext, server_logs_level, client_options, case_file, std
     while (datetime.now() - start_time).total_seconds() < args.timeout and proc.poll() is None:
         sleep(0.01)
 
+    total_time = (datetime.now() - start_time).total_seconds()
+
     # Normalize randomized database names in stdout, stderr files.
-    os.system("sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stdout_file))
-    os.system("sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stderr_file))
+    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stdout_file))
+    os.system("LC_ALL=C sed -i -e 's/{test_db}/default/g' {file}".format(test_db=args.database, file=stderr_file))
 
     stdout = open(stdout_file, 'r').read() if os.path.exists(stdout_file) else ''
     stdout = unicode(stdout, errors='replace', encoding='utf-8')
     stderr = open(stderr_file, 'r').read() if os.path.exists(stderr_file) else ''
     stderr = unicode(stderr, errors='replace', encoding='utf-8')
 
-    return proc, stdout, stderr
+    return proc, stdout, stderr, total_time
 
 
 def need_retry(stderr):
@@ -95,21 +98,29 @@ def get_processlist(client_cmd):
         return "" #  server seems dead
 
 
-def get_stacktraces(server_pid):
-    cmd = "gdb -q -ex 'set pagination off' -ex 'backtrace' -ex 'thread apply all backtrace' -ex 'detach' -ex 'quit' --pid {} 2>/dev/null".format(server_pid)
+# collect server stacktraces using gdb
+def get_stacktraces_from_gdb(server_pid):
+    cmd = "gdb -batch -ex 'thread apply all backtrace' -p {}".format(server_pid)
     try:
         return subprocess.check_output(cmd, shell=True)
     except Exception as ex:
-        return "Error occured while receiving stack traces {}".format(str(ex))
+        return "Error occured while receiving stack traces from gdb: {}".format(str(ex))
+
+
+# collect server stacktraces from system.stack_trace table
+def get_stacktraces_from_clickhouse(client):
+    try:
+        return subprocess.check_call("{} --allow_introspection_functions=1 --query \"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace FROM system.stack_trace format Vertical\"".format(client), shell=True)
+    except Exception as ex:
+        return "Error occured while receiving stack traces from client: {}".format(str(ex))
 
 
 def get_server_pid(server_tcp_port):
-    cmd = "lsof -i tcp:{port} | grep '*:{port}'".format(port=server_tcp_port)
+    cmd = "lsof -i tcp:{port} -s tcp:LISTEN -Fp | awk '/^p[0-9]+$/{{print substr($0, 2)}}'".format(port=server_tcp_port)
     try:
         output = subprocess.check_output(cmd, shell=True)
         if output:
-            columns = output.strip().split(' ')
-            return int(columns[1])
+            return int(output)
         else:
             return None # server dead
     except Exception as ex:
@@ -149,6 +160,10 @@ def run_tests_array(all_tests_with_params):
 
     client_options = get_additional_client_options(args)
 
+    def print_test_time(test_time):
+        if args.print_time:
+            print(" {0:.2f} sec.".format(test_time), end='')
+
     if len(all_tests):
         print("\nRunning {} {} tests.".format(len(all_tests), suite) + "\n")
 
@@ -175,7 +190,11 @@ def run_tests_array(all_tests_with_params):
                     or 'global' in name):
                 print(MSG_SKIPPED + " - no shard")
                 skipped_total += 1
-            elif not args.no_long and 'long' in name:
+            elif not args.no_long and ('long' in name
+                    # Tests for races and deadlocks usually are runned in loop
+                    #  for significant amount of time
+                    or 'deadlock' in name
+                    or 'race' in name):
                 print(MSG_SKIPPED + " - no long")
                 skipped_total += 1
             else:
@@ -194,7 +213,7 @@ def run_tests_array(all_tests_with_params):
                     stdout_file = os.path.join(suite_tmp_dir, name) + '.stdout'
                     stderr_file = os.path.join(suite_tmp_dir, name) + '.stderr'
 
-                    proc, stdout, stderr = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+                    proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                     if proc.returncode is None:
                         try:
                             proc.kill()
@@ -203,11 +222,13 @@ def run_tests_array(all_tests_with_params):
                                 raise
 
                         failures += 1
-                        print("{0} - Timeout!".format(MSG_FAIL))
+                        print(MSG_FAIL, end='')
+                        print_test_time(total_time)
+                        print(" - Timeout!")
                     else:
                         counter = 1
                         while proc.returncode != 0 and need_retry(stderr):
-                            proc, stdout, stderr = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
+                            proc, stdout, stderr, total_time = run_single_test(args, ext, server_logs_level, client_options, case_file, stdout_file, stderr_file)
                             sleep(2**counter)
                             counter += 1
                             if counter > 6:
@@ -216,7 +237,9 @@ def run_tests_array(all_tests_with_params):
                         if proc.returncode != 0:
                             failures += 1
                             failures_chain += 1
-                            print("{0} - return code {1}".format(MSG_FAIL, proc.returncode))
+                            print(MSG_FAIL, end='')
+                            print_test_time(total_time)
+                            print(" - return code {}".format(proc.returncode))
 
                             if stderr:
                                 print(stderr.encode('utf-8'))
@@ -227,24 +250,34 @@ def run_tests_array(all_tests_with_params):
                         elif stderr:
                             failures += 1
                             failures_chain += 1
-                            print("{0} - having stderror:\n{1}".format(MSG_FAIL, stderr.encode('utf-8')))
+                            print(MSG_FAIL, end='')
+                            print_test_time(total_time)
+                            print(" - having stderror:\n{}".format(stderr.encode('utf-8')))
                         elif 'Exception' in stdout:
                             failures += 1
                             failures_chain += 1
-                            print("{0} - having exception:\n{1}".format(MSG_FAIL, stdout.encode('utf-8')))
+                            print(MSG_FAIL, end='')
+                            print_test_time(total_time)
+                            print(" - having exception:\n{}".format(stdout.encode('utf-8')))
                         elif not os.path.isfile(reference_file):
-                            print("{0} - no reference file".format(MSG_UNKNOWN))
+                            print(MSG_UNKNOWN, end='')
+                            print_test_time(total_time)
+                            print(" - no reference file")
                         else:
                             result_is_different = subprocess.call(['diff', '-q', reference_file, stdout_file], stdout = PIPE)
 
                             if result_is_different:
                                 diff = Popen(['diff', '-U', str(args.unified), reference_file, stdout_file], stdout = PIPE).communicate()[0]
                                 failures += 1
-                                print("{0} - result differs with reference:\n{1}".format(MSG_FAIL, diff))
+                                print(MSG_FAIL, end='')
+                                print_test_time(total_time)
+                                print(" - result differs with reference:\n{}".format(diff))
                             else:
                                 passed_total += 1
                                 failures_chain = 0
-                                print(MSG_OK)
+                                print(MSG_OK, end='')
+                                print_test_time(total_time)
+                                print()
                                 if os.path.exists(stdout_file):
                                     os.remove(stdout_file)
                                 if os.path.exists(stderr_file):
@@ -428,12 +461,24 @@ def main(args):
     if args.hung_check:
         processlist = get_processlist(args.client_with_database)
         if processlist:
-            server_pid = get_server_pid(os.getenv("CLICKHOUSE_PORT_TCP", '9000'))
             print(colored("\nFound hung queries in processlist:", args, "red", attrs=["bold"]))
             print(processlist)
+
+            clickhouse_tcp_port = os.getenv("CLICKHOUSE_PORT_TCP", '9000')
+            server_pid = get_server_pid(clickhouse_tcp_port)
             if server_pid:
-                print("\nStacktraces of all threads:")
-                print(get_stacktraces(server_pid))
+                print("\nLocated ClickHouse server process {} listening at TCP port {}".format(server_pid, clickhouse_tcp_port))
+                print("\nCollecting stacktraces from system.stacktraces table:")
+                print(get_stacktraces_from_clickhouse(args.client))
+                print("\nCollecting stacktraces from all running threads with gdb:")
+                print(get_stacktraces_from_gdb(server_pid))
+            else:
+                print(
+                    colored(
+                        "\nUnable to locate ClickHouse server process listening at TCP port {}. "
+                        "It must have crashed or exited prematurely!".format(clickhouse_tcp_port),
+                        args, "red", attrs=["bold"]))
+
             exit_code = 1
         else:
             print(colored("\nNo queries hung.", args, "green", attrs=["bold"]))
@@ -489,7 +534,7 @@ if __name__ == '__main__':
     parser.add_argument('test', nargs='*', help='Optional test case name regex')
     parser.add_argument('-d', '--disabled', action='store_true', default=False, help='Also run disabled tests')
     parser.add_argument('--stop', action='store_true', default=None, dest='stop', help='Stop on network errors')
-    parser.add_argument('--order', default='desc', help='Run order (asc, desc, random)')
+    parser.add_argument('--order', default='desc', choices=['asc', 'desc', 'random'], help='Run order')
     parser.add_argument('--testname', action='store_true', default=None, dest='testname', help='Make query with test name before test run')
     parser.add_argument('--hung-check', action='store_true', default=False)
     parser.add_argument('--force-color', action='store_true', default=False)
@@ -503,6 +548,7 @@ if __name__ == '__main__':
     parser.add_argument('--skip', nargs='+', help="Skip these tests")
     parser.add_argument('--no-long', action='store_false', dest='no_long', help='Do not run long tests')
     parser.add_argument('--client-option', nargs='+', help='Specify additional client argument')
+    parser.add_argument('--print-time', action='store_true', dest='print_time', help='Print test time')
     group=parser.add_mutually_exclusive_group(required=False)
     group.add_argument('--zookeeper', action='store_true', default=None, dest='zookeeper', help='Run zookeeper related tests')
     group.add_argument('--no-zookeeper', action='store_false', default=None, dest='zookeeper', help='Do not run zookeeper related tests')

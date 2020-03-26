@@ -10,7 +10,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
-    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -93,19 +92,32 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
     settings.ostr << (settings.hilite ? hilite_keyword : "") << "SYSTEM " << (settings.hilite ? hilite_none : "");
     settings.ostr << typeToString(type);
 
-    auto print_database_table = [&] ()
+    auto print_database_table = [&]
     {
         settings.ostr << " ";
-
-        if (!target_database.empty())
+        if (!database.empty())
         {
-            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_database)
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
                           << (settings.hilite ? hilite_none : "") << ".";
         }
-
-        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_table)
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(table)
                       << (settings.hilite ? hilite_none : "");
     };
+
+    auto print_database_dictionary = [&]
+    {
+        settings.ostr << " ";
+        if (!database.empty())
+        {
+            settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(database)
+                          << (settings.hilite ? hilite_none : "") << ".";
+        }
+        settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(target_dictionary)
+                      << (settings.hilite ? hilite_none : "");
+    };
+
+    if (!cluster.empty())
+        formatOnCluster(settings);
 
     if (   type == Type::STOP_MERGES
         || type == Type::START_MERGES
@@ -122,7 +134,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         || type == Type::STOP_DISTRIBUTED_SENDS
         || type == Type::START_DISTRIBUTED_SENDS)
     {
-        if (!target_table.empty())
+        if (!table.empty())
             print_database_table();
     }
     else if (type == Type::RESTART_REPLICA || type == Type::SYNC_REPLICA || type == Type::FLUSH_DISTRIBUTED)
@@ -130,7 +142,7 @@ void ASTSystemQuery::formatImpl(const FormatSettings & settings, FormatState &, 
         print_database_table();
     }
     else if (type == Type::RELOAD_DICTIONARY)
-        settings.ostr << " " << backQuoteIfNeed(target_dictionary);
+        print_database_dictionary();
 }
 
 

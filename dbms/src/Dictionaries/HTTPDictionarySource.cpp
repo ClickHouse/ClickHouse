@@ -1,20 +1,26 @@
 #include "HTTPDictionarySource.h"
-
 #include <DataStreams/IBlockOutputStream.h>
 #include <DataStreams/OwningBlockInputStream.h>
 #include <IO/ConnectionTimeouts.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/WriteBufferFromOStream.h>
+#include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <common/logger_useful.h>
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
+#include "registerDictionaries.h"
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 static const UInt64 max_block_size = 8192;
 
 
@@ -23,7 +29,8 @@ HTTPDictionarySource::HTTPDictionarySource(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     Block & sample_block_,
-    const Context & context_)
+    const Context & context_,
+    bool check_config)
     : log(&Logger::get("HTTPDictionarySource"))
     , update_time{std::chrono::system_clock::from_time_t(0)}
     , dict_struct{dict_struct_}
@@ -34,6 +41,10 @@ HTTPDictionarySource::HTTPDictionarySource(
     , context(context_)
     , timeouts(ConnectionTimeouts::getHTTPTimeouts(context))
 {
+
+    if (check_config)
+        context.getRemoteHostFilter().checkURL(Poco::URI(url));
+
     const auto & credentials_prefix = config_prefix + ".credentials";
 
     if (config.has(credentials_prefix))
@@ -82,12 +93,9 @@ void HTTPDictionarySource::getUpdateFieldAndDate(Poco::URI & uri)
         auto tmp_time = update_time;
         update_time = std::chrono::system_clock::now();
         time_t hr_time = std::chrono::system_clock::to_time_t(tmp_time) - 1;
-        char buffer[80];
-        struct tm * timeinfo;
-        timeinfo = localtime(&hr_time);
-        strftime(buffer, 80, "%Y-%m-%d %H:%M:%S", timeinfo);
-        std::string str_time(buffer);
-        uri.addQueryParameter(update_field, str_time);
+        WriteBufferFromOwnString out;
+        writeDateTimeText(hr_time, out);
+        uri.addQueryParameter(update_field, out.str());
     }
     else
     {
@@ -184,18 +192,21 @@ std::string HTTPDictionarySource::toString() const
 
 void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
 {
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context) -> DictionarySourcePtr
+                                 const Context & context,
+                                 bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
-        return std::make_unique<HTTPDictionarySource>(dict_struct, config, config_prefix + ".http", sample_block, context);
+        return std::make_unique<HTTPDictionarySource>(
+            dict_struct, config, config_prefix + ".http",
+            sample_block, context, check_config);
     };
-    factory.registerSource("http", createTableSource);
+    factory.registerSource("http", create_table_source);
 }
 
 }

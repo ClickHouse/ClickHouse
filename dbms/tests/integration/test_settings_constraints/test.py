@@ -29,68 +29,112 @@ def test_system_settings(started_cluster):
            "readonly\t0\t\\N\t\\N\t0\n"
 
 
+def test_system_constraints(started_cluster):
+    assert_query_settings(instance, "SELECT 1",
+                          settings={'readonly': 0},
+                          exception="Cannot modify 'readonly'",
+                          user="readonly_user")
+
+    assert_query_settings(instance, "SELECT 1",
+                          settings={'allow_ddl': 1},
+                          exception="Cannot modify 'allow_ddl'",
+                          user="no_dll_user")
+
+
 def test_read_only_constraint(started_cluster):
-    # Change a setting for session with SET.
-    assert instance.query("SELECT value FROM system.settings WHERE name='force_index_by_date'") ==\
-           "0\n"
+    # Default value
+    assert_query_settings(instance, "SELECT value FROM system.settings WHERE name='force_index_by_date'",
+                          settings={},
+                          result="0")
 
-    expected_error = "Setting force_index_by_date should not be changed"
-    assert expected_error in instance.query_and_get_error("SET force_index_by_date=1")
-
-    # Change a setting for query with SETTINGS.
-    assert instance.query("SELECT value FROM system.settings WHERE name='force_index_by_date'") ==\
-           "0\n"
-
-    assert expected_error in instance.query_and_get_error(
-           "SELECT value FROM system.settings WHERE name='force_index_by_date' "
-           "SETTINGS force_index_by_date=1")
+    # Invalid value
+    assert_query_settings(instance, "SELECT value FROM system.settings WHERE name='force_index_by_date'",
+                          settings={'force_index_by_date': 1},
+                          result=None,
+                          exception="Setting force_index_by_date should not be changed")
 
 
 def test_min_constraint(started_cluster):
-    # Change a setting for session with SET.
-    assert instance.query("SELECT value FROM system.settings WHERE name='max_memory_usage'") ==\
-           "10000000000\n"
+    # Default value
+    assert_query_settings(instance, "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+                          {},
+                          result="10000000000")
 
-    assert instance.query("SET max_memory_usage=5000000000;\n"
-                          "SELECT value FROM system.settings WHERE name='max_memory_usage'") ==\
-           "5000000000\n"
+    # Valid value
+    assert_query_settings(instance, "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+                          settings={'max_memory_usage': 5000000000},
+                          result="5000000000")
 
-    expected_error = "Setting max_memory_usage shouldn't be less than 5000000000"
-    assert expected_error in instance.query_and_get_error("SET max_memory_usage=4999999999")
-
-    # Change a setting for query with SETTINGS.
-    assert instance.query("SELECT value FROM system.settings WHERE name='max_memory_usage'") ==\
-           "10000000000\n"
-
-    assert instance.query("SET max_memory_usage=5000000001;\n"
-                          "SELECT value FROM system.settings WHERE name='max_memory_usage'") ==\
-           "5000000001\n"
-
-    assert expected_error in instance.query_and_get_error(
-           "SELECT value FROM system.settings WHERE name='max_memory_usage' "
-           "SETTINGS max_memory_usage=4999999999")
+    # Invalid value
+    assert_query_settings(instance, "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+                          settings={'max_memory_usage': 4999999999},
+                          result=None,
+                          exception="Setting max_memory_usage shouldn't be less than 5000000000")
 
 
 def test_max_constraint(started_cluster):
-    # Change a setting for session with SET.
-    assert instance.query("SELECT value FROM system.settings WHERE name='max_memory_usage'") ==\
-           "10000000000\n"
+    # Default value
+    assert_query_settings(instance, "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+                          {},
+                          result="10000000000")
 
-    assert instance.query("SET max_memory_usage=20000000000;\n"
-                          "SELECT value FROM system.settings WHERE name='max_memory_usage'") ==\
-           "20000000000\n"
+    # Valid value
+    assert_query_settings(instance, "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+                          settings={'max_memory_usage': 20000000000},
+                          result="20000000000")
 
-    expected_error = "Setting max_memory_usage shouldn't be greater than 20000000000"
-    assert expected_error in instance.query_and_get_error("SET max_memory_usage=20000000001")
+    # Invalid value
+    assert_query_settings(instance, "SELECT value FROM system.settings WHERE name='max_memory_usage'",
+                          settings={'max_memory_usage': 20000000001},
+                          result=None,
+                          exception="Setting max_memory_usage shouldn't be greater than 20000000000")
 
-     # Change a setting for query with SETTINGS.
-    assert instance.query("SELECT value FROM system.settings WHERE name='max_memory_usage'") ==\
-           "10000000000\n"
 
-    assert instance.query("SELECT value FROM system.settings WHERE name='max_memory_usage' "
-                          "SETTINGS max_memory_usage=19999999999") == "19999999999\n"
+def assert_query_settings(instance, query, settings, result=None, exception=None, user=None):
+    """
+    Try and send the query with custom settings via all available methods:
+    1. TCP Protocol with settings packet
+    2. HTTP Protocol with settings params
+    3. TCP Protocol with session level settings
+    4. TCP Protocol with query level settings
+    """
 
-    assert expected_error in instance.query_and_get_error(
-           "SELECT value FROM system.settings WHERE name='max_memory_usage' "
-           "SETTINGS max_memory_usage=20000000001")
- 
+    if not settings:
+        settings = {}
+
+    # tcp level settings
+    if exception:
+        assert exception in instance.query_and_get_error(query, settings=settings, user=user)
+    else:
+        assert instance.query(query, settings=settings, user=user).strip() == result
+
+    # http level settings
+    if exception:
+        assert exception in instance.http_query(query, params=settings, user=user)
+    else:
+        assert instance.http_query(query, params=settings, user=user).strip() == result
+
+    # session level settings
+    queries = ""
+
+    for k, v in settings.items():
+        queries += "SET {}={};\n".format(k, v)
+
+    queries += query
+
+    if exception:
+        assert exception in instance.query_and_get_error(queries, user=user)
+    else:
+        assert instance.query(queries, user=user).strip() == result
+
+    if settings:
+        query += " SETTINGS "
+        for ix, (k, v) in enumerate(settings.items()):
+            query += "{} = {}".format(k, v)
+            if ix != len(settings) - 1:
+                query += ", "
+
+    if exception:
+        assert exception in instance.query_and_get_error(queries, user=user)
+    else:
+        assert instance.query(queries, user=user).strip() == result

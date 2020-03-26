@@ -40,10 +40,12 @@ struct PartLogElement
     UInt64 bytes_uncompressed = 0;
     UInt64 rows_read = 0;
     UInt64 bytes_read_uncompressed = 0;
+    UInt64 peak_memory_usage = 0;
 
     /// Was the operation successful?
     UInt16 error = 0;
     String exception;
+
 
     static std::string name() { return "PartLog"; }
 
@@ -51,7 +53,7 @@ struct PartLogElement
     void appendToBlock(Block & block) const;
 };
 
-struct MergeTreeDataPart;
+class IMergeTreeDataPart;
 
 
 /// Instead of typedef - to allow forward declaration.
@@ -59,7 +61,7 @@ class PartLog : public SystemLog<PartLogElement>
 {
     using SystemLog<PartLogElement>::SystemLog;
 
-    using MutableDataPartPtr = std::shared_ptr<MergeTreeDataPart>;
+    using MutableDataPartPtr = std::shared_ptr<IMergeTreeDataPart>;
     using MutableDataPartsVector = std::vector<MutableDataPartPtr>;
 
 public:

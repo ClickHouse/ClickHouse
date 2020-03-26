@@ -6,7 +6,7 @@
 #include <Poco/Mutex.h>
 #include <Poco/Semaphore.h>
 
-#include <common/Types.h>
+#include <common/types.h>
 
 
 namespace detail
@@ -136,6 +136,12 @@ public:
     {
         Poco::ScopedLock<Poco::FastMutex> lock(mutex);
         return queue.size();
+    }
+
+    size_t empty()
+    {
+        Poco::ScopedLock<Poco::FastMutex> lock(mutex);
+        return queue.empty();
     }
 
     void clear()

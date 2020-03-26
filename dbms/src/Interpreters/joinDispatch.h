@@ -12,57 +12,50 @@
 namespace DB
 {
 
-template <bool fill_right, typename ASTTableJoin::Strictness>
-struct MapGetterImpl;
+template <ASTTableJoin::Kind kind, typename ASTTableJoin::Strictness>
+struct MapGetter;
 
-template <>
-struct MapGetterImpl<false, ASTTableJoin::Strictness::Any>
-{
-    using Map = Join::MapsAny;
-};
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::RightAny> { using Map = Join::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::RightAny> { using Map = Join::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::RightAny> { using Map = Join::MapsOneFlagged; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::RightAny> { using Map = Join::MapsOneFlagged; };
 
-template <>
-struct MapGetterImpl<true, ASTTableJoin::Strictness::Any>
-{
-    using Map = Join::MapsAnyFull;
-};
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Any> { using Map = Join::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Any> { using Map = Join::MapsOneFlagged; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Any> { using Map = Join::MapsAllFlagged; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Any> { using Map = Join::MapsAllFlagged; };
 
-template <>
-struct MapGetterImpl<false, ASTTableJoin::Strictness::All>
-{
-    using Map = Join::MapsAll;
-};
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::All> { using Map = Join::MapsAll; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::All> { using Map = Join::MapsAll; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::All> { using Map = Join::MapsAllFlagged; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::All> { using Map = Join::MapsAllFlagged; };
 
-template <>
-struct MapGetterImpl<true, ASTTableJoin::Strictness::All>
-{
-    using Map = Join::MapsAllFull;
-};
+/// Only SEMI LEFT and SEMI RIGHT are valid. INNER and FULL are here for templates instantiation.
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsAllFlagged; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Semi> { using Map = Join::MapsOne; };
 
-template <bool fill_right>
-struct MapGetterImpl<fill_right, ASTTableJoin::Strictness::Asof>
+/// Only SEMI LEFT and SEMI RIGHT are valid. INNER and FULL are here for templates instantiation.
+template <> struct MapGetter<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::Anti> { using Map = Join::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Inner, ASTTableJoin::Strictness::Anti> { using Map = Join::MapsOne; };
+template <> struct MapGetter<ASTTableJoin::Kind::Right, ASTTableJoin::Strictness::Anti> { using Map = Join::MapsAllFlagged; };
+template <> struct MapGetter<ASTTableJoin::Kind::Full, ASTTableJoin::Strictness::Anti> { using Map = Join::MapsOne; };
+
+template <ASTTableJoin::Kind kind>
+struct MapGetter<kind, ASTTableJoin::Strictness::Asof>
 {
     using Map = Join::MapsAsof;
 };
 
-template <ASTTableJoin::Kind KIND>
-struct KindTrait
-{
-    // Affects the Adder trait so that when the right part is empty, adding a default value on the left
-    static constexpr bool fill_left = static_in_v<KIND, ASTTableJoin::Kind::Left, ASTTableJoin::Kind::Full>;
 
-    // Affects the Map trait so that a `used` flag is attached to map slots in order to
-    // generate default values on the right when the left part is empty
-    static constexpr bool fill_right = static_in_v<KIND, ASTTableJoin::Kind::Right, ASTTableJoin::Kind::Full>;
-};
-
-template <ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness>
-using Map = typename MapGetterImpl<KindTrait<kind>::fill_right, strictness>::Map;
-
-static constexpr std::array<ASTTableJoin::Strictness, 3> STRICTNESSES = {
+static constexpr std::array<ASTTableJoin::Strictness, 6> STRICTNESSES = {
+    ASTTableJoin::Strictness::RightAny,
     ASTTableJoin::Strictness::Any,
     ASTTableJoin::Strictness::All,
-    ASTTableJoin::Strictness::Asof
+    ASTTableJoin::Strictness::Asof,
+    ASTTableJoin::Strictness::Semi,
+    ASTTableJoin::Strictness::Anti,
 };
 
 static constexpr std::array<ASTTableJoin::Kind, 4> KINDS = {
@@ -81,7 +74,7 @@ inline bool joinDispatchInit(ASTTableJoin::Kind kind, ASTTableJoin::Strictness s
         constexpr auto j = ij % STRICTNESSES.size();
         if (kind == KINDS[i] && strictness == STRICTNESSES[j])
         {
-            maps = Map<KINDS[i], STRICTNESSES[j]>();
+            maps = typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map();
             return true;
         }
         return false;
@@ -103,7 +96,7 @@ inline bool joinDispatch(ASTTableJoin::Kind kind, ASTTableJoin::Strictness stric
             func(
                 std::integral_constant<ASTTableJoin::Kind, KINDS[i]>(),
                 std::integral_constant<ASTTableJoin::Strictness, STRICTNESSES[j]>(),
-                std::get<Map<KINDS[i], STRICTNESSES[j]>>(maps));
+                std::get<typename MapGetter<KINDS[i], STRICTNESSES[j]>::Map>(maps));
             return true;
         }
         return false;

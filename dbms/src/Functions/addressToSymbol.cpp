@@ -4,9 +4,10 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
 
@@ -19,7 +20,6 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int FUNCTION_NOT_ALLOWED;
 }
 
 class FunctionAddressToSymbol : public IFunction
@@ -28,8 +28,7 @@ public:
     static constexpr auto name = "addressToSymbol";
     static FunctionPtr create(const Context & context)
     {
-        if (!context.getSettingsRef().allow_introspection_functions)
-            throw Exception("Introspection functions are disabled, because setting 'allow_introspection_functions' is set to 0", ErrorCodes::FUNCTION_NOT_ALLOWED);
+        context.checkAccess(AccessType::addressToSymbol);
         return std::make_shared<FunctionAddressToSymbol>();
     }
 

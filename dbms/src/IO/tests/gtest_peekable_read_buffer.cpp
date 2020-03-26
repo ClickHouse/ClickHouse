@@ -12,7 +12,7 @@ namespace DB::ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-void readAndAssert(DB::ReadBuffer & buf, const char * str)
+static void readAndAssert(DB::ReadBuffer & buf, const char * str)
 {
     size_t n = strlen(str);
     char tmp[n];
@@ -20,7 +20,7 @@ void readAndAssert(DB::ReadBuffer & buf, const char * str)
     ASSERT_EQ(strncmp(tmp, str, n), 0);
 }
 
-void assertAvailable(DB::ReadBuffer & buf, const char * str)
+static void assertAvailable(DB::ReadBuffer & buf, const char * str)
 {
     size_t n = strlen(str);
     ASSERT_EQ(buf.available(), n);

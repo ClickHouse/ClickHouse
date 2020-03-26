@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreePartition.h>
 #include <Storages/MergeTree/MergeTreeData.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
-#include <IO/ReadBufferFromFile.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Common/FieldVisitors.h>
 #include <DataTypes/DataTypeDate.h>
@@ -12,14 +11,17 @@
 #include <Common/hex.h>
 #include <Core/Block.h>
 
-#include <Poco/File.h>
 
 namespace DB
 {
-
-static ReadBufferFromFile openForReading(const String & path)
+namespace ErrorCodes
 {
-    return ReadBufferFromFile(path, std::min(static_cast<Poco::File::FileSize>(DBMS_DEFAULT_BUFFER_SIZE), Poco::File(path).getSize()));
+    extern const int LOGICAL_ERROR;
+}
+
+static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
+{
+    return disk->readFile(path, std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), disk->getFileSize(path)));
 }
 
 String MergeTreePartition::getID(const MergeTreeData & storage) const
@@ -119,29 +121,30 @@ void MergeTreePartition::serializeText(const MergeTreeData & storage, WriteBuffe
     }
 }
 
-void MergeTreePartition::load(const MergeTreeData & storage, const String & part_path)
+void MergeTreePartition::load(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path)
 {
     if (!storage.partition_key_expr)
         return;
 
-    ReadBufferFromFile file = openForReading(part_path + "partition.dat");
+    auto partition_file_path = part_path + "partition.dat";
+    auto file = openForReading(disk, partition_file_path);
     value.resize(storage.partition_key_sample.columns());
     for (size_t i = 0; i < storage.partition_key_sample.columns(); ++i)
-        storage.partition_key_sample.getByPosition(i).type->deserializeBinary(value[i], file);
+        storage.partition_key_sample.getByPosition(i).type->deserializeBinary(value[i], *file);
 }
 
-void MergeTreePartition::store(const MergeTreeData & storage, const String & part_path, MergeTreeDataPartChecksums & checksums) const
+void MergeTreePartition::store(const MergeTreeData & storage, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
-    store(storage.partition_key_sample, part_path, checksums);
+    store(storage.partition_key_sample, disk, part_path, checksums);
 }
 
-void MergeTreePartition::store(const Block & partition_key_sample, const String & part_path, MergeTreeDataPartChecksums & checksums) const
+void MergeTreePartition::store(const Block & partition_key_sample, const DiskPtr & disk, const String & part_path, MergeTreeDataPartChecksums & checksums) const
 {
     if (!partition_key_sample)
         return;
 
-    WriteBufferFromFile out(part_path + "partition.dat");
-    HashingWriteBuffer out_hashing(out);
+    auto out = disk->writeFile(part_path + "partition.dat");
+    HashingWriteBuffer out_hashing(*out);
     for (size_t i = 0; i < value.size(); ++i)
         partition_key_sample.getByPosition(i).type->serializeBinary(value[i], out_hashing);
     out_hashing.next();

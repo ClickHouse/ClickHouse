@@ -20,8 +20,8 @@ namespace DataPartsExchange
 class Service final : public InterserverIOEndpoint
 {
 public:
-    Service(MergeTreeData & data_, StoragePtr & storage_) : data(data_),
-        storage(storage_), log(&Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
+    Service(MergeTreeData & data_)
+    : data(data_), log(&Logger::get(data.getLogName() + " (Replicated PartsService)")) {}
 
     Service(const Service &) = delete;
     Service & operator=(const Service &) = delete;
@@ -33,8 +33,9 @@ private:
     MergeTreeData::DataPartPtr findPart(const String & name);
 
 private:
+    /// StorageReplicatedMergeTree::shutdown() waits for all parts exchange handlers to finish,
+    /// so Service will never access dangling reference to storage
     MergeTreeData & data;
-    StorageWeakPtr storage;
     Logger * log;
 };
 
@@ -70,7 +71,7 @@ private:
             const String & replica_path,
             bool to_detached,
             const String & tmp_prefix_,
-            const DiskSpace::ReservationPtr reservation,
+            const ReservationPtr reservation,
             PooledReadWriteBufferFromHTTP & in);
 
     MergeTreeData & data;

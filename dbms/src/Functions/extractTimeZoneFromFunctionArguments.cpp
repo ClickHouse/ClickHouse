@@ -2,6 +2,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Core/Block.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <Columns/ColumnString.h>
 #include <common/DateLUT.h>
 
@@ -37,11 +38,13 @@ std::string extractTimeZoneNameFromFunctionArguments(const ColumnsWithTypeAndNam
     }
     else
     {
-        if (!arguments.size())
+        if (arguments.empty())
             return {};
 
         /// If time zone is attached to an argument of type DateTime.
         if (const DataTypeDateTime * type = checkAndGetDataType<DataTypeDateTime>(arguments[datetime_arg_num].type.get()))
+            return type->getTimeZone().getTimeZone();
+        if (const DataTypeDateTime64 * type = checkAndGetDataType<DataTypeDateTime64>(arguments[datetime_arg_num].type.get()))
             return type->getTimeZone().getTimeZone();
 
         return {};
@@ -54,7 +57,7 @@ const DateLUTImpl & extractTimeZoneFromFunctionArguments(Block & block, const Co
         return DateLUT::instance(extractTimeZoneNameFromColumn(*block.getByPosition(arguments[time_zone_arg_num]).column));
     else
     {
-        if (!arguments.size())
+        if (arguments.empty())
             return DateLUT::instance();
 
         /// If time zone is attached to an argument of type DateTime.

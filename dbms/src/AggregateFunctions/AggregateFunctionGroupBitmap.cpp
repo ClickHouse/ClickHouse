@@ -2,6 +2,7 @@
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include "registerAggregateFunctions.h"
 
 // TODO include this last because of a broken roaring header. See the comment
 // inside.
@@ -9,6 +10,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 namespace
 {

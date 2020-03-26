@@ -3,7 +3,7 @@
 #include "config_core.h"
 #if USE_EMBEDDED_COMPILER
 
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Common/LRUCache.h>
@@ -17,7 +17,7 @@ using CompilableExpression = std::function<llvm::Value * (llvm::IRBuilderBase &,
 
 struct LLVMModuleState;
 
-class LLVMFunction : public IFunctionBase
+class LLVMFunction : public IFunctionBaseImpl
 {
     std::string name;
     Names arg_names;
@@ -43,7 +43,7 @@ public:
 
     const DataTypePtr & getReturnType() const override { return originals.back()->getReturnType(); }
 
-    PreparedFunctionPtr prepare(const Block &, const ColumnNumbers &, size_t) const override;
+    ExecutableFunctionImplPtr prepare(const Block &, const ColumnNumbers &, size_t) const override;
 
     bool isDeterministic() const override;
 
@@ -63,10 +63,10 @@ public:
 /** This child of LRUCache breaks one of it's invariants: total weight may be changed after insertion.
  * We have to do so, because we don't known real memory consumption of generated LLVM code for every function.
  */
-class CompiledExpressionCache : public LRUCache<UInt128, LLVMFunction, UInt128Hash>
+class CompiledExpressionCache : public LRUCache<UInt128, IFunctionBase, UInt128Hash>
 {
 public:
-    using Base = LRUCache<UInt128, LLVMFunction, UInt128Hash>;
+    using Base = LRUCache<UInt128, IFunctionBase, UInt128Hash>;
     using Base::Base;
 };
 

@@ -15,7 +15,7 @@ NamesAndTypesList StorageSystemModels::getNamesAndTypes()
 {
     return {
         { "name", std::make_shared<DataTypeString>() },
-        { "status", std::make_shared<DataTypeEnum8>(ExternalLoader::getStatusEnumAllPossibleValues()) },
+        { "status", std::make_shared<DataTypeEnum8>(getStatusEnumAllPossibleValues()) },
         { "origin", std::make_shared<DataTypeString>() },
         { "type", std::make_shared<DataTypeString>() },
         { "loading_start_time", std::make_shared<DataTypeDateTime>() },
@@ -30,9 +30,9 @@ void StorageSystemModels::fillData(MutableColumns & res_columns, const Context &
     const auto & external_models_loader = context.getExternalModelsLoader();
     auto load_results = external_models_loader.getCurrentLoadResults();
 
-    for (const auto & [model_name, load_result] : load_results)
+    for (const auto & load_result : load_results)
     {
-        res_columns[0]->insert(model_name);
+        res_columns[0]->insert(load_result.name);
         res_columns[1]->insert(static_cast<Int8>(load_result.status));
         res_columns[2]->insert(load_result.origin);
 

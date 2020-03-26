@@ -9,12 +9,12 @@ namespace
 /// NOTE: Trailing return type is explicitly specified for SFINAE.
 
 /// google::sparse_hash_map
-template <typename T> auto first(const T & value) -> decltype(value.first) { return value.first; }
-template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; }
+template <typename T> auto first(const T & value) -> decltype(value.first) { return value.first; } // NOLINT
+template <typename T> auto second(const T & value) -> decltype(value.second) { return value.second; } // NOLINT
 
 /// HashMap
-template <typename T> auto first(const T & value) -> decltype(value.getKey()) { return value.getKey(); }
-template <typename T> auto second(const T & value) -> decltype(value.getMapped()) { return value.getMapped(); }
+template <typename T> auto first(const T & value) -> decltype(value.getKey()) { return value.getKey(); } // NOLINT
+template <typename T> auto second(const T & value) -> decltype(value.getMapped()) { return value.getMapped(); } // NOLINT
 
 }
 
@@ -23,7 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TYPE_MISMATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
     extern const int UNSUPPORTED_METHOD;
@@ -31,6 +30,7 @@ namespace ErrorCodes
 
 
 HashedDictionary::HashedDictionary(
+    const std::string & database_,
     const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
@@ -38,7 +38,9 @@ HashedDictionary::HashedDictionary(
     bool require_nonempty_,
     bool sparse_,
     BlockPtr saved_block_)
-    : name{name_}
+    : database(database_)
+    , name(name_)
+    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -129,7 +131,7 @@ void HashedDictionary::isInConstantVector(const Key child_id, const PaddedPODArr
         const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -155,7 +157,7 @@ DECLARE(Decimal128)
 void HashedDictionary::getString(const std::string & attribute_name, const PaddedPODArray<Key> & ids, ColumnString * out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -174,7 +176,7 @@ void HashedDictionary::getString(const std::string & attribute_name, const Padde
         ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t row) { return def[row]; }); \
@@ -199,7 +201,7 @@ void HashedDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const ColumnString * const def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -213,7 +215,7 @@ void HashedDictionary::getString(
         const std::string & attribute_name, const PaddedPODArray<Key> & ids, const TYPE & def, ResultArrayType<TYPE> & out) const \
     { \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, ids, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -238,7 +240,7 @@ void HashedDictionary::getString(
     const std::string & attribute_name, const PaddedPODArray<Key> & ids, const String & def, ColumnString * const out) const
 {
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -317,7 +319,7 @@ void HashedDictionary::createAttributes()
             hierarchical_attribute = &attributes.back();
 
             if (hierarchical_attribute->type != AttributeUnderlyingType::utUInt64)
-                throw Exception{name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
+                throw Exception{full_name + ": hierarchical attribute must be UInt64.", ErrorCodes::TYPE_MISMATCH};
         }
     }
 }
@@ -424,7 +426,7 @@ void HashedDictionary::loadData()
         updateData();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
 }
 
 template <typename T>
@@ -442,9 +444,9 @@ void HashedDictionary::addAttributeSize(const Attribute & attribute)
         bucket_count = map_ref->bucket_count();
 
         /** TODO: more accurate calculation */
-        bytes_allocated += sizeof(CollectionType<T>);
+        bytes_allocated += sizeof(SparseCollectionType<T>);
         bytes_allocated += bucket_count;
-        bytes_allocated += map_ref->size() * sizeof(Key) * sizeof(T);
+        bytes_allocated += map_ref->size() * (sizeof(Key) + sizeof(T));
     }
 }
 
@@ -684,7 +686,7 @@ const HashedDictionary::Attribute & HashedDictionary::getAttribute(const std::st
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }
@@ -768,27 +770,31 @@ BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_n
 
 void registerDictionaryHashed(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string & name,
+    auto create_layout = [=](const std::string & full_name,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
-                             DictionarySourcePtr source_ptr) -> DictionaryPtr
+                             DictionarySourcePtr source_ptr,
+                             bool sparse) -> DictionaryPtr
     {
         if (dict_struct.key)
             throw Exception{"'key' is not supported for dictionary of layout 'hashed'", ErrorCodes::UNSUPPORTED_METHOD};
 
         if (dict_struct.range_min || dict_struct.range_max)
-            throw Exception{name
+            throw Exception{full_name
                                 + ": elements .structure.range_min and .structure.range_max should be defined only "
                                   "for a dictionary of layout 'range_hashed'",
                             ErrorCodes::BAD_ARGUMENTS};
+
+        const String database = config.getString(config_prefix + ".database", "");
+        const String name = config.getString(config_prefix + ".name");
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
-        const bool sparse = name == "sparse_hashed";
-        return std::make_unique<HashedDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
+        return std::make_unique<HashedDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty, sparse);
     };
-    factory.registerLayout("hashed", create_layout, false);
-    factory.registerLayout("sparse_hashed", create_layout, false);
+    using namespace std::placeholders;
+    factory.registerLayout("hashed", std::bind(create_layout, _1, _2, _3, _4, _5, /* sparse = */ false), false);
+    factory.registerLayout("sparse_hashed", std::bind(create_layout, _1, _2, _3, _4, _5, /* sparse = */ true), false);
 }
 
 }

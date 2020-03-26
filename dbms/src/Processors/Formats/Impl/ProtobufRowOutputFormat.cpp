@@ -10,13 +10,10 @@
 #include <google/protobuf/descriptor.h>
 
 
-
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
-    extern const int NO_DATA_FOR_REQUIRED_PROTOBUF_FIELD;
 }
 
 
@@ -50,12 +47,12 @@ void registerOutputFormatProcessorProtobuf(FormatFactory & factory)
         "Protobuf",
         [](WriteBuffer & buf,
            const Block & header,
-           const Context & context,
            FormatFactory::WriteCallback callback,
-           const FormatSettings &)
+           const FormatSettings & settings)
         {
-            return std::make_shared<ProtobufRowOutputFormat>(buf, header, callback,
-                                                             FormatSchemaInfo(context, context.getSettingsRef().format_schema, "Protobuf", true));
+            return std::make_shared<ProtobufRowOutputFormat>(buf, header, std::move(callback),
+                FormatSchemaInfo(settings.schema.format_schema, "Protobuf", true,
+                                 settings.schema.is_server, settings.schema.format_schema_path));
         });
 }
 

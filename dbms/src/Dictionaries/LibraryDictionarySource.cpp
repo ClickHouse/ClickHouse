@@ -1,25 +1,25 @@
 #include "LibraryDictionarySource.h"
 #include <DataStreams/OneBlockInputStream.h>
-#include <Core/Defines.h>
 #include <Interpreters/Context.h>
 #include <Poco/File.h>
 #include <common/logger_useful.h>
 #include <ext/bit_cast.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
+#include <Common/StringUtils/StringUtils.h>
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "LibraryDictionarySourceExternal.h"
-
+#include "registerDictionaries.h"
 
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int FILE_DOESNT_EXIST;
     extern const int EXTERNAL_LIBRARY_ERROR;
+    extern const int PATH_ACCESS_DENIED;
 }
 
 
@@ -122,17 +122,28 @@ LibraryDictionarySource::LibraryDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix_,
-    Block & sample_block_)
+    Block & sample_block_,
+    const Context & context,
+    bool check_config)
     : log(&Logger::get("LibraryDictionarySource"))
     , dict_struct{dict_struct_}
     , config_prefix{config_prefix_}
     , path{config.getString(config_prefix + ".path", "")}
     , sample_block{sample_block_}
 {
+
+    if (check_config)
+    {
+        const String dictionaries_lib_path = context.getDictionariesLibPath();
+        if (!startsWith(path, dictionaries_lib_path))
+            throw Exception("LibraryDictionarySource: Library path " + path + " is not inside " + dictionaries_lib_path, ErrorCodes::PATH_ACCESS_DENIED);
+    }
+
     if (!Poco::File(path).exists())
         throw Exception(
-            "LibraryDictionarySource: Can't load lib " + toString() + ": " + Poco::File(path).path() + " - File doesn't exist",
+            "LibraryDictionarySource: Can't load library " + Poco::File(path).path() + ": file doesn't exist",
             ErrorCodes::FILE_DOESNT_EXIST);
+
     description.init(sample_block);
     library = std::make_shared<SharedLibrary>(path, RTLD_LAZY
 #if defined(RTLD_DEEPBIND) && !defined(ADDRESS_SANITIZER) // Does not exists in FreeBSD. Cannot work with Address Sanitizer.
@@ -140,9 +151,9 @@ LibraryDictionarySource::LibraryDictionarySource(
 #endif
     );
     settings = std::make_shared<CStringsHolder>(getLibSettings(config, config_prefix + lib_config_settings));
-    if (auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
+    if (auto lib_new = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
             "ClickHouseDictionary_v3_libNew"))
-        lib_data = libNew(&settings->strings, ClickHouseLibrary::log);
+        lib_data = lib_new(&settings->strings, ClickHouseLibrary::log);
 }
 
 LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource & other)
@@ -155,18 +166,18 @@ LibraryDictionarySource::LibraryDictionarySource(const LibraryDictionarySource &
     , description{other.description}
     , settings{other.settings}
 {
-    if (auto libClone = library->tryGet<decltype(lib_data) (*)(decltype(other.lib_data))>("ClickHouseDictionary_v3_libClone"))
-        lib_data = libClone(other.lib_data);
+    if (auto lib_clone = library->tryGet<decltype(lib_data) (*)(decltype(other.lib_data))>("ClickHouseDictionary_v3_libClone"))
+        lib_data = lib_clone(other.lib_data);
     else if (
-        auto libNew = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
+        auto lib_new = library->tryGet<decltype(lib_data) (*)(decltype(&settings->strings), decltype(&ClickHouseLibrary::log))>(
             "ClickHouseDictionary_v3_libNew"))
-        lib_data = libNew(&settings->strings, ClickHouseLibrary::log);
+        lib_data = lib_new(&settings->strings, ClickHouseLibrary::log);
 }
 
 LibraryDictionarySource::~LibraryDictionarySource()
 {
-    if (auto libDelete = library->tryGet<void (*)(decltype(lib_data))>("ClickHouseDictionary_v3_libDelete"))
-        libDelete(lib_data);
+    if (auto lib_delete = library->tryGet<void (*)(decltype(lib_data))>("ClickHouseDictionary_v3_libDelete"))
+        lib_delete(lib_data);
 }
 
 BlockInputStreamPtr LibraryDictionarySource::loadAll()
@@ -185,10 +196,10 @@ BlockInputStreamPtr LibraryDictionarySource::loadAll()
     void * data_ptr = nullptr;
 
     /// Get function pointer before dataNew call because library->get may throw.
-    auto func_loadAll
+    auto func_load_all
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns))>("ClickHouseDictionary_v3_loadAll");
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    auto data = func_loadAll(data_ptr, &settings->strings, &columns);
+    auto data = func_load_all(data_ptr, &settings->strings, &columns);
     auto block = dataToBlock(description.sample_block, data);
     SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
@@ -211,11 +222,11 @@ BlockInputStreamPtr LibraryDictionarySource::loadIds(const std::vector<UInt64> &
     void * data_ptr = nullptr;
 
     /// Get function pointer before dataNew call because library->get may throw.
-    auto func_loadIds
+    auto func_load_ids
         = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&columns_pass), decltype(&ids_data))>(
             "ClickHouseDictionary_v3_loadIds");
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    auto data = func_loadIds(data_ptr, &settings->strings, &columns_pass, &ids_data);
+    auto data = func_load_ids(data_ptr, &settings->strings, &columns_pass, &ids_data);
     auto block = dataToBlock(description.sample_block, data);
     SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
@@ -245,10 +256,10 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 
     void * data_ptr = nullptr;
     /// Get function pointer before dataNew call because library->get may throw.
-    auto func_loadKeys = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&request_cols))>(
+    auto func_load_keys = library->get<void * (*)(decltype(data_ptr), decltype(&settings->strings), decltype(&request_cols))>(
         "ClickHouseDictionary_v3_loadKeys");
     data_ptr = library->get<decltype(data_ptr) (*)(decltype(lib_data))>("ClickHouseDictionary_v3_dataNew")(lib_data);
-    auto data = func_loadKeys(data_ptr, &settings->strings, &request_cols);
+    auto data = func_load_keys(data_ptr, &settings->strings, &request_cols);
     auto block = dataToBlock(description.sample_block, data);
     SCOPE_EXIT(library->get<void (*)(decltype(lib_data), decltype(data_ptr))>("ClickHouseDictionary_v3_dataDelete")(lib_data, data_ptr));
     return std::make_shared<OneBlockInputStream>(block);
@@ -256,17 +267,17 @@ BlockInputStreamPtr LibraryDictionarySource::loadKeys(const Columns & key_column
 
 bool LibraryDictionarySource::isModified() const
 {
-    if (auto func_isModified
+    if (auto func_is_modified
         = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v3_isModified"))
-        return func_isModified(lib_data, &settings->strings);
+        return func_is_modified(lib_data, &settings->strings);
     return true;
 }
 
 bool LibraryDictionarySource::supportsSelectiveLoad() const
 {
-    if (auto func_supportsSelectiveLoad
+    if (auto func_supports_selective_load
         = library->tryGet<bool (*)(decltype(lib_data), decltype(&settings->strings))>("ClickHouseDictionary_v3_supportsSelectiveLoad"))
-        return func_supportsSelectiveLoad(lib_data, &settings->strings);
+        return func_supports_selective_load(lib_data, &settings->strings);
     return true;
 }
 
@@ -282,15 +293,16 @@ std::string LibraryDictionarySource::toString() const
 
 void registerDictionarySourceLibrary(DictionarySourceFactory & factory)
 {
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context &) -> DictionarySourcePtr
+                                 const Context & context,
+                                 bool check_config) -> DictionarySourcePtr
     {
-        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block);
+        return std::make_unique<LibraryDictionarySource>(dict_struct, config, config_prefix + ".library", sample_block, context, check_config);
     };
-    factory.registerSource("library", createTableSource);
+    factory.registerSource("library", create_table_source);
 }
 
 }

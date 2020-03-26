@@ -6,6 +6,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/parseDateTimeBestEffort.h>
 
+#include <limits>
 
 namespace DB
 {
@@ -64,9 +65,32 @@ inline void readDecimalNumber(T & res, const char * src)
     readDecimalNumberImpl<num_digits - 1, 1>(res, src);
 }
 
+template <typename T>
+inline void readDecimalNumber(T & res, size_t num_digits, const char * src)
+{
+#define READ_DECIMAL_NUMBER(N) do { res *= common::exp10_i32(N); readDecimalNumber<N>(res, src); src += (N); num_digits -= (N); } while (false)
+
+    while (num_digits)
+    {
+        switch (num_digits)
+        {
+            case 3: READ_DECIMAL_NUMBER(3); break;
+            case 2: READ_DECIMAL_NUMBER(2); break;
+            case 1: READ_DECIMAL_NUMBER(1); break;
+            default: READ_DECIMAL_NUMBER(4); break;
+        }
+    }
+#undef DECIMAL_NUMBER_CASE
+}
+
+struct DateTimeSubsecondPart
+{
+    Int64 value;
+    UInt8 digits;
+};
 
 template <typename ReturnType>
-ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeSubsecondPart * fractional = nullptr)
 {
     auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
@@ -94,7 +118,7 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
 
     auto read_alpha_month = [&month] (const auto & alpha)
     {
-             if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
+        if (0 == strncasecmp(alpha, "Jan", 3)) month = 1;
         else if (0 == strncasecmp(alpha, "Feb", 3)) month = 2;
         else if (0 == strncasecmp(alpha, "Mar", 3)) month = 3;
         else if (0 == strncasecmp(alpha, "Apr", 3)) month = 4;
@@ -113,7 +137,7 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
 
     while (!in.eof())
     {
-        char digits[14];
+        char digits[std::numeric_limits<UInt64>::digits10];
 
         size_t num_digits = 0;
 
@@ -358,9 +382,18 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
                     return on_error("Cannot read DateTime: unexpected point symbol", ErrorCodes::CANNOT_PARSE_DATETIME);
 
                 ++in.position();
+                num_digits = readDigits(digits, sizeof(digits), in);
+                if (fractional)
+                {
+                    using FractionalType = typename std::decay<decltype(fractional->value)>::type;
+                    // Reading more decimal digits than fits into FractionalType would case an
+                    // overflow, so it is better to skip all digits from the right side that do not
+                    // fit into result type. To provide less precise value rather than bogus one.
+                    num_digits = std::min(static_cast<size_t>(std::numeric_limits<FractionalType>::digits10), num_digits);
 
-                /// Just ignore fractional part of second.
-                readDigits(digits, sizeof(digits), in);
+                    fractional->digits = num_digits;
+                    readDecimalNumber(fractional->value, num_digits, digits);
+                }
             }
             else if (c == '+' || c == '-')
             {
@@ -446,12 +479,12 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
                     if (read_alpha_month(alpha))
                     {
                     }
-                    else if (0 == strncasecmp(alpha, "UTC", 3)) has_time_zone_offset = true;
+                    else if (0 == strncasecmp(alpha, "UTC", 3)) has_time_zone_offset = true; // NOLINT
                     else if (0 == strncasecmp(alpha, "GMT", 3)) has_time_zone_offset = true;
                     else if (0 == strncasecmp(alpha, "MSK", 3)) { has_time_zone_offset = true; time_zone_offset_hour = 3; }
                     else if (0 == strncasecmp(alpha, "MSD", 3)) { has_time_zone_offset = true; time_zone_offset_hour = 4; }
 
-                    else if (0 == strncasecmp(alpha, "Mon", 3)) has_day_of_week = true;
+                    else if (0 == strncasecmp(alpha, "Mon", 3)) has_day_of_week = true; // NOLINT
                     else if (0 == strncasecmp(alpha, "Tue", 3)) has_day_of_week = true;
                     else if (0 == strncasecmp(alpha, "Wed", 3)) has_day_of_week = true;
                     else if (0 == strncasecmp(alpha, "Thu", 3)) has_day_of_week = true;
@@ -517,6 +550,28 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
     return ReturnType(true);
 }
 
+template <typename ReturnType>
+ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    time_t whole;
+    DateTimeSubsecondPart subsecond = {0, 0}; // needs to be explicitly initialized sine it could be missing from input string
+    if (!parseDateTimeBestEffortImpl<bool>(whole, in, local_time_zone, utc_time_zone, &subsecond))
+        return ReturnType(false);
+
+    DateTime64::NativeType fractional = subsecond.value;
+    if (scale < subsecond.digits)
+    {
+        fractional /= common::exp10_i64(subsecond.digits - scale);
+    }
+    else if (scale > subsecond.digits)
+    {
+        fractional *= common::exp10_i64(scale - subsecond.digits);
+    }
+
+    res = DecimalUtils::decimalFromComponents<DateTime64>(whole, fractional, scale);
+    return ReturnType(true);
+}
+
 }
 
 #if defined(__PPC__)
@@ -533,6 +588,16 @@ void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & 
 bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
     return parseDateTimeBestEffortImpl<bool>(res, in, local_time_zone, utc_time_zone);
+}
+
+void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    return parseDateTime64BestEffortImpl<void>(res, scale, in, local_time_zone, utc_time_zone);
+}
+
+bool tryParseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
+{
+    return parseDateTime64BestEffortImpl<bool>(res, scale, in, local_time_zone, utc_time_zone);
 }
 
 }

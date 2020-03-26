@@ -12,9 +12,9 @@ do                                    \
         if ((res)) { (res) = false; }                \
     }                                \
 } \
-while (0)
+while (false)
 
-void test1()
+static void test1()
 {
     using namespace DB;
 
@@ -135,7 +135,7 @@ void test1()
         std::cerr << "Some errors were found in test 1\n";
 }
 
-void test2()
+static void test2()
 {
     using namespace DB;
 
@@ -168,11 +168,11 @@ void test2()
         ASSERT_CHECK((arr[1] == 2), res);
         ASSERT_CHECK((arr[2] == 3), res);
 
-        ASSERT_CHECK((arr2.size() == 0), res);
+        ASSERT_CHECK((arr2.empty()), res);
 
         arr.swap(arr2);
 
-        ASSERT_CHECK((arr.size() == 0), res);
+        ASSERT_CHECK((arr.empty()), res);
 
         ASSERT_CHECK((arr2.size() == 3), res);
         ASSERT_CHECK((arr2[0] == 1), res);
@@ -200,11 +200,11 @@ void test2()
         ASSERT_CHECK((arr[3] == 4), res);
         ASSERT_CHECK((arr[4] == 5), res);
 
-        ASSERT_CHECK((arr2.size() == 0), res);
+        ASSERT_CHECK((arr2.empty()), res);
 
         arr.swap(arr2);
 
-        ASSERT_CHECK((arr.size() == 0), res);
+        ASSERT_CHECK((arr.empty()), res);
 
         ASSERT_CHECK((arr2.size() == 5), res);
         ASSERT_CHECK((arr2[0] == 1), res);
@@ -385,7 +385,7 @@ void test2()
         std::cerr << "Some errors were found in test 2\n";
 }
 
-void test3()
+static void test3()
 {
     using namespace DB;
 
@@ -409,7 +409,7 @@ void test3()
 
         Array arr2{std::move(arr)};
 
-        ASSERT_CHECK((arr.size() == 0), res);
+        ASSERT_CHECK((arr.empty()), res); // NOLINT
 
         ASSERT_CHECK((arr2.size() == 3), res);
         ASSERT_CHECK((arr2[0] == 1), res);
@@ -428,7 +428,7 @@ void test3()
 
         Array arr2{std::move(arr)};
 
-        ASSERT_CHECK((arr.size() == 0), res);
+        ASSERT_CHECK((arr.empty()), res); // NOLINT
 
         ASSERT_CHECK((arr2.size() == 5), res);
         ASSERT_CHECK((arr2[0] == 1), res);

@@ -18,12 +18,12 @@ namespace ErrorCodes
 {
     extern const int CANNOT_GET_SIZE_OF_FIELD;
     extern const int NOT_IMPLEMENTED;
-    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
 class Arena;
 class ColumnGathererStream;
 class Field;
+class WeakHash32;
 
 /// Declares interface to store columns in memory.
 class IColumn : public COW<IColumn>
@@ -98,6 +98,11 @@ public:
     virtual Float64 getFloat64(size_t /*n*/) const
     {
         throw Exception("Method getFloat64 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    virtual Float32 getFloat32(size_t /*n*/) const
+    {
+        throw Exception("Method getFloat32 is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     /** If column is numeric, return value of n-th element, casted to UInt64.
@@ -195,6 +200,11 @@ public:
     /// On subsequent calls of this method for sequence of column values of arbitrary types,
     ///  passed bytes to hash must identify sequence of values unambiguously.
     virtual void updateHashWithValue(size_t n, SipHash & hash) const = 0;
+
+    /// Update hash function value. Hash is calculated for each element.
+    /// It's a fast weak hash function. Mainly need to scatter data between threads.
+    /// WeakHash32 must have the same size as column.
+    virtual void updateWeakHash32(WeakHash32 & hash) const = 0;
 
     /** Removes elements that don't match the filter.
       * Is used in WHERE and HAVING operations.

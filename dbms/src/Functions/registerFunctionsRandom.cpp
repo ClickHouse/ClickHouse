@@ -7,6 +7,7 @@ void registerFunctionRand(FunctionFactory & factory);
 void registerFunctionRand64(FunctionFactory & factory);
 void registerFunctionRandConstant(FunctionFactory & factory);
 void registerFunctionGenerateUUIDv4(FunctionFactory & factory);
+void registerFunctionRandomPrintableASCII(FunctionFactory & factory);
 
 void registerFunctionsRandom(FunctionFactory & factory)
 {
@@ -14,8 +15,7 @@ void registerFunctionsRandom(FunctionFactory & factory)
     registerFunctionRand64(factory);
     registerFunctionRandConstant(factory);
     registerFunctionGenerateUUIDv4(factory);
+    registerFunctionRandomPrintableASCII(factory);
 }
 
 }
-
-

@@ -36,7 +36,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <ext/range.h>
 #include <ext/bit_cast.h>
@@ -47,6 +47,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
@@ -371,7 +373,7 @@ struct JavaHashUTF16LEImpl
         }
 
         if (size % 2 != 0)
-            throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Arguments for javaHashUTF16LE must be in the form of UTF-16", ErrorCodes::BAD_ARGUMENTS);
 
         UInt32 h = 0;
         for (size_t i = 0; i < size; i += 2)
@@ -455,10 +457,10 @@ struct ImplMetroHash64
         union
         {
             UInt64 u64;
-            UInt8 u8[sizeof(u64)];
+            uint8_t u8[sizeof(u64)];
         };
 
-        metrohash64_1(reinterpret_cast<const UInt8 *>(s), len, 0, u8);
+        metrohash64_1(reinterpret_cast<const uint8_t *>(s), len, 0, u8);
 
         return u64;
     }
@@ -553,7 +555,7 @@ public:
                 Impl::apply(
                     reinterpret_cast<const char *>(&data[current_offset]),
                     offsets[i] - current_offset - 1,
-                    &chars_to[i * Impl::length]);
+                    reinterpret_cast<uint8_t *>(&chars_to[i * Impl::length]));
 
                 current_offset = offsets[i];
             }
@@ -708,6 +710,20 @@ private:
     }
 
     template <bool first>
+    void executeGeneric(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
+    {
+        for (size_t i = 0, size = column->size(); i < size; ++i)
+        {
+            StringRef bytes = column->getDataAt(i);
+            const ToType h = Impl::apply(bytes.data, bytes.size);
+            if (first)
+                vec_to[i] = h;
+            else
+                vec_to[i] = Impl::combineHashes(vec_to[i], h);
+        }
+    }
+
+    template <bool first>
     void executeString(const IColumn * column, typename ColumnVector<ToType>::Container & vec_to)
     {
         if (const ColumnString * col_from = checkAndGetColumn<ColumnString>(column))
@@ -843,8 +859,7 @@ private:
         else if (which.isFixedString()) executeString<first>(icolumn, vec_to);
         else if (which.isArray()) executeArray<first>(from_type, icolumn, vec_to);
         else
-            throw Exception("Unexpected type " + from_type->getName() + " of argument of function " + getName(),
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+            executeGeneric<first>(icolumn, vec_to);
     }
 
     void executeForArgument(const IDataType * type, const IColumn * column, typename ColumnVector<ToType>::Container & vec_to, bool & is_first)

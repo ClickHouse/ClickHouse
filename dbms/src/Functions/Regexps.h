@@ -36,6 +36,7 @@ namespace ErrorCodes
 {
     extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace Regexps
@@ -205,7 +206,7 @@ namespace MultiRegexps
             else
                 throw Exception(
                     "Pattern '" + str_patterns[error->expression] + "' failed with error '" + String(error->message),
-                    ErrorCodes::LOGICAL_ERROR);
+                    ErrorCodes::BAD_ARGUMENTS);
         }
 
         ProfileEvents::increment(ProfileEvents::RegexpCreated);

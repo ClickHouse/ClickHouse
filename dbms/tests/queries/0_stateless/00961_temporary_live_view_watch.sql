@@ -1,20 +1,20 @@
 SET allow_experimental_live_view = 1;
 
-DROP TABLE IF EXISTS test.lv;
-DROP TABLE IF EXISTS test.mt;
+DROP TABLE IF EXISTS lv;
+DROP TABLE IF EXISTS mt;
 
-CREATE TABLE test.mt (a Int32) Engine=MergeTree order by tuple();
-CREATE TEMPORARY LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt;
+CREATE TABLE mt (a Int32) Engine=MergeTree order by tuple();
+CREATE LIVE VIEW lv WITH TIMEOUT AS SELECT sum(a) FROM mt;
 
-WATCH test.lv LIMIT 0;
+WATCH lv LIMIT 0;
 
-INSERT INTO test.mt VALUES (1),(2),(3);
+INSERT INTO mt VALUES (1),(2),(3);
 
-WATCH test.lv LIMIT 0;
+WATCH lv LIMIT 0;
 
-INSERT INTO test.mt VALUES (4),(5),(6);
+INSERT INTO mt VALUES (4),(5),(6);
 
-WATCH test.lv LIMIT 0;
+WATCH lv LIMIT 0;
 
-DROP TABLE test.lv;
-DROP TABLE test.mt;
+DROP TABLE lv;
+DROP TABLE mt;

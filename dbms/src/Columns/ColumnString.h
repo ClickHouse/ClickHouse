@@ -188,6 +188,8 @@ public:
         hash.update(reinterpret_cast<const char *>(&chars[offset]), string_size);
     }
 
+    void updateWeakHash32(WeakHash32 & hash) const override;
+
     void insertRangeFrom(const IColumn & src, size_t start, size_t length) override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
@@ -203,6 +205,13 @@ public:
     {
         chars.push_back(0);
         offsets.push_back(offsets.back() + 1);
+    }
+
+    virtual void insertManyDefaults(size_t length) override
+    {
+        chars.resize_fill(chars.size() + length);
+        for (size_t i = 0; i < length; ++i)
+            offsets.push_back(offsets.back() + 1);
     }
 
     int compareAt(size_t n, size_t m, const IColumn & rhs_, int /*nan_direction_hint*/) const override

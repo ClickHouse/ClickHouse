@@ -29,7 +29,17 @@ void stableGetPermutation(const Block & block, const SortDescription & descripti
   */
 bool isAlreadySorted(const Block & block, const SortDescription & description);
 
-using ColumnsWithSortDescriptions = std::vector<std::pair<const IColumn *, SortColumnDescription>>;
+/// Column with description for sort
+struct ColumnWithSortDescription
+{
+    const IColumn * column;
+    SortColumnDescription description;
+
+    /// It means, that this column is ColumnConst
+    bool column_const = false;
+};
+
+using ColumnsWithSortDescriptions = std::vector<ColumnWithSortDescription>;
 
 ColumnsWithSortDescriptions getColumnsWithSortDescription(const Block & block, const SortDescription & description);
 

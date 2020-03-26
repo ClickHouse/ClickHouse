@@ -16,7 +16,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
-    extern const int UNKNOWN_EXCEPTION;
 }
 
 void MergeTreeIndexFactory::registerIndex(const std::string & name, Creator creator)
@@ -44,38 +43,17 @@ std::unique_ptr<IMergeTreeIndex> MergeTreeIndexFactory::get(
         throw Exception(
                 "Unknown Index type '" + node->type->name + "'. Available index types: " +
                 std::accumulate(indexes.cbegin(), indexes.cend(), std::string{},
-                        [] (auto && lft, const auto & rht) -> std::string {
-                            if (lft == "")
-                                return rht.first;
+                        [] (auto && left, const auto & right) -> std::string
+                        {
+                            if (left.empty())
+                                return right.first;
                             else
-                                return lft + ", " + rht.first;
+                                return left + ", " + right.first;
                         }),
                 ErrorCodes::INCORRECT_QUERY);
 
     return it->second(columns, node, context);
 }
-
-
-std::unique_ptr<IMergeTreeIndex> minmaxIndexCreator(
-        const NamesAndTypesList & columns,
-        std::shared_ptr<ASTIndexDeclaration> node,
-        const Context & context);
-
-std::unique_ptr<IMergeTreeIndex> setIndexCreator(
-        const NamesAndTypesList & columns,
-        std::shared_ptr<ASTIndexDeclaration> node,
-        const Context & context);
-
-std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreator(
-        const NamesAndTypesList & columns,
-        std::shared_ptr<ASTIndexDeclaration> node,
-        const Context & context);
-
-std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
-    const NamesAndTypesList & columns,
-    std::shared_ptr<ASTIndexDeclaration> node,
-    const Context & context);
-
 
 MergeTreeIndexFactory::MergeTreeIndexFactory()
 {

@@ -329,6 +329,7 @@ public:
     virtual void writeUUID(const UUID &) override { cannotConvertType("UUID"); }
     virtual void writeDate(DayNum) override { cannotConvertType("Date"); }
     virtual void writeDateTime(time_t) override { cannotConvertType("DateTime"); }
+    virtual void writeDateTime64(DateTime64, UInt32) override { cannotConvertType("DateTime64"); }
     virtual void writeDecimal32(Decimal32, UInt32) override { cannotConvertType("Decimal32"); }
     virtual void writeDecimal64(Decimal64, UInt32) override { cannotConvertType("Decimal64"); }
     virtual void writeDecimal128(const Decimal128 &, UInt32) override { cannotConvertType("Decimal128"); }
@@ -436,6 +437,13 @@ public:
         text_buffer.restart();
     }
 
+    void writeDateTime64(DateTime64 date_time, UInt32 scale) override
+    {
+        writeDateTimeText(date_time, scale, text_buffer);
+        writeField(text_buffer.stringRef());
+        text_buffer.restart();
+    }
+
     void writeDecimal32(Decimal32 decimal, UInt32 scale) override { writeDecimal(decimal, scale); }
     void writeDecimal64(Decimal64 decimal, UInt32 scale) override { writeDecimal(decimal, scale); }
     void writeDecimal128(const Decimal128 & decimal, UInt32 scale) override { writeDecimal(decimal, scale); }
@@ -533,7 +541,7 @@ public:
 
     void writeDate(DayNum date) override { castNumericAndWriteField(static_cast<UInt16>(date)); }
     void writeDateTime(time_t tm) override { castNumericAndWriteField(tm); }
-
+    void writeDateTime64(DateTime64 date_time, UInt32 scale) override { writeDecimal(date_time, scale); }
     void writeDecimal32(Decimal32 decimal, UInt32 scale) override { writeDecimal(decimal, scale); }
     void writeDecimal64(Decimal64 decimal, UInt32 scale) override { writeDecimal(decimal, scale); }
     void writeDecimal128(const Decimal128 & decimal, UInt32 scale) override { writeDecimal(decimal, scale); }

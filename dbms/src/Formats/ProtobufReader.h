@@ -72,6 +72,7 @@ public:
     bool readUUID(UUID & uuid) { return current_converter->readUUID(uuid); }
     bool readDate(DayNum & date) { return current_converter->readDate(date); }
     bool readDateTime(time_t & tm) { return current_converter->readDateTime(tm); }
+    bool readDateTime64(DateTime64 & tm, UInt32 scale) { return current_converter->readDateTime64(tm, scale); }
 
     bool readDecimal(Decimal32 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal32(decimal, precision, scale); }
     bool readDecimal(Decimal64 & decimal, UInt32 precision, UInt32 scale) { return current_converter->readDecimal64(decimal, precision, scale); }
@@ -152,6 +153,7 @@ private:
        virtual bool readUUID(UUID &) = 0;
        virtual bool readDate(DayNum &) = 0;
        virtual bool readDateTime(time_t &) = 0;
+       virtual bool readDateTime64(DateTime64 &, UInt32) = 0;
        virtual bool readDecimal32(Decimal32 &, UInt32, UInt32) = 0;
        virtual bool readDecimal64(Decimal64 &, UInt32, UInt32) = 0;
        virtual bool readDecimal128(Decimal128 &, UInt32, UInt32) = 0;
@@ -227,6 +229,7 @@ public:
     bool readUUID(UUID &) { return false; }
     bool readDate(DayNum &) { return false; }
     bool readDateTime(time_t &) { return false; }
+    bool readDateTime64(DateTime64 & /*tm*/, UInt32 /*scale*/) { return false; }
     bool readDecimal(Decimal32 &, UInt32, UInt32) { return false; }
     bool readDecimal(Decimal64 &, UInt32, UInt32) { return false; }
     bool readDecimal(Decimal128 &, UInt32, UInt32) { return false; }

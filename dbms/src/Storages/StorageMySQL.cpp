@@ -15,6 +15,8 @@
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTLiteral.h>
 #include <mysqlxx/Transaction.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -26,7 +28,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-String backQuoteMySQL(const String & x)
+static String backQuoteMySQL(const String & x)
 {
     String res(x.size(), '\0');
     {
@@ -37,8 +39,7 @@ String backQuoteMySQL(const String & x)
 }
 
 StorageMySQL::StorageMySQL(
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     mysqlxx::Pool && pool_,
     const std::string & remote_database_name_,
     const std::string & remote_table_name_,
@@ -47,8 +48,7 @@ StorageMySQL::StorageMySQL(
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const Context & context_)
-    : table_name(table_name_)
-    , database_name(database_name_)
+    : IStorage(table_id_)
     , remote_database_name(remote_database_name_)
     , remote_table_name(remote_table_name_)
     , replace_query{replace_query_}
@@ -61,7 +61,7 @@ StorageMySQL::StorageMySQL(
 }
 
 
-BlockInputStreams StorageMySQL::read(
+Pipes StorageMySQL::read(
     const Names & column_names_,
     const SelectQueryInfo & query_info_,
     const Context & context_,
@@ -80,7 +80,12 @@ BlockInputStreams StorageMySQL::read(
         sample_block.insert({ column_data.type, column_data.name });
     }
 
-    return { std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size_) };
+    Pipes pipes;
+    /// TODO: rewrite MySQLBlockInputStream
+    pipes.emplace_back(std::make_shared<SourceFromInputStream>(
+            std::make_shared<MySQLBlockInputStream>(pool.get(), query, sample_block, max_block_size_)));
+
+    return pipes;
 }
 
 
@@ -170,7 +175,7 @@ public:
         return splitted_blocks;
     }
 
-    std::string dumpNamesWithBackQuote(const Block & block) const
+    static std::string dumpNamesWithBackQuote(const Block & block)
     {
         WriteBufferFromOwnString out;
         for (auto it = block.begin(); it != block.end(); ++it)
@@ -181,7 +186,6 @@ public:
         }
         return out.str();
     }
-
 
 private:
     const StorageMySQL & storage;
@@ -195,7 +199,7 @@ private:
 BlockOutputStreamPtr StorageMySQL::write(
     const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.Get(), context.getSettingsRef().mysql_max_rows_to_insert);
+    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.get(), context.getSettingsRef().mysql_max_rows_to_insert);
 }
 
 void registerStorageMySQL(StorageFactory & factory)
@@ -209,8 +213,8 @@ void registerStorageMySQL(StorageFactory & factory)
                 "Storage MySQL requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (size_t i = 0; i < engine_args.size(); ++i)
-            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
 
         /// 3306 is the default MySQL port.
         auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 3306);
@@ -235,8 +239,7 @@ void registerStorageMySQL(StorageFactory & factory)
                 ErrorCodes::BAD_ARGUMENTS);
 
         return StorageMySQL::create(
-            args.database_name,
-            args.table_name,
+            args.table_id,
             std::move(pool),
             remote_database,
             remote_table,

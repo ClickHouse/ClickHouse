@@ -69,7 +69,6 @@ void registerOutputFormatProcessorODBCDriver(FormatFactory & factory)
     factory.registerOutputFormatProcessor("ODBCDriver", [](
         WriteBuffer & buf,
         const Block & sample,
-        const Context &,
         FormatFactory::WriteCallback,
         const FormatSettings & format_settings)
     {

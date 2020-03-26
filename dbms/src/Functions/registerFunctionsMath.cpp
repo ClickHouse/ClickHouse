@@ -27,6 +27,7 @@ void registerFunctionSigmoid(FunctionFactory & factory);
 void registerFunctionTanh(FunctionFactory & factory);
 void registerFunctionPow(FunctionFactory & factory);
 
+
 void registerFunctionsMath(FunctionFactory & factory)
 {
     registerFunctionE(factory);
@@ -55,4 +56,3 @@ void registerFunctionsMath(FunctionFactory & factory)
 }
 
 }
-

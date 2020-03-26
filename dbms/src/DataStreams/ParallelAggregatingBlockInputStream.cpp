@@ -120,7 +120,7 @@ void ParallelAggregatingBlockInputStream::Handler::onFinishThread(size_t thread_
         if (data.isConvertibleToTwoLevel())
             data.convertToTwoLevel();
 
-        if (data.size())
+        if (!data.empty())
             parent.aggregator.writeToTemporaryFile(data);
     }
 }
@@ -136,7 +136,7 @@ void ParallelAggregatingBlockInputStream::Handler::onFinish()
             if (data->isConvertibleToTwoLevel())
                 data->convertToTwoLevel();
 
-            if (data->size())
+            if (!data->empty())
                 parent.aggregator.writeToTemporaryFile(*data);
         }
     }

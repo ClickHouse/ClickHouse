@@ -752,9 +752,9 @@ ReturnType readDateTextFallback(LocalDate & date, ReadBuffer & buf)
 
     UInt16 year = 0;
     if (!append_digit(year)
-        || !append_digit(year)
-        || !append_digit(year)
-        || !append_digit(year))
+        || !append_digit(year) // NOLINT
+        || !append_digit(year) // NOLINT
+        || !append_digit(year)) // NOLINT
         return error();
 
     if (!ignore_delimiter())
@@ -786,14 +786,14 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    static constexpr auto DATE_TIME_BROKEN_DOWN_LENGTH = 19;
-    static constexpr auto UNIX_TIMESTAMP_MAX_LENGTH = 10;
+    static constexpr auto date_time_broken_down_length = 19;
+    static constexpr auto unix_timestamp_max_length = 10;
 
-    char s[DATE_TIME_BROKEN_DOWN_LENGTH];
+    char s[date_time_broken_down_length];
     char * s_pos = s;
 
     /// A piece similar to unix timestamp.
-    while (s_pos < s + UNIX_TIMESTAMP_MAX_LENGTH && !buf.eof() && isNumericASCII(*buf.position()))
+    while (s_pos < s + unix_timestamp_max_length && !buf.eof() && isNumericASCII(*buf.position()))
     {
         *s_pos = *buf.position();
         ++s_pos;
@@ -803,7 +803,7 @@ ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const D
     /// 2015-01-01 01:02:03
     if (s_pos == s + 4 && !buf.eof() && (*buf.position() < '0' || *buf.position() > '9'))
     {
-        const size_t remaining_size = DATE_TIME_BROKEN_DOWN_LENGTH - (s_pos - s);
+        const size_t remaining_size = date_time_broken_down_length - (s_pos - s);
         size_t size = buf.read(s_pos, remaining_size);
         if (remaining_size != size)
         {
@@ -959,13 +959,13 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field)
 }
 
 
-void readException(Exception & e, ReadBuffer & buf, const String & additional_message)
+Exception readException(ReadBuffer & buf, const String & additional_message)
 {
     int code = 0;
     String name;
     String message;
     String stack_trace;
-    bool has_nested = false;
+    bool has_nested = false;    /// Obsolete
 
     readBinary(code, buf);
     readBinary(name, buf);
@@ -986,21 +986,12 @@ void readException(Exception & e, ReadBuffer & buf, const String & additional_me
     if (!stack_trace.empty())
         out << " Stack trace:\n\n" << stack_trace;
 
-    if (has_nested)
-    {
-        Exception nested;
-        readException(nested, buf);
-        e = Exception(out.str(), nested, code);
-    }
-    else
-        e = Exception(out.str(), code);
+    return Exception(out.str(), code);
 }
 
 void readAndThrowException(ReadBuffer & buf, const String & additional_message)
 {
-    Exception e;
-    readException(e, buf, additional_message);
-    e.rethrow();
+    readException(buf, additional_message).rethrow();
 }
 
 
@@ -1051,6 +1042,37 @@ void skipToUnescapedNextLineOrEOF(ReadBuffer & buf)
             continue;
         }
     }
+}
+
+void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current)
+{
+    assert(current >= in.position());
+    assert(current <= in.buffer().end());
+
+    const int old_bytes = memory.size();
+    const int additional_bytes = current - in.position();
+    const int new_bytes = old_bytes + additional_bytes;
+    /// There are no new bytes to add to memory.
+    /// No need to do extra stuff.
+    if (new_bytes == 0)
+        return;
+    memory.resize(new_bytes);
+    memcpy(memory.data() + old_bytes, in.position(), additional_bytes);
+    in.position() = current;
+}
+
+bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current)
+{
+    assert(current <= in.buffer().end());
+
+    if (current < in.buffer().end())
+        return true;
+
+    saveUpToPosition(in, memory, current);
+    bool loaded_more = !in.eof();
+    assert(in.position() == in.buffer().begin());
+    current = in.position();
+    return loaded_more;
 }
 
 }

@@ -15,6 +15,12 @@ struct TableStructureWriteLockHolder
         *this = TableStructureWriteLockHolder();
     }
 
+    void releaseAllExpectAlterIntention()
+    {
+        new_data_structure_lock.reset();
+        structure_lock.reset();
+    }
+
 private:
     friend class IStorage;
 

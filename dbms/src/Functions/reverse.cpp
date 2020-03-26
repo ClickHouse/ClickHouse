@@ -40,7 +40,7 @@ struct ReverseImpl
         }
     }
 
-    static void vector_fixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data)
+    static void vectorFixed(const ColumnString::Chars & data, size_t n, ColumnString::Chars & res_data)
     {
         res_data.resize(data.size());
         size_t size = data.size() / n;
@@ -100,7 +100,7 @@ public:
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column.get()))
         {
             auto col_res = ColumnFixedString::create(col_fixed->getN());
-            ReverseImpl::vector_fixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
+            ReverseImpl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), col_res->getChars());
             block.getByPosition(result).column = std::move(col_res);
         }
         else
@@ -112,30 +112,29 @@ public:
 
 
 /// Also works with arrays.
-class FunctionBuilderReverse : public FunctionBuilderImpl
+class ReverseOverloadResolver : public IFunctionOverloadResolverImpl
 {
 public:
     static constexpr auto name = "reverse";
-    static FunctionBuilderPtr create(const Context & context) { return std::make_shared<FunctionBuilderReverse>(context); }
+    static FunctionOverloadResolverImplPtr create(const Context & context) { return std::make_unique<ReverseOverloadResolver>(context); }
 
-    FunctionBuilderReverse(const Context & context_) : context(context_) {}
+    explicit ReverseOverloadResolver(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
     size_t getNumberOfArguments() const override { return 1; }
 
-protected:
-    FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
+    FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
         if (isArray(arguments.at(0).type))
-            return FunctionFactory::instance().get("arrayReverse", context)->build(arguments);
+            return FunctionOverloadResolverAdaptor(FunctionFactory::instance().getImpl("arrayReverse", context)).buildImpl(arguments);
         else
-            return std::make_shared<DefaultFunction>(
+            return std::make_unique<DefaultFunction>(
                 FunctionReverse::create(context),
                 ext::map<DataTypes>(arguments, [](const auto & elem) { return elem.type; }),
                 return_type);
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnType(const DataTypes & arguments) const override
     {
         return arguments.at(0);
     }
@@ -147,7 +146,7 @@ private:
 
 void registerFunctionReverse(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionBuilderReverse>(FunctionFactory::CaseInsensitive);
+    factory.registerFunction<ReverseOverloadResolver>(FunctionFactory::CaseInsensitive);
 }
 
 }

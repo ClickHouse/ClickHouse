@@ -41,7 +41,7 @@ WriteBufferFromFile::WriteBufferFromFile(
         flags = flags & ~O_DIRECT;
 #endif
 
-    fd = ::open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT : flags, mode);
+    fd = ::open(file_name.c_str(), flags == -1 ? O_WRONLY | O_TRUNC | O_CREAT | O_CLOEXEC : flags | O_CLOEXEC, mode);
 
     if (-1 == fd)
         throwFromErrnoWithPath("Cannot open file " + file_name, file_name,

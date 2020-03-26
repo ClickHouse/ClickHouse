@@ -41,6 +41,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
             query = std::make_shared<ASTExistsTableQuery>();
         else if (s_dictionary.checkWithoutMoving(pos, expected))
             query = std::make_shared<ASTExistsDictionaryQuery>();
+        else
+            query = std::make_shared<ASTExistsTableQuery>();
     }
     else if (s_show.ignore(pos, expected))
     {

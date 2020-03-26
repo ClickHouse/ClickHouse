@@ -1,4 +1,4 @@
-#include <Functions/IFunction.h>
+#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionFactory.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -19,7 +19,7 @@ public:
         return std::make_shared<FunctionArray>(context);
     }
 
-    FunctionArray(const Context & context_)
+    explicit FunctionArray(const Context & context_)
         : context(context_)
     {
     }

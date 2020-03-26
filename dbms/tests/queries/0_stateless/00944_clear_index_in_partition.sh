@@ -8,7 +8,6 @@ $CLICKHOUSE_CLIENT --query="DROP TABLE IF EXISTS test.minmax_idx;"
 
 
 $CLICKHOUSE_CLIENT -n --query="
-SET allow_experimental_data_skipping_indices=1;
 CREATE TABLE test.minmax_idx
 (
     u64 UInt64,
@@ -36,8 +35,7 @@ $CLICKHOUSE_CLIENT --query="INSERT INTO test.minmax_idx VALUES
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 2;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read"
 
-$CLICKHOUSE_CLIENT --query="ALTER TABLE test.minmax_idx CLEAR INDEX idx IN PARTITION 1;"
-sleep 0.5
+$CLICKHOUSE_CLIENT --query="ALTER TABLE test.minmax_idx CLEAR INDEX idx IN PARTITION 1;" --replication_alter_partitions_sync=2
 
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 2;"
 $CLICKHOUSE_CLIENT --query="SELECT count() FROM test.minmax_idx WHERE i64 = 2 FORMAT JSON" | grep "rows_read"

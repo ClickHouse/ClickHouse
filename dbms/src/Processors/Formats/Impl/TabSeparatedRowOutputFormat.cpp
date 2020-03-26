@@ -57,6 +57,8 @@ void TabSeparatedRowOutputFormat::writeFieldDelimiter()
 
 void TabSeparatedRowOutputFormat::writeRowEndDelimiter()
 {
+    if (format_settings.tsv.crlf_end_of_line)
+        writeChar('\r', out);
     writeChar('\n', out);
 }
 
@@ -78,7 +80,6 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
@@ -91,7 +92,6 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
@@ -104,7 +104,6 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {
@@ -117,7 +116,6 @@ void registerOutputFormatProcessorTabSeparated(FormatFactory & factory)
         factory.registerOutputFormatProcessor(name, [](
             WriteBuffer & buf,
             const Block & sample,
-            const Context &,
             FormatFactory::WriteCallback callback,
             const FormatSettings & settings)
         {

@@ -48,22 +48,24 @@ void NO_INLINE bench(const std::vector<UInt16> & data, const char * name)
     Map map;
 
     Stopwatch watch;
-    for (size_t i = 0, size = data.size(); i < size; ++i)
+    for (auto value : data)
     {
         typename Map::LookupResult it;
         bool inserted;
 
-        map.emplace(data[i], it, inserted);
+        map.emplace(value, it, inserted);
         if (inserted)
             it->getMapped() = 1;
         else
             ++it->getMapped();
     }
 
-    for (size_t i = 0, size = data.size(); i < size; ++i)
+    for (auto value : data)
     {
-        auto it = map.find(data[i]);
-        ++it->getMapped();
+        auto it = map.find(value);
+        auto curr = ++it;
+        if (curr)
+            curr->getMapped();
     }
     watch.stop();
     std::cerr << std::fixed << std::setprecision(2) << "HashMap (" << name << "). Size: " << map.size()
@@ -95,8 +97,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = atoi(argv[1]);
-    size_t m = atoi(argv[2]);
+    size_t n = std::stol(argv[1]);
+    size_t m = std::stol(argv[2]);
 
     std::vector<UInt16> data(n);
 

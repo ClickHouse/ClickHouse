@@ -105,6 +105,11 @@ public:
         return data->getFloat64(0);
     }
 
+    Float32 getFloat32(size_t) const override
+    {
+        return data->getFloat32(0);
+    }
+
     bool isNullAt(size_t) const override
     {
         return data->isNullAt(0);
@@ -157,6 +162,8 @@ public:
     {
         data->updateHashWithValue(0, hash);
     }
+
+    void updateWeakHash32(WeakHash32 & hash) const override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override;
     ColumnPtr replicate(const Offsets & offsets) const override;
@@ -219,6 +226,7 @@ public:
 
     Field getField() const { return getDataColumn()[0]; }
 
+    /// The constant value. It is valid even if the size of the column is 0.
     template <typename T>
     T getValue() const { return getField().safeGet<NearestFieldType<T>>(); }
 };

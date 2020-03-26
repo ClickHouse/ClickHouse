@@ -19,7 +19,6 @@
 #include <DataStreams/NativeBlockInputStream.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <Interpreters/executeQuery.h>
-#include <Interpreters/Quota.h>
 #include <Interpreters/TablesStatus.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Storages/StorageMemory.h>
@@ -40,12 +39,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int CLIENT_HAS_CONNECTED_TO_WRONG_PORT;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_EXCEPTION;
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
     extern const int POCO_EXCEPTION;
-    extern const int STD_EXCEPTION;
     extern const int SOCKET_TIMEOUT;
     extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
@@ -109,11 +109,11 @@ void TCPHandler::runImpl()
     /// When connecting, the default database can be specified.
     if (!default_database.empty())
     {
-        if (!connection_context.isDatabaseExist(default_database))
+        if (!DatabaseCatalog::instance().isDatabaseExist(default_database))
         {
-            Exception e("Database " + default_database + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
+            Exception e("Database " + backQuote(default_database) + " doesn't exist", ErrorCodes::UNKNOWN_DATABASE);
             LOG_ERROR(log, "Code: " << e.code() << ", e.displayText() = " << e.displayText()
-                << ", Stack trace:\n\n" << e.getStackTrace().toString());
+                << ", Stack trace:\n\n" << e.getStackTraceString());
             sendException(e, connection_context.getSettingsRef().calculate_text_stack_trace);
             return;
         }
@@ -127,7 +127,7 @@ void TCPHandler::runImpl()
 
     connection_context.setProgressCallback([this] (const Progress & value) { return this->updateProgress(value); });
 
-    while (1)
+    while (true)
     {
         /// We are waiting for a packet from the client. Thus, every `poll_interval` seconds check whether we need to shut down.
         {
@@ -159,10 +159,10 @@ void TCPHandler::runImpl()
         /** An exception during the execution of request (it must be sent over the network to the client).
          *  The client will be able to accept it, if it did not happen while sending another packet and the client has not disconnected yet.
          */
-        std::unique_ptr<Exception> exception;
+        std::optional<DB::Exception> exception;
         bool network_error = false;
 
-        bool send_exception_with_stack_trace = connection_context.getSettingsRef().calculate_text_stack_trace;
+        bool send_exception_with_stack_trace = true;
 
         try
         {
@@ -201,6 +201,8 @@ void TCPHandler::runImpl()
                 /// So, the stream has been marked as cancelled and we can't read from it anymore.
                 state.block_in.reset();
                 state.maybe_compressed_in.reset(); /// For more accurate accounting by MemoryTracker.
+
+                state.temporary_tables_read = true;
             });
 
             /// Send structure of columns to client for function input()
@@ -263,7 +265,7 @@ void TCPHandler::runImpl()
                 state.io.onFinish();
             }
             else if (state.io.pipeline.initialized())
-                processOrdinaryQueryWithProcessors(query_context->getSettingsRef().max_threads);
+                processOrdinaryQueryWithProcessors();
             else
                 processOrdinaryQuery();
 
@@ -279,7 +281,7 @@ void TCPHandler::runImpl()
         catch (const Exception & e)
         {
             state.io.onException();
-            exception.reset(e.clone());
+            exception.emplace(e);
 
             if (e.code() == ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT)
                 throw;
@@ -297,22 +299,22 @@ void TCPHandler::runImpl()
              *  We will try to send exception to the client in any case - see below.
              */
             state.io.onException();
-            exception = std::make_unique<Exception>(e.displayText(), ErrorCodes::POCO_EXCEPTION);
+            exception.emplace(Exception::CreateFromPoco, e);
         }
         catch (const Poco::Exception & e)
         {
             state.io.onException();
-            exception = std::make_unique<Exception>(e.displayText(), ErrorCodes::POCO_EXCEPTION);
+            exception.emplace(Exception::CreateFromPoco, e);
         }
         catch (const std::exception & e)
         {
             state.io.onException();
-            exception = std::make_unique<Exception>(e.what(), ErrorCodes::STD_EXCEPTION);
+            exception.emplace(Exception::CreateFromSTD, e);
         }
         catch (...)
         {
             state.io.onException();
-            exception = std::make_unique<Exception>("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
+            exception.emplace("Unknown exception", ErrorCodes::UNKNOWN_EXCEPTION);
         }
 
         try
@@ -339,6 +341,18 @@ void TCPHandler::runImpl()
             network_error = true;
             LOG_WARNING(log, "Client has gone away.");
         }
+
+        try
+        {
+            if (exception && !state.temporary_tables_read)
+                query_context->initializeExternalTablesIfSet();
+        }
+        catch (...)
+        {
+            network_error = true;
+            LOG_WARNING(log, "Can't read external tables after query failure.");
+        }
+
 
         try
         {
@@ -449,11 +463,11 @@ void TCPHandler::processInsertQuery(const Settings & connection_settings)
     /// Send ColumnsDescription for insertion table
     if (client_revision >= DBMS_MIN_REVISION_WITH_COLUMN_DEFAULTS_METADATA)
     {
-        const auto & db_and_table = query_context->getInsertionTable();
+        const auto & table_id = query_context->getInsertionTable();
         if (query_context->getSettingsRef().input_format_defaults_for_omitted_fields)
         {
-            if (!db_and_table.second.empty())
-                sendTableColumns(query_context->getTable(db_and_table.first, db_and_table.second)->getColumns());
+            if (!table_id.empty())
+                sendTableColumns(DatabaseCatalog::instance().getTable(table_id)->getColumns());
         }
     }
 
@@ -471,86 +485,68 @@ void TCPHandler::processOrdinaryQuery()
     /// Pull query execution result, if exists, and send it to network.
     if (state.io.in)
     {
-        /// Send header-block, to allow client to prepare output format for data to send.
-        {
-            Block header = state.io.in->getHeader();
+        /// This allows the client to prepare output format
+        if (Block header = state.io.in->getHeader())
+            sendData(header);
 
-            if (header)
-                sendData(header);
-        }
-
+        /// Use of async mode here enables reporting progress and monitoring client cancelling the query
         AsynchronousBlockInputStream async_in(state.io.in);
-        async_in.readPrefix();
 
+        async_in.readPrefix();
         while (true)
         {
-            Block block;
-
-            while (true)
+            if (isQueryCancelled())
             {
-                if (isQueryCancelled())
-                {
-                    /// A packet was received requesting to stop execution of the request.
-                    async_in.cancel(false);
-                    break;
-                }
-                else
-                {
-                    if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
-                    {
-                        /// Some time passed and there is a progress.
-                        after_send_progress.restart();
-                        sendProgress();
-                    }
-
-                    sendLogs();
-
-                    if (async_in.poll(query_context->getSettingsRef().interactive_delay / 1000))
-                    {
-                        /// There is the following result block.
-                        block = async_in.read();
-                        break;
-                    }
-                }
-            }
-
-            /** If data has run out, we will send the profiling data and total values to
-              * the last zero block to be able to use
-              * this information in the suffix output of stream.
-              * If the request was interrupted, then `sendTotals` and other methods could not be called,
-              *  because we have not read all the data yet,
-              *  and there could be ongoing calculations in other threads at the same time.
-              */
-            if (!block && !isQueryCancelled())
-            {
-                /// Wait till inner thread finish to avoid possible race with getTotals.
-                async_in.waitInnerThread();
-
-                sendTotals(state.io.in->getTotals());
-                sendExtremes(state.io.in->getExtremes());
-                sendProfileInfo(state.io.in->getProfileInfo());
-                sendProgress();
-                sendLogs();
-            }
-
-            if (!block || !state.io.null_format)
-                sendData(block);
-            if (!block)
+                async_in.cancel(false);
                 break;
+            }
+
+            if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
+            {
+                /// Some time passed.
+                after_send_progress.restart();
+                sendProgress();
+            }
+
+            sendLogs();
+
+            if (async_in.poll(query_context->getSettingsRef().interactive_delay / 1000))
+            {
+                const auto block = async_in.read();
+                if (!block)
+                    break;
+
+                if (!state.io.null_format)
+                    sendData(block);
+            }
+        }
+        async_in.readSuffix();
+
+        /** When the data has run out, we send the profiling data and totals up to the terminating empty block,
+          * so that this information can be used in the suffix output of stream.
+          * If the request has been interrupted, then sendTotals and other methods should not be called,
+          * because we have not read all the data.
+          */
+        if (!isQueryCancelled())
+        {
+            sendTotals(state.io.in->getTotals());
+            sendExtremes(state.io.in->getExtremes());
+            sendProfileInfo(state.io.in->getProfileInfo());
+            sendProgress();
         }
 
-        async_in.readSuffix();
+        sendData({});
     }
 
     state.io.onFinish();
+
+    sendProgress();
 }
 
-void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
+
+void TCPHandler::processOrdinaryQueryWithProcessors()
 {
     auto & pipeline = state.io.pipeline;
-
-    if (pipeline.getMaxThreads())
-        num_threads = pipeline.getMaxThreads();
 
     /// Send header-block, to allow client to prepare output format for data to send.
     {
@@ -586,7 +582,7 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
 
             try
             {
-                executor->execute(num_threads);
+                executor->execute(pipeline.getNumThreads());
             }
             catch (...)
             {
@@ -595,11 +591,9 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
             }
         });
 
-        /// Wait in case of exception. Delete pipeline to release memory.
+        /// Wait in case of exception happened outside of pool.
         SCOPE_EXIT(
-                /// Clear queue in case if somebody is waiting lazy_format to push.
                 lazy_format->finish();
-                lazy_format->clearQueue();
 
                 try
                 {
@@ -608,75 +602,61 @@ void TCPHandler::processOrdinaryQueryWithProcessors(size_t num_threads)
                 catch (...)
                 {
                     /// If exception was thrown during pipeline execution, skip it while processing other exception.
+                    tryLogCurrentException(log);
                 }
-
-                pipeline = QueryPipeline()
         );
 
-        while (true)
+        while (!lazy_format->isFinished() && !exception)
         {
-            Block block;
-
-            while (true)
+            if (isQueryCancelled())
             {
-                if (isQueryCancelled())
-                {
-                    /// A packet was received requesting to stop execution of the request.
-                    executor->cancel();
-
-                    break;
-                }
-                else
-                {
-                    if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
-                    {
-                        /// Some time passed and there is a progress.
-                        after_send_progress.restart();
-                        sendProgress();
-                    }
-
-                    sendLogs();
-
-                    if ((block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000)))
-                        break;
-
-                    if (lazy_format->isFinished())
-                        break;
-
-                    if (exception)
-                    {
-                        pool.wait();
-                        break;
-                    }
-                }
-            }
-
-            /** If data has run out, we will send the profiling data and total values to
-              * the last zero block to be able to use
-              * this information in the suffix output of stream.
-              * If the request was interrupted, then `sendTotals` and other methods could not be called,
-              *  because we have not read all the data yet,
-              *  and there could be ongoing calculations in other threads at the same time.
-              */
-            if (!block && !isQueryCancelled())
-            {
-                pool.wait();
-                pipeline.finalize();
-
-                sendTotals(lazy_format->getTotals());
-                sendExtremes(lazy_format->getExtremes());
-                sendProfileInfo(lazy_format->getProfileInfo());
-                sendProgress();
-                sendLogs();
-            }
-
-            sendData(block);
-            if (!block)
+                /// A packet was received requesting to stop execution of the request.
+                executor->cancel();
                 break;
+            }
+
+            if (after_send_progress.elapsed() / 1000 >= query_context->getSettingsRef().interactive_delay)
+            {
+                /// Some time passed and there is a progress.
+                after_send_progress.restart();
+                sendProgress();
+            }
+
+            sendLogs();
+
+            if (auto block = lazy_format->getBlock(query_context->getSettingsRef().interactive_delay / 1000))
+            {
+                if (!state.io.null_format)
+                    sendData(block);
+            }
         }
+
+        /// Finish lazy_format before waiting. Otherwise some thread may write into it, and waiting will lock.
+        lazy_format->finish();
+        pool.wait();
+
+        /** If data has run out, we will send the profiling data and total values to
+          * the last zero block to be able to use
+          * this information in the suffix output of stream.
+          * If the request was interrupted, then `sendTotals` and other methods could not be called,
+          *  because we have not read all the data yet,
+          *  and there could be ongoing calculations in other threads at the same time.
+          */
+        if (!isQueryCancelled())
+        {
+            sendTotals(lazy_format->getTotals());
+            sendExtremes(lazy_format->getExtremes());
+            sendProfileInfo(lazy_format->getProfileInfo());
+            sendProgress();
+            sendLogs();
+        }
+
+        sendData({});
     }
 
     state.io.onFinish();
+
+    sendProgress();
 }
 
 
@@ -688,7 +668,8 @@ void TCPHandler::processTablesStatusRequest()
     TablesStatusResponse response;
     for (const QualifiedTableName & table_name: request.tables)
     {
-        StoragePtr table = connection_context.tryGetTable(table_name.database, table_name.table);
+        auto resolved_id = connection_context.tryResolveStorageID({table_name.database, table_name.table});
+        StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id);
         if (!table)
             continue;
 
@@ -894,39 +875,55 @@ void TCPHandler::receiveQuery()
     query_context->setCurrentQueryId(state.query_id);
 
     /// Client info
+    ClientInfo & client_info = query_context->getClientInfo();
+    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
+        client_info.read(*in, client_revision);
+
+    /// For better support of old clients, that does not send ClientInfo.
+    if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
     {
-        ClientInfo & client_info = query_context->getClientInfo();
-        if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
-            client_info.read(*in, client_revision);
-
-        /// For better support of old clients, that does not send ClientInfo.
-        if (client_info.query_kind == ClientInfo::QueryKind::NO_QUERY)
-        {
-            client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-            client_info.client_name = client_name;
-            client_info.client_version_major = client_version_major;
-            client_info.client_version_minor = client_version_minor;
-            client_info.client_version_patch = client_version_patch;
-            client_info.client_revision = client_revision;
-        }
-
-        /// Set fields, that are known apriori.
-        client_info.interface = ClientInfo::Interface::TCP;
-
-        if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
-        {
-            /// 'Current' fields was set at receiveHello.
-            client_info.initial_user = client_info.current_user;
-            client_info.initial_query_id = client_info.current_query_id;
-            client_info.initial_address = client_info.current_address;
-        }
+        client_info.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
+        client_info.client_name = client_name;
+        client_info.client_version_major = client_version_major;
+        client_info.client_version_minor = client_version_minor;
+        client_info.client_version_patch = client_version_patch;
+        client_info.client_revision = client_revision;
     }
 
-    /// Per query settings.
-    Settings & settings = query_context->getSettingsRef();
+    /// Set fields, that are known apriori.
+    client_info.interface = ClientInfo::Interface::TCP;
+
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        /// 'Current' fields was set at receiveHello.
+        client_info.initial_user = client_info.current_user;
+        client_info.initial_query_id = client_info.current_query_id;
+        client_info.initial_address = client_info.current_address;
+    }
+    else
+    {
+        query_context->setInitialRowPolicy();
+    }
+
+    /// Per query settings are also passed via TCP.
+    /// We need to check them before applying due to they can violate the settings constraints.
     auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
                                                                                                       : SettingsBinaryFormat::OLD;
-    settings.deserialize(*in, settings_format);
+    Settings passed_settings;
+    passed_settings.deserialize(*in, settings_format);
+    auto settings_changes = passed_settings.changes();
+    if (client_info.query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
+    {
+        /// Throw an exception if the passed settings violate the constraints.
+        query_context->checkSettingsConstraints(settings_changes);
+    }
+    else
+    {
+        /// Quietly clamp to the constraints if it's not an initial query.
+        query_context->clampToSettingsConstraints(settings_changes);
+    }
+    query_context->applySettingsChanges(settings_changes);
+    const Settings & settings = query_context->getSettingsRef();
 
     /// Sync timeouts on client and server during current query to avoid dangling queries on server
     /// NOTE: We use settings.send_timeout for the receive timeout and vice versa (change arguments ordering in TimeoutSetter),
@@ -950,11 +947,11 @@ void TCPHandler::receiveUnexpectedQuery()
 
     readStringBinary(skip_string, *in);
 
-    ClientInfo & skip_client_info = query_context->getClientInfo();
+    ClientInfo skip_client_info;
     if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_INFO)
         skip_client_info.read(*in, client_revision);
 
-    Settings & skip_settings = query_context->getSettingsRef();
+    Settings skip_settings;
     auto settings_format = (client_revision >= DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS) ? SettingsBinaryFormat::STRINGS
                                                                                                       : SettingsBinaryFormat::OLD;
     skip_settings.deserialize(*in, settings_format);
@@ -971,8 +968,8 @@ bool TCPHandler::receiveData(bool scalar)
     initBlockInput();
 
     /// The name of the temporary table for writing data, default to empty string
-    String name;
-    readStringBinary(name, *in);
+    auto temporary_id = StorageID::createEmpty();
+    readStringBinary(temporary_id.table_name, *in);
 
     /// Read one block from the network and write it down
     Block block = state.block_in->read();
@@ -980,21 +977,24 @@ bool TCPHandler::receiveData(bool scalar)
     if (block)
     {
         if (scalar)
-            query_context->addScalar(name, block);
+            query_context->addScalar(temporary_id.table_name, block);
         else
         {
             /// If there is an insert request, then the data should be written directly to `state.io.out`.
             /// Otherwise, we write the blocks in the temporary `external_table_name` table.
             if (!state.need_receive_data_for_insert && !state.need_receive_data_for_input)
             {
+                auto resolved = query_context->tryResolveStorageID(temporary_id, Context::ResolveExternal);
                 StoragePtr storage;
                 /// If such a table does not exist, create it.
-                if (!(storage = query_context->tryGetExternalTable(name)))
+                if (resolved)
+                    storage = DatabaseCatalog::instance().getTable(resolved);
+                else
                 {
                     NamesAndTypesList columns = block.getNamesAndTypesList();
-                    storage = StorageMemory::create("_external", name, ColumnsDescription{columns}, ConstraintsDescription{});
-                    storage->startup();
-                    query_context->addExternalTable(name, storage);
+                    auto temporary_table = TemporaryTableHolder(*query_context, ColumnsDescription{columns});
+                    storage = temporary_table.getTable();
+                    query_context->addExternalTable(temporary_id.table_name, std::move(temporary_table));
                 }
                 /// The data will be written directly to the table.
                 state.io.out = storage->write(ASTPtr(), *query_context);
@@ -1027,7 +1027,7 @@ void TCPHandler::receiveUnexpectedData()
             last_block_in.header,
             client_revision);
 
-    Block skip_block = skip_block_in->read();
+    skip_block_in->read();
     throw NetException("Unexpected packet Data received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 }
 

@@ -6,10 +6,16 @@
 #include <DataTypes/DataTypeDateTime.h>
 
 #include <ext/range.h>
+#include "registerAggregateFunctions.h"
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+}
 
 namespace
 {
@@ -17,7 +23,7 @@ namespace
 template <template <typename> class Data>
 AggregateFunctionPtr createAggregateFunctionWindowFunnel(const std::string & name, const DataTypes & arguments, const Array & params)
 {
-    if (params.size() < 1)
+    if (params.empty())
         throw Exception{"Aggregate function " + name + " requires at least one parameter: <window>, [option, [option, ...]]", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH};
 
     if (arguments.size() < 2)

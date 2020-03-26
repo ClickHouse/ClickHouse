@@ -129,9 +129,9 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
-        /// TODO Inefficient.
-        const auto x = applyVisitor(FieldVisitorConvertToNumber<Float64>(), (*columns[0])[row_num]);
-        const auto y = applyVisitor(FieldVisitorConvertToNumber<Float64>(), (*columns[1])[row_num]);
+        /// NOTE Slightly inefficient.
+        const auto x = columns[0]->getFloat64(row_num);
+        const auto y = columns[1]->getFloat64(row_num);
         data(place).add(x, y);
     }
 
@@ -153,11 +153,6 @@ public:
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         assert_cast<ColumnFloat64 &>(to).getData().push_back(getBoundingRatio(data(place)));
-    }
-
-    const char * getHeaderFilePath() const override
-    {
-        return __FILE__;
     }
 };
 

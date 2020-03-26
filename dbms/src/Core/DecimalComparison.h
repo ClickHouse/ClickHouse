@@ -4,6 +4,7 @@
 #include <Core/Block.h>
 #include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
@@ -16,18 +17,19 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int DECIMAL_OVERFLOW;
 }
 
 ///
 inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataTypePtr & right_type)
 {
-    if (isDecimal(left_type))
+    if (isColumnedAsDecimal(left_type))
     {
-        if (isDecimal(right_type) || isNotDecimalButComparableToDecimal(right_type))
+        if (isColumnedAsDecimal(right_type) || isNotDecimalButComparableToDecimal(right_type))
             return true;
     }
-    else if (isNotDecimalButComparableToDecimal(left_type) && isDecimal(right_type))
+    else if (isNotDecimalButComparableToDecimal(left_type) && isColumnedAsDecimal(right_type))
         return true;
     return false;
 }
@@ -82,15 +84,15 @@ public:
 
     static bool compare(A a, B b, UInt32 scale_a, UInt32 scale_b)
     {
-        static const UInt32 max_scale = maxDecimalPrecision<Decimal128>();
+        static const UInt32 max_scale = DecimalUtils::maxPrecision<Decimal128>();
         if (scale_a > max_scale || scale_b > max_scale)
             throw Exception("Bad scale of decimal field", ErrorCodes::DECIMAL_OVERFLOW);
 
         Shift shift;
         if (scale_a < scale_b)
-            shift.a = DataTypeDecimal<B>(maxDecimalPrecision<B>(), scale_b).getScaleMultiplier(scale_b - scale_a);
+            shift.a = B::getScaleMultiplier(scale_b - scale_a);
         if (scale_a > scale_b)
-            shift.b = DataTypeDecimal<A>(maxDecimalPrecision<A>(), scale_a).getScaleMultiplier(scale_a - scale_b);
+            shift.b = A::getScaleMultiplier(scale_a - scale_b);
 
         return applyWithScale(a, b, shift);
     }
@@ -189,7 +191,7 @@ private:
                 const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
                 A a = c0_const->template getValue<A>();
                 if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                    constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
+                    constantVector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
                 else
                     throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
@@ -198,7 +200,7 @@ private:
                 const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
                 B b = c1_const->template getValue<B>();
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                    vector_constant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
+                    vectorConstant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
                 else
                     throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
@@ -207,7 +209,7 @@ private:
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
                 {
                     if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
+                        vectorVector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
                     else
                         throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
                 }
@@ -258,7 +260,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE vector_vector(const ArrayA & a, const ArrayB & b, PaddedPODArray<UInt8> & c,
+    static void NO_INLINE vectorVector(const ArrayA & a, const ArrayB & b, PaddedPODArray<UInt8> & c,
                                         CompareInt scale)
     {
         size_t size = a.size();
@@ -277,7 +279,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE vector_constant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    static void NO_INLINE vectorConstant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = a.size();
         const A * a_pos = a.data();
@@ -293,7 +295,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE constant_vector(A a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    static void NO_INLINE constantVector(A a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = b.size();
         const B * b_pos = b.data();

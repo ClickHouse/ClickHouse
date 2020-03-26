@@ -1,5 +1,7 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnDecimal.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
 
@@ -9,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -31,6 +34,13 @@ struct ArrayCumSumImpl
         if (which.isFloat())
             return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat64>());
 
+        if (which.isDecimal())
+        {
+            UInt32 scale = getDecimalScale(*expression_return);
+            DataTypePtr nested = std::make_shared<DataTypeDecimal<Decimal128>>(DecimalUtils::maxPrecision<Decimal128>(), scale);
+            return std::make_shared<DataTypeArray>(nested);
+        }
+
         throw Exception("arrayCumSum cannot add values of type " + expression_return->getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
     }
 
@@ -38,11 +48,14 @@ struct ArrayCumSumImpl
     template <typename Element, typename Result>
     static bool executeType(const ColumnPtr & mapped, const ColumnArray & array, ColumnPtr & res_ptr)
     {
-        const ColumnVector<Element> * column = checkAndGetColumn<ColumnVector<Element>>(&*mapped);
+        using ColVecType = std::conditional_t<IsDecimalNumber<Element>, ColumnDecimal<Element>, ColumnVector<Element>>;
+        using ColVecResult = std::conditional_t<IsDecimalNumber<Result>, ColumnDecimal<Result>, ColumnVector<Result>>;
+
+        const ColVecType * column = checkAndGetColumn<ColVecType>(&*mapped);
 
         if (!column)
         {
-            const ColumnConst * column_const = checkAndGetColumnConst<ColumnVector<Element>>(&*mapped);
+            const ColumnConst * column_const = checkAndGetColumnConst<ColVecType>(&*mapped);
 
             if (!column_const)
                 return false;
@@ -50,21 +63,28 @@ struct ArrayCumSumImpl
             const Element x = column_const->template getValue<Element>();
             const IColumn::Offsets & offsets = array.getOffsets();
 
-            auto res_nested = ColumnVector<Result>::create();
-            typename ColumnVector<Result>::Container & res_values = res_nested->getData();
+            typename ColVecResult::MutablePtr res_nested;
+            if constexpr (IsDecimalNumber<Element>)
+            {
+                const typename ColVecType::Container & data =
+                    checkAndGetColumn<ColVecType>(&column_const->getDataColumn())->getData();
+                res_nested = ColVecResult::create(0, data.getScale());
+            }
+            else
+                res_nested = ColVecResult::create();
+
+            typename ColVecResult::Container & res_values = res_nested->getData();
             res_values.resize(column_const->size());
 
             size_t pos = 0;
-            for (size_t i = 0; i < offsets.size(); ++i)
+            for (auto offset : offsets)
             {
                 // skip empty arrays
-                if (pos < offsets[i])
+                if (pos < offset)
                 {
                     res_values[pos++] = x;
-                    for (; pos < offsets[i]; ++pos)
-                    {
+                    for (; pos < offset; ++pos)
                         res_values[pos] = res_values[pos - 1] + x;
-                    }
                 }
             }
 
@@ -72,24 +92,27 @@ struct ArrayCumSumImpl
             return true;
         }
 
+        const typename ColVecType::Container & data = column->getData();
         const IColumn::Offsets & offsets = array.getOffsets();
-        const typename ColumnVector<Element>::Container & data = column->getData();
 
-        auto res_nested = ColumnVector<Result>::create();
-        typename ColumnVector<Result>::Container & res_values = res_nested->getData();
+        typename ColVecResult::MutablePtr res_nested;
+        if constexpr (IsDecimalNumber<Element>)
+            res_nested = ColVecResult::create(0, data.getScale());
+        else
+            res_nested = ColVecResult::create();
+
+        typename ColVecResult::Container & res_values = res_nested->getData();
         res_values.resize(data.size());
 
         size_t pos = 0;
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (auto offset : offsets)
         {
             // skip empty arrays
-            if (pos < offsets[i])
+            if (pos < offset)
             {
                 res_values[pos] = data[pos];
-                for (++pos; pos < offsets[i]; ++pos)
-                {
+                for (++pos; pos < offset; ++pos)
                     res_values[pos] = res_values[pos - 1] + data[pos];
-                }
             }
         }
         res_ptr = ColumnArray::create(std::move(res_nested), array.getOffsetsPtr());
@@ -110,7 +133,10 @@ struct ArrayCumSumImpl
             executeType<  Int32,  Int64>(mapped, array, res) ||
             executeType<  Int64,  Int64>(mapped, array, res) ||
             executeType<Float32,Float64>(mapped, array, res) ||
-            executeType<Float64,Float64>(mapped, array, res))
+            executeType<Float64,Float64>(mapped, array, res) ||
+            executeType<Decimal32, Decimal128>(mapped, array, res) ||
+            executeType<Decimal64, Decimal128>(mapped, array, res) ||
+            executeType<Decimal128, Decimal128>(mapped, array, res))
             return res;
         else
             throw Exception("Unexpected column for arrayCumSum: " + mapped->getName(), ErrorCodes::ILLEGAL_COLUMN);

@@ -14,12 +14,18 @@
 #include "DictionarySourceFactory.h"
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
+#include "registerDictionaries.h"
 
 
 namespace DB
 {
 static const UInt64 max_block_size = 8192;
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int DICTIONARY_ACCESS_DENIED;
+}
 
 namespace
 {
@@ -195,10 +201,7 @@ bool ExecutableDictionarySource::supportsSelectiveLoad() const
 
 bool ExecutableDictionarySource::hasUpdateField() const
 {
-    if (update_field.empty())
-        return false;
-    else
-        return true;
+    return !update_field.empty();
 }
 
 DictionarySourcePtr ExecutableDictionarySource::clone() const
@@ -213,18 +216,27 @@ std::string ExecutableDictionarySource::toString() const
 
 void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 {
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
-                                 const Context & context) -> DictionarySourcePtr
+                                 const Context & context,
+                                 bool check_config) -> DictionarySourcePtr
     {
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `executable` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
-        return std::make_unique<ExecutableDictionarySource>(dict_struct, config, config_prefix + ".executable", sample_block, context);
+        /// Executable dictionaries may execute arbitrary commands.
+        /// It's OK for dictionaries created by administrator from xml-file, but
+        /// maybe dangerous for dictionaries created from DDL-queries.
+        if (check_config)
+            throw Exception("Dictionaries with Executable dictionary source is not allowed", ErrorCodes::DICTIONARY_ACCESS_DENIED);
+
+        return std::make_unique<ExecutableDictionarySource>(
+            dict_struct, config, config_prefix + ".executable",
+            sample_block, context);
     };
-    factory.registerSource("executable", createTableSource);
+    factory.registerSource("executable", create_table_source);
 }
 
 }

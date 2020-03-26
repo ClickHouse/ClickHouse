@@ -2,12 +2,9 @@
 #if USE_MYSQL
 
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate.h>
-#include <DataTypes/DataTypeDateTime.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeString.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <Formats/MySQLBlockInputStream.h>
+#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -19,9 +16,9 @@
 #include <Common/Exception.h>
 #include <Common/parseAddress.h>
 #include <Common/quoteString.h>
-#include <Common/typeid_cast.h>
 #include <DataTypes/convertMySQLDataType.h>
 #include <IO/Operators.h>
+#include "registerTableFunctions.h"
 
 #include <mysqlxx/Pool.h>
 
@@ -31,6 +28,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_TABLE;
@@ -50,14 +48,16 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         throw Exception("Table function 'mysql' requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (size_t i = 0; i < args.size(); ++i)
-        args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(args[i], context);
+    for (auto & arg : args)
+        arg = evaluateConstantExpressionOrIdentifierAsLiteral(arg, context);
 
     std::string host_port = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     std::string remote_database_name = args[1]->as<ASTLiteral &>().value.safeGet<String>();
     std::string remote_table_name = args[2]->as<ASTLiteral &>().value.safeGet<String>();
     std::string user_name = args[3]->as<ASTLiteral &>().value.safeGet<String>();
     std::string password = args[4]->as<ASTLiteral &>().value.safeGet<String>();
+
+    context.checkAccess(AccessType::mysql);
 
     bool replace_query = false;
     std::string on_duplicate_clause;
@@ -100,7 +100,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         << " ORDER BY ORDINAL_POSITION";
 
     NamesAndTypesList columns;
-    MySQLBlockInputStream result(pool.Get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(pool.get(), query.str(), sample_block, DEFAULT_BLOCK_SIZE);
     while (Block block = result.read())
     {
         size_t rows = block.rows();
@@ -119,8 +119,7 @@ StoragePtr TableFunctionMySQL::executeImpl(const ASTPtr & ast_function, const Co
         throw Exception("MySQL table " + backQuoteIfNeed(remote_database_name) + "." + backQuoteIfNeed(remote_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     auto res = StorageMySQL::create(
-        getDatabaseName(),
-        table_name,
+        StorageID(getDatabaseName(), table_name),
         std::move(pool),
         remote_database_name,
         remote_table_name,

@@ -3,17 +3,17 @@
 #include <DataTypes/NumberTraits.h>
 
 
-void printType(DB::UInt8) { std::cout << "UInt8"; }
-void printType(DB::UInt16) { std::cout << "UInt16"; }
-void printType(DB::UInt32) { std::cout << "UInt32"; }
-void printType(DB::UInt64) { std::cout << "UInt64"; }
-void printType(DB::Int8) { std::cout << "Int8"; }
-void printType(DB::Int16) { std::cout << "Int16"; }
-void printType(DB::Int32) { std::cout << "Int32"; }
-void printType(DB::Int64) { std::cout << "Int64"; }
-void printType(DB::Float32) { std::cout << "Float32"; }
-void printType(DB::Float64) { std::cout << "Float64"; }
-void printType(DB::NumberTraits::Error) { std::cout << "Error"; }
+static void printType(DB::UInt8) { std::cout << "UInt8"; }
+static void printType(DB::UInt16) { std::cout << "UInt16"; }
+static void printType(DB::UInt32) { std::cout << "UInt32"; }
+static void printType(DB::UInt64) { std::cout << "UInt64"; }
+static void printType(DB::Int8) { std::cout << "Int8"; }
+static void printType(DB::Int16) { std::cout << "Int16"; }
+static void printType(DB::Int32) { std::cout << "Int32"; }
+static void printType(DB::Int64) { std::cout << "Int64"; }
+static void printType(DB::Float32) { std::cout << "Float32"; }
+static void printType(DB::Float64) { std::cout << "Float64"; }
+static void printType(DB::NumberTraits::Error) { std::cout << "Error"; }
 
 template <typename T0, typename T1>
 void ifRightType()
