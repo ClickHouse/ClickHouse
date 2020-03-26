@@ -474,6 +474,8 @@ namespace ErrorCodes
     extern const int NOT_ENOUGH_PRIVILEGES = 497;
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED = 498;
 
+    extern const int CANNOT_COMMIT_OFFSET = 518;
+
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
     extern const int STD_EXCEPTION = 1001;
