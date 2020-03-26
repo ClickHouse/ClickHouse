@@ -1,3 +1,6 @@
+#include <signal.h>
+#include <setjmp.h>
+
 #include <new>
 #include <iostream>
 #include <vector>
@@ -158,7 +161,7 @@ std::string instructionFailToString(InstructionFail fail)
 
 sigjmp_buf jmpbuf;
 
-void sigIllCheckHandler(int, siginfo_t *, void *)
+[[noreturn]] void sigIllCheckHandler(int, siginfo_t *, void *)
 {
     siglongjmp(jmpbuf, 1);
 }
@@ -167,38 +170,38 @@ void sigIllCheckHandler(int, siginfo_t *, void *)
 /// If instruction is unavailable, SIGILL will be sent by kernel.
 void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 {
-#if __SSE3__
+#if defined(__SSE3__)
     fail = InstructionFail::SSE3;
     __asm__ volatile ("addsubpd %%xmm0, %%xmm0" : : : "xmm0");
 #endif
 
-#if __SSSE3__
+#if defined(__SSSE3__)
     fail = InstructionFail::SSSE3;
     __asm__ volatile ("pabsw %%xmm0, %%xmm0" : : : "xmm0");
 
 #endif
 
-#if __SSE4_1__
+#if defined(__SSE4_1__)
     fail = InstructionFail::SSE4_1;
     __asm__ volatile ("pmaxud %%xmm0, %%xmm0" : : : "xmm0");
 #endif
 
-#if __SSE4_2__
+#if defined(__SSE4_2__)
     fail = InstructionFail::SSE4_2;
     __asm__ volatile ("pcmpgtq %%xmm0, %%xmm0" : : : "xmm0");
 #endif
 
-#if __AVX__
+#if defined(__AVX__)
     fail = InstructionFail::AVX;
     __asm__ volatile ("vaddpd %%ymm0, %%ymm0, %%ymm0" : : : "ymm0");
 #endif
 
-#if __AVX2__
+#if defined(__AVX2__)
     fail = InstructionFail::AVX2;
     __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
 #endif
 
-#if __AVX512__
+#if defined(__AVX512__)
     fail = InstructionFail::AVX512;
     __asm__ volatile ("vpabsw %%zmm0, %%zmm0" : : : "zmm0");
 #endif
@@ -208,6 +211,7 @@ void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 
 /// Check SSE and others instructions availability
 /// Calls exit on fail
+/// This function must be called as early inside main as possible.
 void checkRequiredInstructions()
 {
     struct sigaction sa{};
