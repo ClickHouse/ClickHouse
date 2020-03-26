@@ -89,12 +89,12 @@ public:
 
     void insertDefault() override
     {
-        chars.resize_fill(chars.size() + n);
+        chars.resize_fill(chars.size() + n, ' ');
     }
 
     virtual void insertManyDefaults(size_t length) override
     {
-        chars.resize_fill(chars.size() + n * length);
+        chars.resize_fill(chars.size() + n * length, ' ');
     }
 
     void popBack(size_t elems) override

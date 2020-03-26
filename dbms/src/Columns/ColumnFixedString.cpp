@@ -58,7 +58,7 @@ void ColumnFixedString::insert(const Field & x)
         throw Exception("Too large string '" + s + "' for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
 
     size_t old_size = chars.size();
-    chars.resize_fill(old_size + n);
+    chars.resize_fill(old_size + n, ' ');
     memcpy(chars.data() + old_size, s.data(), s.size());
 }
 
@@ -80,7 +80,7 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
         throw Exception("Too large string for FixedString column", ErrorCodes::TOO_LARGE_STRING_SIZE);
 
     size_t old_size = chars.size();
-    chars.resize_fill(old_size + n);
+    chars.resize_fill(old_size + n, ' ');
     memcpy(chars.data() + old_size, pos, length);
 }
 

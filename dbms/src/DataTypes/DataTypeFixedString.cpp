@@ -131,7 +131,7 @@ static inline void alignStringLength(const DataTypeFixedString & type,
     size_t length = data.size() - string_start;
     if (length < type.getN())
     {
-        data.resize_fill(string_start + type.getN());
+        data.resize_fill(string_start + type.getN(), ' ');
     }
     else if (length > type.getN())
     {

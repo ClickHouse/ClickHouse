@@ -1304,7 +1304,7 @@ public:
             const auto & in_chars = column_string->getChars();
             const auto & in_offsets = column_string->getOffsets();
 
-            out_chars.resize_fill(in_offsets.size() * n);
+            out_chars.resize_fill(in_offsets.size() * n, ' ');
 
             for (size_t i = 0; i < in_offsets.size(); ++i)
             {
@@ -1329,7 +1329,7 @@ public:
             auto & out_chars = column_fixed->getChars();
             const auto & in_chars = column_fixed_string->getChars();
             const auto size = column_fixed_string->size();
-            out_chars.resize_fill(size * n);
+            out_chars.resize_fill(size * n, ' ');
 
             for (const auto i : ext::range(0, size))
                 memcpy(&out_chars[i * n], &in_chars[i * src_n], src_n);
