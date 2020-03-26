@@ -176,11 +176,10 @@ void ReadBufferFromKafkaConsumer::commit()
     }
     else
     {
-        LOG_TRACE(log,"Nothing to commit.");
+        LOG_TRACE(log, "Nothing to commit.");
     }
 
     offsets_stored = 0;
-
     stalled = false;
 }
 
