@@ -310,10 +310,10 @@ SELECT subtractQuarters(N, 1)
 "DateTime('Europe/Minsk')","2019-06-16 19:20:11"
 "DateTime64(3, 'Europe/Minsk')","2019-06-16 19:20:11.234"
 ------------------------------------------
-SELECT CAST(N as DateTime)
-"DateTime","2019-09-16 00:00:00"
-"DateTime","2019-09-16 19:20:11"
-"DateTime","2019-09-16 19:20:11"
+SELECT CAST(N as DateTime(\'Europe/Minsk\'))
+"DateTime('Europe/Minsk')","2019-09-16 00:00:00"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:11"
+"DateTime('Europe/Minsk')","2019-09-16 19:20:11"
 ------------------------------------------
 SELECT CAST(N as Date)
 "Date","2019-09-16"
@@ -325,25 +325,25 @@ SELECT CAST(N as UInt64)
 "UInt64",1568650811
 "UInt64",1568650811
 ------------------------------------------
-SELECT CAST(N as DateTime64(0))
-"DateTime64(0)","2019-09-16 00:00:00"
-"DateTime64(0)","2019-09-16 19:20:11"
-"DateTime64(0)","2019-09-16 19:20:11"
+SELECT CAST(N as DateTime64(0, \'Europe/Minsk\'))
+"DateTime64(0, 'Europe/Minsk')","2019-09-16 00:00:00"
+"DateTime64(0, 'Europe/Minsk')","2019-09-16 19:20:11"
+"DateTime64(0, 'Europe/Minsk')","2019-09-16 19:20:11"
 ------------------------------------------
-SELECT CAST(N as DateTime64(3))
-"DateTime64(3)","2019-09-16 00:00:00.000"
-"DateTime64(3)","2019-09-16 19:20:11.000"
-"DateTime64(3)","2019-09-16 19:20:11.234"
+SELECT CAST(N as DateTime64(3, \'Europe/Minsk\'))
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 00:00:00.000"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:11.000"
+"DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:11.234"
 ------------------------------------------
-SELECT CAST(N as DateTime64(6))
-"DateTime64(6)","2019-09-16 00:00:00.000000"
-"DateTime64(6)","2019-09-16 19:20:11.000000"
-"DateTime64(6)","2019-09-16 19:20:11.234000"
+SELECT CAST(N as DateTime64(6, \'Europe/Minsk\'))
+"DateTime64(6, 'Europe/Minsk')","2019-09-16 00:00:00.000000"
+"DateTime64(6, 'Europe/Minsk')","2019-09-16 19:20:11.000000"
+"DateTime64(6, 'Europe/Minsk')","2019-09-16 19:20:11.234000"
 ------------------------------------------
-SELECT CAST(N as DateTime64(9))
-"DateTime64(9)","2019-09-16 00:00:00.000000000"
-"DateTime64(9)","2019-09-16 19:20:11.000000000"
-"DateTime64(9)","2019-09-16 19:20:11.234000000"
+SELECT CAST(N as DateTime64(9, \'Europe/Minsk\'))
+"DateTime64(9, 'Europe/Minsk')","2019-09-16 00:00:00.000000000"
+"DateTime64(9, 'Europe/Minsk')","2019-09-16 19:20:11.000000000"
+"DateTime64(9, 'Europe/Minsk')","2019-09-16 19:20:11.234000000"
 ------------------------------------------
 SELECT formatDateTime(N, \'%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%\')
 "String","20 16 09/16/19 16 2019-09-16 00 12 259 09 00 AM 00:00 00 00:00:00 1 38 1 19 2019 %"
