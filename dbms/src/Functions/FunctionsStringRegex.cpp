@@ -259,6 +259,9 @@ struct MatchImpl
             const UInt8 * pos = begin;
             const UInt8 * end = pos + data.size();
 
+            size_t i = 0;
+            const UInt8 * next_pos = begin;
+
             /// If pattern is larger than string size - it cannot be found.
             if (strstr_pattern.size() <= n)
             {
@@ -268,26 +271,26 @@ struct MatchImpl
                 while (pos < end && end != (pos = searcher.search(pos, end - pos)))
                 {
                     /// Let's determine which index it refers to.
-                    size_t i = (pos - begin) / n;
+                    while (next_pos + n <= pos)
+                    {
+                        res[i] = revert;
+                        next_pos += n;
+                        ++i;
+                    }
 
                     /// We check that the entry does not pass through the boundaries of strings.
-                    auto next = begin + (i + 1) * n;
-
-                    if (pos + strstr_pattern.size() < next)
+                    if (pos + strstr_pattern.size() < next_pos)
                         res[i] = !revert;
                     else
                         res[i] = revert;
 
-                    pos = next;
+                    pos = next_pos;
                 }
             }
 
             /// Tail, in which there can be no substring.
-            {
-                size_t i = (pos - begin) / n;
-                if (i < res.size())
-                    memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
-            }
+            if (i < res.size())
+                memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
         }
         else
         {
@@ -334,6 +337,9 @@ struct MatchImpl
                 const UInt8 * pos = begin;
                 const UInt8 * end = pos + data.size();
 
+                size_t i = 0;
+                const UInt8 * next_pos = begin;
+
                 /// If required substring is larger than string size - it cannot be found.
                 if (strstr_pattern.size() <= n)
                 {
@@ -342,13 +348,15 @@ struct MatchImpl
                     /// We will search for the next occurrence in all rows at once.
                     while (pos < end && end != (pos = searcher.search(pos, end - pos)))
                     {
-                        /// Determine which index it refers to.
-                        size_t i = (pos - begin) / n;
+                        /// Let's determine which index it refers to.
+                        while (next_pos + n <= pos)
+                        {
+                            res[i] = revert;
+                            next_pos += n;
+                            ++i;
+                        }
 
-                        /// We check that the entry does not pass through the boundaries of strings.
-                        auto next = begin + (i + 1) * n;
-
-                        if (pos + strstr_pattern.size() < next)
+                        if (pos + strstr_pattern.size() < next_pos)
                         {
                             /// And if it does not, if necessary, we check the regexp.
 
@@ -356,7 +364,7 @@ struct MatchImpl
                                 res[i] = !revert;
                             else
                             {
-                                const char * str_data = reinterpret_cast<const char *>(begin + i * n);
+                                const char * str_data = reinterpret_cast<const char *>(next_pos - n);
 
                                 /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
                                 *  so that it can match when `required_substring` occurs into the string several times,
@@ -381,16 +389,13 @@ struct MatchImpl
                         else
                             res[i] = revert;
 
-                        pos = next;
+                        pos = next_pos;
                     }
                 }
 
                 /// Tail, in which there can be no substring.
-                {
-                    size_t i = (pos - begin) / n;
-                    if (i < res.size())
-                        memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
-                }
+                if (i < res.size())
+                    memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
             }
         }
     }
