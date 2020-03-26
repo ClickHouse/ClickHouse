@@ -12,7 +12,7 @@
 #include <Core/ExternalTable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/config.h>
@@ -439,13 +439,13 @@ void HTTPHandler::processQuery(
 
     /// In theory if initially readonly = 0, the client can change any setting and then set readonly
     /// to some other value.
-    auto & settings = context.getSettingsRef();
+    const auto & settings = context.getSettingsRef();
 
     /// Only readonly queries are allowed for HTTP GET requests.
     if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
     {
         if (settings.readonly == 0)
-            settings.readonly = 2;
+            context.setSetting("readonly", 2);
     }
 
     bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
@@ -546,7 +546,7 @@ void HTTPHandler::processQuery(
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
 
-    auto appendCallback = [&context] (ProgressCallback callback)
+    auto append_callback = [&context] (ProgressCallback callback)
     {
         auto prev = context.getProgressCallback();
 
@@ -561,13 +561,13 @@ void HTTPHandler::processQuery(
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
     if (settings.send_progress_in_http_headers)
-        appendCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
+        append_callback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
         Poco::Net::StreamSocket & socket = dynamic_cast<Poco::Net::HTTPServerRequestImpl &>(request).socket();
 
-        appendCallback([&context, &socket](const Progress &)
+        append_callback([&context, &socket](const Progress &)
         {
             /// Assume that at the point this method is called no one is reading data from the socket any more.
             /// True for read-only queries.

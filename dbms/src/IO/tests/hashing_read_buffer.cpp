@@ -3,14 +3,18 @@
 #include <IO/WriteBufferFromOStream.h>
 #include "hashing_buffer.h"
 #include <iostream>
+#include <pcg_random.hpp>
+
 
 static void test(size_t data_size)
 {
+    pcg64 rng;
+
     std::vector<char> vec(data_size);
     char * data = vec.data();
 
     for (size_t i = 0; i < data_size; ++i)
-        data[i] = rand() & 255;
+        data[i] = rng() & 255;
 
     CityHash_v1_0_2::uint128 reference = referenceHash(data, data_size);
 
@@ -19,8 +23,8 @@ static void test(size_t data_size)
     {
         std::cout << "block size " << read_buffer_block_size << std::endl;
         std::stringstream io;
-        DB::WriteBufferFromOStream out_(io);
-        DB::HashingWriteBuffer out(out_);
+        DB::WriteBufferFromOStream out_impl(io);
+        DB::HashingWriteBuffer out(out_impl);
         out.write(data, data_size);
         out.next();
 

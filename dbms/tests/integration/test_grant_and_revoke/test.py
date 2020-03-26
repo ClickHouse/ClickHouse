@@ -30,14 +30,14 @@ def reset_users_and_roles():
 
 
 def test_login():
-    instance.query("CREATE USER A PROFILE 'default'")
-    instance.query("CREATE USER B PROFILE 'default'")
+    instance.query("CREATE USER A")
+    instance.query("CREATE USER B")
     assert instance.query("SELECT 1", user='A') == "1\n"
     assert instance.query("SELECT 1", user='B') == "1\n"
 
 
 def test_grant_and_revoke():
-    instance.query("CREATE USER A PROFILE 'default'")
+    instance.query("CREATE USER A")
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
     
     instance.query('GRANT SELECT ON test_table TO A')
@@ -48,8 +48,8 @@ def test_grant_and_revoke():
 
 
 def test_grant_option():
-    instance.query("CREATE USER A PROFILE 'default'")
-    instance.query("CREATE USER B PROFILE 'default'")
+    instance.query("CREATE USER A")
+    instance.query("CREATE USER B")
 
     instance.query('GRANT SELECT ON test_table TO A')
     assert instance.query("SELECT * FROM test_table", user='A') == "1\t5\n2\t10\n"
@@ -63,7 +63,7 @@ def test_grant_option():
 
 
 def test_create_role():
-    instance.query("CREATE USER A PROFILE 'default'")
+    instance.query("CREATE USER A")
     instance.query('CREATE ROLE R1')
 
     assert "Not enough privileges" in instance.query_and_get_error("SELECT * FROM test_table", user='A')
@@ -79,7 +79,7 @@ def test_create_role():
 
 
 def test_grant_role_to_role():
-    instance.query("CREATE USER A PROFILE 'default'")
+    instance.query("CREATE USER A")
     instance.query('CREATE ROLE R1')
     instance.query('CREATE ROLE R2')
 
@@ -96,7 +96,7 @@ def test_grant_role_to_role():
 
 
 def test_combine_privileges():
-    instance.query("CREATE USER A PROFILE 'default'")
+    instance.query("CREATE USER A ")
     instance.query('CREATE ROLE R1')
     instance.query('CREATE ROLE R2')
 
@@ -113,8 +113,8 @@ def test_combine_privileges():
 
 
 def test_admin_option():
-    instance.query("CREATE USER A PROFILE 'default'")
-    instance.query("CREATE USER B PROFILE 'default'")
+    instance.query("CREATE USER A")
+    instance.query("CREATE USER B")
     instance.query('CREATE ROLE R1')
 
     instance.query('GRANT SELECT ON test_table TO R1')

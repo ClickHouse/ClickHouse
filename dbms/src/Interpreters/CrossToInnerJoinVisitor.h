@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/Aliases.h>
 
 namespace DB
 {
@@ -15,6 +16,7 @@ public:
     struct Data
     {
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns;
+        const Aliases & aliases;
         const String current_database;
         bool done = false;
     };

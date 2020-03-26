@@ -35,10 +35,12 @@ StorageInMemoryMetadata::StorageInMemoryMetadata(const StorageInMemoryMetadata &
 
 StorageInMemoryMetadata & StorageInMemoryMetadata::operator=(const StorageInMemoryMetadata & other)
 {
+    if (this == &other)
+        return *this;
+
     columns = other.columns;
     indices = other.indices;
     constraints = other.constraints;
-
 
     if (other.partition_by_ast)
         partition_by_ast = other.partition_by_ast->clone();

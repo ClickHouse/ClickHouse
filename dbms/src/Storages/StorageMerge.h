@@ -13,7 +13,7 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorage
+class StorageMerge final : public ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMerge>;
 public:
@@ -64,7 +64,7 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
-    DatabaseTablesIteratorPtr getDatabaseIterator(const Context & context) const;
+    DatabaseTablesIteratorPtr getDatabaseIterator() const;
 
 protected:
     StorageMerge(

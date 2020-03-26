@@ -10,6 +10,8 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/typeid_cast.h>
 #include <Common/Arena.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 
 #include <AggregateFunctions/AggregateFunctionMLMethod.h>
 
@@ -91,13 +93,13 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
     MutableColumnPtr res = func->getReturnTypeToPredict()->createColumn();
     res->reserve(data.size());
 
-    auto ML_function = func.get();
-    if (ML_function)
+    auto machine_learning_function = func.get();
+    if (machine_learning_function)
     {
         if (data.size() == 1)
         {
             /// Case for const column. Predict using single model.
-            ML_function->predictValues(data[0], *res, block, 0, block.rows(), arguments, context);
+            machine_learning_function->predictValues(data[0], *res, block, 0, block.rows(), arguments, context);
         }
         else
         {
@@ -105,7 +107,7 @@ MutableColumnPtr ColumnAggregateFunction::predictValues(Block & block, const Col
             size_t row_num = 0;
             for (auto val : data)
             {
-                ML_function->predictValues(val, *res, block, row_num, 1, arguments, context);
+                machine_learning_function->predictValues(val, *res, block, row_num, 1, arguments, context);
                 ++row_num;
             }
         }
@@ -280,6 +282,25 @@ void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) cons
     WriteBufferFromOwnString wbuf;
     func->serialize(data[n], wbuf);
     hash.update(wbuf.str().c_str(), wbuf.str().size());
+}
+
+void ColumnAggregateFunction::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = data.size();
+    if (hash.getData().size() != data.size())
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    auto & hash_data = hash.getData();
+
+    std::vector<UInt8> v;
+    for (size_t i = 0; i < s; ++i)
+    {
+        WriteBufferFromVector<std::vector<UInt8>> wbuf(v);
+        func->serialize(data[i], wbuf);
+        wbuf.finalize();
+        hash_data[i] = ::updateWeakHash32(v.data(), v.size(), hash_data[i]);
+    }
 }
 
 /// The returned size is less than real size. The reason is that some parts of
@@ -501,7 +522,7 @@ MutableColumns ColumnAggregateFunction::scatter(IColumn::ColumnIndex num_columns
     size_t num_rows = size();
 
     {
-        size_t reserve_size = num_rows / num_columns * 1.1; /// 1.1 is just a guess. Better to use n-sigma rule.
+        size_t reserve_size = double(num_rows) / num_columns * 1.1; /// 1.1 is just a guess. Better to use n-sigma rule.
 
         if (reserve_size > 1)
             for (auto & column : columns)
@@ -576,8 +597,9 @@ ColumnAggregateFunction::MutablePtr ColumnAggregateFunction::createView() const
 }
 
 ColumnAggregateFunction::ColumnAggregateFunction(const ColumnAggregateFunction & src_)
-    : foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
-      func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
+    : COWHelper<IColumn, ColumnAggregateFunction>(src_),
+    foreign_arenas(concatArenas(src_.foreign_arenas, src_.my_arena)),
+    func(src_.func), src(src_.getPtr()), data(src_.data.begin(), src_.data.end())
 {
 }
 

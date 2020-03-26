@@ -1,17 +1,17 @@
-# Hierarchical Dictionaries
+# Hierarchical Dictionaries {#hierarchical-dictionaries}
 
 ClickHouse supports hierarchical dictionaries with a [numeric key](external_dicts_dict_structure.md#ext_dict-numeric-key).
 
 Look at the following hierarchical structure:
 
-```text
+``` text
 0 (Common parent)
 │
 ├── 1 (Russia)
 │   │
-│   └── 2 (Moscow) 
+│   └── 2 (Moscow)
 │       │
-│       └── 3 (Center)  
+│       └── 3 (Center)
 │
 └── 4 (Great Britain)
     │
@@ -20,13 +20,13 @@ Look at the following hierarchical structure:
 
 This hierarchy can be expressed as the following dictionary table.
 
-region_id | parent_region | region_name
-----|--------------|------
-1 | 0 | Russia
-2 | 1 | Moscow
-3 | 2 | Center
-4 | 0 | Great Britain
-5 | 4 | London
+| region\_id | parent\_region | region\_name  |
+|------------|----------------|---------------|
+| 1          | 0              | Russia        |
+| 2          | 1              | Moscow        |
+| 3          | 2              | Center        |
+| 4          | 0              | Great Britain |
+| 5          | 4              | London        |
 
 This table contains a column `parent_region` that contains the key of the nearest parent for the element.
 
@@ -36,7 +36,7 @@ The [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy) func
 
 For our example, the structure of dictionary can be the following:
 
-```xml
+``` xml
 <dictionary>
     <structure>
         <id>

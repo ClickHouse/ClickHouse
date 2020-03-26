@@ -116,6 +116,68 @@ static void changeNullability(MutableColumnPtr & mutable_column)
     mutable_column = (*std::move(column)).mutate();
 }
 
+static ColumnPtr emptyNotNullableClone(const ColumnPtr & column)
+{
+    if (column->isNullable())
+        return checkAndGetColumn<ColumnNullable>(*column)->getNestedColumnPtr()->cloneEmpty();
+    return column->cloneEmpty();
+}
+
+static ColumnPtr changeLowCardinality(const ColumnPtr & column, const ColumnPtr & dst_sample)
+{
+    if (dst_sample->lowCardinality())
+    {
+        MutableColumnPtr lc = dst_sample->cloneEmpty();
+        typeid_cast<ColumnLowCardinality &>(*lc).insertRangeFromFullColumn(*column, 0, column->size());
+        return lc;
+    }
+
+    return column->convertToFullColumnIfLowCardinality();
+}
+
+/// Change both column nullability and low cardinality
+static void changeColumnRepresentation(const ColumnPtr & src_column, ColumnPtr & dst_column)
+{
+    bool nullable_src = src_column->isNullable();
+    bool nullable_dst = dst_column->isNullable();
+
+    ColumnPtr dst_not_null = emptyNotNullableClone(dst_column);
+    bool lowcard_src = emptyNotNullableClone(src_column)->lowCardinality();
+    bool lowcard_dst = dst_not_null->lowCardinality();
+    bool change_lowcard = (!lowcard_src && lowcard_dst) || (lowcard_src && !lowcard_dst);
+
+    if (nullable_src && !nullable_dst)
+    {
+        auto * nullable = checkAndGetColumn<ColumnNullable>(*src_column);
+        if (change_lowcard)
+            dst_column = changeLowCardinality(nullable->getNestedColumnPtr(), dst_column);
+        else
+            dst_column = nullable->getNestedColumnPtr();
+    }
+    else if (!nullable_src && nullable_dst)
+    {
+        if (change_lowcard)
+            dst_column = makeNullable(changeLowCardinality(src_column, dst_not_null));
+        else
+            dst_column = makeNullable(src_column);
+    }
+    else /// same nullability
+    {
+        if (change_lowcard)
+        {
+            if (auto * nullable = checkAndGetColumn<ColumnNullable>(*src_column))
+            {
+                dst_column = makeNullable(changeLowCardinality(nullable->getNestedColumnPtr(), dst_not_null));
+                assert_cast<ColumnNullable &>(*dst_column->assumeMutable()).applyNullMap(nullable->getNullMapColumn());
+            }
+            else
+                dst_column = changeLowCardinality(src_column, dst_not_null);
+        }
+        else
+            dst_column = src_column;
+    }
+}
+
 
 Join::Join(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_)
     : table_join(table_join_)
@@ -315,10 +377,14 @@ void Join::setSampleBlock(const Block & block)
     if (!empty())
         return;
 
-    ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(key_names_right, block, right_table_keys, sample_block_with_columns_to_add);
+    JoinCommon::splitAdditionalColumns(block, key_names_right, right_table_keys, sample_block_with_columns_to_add);
 
-    initRightBlockStructure(data->sample_block);
     initRequiredRightKeys();
+
+    JoinCommon::removeLowCardinalityInplace(right_table_keys);
+    initRightBlockStructure(data->sample_block);
+
+    ColumnRawPtrs key_columns = JoinCommon::extractKeysForJoin(right_table_keys, key_names_right);
 
     JoinCommon::createMissedColumns(sample_block_with_columns_to_add);
     if (nullable_right_side)
@@ -1249,7 +1315,10 @@ private:
     ///
     std::unordered_map<size_t, size_t> same_result_keys;
     /// Which right columns (saved in parent) need nullability change before placing them in result block
-    std::vector<size_t> right_nullability_changes;
+    std::vector<size_t> right_nullability_adds;
+    std::vector<size_t> right_nullability_removes;
+    /// Which right columns (saved in parent) need LowCardinality change before placing them in result block
+    std::vector<std::pair<size_t, ColumnPtr>> right_lowcard_changes;
 
     std::any position;
     std::optional<Join::BlockNullmapList::const_iterator> nulls_position;
@@ -1259,19 +1328,28 @@ private:
         if (!column_indices_right.count(right_pos))
         {
             column_indices_right[right_pos] = result_position;
-
-            if (hasNullabilityChange(right_pos, result_position))
-                right_nullability_changes.push_back(right_pos);
+            extractColumnChanges(right_pos, result_position);
         }
         else
             same_result_keys[result_position] = column_indices_right[right_pos];
     }
 
-    bool hasNullabilityChange(size_t right_pos, size_t result_pos) const
+    void extractColumnChanges(size_t right_pos, size_t result_pos)
     {
         const auto & src = parent.savedBlockSample().getByPosition(right_pos).column;
         const auto & dst = result_sample_block.getByPosition(result_pos).column;
-        return src->isNullable() != dst->isNullable();
+
+        if (!src->isNullable() && dst->isNullable())
+            right_nullability_adds.push_back(right_pos);
+
+        if (src->isNullable() && !dst->isNullable())
+            right_nullability_removes.push_back(right_pos);
+
+        ColumnPtr src_not_null = emptyNotNullableClone(src);
+        ColumnPtr dst_not_null = emptyNotNullableClone(dst);
+
+        if (src_not_null->lowCardinality() != dst_not_null->lowCardinality())
+            right_lowcard_changes.push_back({right_pos, dst_not_null});
     }
 
     Block createBlock()
@@ -1293,7 +1371,13 @@ private:
         if (!rows_added)
             return {};
 
-        for (size_t pos : right_nullability_changes)
+        for (size_t pos : right_nullability_removes)
+            changeNullability(columns_right[pos]);
+
+        for (auto & [pos, dst_sample] : right_lowcard_changes)
+            columns_right[pos] = changeLowCardinality(std::move(columns_right[pos]), dst_sample)->assumeMutable();
+
+        for (size_t pos : right_nullability_adds)
             changeNullability(columns_right[pos]);
 
         Block res = result_sample_block.cloneEmpty();
@@ -1318,16 +1402,7 @@ private:
         {
             auto & src_column = res.getByPosition(pr.second).column;
             auto & dst_column = res.getByPosition(pr.first).column;
-
-            if (src_column->isNullable() && !dst_column->isNullable())
-            {
-                auto * nullable = checkAndGetColumn<ColumnNullable>(*src_column);
-                dst_column = nullable->getNestedColumnPtr();
-            }
-            else if (!src_column->isNullable() && dst_column->isNullable())
-                dst_column = makeNullable(src_column);
-            else
-                dst_column = src_column;
+            changeColumnRepresentation(src_column, dst_column);
         }
 
         return res;

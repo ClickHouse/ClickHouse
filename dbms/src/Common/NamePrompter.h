@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Common/PODArray.h>
 
 #include <algorithm>
 #include <cctype>
@@ -32,15 +33,7 @@ private:
         size_t m = lhs.size();
         size_t n = rhs.size();
 
-        static constexpr size_t small_buffer_size = 64;
-        size_t small_buffer[small_buffer_size];
-        std::unique_ptr<size_t[]> alloc_buffer;
-        size_t * row = small_buffer;
-        if (n + 1 > small_buffer_size)
-        {
-            row = new size_t[n + 1];
-            alloc_buffer.reset(row);
-        }
+        PODArrayWithStackMemory<size_t, 64> row(n + 1);
 
         for (size_t i = 1; i <= n; ++i)
             row[i] = i;

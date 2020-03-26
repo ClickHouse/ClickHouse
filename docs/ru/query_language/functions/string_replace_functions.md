@@ -1,13 +1,16 @@
-# Функции поиска и замены в строках
+# Функции поиска и замены в строках {#funktsii-poiska-i-zameny-v-strokakh}
 
-## replaceOne(haystack, pattern, replacement)
+## replaceOne(haystack, pattern, replacement) {#replaceonehaystack-pattern-replacement}
+
 Замена первого вхождения, если такое есть, подстроки pattern в haystack на подстроку replacement.
 Здесь и далее, pattern и replacement должны быть константами.
 
-## replaceAll(haystack, pattern, replacement)
+## replaceAll(haystack, pattern, replacement) {#replaceallhaystack-pattern-replacement}
+
 Замена всех вхождений подстроки pattern в haystack на подстроку replacement.
 
-## replaceRegexpOne(haystack, pattern, replacement)
+## replaceRegexpOne(haystack, pattern, replacement) {#replaceregexponehaystack-pattern-replacement}
+
 Замена по регулярному выражению pattern. Регулярное выражение re2.
 Заменяется только первое вхождение, если есть.
 В качестве replacement может быть указан шаблон для замен. Этот шаблон может включать в себя подстановки `\0-\9`.
@@ -17,7 +20,7 @@
 
 Пример 1. Переведём дату в американский формат:
 
-```sql
+``` sql
 SELECT DISTINCT
     EventDate,
     replaceRegexpOne(toString(EventDate), '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
@@ -26,7 +29,7 @@ LIMIT 7
 FORMAT TabSeparated
 ```
 
-```text
+``` text
 2014-03-17      03/17/2014
 2014-03-18      03/18/2014
 2014-03-19      03/19/2014
@@ -38,24 +41,25 @@ FORMAT TabSeparated
 
 Пример 2. Размножить строку десять раз:
 
-```sql
+``` sql
 SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res
 ```
 
-```text
+``` text
 ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
 └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## replaceRegexpAll(haystack, pattern, replacement)
+## replaceRegexpAll(haystack, pattern, replacement) {#replaceregexpallhaystack-pattern-replacement}
+
 То же самое, но делается замена всех вхождений. Пример:
 
-```sql
+``` sql
 SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 ```
 
-```text
+``` text
 ┌─res────────────────────────┐
 │ HHeelllloo,,  WWoorrlldd!! │
 └────────────────────────────┘
@@ -64,11 +68,11 @@ SELECT replaceRegexpAll('Hello, World!', '.', '\\0\\0') AS res
 В качестве исключения, если регулярное выражение сработало на пустой подстроке, то замена делается не более одного раза.
 Пример:
 
-```sql
+``` sql
 SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ```
 
-```text
+``` text
 ┌─res─────────────────┐
 │ here: Hello, World! │
 └─────────────────────┘

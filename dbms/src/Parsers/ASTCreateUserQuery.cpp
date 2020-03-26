@@ -1,5 +1,6 @@
 #include <Parsers/ASTCreateUserQuery.h>
-#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTSettingsProfileElement.h>
 #include <Common/quoteString.h>
 
 
@@ -135,17 +136,17 @@ namespace
     }
 
 
-    void formatDefaultRoles(const ASTGenericRoleSet & default_roles, const IAST::FormatSettings & settings)
+    void formatDefaultRoles(const ASTExtendedRoleSet & default_roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " DEFAULT ROLE " << (settings.hilite ? IAST::hilite_none : "");
         default_roles.format(settings);
     }
 
 
-    void formatProfile(const String & profile_name, const IAST::FormatSettings & settings)
+    void formatSettings(const ASTSettingsProfileElements & settings, const IAST::FormatSettings & format)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " PROFILE " << (settings.hilite ? IAST::hilite_none : "")
-                      << quoteString(profile_name);
+        format.ostr << (format.hilite ? IAST::hilite_keyword : "") << " SETTINGS " << (format.hilite ? IAST::hilite_none : "");
+        settings.format(format);
     }
 }
 
@@ -162,44 +163,44 @@ ASTPtr ASTCreateUserQuery::clone() const
 }
 
 
-void ASTCreateUserQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
+void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (attach)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH USER" << (settings.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << "ATTACH USER" << (format.hilite ? hilite_none : "");
     }
     else
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER USER" : "CREATE USER")
-                      << (settings.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << (alter ? "ALTER USER" : "CREATE USER")
+                    << (format.hilite ? hilite_none : "");
     }
 
     if (if_exists)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF EXISTS" << (settings.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << " IF EXISTS" << (format.hilite ? hilite_none : "");
     else if (if_not_exists)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (settings.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << " IF NOT EXISTS" << (format.hilite ? hilite_none : "");
     else if (or_replace)
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << " OR REPLACE" << (settings.hilite ? hilite_none : "");
+        format.ostr << (format.hilite ? hilite_keyword : "") << " OR REPLACE" << (format.hilite ? hilite_none : "");
 
-    settings.ostr << " " << backQuoteIfNeed(name);
+    format.ostr << " " << backQuoteIfNeed(name);
 
     if (!new_name.empty())
-        formatRenameTo(new_name, settings);
+        formatRenameTo(new_name, format);
 
     if (authentication)
-        formatAuthentication(*authentication, settings);
+        formatAuthentication(*authentication, format);
 
     if (hosts)
-        formatHosts(nullptr, *hosts, settings);
+        formatHosts(nullptr, *hosts, format);
     if (add_hosts)
-        formatHosts("ADD", *add_hosts, settings);
+        formatHosts("ADD", *add_hosts, format);
     if (remove_hosts)
-        formatHosts("REMOVE", *remove_hosts, settings);
+        formatHosts("REMOVE", *remove_hosts, format);
 
     if (default_roles)
-        formatDefaultRoles(*default_roles, settings);
+        formatDefaultRoles(*default_roles, format);
 
-    if (profile)
-        formatProfile(*profile, settings);
+    if (settings && (!settings->empty() || alter))
+        formatSettings(*settings, format);
 }
 }

@@ -34,7 +34,7 @@ SELECT _part, x FROM test.part_header_r1 ORDER BY x;
 SELECT '*** replica 2 ***';
 SELECT _part, x FROM test.part_header_r2 ORDER BY x;
 
-SELECT sleep(2) FORMAT Null;
+SELECT sleep(3) FORMAT Null;
 
 SELECT '*** Test part removal ***';
 SELECT '*** replica 1 ***';

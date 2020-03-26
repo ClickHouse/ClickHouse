@@ -2,6 +2,7 @@
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterShowTablesQuery.h>
 #include <Common/typeid_cast.h>
@@ -35,8 +36,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     if (query.temporary && !query.from.empty())
         throw Exception("The `FROM` and `TEMPORARY` cannot be used together in `SHOW TABLES`", ErrorCodes::SYNTAX_ERROR);
 
-    String database = query.from.empty() ? context.getCurrentDatabase() : query.from;
-    context.assertDatabaseExists(database);
+    String database = context.resolveDatabase(query.from);
+    DatabaseCatalog::instance().assertDatabaseExists(database);
 
     std::stringstream rewritten_query;
     rewritten_query << "SELECT name FROM system.";

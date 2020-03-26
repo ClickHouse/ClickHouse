@@ -25,7 +25,7 @@ namespace DB
 
 /** Class for asynchronous data reading.
   */
-class ReadBufferAIO : public ReadBufferFromFileBase
+class ReadBufferAIO final : public ReadBufferFromFileBase
 {
 public:
     ReadBufferAIO(const std::string & filename_, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, int flags_ = -1,

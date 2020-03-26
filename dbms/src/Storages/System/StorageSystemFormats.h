@@ -5,7 +5,7 @@
 
 namespace DB
 {
-class StorageSystemFormats : public ext::shared_ptr_helper<StorageSystemFormats>, public IStorageSystemOneBlock<StorageSystemFormats>
+class StorageSystemFormats final : public ext::shared_ptr_helper<StorageSystemFormats>, public IStorageSystemOneBlock<StorageSystemFormats>
 {
     friend struct ext::shared_ptr_helper<StorageSystemFormats>;
 protected:

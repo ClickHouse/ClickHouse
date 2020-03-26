@@ -342,7 +342,7 @@ bool MergeTreeIndexConditionSet::atomFromAST(ASTPtr & node) const
     return false;
 }
 
-bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
+bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
 {
     /// Functions AND, OR, NOT. Replace with bit*.
     auto * func = node->as<ASTFunction>();
