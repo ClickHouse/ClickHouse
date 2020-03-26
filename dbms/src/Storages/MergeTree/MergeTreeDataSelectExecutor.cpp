@@ -58,7 +58,7 @@ namespace std
 #include <Processors/Transforms/AddingConstColumnTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
-#include <Processors/Transforms/MergingSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 

@@ -1,10 +1,11 @@
-#include <Processors/Transforms/MergingSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBuffer.h>
 #include <DataStreams/materializeBlock.h>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -13,15 +14,14 @@ namespace ErrorCodes
 MergingSortedTransform::MergingSortedTransform(
     const Block & header,
     size_t num_inputs,
-    const SortDescription & description_,
+    SortDescription  description_,
     size_t max_block_size_,
     UInt64 limit_,
     bool quiet_,
     bool have_all_inputs_)
-    : IProcessor(InputPorts(num_inputs, header), {header})
-    , description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
-    , have_all_inputs(have_all_inputs_)
-    , merged_data(header), source_chunks(num_inputs), cursors(num_inputs)
+    : IMergingTransform(num_inputs, header, header, have_all_inputs_)
+    , description(std::move(description_)), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
+    , source_chunks(num_inputs), cursors(num_inputs)
 {
     auto & sample = outputs.front().getHeader();
     /// Replace column names in description to positions.
@@ -36,172 +36,56 @@ MergingSortedTransform::MergingSortedTransform(
     }
 }
 
-void MergingSortedTransform::addInput()
+void MergingSortedTransform::onNewInput()
 {
-    if (have_all_inputs)
-        throw Exception("MergingSortedTransform already have all inputs.", ErrorCodes::LOGICAL_ERROR);
-
-    inputs.emplace_back(outputs.front().getHeader(), this);
     source_chunks.emplace_back();
     cursors.emplace_back();
 }
 
-void MergingSortedTransform::setHaveAllInputs()
+void MergingSortedTransform::initializeInputs()
 {
-    if (have_all_inputs)
-        throw Exception("MergingSortedTransform already have all inputs.", ErrorCodes::LOGICAL_ERROR);
+    if (has_collation)
+        queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
+    else
+        queue_without_collation = SortingHeap<SortCursor>(cursors);
 
-    have_all_inputs = true;
+    is_queue_initialized = true;
 }
 
-IProcessor::Status MergingSortedTransform::prepare()
+void MergingSortedTransform::consume(Chunk chunk, size_t input_number)
 {
-    if (!have_all_inputs)
-        return Status::NeedData;
+    updateCursor(std::move(chunk), input_number);
 
-    auto & output = outputs.front();
-
-    /// Special case for no inputs.
-    if (inputs.empty())
+    if (is_queue_initialized)
     {
-        output.finish();
-        return Status::Finished;
-    }
-
-    /// Check can output.
-
-    if (output.isFinished())
-    {
-        for (auto & in : inputs)
-            in.close();
-
-        return Status::Finished;
-    }
-
-    /// Do not disable inputs, so it will work in the same way as with AsynchronousBlockInputStream, like before.
-    bool is_port_full = !output.canPush();
-
-    /// Special case for single input.
-    if (inputs.size() == 1)
-    {
-        auto & input = inputs.front();
-        if (input.isFinished())
-        {
-            output.finish();
-            return Status::Finished;
-        }
-
-        input.setNeeded();
-
-        if (input.hasData())
-        {
-            if (!is_port_full)
-                output.push(input.pull());
-
-            return Status::PortFull;
-        }
-
-        return Status::NeedData;
-    }
-
-    /// Push if has data.
-    if (merged_data.mergedRows() && !is_port_full)
-        output.push(merged_data.pull());
-
-    if (!is_initialized)
-    {
-        /// Check for inputs we need.
-        bool all_inputs_has_data = true;
-        auto it = inputs.begin();
-        for (size_t i = 0; it != inputs.end(); ++i, ++it)
-        {
-            auto & input = *it;
-            if (input.isFinished())
-                continue;
-
-            if (!cursors[i].empty())
-            {
-                // input.setNotNeeded();
-                continue;
-            }
-
-            input.setNeeded();
-
-            if (!input.hasData())
-            {
-                all_inputs_has_data = false;
-                continue;
-            }
-
-            auto chunk = input.pull();
-            if (!chunk.hasRows())
-            {
-
-                if (!input.isFinished())
-                    all_inputs_has_data = false;
-
-                continue;
-            }
-
-            updateCursor(std::move(chunk), i);
-        }
-
-        if (!all_inputs_has_data)
-            return Status::NeedData;
-
         if (has_collation)
-            queue_with_collation = SortingHeap<SortCursorWithCollation>(cursors);
+            queue_with_collation.push(cursors[input_number]);
         else
-            queue_without_collation = SortingHeap<SortCursor>(cursors);
+            queue_without_collation.push(cursors[input_number]);
+    }
+}
 
-        is_initialized = true;
-        return Status::Ready;
+void MergingSortedTransform::updateCursor(Chunk chunk, size_t source_num)
+{
+    auto num_rows = chunk.getNumRows();
+    auto columns = chunk.detachColumns();
+    for (auto & column : columns)
+        column = column->convertToFullColumnIfConst();
+
+    chunk.setColumns(std::move(columns), num_rows);
+
+    auto & source_chunk = source_chunks[source_num];
+
+    if (source_chunk.empty())
+    {
+        source_chunk = std::move(chunk);
+        cursors[source_num] = SortCursorImpl(source_chunk.getColumns(), description, source_num);
+        has_collation |= cursors[source_num].has_collation;
     }
     else
     {
-        if (is_finished)
-        {
-
-            if (is_port_full)
-                return Status::PortFull;
-
-            for (auto & input : inputs)
-                input.close();
-
-            outputs.front().finish();
-
-            return Status::Finished;
-        }
-
-        if (need_data)
-        {
-            auto & input = *std::next(inputs.begin(), next_input_to_read);
-            if (!input.isFinished())
-            {
-                input.setNeeded();
-
-                if (!input.hasData())
-                    return Status::NeedData;
-
-                auto chunk = input.pull();
-                if (!chunk.hasRows() && !input.isFinished())
-                    return Status::NeedData;
-
-                updateCursor(std::move(chunk), next_input_to_read);
-
-                if (has_collation)
-                    queue_with_collation.push(cursors[next_input_to_read]);
-                else
-                    queue_without_collation.push(cursors[next_input_to_read]);
-            }
-
-            need_data = false;
-        }
-
-        if (is_port_full)
-            return Status::PortFull;
-
-        return Status::Ready;
+        source_chunk = std::move(chunk);
+        cursors[source_num].reset(source_chunk.getColumns(), {});
     }
 }
 
@@ -222,7 +106,7 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
         if (limit && merged_data.totalMergedRows() >= limit)
         {
             //std::cerr << "Limit reached\n";
-            is_finished = true;
+            finish();
             return false;
         }
 
@@ -274,7 +158,7 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
 
         if (!current->isLast())
         {
-//            std::cerr << "moving to next row\n";
+            //std::cerr << "moving to next row\n";
             queue.next();
         }
         else
@@ -282,17 +166,17 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
             /// We will get the next block from the corresponding source, if there is one.
             queue.removeTop();
 
-//            std::cerr << "It was last row, fetching next block\n";
-            need_data = true;
-            next_input_to_read = current.impl->order;
+            //std::cerr << "It was last row, fetching next block\n";
+            requestDataForInput(current.impl->order);
 
             if (limit && merged_data.totalMergedRows() >= limit)
-                is_finished = true;
+                finish();
 
             return;
         }
     }
-    is_finished = true;
+
+    finish();
 }
 
 void MergingSortedTransform::insertFromChunk(size_t source_num)
@@ -309,14 +193,14 @@ void MergingSortedTransform::insertFromChunk(size_t source_num)
     {
         num_rows = total_merged_rows_after_insertion - limit;
         merged_data.insertFromChunk(std::move(source_chunks[source_num]), num_rows);
-        is_finished = true;
+        finish();
     }
     else
     {
         merged_data.insertFromChunk(std::move(source_chunks[source_num]), 0);
-        need_data = true;
-        next_input_to_read = source_num;
+        requestDataForInput(source_num);
     }
+
     source_chunks[source_num] = Chunk();
 
     if (out_row_sources_buf)
@@ -326,6 +210,5 @@ void MergingSortedTransform::insertFromChunk(size_t source_num)
             out_row_sources_buf->write(row_source.data);
     }
 }
-
 
 }

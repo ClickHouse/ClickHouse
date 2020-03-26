@@ -84,7 +84,7 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
-#include <Processors/Transforms/MergingSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>

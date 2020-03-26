@@ -1,6 +1,6 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
-#include <Processors/Transforms/MergingSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Common/ProfileEvents.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/ReadBufferFromFile.h>

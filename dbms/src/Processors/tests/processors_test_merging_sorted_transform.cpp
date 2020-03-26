@@ -8,7 +8,7 @@
 #include <Processors/ISimpleTransform.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/printPipeline.h>
-#include <Processors/Transforms/MergingSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Executors/PipelineExecutor.h>
 
 #include <IO/WriteBufferFromFileDescriptor.h>
