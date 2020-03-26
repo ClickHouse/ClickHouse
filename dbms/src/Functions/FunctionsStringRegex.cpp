@@ -245,6 +245,7 @@ struct MatchImpl
         }
     }
 
+    /// Very carefully crafted copy-paste.
     static void vectorFixedConstant(
         const ColumnString::Chars & data, size_t n, const std::string & pattern, PaddedPODArray<UInt8> & res)
     {
