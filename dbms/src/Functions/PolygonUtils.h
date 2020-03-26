@@ -36,11 +36,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 
 template <typename Polygon>
 UInt64 getPolygonAllocatedBytes(const Polygon & polygon)
@@ -406,19 +401,19 @@ bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGr
         return Point(to.x() - from.x(), to.y() - from.y());
     };
 
-    Point first = getVector(outer[0], outer[1]);
+    Point first = get_vector(outer[0], outer[1]);
     Point prev = first;
 
     for (auto i : ext::range(1, outer.size() - 1))
     {
-        Point cur = getVector(outer[i], outer[i + 1]);
+        Point cur = get_vector(outer[i], outer[i + 1]);
         if (vec_product(prev, cur) < 0)
             return false;
 
         prev = cur;
     }
 
-    return get_vector(prev, first) >= 0;
+    return vec_product(prev, first) >= 0;
 }
 
 template <typename CoordinateType>
