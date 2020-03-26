@@ -148,3 +148,6 @@
 	path = contrib/avro
 	url = https://github.com/ClickHouse-Extras/avro.git
 	ignore = untracked
+[submodule "contrib/msgpack-c"]
+	path = contrib/msgpack-c
+	url = https://github.com/msgpack/msgpack-c

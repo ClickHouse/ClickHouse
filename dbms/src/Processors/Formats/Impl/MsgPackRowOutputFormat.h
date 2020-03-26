@@ -13,7 +13,7 @@ namespace DB
 class MsgPackRowOutputFormat : public IRowOutputFormat
 {
 public:
-    MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_);
+    MsgPackRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback);
 
     String getName() const override { return "MsgPackRowOutputFormat"; }
 
@@ -22,7 +22,6 @@ public:
     void serializeField(const IColumn & column, DataTypePtr data_type, size_t row_num);
 
 private:
-    FormatSettings settings;
     msgpack::packer<DB::WriteBuffer> packer;
 };
 
