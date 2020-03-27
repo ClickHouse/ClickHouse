@@ -19,6 +19,7 @@ MergingSortedTransform::MergingSortedTransform(
     SortDescription  description_,
     size_t max_block_size,
     UInt64 limit_,
+    WriteBuffer * out_row_sources_buf_,
     bool quiet_,
     bool use_average_block_sizes,
     bool have_all_inputs_)
@@ -26,6 +27,7 @@ MergingSortedTransform::MergingSortedTransform(
     , description(std::move(description_))
     , limit(limit_)
     , quiet(quiet_)
+    , out_row_sources_buf(out_row_sources_buf_)
     , source_chunks(num_inputs)
     , cursors(num_inputs)
 {
@@ -205,6 +207,8 @@ void MergingSortedTransform::insertFromChunk(size_t source_num)
 
     source_chunks[source_num] = Chunk();
 
+    /// Write order of rows for other columns
+    /// this data will be used in gather stream
     if (out_row_sources_buf)
     {
         RowSourcePart row_source(source_num);
@@ -224,13 +228,13 @@ void MergingSortedTransform::onFinish()
 
     std::stringstream message;
     message << std::fixed << std::setprecision(2)
-            << "Merge sorted " << total_chunks << " blocks, " << total_rows << " rows"
+            << "Merge sorted " << merged_data.totalChunks() << " blocks, " << merged_data.totalMergedRows() << " rows"
             << " in " << seconds << " sec.";
 
     if (seconds != 0)
         message << ", "
-                << total_rows / seconds << " rows/sec., "
-                << total_bytes / 1000000.0 / seconds << " MB/sec.";
+                << merged_data.totalMergedRows() / seconds << " rows/sec., "
+                << merged_data.totalAllocatedBytes() / 1000000.0 / seconds << " MB/sec.";
 
     LOG_DEBUG(log, message.str());
 }

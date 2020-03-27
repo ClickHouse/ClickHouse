@@ -9,7 +9,7 @@ namespace DB
 {
 
 /// Merges several sorted inputs into one sorted output.
-class MergingSortedTransform : public IMergingTransform
+class MergingSortedTransform final : public IMergingTransform
 {
 public:
     MergingSortedTransform(
@@ -18,6 +18,7 @@ public:
         SortDescription description,
         size_t max_block_size,
         UInt64 limit_ = 0,
+        WriteBuffer * out_row_sources_buf_ = nullptr,
         bool quiet_ = false,
         bool use_average_block_sizes = false,
         bool have_all_inputs_ = true);
