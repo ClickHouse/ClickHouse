@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 /// Base class for merging transforms.
 class IMergingTransform : public IProcessor
 {
