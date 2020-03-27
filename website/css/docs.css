@@ -27,7 +27,7 @@
 }
 
 #content {
-    overflow-x: hidden;
+    overflow-x: scroll;
 }
 
 #content table {
@@ -74,7 +74,7 @@
 
 @media (max-width: 768px) {
     #search-form {
-        width: 75%;
+        width: 50%;
     }
     .algolia-autocomplete, #docsearch-input, #search-form .input-group {
         width: 100%;

@@ -1,5 +1,5 @@
 <div id="sidebar" class="col-xl-2 col-md-4 bg-secondary-alt p-3 d-print-none min-vh-100 overflow-auto">
-    <div>
+    <div class="overflow-auto">
         <div id="single-page-switch" class="btn-group mb-2 float-right" role="group" aria-label="{{ _('Multi-page or single-page') }}">
             <a href="{{ base_url }}" role="button" class="btn btn-dark{% if config.extra.single_page %}-alt{% endif %} active" aria-pressed="{% if not config.extra.single_page %}true{% else %}false{% endif %}">
                 <img src="/images/mkdocs/multi.svg" alt="{{ _('Multi-page version') }}" title="{{ _('Multi-page version') }}" />

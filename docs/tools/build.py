@@ -54,7 +54,7 @@ def build_for_lang(lang, args):
     try:
         theme_cfg = {
             'name': None,
-            'custom_dir': os.path.join(os.path.dirname(__file__), args.theme_dir),
+            'custom_dir': os.path.join(os.path.dirname(__file__), '..', args.theme_dir),
             'language': lang,
             'direction': 'rtl' if lang == 'fa' else 'ltr',
             # TODO: cleanup
@@ -360,6 +360,7 @@ if __name__ == '__main__':
         server.watch(args.website_dir + '**/*', livereload.shell(new_args, cwd='tools', shell=True))
         server.serve(
             root=args.output_dir,
+            host='0.0.0.0',
             port=args.livereload
         )
         sys.exit(0)
