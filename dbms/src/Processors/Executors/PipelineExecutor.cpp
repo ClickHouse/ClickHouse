@@ -40,7 +40,21 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     , expand_pipeline_task(nullptr)
     , process_list_element(elem)
 {
-    buildGraph();
+    try
+    {
+        buildGraph();
+    }
+    catch (Exception & exception)
+    {
+        /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
+        /// It is logical error, and we need more information about pipeline.
+        WriteBufferFromOwnString buf;
+        printPipeline(processors, buf);
+        buf.finalize();
+        exception.addMessage("Query pipeline:\n" + buf.str());
+
+        throw;
+    }
 }
 
 bool PipelineExecutor::addEdges(UInt64 node)
