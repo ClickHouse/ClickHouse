@@ -57,7 +57,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
     else
     {
         String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
-        engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
+        engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time)"
+            "SETTINGS index_granularity = 1024, min_bytes_for_wide_part = 10485760"; /// Use polymorphic parts for log tables by default
     }
 
     size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds", DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
