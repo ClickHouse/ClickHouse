@@ -41,7 +41,7 @@ protected:
     void finish() { is_finished = true; } /// Call it when all data was inserted to merged_data.
 
     /// Struct which represents current merging chunk of data.
-    /// Also it calculates the number of merged rows.
+    /// Also it calculates the number of merged rows and other profile info.
     class MergedData
     {
     public:
@@ -98,6 +98,8 @@ protected:
 
             merged_rows = 0;
             sum_blocks_granularity = 0;
+            ++total_chunks;
+            total_allocated_bytes += chunk.allocatedBytes();
 
             return chunk;
         }
@@ -118,28 +120,28 @@ protected:
             return merged_rows * merged_rows >= sum_blocks_granularity;
         }
 
-        UInt64 totalMergedRows() const { return total_merged_rows; }
         UInt64 mergedRows() const { return merged_rows; }
+        UInt64 totalMergedRows() const { return total_merged_rows; }
+        UInt64 totalChunks() const { return total_chunks; }
+        UInt64 totalAllocatedBytes() const { return total_allocated_bytes; }
 
     private:
+        MutableColumns columns;
+
         UInt64 sum_blocks_granularity = 0;
-        UInt64 total_merged_rows = 0;
         UInt64 merged_rows = 0;
+        UInt64 total_merged_rows = 0;
+        UInt64 total_chunks = 0;
+        UInt64 total_allocated_bytes = 0;
 
         const UInt64 max_block_size;
         const bool use_average_block_size;
-
-        MutableColumns columns;
     };
 
     MergedData merged_data;
 
-protected:
     /// Profile info.
     Stopwatch total_stopwatch {CLOCK_MONOTONIC_COARSE};
-    UInt64 total_rows = 0;
-    UInt64 total_bytes = 0;
-    UInt64 total_chunks = 0;
 
 private:
     /// Processor state.

@@ -173,15 +173,7 @@ IProcessor::Status IMergingTransform::prepare()
     /// Push if has data.
     bool has_data_to_push = (is_finished && merged_data.mergedRows()) || merged_data.hasEnoughRows();
     if (has_data_to_push && !is_port_full)
-    {
-        auto chunk = merged_data.pull();
-
-        ++total_chunks;
-        total_rows += chunk.getNumRows();
-        total_bytes += chunk.allocatedBytes();
-
-        output.push(std::move(chunk));
-    }
+        output.push(merged_data.pull());
 
     if (!is_initialized)
         return prepareInitializeInputs();
