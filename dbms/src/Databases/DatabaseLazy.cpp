@@ -38,6 +38,8 @@ void DatabaseLazy::loadStoredObjects(
     Context & context,
     bool /* has_force_restore_data_flag */)
 {
+    Poco::File(context.getPath() + getDataPath()).createDirectories();
+    Poco::File(getMetadataPath()).createDirectories();
     iterateMetadataFiles(context, [this](const String & file_name)
     {
         const std::string table_name = file_name.substr(0, file_name.size() - 4);

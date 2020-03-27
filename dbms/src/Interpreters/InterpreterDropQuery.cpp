@@ -92,8 +92,11 @@ BlockIO InterpreterDropQuery::executeToTable(
         {
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->shutdown();
-            /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+            TableStructureWriteLockHolder table_lock;
+            if (database->getEngineName() != "Atomic")
+            {
+                table_lock = table->lockExclusively(context.getCurrentQueryId());
+            }
             /// Drop table from memory, don't touch data and metadata
             database->detachTable(table_id.table_name);
         }
@@ -112,12 +115,12 @@ BlockIO InterpreterDropQuery::executeToTable(
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->checkTableCanBeDropped();
 
-            table->shutdown();
-            /// If table was already dropped by anyone, an exception will be thrown
-
             TableStructureWriteLockHolder table_lock;
             if (database->getEngineName() != "Atomic")
+            {
+                table->shutdown();
                 table_lock = table->lockExclusively(context.getCurrentQueryId());
+            }
 
             database->dropTable(context, table_id.table_name, query.no_delay);
         }
