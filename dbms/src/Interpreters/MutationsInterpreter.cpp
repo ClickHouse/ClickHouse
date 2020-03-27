@@ -558,6 +558,10 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
             all_asts->children.push_back(std::make_shared<ASTIdentifier>(column));
 
         auto syntax_result = SyntaxAnalyzer(context).analyze(all_asts, all_columns);
+        if (context.hasQueryContext())
+            for (const auto & it : syntax_result->getScalars())
+                context.getQueryContext().addScalar(it.first, it.second);
+
         stage.analyzer = std::make_unique<ExpressionAnalyzer>(all_asts, syntax_result, context);
 
         ExpressionActionsChain & actions_chain = stage.expressions_chain;
