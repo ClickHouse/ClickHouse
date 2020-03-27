@@ -1183,7 +1183,8 @@ TestResult check(const TestEntry & entry)
 
         try
         {
-            DB::InJoinSubqueriesPreprocessor(context, std::make_unique<CheckShardsAndTablesMock>()).visit(ast_input);
+            DB::InJoinSubqueriesPreprocessor::SubqueryTables renamed;
+            DB::InJoinSubqueriesPreprocessor(context, renamed, std::make_unique<CheckShardsAndTablesMock>()).visit(ast_input);
         }
         catch (const DB::Exception & ex)
         {

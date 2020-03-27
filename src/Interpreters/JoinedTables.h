@@ -38,6 +38,8 @@ public:
     const String & leftTableDatabase() const { return database_name; }
     const String & leftTableName() const { return table_name; }
 
+    void rewriteDistributedInAndJoins(ASTPtr & query);
+
     std::unique_ptr<InterpreterSelectWithUnionQuery> makeLeftTableSubquery(const SelectQueryOptions & select_options);
 
 private:

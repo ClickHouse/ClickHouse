@@ -289,6 +289,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
             source_header = interpreter_subquery->getSampleBlock();
     }
 
+    joined_tables.rewriteDistributedInAndJoins(query_ptr);
+
     max_streams = settings.max_threads;
     ASTSelectQuery & query = getSelectQuery();
 
