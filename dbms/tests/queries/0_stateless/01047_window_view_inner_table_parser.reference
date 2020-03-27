@@ -1,0 +1,22 @@
+---TUMBLE---
+||---WINDOW COLUMN NAME---
+CREATE TABLE default.`.inner.wv` (`TUMBLE(timestamp, toIntervalSecond(\'1\'))` Tuple(DateTime, DateTime), `count(a)` AggregateFunction(count, Int32)) ENGINE = AggregatingMergeTree ORDER BY `TUMBLE(timestamp, toIntervalSecond(\'1\'))` SETTINGS index_granularity = 8192
+||---WINDOW COLUMN ALIAS---
+CREATE TABLE default.`.inner.wv` (`TUMBLE(timestamp, toIntervalSecond(\'1\'))` Tuple(DateTime, DateTime), `count(a)` AggregateFunction(count, Int32)) ENGINE = AggregatingMergeTree ORDER BY `TUMBLE(timestamp, toIntervalSecond(\'1\'))` SETTINGS index_granularity = 8192
+||---IDENTIFIER---
+CREATE TABLE default.`.inner.wv` (`b` Int32, `TUMBLE(timestamp, toIntervalSecond(\'1\'))` Tuple(DateTime, DateTime), `count(a)` AggregateFunction(count, Int32)) ENGINE = AggregatingMergeTree PRIMARY KEY `TUMBLE(timestamp, toIntervalSecond(\'1\'))` ORDER BY (`TUMBLE(timestamp, toIntervalSecond(\'1\'))`, b) SETTINGS index_granularity = 8192
+||---FUNCTION---
+CREATE TABLE default.`.inner.wv` (`plus(a, b)` Int64, `TUMBLE(timestamp, toIntervalSecond(\'1\'))` Tuple(DateTime, DateTime), `count(a)` AggregateFunction(count, Int32)) ENGINE = AggregatingMergeTree PRIMARY KEY `TUMBLE(timestamp, toIntervalSecond(\'1\'))` ORDER BY (`TUMBLE(timestamp, toIntervalSecond(\'1\'))`, `plus(a, b)`) SETTINGS index_granularity = 8192
+||---PARTITION---
+CREATE TABLE default.`.inner.wv` (`TUMBLE(____timestamp, toIntervalSecond(\'1\'))` Tuple(DateTime, DateTime), `count(a)` AggregateFunction(count, Int32)) ENGINE = AggregatingMergeTree PARTITION BY `TUMBLE(____timestamp, toIntervalSecond(\'1\'))` ORDER BY `TUMBLE(____timestamp, toIntervalSecond(\'1\'))` SETTINGS index_granularity = 8192
+---HOP---
+||---WINDOW COLUMN NAME---
+CREATE TABLE default.`.inner.wv` (`arrayJoin(HOP(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))` Tuple(DateTime, DateTime), `count(a)` AggregateFunction(count, Int32)) ENGINE = AggregatingMergeTree ORDER BY `arrayJoin(HOP(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))` SETTINGS index_granularity = 8192
+||---WINDOW COLUMN ALIAS---
+CREATE TABLE default.`.inner.wv` (`arrayJoin(HOP(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))` Tuple(DateTime, DateTime), `count(a)` AggregateFunction(count, Int32)) ENGINE = AggregatingMergeTree ORDER BY `arrayJoin(HOP(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))` SETTINGS index_granularity = 8192
+||---IDENTIFIER---
+CREATE TABLE default.`.inner.wv` (`b` Int32, `arrayJoin(HOP(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))` Tuple(DateTime, DateTime), `count(a)` AggregateFunction(count, Int32)) ENGINE = AggregatingMergeTree PRIMARY KEY `arrayJoin(HOP(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))` ORDER BY (`arrayJoin(HOP(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))`, b) SETTINGS index_granularity = 8192
+||---FUNCTION---
+CREATE TABLE default.`.inner.wv` (`plus(a, b)` Int64, `arrayJoin(HOP(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))` Tuple(DateTime, DateTime), `count(a)` AggregateFunction(count, Int32)) ENGINE = AggregatingMergeTree PRIMARY KEY `arrayJoin(HOP(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))` ORDER BY (`arrayJoin(HOP(timestamp, toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))`, `plus(a, b)`) SETTINGS index_granularity = 8192
+||---PARTITION---
+CREATE TABLE default.`.inner.wv` (`arrayJoin(HOP(now(), toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))` Tuple(DateTime, DateTime), `count(a)` AggregateFunction(count, Int32)) ENGINE = AggregatingMergeTree PARTITION BY `arrayJoin(HOP(now(), toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))` ORDER BY `arrayJoin(HOP(now(), toIntervalSecond(\'1\'), toIntervalSecond(\'3\')))` SETTINGS index_granularity = 8192

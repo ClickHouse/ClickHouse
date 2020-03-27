@@ -63,7 +63,6 @@ private:
     bool is_tumble; // false if is hop
     std::atomic<bool> shutdown_called{false};
     mutable Block sample_block;
-    mutable Block mergeable_sample_block;
     UInt64 clean_interval;
     const DateLUTImpl & time_zone;
     UInt32 max_timestamp = 0;
@@ -78,7 +77,6 @@ private:
     std::list<std::weak_ptr<WindowViewBlockInputStream>> watch_streams;
     std::condition_variable_any fire_signal_condition;
     std::condition_variable fire_condition;
-    BlocksList mergeable_blocks;
 
     /// Mutex for the blocks and ready condition
     std::mutex mutex;
@@ -110,7 +108,7 @@ private:
 
     ASTPtr innerQueryParser(ASTSelectQuery & inner_query);
 
-    std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(const ASTCreateQuery & inner_create_query, const String & database_name, const String & table_name);
+    std::shared_ptr<ASTCreateQuery> generateInnerTableCreateQuery(ASTStorage * storage, const String & database_name, const String & table_name);
     ASTPtr generateCleanCacheQuery(UInt32 timestamp);
 
     UInt32 getWindowLowerBound(UInt32 time_sec);
@@ -137,8 +135,6 @@ private:
     StoragePtr & getTargetStorage() const;
 
     Block & getHeader() const;
-
-    Block & getMergeableHeader() const;
 
     StorageWindowView(
         const StorageID & table_id_,
