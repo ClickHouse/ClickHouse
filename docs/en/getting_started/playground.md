@@ -1,9 +1,9 @@
 # ClickHouse Playground {#clickhouse-playground}
 
-[ClickHouse Playground](https://play.clickhouse.tech?file=welcome) allows people to experiment with ClickHouse by running queries instantly, without setting up their own server or cluster.
-Several example datasets are available in Playground as well as sample queries that show ClickHouse features.
+[ClickHouse Playground](https://play.clickhouse.tech?file=welcome) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
+Several example datasets are available in the Playground as well as sample queries that show ClickHouse features.
 
-The queries are executed as read-only user. This implies some limitations:
+The queries are executed as a read-only user. It implies some limitations:
 
 -   DDL queries are not allowed
 -   INSERT queries are not allowed
@@ -20,8 +20,8 @@ instance hosted in [Yandex.Cloud](https://cloud.yandex.com/).
 More information about [cloud providers](../commercial/cloud.md).
 
 ClickHouse Playground web interface makes requests via ClickHouse [HTTP API](../interfaces/http.md).
-Playground backend is just a ClickHouse cluster without any additional server-side application.
-ClickHouse HTTPS endpoint is is also available as a part of Playground.
+The Playground backend is just a ClickHouse cluster without any additional server-side application.
+ClickHouse HTTPS endpoint is also available as a part of the Playground.
 
 You can make queries to playground using any HTTP client, for example [curl](https://curl.haxx.se) or [wget](https://www.gnu.org/software/wget/), or set up a connection using [JDBC](../interfaces/jdbc.md) or [ODBC](../interfaces/odbc.md) drivers.
 More information about software products that support ClickHouse is available [here](../interfaces/index.md).
