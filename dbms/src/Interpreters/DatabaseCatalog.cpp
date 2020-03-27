@@ -139,6 +139,12 @@ void DatabaseCatalog::shutdown()
     for (auto & database : current_databases)
         database.second->shutdown();
 
+    {
+        std::lock_guard lock(tables_marked_droped_mutex);
+        for (auto & elem : tables_marked_droped)
+            if (elem.need_shutdown)
+                elem.table->shutdown();
+    }
 
     std::lock_guard lock(databases_mutex);
     assert(std::find_if_not(uuid_map.begin(), uuid_map.end(), [](const auto & elem) { return elem.map.empty(); }) == uuid_map.end());
@@ -514,6 +520,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
 
     time_t drop_time;
+    bool need_shutdown = true;
     if (table)
         drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     else
@@ -550,13 +557,14 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
 
         drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();
+        need_shutdown = false;
     }
 
     std::lock_guard lock(tables_marked_droped_mutex);
     if (ignore_delay)
-        tables_marked_droped.push_front({table_id, table, dropped_metadata_path, 0});
+        tables_marked_droped.push_front({table_id, table, dropped_metadata_path, 0, need_shutdown});
     else
-        tables_marked_droped.push_back({table_id, table, dropped_metadata_path, drop_time});
+        tables_marked_droped.push_back({table_id, table, dropped_metadata_path, drop_time, need_shutdown});
 }
 
 void DatabaseCatalog::dropTableDataTask()
@@ -573,13 +581,20 @@ void DatabaseCatalog::dropTableDataTask()
             //LOG_INFO(log, "Check table " + elem.table_id.getNameForLogs() + ": " +
             //              "refcount = " + std::to_string(elem.table.use_count()) + ", " +
             //              "time elapsed = " + std::to_string(current_time - elem.drop_time));
-            return (!elem.table || elem.table.unique()) && elem.drop_time + drop_delay_s < current_time;
+            bool not_in_use = !elem.table || elem.table.unique();
+            bool old_enough = elem.drop_time + drop_delay_s < current_time;
+            return (not_in_use && old_enough) || elem.need_shutdown;
         });
-        if (it != tables_marked_droped.end())
+        if (it != tables_marked_droped.end() && !it->need_shutdown)
         {
             table = std::move(*it);
             LOG_INFO(log, "Will try drop " + table.table_id.getNameForLogs());
             tables_marked_droped.erase(it);
+        }
+        else if (it->need_shutdown)
+        {
+            table = *it;
+            it->need_shutdown = false;
         }
     }
     catch (...)
@@ -589,6 +604,13 @@ void DatabaseCatalog::dropTableDataTask()
 
     if (table.table_id)
     {
+        if (table.need_shutdown)
+        {
+            table.table->shutdown();
+            (*drop_task)->scheduleAfter(0);
+            return;
+        }
+
         try
         {
             dropTableFinally(table);
