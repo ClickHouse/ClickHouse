@@ -46,7 +46,7 @@ void IMergingTransform::setHaveAllInputs()
 
 void IMergingTransform::requestDataForInput(size_t input_number)
 {
-    if (!need_data)
+    if (need_data)
         throw Exception("Data was requested for several inputs in IMergingTransform:"
                         " " + std::to_string(next_input_to_read) + " and " + std::to_string(input_number),
                         ErrorCodes::LOGICAL_ERROR);
