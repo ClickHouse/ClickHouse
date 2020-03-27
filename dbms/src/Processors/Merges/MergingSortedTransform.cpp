@@ -122,8 +122,11 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
     };
 
     /// Take rows in required order and put them into `merged_data`, while the rows are no more than `max_block_size`
-    while (queue.isValid() && can_read_another_row())
+    while (queue.isValid())
     {
+        if (!can_read_another_row())
+            return;
+
         auto current = queue.current();
 
         /** And what if the block is totally less or equal than the rest for the current cursor?
