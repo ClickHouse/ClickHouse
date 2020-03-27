@@ -51,7 +51,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
     size_t arg_num = 0;
 
-    auto getStringLiteral = [](const IAST & node, const char * description)
+    auto get_string_literal = [](const IAST & node, const char * description)
     {
         const auto * lit = node.as<ASTLiteral>();
         if (!lit)
@@ -71,7 +71,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     else
     {
         if (!tryGetIdentifierNameInto(args[arg_num], cluster_name))
-            cluster_description = getStringLiteral(*args[arg_num], "Hosts pattern");
+            cluster_description = get_string_literal(*args[arg_num], "Hosts pattern");
     }
     ++arg_num;
 
@@ -116,7 +116,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
     {
         if (arg_num < args.size())
         {
-            username = getStringLiteral(*args[arg_num], "Username");
+            username = get_string_literal(*args[arg_num], "Username");
             ++arg_num;
         }
         else
@@ -124,7 +124,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & ast_function, const C
 
         if (arg_num < args.size())
         {
-            password = getStringLiteral(*args[arg_num], "Password");
+            password = get_string_literal(*args[arg_num], "Password");
             ++arg_num;
         }
     }

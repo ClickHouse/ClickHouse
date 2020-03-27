@@ -103,7 +103,7 @@ private:
 };
 
 template<typename TimeT = std::chrono::milliseconds>
-struct measure
+struct Measure
 {
     template<typename F, typename ...Args>
     static typename TimeT::rep execution(F&& func, Args&&... args)
@@ -179,7 +179,7 @@ try
             msg += ", " + toString(blocks_count) + " blocks per " + toString(source_block_size) + " numbers" +
                     ", no remerge and external sorts.";
 
-            Int64 time = measure<>::execution(execute_chain, msg,
+            Int64 time = Measure<>::execution(execute_chain, msg,
                                         source_block_size,
                                         blocks_count,
                                         max_merged_block_size,
@@ -202,7 +202,7 @@ try
             msg += ", " + toString(blocks_count) + " blocks per " + toString(source_block_size) + " numbers" +
                    ", with remerge, no external sorts.";
 
-            Int64 time = measure<>::execution(execute_chain, msg,
+            Int64 time = Measure<>::execution(execute_chain, msg,
                                               source_block_size,
                                               blocks_count,
                                               max_merged_block_size,
@@ -225,7 +225,7 @@ try
             msg += ", " + toString(blocks_count) + " blocks per " + toString(source_block_size) + " numbers" +
                    ", no remerge, with external sorts.";
 
-            Int64 time = measure<>::execution(execute_chain, msg,
+            Int64 time = Measure<>::execution(execute_chain, msg,
                                               source_block_size,
                                               blocks_count,
                                               max_merged_block_size,

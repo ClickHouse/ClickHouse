@@ -177,7 +177,8 @@ public:
             // We may log some specific signals afterwards, with different log
             // levels and more info, but for completeness we log all signals
             // here at trace level.
-            LOG_TRACE(log, "Received signal " << strsignal(sig) << " (" << sig << ")");
+            // Don't use strsignal here, because it's not thread-safe.
+            LOG_TRACE(log, "Received signal " << sig);
 
             if (sig == Signals::StopThread)
             {

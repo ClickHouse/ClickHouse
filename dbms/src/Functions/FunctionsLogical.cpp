@@ -301,13 +301,13 @@ struct OperationApplier
             return;
         }
 
-        const OperationApplierImpl<Op, N> operationApplierImpl(in);
+        const OperationApplierImpl<Op, N> operation_applier_impl(in);
         size_t i = 0;
         for (auto & res : result_data)
             if constexpr (CarryResult)
-                res = Op::apply(res, operationApplierImpl.apply(i++));
+                res = Op::apply(res, operation_applier_impl.apply(i++));
             else
-                res = operationApplierImpl.apply(i++);
+                res = operation_applier_impl.apply(i++);
 
         in.erase(in.end() - N, in.end());
     }

@@ -127,8 +127,8 @@ MergeableBlocksPtr StorageLiveView::collectMergeableBlocks(const Context & conte
 Pipes StorageLiveView::blocksToPipes(BlocksPtrs blocks, Block & sample_block)
 {
     Pipes pipes;
-    for (auto & blocks_ : *blocks)
-        pipes.emplace_back(std::make_shared<BlocksSource>(std::make_shared<BlocksPtr>(blocks_), sample_block));
+    for (auto & blocks_for_source : *blocks)
+        pipes.emplace_back(std::make_shared<BlocksSource>(std::make_shared<BlocksPtr>(blocks_for_source), sample_block));
 
     return pipes;
 }

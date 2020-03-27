@@ -164,7 +164,7 @@ protected:
         const String & relative_data_path_,
         bool attach);
 
-    ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info);
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info, const Context & context);
 
     void createStorage();
 
