@@ -167,7 +167,7 @@ sigjmp_buf jmpbuf;
     siglongjmp(jmpbuf, 1);
 }
 
-/// Check if necessary sse extensions are available by trying to execute some sse instructions.
+/// Check if necessary SSE extensions are available by trying to execute some sse instructions.
 /// If instruction is unavailable, SIGILL will be sent by kernel.
 void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
 {
