@@ -57,7 +57,7 @@ public:
         if (node->as<ASTTableExpression>() ||
             node->as<ASTQualifiedAsterisk>() ||
             child->as<ASTSubquery>())
-            return false;
+            return false; // NOLINT
         return true;
     }
 
