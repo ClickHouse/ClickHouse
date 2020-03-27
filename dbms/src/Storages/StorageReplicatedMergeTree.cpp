@@ -998,7 +998,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
         size_t sum_parts_bytes_on_disk = 0;
         for (const auto & part : parts)
-            sum_parts_bytes_on_disk += part->bytes_on_disk;
+            sum_parts_bytes_on_disk += part->getBytesOnDisk();
 
         if (sum_parts_bytes_on_disk >= storage_settings_ptr->prefer_fetch_merged_part_size_threshold)
         {
@@ -2203,7 +2203,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
                 DataPartsVector data_parts = getDataPartsVector();
                 for (const auto & part : data_parts)
                 {
-                    if (part->bytes_on_disk > max_source_part_size_for_mutation)
+                    if (part->getBytesOnDisk() > max_source_part_size_for_mutation)
                         continue;
 
                     std::optional<std::pair<Int64, int>> desired_mutation_version = merge_pred.getDesiredMutationVersion(part);
@@ -2973,14 +2973,12 @@ Pipes StorageReplicatedMergeTree::read(
     const size_t max_block_size,
     const unsigned num_streams)
 {
-    const Settings & settings_ = context.getSettingsRef();
-
     /** The `select_sequential_consistency` setting has two meanings:
     * 1. To throw an exception if on a replica there are not all parts which have been written down on quorum of remaining replicas.
     * 2. Do not read parts that have not yet been written to the quorum of the replicas.
     * For this you have to synchronously go to ZooKeeper.
     */
-    if (settings_.select_sequential_consistency)
+    if (context.getSettingsRef().select_sequential_consistency)
     {
         auto max_added_blocks = getMaxAddedBlocks();
         return reader.read(column_names, query_info, context, max_block_size, num_streams, &max_added_blocks);
@@ -3161,8 +3159,6 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
 
     /// This transaction may not happen, but it's OK, because on the next retry we will eventually create/update this node
     zookeeper->createOrUpdate(replica_path + "/metadata_version", std::to_string(metadata_version), zkutil::CreateMode::Persistent);
-
-    recalculateColumnSizes();
 
     return true;
 }
@@ -3558,8 +3554,6 @@ void StorageReplicatedMergeTree::attachPartition(const ASTPtr & partition, bool 
 
 void StorageReplicatedMergeTree::checkTableCanBeDropped() const
 {
-    /// Consider only synchronized data
-    const_cast<StorageReplicatedMergeTree &>(*this).recalculateColumnSizes();
     auto table_id = getStorageID();
     global_context.checkTableCanBeDropped(table_id.database_name, table_id.table_name, getTotalActiveSizeInBytes());
 }
@@ -3567,15 +3561,13 @@ void StorageReplicatedMergeTree::checkTableCanBeDropped() const
 
 void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
 {
-    const_cast<StorageReplicatedMergeTree &>(*this).recalculateColumnSizes();
-
     const String partition_id = getPartitionIDFromQuery(partition, global_context);
     auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
 
     UInt64 partition_size = 0;
 
     for (const auto & part : parts_to_remove)
-        partition_size += part->bytes_on_disk;
+        partition_size += part->getBytesOnDisk();
 
     auto table_id = getStorageID();
     global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);

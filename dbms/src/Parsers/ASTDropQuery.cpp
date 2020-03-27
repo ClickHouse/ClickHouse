@@ -47,10 +47,12 @@ void ASTDropQuery::formatQueryImpl(const FormatSettings & settings, FormatState 
 
     if (table.empty() && !database.empty())
         settings.ostr << "DATABASE ";
-    else if (!is_dictionary)
-        settings.ostr << "TABLE ";
-    else
+    else if (is_dictionary)
         settings.ostr << "DICTIONARY ";
+    else if (is_view)
+        settings.ostr << "VIEW ";
+    else
+        settings.ostr << "TABLE ";
 
     if (if_exists)
         settings.ostr << "IF EXISTS ";

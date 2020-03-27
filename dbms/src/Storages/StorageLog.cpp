@@ -240,7 +240,7 @@ void LogSource::readData(const String & name, const IDataType & type, IColumn & 
 {
     IDataType::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
 
-    auto createStringGetter = [&](bool stream_for_prefix)
+    auto create_string_getter = [&](bool stream_for_prefix)
     {
         return [&, stream_for_prefix] (const IDataType::SubstreamPath & path) -> ReadBuffer *
         {
@@ -262,11 +262,11 @@ void LogSource::readData(const String & name, const IDataType & type, IColumn & 
 
     if (deserialize_states.count(name) == 0)
     {
-        settings.getter = createStringGetter(true);
+        settings.getter = create_string_getter(true);
         type.deserializeBinaryBulkStatePrefix(settings, deserialize_states[name]);
     }
 
-    settings.getter = createStringGetter(false);
+    settings.getter = create_string_getter(false);
     type.deserializeBinaryBulkWithMultipleStreams(column, max_rows_to_read, settings, deserialize_states[name]);
 }
 

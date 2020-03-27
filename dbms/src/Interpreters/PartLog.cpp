@@ -131,7 +131,7 @@ bool PartLog::addNewParts(Context & current_context, const PartLog::MutableDataP
             elem.part_name = part->name;
             elem.path_on_disk = part->getFullPath();
 
-            elem.bytes_compressed_on_disk = part->bytes_on_disk;
+            elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             elem.rows = part->rows_count;
 
             elem.error = static_cast<UInt16>(execution_status.code);

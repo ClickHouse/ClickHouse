@@ -1254,7 +1254,7 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
         {
             part_log_elem.partition_id = part->info.partition_id;
             part_log_elem.part_name = part->name;
-            part_log_elem.bytes_compressed_on_disk = part->bytes_on_disk;
+            part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
             part_log_elem.rows = part->rows_count;
 
             part_log->add(part_log_elem);
@@ -2135,7 +2135,7 @@ size_t MergeTreeData::getTotalActiveSizeInBytes() const
         auto lock = lockParts();
 
         for (auto & part : getDataPartsStateRange(DataPartState::Committed))
-            res += part->bytes_on_disk;
+            res += part->getBytesOnDisk();
     }
 
     return res;
@@ -3190,7 +3190,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
 
-    auto reservation = reserveSpace(src_part->bytes_on_disk, src_part->disk);
+    auto reservation = reserveSpace(src_part->getBytesOnDisk(), src_part->disk);
     auto disk = reservation->getDisk();
     String src_part_path = src_part->getFullRelativePath();
     String dst_part_path = relative_data_path + tmp_dst_part_name;
@@ -3340,7 +3340,7 @@ try
     if (result_part)
     {
         part_log_elem.path_on_disk = result_part->getFullPath();
-        part_log_elem.bytes_compressed_on_disk = result_part->bytes_on_disk;
+        part_log_elem.bytes_compressed_on_disk = result_part->getBytesOnDisk();
         part_log_elem.rows = result_part->rows_count;
     }
 
@@ -3452,7 +3452,7 @@ MergeTreeData::CurrentlyMovingPartsTagger MergeTreeData::checkPartsForMove(const
     MergeTreeMovingParts parts_to_move;
     for (const auto & part : parts)
     {
-        auto reservation = space->reserve(part->bytes_on_disk);
+        auto reservation = space->reserve(part->getBytesOnDisk());
         if (!reservation)
             throw Exception("Move is not possible. Not enough space on '" + space->getName() + "'", ErrorCodes::NOT_ENOUGH_SPACE);
 

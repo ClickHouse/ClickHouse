@@ -3,10 +3,10 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIntervalKind.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
-#include <Parsers/ParserGenericRoleSet.h>
+#include <Parsers/ParserExtendedRoleSet.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <ext/range.h>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -187,15 +187,15 @@ namespace
         });
     }
 
-    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTGenericRoleSet> & roles)
+    bool parseToRoles(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr node;
-            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserGenericRoleSet{}.enableIDMode(id_mode).parse(pos, node, expected))
+            if (roles || !ParserKeyword{"TO"}.ignore(pos, expected) || !ParserExtendedRoleSet{}.useIDMode(id_mode).parse(pos, node, expected))
                 return false;
 
-            roles = std::static_pointer_cast<ASTGenericRoleSet>(node);
+            roles = std::static_pointer_cast<ASTExtendedRoleSet>(node);
             return true;
         });
     }
@@ -205,12 +205,10 @@ namespace
 bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool alter = false;
-    bool attach = false;
     if (attach_mode)
     {
         if (!ParserKeyword{"ATTACH QUOTA"}.ignore(pos, expected))
             return false;
-        attach = true;
     }
     else
     {
@@ -243,7 +241,6 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     String new_name;
     std::optional<KeyType> key_type;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
-    std::shared_ptr<ASTGenericRoleSet> roles;
 
     while (true)
     {
@@ -256,11 +253,11 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (parseAllLimits(pos, expected, alter, all_limits))
             continue;
 
-        if (!roles && parseToRoles(pos, expected, attach, roles))
-            continue;
-
         break;
     }
+
+    std::shared_ptr<ASTExtendedRoleSet> roles;
+    parseToRoles(pos, expected, attach_mode, roles);
 
     auto query = std::make_shared<ASTCreateQuotaQuery>();
     node = query;

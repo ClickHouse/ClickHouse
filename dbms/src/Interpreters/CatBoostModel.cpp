@@ -31,39 +31,39 @@ struct CatBoostWrapperAPI
 {
     using ModelCalcerHandle = void;
 
-    ModelCalcerHandle * (* ModelCalcerCreate)();
+    ModelCalcerHandle * (* ModelCalcerCreate)(); // NOLINT
 
-    void (* ModelCalcerDelete)(ModelCalcerHandle * calcer);
+    void (* ModelCalcerDelete)(ModelCalcerHandle * calcer); // NOLINT
 
-    const char * (* GetErrorString)();
+    const char * (* GetErrorString)(); // NOLINT
 
-    bool (* LoadFullModelFromFile)(ModelCalcerHandle * calcer, const char * filename);
+    bool (* LoadFullModelFromFile)(ModelCalcerHandle * calcer, const char * filename); // NOLINT
 
-    bool (* CalcModelPredictionFlat)(ModelCalcerHandle * calcer, size_t docCount,
+    bool (* CalcModelPredictionFlat)(ModelCalcerHandle * calcer, size_t docCount, // NOLINT
                                      const float ** floatFeatures, size_t floatFeaturesSize,
                                      double * result, size_t resultSize);
 
-    bool (* CalcModelPrediction)(ModelCalcerHandle * calcer, size_t docCount,
+    bool (* CalcModelPrediction)(ModelCalcerHandle * calcer, size_t docCount, // NOLINT
                                  const float ** floatFeatures, size_t floatFeaturesSize,
                                  const char *** catFeatures, size_t catFeaturesSize,
                                  double * result, size_t resultSize);
 
-    bool (* CalcModelPredictionWithHashedCatFeatures)(ModelCalcerHandle * calcer, size_t docCount,
+    bool (* CalcModelPredictionWithHashedCatFeatures)(ModelCalcerHandle * calcer, size_t docCount, // NOLINT
                                                       const float ** floatFeatures, size_t floatFeaturesSize,
                                                       const int ** catFeatures, size_t catFeaturesSize,
                                                       double * result, size_t resultSize);
 
-    int (* GetStringCatFeatureHash)(const char * data, size_t size);
-    int (* GetIntegerCatFeatureHash)(uint64_t val);
+    int (* GetStringCatFeatureHash)(const char * data, size_t size); // NOLINT
+    int (* GetIntegerCatFeatureHash)(uint64_t val); // NOLINT
 
-    size_t (* GetFloatFeaturesCount)(ModelCalcerHandle* calcer);
-    size_t (* GetCatFeaturesCount)(ModelCalcerHandle* calcer);
-    size_t (* GetTreeCount)(ModelCalcerHandle* modelHandle);
-    size_t (* GetDimensionsCount)(ModelCalcerHandle* modelHandle);
+    size_t (* GetFloatFeaturesCount)(ModelCalcerHandle* calcer); // NOLINT
+    size_t (* GetCatFeaturesCount)(ModelCalcerHandle* calcer); // NOLINT
+    size_t (* GetTreeCount)(ModelCalcerHandle* modelHandle); // NOLINT
+    size_t (* GetDimensionsCount)(ModelCalcerHandle* modelHandle); // NOLINT
 
-    bool (* CheckModelMetadataHasKey)(ModelCalcerHandle* modelHandle, const char* keyPtr, size_t keySize);
-    size_t (*GetModelInfoValueSize)(ModelCalcerHandle* modelHandle, const char* keyPtr, size_t keySize);
-    const char* (*GetModelInfoValue)(ModelCalcerHandle* modelHandle, const char* keyPtr, size_t keySize);
+    bool (* CheckModelMetadataHasKey)(ModelCalcerHandle* modelHandle, const char* keyPtr, size_t keySize); // NOLINT
+    size_t (*GetModelInfoValueSize)(ModelCalcerHandle* modelHandle, const char* keyPtr, size_t keySize); // NOLINT
+    const char* (*GetModelInfoValue)(ModelCalcerHandle* modelHandle, const char* keyPtr, size_t keySize); // NOLINT
 };
 
 
@@ -88,25 +88,23 @@ class CatBoostModelImpl : public ICatBoostModel
 public:
     CatBoostModelImpl(const CatBoostWrapperAPI * api_, const std::string & model_path) : api(api_)
     {
-        auto handle_ = std::make_unique<CatBoostModelHolder>(api);
-        if (!handle_)
+        handle = std::make_unique<CatBoostModelHolder>(api);
+        if (!handle)
         {
             std::string msg = "Cannot create CatBoost model: ";
             throw Exception(msg + api->GetErrorString(), ErrorCodes::CANNOT_LOAD_CATBOOST_MODEL);
         }
-        if (!api->LoadFullModelFromFile(handle_->get(), model_path.c_str()))
+        if (!api->LoadFullModelFromFile(handle->get(), model_path.c_str()))
         {
             std::string msg = "Cannot load CatBoost model: ";
             throw Exception(msg + api->GetErrorString(), ErrorCodes::CANNOT_LOAD_CATBOOST_MODEL);
         }
 
-        float_features_count = api->GetFloatFeaturesCount(handle_->get());
-        cat_features_count = api->GetCatFeaturesCount(handle_->get());
+        float_features_count = api->GetFloatFeaturesCount(handle->get());
+        cat_features_count = api->GetCatFeaturesCount(handle->get());
         tree_count = 1;
         if (api->GetDimensionsCount)
-            tree_count = api->GetDimensionsCount(handle_->get());
-
-        handle = std::move(handle_);
+            tree_count = api->GetDimensionsCount(handle->get());
     }
 
     ColumnPtr evaluate(const ColumnRawPtrs & columns) const override

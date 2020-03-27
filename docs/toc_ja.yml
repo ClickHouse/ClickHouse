@@ -13,6 +13,7 @@ nav:
   - 'Installation': 'getting_started/install.md'
   - 'Tutorial': 'getting_started/tutorial.md'
   - 'Example Datasets':
+    - 'Introduction': 'getting_started/example_datasets/index.md'
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'New York Taxi Data': 'getting_started/example_datasets/nyc_taxi.md'
     - 'AMPLab Big Data Benchmark': 'getting_started/example_datasets/amplab_benchmark.md'
@@ -20,6 +21,7 @@ nav:
     - 'Terabyte Click Logs from Criteo': 'getting_started/example_datasets/criteo.md'
     - 'Star Schema Benchmark': 'getting_started/example_datasets/star_schema.md'
     - 'Yandex.Metrica Data': 'getting_started/example_datasets/metrica.md'
+  - 'Playground': 'getting_started/playground.md'
 
 - 'Interfaces':
   - 'Introduction': 'interfaces/index.md'

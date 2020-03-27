@@ -44,6 +44,7 @@
         -   [Sistema abierto.](https://github.com/hot-wifi/clickhouse_exporter) (utilizar [Ir cliente](https://github.com/kshvakov/clickhouse/))
     -   [Nagios](https://www.nagios.org/)
         -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/exogroup/check_clickhouse/)
+        -   [check\_clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
     -   [Zabbix](https://www.zabbix.com)
         -   [Sistema abierto.](https://github.com/Altinity/clickhouse-zabbix-template)
     -   [Sematext](https://sematext.com/)

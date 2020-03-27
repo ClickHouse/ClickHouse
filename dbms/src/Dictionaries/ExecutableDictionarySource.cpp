@@ -216,7 +216,7 @@ std::string ExecutableDictionarySource::toString() const
 
 void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
 {
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -236,7 +236,7 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
             dict_struct, config, config_prefix + ".executable",
             sample_block, context);
     };
-    factory.registerSource("executable", createTableSource);
+    factory.registerSource("executable", create_table_source);
 }
 
 }
