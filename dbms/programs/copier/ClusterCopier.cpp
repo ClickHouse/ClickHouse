@@ -400,7 +400,7 @@ zkutil::EphemeralNodeHolder::Ptr ClusterCopier::createTaskWorkerNodeAndWaitIfNee
 bool ClusterCopier::checkPartitionPieceIsClean(
         const zkutil::ZooKeeperPtr & zookeeper,
         const CleanStateClock & clean_state_clock,
-        const String & task_status_path) const
+        const String & task_status_path)
 {
     LogicalClock task_start_clock;
 

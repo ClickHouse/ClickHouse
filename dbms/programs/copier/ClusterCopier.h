@@ -88,10 +88,10 @@ protected:
      * The only requirement is that you have to pass is_dirty_flag_path and is_dirty_cleaned_path to the function.
      * And is_dirty_flag_path is a parent of is_dirty_cleaned_path.
      * */
-    bool checkPartitionPieceIsClean(
+    static bool checkPartitionPieceIsClean(
             const zkutil::ZooKeeperPtr & zookeeper,
             const CleanStateClock & clean_state_clock,
-            const String & task_status_path) const;
+            const String & task_status_path);
 
     bool checkAllPiecesInPartitionAreDone(const TaskTable & task_table, const String & partition_name, const TasksShard & shards_with_partition);
 
@@ -114,7 +114,7 @@ protected:
     TaskStatus tryMoveAllPiecesToDestinationTable(const TaskTable & task_table, const String & partition_name);
 
     /// Removes MATERIALIZED and ALIAS columns from create table query
-    ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast);
+    static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast);
 
     bool tryDropPartitionPiece(ShardPartition & task_partition, const size_t current_piece_number,
             const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);
