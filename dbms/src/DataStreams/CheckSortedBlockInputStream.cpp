@@ -22,6 +22,7 @@ SortDescriptionsWithPositions
 CheckSortedBlockInputStream::addPositionsToSortDescriptions(const SortDescription & sort_description)
 {
     SortDescriptionsWithPositions result;
+    result.reserve(sort_description.size());
 
     for (SortColumnDescription description_copy : sort_description)
     {
@@ -35,11 +36,11 @@ CheckSortedBlockInputStream::addPositionsToSortDescriptions(const SortDescriptio
 }
 
 /// Compares values in columns. Columns must have equal types.
-struct SortingLessComparator
+struct SortingLessOrEqualComparator
 {
     const SortDescriptionsWithPositions & sort_description;
 
-    explicit SortingLessComparator(const SortDescriptionsWithPositions & sort_description_)
+    explicit SortingLessOrEqualComparator(const SortDescriptionsWithPositions & sort_description_)
         : sort_description(sort_description_) {}
 
     bool operator()(const Columns & left, size_t left_index, const Columns & right, size_t right_index) const
@@ -64,10 +65,10 @@ struct SortingLessComparator
 Block CheckSortedBlockInputStream::readImpl()
 {
     Block block = children.back()->read();
-    if (!block)
+    if (!block || block.rows() == 0)
         return block;
 
-    SortingLessComparator less(sort_description_map);
+    SortingLessOrEqualComparator less(sort_description_map);
 
     auto block_columns = block.getColumns();
     if (!last_row.empty() && !less(last_row, 0, block_columns, 0))
