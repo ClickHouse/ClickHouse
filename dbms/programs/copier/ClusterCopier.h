@@ -5,7 +5,9 @@
 #include "TaskCluster.h"
 #include "TaskTableAndShard.h"
 #include "ShardPartition.h"
+#include "ShardPartitionPiece.h"
 #include "ZooKeeperStaff.h"
+
 
 namespace DB
 {
@@ -27,10 +29,10 @@ public:
 
     void init();
 
-    template<typename T>
+    template <typename T>
     decltype(auto) retry(T && func, UInt64 max_tries = 100);
 
-    void discoverShardPartitions(const ConnectionTimeouts & timeouts, const TaskShardPtr & task_shard) ;
+    void discoverShardPartitions(const ConnectionTimeouts & timeouts, const TaskShardPtr & task_shard);
 
     /// Compute set of partitions, assume set of partitions aren't changed during the processing
     void discoverTablePartitions(const ConnectionTimeouts & timeouts, TaskTable & task_table, UInt64 num_threads = 0);
@@ -54,6 +56,10 @@ public:
         copy_fault_probability = copy_fault_probability_;
     }
 
+    void setMoveFaultProbability(double move_fault_probability_)
+    {
+        move_fault_probability = move_fault_probability_;
+    }
 
 protected:
 
@@ -73,59 +79,102 @@ protected:
     }
 
     zkutil::EphemeralNodeHolder::Ptr createTaskWorkerNodeAndWaitIfNeed(
-            const zkutil::ZooKeeperPtr &zookeeper,
-            const String &description,
+            const zkutil::ZooKeeperPtr & zookeeper,
+            const String & description,
             bool unprioritized);
+
+    /*
+     * Checks that partition piece or some other entity is clean.
+     * The only requirement is that you have to pass is_dirty_flag_path and is_dirty_cleaned_path to the function.
+     * And is_dirty_flag_path is a parent of is_dirty_cleaned_path.
+     * */
+    bool checkPartitionPieceIsClean(
+            const zkutil::ZooKeeperPtr & zookeeper,
+            const CleanStateClock & clean_state_clock,
+            const String & task_status_path) const;
+
+    bool checkAllPiecesInPartitionAreDone(const TaskTable & task_table, const String & partition_name, const TasksShard & shards_with_partition);
 
     /** Checks that the whole partition of a table was copied. We should do it carefully due to dirty lock.
      * State of some task could change during the processing.
      * We have to ensure that all shards have the finished state and there is no dirty flag.
      * Moreover, we have to check status twice and check zxid, because state can change during the checking.
      */
-    bool checkPartitionIsDone(const TaskTable & task_table, const String & partition_name,
-                              const TasksShard & shards_with_partition);
+
+    /* The same as function above
+     * Assume that we don't know on which shards do we have partition certain piece.
+     * We'll check them all (I mean shards that contain the whole partition)
+     * And shards that don't have certain piece MUST mark that piece is_done true.
+     * */
+    bool checkPartitionPieceIsDone(const TaskTable & task_table, const String & partition_name,
+                                   size_t piece_number, const TasksShard & shards_with_partition);
+
+
+    /*Alter successful insertion to helping tables it will move all pieces to destination table*/
+    TaskStatus tryMoveAllPiecesToDestinationTable(const TaskTable & task_table, const String & partition_name);
 
     /// Removes MATERIALIZED and ALIAS columns from create table query
-    static ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr &query_ast);
+    ASTPtr removeAliasColumnsFromCreateQuery(const ASTPtr & query_ast);
 
-    bool tryDropPartition(ShardPartition & task_partition,
-                          const zkutil::ZooKeeperPtr & zookeeper,
-                          const CleanStateClock & clean_state_clock);
-
+    bool tryDropPartitionPiece(ShardPartition & task_partition, const size_t current_piece_number,
+            const zkutil::ZooKeeperPtr & zookeeper, const CleanStateClock & clean_state_clock);
 
     static constexpr UInt64 max_table_tries = 1000;
     static constexpr UInt64 max_shard_partition_tries = 600;
+    static constexpr UInt64 max_shard_partition_piece_tries_for_alter = 100;
 
     bool tryProcessTable(const ConnectionTimeouts & timeouts, TaskTable & task_table);
 
-    PartitionTaskStatus tryProcessPartitionTask(const ConnectionTimeouts & timeouts,
-                                                ShardPartition & task_partition,
-                                                bool is_unprioritized_task);
+    /// Job for copying partition from particular shard.
+    TaskStatus tryProcessPartitionTask(const ConnectionTimeouts & timeouts,
+                                       ShardPartition & task_partition,
+                                       bool is_unprioritized_task);
 
-    PartitionTaskStatus processPartitionTaskImpl(const ConnectionTimeouts & timeouts,
-                                                 ShardPartition & task_partition,
-                                                 bool is_unprioritized_task);
+    TaskStatus iterateThroughAllPiecesInPartition(const ConnectionTimeouts & timeouts,
+                                                  ShardPartition & task_partition,
+                                                  bool is_unprioritized_task);
+
+    TaskStatus processPartitionPieceTaskImpl(const ConnectionTimeouts & timeouts,
+                                             ShardPartition & task_partition,
+                                             const size_t current_piece_number,
+                                             bool is_unprioritized_task);
 
     void dropAndCreateLocalTable(const ASTPtr & create_ast);
 
-    void dropLocalTableIfExists (const DatabaseAndTableName & table_name) const;
+    void dropLocalTableIfExists(const DatabaseAndTableName & table_name) const;
 
-    String getRemoteCreateTable(const DatabaseAndTableName & table,
-                                Connection & connection,
-                                const Settings * settings = nullptr);
+    void dropHelpingTables(const TaskTable & task_table);
+
+    /// Is used for usage less disk space.
+    /// After all pieces were successfully moved to original destination
+    /// table we can get rid of partition pieces (partitions in helping tables).
+    void dropParticularPartitionPieceFromAllHelpingTables(const TaskTable & task_table, const String & partition_name);
+
+    String getRemoteCreateTable(const DatabaseAndTableName & table, Connection & connection, const Settings * settings = nullptr);
 
     ASTPtr getCreateTableForPullShard(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
 
-    void createShardInternalTables(const ConnectionTimeouts & timeouts,
-                                   TaskShard & task_shard,
-                                   bool create_split = true);
+    /// If it is implicitly asked to create split Distributed table for certain piece on current shard, we will do it.
+    void createShardInternalTables(const ConnectionTimeouts & timeouts, TaskShard & task_shard, bool create_split = true);
 
-    std::set<String> getShardPartitions(const ConnectionTimeouts & timeouts,
-                                        TaskShard & task_shard);
+    std::set<String> getShardPartitions(const ConnectionTimeouts & timeouts, TaskShard & task_shard);
 
-    bool checkShardHasPartition(const ConnectionTimeouts & timeouts,
-                                TaskShard & task_shard,
-                                const String & partition_quoted_name);
+    bool checkShardHasPartition(const ConnectionTimeouts & timeouts, TaskShard & task_shard, const String & partition_quoted_name);
+
+    bool checkPresentPartitionPiecesOnCurrentShard(const ConnectionTimeouts & timeouts,
+             TaskShard & task_shard, const String & partition_quoted_name, size_t current_piece_number);
+
+    /*
+     * This class is used in executeQueryOnCluster function
+     * You can execute query on each shard (no sense it is executed on each replica of a shard or not)
+     * or you can execute query on each replica on each shard.
+     * First mode is useful for INSERTS queries.
+     * */
+    enum ClusterExecutionMode
+    {
+        ON_EACH_SHARD,
+        ON_EACH_NODE
+    };
 
     /** Executes simple query (without output streams, for example DDL queries) on each shard of the cluster
       * Returns number of shards for which at least one replica executed query successfully
@@ -136,6 +185,7 @@ protected:
             const ASTPtr & query_ast_ = nullptr,
             const Settings * settings = nullptr,
             PoolMode pool_mode = PoolMode::GET_ALL,
+            ClusterExecutionMode execution_mode = ClusterExecutionMode::ON_EACH_SHARD,
             UInt64 max_successful_executions_per_shard = 0) const;
 
 private:
@@ -145,25 +195,25 @@ private:
     String working_database_name;
 
     /// Auto update config stuff
-    UInt64 task_descprtion_current_version = 1;
-    std::atomic<UInt64> task_descprtion_version{1};
+    UInt64 task_description_current_version = 1;
+    std::atomic<UInt64> task_description_version{1};
     Coordination::WatchCallback task_description_watch_callback;
     /// ZooKeeper session used to set the callback
     zkutil::ZooKeeperPtr task_description_watch_zookeeper;
 
     ConfigurationPtr task_cluster_initial_config;
     ConfigurationPtr task_cluster_current_config;
-    Coordination::Stat task_descprtion_current_stat{};
+    Coordination::Stat task_description_current_stat{};
 
     std::unique_ptr<TaskCluster> task_cluster;
 
     bool is_safe_mode = false;
     double copy_fault_probability = 0.0;
+    double move_fault_probability = 0.0;
 
     Context & context;
     Poco::Logger * log;
 
     std::chrono::milliseconds default_sleep_time{1000};
 };
-
 }

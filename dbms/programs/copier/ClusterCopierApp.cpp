@@ -17,6 +17,8 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
     is_safe_mode = config().has("safe-mode");
     if (config().has("copy-fault-probability"))
         copy_fault_probability = std::max(std::min(config().getDouble("copy-fault-probability"), 1.0), 0.0);
+    if (config().has("move-fault-probability"))
+        move_fault_probability = std::max(std::min(config().getDouble("move-fault-probability"), 1.0), 0.0);
     base_dir = (config().has("base-dir")) ? config().getString("base-dir") : Poco::Path::current();
     // process_id is '<hostname>#<start_timestamp>_<pid>'
     time_t timestamp = Poco::Timestamp().epochTime();
@@ -58,23 +60,25 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
     Base::defineOptions(options);
 
     options.addOption(Poco::Util::Option("task-path", "", "path to task in ZooKeeper")
-                              .argument("task-path").binding("task-path"));
+                          .argument("task-path").binding("task-path"));
     options.addOption(Poco::Util::Option("task-file", "", "path to task file for uploading in ZooKeeper to task-path")
-                              .argument("task-file").binding("task-file"));
+                          .argument("task-file").binding("task-file"));
     options.addOption(Poco::Util::Option("task-upload-force", "", "Force upload task-file even node already exists")
-                              .argument("task-upload-force").binding("task-upload-force"));
+                          .argument("task-upload-force").binding("task-upload-force"));
     options.addOption(Poco::Util::Option("safe-mode", "", "disables ALTER DROP PARTITION in case of errors")
-                              .binding("safe-mode"));
+                          .binding("safe-mode"));
     options.addOption(Poco::Util::Option("copy-fault-probability", "", "the copying fails with specified probability (used to test partition state recovering)")
-                              .argument("copy-fault-probability").binding("copy-fault-probability"));
+                          .argument("copy-fault-probability").binding("copy-fault-probability"));
+    options.addOption(Poco::Util::Option("move-fault-probability", "", "the moving fails with specified probability (used to test partition state recovering)")
+                              .argument("move-fault-probability").binding("move-fault-probability"));
     options.addOption(Poco::Util::Option("log-level", "", "sets log level")
-                              .argument("log-level").binding("log-level"));
+                          .argument("log-level").binding("log-level"));
     options.addOption(Poco::Util::Option("base-dir", "", "base directory for copiers, consecutive copier launches will populate /base-dir/launch_id/* directories")
-                              .argument("base-dir").binding("base-dir"));
+                          .argument("base-dir").binding("base-dir"));
 
     using Me = std::decay_t<decltype(*this)>;
     options.addOption(Poco::Util::Option("help", "", "produce this help message").binding("help")
-                              .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
+                          .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
 }
 
 
@@ -85,10 +89,10 @@ void ClusterCopierApp::mainImpl()
 
     auto log = &logger();
     LOG_INFO(log, "Starting clickhouse-copier ("
-            << "id " << process_id << ", "
-            << "host_id " << host_id << ", "
-            << "path " << process_path << ", "
-            << "revision " << ClickHouseRevision::get() << ")");
+        << "id " << process_id << ", "
+        << "host_id " << host_id << ", "
+        << "path " << process_path << ", "
+        << "revision " << ClickHouseRevision::get() << ")");
 
     auto context = std::make_unique<Context>(Context::createGlobal());
     context->makeGlobalContext();
@@ -115,6 +119,7 @@ void ClusterCopierApp::mainImpl()
     auto copier = std::make_unique<ClusterCopier>(task_path, host_id, default_database, *context);
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
+    copier->setMoveFaultProbability(move_fault_probability);
 
     auto task_file = config().getString("task-file", "");
     if (!task_file.empty())
