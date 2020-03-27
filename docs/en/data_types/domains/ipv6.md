@@ -1,6 +1,6 @@
 ## IPv6 {#ipv6}
 
-`IPv6` is a domain based on `FixedString(16)` type and serves as typed replacement for storing IPv6 values. It provides compact storage with human-friendly input-output format, and column type information on inspection.
+`IPv6` is a domain based on `FixedString(16)` type and serves as a typed replacement for storing IPv6 values. It provides compact storage with the human-friendly input-output format and column type information on inspection.
 
 ### Basic Usage {#basic-usage}
 
