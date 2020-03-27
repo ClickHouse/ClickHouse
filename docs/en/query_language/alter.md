@@ -497,9 +497,9 @@ Entries for finished mutations are not deleted right away (the number of preserv
 
 ## ALTER USER {#alter-user-statement}
 
-Changes ClickHouse user accounts or roles.
+Changes ClickHouse user accounts.
 
-### Syntax
+### Syntax {#alter-user-syntax}
 
 ``` sql
 ALTER USER [IF EXISTS] name
@@ -515,9 +515,11 @@ ALTER USER [IF EXISTS] name
 To use `ALTER USER` you must have the [CREATE USER](grant.md#grant-create-user) privilege.
 
 
-## ALTER ROLE {#alter-role}
+## ALTER ROLE {#alter-role-statement}
 
-### Syntax
+Changes roles.
+
+### Syntax {#alter-role-syntax}
 
 ```sql
 ALTER ROLE [IF EXISTS] name
@@ -526,7 +528,11 @@ ALTER ROLE [IF EXISTS] name
 ```
 
 
-## ALTER ROW POLICY {#alter-row-policy}
+## ALTER ROW POLICY {#alter-row-policy-statement}
+
+Changes row policy.
+
+### Syntax {#alter-row-policy-syntax}
 
 ``` sql
 ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
@@ -538,7 +544,5 @@ ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 
-`ALTER ROW POLICY filter ON mydb.mytable ...;`
-`ALTER ROW POLICY filter ON mydb.mytable ...;`
 
 [Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

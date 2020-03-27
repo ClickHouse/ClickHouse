@@ -106,13 +106,40 @@ If `IF EXISTS` is specified, it doesn’t return an error if the table doesn’t
 Delets the dictionary.
 If `IF EXISTS` is specified, it doesn’t return an error if the table doesn’t exist or the database doesn’t exist.
 
-## DROP USER {#drop-user}
+## DROP USER {#drop-user-statement}
 
-## DROP ROLE {#drop-role}
+Deletes a user.
 
-## DROP ROW POLICY {#drop-row-policy}
+### Syntax {#drop-user-syntax}
 
-`DROP ROW POLICY filter ON mydb.mytable;`
+```sql
+DROP USER [IF EXISTS] name [,...]
+```
+
+
+## DROP ROLE {#drop-role-statement}
+
+Deletes a role.
+
+Deleted role is revoked from all the entities where it was assigned.
+
+### Syntax {#drop-role-syntax}
+
+```sql
+DROP ROLE [IF EXISTS] name [,...]
+```
+
+## DROP ROW POLICY {#drop-row-policy-statement}
+
+Deletes a row policy.
+
+Deleted row policy is revoked from all the entities where it was assigned.
+
+### Syntax {#drop-row-policy-syntax}
+
+``` sql
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
+```
 
 ## EXISTS {#exists-statement}
 
@@ -230,15 +257,26 @@ SET profile = 'profile-name-from-the-settings-file'
 
 For more information, see [Settings](../operations/settings/settings.md).
 
-# SET ROLE {#set-role-statement}
+## SET ROLE {#set-role-statement}
 
-```sql
+Activates roles for the current user.
+
+### Syntax {#set-role-syntax}
+
+``` sql
 SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
 ```
 
-# SET DEFAULT ROLE {#set-default-role-statement}
+## SET DEFAULT ROLE {#set-default-role-statement}
 
-```sql
+Assigns the default roles for a user.
+
+Default roles are automatically activated at user login.
+
+
+### Syntax {#set-default-role-syntax}
+
+``` sql
 SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
 ```
 
