@@ -47,7 +47,7 @@ private:
 
     StoragePtr storage;
     std::vector<MutationCommand> commands;
-    const Context & context;
+    Context context;
     bool can_execute;
 
     ASTPtr mutation_ast;
