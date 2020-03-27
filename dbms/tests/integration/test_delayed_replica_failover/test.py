@@ -1,3 +1,4 @@
+#encoding=utf-8
 import pytest
 import time
 import os, sys
@@ -98,3 +99,39 @@ SELECT sum(x) FROM distributed SETTINGS
     load_balancing='in_order',
     max_replica_delay_for_distributed_queries=1
 ''').strip() == '2'
+
+
+# in some scenarios one of the replica can misbehave in a very weird way
+# just like if the process listening the socket was stopped
+# that can happen in clouds due to some operations on instances / vms
+# or in certain network conditions
+@pytest.mark.timeout(120)
+def test_stuck_replica(started_cluster):
+    node_1_2.query("INSERT INTO replicated VALUES ('2020-03-27', 1)")
+
+    node_2_1.query("INSERT INTO replicated VALUES ('2020-03-27', 2)")
+    node_2_2.query("INSERT INTO replicated VALUES ('2020-03-27', 3)")
+    node_2_2.query("SYSTEM SYNC REPLICA replicated")
+    node_2_1.query("SYSTEM SYNC REPLICA replicated")
+
+    cluster.pause_container('node_2_1')
+
+    result = instance_with_dist_table.query("SELECT hostName(), x FROM distributed ORDER BY hostName(), x SETTINGS load_balancing='in_order', prefer_localhost_replica=0")
+    assert TSV(result) == TSV('node_1_1\t1\nnode_2_2\t2\nnode_2_2\t3')
+    # сейчас: висит 5 минут (receive_timeout), остановить запрос с помощью ctrl+c или по max_execution_time - невозможно
+
+    # ожидаемое поведение:
+    #  убеждаемся что реплика не даёт никакого acknowkegment (можно какой-то доп райунтрип "ты жива? да",
+    #  или ack после отправки запроса по типу "запроос принят, буду обрабатывать") в течение
+    #  connect_timeout_with_failover_ms, и если ack нет - идём в другую (здоровую) реплику
+
+    result = instance_with_dist_table.query("select errors_count,estimated_recovery_time>10 from system.clusters where cluster='test_cluster' and host_name='node_2_1'")
+    assert TSV(result) == TSV('1\t1')
+    # тут тоже похоже несколько странное поведение - пока errors_count=1 ни один запрос туда не отправится
+    # estimated_recovery_time потихоньку доходит до нуля, потом он остаётся = 0, но errors_count по-прежнему=1 (наверное ок)
+    # если после этого повторить запрос - он снова висит, и но количество ошибок не увеличивается
+
+    result = instance_with_dist_table.query("SELECT hostName(), x FROM distributed ORDER BY hostName(), x SETTINGS load_balancing='in_order', prefer_localhost_replica=0")
+    assert TSV(result) == TSV('node_1_1\t1\nnode_2_2\t2\nnode_2_2\t3')
+
+    cluster.unpause_container('node_2_1')
