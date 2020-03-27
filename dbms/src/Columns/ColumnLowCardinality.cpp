@@ -4,6 +4,7 @@
 #include <DataTypes/NumberTraits.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
 
 
 namespace DB
@@ -239,6 +240,21 @@ const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * po
 
     idx.check(getDictionary().size());
     return new_pos;
+}
+
+void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = size();
+
+    if (hash.getData().size() != s)
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    auto & dict = getDictionary().getNestedColumn();
+    WeakHash32 dict_hash(dict->size());
+    dict->updateWeakHash32(dict_hash);
+
+    idx.updateWeakHash(hash, dict_hash);
 }
 
 void ColumnLowCardinality::gather(ColumnGathererStream & gatherer)
@@ -643,6 +659,24 @@ bool ColumnLowCardinality::Index::containsDefault() const
 
     callForType(std::move(check_contains_default), size_of_type);
     return contains;
+}
+
+void ColumnLowCardinality::Index::updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const
+{
+    auto & hash_data = hash.getData();
+    auto & dict_hash_data = dict_hash.getData();
+
+    auto update_weak_hash = [&](auto x)
+    {
+        using CurIndexType = decltype(x);
+        auto & data = getPositionsData<CurIndexType>();
+        auto size = data.size();
+
+        for (size_t i = 0; i < size; ++i)
+            hash_data[i] = intHashCRC32(dict_hash_data[data[i]], hash_data[i]);
+    };
+
+    callForType(std::move(update_weak_hash), size_of_type);
 }
 
 

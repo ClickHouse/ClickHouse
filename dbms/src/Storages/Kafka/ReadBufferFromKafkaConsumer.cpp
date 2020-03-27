@@ -8,6 +8,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int CANNOT_COMMIT_OFFSET;
+}
+
 using namespace std::chrono_literals;
 const auto MAX_TIME_TO_WAIT_FOR_ASSIGNMENT_MS = 15000;
 
@@ -31,14 +36,14 @@ ReadBufferFromKafkaConsumer::ReadBufferFromKafkaConsumer(
     , topics(_topics)
 {
     // called (synchroniously, during poll) when we enter the consumer group
-    consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList& topic_partitions)
+    consumer->set_assignment_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
         LOG_TRACE(log, "Topics/partitions assigned: " << topic_partitions);
         assignment = topic_partitions;
     });
 
     // called (synchroniously, during poll) when we leave the consumer group
-    consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList& topic_partitions)
+    consumer->set_revocation_callback([this](const cppkafka::TopicPartitionList & topic_partitions)
     {
         // Rebalance is happening now, and now we have a chance to finish the work
         // with topics/partitions we were working with before rebalance
@@ -140,16 +145,41 @@ void ReadBufferFromKafkaConsumer::commit()
         // we may need to repeat commit in sync mode in revocation callback,
         // but it seems like existing API doesn't allow us to to that
         // in a controlled manner (i.e. we don't know the offsets to commit then)
-        consumer->commit();
+
+        size_t max_retries = 5;
+        bool commited = false;
+
+        while (!commited && max_retries > 0)
+        {
+            try
+            {
+                // See https://github.com/edenhill/librdkafka/issues/1470
+                // broker may reject commit if during offsets.commit.timeout.ms (5000 by default),
+                // there were not enough replicas available for the __consumer_offsets topic.
+                // also some other temporary issues like client-server connectivity problems are possible
+                consumer->commit();
+                commited = true;
+                print_offsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
+            }
+            catch (const cppkafka::HandleException & e)
+            {
+                LOG_ERROR(log, "Exception during commit attempt: " << e.what());
+            }
+            --max_retries;
+        }
+
+        if (!commited)
+        {
+            // TODO: insert atomicity / transactions is needed here (possibility to rollback, ot 2 phase commits)
+            throw Exception("All commit attempts failed. Last block was already written to target table(s), but was not commited to Kafka.", ErrorCodes::CANNOT_COMMIT_OFFSET);
+        }
     }
     else
     {
-        LOG_TRACE(log,"Nothing to commit.");
+        LOG_TRACE(log, "Nothing to commit.");
     }
 
-    print_offsets("Committed offset", consumer->get_offsets_committed(consumer->get_assignment()));
     offsets_stored = 0;
-
     stalled = false;
 }
 
@@ -222,8 +252,7 @@ void ReadBufferFromKafkaConsumer::resetToLastCommitted(const char * msg)
     }
     auto committed_offset = consumer->get_offsets_committed(consumer->get_assignment());
     consumer->assign(committed_offset);
-    LOG_TRACE(log, msg << "Returned to committed position: " << committed_offset);
-
+    LOG_TRACE(log, msg << " Returned to committed position: " << committed_offset);
 }
 
 /// Do commit messages implicitly after we processed the previous batch.

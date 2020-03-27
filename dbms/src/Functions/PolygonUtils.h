@@ -25,8 +25,6 @@
 #include <boost/geometry/geometries/polygon.hpp>
 #include <boost/geometry/geometries/multi_polygon.hpp>
 #include <boost/geometry/geometries/segment.hpp>
-#include <boost/geometry/algorithms/comparable_distance.hpp>
-#include <boost/geometry/strategies/cartesian/distance_pythagoras.hpp>
 
 #include <array>
 #include <vector>
@@ -40,12 +38,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
-
-
-namespace GeoUtils
-{
 
 
 template <typename Polygon>
@@ -80,7 +74,82 @@ UInt64 getMultiPolygonAllocatedBytes(const MultiPolygon & multi_polygon)
     return size;
 }
 
-template <typename CoordinateType = Float32>
+
+/// This algorithm can be used as a baseline for comparison.
+template <typename CoordinateType>
+class PointInPolygonTrivial
+{
+public:
+    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
+    /// Counter-Clockwise ordering.
+    using Polygon = boost::geometry::model::polygon<Point, false>;
+    using MultiPolygon = boost::geometry::model::multi_polygon<Polygon>;
+    using Box = boost::geometry::model::box<Point>;
+    using Segment = boost::geometry::model::segment<Point>;
+
+    explicit PointInPolygonTrivial(const Polygon & polygon_)
+        : polygon(polygon_) {}
+
+    /// True if bound box is empty.
+    bool hasEmptyBound() const { return false; }
+
+    UInt64 getAllocatedBytes() const { return 0; }
+
+    bool contains(CoordinateType x, CoordinateType y) const
+    {
+        return boost::geometry::covered_by(Point(x, y), polygon);
+    }
+
+private:
+    Polygon polygon;
+};
+
+
+/// Simple algorithm with bounding box.
+template <typename Strategy, typename CoordinateType>
+class PointInPolygon
+{
+public:
+    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
+    /// Counter-Clockwise ordering.
+    using Polygon = boost::geometry::model::polygon<Point, false>;
+    using Box = boost::geometry::model::box<Point>;
+
+    explicit PointInPolygon(const Polygon & polygon_) : polygon(polygon_)
+    {
+        boost::geometry::envelope(polygon, box);
+
+        const Point & min_corner = box.min_corner();
+        const Point & max_corner = box.max_corner();
+
+        if (min_corner.x() == max_corner.x() || min_corner.y() == max_corner.y())
+            has_empty_bound = true;
+    }
+
+    bool hasEmptyBound() const { return has_empty_bound; }
+
+    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const
+    {
+        Point point(x, y);
+
+        if (!boost::geometry::within(point, box))
+            return false;
+
+        return boost::geometry::covered_by(point, polygon, strategy);
+    }
+
+    UInt64 getAllocatedBytes() const { return sizeof(*this); }
+
+private:
+    const Polygon & polygon;
+    Box box;
+    bool has_empty_bound = false;
+    Strategy strategy;
+};
+
+
+/// Optimized algorithm with bounding box and grid.
+template <typename CoordinateType>
 class PointInPolygonWithGrid
 {
 public:
@@ -92,27 +161,28 @@ public:
     using Segment = boost::geometry::model::segment<Point>;
 
     explicit PointInPolygonWithGrid(const Polygon & polygon_, UInt16 grid_size_ = 8)
-            : grid_size(std::max<UInt16>(1, grid_size_)), polygon(polygon_) {}
-
-    void init();
+        : grid_size(std::max<UInt16>(1, grid_size_)), polygon(polygon_)
+    {
+        buildGrid();
+    }
 
     /// True if bound box is empty.
     bool hasEmptyBound() const { return has_empty_bound; }
 
     UInt64 getAllocatedBytes() const;
 
-    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y);
+    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y) const;
 
 private:
     enum class CellType
     {
-        inner,
-        outer,
-        singleLine,
-        pairOfLinesSingleConvexPolygon,
-        pairOfLinesSingleNonConvexPolygons,
-        pairOfLinesDifferentPolygons,
-        complexPolygon
+        inner,                                  /// The cell is completely inside polygon.
+        outer,                                  /// The cell is completely outside of polygon.
+        singleLine,                             /// The cell is splitted to inner/outer part by a single line.
+        pairOfLinesSingleConvexPolygon,         /// The cell is splitted to inner/outer part by a polyline of two sections and inner part is convex.
+        pairOfLinesSingleNonConvexPolygons,     /// The cell is splitted to inner/outer part by a polyline of two sections and inner part is non convex.
+        pairOfLinesDifferentPolygons,           /// The cell is spliited by two lines to three different parts.
+        complexPolygon                          /// Generic case.
     };
 
     struct HalfPlane
@@ -122,8 +192,10 @@ private:
         CoordinateType b;
         CoordinateType c;
 
+        HalfPlane() = default;
+
         /// Take left half-plane.
-        void fill(const Point & from, const Point & to)
+        HalfPlane(const Point & from, const Point & to)
         {
             a = -(to.y() - from.y());
             b = to.x() - from.x();
@@ -158,10 +230,10 @@ private:
     CoordinateType y_scale;
 
     bool has_empty_bound = false;
-    bool was_grid_built = false;
 
     void buildGrid();
 
+    /// Calculate bounding box and shift/scale of cells.
     void calcGridAttributes(Box & box);
 
     template <typename T>
@@ -184,12 +256,8 @@ private:
 
     /// Check that polygon.outer() is convex.
     inline bool isConvex(const Polygon & polygon);
-
-    using Distance = typename boost::geometry::default_comparable_distance_result<Point, Segment>::type;
-
-    /// min(distance(point, edge) : edge in polygon)
-    inline Distance distance(const Point & point, const Polygon & polygon);
 };
+
 
 template <typename CoordinateType>
 UInt64 PointInPolygonWithGrid<CoordinateType>::getAllocatedBytes() const
@@ -204,15 +272,6 @@ UInt64 PointInPolygonWithGrid<CoordinateType>::getAllocatedBytes() const
         size += getMultiPolygonAllocatedBytes(elem);
 
     return size;
-}
-
-template <typename CoordinateType>
-void PointInPolygonWithGrid<CoordinateType>::init()
-{
-    if (!was_grid_built)
-        buildGrid();
-
-    was_grid_built = true;
 }
 
 template <typename CoordinateType>
@@ -275,28 +334,25 @@ void PointInPolygonWithGrid<CoordinateType>::buildGrid()
 #pragma GCC diagnostic pop
             Box cell_box(Point(x_min, y_min), Point(x_max, y_max));
 
-            Polygon cell_bound;
-            boost::geometry::convert(cell_box, cell_bound);
-
             MultiPolygon intersection;
-            boost::geometry::intersection(polygon, cell_bound, intersection);
+            boost::geometry::intersection(polygon, cell_box, intersection);
 
-            size_t cellIndex = getCellIndex(row, col);
+            size_t cell_index = getCellIndex(row, col);
 
             if (intersection.empty())
-                addCell(cellIndex, cell_box);
+                addCell(cell_index, cell_box);
             else if (intersection.size() == 1)
-                addCell(cellIndex, cell_box, intersection.front());
+                addCell(cell_index, cell_box, intersection.front());
             else if (intersection.size() == 2)
-                addCell(cellIndex, cell_box, intersection.front(), intersection.back());
+                addCell(cell_index, cell_box, intersection.front(), intersection.back());
             else
-                addComplexPolygonCell(cellIndex, cell_box);
+                addComplexPolygonCell(cell_index, cell_box);
         }
     }
 }
 
 template <typename CoordinateType>
-bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, CoordinateType y)
+bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, CoordinateType y) const
 {
     if (has_empty_bound)
         return false;
@@ -335,22 +391,6 @@ bool PointInPolygonWithGrid<CoordinateType>::contains(CoordinateType x, Coordina
     __builtin_unreachable();
 }
 
-template <typename CoordinateType>
-typename PointInPolygonWithGrid<CoordinateType>::Distance
-PointInPolygonWithGrid<CoordinateType>::distance(
-        const PointInPolygonWithGrid<CoordinateType>::Point & point,
-        const PointInPolygonWithGrid<CoordinateType>::Polygon & poly)
-{
-    const auto & outer = poly.outer();
-    Distance distance = 0;
-    for (auto i : ext::range(0, outer.size() - 1))
-    {
-        Segment segment(outer[i], outer[i + 1]);
-        Distance current = boost::geometry::comparable_distance(point, segment);
-        distance = i ? std::min(current, distance) : current;
-    }
-    return distance;
-}
 
 template <typename CoordinateType>
 bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGrid<CoordinateType>::Polygon & poly)
@@ -360,25 +400,25 @@ bool PointInPolygonWithGrid<CoordinateType>::isConvex(const PointInPolygonWithGr
     if (outer.size() < 4)
         return false;
 
-    auto vecProduct = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
-    auto getVector = [](const Point & from, const Point & to) -> Point
+    auto vec_product = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
+    auto get_vector = [](const Point & from, const Point & to) -> Point
     {
         return Point(to.x() - from.x(), to.y() - from.y());
     };
 
-    Point first = getVector(outer[0], outer[1]);
+    Point first = get_vector(outer[0], outer[1]);
     Point prev = first;
 
     for (auto i : ext::range(1, outer.size() - 1))
     {
-        Point cur = getVector(outer[i], outer[i + 1]);
-        if (vecProduct(prev, cur) < 0)
+        Point cur = get_vector(outer[i], outer[i + 1]);
+        if (vec_product(prev, cur) < 0)
             return false;
 
         prev = cur;
     }
 
-    return vecProduct(prev, first) >= 0;
+    return vec_product(prev, first) >= 0;
 }
 
 template <typename CoordinateType>
@@ -388,20 +428,27 @@ PointInPolygonWithGrid<CoordinateType>::findHalfPlanes(
         const PointInPolygonWithGrid<CoordinateType>::Polygon & intersection)
 {
     std::vector<HalfPlane> half_planes;
-    Polygon bound;
-    boost::geometry::convert(box, bound);
     const auto & outer = intersection.outer();
 
     for (auto i : ext::range(0, outer.size() - 1))
     {
         /// Want to detect is intersection edge was formed from box edge or from polygon edge.
-        /// If center of the edge closer to box, than don't form the half-plane.
-        Segment segment(outer[i], outer[i + 1]);
-        Point center((segment.first.x() + segment.second.x()) / 2, (segment.first.y() + segment.second.y()) / 2);
-        if (distance(center, polygon) < distance(center, bound))
+        /// If section (x1, y1), (x2, y2) is on box edge, then either x1 = x2 = one of box_x or y1 = y2 = one of box_y
+
+        auto x1 = outer[i].x();
+        auto y1 = outer[i].y();
+        auto x2 = outer[i + 1].x();
+        auto y2 = outer[i + 1].y();
+
+        auto box_x1 = box.min_corner().x();
+        auto box_y1 = box.min_corner().y();
+        auto box_x2 = box.max_corner().x();
+        auto box_y2 = box.max_corner().y();
+
+        if (! ((x1 == x2 && (x1 == box_x1 || x2 == box_x2))
+            || (y1 == y2 && (y1 == box_y1 || y2 == box_y2))))
         {
-            half_planes.push_back({});
-            half_planes.back().fill(segment.first, segment.second);
+            half_planes.emplace_back(Point(x1, y1), Point(x2, y2));
         }
     }
 
@@ -424,11 +471,8 @@ void PointInPolygonWithGrid<CoordinateType>::addComplexPolygonCell(
     Point max_corner(box.max_corner().x() + x_eps, box.max_corner().y() + y_eps);
     Box box_with_eps_bound(min_corner, max_corner);
 
-    Polygon bound;
-    boost::geometry::convert(box_with_eps_bound, bound);
-
     MultiPolygon intersection;
-    boost::geometry::intersection(polygon, bound, intersection);
+    boost::geometry::intersection(polygon, box_with_eps_bound, intersection);
 
     polygons.push_back(intersection);
 }
@@ -461,7 +505,9 @@ void PointInPolygonWithGrid<CoordinateType>::addCell(
     auto half_planes = findHalfPlanes(box, intersection);
 
     if (half_planes.empty())
+    {
         addCell(index, box);
+    }
     else if (half_planes.size() == 1)
     {
         cells[index].type = CellType::singleLine;
@@ -506,50 +552,6 @@ void PointInPolygonWithGrid<CoordinateType>::addCell(
 }
 
 
-template <typename Strategy, typename CoordinateType = Float32>
-class PointInPolygon
-{
-public:
-    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
-    /// Counter-Clockwise ordering.
-    using Polygon = boost::geometry::model::polygon<Point, false>;
-    using Box = boost::geometry::model::box<Point>;
-
-    explicit PointInPolygon(const Polygon & polygon_) : polygon(polygon_) {}
-
-    void init()
-    {
-        boost::geometry::envelope(polygon, box);
-
-        const Point & min_corner = box.min_corner();
-        const Point & max_corner = box.max_corner();
-
-        if (min_corner.x() == max_corner.x() || min_corner.y() == max_corner.y())
-            has_empty_bound = true;
-    }
-
-    bool hasEmptyBound() const { return has_empty_bound; }
-
-    inline bool ALWAYS_INLINE contains(CoordinateType x, CoordinateType y)
-    {
-        Point point(x, y);
-
-        if (!boost::geometry::within(point, box))
-            return false;
-
-        return boost::geometry::covered_by(point, polygon, strategy);
-    }
-
-    UInt64 getAllocatedBytes() const { return sizeof(*this); }
-
-private:
-    const Polygon & polygon;
-    Box box;
-    bool has_empty_bound = false;
-    Strategy strategy;
-};
-
-
 /// Algorithms.
 
 template <typename T, typename U, typename PointInPolygonImpl>
@@ -557,12 +559,8 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
 {
     auto size = x.size();
 
-    impl.init();
-
     if (impl.hasEmptyBound())
-    {
         return ColumnVector<UInt8>::create(size, 0);
-    }
 
     auto result = ColumnVector<UInt8>::create(size);
     auto & data = result->getData();
@@ -571,9 +569,7 @@ ColumnPtr pointInPolygon(const ColumnVector<T> & x, const ColumnVector<U> & y, P
     const auto & y_data = y.getData();
 
     for (auto i : ext::range(0, size))
-    {
         data[i] = static_cast<UInt8>(impl.contains(x_data[i], y_data[i]));
-    }
 
     return result;
 }
@@ -595,7 +591,7 @@ struct CallPointInPolygon<Type, Types ...>
     template <typename PointInPolygonImpl>
     static ColumnPtr call(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
     {
-        using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNativeNumbers>::Type;
+        using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNativeNumbers>::Type;
         if (auto column = typeid_cast<const ColumnVector<Type> *>(&x))
             return Impl::template call<Type>(*column, y, impl);
         return CallPointInPolygon<Types ...>::call(x, y, impl);
@@ -621,124 +617,36 @@ struct CallPointInPolygon<>
 template <typename PointInPolygonImpl>
 ColumnPtr pointInPolygon(const IColumn & x, const IColumn & y, PointInPolygonImpl && impl)
 {
-    using Impl = typename ApplyTypeListForClass<::DB::GeoUtils::CallPointInPolygon, TypeListNativeNumbers>::Type;
+    using Impl = typename ApplyTypeListForClass<CallPointInPolygon, TypeListNativeNumbers>::Type;
     return Impl::call(x, y, impl);
-}
-
-/// Total angle (signed) between neighbor vectors in linestring. Zero if linestring.size() < 2.
-template <typename Linestring>
-double calcLinestringRotation(const Linestring & points)
-{
-    using Point = std::decay_t<decltype(*points.begin())>;
-    double rotation = 0;
-
-    auto vecProduct = [](const Point & from, const Point & to) { return from.x() * to.y() - from.y() * to.x(); };
-    auto scalarProduct = [](const Point & from, const Point & to) { return from.x() * to.x() + from.y() * to.y(); };
-    auto getVector = [](const Point & from, const Point & to) -> Point
-    {
-        return Point(to.x() - from.x(), to.y() - from.y());
-    };
-
-    for (auto it = points.begin(); it != points.end(); ++it)
-    {
-        if (it != points.begin())
-        {
-            auto prev = std::prev(it);
-            auto next = std::next(it);
-
-            if (next == points.end())
-                next = std::next(points.begin());
-
-            Point from = getVector(*prev, *it);
-            Point to = getVector(*it, *next);
-
-            auto vec_prod = vecProduct(from, to);
-            auto scalar_prod = scalarProduct(from, to);
-            auto ang = std::atan2(vec_prod, scalar_prod);
-            rotation += ang;
-        }
-    }
-
-    return rotation;
-}
-
-/// Make inner linestring counter-clockwise and outers clockwise oriented.
-template <typename Polygon>
-void normalizePolygon(Polygon && polygon)
-{
-    auto & outer = polygon.outer();
-    if (calcLinestringRotation(outer) < 0)
-        std::reverse(outer.begin(), outer.end());
-
-    auto & inners = polygon.inners();
-    for (auto & inner : inners)
-        if (calcLinestringRotation(inner) > 0)
-            std::reverse(inner.begin(), inner.end());
 }
 
 
 template <typename Polygon>
 std::string serialize(Polygon && polygon)
 {
-    std::string result;
+    WriteBufferFromOwnString buffer;
 
+    using RingType = typename std::decay_t<Polygon>::ring_type;
+
+    auto serializeRing = [&buffer](const RingType & ring)
     {
-        WriteBufferFromString buffer(result);
-
-        using RingType = typename std::decay_t<Polygon>::ring_type;
-
-        auto serializeFloat = [&buffer](float value) { buffer.write(reinterpret_cast<char *>(&value), sizeof(value)); };
-        auto serializeSize = [&buffer](size_t size) { buffer.write(reinterpret_cast<char *>(&size), sizeof(size)); };
-
-        auto serializeRing = [& serializeFloat, & serializeSize](const RingType & ring)
+        writeBinary(ring.size(), buffer);
+        for (const auto & point : ring)
         {
-            serializeSize(ring.size());
-            for (const auto & point : ring)
-            {
-                serializeFloat(point.x());
-                serializeFloat(point.y());
-            }
-        };
+            writeBinary(point.x(), buffer);
+            writeBinary(point.y(), buffer);
+        }
+    };
 
-        serializeRing(polygon.outer());
+    serializeRing(polygon.outer());
 
-        const auto & inners = polygon.inners();
-        serializeSize(inners.size());
-        for (auto & inner : inners)
-            serializeRing(inner);
-    }
+    const auto & inners = polygon.inners();
+    writeBinary(inners.size(), buffer);
+    for (auto & inner : inners)
+        serializeRing(inner);
 
-    return result;
+    return buffer.str();
 }
 
-size_t geohashEncode(Float64 longitude, Float64 latitude, uint8_t precision, char * out);
-
-void geohashDecode(const char * encoded_string, size_t encoded_len, Float64 * longitude, Float64 * latitude);
-
-std::vector<std::pair<Float64, Float64>> geohashCoverBox(Float64 longitude_min, Float64 latitude_min, Float64 longitude_max, Float64 latitude_max, uint8_t precision, UInt32 max_items = 0);
-
-struct GeohashesInBoxPreparedArgs
-{
-    UInt64 items_count = 0;
-    uint8_t precision = 0;
-
-    Float64 longitude_min = 0.0;
-    Float64 latitude_min = 0.0;
-    Float64 longitude_max = 0.0;
-    Float64 latitude_max = 0.0;
-
-    Float64 longitude_step = 0.0;
-    Float64 latitude_step = 0.0;
-};
-
-GeohashesInBoxPreparedArgs geohashesInBoxPrepare(const Float64 longitude_min,
-                                              const Float64 latitude_min,
-                                              Float64 longitude_max,
-                                              Float64 latitude_max,
-                                              uint8_t precision);
-
-UInt64 geohashesInBox(const GeohashesInBoxPreparedArgs & args, char * out);
-
-} /// GeoUtils
-
-} /// DB
+}

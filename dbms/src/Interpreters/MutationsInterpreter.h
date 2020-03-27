@@ -43,6 +43,8 @@ private:
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
     BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
+    std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
+
     StoragePtr storage;
     MutationCommands commands;
     const Context & context;

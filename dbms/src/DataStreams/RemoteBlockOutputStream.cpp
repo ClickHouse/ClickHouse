@@ -21,13 +21,14 @@ namespace ErrorCodes
 RemoteBlockOutputStream::RemoteBlockOutputStream(Connection & connection_,
                                                  const ConnectionTimeouts & timeouts,
                                                  const String & query_,
-                                                 const Settings * settings_)
-    : connection(connection_), query(query_), settings(settings_)
+                                                 const Settings * settings_,
+                                                 const ClientInfo * client_info_)
+    : connection(connection_), query(query_), settings(settings_), client_info(client_info_)
 {
     /** Send query and receive "header", that describe table structure.
       * Header is needed to know, what structure is required for blocks to be passed to 'write' method.
       */
-    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, settings, nullptr);
+    connection.sendQuery(timeouts, query, "", QueryProcessingStage::Complete, settings, client_info);
 
     while (true)
     {

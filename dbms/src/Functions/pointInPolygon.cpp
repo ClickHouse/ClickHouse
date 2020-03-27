@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/GeoUtils.h>
+#include <Functions/PolygonUtils.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <boost/geometry.hpp>
@@ -34,14 +34,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
-namespace FunctionPointInPolygonDetail
+namespace
 {
 
 template <typename Polygon, typename PointInPolygonImpl>
@@ -53,11 +52,7 @@ ColumnPtr callPointInPolygonImplWithPool(const IColumn & x, const IColumn & y, P
 
     auto factory = [& polygon]()
     {
-        GeoUtils::normalizePolygon(polygon);
         auto ptr = std::make_unique<PointInPolygonImpl>(polygon);
-
-        /// To allocate memory.
-        ptr->init();
 
         ProfileEvents::increment(ProfileEvents::PolygonsAddedToPool);
         ProfileEvents::increment(ProfileEvents::PolygonsInPoolAllocatedBytes, ptr->getAllocatedBytes());
@@ -65,38 +60,38 @@ ColumnPtr callPointInPolygonImplWithPool(const IColumn & x, const IColumn & y, P
         return ptr.release();
     };
 
-    std::string serialized_polygon = GeoUtils::serialize(polygon);
+    std::string serialized_polygon = serialize(polygon);
     auto impl = known_polygons.get(serialized_polygon, factory);
 
-    return GeoUtils::pointInPolygon(x, y, *impl);
+    return pointInPolygon(x, y, *impl);
 }
 
 template <typename Polygon, typename PointInPolygonImpl>
 ColumnPtr callPointInPolygonImpl(const IColumn & x, const IColumn & y, Polygon & polygon)
 {
     PointInPolygonImpl impl(polygon);
-    return GeoUtils::pointInPolygon(x, y, impl);
+    return pointInPolygon(x, y, impl);
 }
 
 }
 
-template <template <typename> typename PointInPolygonImpl, bool use_object_pool = false>
+template <typename PointInPolygonImpl, bool use_object_pool>
 class FunctionPointInPolygon : public IFunction
 {
 public:
+    using CoordinateType = Float64;
 
-    template <typename Type>
-    using Point = boost::geometry::model::d2::point_xy<Type>;
-    template <typename Type>
-    using Polygon = boost::geometry::model::polygon<Point<Type>, false>;
-    template <typename Type>
-    using Box = boost::geometry::model::box<Point<Type>>;
+    using Point = boost::geometry::model::d2::point_xy<CoordinateType>;
+    using Polygon = boost::geometry::model::polygon<Point, false>;
+    using Box = boost::geometry::model::box<Point>;
 
-    static const char * name;
+    static inline const char * name = "pointInPolygon";
 
-    static FunctionPtr create(const Context &)
+    explicit FunctionPointInPolygon(bool validate_) : validate(validate_) {}
+
+    static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl, use_object_pool>>();
+        return std::make_shared<FunctionPointInPolygon<PointInPolygonImpl, use_object_pool>>(context.getSettingsRef().validate_polygons);
     }
 
     String getName() const override
@@ -153,7 +148,6 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-
         const IColumn * point_col = block.getByPosition(arguments[0]).column.get();
         auto const_tuple_col = checkAndGetColumn<ColumnConst>(point_col);
         if (const_tuple_col)
@@ -161,51 +155,24 @@ public:
         auto tuple_col = checkAndGetColumn<ColumnTuple>(point_col);
 
         if (!tuple_col)
-        {
             throw Exception("First argument for function " + getName() + " must be constant array of tuples.",
                             ErrorCodes::ILLEGAL_COLUMN);
-        }
-
-        const auto & tuple_columns = tuple_col->getColumns();
-        const DataTypes & tuple_types = typeid_cast<const DataTypeTuple &>(*block.getByPosition(arguments[0]).type).getElements();
-
-        bool use_float64 = WhichDataType(tuple_types[0]).isFloat64() || WhichDataType(tuple_types[1]).isFloat64();
 
         auto & result_column = block.safeGetByPosition(result).column;
 
-        if (use_float64)
-            result_column = executeForType<Float64>(*tuple_columns[0], *tuple_columns[1], block, arguments);
-        else
-            result_column = executeForType<Float32>(*tuple_columns[0], *tuple_columns[1], block, arguments);
+        const auto & tuple_columns = tuple_col->getColumns();
+        result_column = executeForType(*tuple_columns[0], *tuple_columns[1], block, arguments);
 
         if (const_tuple_col)
             result_column = ColumnConst::create(result_column, const_tuple_col->size());
     }
 
 private:
+    bool validate;
 
-    Float64 getCoordinateFromField(const Field & field)
-    {
-        switch (field.getType())
-        {
-            case Field::Types::Float64:
-                return field.get<Float64>();
-            case Field::Types::Int64:
-                return field.get<Int64>();
-            case Field::Types::UInt64:
-                return field.get<UInt64>();
-            default:
-            {
-                std::string msg = "Expected numeric field, but got ";
-                throw Exception(msg + Field::Types::toString(field.getType()), ErrorCodes::LOGICAL_ERROR);
-            }
-        }
-    }
-
-    template <typename Type>
     ColumnPtr executeForType(const IColumn & x, const IColumn & y, Block & block, const ColumnNumbers & arguments)
     {
-        Polygon<Type> polygon;
+        Polygon polygon;
 
         auto get_message_prefix = [this](size_t i) { return "Argument " + toString(i + 1) + " for function " + getName(); };
 
@@ -234,37 +201,36 @@ private:
 
             for (auto j : ext::range(0, size))
             {
-                Type x_coord = getCoordinateFromField((*column_x)[j]);
-                Type y_coord = getCoordinateFromField((*column_y)[j]);
-                container.push_back(Point<Type>(x_coord, y_coord));
+                CoordinateType x_coord = column_x->getFloat64(j);
+                CoordinateType y_coord = column_y->getFloat64(j);
+                container.push_back(Point(x_coord, y_coord));
             }
-
-            /// Polygon assumed to be closed. Allow user to escape repeating of first point.
-            if (!boost::geometry::equals(container.front(), container.back()))
-                container.push_back(container.front());
         }
 
+        boost::geometry::correct(polygon);
+
+#if !defined(__clang_analyzer__) /// It does not like boost.
+        if (validate)
+        {
+            std::string failure_message;
+            auto is_valid = boost::geometry::is_valid(polygon, failure_message);
+            if (!is_valid)
+                throw Exception("Polygon is not valid: " + failure_message, ErrorCodes::BAD_ARGUMENTS);
+        }
+#endif
+
         auto call_impl = use_object_pool
-            ? FunctionPointInPolygonDetail::callPointInPolygonImplWithPool<Polygon<Type>, PointInPolygonImpl<Type>>
-            : FunctionPointInPolygonDetail::callPointInPolygonImpl<Polygon<Type>, PointInPolygonImpl<Type>>;
+            ? callPointInPolygonImplWithPool<Polygon, PointInPolygonImpl>
+            : callPointInPolygonImpl<Polygon, PointInPolygonImpl>;
 
         return call_impl(x, y, polygon);
     }
 };
 
 
-template <typename Type>
-using Point = boost::geometry::model::d2::point_xy<Type>;
-
-template <typename Type>
-using PointInPolygonWithGrid = GeoUtils::PointInPolygonWithGrid<Type>;
-
-template <>
-const char * FunctionPointInPolygon<PointInPolygonWithGrid, true>::name = "pointInPolygon";
-
 void registerFunctionPointInPolygon(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid, true>>();
+    factory.registerFunction<FunctionPointInPolygon<PointInPolygonWithGrid<Float64>, true>>();
 }
 
 }

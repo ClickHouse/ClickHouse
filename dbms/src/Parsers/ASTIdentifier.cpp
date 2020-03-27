@@ -101,6 +101,15 @@ void ASTIdentifier::appendColumnNameImpl(WriteBuffer & ostr) const
     writeString(name, ostr);
 }
 
+void ASTIdentifier::resetTable(const String & database_name, const String & table_name)
+{
+    auto ast = createTableIdentifier(database_name, table_name);
+    auto & ident = ast->as<ASTIdentifier &>();
+    name.swap(ident.name);
+    name_parts.swap(ident.name_parts);
+    uuid = ident.uuid;
+}
+
 ASTPtr createTableIdentifier(const String & database_name, const String & table_name)
 {
     assert(database_name != "_temporary_and_external_tables");
