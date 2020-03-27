@@ -1,8 +1,6 @@
 # Array(T) {#data-type-array}
 
-Array of `T`-type items.
-
-`T` can be anything, including an array.
+An array of `T`-type items. `T` can be any data type, including an array.
 
 ## Creating an array {#creating-an-array}
 
@@ -40,11 +38,11 @@ SELECT [1, 2] AS x, toTypeName(x)
 └───────┴────────────────────┘
 ```
 
-## Working with data types {#working-with-data-types}
+## Working with Data Types {#working-with-data-types}
 
-When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [NULL](../query_language/syntax.md#null-literal) or [Nullable](nullable.md#data_type-nullable) type arguments, the type of array elements is [Nullable](nullable.md).
+When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [Nullable](nullable.md#data_type-nullable) or literal [NULL](../query_language/syntax.md#null-literal) values, the type of an array element also becomes [Nullable](nullable.md).
 
-If ClickHouse couldn’t determine the data type, it will generate an exception. For instance, this will happen when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
+If ClickHouse couldn’t determine the data type, it generates an exception. For instance, this happens when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
 
 Examples of automatic data type detection:
 
