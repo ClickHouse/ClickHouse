@@ -71,7 +71,6 @@ protected:
                                 ErrorCodes::LOGICAL_ERROR);
 
             auto num_rows = chunk.getNumRows();
-            auto block_size = num_rows;
             columns = chunk.mutateColumns();
             if (limit_rows && num_rows > limit_rows)
             {
@@ -80,9 +79,12 @@ protected:
                     column = (*column->cut(0, num_rows)).mutate();
             }
 
+            was_chunk_inserted = true;
             total_merged_rows += num_rows;
             merged_rows = num_rows;
-            sum_blocks_granularity += block_size * num_rows;
+
+            /// We don't cate about granularity here. Because, for fast-forward optimization, chunk will be moved as-is.
+            /// sum_blocks_granularity += block_size * num_rows;
         }
 
         Chunk pull()
@@ -100,12 +102,18 @@ protected:
             sum_blocks_granularity = 0;
             ++total_chunks;
             total_allocated_bytes += chunk.allocatedBytes();
+            was_chunk_inserted = false;
 
             return chunk;
         }
 
         bool hasEnoughRows() const
         {
+            /// If full chunk was inserted, then we must pull it.
+            /// It is needed for fast-forward optimization.
+            if (was_chunk_inserted)
+                return true;
+
             /// Never return more then max_block_size.
             if (merged_rows >= max_block_size)
                 return true;
@@ -136,6 +144,8 @@ protected:
 
         const UInt64 max_block_size;
         const bool use_average_block_size;
+
+        bool was_chunk_inserted = false;
     };
 
     MergedData merged_data;
