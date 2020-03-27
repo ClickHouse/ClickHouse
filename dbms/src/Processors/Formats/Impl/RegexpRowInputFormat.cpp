@@ -3,7 +3,6 @@
 #include <Processors/Formats/Impl/RegexpRowInputFormat.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
-#include <re2/stringpiece.h>
 
 namespace DB
 {
@@ -33,17 +32,17 @@ RegexpRowInputFormat::RegexpRowInputFormat(
     field_format = stringToFormat(format_settings_.regexp.escaping_rule);
 }
 
-RegexpRowInputFormat::FieldFormat RegexpRowInputFormat::stringToFormat(const String & format)
+RegexpRowInputFormat::ColumnFormat RegexpRowInputFormat::stringToFormat(const String & format)
 {
     if (format == "Escaped")
-        return FieldFormat::Escaped;
+        return ColumnFormat::Escaped;
     if (format == "Quoted")
-        return FieldFormat::Quoted;
+        return ColumnFormat::Quoted;
     if (format == "CSV")
-        return FieldFormat::Csv;
+        return ColumnFormat::Csv;
     if (format == "JSON")
-        return FieldFormat::Json;
-    throw Exception("Unknown field format \"" + format + "\".", ErrorCodes::BAD_ARGUMENTS);
+        return ColumnFormat::Json;
+    throw Exception("Unsupported column format \"" + format + "\".", ErrorCodes::BAD_ARGUMENTS);
 }
 
 bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
@@ -51,40 +50,42 @@ bool RegexpRowInputFormat::readField(size_t index, MutableColumns & columns)
     const auto & type = getPort().getHeader().getByPosition(index).type;
     bool parse_as_nullable = format_settings.null_as_default && !type->isNullable();
     bool read = true;
-    ReadBuffer field_buf(matched_fields[index].data(), matched_fields[index].size(), 0);
+    ReadBuffer field_buf(const_cast<char *>(matched_fields[index].data()), matched_fields[index].size(), 0);
     try
     {
         switch (field_format)
         {
-            case FieldFormat::Escaped:
+            case ColumnFormat::Escaped:
                 if (parse_as_nullable)
                     read = DataTypeNullable::deserializeTextEscaped(*columns[index], field_buf, format_settings, type);
                 else
                     type->deserializeAsTextEscaped(*columns[index], field_buf, format_settings);
                 break;
-            case FieldFormat::Quoted:
+            case ColumnFormat::Quoted:
                 if (parse_as_nullable)
                     read = DataTypeNullable::deserializeTextQuoted(*columns[index], field_buf, format_settings, type);
                 else
                     type->deserializeAsTextQuoted(*columns[index], field_buf, format_settings);
                 break;
-            case FieldFormat::Csv:
+            case ColumnFormat::Csv:
                 if (parse_as_nullable)
                     read = DataTypeNullable::deserializeTextCSV(*columns[index], field_buf, format_settings, type);
                 else
                     type->deserializeAsTextCSV(*columns[index], field_buf, format_settings);
                 break;
-            case FieldFormat::Json:
+            case ColumnFormat::Json:
                 if (parse_as_nullable)
                     read = DataTypeNullable::deserializeTextJSON(*columns[index], field_buf, format_settings, type);
                 else
                     type->deserializeAsTextJSON(*columns[index], field_buf, format_settings);
                 break;
+            default:
+                break;
         }
     }
     catch (Exception & e)
     {
-        e.addMessage("(while read the value of key " +  getPort().getHeader().getByPosition(index).name + ")");
+        e.addMessage("(while read the value of column " +  getPort().getHeader().getByPosition(index).name + ")");
         throw;
     }
     return read;
@@ -111,11 +112,11 @@ bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & 
 
     size_t line_size = 0;
 
-    while (!buf.eof() && *buf.position() != '\n' && *buf.position() != '\r')
-    {
-        ++buf.position();
-        ++line_size;
-    }
+    do {
+        char *pos = find_first_symbols<'\n', '\r'>(buf.position(), buf.buffer().end());
+        line_size += pos - buf.position();
+        buf.position() = pos;
+    } while (buf.position() == buf.buffer().end() && !buf.eof());
 
     buf.makeContinuousMemoryFromCheckpointToPos();
     buf.rollbackToCheckpoint();
@@ -135,12 +136,9 @@ bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & 
 
     buf.position() += line_size;
 
-    // Two sequential increments are needed to support DOS-style newline ("\r\n").
-    if (!buf.eof() && *buf.position() == '\r')
-        ++buf.position();
-
-    if (!buf.eof() && *buf.position() == '\n')
-        ++buf.position();
+    checkChar('\r', buf);
+    if (!buf.eof() && !checkChar('\n', buf))
+        throw Exception("No \\n after \\r at the end of line.", ErrorCodes::INCORRECT_DATA);
 
     return true;
 }
@@ -160,21 +158,27 @@ void registerInputFormatProcessorRegexp(FormatFactory & factory)
 static bool fileSegmentationEngineRegexpImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_chunk_size)
 {
     char * pos = in.position();
+    bool need_more_data = true;
 
-    while (loadAtPosition(in, memory, pos) && (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size))
+    while (loadAtPosition(in, memory, pos) && need_more_data)
     {
         pos = find_first_symbols<'\n', '\r'>(pos, in.buffer().end());
         if (pos == in.buffer().end())
             continue;
 
         // Support DOS-style newline ("\r\n")
-        if (*pos++ == '\r')
+        if (*pos == '\r')
         {
+            ++pos;
             if (pos == in.buffer().end())
                 loadAtPosition(in, memory, pos);
-            if (*pos == '\n')
-                ++pos;
         }
+
+        if (memory.size() + static_cast<size_t>(pos - in.position()) >= min_chunk_size)
+            need_more_data = false;
+
+        ++pos;
+
     }
 
     saveUpToPosition(in, memory, pos);
