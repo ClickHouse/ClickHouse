@@ -184,7 +184,7 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
 void MergingSortedTransform::insertFromChunk(size_t source_num)
 {
     if (source_num >= cursors.size())
-        throw Exception("Logical error in MergingSortedTrandform", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Logical error in MergingSortedTransform", ErrorCodes::LOGICAL_ERROR);
 
     //std::cerr << "copied columns\n";
 
