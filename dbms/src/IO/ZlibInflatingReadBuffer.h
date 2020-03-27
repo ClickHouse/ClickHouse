@@ -12,7 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ZLIB_INFLATE_FAILED;
 }
 
 /// Reads compressed data from ReadBuffer in_ and performs decompression using zlib library.

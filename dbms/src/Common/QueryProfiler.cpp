@@ -1,17 +1,16 @@
 #include "QueryProfiler.h"
 
-#include <random>
-#include <common/phdr_cache.h>
-#include <common/config_common.h>
-#include <common/StringRef.h>
-#include <common/logger_useful.h>
-#include <Common/PipeFDs.h>
-#include <Common/StackTrace.h>
-#include <Common/CurrentThread.h>
-#include <Common/Exception.h>
-#include <Common/thread_local_rng.h>
 #include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromFileDescriptorDiscardOnFailure.h>
+#include <Common/Exception.h>
+#include <Common/StackTrace.h>
+#include <Common/TraceCollector.h>
+#include <Common/thread_local_rng.h>
+#include <common/StringRef.h>
+#include <common/config_common.h>
+#include <common/logger_useful.h>
+#include <common/phdr_cache.h>
+
+#include <random>
 
 
 namespace ProfileEvents
@@ -22,74 +21,50 @@ namespace ProfileEvents
 namespace DB
 {
 
-extern LazyPipeFDs trace_pipe;
-
 namespace
 {
-    /// Normally query_id is a UUID (string with a fixed length) but user can provide custom query_id.
-    /// Thus upper bound on query_id length should be introduced to avoid buffer overflow in signal handler.
-    constexpr size_t QUERY_ID_MAX_LEN = 1024;
-
-#if defined(OS_LINUX)
     thread_local size_t write_trace_iteration = 0;
-#endif
 
-    void writeTraceInfo(TimerType timer_type, int /* sig */, siginfo_t * info, void * context)
+    void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
+        auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
 #if defined(OS_LINUX)
-        /// Quickly drop if signal handler is called too frequently.
-        /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
-        ++write_trace_iteration;
-        if (info && info->si_overrun > 0)
+        if (info)
         {
-            /// But pass with some frequency to avoid drop of all traces.
-            if (write_trace_iteration % info->si_overrun == 0)
+            int overrun_count = info->si_overrun;
+
+            /// Quickly drop if signal handler is called too frequently.
+            /// Otherwise we may end up infinitelly processing signals instead of doing any useful work.
+            ++write_trace_iteration;
+            if (overrun_count)
             {
-                ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, info->si_overrun);
-            }
-            else
-            {
-                ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, info->si_overrun + 1);
-                return;
+                /// But pass with some frequency to avoid drop of all traces.
+                if (write_trace_iteration % overrun_count == 0)
+                {
+                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
+                }
+                else
+                {
+                    ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count + 1);
+                    return;
+                }
             }
         }
 #else
         UNUSED(info);
+        UNUSED(write_trace_iteration);
 #endif
-
-        constexpr size_t buf_size = sizeof(char) + // TraceCollector stop flag
-                                    8 * sizeof(char) + // maximum VarUInt length for string size
-                                    QUERY_ID_MAX_LEN * sizeof(char) + // maximum query_id length
-                                    sizeof(UInt8) + // number of stack frames
-                                    sizeof(StackTrace::Frames) + // collected stack trace, maximum capacity
-                                    sizeof(TimerType) + // timer type
-                                    sizeof(UInt64); // thread_id
-        char buffer[buf_size];
-        WriteBufferFromFileDescriptorDiscardOnFailure out(trace_pipe.fds_rw[1], buf_size, buffer);
-
-        StringRef query_id = CurrentThread::getQueryId();
-        query_id.size = std::min(query_id.size, QUERY_ID_MAX_LEN);
-
-        UInt64 thread_id = CurrentThread::get().thread_id;
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
         const StackTrace stack_trace(signal_context);
 
-        writeChar(false, out);
-        writeStringBinary(query_id, out);
+        TraceCollector::collect(trace_type, stack_trace, 0);
 
-        size_t stack_trace_size = stack_trace.getSize();
-        size_t stack_trace_offset = stack_trace.getOffset();
-        writeIntBinary(UInt8(stack_trace_size - stack_trace_offset), out);
-        for (size_t i = stack_trace_offset; i < stack_trace_size; ++i)
-            writePODBinary(stack_trace.getFrames()[i], out);
-
-        writePODBinary(timer_type, out);
-        writePODBinary(thread_id, out);
-        out.next();
+        errno = saved_errno;
     }
 
-    [[maybe_unused]] const UInt32 TIMER_PRECISION = 1e9;
+    [[maybe_unused]] constexpr UInt32 TIMER_PRECISION = 1e9;
 }
 
 namespace ErrorCodes
@@ -131,15 +106,15 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
 
     try
     {
-        struct sigevent sev;
+        struct sigevent sev {};
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
 
-#if defined(__FreeBSD__)
+#   if defined(__FreeBSD__)
         sev._sigev_un._threadid = thread_id;
-#else
+#   else
         sev._sigev_un._tid = thread_id;
-#endif
+#   endif
         if (timer_create(clock_type, &sev, &timer_id))
         {
             /// In Google Cloud Run, the function "timer_create" is implemented incorrectly as of 2020-01-25.
@@ -206,7 +181,7 @@ QueryProfilerReal::QueryProfilerReal(const UInt64 thread_id, const UInt32 period
 
 void QueryProfilerReal::signalHandler(int sig, siginfo_t * info, void * context)
 {
-    writeTraceInfo(TimerType::Real, sig, info, context);
+    writeTraceInfo(TraceType::Real, sig, info, context);
 }
 
 QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
@@ -215,7 +190,7 @@ QueryProfilerCpu::QueryProfilerCpu(const UInt64 thread_id, const UInt32 period)
 
 void QueryProfilerCpu::signalHandler(int sig, siginfo_t * info, void * context)
 {
-    writeTraceInfo(TimerType::Cpu, sig, info, context);
+    writeTraceInfo(TraceType::CPU, sig, info, context);
 }
 
 }

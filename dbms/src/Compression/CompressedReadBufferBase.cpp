@@ -1,7 +1,8 @@
 #include "CompressedReadBufferBase.h"
 
 #include <vector>
-#include <string.h>
+#include <cstring>
+#include <cassert>
 #include <city.h>
 #include <Common/PODArray.h>
 #include <Common/ProfileEvents.h>
@@ -28,7 +29,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int CANNOT_DECOMPRESS;
@@ -105,7 +105,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     own_compressed_buffer.resize(header_size);
     compressed_in->readStrict(own_compressed_buffer.data(), header_size);
 
-    UInt8 method = ICompressionCodec::readMethod(own_compressed_buffer.data());
+    uint8_t method = ICompressionCodec::readMethod(own_compressed_buffer.data());
 
     if (!codec)
         codec = CompressionCodecFactory::instance().get(method);
@@ -119,6 +119,9 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     size_compressed_without_checksum = ICompressionCodec::readCompressedBlockSize(own_compressed_buffer.data());
     size_decompressed = ICompressionCodec::readDecompressedBlockSize(own_compressed_buffer.data());
 
+    /// This is for clang static analyzer.
+    assert(size_decompressed > 0);
+
     if (size_compressed_without_checksum > DBMS_MAX_COMPRESSED_SIZE)
         throw Exception("Too large size_compressed_without_checksum: "
                         + toString(size_compressed_without_checksum)
@@ -131,9 +134,11 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
 
     ProfileEvents::increment(ProfileEvents::ReadCompressedBytes, size_compressed_without_checksum + sizeof(Checksum));
 
+    auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
+
     /// Is whole compressed block located in 'compressed_in->' buffer?
     if (compressed_in->offset() >= header_size &&
-        compressed_in->position() + size_compressed_without_checksum + codec->getAdditionalSizeAtTheEndOfBuffer()  - header_size <= compressed_in->buffer().end())
+        compressed_in->position() + size_compressed_without_checksum + additional_size_at_the_end_of_buffer  - header_size <= compressed_in->buffer().end())
     {
         compressed_in->position() -= header_size;
         compressed_buffer = compressed_in->position();
@@ -141,7 +146,7 @@ size_t CompressedReadBufferBase::readCompressedData(size_t & size_decompressed, 
     }
     else
     {
-        own_compressed_buffer.resize(size_compressed_without_checksum + codec->getAdditionalSizeAtTheEndOfBuffer());
+        own_compressed_buffer.resize(size_compressed_without_checksum + additional_size_at_the_end_of_buffer);
         compressed_buffer = own_compressed_buffer.data();
         compressed_in->readStrict(compressed_buffer + header_size, size_compressed_without_checksum - header_size);
     }
@@ -158,7 +163,7 @@ void CompressedReadBufferBase::decompress(char * to, size_t size_decompressed, s
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBlocks);
     ProfileEvents::increment(ProfileEvents::CompressedReadBufferBytes, size_decompressed);
 
-    UInt8 method = ICompressionCodec::readMethod(compressed_buffer);
+    uint8_t method = ICompressionCodec::readMethod(compressed_buffer);
 
     if (!codec)
         codec = CompressionCodecFactory::instance().get(method);

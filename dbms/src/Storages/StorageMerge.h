@@ -4,6 +4,7 @@
 
 #include <Common/OptimizedRegularExpression.h>
 #include <Storages/IStorage.h>
+#include <Interpreters/Context.h>
 
 
 namespace DB
@@ -12,7 +13,7 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorage
+class StorageMerge final : public ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMerge>;
 public:
@@ -32,7 +33,7 @@ public:
 
     QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const override;
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -63,7 +64,7 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
-    DatabaseTablesIteratorPtr getDatabaseIterator(const Context & context) const;
+    DatabaseTablesIteratorPtr getDatabaseIterator() const;
 
 protected:
     StorageMerge(
@@ -76,14 +77,15 @@ protected:
     Block getQueryHeader(const Names & column_names, const SelectQueryInfo & query_info,
                          const Context & context, QueryProcessingStage::Enum processed_stage);
 
-    BlockInputStreams createSourceStreams(const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
-                                          const UInt64 max_block_size, const Block & header, const StorageWithLockAndName & storage_with_lock,
-                                          Names & real_column_names,
-                                          Context & modified_context, size_t streams_num, bool has_table_virtual_column,
-                                          bool concat_streams = false);
+    Pipes createSources(
+        const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
+        const UInt64 max_block_size, const Block & header, const StorageWithLockAndName & storage_with_lock,
+        Names & real_column_names,
+        const std::shared_ptr<Context> & modified_context, size_t streams_num, bool has_table_virtual_column,
+        bool concat_streams = false);
 
     void convertingSourceStream(const Block & header, const Context & context, ASTPtr & query,
-                                BlockInputStreamPtr & source_stream, QueryProcessingStage::Enum processed_stage);
+                                Pipe & pipe, QueryProcessingStage::Enum processed_stage);
 };
 
 }

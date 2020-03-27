@@ -40,6 +40,15 @@ struct MarkInCompressedFile
 
 };
 
-using MarksInCompressedFile = PODArray<MarkInCompressedFile>;
+class MarksInCompressedFile : public PODArray<MarkInCompressedFile>
+{
+public:
+    MarksInCompressedFile(size_t n) : PODArray(n) {}
+
+    void read(ReadBuffer & buffer, size_t from, size_t count)
+    {
+        buffer.readStrict(reinterpret_cast<char *>(data() + from), count * sizeof(MarkInCompressedFile));
+    }
+};
 
 }

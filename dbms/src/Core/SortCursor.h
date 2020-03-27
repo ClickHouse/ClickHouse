@@ -15,6 +15,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /** Cursor allows to compare rows in different blocks (and parts).
   * Cursor moves inside single block.

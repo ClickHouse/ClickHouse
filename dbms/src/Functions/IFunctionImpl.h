@@ -18,6 +18,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int NOT_IMPLEMENTED;
+}
 
 /// Cache for functions result if it was executed on low cardinality column.
 class ExecutableFunctionLowCardinalityResultCache;

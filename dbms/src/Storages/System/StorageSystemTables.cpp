@@ -6,7 +6,7 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
-#include <Access/AccessRightsContext.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/queryToString.h>
@@ -24,7 +24,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int TABLE_IS_DROPPED;
 }
 
@@ -57,7 +56,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
 static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & context)
 {
     MutableColumnPtr column = ColumnString::create();
-    for (const auto & db : context.getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
         column->insert(db.first);
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
@@ -106,8 +105,8 @@ protected:
 
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
-        const auto access_rights = context.getAccessRights();
-        const bool check_access_for_databases = !access_rights->isGranted(AccessType::SHOW);
+        const auto access = context.getAccess();
+        const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)
@@ -118,7 +117,7 @@ protected:
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
                 database_name = databases->getDataAt(database_idx).toString();
-                database = context.tryGetDatabase(database_name);
+                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
                 if (!database)
                 {
@@ -137,7 +136,7 @@ protected:
                 {
                     Tables external_tables = context.getSessionContext().getExternalTables();
 
-                    for (auto table : external_tables)
+                    for (auto & table : external_tables)
                     {
                         size_t src_index = 0;
                         size_t res_index = 0;
@@ -197,7 +196,7 @@ protected:
                 return Chunk(std::move(res_columns), num_rows);
             }
 
-            const bool check_access_for_tables = check_access_for_databases && !access_rights->isGranted(AccessType::SHOW, database_name);
+            const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesWithDictionaryTablesIterator(context);
@@ -207,7 +206,7 @@ protected:
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
-                if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name))
+                if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
                 StoragePtr table = nullptr;
@@ -217,8 +216,7 @@ protected:
                 {
                     if (need_lock_structure)
                     {
-                        if (!table)
-                            table = tables_it->table();
+                        table = tables_it->table();
                         lock = table->lockStructureForShare(false, context.getCurrentQueryId());
                     }
                 }
@@ -242,8 +240,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     res_columns[res_index++]->insert(table->getName());
                 }
 
@@ -252,9 +249,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
-
+                    assert(table != nullptr);
                     Array table_paths_array;
                     auto paths = table->getDataPaths();
                     table_paths_array.reserve(paths.size());
@@ -274,7 +269,7 @@ protected:
                     Array dependencies_database_name_array;
                     if (columns_mask[src_index] || columns_mask[src_index + 1])
                     {
-                        const auto dependencies = context.getDependencies(StorageID(database_name, table_name));
+                        const auto dependencies = DatabaseCatalog::instance().getDependencies(StorageID(database_name, table_name));
 
                         dependencies_table_name_array.reserve(dependencies.size());
                         dependencies_database_name_array.reserve(dependencies.size());
@@ -325,8 +320,7 @@ protected:
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -335,8 +329,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getSortingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -345,8 +338,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getPrimaryKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -355,8 +347,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -365,8 +356,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     auto policy = table->getStoragePolicy();
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
@@ -392,7 +382,7 @@ private:
 };
 
 
-Pipes StorageSystemTables::readWithProcessors(
+Pipes StorageSystemTables::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,

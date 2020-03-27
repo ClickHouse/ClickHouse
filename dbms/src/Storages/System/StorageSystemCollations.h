@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class StorageSystemCollations : public ext::shared_ptr_helper<StorageSystemCollations>,
+class StorageSystemCollations final : public ext::shared_ptr_helper<StorageSystemCollations>,
                                 public IStorageSystemOneBlock<StorageSystemCollations>
 {
     friend struct ext::shared_ptr_helper<StorageSystemCollations>;

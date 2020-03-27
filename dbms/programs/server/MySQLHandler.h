@@ -1,13 +1,19 @@
 #pragma once
 #include <Common/config.h>
 #include <Poco/Net/TCPServerConnection.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
+#include <Common/CurrentMetrics.h>
 #include <Core/MySQLProtocol.h>
 #include "IServer.h"
 
 #if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
+
+namespace CurrentMetrics
+{
+    extern const Metric MySQLConnection;
+}
 
 namespace DB
 {
@@ -20,6 +26,8 @@ public:
     void run() final;
 
 private:
+    CurrentMetrics::Increment metric_increment{CurrentMetrics::MySQLConnection};
+
     /// Enables SSL, if client requested.
     void finishHandshake(MySQLProtocol::HandshakeResponse &);
 

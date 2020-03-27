@@ -1,5 +1,6 @@
 #include <Processors/Transforms/InflatingExpressionTransform.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -27,7 +28,7 @@ void InflatingExpressionTransform::transform(Chunk & chunk)
         if (expression->resultIsAlwaysEmpty())
         {
             stopReading();
-            chunk = Chunk(getOutputPort().getHeader().getColumns(), 0);
+            chunk.clear();
             return;
         }
     }

@@ -20,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int POSITION_OUT_OF_BOUND;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
@@ -355,7 +356,6 @@ void Block::setColumns(const Columns & columns)
     for (size_t i = 0; i < num_columns; ++i)
         data[i].column = columns[i];
 }
-
 
 
 Block Block::cloneWithColumns(MutableColumns && columns) const

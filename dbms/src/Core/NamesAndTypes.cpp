@@ -165,4 +165,13 @@ bool NamesAndTypesList::contains(const String & name) const
     return false;
 }
 
+std::optional<NameAndTypePair> NamesAndTypesList::tryGetByName(const std::string & name) const
+{
+    for (const NameAndTypePair & column : *this)
+    {
+        if (column.name == name)
+            return column;
+    }
+    return {};
+}
 }

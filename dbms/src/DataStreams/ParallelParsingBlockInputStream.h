@@ -213,9 +213,9 @@ private:
     std::deque<ProcessingUnit> processing_units;
 
 
-    void scheduleParserThreadForUnitWithNumber(size_t unit_number)
+    void scheduleParserThreadForUnitWithNumber(size_t ticket_number)
     {
-        pool.scheduleOrThrowOnError(std::bind(&ParallelParsingBlockInputStream::parserThreadFunction, this, unit_number));
+        pool.scheduleOrThrowOnError(std::bind(&ParallelParsingBlockInputStream::parserThreadFunction, this, ticket_number));
     }
 
     void finishAndWait()
@@ -242,7 +242,7 @@ private:
     }
 
     void segmentatorThreadFunction();
-    void parserThreadFunction(size_t bucket_num);
+    void parserThreadFunction(size_t current_ticket_number);
 
     // Save/log a background exception, set termination flag, wake up all
     // threads. This function is used by segmentator and parsed threads.
