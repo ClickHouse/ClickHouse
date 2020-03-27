@@ -384,6 +384,15 @@ public:
     std::vector<MergeTreeMutationStatus> getMutationsStatus() const;
 
     void removeCurrentPartsFromMutations();
+
+    using QueueLocks = std::scoped_lock<std::mutex, std::mutex, std::mutex>;
+
+    /// This method locks all important queue mutexes: state_mutex,
+    /// pull_logs_to_queue and update_mutations_mutex. It should be used only
+    /// once while we want to shutdown our queue and remove it's task from pool.
+    /// It's needed because queue itself can trigger it's task handler and in
+    /// this case race condition is possible.
+    QueueLocks lockQueue();
 };
 
 class ReplicatedMergeTreeMergePredicate

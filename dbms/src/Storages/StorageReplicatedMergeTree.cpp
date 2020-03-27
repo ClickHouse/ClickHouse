@@ -2882,7 +2882,14 @@ void StorageReplicatedMergeTree::shutdown()
 
     if (queue_task_handle)
         global_context.getBackgroundPool().removeTask(queue_task_handle);
-    queue_task_handle.reset();
+
+    {
+        /// Queue can trigger queue_task_handle itself. So we ensure that all
+        /// queue processes finished and after that reset queue_task_handle.
+        auto lock = queue.lockQueue();
+        queue_task_handle.reset();
+    }
+
 
     if (move_parts_task_handle)
         global_context.getBackgroundMovePool().removeTask(move_parts_task_handle);
