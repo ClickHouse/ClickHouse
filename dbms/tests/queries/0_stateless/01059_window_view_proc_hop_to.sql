@@ -1,5 +1,4 @@
 SET allow_experimental_window_view = 1;
-SET allow_experimental_window_view = 1;
 
 DROP TABLE IF EXISTS mt;
 DROP TABLE IF EXISTS dst;
