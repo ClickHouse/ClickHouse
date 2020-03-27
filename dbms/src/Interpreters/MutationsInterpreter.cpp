@@ -12,13 +12,13 @@
 #include <DataStreams/CreatingSetsBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
+#include <DataStreams/CheckSortedBlockInputStream.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/formatAST.h>
-#include <Parsers/ASTOrderByElement.h>
 #include <IO/WriteHelpers.h>
 
 
@@ -620,39 +620,6 @@ ASTPtr MutationsInterpreter::prepareInterpreterSelectQuery(std::vector<Stage> & 
         }
         select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_expression));
     }
-    auto metadata = storage->getInMemoryMetadata();
-    /// We have to execute select in order of primary key
-    /// because we don't sort results additionaly and don't have
-    /// any guarantees on data order without ORDER BY. It's almost free, because we
-    /// have optimization for data read in primary key order.
-    if (metadata.order_by_ast)
-    {
-        ASTPtr dummy;
-
-        ASTPtr key_expr;
-        if (metadata.primary_key_ast)
-            key_expr = metadata.primary_key_ast;
-        else
-            key_expr = metadata.order_by_ast;
-
-        bool empty = false;
-        /// In all other cases we cannot have empty key
-        if (auto key_function = key_expr->as<ASTFunction>())
-            empty = key_function->arguments->children.empty();
-
-        /// Not explicitely spicified empty key
-        if (!empty)
-        {
-            auto order_by_expr = std::make_shared<ASTOrderByElement>(1, 1, false, dummy, false, dummy, dummy, dummy);
-
-
-            order_by_expr->children.push_back(key_expr);
-            auto res = std::make_shared<ASTExpressionList>();
-            res->children.push_back(order_by_expr);
-
-            select->setExpression(ASTSelectQuery::Expression::ORDER_BY, std::move(res));
-        }
-    }
 
     return select;
 }
@@ -717,9 +684,17 @@ BlockInputStreamPtr MutationsInterpreter::execute(TableStructureReadLockHolder &
         throw Exception("Cannot execute mutations interpreter because can_execute flag set to false", ErrorCodes::LOGICAL_ERROR);
 
     BlockInputStreamPtr in = select_interpreter->execute().in;
+
     auto result_stream = addStreamsForLaterStages(stages, in);
+
+    /// Sometimes we update just part of columns (for example UPDATE mutation)
+    /// in this case we don't read sorting key, so just we don't check anything.
+    if (auto sort_desc = getStorageSortDescriptionIfPossible(result_stream->getHeader()))
+        result_stream = std::make_shared<CheckSortedBlockInputStream>(result_stream, *sort_desc);
+
     if (!updated_header)
         updated_header = std::make_unique<Block>(result_stream->getHeader());
+
     return result_stream;
 }
 
@@ -736,6 +711,24 @@ size_t MutationsInterpreter::evaluateCommandsSize()
             return mutation_ast->size();
 
     return std::max(prepareQueryAffectedAST(commands)->size(), mutation_ast->size());
+}
+
+std::optional<SortDescription> MutationsInterpreter::getStorageSortDescriptionIfPossible(const Block & header) const
+{
+    Names sort_columns = storage->getSortingKeyColumns();
+    SortDescription sort_description;
+    size_t sort_columns_size = sort_columns.size();
+    sort_description.reserve(sort_columns_size);
+
+    for (size_t i = 0; i < sort_columns_size; ++i)
+    {
+        if (header.has(sort_columns[i]))
+            sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
+        else
+            return {};
+    }
+
+    return sort_description;
 }
 
 }

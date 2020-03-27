@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/GeoUtils.h>
+#include <Functions/GeoHash.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Columns/ColumnString.h>
@@ -80,7 +80,7 @@ public:
             const Float64 longitude_value = longitude->getElement(i);
             const Float64 latitude_value = latitude->getElement(i);
 
-            const size_t encoded_size = GeoUtils::geohashEncode(longitude_value, latitude_value, precision_value, pos);
+            const size_t encoded_size = geohashEncode(longitude_value, latitude_value, precision_value, pos);
 
             pos += encoded_size;
             *pos = '\0';

@@ -8,10 +8,9 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', user_configs=['configs/users_on_cluster.xml'])
-node2 = cluster.add_instance('node2', user_configs=['configs/users_on_cluster.xml'])
-
-distributed = cluster.add_instance('distributed', main_configs=['configs/remote_servers.xml'], user_configs=['configs/users_on_distributed.xml'])
+node1 = cluster.add_instance('node1')
+node2 = cluster.add_instance('node2')
+distributed = cluster.add_instance('distributed', main_configs=['configs/remote_servers.xml'])
 
 
 @pytest.fixture(scope="module")
@@ -20,11 +19,15 @@ def started_cluster():
         cluster.start()
 
         for node in [node1, node2]:
-            node.query("CREATE TABLE sometable(date Date, id UInt32, value Int32) ENGINE = MergeTree() ORDER BY id;")
-            node.query("INSERT INTO sometable VALUES (toDate('2020-01-20'), 1, 1)")
+            node.query("CREATE TABLE sometable (date Date, id UInt32, value Int32) ENGINE = MergeTree() ORDER BY id;")
+            node.query("INSERT INTO sometable VALUES (toDate('2010-01-10'), 1, 1)")
+            node.query("CREATE USER shard")
+            node.query("GRANT ALL ON *.* TO shard")
 
-        distributed.query("CREATE TABLE proxy (date Date, id UInt32, value Int32) ENGINE = Distributed(test_cluster, default, sometable);")
-        distributed.query("CREATE TABLE sysproxy (name String, value String) ENGINE = Distributed(test_cluster, system, settings);")
+        distributed.query("CREATE TABLE proxy (date Date, id UInt32, value Int32) ENGINE = Distributed(test_cluster, default, sometable, toUInt64(date));")
+        distributed.query("CREATE TABLE shard_settings (name String, value String) ENGINE = Distributed(test_cluster, system, settings);")
+        distributed.query("CREATE ROLE admin")
+        distributed.query("GRANT ALL ON *.* TO admin")
 
         yield cluster
 
@@ -32,7 +35,14 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_shard_doesnt_throw_on_constraint_violation(started_cluster):
+def test_select_clamps_settings(started_cluster):
+    distributed.query("CREATE USER normal DEFAULT ROLE admin SETTINGS max_memory_usage = 80000000")
+    distributed.query("CREATE USER wasteful DEFAULT ROLE admin SETTINGS max_memory_usage = 2000000000")
+    distributed.query("CREATE USER readonly DEFAULT ROLE admin SETTINGS readonly = 1")
+    node1.query("ALTER USER shard SETTINGS max_memory_usage = 50000000 MIN 11111111 MAX 99999999")
+    node2.query("ALTER USER shard SETTINGS readonly = 1")
+
+    # Check that shards doesn't throw exceptions on constraints violation
     query = "SELECT COUNT() FROM proxy"
     assert distributed.query(query) == '2\n'
     assert distributed.query(query, user = 'normal') == '2\n'
@@ -47,9 +57,8 @@ def test_shard_doesnt_throw_on_constraint_violation(started_cluster):
     assert distributed.query(query, user = 'normal') == '2\n'
     assert distributed.query(query, user = 'wasteful') == '2\n'
 
-
-def test_shard_clamps_settings(started_cluster):
-    query = "SELECT hostName() as host, name, value FROM sysproxy WHERE name = 'max_memory_usage' OR name = 'readonly' ORDER BY host, name, value"
+    # Check that shards clamp passed settings.
+    query = "SELECT hostName() as host, name, value FROM shard_settings WHERE name = 'max_memory_usage' OR name = 'readonly' ORDER BY host, name, value"
     assert distributed.query(query) == 'node1\tmax_memory_usage\t99999999\n'\
                                        'node1\treadonly\t0\n'\
                                        'node2\tmax_memory_usage\t10000000000\n'\
@@ -79,3 +88,11 @@ def test_shard_clamps_settings(started_cluster):
                                                                                                  'node1\treadonly\t2\n'\
                                                                                                  'node2\tmax_memory_usage\t10000000000\n'\
                                                                                                  'node2\treadonly\t1\n'
+
+def test_insert_clamps_settings(started_cluster):
+    node1.query("ALTER USER shard SETTINGS max_memory_usage = 50000000 MIN 11111111 MAX 99999999")
+    node2.query("ALTER USER shard SETTINGS max_memory_usage = 50000000 MIN 11111111 MAX 99999999")
+
+    distributed.query("INSERT INTO proxy VALUES (toDate('2020-02-20'), 2, 2)")
+    distributed.query("INSERT INTO proxy VALUES (toDate('2020-02-21'), 2, 2)", settings={"max_memory_usage": 5000000})
+    assert distributed.query("SELECT COUNT() FROM proxy") == "4\n"
