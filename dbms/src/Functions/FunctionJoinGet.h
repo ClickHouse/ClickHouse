@@ -17,6 +17,10 @@ public:
 
     static constexpr auto name = "joinGet";
 
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
+
     void execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override;
 
     String getName() const override { return name; }
@@ -71,6 +75,9 @@ public:
 
     FunctionBaseImplPtr build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const override;
     DataTypePtr getReturnType(const ColumnsWithTypeAndName & arguments) const override;
+
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return true; }
 
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }

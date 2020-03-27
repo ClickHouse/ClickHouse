@@ -29,6 +29,7 @@ void registerDictionaries()
         registerDictionaryFlat(factory);
         registerDictionaryHashed(factory);
         registerDictionaryCache(factory);
+        registerDictionaryPolygon(factory);
     }
 }
 

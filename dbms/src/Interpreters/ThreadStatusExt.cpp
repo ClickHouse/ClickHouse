@@ -1,12 +1,13 @@
 #include <Common/ThreadStatus.h>
 
+#include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
+#include <Interpreters/QueryThreadLog.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/QueryProfiler.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/ProcessList.h>
+#include <Common/ThreadProfileEvents.h>
+#include <Common/TraceCollector.h>
 
 #if defined(OS_LINUX)
 #   include <Common/hasLinuxCapability.h>
@@ -24,6 +25,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_SET_THREAD_PRIORITY;
 }
 

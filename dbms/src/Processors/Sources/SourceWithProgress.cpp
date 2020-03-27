@@ -1,7 +1,7 @@
 #include <Processors/Sources/SourceWithProgress.h>
 
 #include <Interpreters/ProcessList.h>
-#include <Access/QuotaContext.h>
+#include <Access/EnabledQuota.h>
 
 namespace DB
 {
@@ -10,7 +10,6 @@ namespace ErrorCodes
 {
     extern const int TOO_MANY_ROWS;
     extern const int TOO_MANY_BYTES;
-    extern const int TIMEOUT_EXCEEDED;
 }
 
 void SourceWithProgress::work()

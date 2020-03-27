@@ -20,7 +20,7 @@ int main(int argc, char ** argv)
 
     try
     {
-        size_t n = argc == 2 ? atoi(argv[1]) : 10;
+        size_t n = argc == 2 ? std::stol(argv[1]) : 10;
 
         Block block;
 

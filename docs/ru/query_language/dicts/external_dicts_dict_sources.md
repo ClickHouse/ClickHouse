@@ -1,11 +1,10 @@
-
-# Источники внешних словарей {#dicts-external_dicts_dict_sources}
+# Источники внешних словарей {#dicts-external-dicts-dict-sources}
 
 Внешний словарь можно подключить из множества источников.
 
-Общий вид конфигурации:
+Общий вид XML-конфигурации:
 
-```xml
+``` xml
 <yandex>
   <dictionary>
     ...
@@ -20,26 +19,34 @@
 </yandex>
 ```
 
+Аналогичный [DDL-запрос](../create.md#create-dictionary-query):
+
+``` sql
+CREATE DICTIONARY dict_name (...)
+...
+SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
+...
+```
+
 Источник настраивается в разделе `source`.
 
 Типы источников (`source_type`):
 
-- [Локальный файл](#dicts-external_dicts_dict_sources-local_file)
-- [Исполняемый файл](#dicts-external_dicts_dict_sources-executable)
-- [HTTP(s)](#dicts-external_dicts_dict_sources-http)
+-   [Локальный файл](#dicts-external_dicts_dict_sources-local_file)
+-   [Исполняемый файл](#dicts-external_dicts_dict_sources-executable)
+-   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 -   СУБД:
-    - [ODBC](#dicts-external_dicts_dict_sources-odbc)
-    - [MySQL](#dicts-external_dicts_dict_sources-mysql)
-    - [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-    - [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
-    - [Redis](#dicts-external_dicts_dict_sources-redis)
-
+    -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
+    -   [MySQL](#dicts-external_dicts_dict_sources-mysql)
+    -   [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+    -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
+    -   [Redis](#dicts-external_dicts_dict_sources-redis)
 
 ## Локальный файл {#dicts-external_dicts_dict_sources-local_file}
 
 Пример настройки:
 
-```xml
+``` xml
 <source>
   <file>
     <path>/opt/dictionaries/os.tsv</path>
@@ -48,11 +55,16 @@
 </source>
 ```
 
+или
+
+``` sql
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+```
+
 Поля настройки:
 
--   `path` - Абсолютный путь к файлу.
--   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../../interfaces/formats.md#formats)".
-
+-   `path` — Абсолютный путь к файлу.
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
 
 ## Исполняемый файл {#dicts-external_dicts_dict_sources-executable}
 
@@ -60,7 +72,7 @@
 
 Пример настройки:
 
-```xml
+``` xml
 <source>
     <executable>
         <command>cat /opt/dictionaries/os.tsv</command>
@@ -69,11 +81,16 @@
 </source>
 ```
 
+или
+
+``` sql
+SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
+```
+
 Поля настройки:
 
--   `command` - Абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
--   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../../interfaces/formats.md#formats)".
-
+-   `command` — Абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
 
 ## HTTP(s) {#dicts-external_dicts_dict_sources-http}
 
@@ -81,22 +98,42 @@
 
 Пример настройки:
 
-```xml
+``` xml
 <source>
     <http>
         <url>http://[::1]/os.tsv</url>
         <format>TabSeparated</format>
+        <credentials>
+            <user>user</user>
+            <password>password</password>
+        </credentials>
+        <headers>
+            <header>
+                <name>API-KEY</name>
+                <value>key</value>
+            </header>
+        </headers>
     </http>
 </source>
+```
+
+или
+
+``` sql
+SOURCE(HTTP(
+    url 'http://[::1]/os.tsv'
+    format 'TabSeparated'
+    credentials(user 'user' password 'password')
+    headers(header(name 'API-KEY' value 'key'))
+))
 ```
 
 Чтобы ClickHouse смог обратиться к HTTPS-ресурсу, необходимо [настроить openSSL](../../operations/server_settings/settings.md) в конфигурации сервера.
 
 Поля настройки:
 
--   `url` - URL источника.
--   `format` - Формат файла. Поддерживаются все форматы, описанные в разделе "[Форматы](../../interfaces/formats.md#formats)".
-
+-   `url` — URL источника.
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
@@ -104,36 +141,49 @@
 
 Пример настройки:
 
-```xml
-<odbc>
-    <db>DatabaseName</db>
-    <table>ShemaName.TableName</table>
-    <connection_string>DSN=some_parameters</connection_string>
-    <invalidate_query>SQL_QUERY</invalidate_query>
-</odbc>
+``` xml
+<source>
+    <odbc>
+        <db>DatabaseName</db>
+        <table>ShemaName.TableName</table>
+        <connection_string>DSN=some_parameters</connection_string>
+        <invalidate_query>SQL_QUERY</invalidate_query>
+    </odbc>
+</source>
+```
+
+или
+
+``` sql
+SOURCE(ODBC(
+    db 'DatabaseName'
+    table 'SchemaName.TableName'
+    connection_string 'DSN=some_parameters'
+    invalidate_query 'SQL_QUERY'
+))
 ```
 
 Поля настройки:
 
--   `db` - имя базы данных. Не указывать, если имя базы задано в параметрах. `<connection_string>`.
--   `table` - имя таблицы и схемы, если она есть.
--   `connection_string` - строка соединения.
--   `invalidate_query` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
+- `db` — имя базы данных. Не указывать, если имя базы задано в параметрах. `<connection_string>`.
+- `table` — имя таблицы и схемы, если она есть.
+- `connection_string` — строка соединения.
+- `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
 
 ClickHouse получает от ODBC-драйвера информацию о квотировании и квотирует настройки в запросах к драйверу, поэтому имя таблицы нужно указывать в соответствии с регистром имени таблицы в базе данных.
 
 Если у вас есть проблемы с кодировками при использовании Oracle, ознакомьтесь с соответствующим разделом [FAQ](../../faq/general.md#oracle-odbc-encodings).
 
-### Выявленная уязвимость в функционировании ODBC словарей
+### Выявленная уязвимость в функционировании ODBC словарей {#vyiavlennaia-uiazvimost-v-funktsionirovanii-odbc-slovarei}
 
-!!! attention
+!!! attention "Attention"
     При соединении с базой данных через ODBC можно заменить параметр соединения `Servername`. В этом случае, значения `USERNAME` и `PASSWORD` из `odbc.ini` отправляются на удаленный сервер и могут быть скомпрометированы.
 
 **Пример небезопасного использования**
 
 Сконфигурируем unixODBC для работы с PostgreSQL. Содержимое `/etc/odbc.ini`:
 
-```text
+``` text
 [gregtest]
 Driver = /usr/lib/psqlodbca.so
 Servername = localhost
@@ -146,23 +196,25 @@ PASSWORD = test
 
 Если выполнить запрос вида:
 
-```sql
-SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');    
+``` sql
+SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 ```
 
 то ODBC драйвер отправит значения `USERNAME` и `PASSWORD` из `odbc.ini` на `some-server.com`.
 
-### Пример подключения PostgreSQL
+### Пример подключения PostgreSQL {#primer-podkliucheniia-postgresql}
 
 ОС Ubuntu.
 
 Установка unixODBC и ODBC-драйвера для PostgreSQL: :
-```bash
+
+``` bash
 $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ```
+
 Настройка `/etc/odbc.ini` (или `~/.odbc.ini`):
 
-```text
+``` text
     [DEFAULT]
     Driver = myconnection
 
@@ -183,7 +235,7 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 
 Конфигурация словаря в ClickHouse:
 
-```xml
+``` xml
 <yandex>
     <dictionary>
         <name>table_name</name>
@@ -216,6 +268,18 @@ $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 </yandex>
 ```
 
+или
+
+``` sql
+CREATE DICTIONARY table_name (
+    id UInt64,
+    some_column UInt64 DEFAULT 0
+)
+PRIMARY KEY id
+SOURCE(ODBC(connection_string 'DSN=myconnection' table 'postgresql_table'))
+LAYOUT(HASHED())
+LIFETIME(MIN 300 MAX 360)
+
 Может понадобиться в `odbc.ini` указать полный путь до библиотеки с драйвером `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
 ### Пример подключения MS SQL Server
@@ -230,7 +294,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 
 Настройка драйвера: :
 
-```bash
+``` bash
     $ cat /etc/freetds/freetds.conf
     ...
 
@@ -265,7 +329,7 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 
 Настройка словаря в ClickHouse:
 
-```xml
+``` xml
 <yandex>
     <dictionary>
         <name>test</name>
@@ -299,14 +363,26 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 </yandex>
 ```
 
-## СУБД
+или
 
+``` sql
+CREATE DICTIONARY test (
+    k UInt64,
+    s String DEFAULT ''
+)
+PRIMARY KEY k
+SOURCE(ODBC(table 'dict' connection_string 'DSN=MSSQL;UID=test;PWD=test'))
+LAYOUT(FLAT())
+LIFETIME(MIN 300 MAX 360)
+```
+
+## СУБД {#subd}
 
 ### MySQL {#dicts-external_dicts_dict_sources-mysql}
 
 Пример настройки:
 
-```xml
+``` xml
 <source>
   <mysql>
       <port>3306</port>
@@ -328,26 +404,48 @@ $ sudo apt-get install tdsodbc freetds-bin sqsh
 </source>
 ```
 
+или
+
+``` sql
+SOURCE(MYSQL(
+    port 3306
+    user 'clickhouse'
+    password 'qwerty'
+    replica(host 'example01-1' priority 1)
+    replica(host 'example01-2' priority 1)
+    db 'db_name'
+    table 'table_name'
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+))
+```
+
 Поля настройки:
 
-- `port` — порт сервера MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
-- `user` — имя пользователя MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
-- `password` — пароль пользователя MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
-- `replica` — блок конфигурации реплики. Блоков может быть несколько.
+-   `port` — порт сервера MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
 
-    - `replica/host` — хост MySQL.
-    - `replica/priority` — приоритет реплики. При попытке соединения ClickHouse обходит реплики в соответствии с приоритетом. Чем меньше цифра, тем выше приоритет.
+-   `user` — имя пользователя MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
 
-- `db` — имя базы данных.
-- `table` — имя таблицы.
-- `where` — условие выбора. Синтаксис условия совпадает с синтаксисом секции `WHERE` в MySQL, например, `id > 10 AND id < 20`. Необязательный параметр.
-- `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
+-   `password` — пароль пользователя MySQL. Можно указать для всех реплик или для каждой в отдельности (внутри `<replica>`).
+
+-   `replica` — блок конфигурации реплики. Блоков может быть несколько.
+
+        - `replica/host` — хост MySQL.
+        - `replica/priority` — приоритет реплики. При попытке соединения ClickHouse обходит реплики в соответствии с приоритетом. Чем меньше цифра, тем выше приоритет.
+
+-   `db` — имя базы данных.
+
+-   `table` — имя таблицы.
+
+-   `where` — условие выбора. Синтаксис условия совпадает с синтаксисом секции `WHERE` в MySQL, например, `id > 10 AND id < 20`. Необязательный параметр.
+
+-   `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
 
 MySQL можно подключить на локальном хосте через сокеты, для этого необходимо задать `host` и `socket`.
 
 Пример настройки:
 
-```xml
+``` xml
 <source>
   <mysql>
       <host>localhost</host>
@@ -362,12 +460,26 @@ MySQL можно подключить на локальном хосте чер�
 </source>
 ```
 
+или
+
+``` sql
+SOURCE(MYSQL(
+    host 'localhost'
+    socket '/path/to/socket/file.sock'
+    user 'clickhouse'
+    password 'qwerty'
+    db 'db_name'
+    table 'table_name'
+    where 'id=10'
+    invalidate_query 'SQL_QUERY'
+))
+```
 
 ### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
 
 Пример настройки:
 
-```xml
+``` xml
 <source>
     <clickhouse>
         <host>example01-01-1</host>
@@ -381,23 +493,36 @@ MySQL можно подключить на локальном хосте чер�
 </source>
 ```
 
+или
+
+``` sql
+SOURCE(CLICKHOUSE(
+    host 'example01-01-1'
+    port 9000
+    user 'default'
+    password ''
+    db 'default'
+    table 'ids'
+    where 'id=10'
+))
+```
+
 Поля настройки:
 
--   `host` - хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../operations/table_engines/distributed.md) и прописать её в дальнейших настройках.
--   `port` - порт сервера ClickHouse.
--   `user` - имя пользователя ClickHouse.
--   `password` - пароль пользователя ClickHouse.
--   `db` - имя базы данных.
--   `table` - имя таблицы.
--   `where` - условие выбора. Может отсутствовать.
--   `invalidate_query` - запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
-
+-   `host` — хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../operations/table_engines/distributed.md) и прописать её в дальнейших настройках.
+-   `port` — порт сервера ClickHouse.
+-   `user` — имя пользователя ClickHouse.
+-   `password` — пароль пользователя ClickHouse.
+-   `db` — имя базы данных.
+-   `table` — имя таблицы.
+-   `where` — условие выбора. Может отсутствовать.
+-   `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
 
 ### MongoDB {#dicts-external_dicts_dict_sources-mongodb}
 
 Пример настройки:
 
-```xml
+``` xml
 <source>
     <mongodb>
         <host>localhost</host>
@@ -410,20 +535,33 @@ MySQL можно подключить на локальном хосте чер�
 </source>
 ```
 
+или
+
+``` sql
+SOURCE(MONGO(
+    host 'localhost'
+    port 27017
+    user ''
+    password ''
+    db 'test'
+    collection 'dictionary_source'
+))
+```
+
 Поля настройки:
 
--   `host` - хост MongoDB.
--   `port` - порт сервера MongoDB.
--   `user` - имя пользователя MongoDB.
--   `password` - пароль пользователя MongoDB.
--   `db` - имя базы данных.
--   `collection` - имя коллекции.
+- `host` — хост MongoDB.
+- `port` — порт сервера MongoDB.
+- `user` — имя пользователя MongoDB.
+- `password` — пароль пользователя MongoDB.
+- `db` — имя базы данных.
+- `collection` — имя коллекции.
 
 ### Redis {#dicts-external_dicts_dict_sources-redis}
 
 Пример настройки:
 
-```xml
+``` xml
 <source>
     <redis>
         <host>localhost</host>
@@ -434,11 +572,22 @@ MySQL можно подключить на локальном хосте чер�
 </source>
 ```
 
+или
+
+``` sql
+SOURCE(REDIS(
+    host 'localhost'
+    port 6379
+    storage_type 'simple'
+    db_index 0
+))
+```
+
 Поля настройки:
 
-- `host` – хост Redis.
-- `port` – порт сервера Redis.
-- `storage_type` – способ хранения ключей. Необходимо использовать `simple` для источников с одним столбцом ключей, `hash_map` -- для источников с двумя столбцами ключей. Источники с более, чем двумя столбцами ключей, не поддерживаются. Может отсутствовать, значение по умолчанию `simple`.
-- `db_index` – номер базы данных. Может отсутствовать, значение по умолчанию 0.
+-   `host` – хост Redis.
+-   `port` – порт сервера Redis.
+-   `storage_type` – способ хранения ключей. Необходимо использовать `simple` для источников с одним столбцом ключей, `hash_map` – для источников с двумя столбцами ключей. Источники с более, чем двумя столбцами ключей, не поддерживаются. Может отсутствовать, значение по умолчанию `simple`.
+-   `db_index` – номер базы данных. Может отсутствовать, значение по умолчанию 0.
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

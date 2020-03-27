@@ -13,7 +13,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
 #include <Storages/ReadInOrderOptimizer.h>
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 
 #include <Processors/QueryPipeline.h>
 #include <Columns/FilterDescription.h>
@@ -92,6 +92,8 @@ public:
 
     ASTPtr getQuery() const { return query_ptr; }
 
+    size_t getMaxStreams() const { return max_streams; }
+
 private:
     InterpreterSelectQuery(
         const ASTPtr & query_ptr_,
@@ -122,6 +124,9 @@ private:
         BlockInputStreamPtr stream_with_non_joined_data;
         bool union_stream = false;
 
+        /// Cache value of InterpreterSelectQuery::max_streams
+        size_t max_threads = 1;
+
         BlockInputStreamPtr & firstStream() { return streams.at(0); }
 
         template <typename Transform>
@@ -147,63 +152,14 @@ private:
 
         bool hasDelayedStream() const { return stream_with_non_joined_data != nullptr; }
         bool initialized() const { return !streams.empty(); }
+
+        /// Compatibility with QueryPipeline (Processors)
+        void   setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
+        size_t getNumThreads() const { return max_threads; }
     };
 
     template <typename TPipeline>
     void executeImpl(TPipeline & pipeline, const BlockInputStreamPtr & prepared_input, std::optional<Pipe> prepared_pipe, QueryPipeline & save_context_and_storage);
-
-    struct AnalysisResult
-    {
-        bool hasJoin() const { return before_join.get(); }
-        bool has_where      = false;
-        bool need_aggregate = false;
-        bool has_having     = false;
-        bool has_order_by   = false;
-        bool has_limit_by   = false;
-
-        bool remove_where_filter = false;
-        bool optimize_read_in_order = false;
-
-        ExpressionActionsPtr before_join;   /// including JOIN
-        ExpressionActionsPtr before_where;
-        ExpressionActionsPtr before_aggregation;
-        ExpressionActionsPtr before_having;
-        ExpressionActionsPtr before_order_and_select;
-        ExpressionActionsPtr before_limit_by;
-        ExpressionActionsPtr final_projection;
-
-        /// Columns from the SELECT list, before renaming them to aliases.
-        Names selected_columns;
-
-        /// Columns will be removed after prewhere actions execution.
-        Names columns_to_remove_after_prewhere;
-
-        /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
-        bool first_stage = false;
-        /// Do I need to execute the second part of the pipeline - running on the initiating server during distributed processing.
-        bool second_stage = false;
-
-        SubqueriesForSets subqueries_for_sets;
-        PrewhereInfoPtr prewhere_info;
-        FilterInfoPtr filter_info;
-        ConstantFilterDescription prewhere_constant_filter_description;
-        ConstantFilterDescription where_constant_filter_description;
-    };
-
-    static AnalysisResult analyzeExpressions(
-        const ASTSelectQuery & query,
-        SelectQueryExpressionAnalyzer & query_analyzer,
-        QueryProcessingStage::Enum from_stage,
-        QueryProcessingStage::Enum to_stage,
-        const Context & context,
-        const StoragePtr & storage,
-        bool only_types,
-        const FilterInfoPtr & filter_info,
-        const Block & source_header);
-
-    /** From which table to read. With JOIN, the "left" table is returned.
-     */
-    static void getDatabaseAndTableNames(const ASTSelectQuery & query, String & database_name, String & table_name, const Context & context);
 
     /// Different stages of query execution.
 
@@ -221,7 +177,7 @@ private:
     void executeMergeAggregated(Pipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(Pipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(Pipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    static void executeExpression(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(Pipeline & pipeline, InputSortingInfoPtr sorting_info);
     void executeWithFill(Pipeline & pipeline);
     void executeMergeSorted(Pipeline & pipeline);
@@ -229,28 +185,28 @@ private:
     void executeUnion(Pipeline & pipeline, Block header);
     void executeLimitBy(Pipeline & pipeline);
     void executeLimit(Pipeline & pipeline);
-    void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
+    static void executeProjection(Pipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(Pipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(Pipeline & pipeline);
-    void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeSubqueriesInSetsAndJoins(Pipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
-    void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_fiter);
+    void executeWhere(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool remove_filter);
     void executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeMergeAggregated(QueryPipeline & pipeline, bool overflow_row, bool final);
     void executeTotalsAndHaving(QueryPipeline & pipeline, bool has_having, const ExpressionActionsPtr & expression, bool overflow_row, bool final);
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
-    void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    static void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
     void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
-    void executePreLimit(QueryPipeline & pipeline);
+    void executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset);
     void executeLimitBy(QueryPipeline & pipeline);
     void executeLimit(QueryPipeline & pipeline);
-    void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
+    static void executeProjection(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeDistinct(QueryPipeline & pipeline, bool before_order, Names columns);
     void executeExtremes(QueryPipeline & pipeline);
-    void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
+    void executeSubqueriesInSetsAndJoins(QueryPipeline & pipeline, const std::unordered_map<String, SubqueryForSet> & subqueries_for_sets);
     void executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit);
 
     String generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
@@ -284,7 +240,7 @@ private:
     SelectQueryInfo query_info;
 
     /// Is calculated in getSampleBlock. Is used later in readImpl.
-    AnalysisResult analysis_result;
+    ExpressionAnalysisResult analysis_result;
     FilterInfoPtr filter_info;
 
     QueryProcessingStage::Enum from_stage = QueryProcessingStage::FetchColumns;

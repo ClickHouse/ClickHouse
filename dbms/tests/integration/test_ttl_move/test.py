@@ -46,8 +46,17 @@ def get_random_string(length):
     return str(result_list)
 
 
-def get_used_disks_for_table(node, table_name):
-    return node.query("select disk_name from system.parts where table == '{}' and active=1 order by modification_time".format(table_name)).strip().split('\n')
+def get_used_disks_for_table(node, table_name, partition=None):
+    if partition is None:
+        suffix = ""
+    else:
+        suffix = "and partition='{}'".format(partition)
+    return node.query("""
+        SELECT disk_name
+        FROM system.parts
+        WHERE table == '{name}' AND active=1 {suffix}
+        ORDER BY modification_time
+    """.format(name=table_name, suffix=suffix)).strip().split('\n')
 
 
 @pytest.mark.skip(reason="Flappy test")
@@ -332,6 +341,39 @@ def test_moves_to_disk_eventually_work(started_cluster, name, engine):
         node1.query("DROP TABLE IF EXISTS {}".format(name))
 
 
+def test_replicated_download_ttl_info(started_cluster):
+    name = "test_replicated_ttl_info"
+    engine = "ReplicatedMergeTree('/clickhouse/test_replicated_download_ttl_info', '{replica}')"
+    try:
+        for i, node in enumerate((node1, node2), start=1):
+            node.query("""
+                CREATE TABLE {name} (
+                    s1 String,
+                    d1 DateTime
+                ) ENGINE = {engine}
+                ORDER BY tuple()
+                TTL d1 TO DISK 'external'
+                SETTINGS storage_policy='small_jbod_with_external'
+            """.format(name=name, engine=engine))
+
+        node1.query("SYSTEM STOP MOVES {}".format(name))
+
+        node2.query("INSERT INTO {} (s1, d1) VALUES ('{}', toDateTime({}))".format(name, get_random_string(1024 * 1024), time.time()-100))
+
+        assert set(get_used_disks_for_table(node2, name)) == {"external"}
+        time.sleep(1)
+
+        assert node1.query("SELECT count() FROM {}".format(name)).splitlines() == ["1"]
+        assert set(get_used_disks_for_table(node1, name)) == {"external"}
+
+    finally:
+        for node in (node1, node2):
+            try:
+                node.query("DROP TABLE IF EXISTS {}".format(name))
+            except:
+                continue
+
+
 @pytest.mark.skip(reason="Flappy test")
 @pytest.mark.parametrize("name,engine,positive", [
     ("mt_test_merges_to_disk_do_not_work","MergeTree()",0),
@@ -549,6 +591,68 @@ def test_ttls_do_not_work_after_alter(started_cluster, name, engine, positive, b
         assert set(used_disks) == {"jbod1" if positive else "external"}
 
         assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == "10"
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {}".format(name))
+
+
+@pytest.mark.parametrize("name,engine", [
+    ("mt_test_materialize_ttl_in_partition","MergeTree()"),
+    ("replicated_mt_test_materialize_ttl_in_partition","ReplicatedMergeTree('/clickhouse/test_materialize_ttl_in_partition', '1')"),
+])
+def test_materialize_ttl_in_partition(started_cluster, name, engine):
+    try:
+        node1.query("""
+            CREATE TABLE {name} (
+                p1 Int8,
+                s1 String,
+                d1 DateTime
+            ) ENGINE = {engine}
+            ORDER BY p1
+            PARTITION BY p1
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name, engine=engine))
+
+        data = [] # 5MB in total
+        for i in range(5):
+            data.append((str(i), "'{}'".format(get_random_string(1024 * 1024)), "toDateTime({})".format(time.time()-1))) # 1MB row
+        node1.query("INSERT INTO {} (p1, s1, d1) VALUES {}".format(name, ",".join(["(" + ",".join(x) + ")" for x in data])))
+
+        time.sleep(0.5)
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert set(used_disks) == {"jbod1"}
+
+        node1.query("""
+                ALTER TABLE {name}
+                    MODIFY TTL
+                    d1 TO DISK 'external'
+            """.format(name=name))
+
+        time.sleep(0.5)
+
+        used_disks = get_used_disks_for_table(node1, name)
+        assert set(used_disks) == {"jbod1"}
+
+        node1.query("""
+                ALTER TABLE {name}
+                    MATERIALIZE TTL IN PARTITION 2
+        """.format(name=name))
+
+        node1.query("""
+                ALTER TABLE {name}
+                    MATERIALIZE TTL IN PARTITION 4
+        """.format(name=name))
+
+        time.sleep(0.5)
+
+        used_disks_sets = []
+        for i in range(len(data)):
+            used_disks_sets.append(set(get_used_disks_for_table(node1, name, partition=i)))
+
+        assert used_disks_sets == [{"jbod1"}, {"jbod1"}, {"external"}, {"jbod1"}, {"external"}]
+
+        assert node1.query("SELECT count() FROM {name}".format(name=name)).strip() == str(len(data))
 
     finally:
         node1.query("DROP TABLE IF EXISTS {}".format(name))

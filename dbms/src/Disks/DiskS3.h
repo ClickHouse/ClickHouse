@@ -21,12 +21,17 @@ class DiskS3 : public IDisk
 public:
     friend class DiskS3Reservation;
 
-    DiskS3(String name_, std::shared_ptr<Aws::S3::S3Client> client_, String bucket_, String s3_root_path_,
-           String metadata_path_, size_t min_upload_part_size_);
+    DiskS3(
+        String name_,
+        std::shared_ptr<Aws::S3::S3Client> client_,
+        String bucket_,
+        String s3_root_path_,
+        String metadata_path_,
+        size_t min_upload_part_size_);
 
     const String & getName() const override { return name; }
 
-    const String & getPath() const override { return s3_root_path; }
+    const String & getPath() const override { return metadata_path; }
 
     ReservationPtr reserve(UInt64 bytes) override;
 
@@ -62,17 +67,37 @@ public:
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & path, size_t buf_size) const override;
+    void listFiles(const String & path, std::vector<String> & file_names) override;
 
-    std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size, WriteMode mode) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold) const override;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode,
+        size_t estimated_size,
+        size_t aio_threshold) override;
 
     void remove(const String & path) override;
 
     void removeRecursive(const String & path) override;
 
-private:
-    String getRandomName() const;
+    void createHardLink(const String & src_path, const String & dst_path) override;
 
+    void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
+
+    Poco::Timestamp getLastModified(const String & path) override;
+
+    void createFile(const String & path) override;
+
+    void setReadOnly(const String & path) override;
+
+private:
     bool tryReserve(UInt64 bytes);
 
 private:

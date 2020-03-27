@@ -2,7 +2,6 @@
 
 #include <Parsers/IAST.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/SubqueryForSet.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 
@@ -12,6 +11,9 @@ namespace DB
 
 class Context;
 class ASTFunction;
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
  /// The case of an explicit enumeration of values.
 SetPtr makeExplicitSet(

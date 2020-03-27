@@ -11,6 +11,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
 }
 
@@ -123,8 +124,8 @@ std::vector<MutableColumnPtr> ColumnFunction::scatter(IColumn::ColumnIndex num_c
     for (IColumn::ColumnIndex part = 0; part < num_columns; ++part)
     {
         auto & capture = captures[part];
-        size_t size__ = capture.empty() ? counts[part] : capture.front().column->size();
-        columns.emplace_back(ColumnFunction::create(size__, function, std::move(capture)));
+        size_t capture_size = capture.empty() ? counts[part] : capture.front().column->size();
+        columns.emplace_back(ColumnFunction::create(capture_size, function, std::move(capture)));
     }
 
     return columns;

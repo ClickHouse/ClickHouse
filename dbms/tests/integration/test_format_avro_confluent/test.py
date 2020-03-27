@@ -29,12 +29,14 @@ def cluster():
         cluster.shutdown()
 
 
-def run_query(instance, query, stdin=None, settings=None):
+def run_query(instance, query, data=None, settings=None):
     # type: (ClickHouseInstance, str, object, dict) -> str
 
     logging.info("Running query '{}'...".format(query))
     # use http to force parsing on server
-    result = instance.http_query(query, data=stdin, params=settings)
+    if not data:
+        data = " "  # make POST request
+    result = instance.http_query(query, data=data, params=settings)
     logging.info("Query finished")
 
     return result
@@ -64,7 +66,7 @@ def test_select(cluster):
             'test_subject', schema, {'value': x}
         )
         buf.write(message)
-    stdin = buf.getvalue()
+    data = buf.getvalue()
 
     instance = cluster.instances["dummy"]  # type: ClickHouseInstance
     schema_registry_url = "http://{}:{}".format(
@@ -74,7 +76,7 @@ def test_select(cluster):
     
     run_query(instance, "create table avro_data(value Int64) engine = Memory()")
     settings = {'format_avro_schema_registry_url': schema_registry_url}
-    run_query(instance, "insert into avro_data format AvroConfluent", stdin, settings)
+    run_query(instance, "insert into avro_data format AvroConfluent", data, settings)
     stdout = run_query(instance, "select * from avro_data")
     assert list(map(str.split, stdout.splitlines())) == [
         ["0"],

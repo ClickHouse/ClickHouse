@@ -23,6 +23,8 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdkafka_lz4.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_metadata.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_metadata_cache.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_mock.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_mock_handlers.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_msg.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_msgset_reader.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_msgset_writer.c

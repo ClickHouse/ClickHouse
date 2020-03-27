@@ -7,6 +7,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import TSV
 from helpers.client import QueryRuntimeException
+from helpers.network import PartitionManager
 
 import json
 import subprocess
@@ -34,6 +35,7 @@ instance = cluster.add_instance('instance',
                                 config_dir='configs',
                                 main_configs=['configs/kafka.xml', 'configs/log_conf.xml' ],
                                 with_kafka=True,
+                                with_zookeeper=True,
                                 clickhouse_path_dir='clickhouse_path')
 kafka_id = ''
 
@@ -789,6 +791,55 @@ def test_kafka_virtual_columns2(kafka_cluster):
     assert TSV(result) == TSV(expected)
 
 
+
+@pytest.mark.timeout(240)
+def test_kafka_produce_key_timestamp(kafka_cluster):
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+        CREATE TABLE test.kafka_writer (key UInt64, value UInt64, _key String, _timestamp DateTime)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'insert3',
+                     kafka_group_name = 'insert3',
+                     kafka_format = 'TSV',
+                     kafka_row_delimiter = '\\n';
+
+        CREATE TABLE test.kafka (key UInt64, value UInt64, inserted_key String, inserted_timestamp DateTime)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'insert3',
+                     kafka_group_name = 'insert3',
+                     kafka_format = 'TSV',
+                     kafka_row_delimiter = '\\n';
+
+        CREATE MATERIALIZED VIEW test.view Engine=Log AS
+            SELECT key, value, inserted_key, toUnixTimestamp(inserted_timestamp), _key, _topic, _partition, _offset, toUnixTimestamp(_timestamp) FROM test.kafka;
+    ''')
+
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(1,1,'k1',1577836801))
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(2,2,'k2',1577836802))
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({})),({},{},'{}',toDateTime({}))".format(3,3,'k3',1577836803,4,4,'k4',1577836804))
+    instance.query("INSERT INTO test.kafka_writer VALUES ({},{},'{}',toDateTime({}))".format(5,5,'k5',1577836805))
+
+    time.sleep(10)
+
+    result = instance.query("SELECT * FROM test.view ORDER BY value", ignore_error=True)
+
+    # print(result)
+
+    expected = '''\
+1	1	k1	1577836801	k1	insert3	0	0	1577836801
+2	2	k2	1577836802	k2	insert3	0	1	1577836802
+3	3	k3	1577836803	k3	insert3	0	2	1577836803
+4	4	k4	1577836804	k4	insert3	0	3	1577836804
+5	5	k5	1577836805	k5	insert3	0	4	1577836805
+'''
+
+    assert TSV(result) == TSV(expected)
+
+
+
 @pytest.mark.timeout(600)
 def test_kafka_flush_by_time(kafka_cluster):
     instance.query('''
@@ -876,9 +927,9 @@ def test_kafka_flush_by_block_size(kafka_cluster):
     time.sleep(1)
 
     result = instance.query('SELECT count() FROM test.view')
-    print(result)
+    # print(result)
 
-   # kafka_cluster.open_bash_shell('instance')
+    # kafka_cluster.open_bash_shell('instance')
 
     instance.query('''
         DROP TABLE test.consumer;
@@ -1056,6 +1107,150 @@ def test_kafka_rebalance(kafka_cluster):
     kafka_thread.join()
 
     assert result == 1, 'Messages from kafka get duplicated!'
+
+@pytest.mark.timeout(1200)
+def test_kafka_no_holes_when_write_suffix_failed(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': 'x' * 300}) for j in range(22)]
+    kafka_produce('no_holes_when_write_suffix_failed', messages)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'no_holes_when_write_suffix_failed',
+                     kafka_group_name = 'no_holes_when_write_suffix_failed',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 20;
+
+        CREATE TABLE test.view (key UInt64, value String)
+            ENGINE = ReplicatedMergeTree('/clickhouse/kafkatest/tables/no_holes_when_write_suffix_failed', 'node1')
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka
+            WHERE NOT sleepEachRow(1);
+    ''')
+    # the tricky part here is that disconnect should happen after write prefix, but before write suffix
+    # so i use sleepEachRow
+    with PartitionManager() as pm:
+        time.sleep(12)
+        pm.drop_instance_zk_connections(instance)
+        time.sleep(20)
+        pm.heal_all
+
+    # connection restored and it will take a while until next block will be flushed
+    # it takes years on CI :\
+    time.sleep(90)
+
+    # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
+    assert instance.contains_in_log("ZooKeeper session has been expired.: while write prefix to view")
+
+    result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
+    print(result)
+
+    # kafka_cluster.open_bash_shell('instance')
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    assert TSV(result) == TSV('22\t22\t22')
+
+
+@pytest.mark.timeout(120)
+def test_exception_from_destructor(kafka_cluster):
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'xyz',
+                     kafka_group_name = '',
+                     kafka_format = 'JSONEachRow';
+    ''')
+    instance.query_and_get_error('''
+        SELECT * FROM test.kafka;
+    ''')
+    instance.query('''
+        DROP TABLE test.kafka;
+    ''')
+
+    instance.query('''
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'xyz',
+                     kafka_group_name = '',
+                     kafka_format = 'JSONEachRow';
+    ''')
+    instance.query('''
+        DROP TABLE test.kafka;
+    ''')
+
+    kafka_cluster.open_bash_shell('instance')
+    assert TSV(instance.query('SELECT 1')) == TSV('1')
+
+
+@pytest.mark.timeout(1200)
+def test_kafka_duplicates_when_commit_failed(kafka_cluster):
+    messages = [json.dumps({'key': j+1, 'value': 'x' * 300}) for j in range(22)]
+    kafka_produce('duplicates_when_commit_failed', messages)
+
+    instance.query('''
+        DROP TABLE IF EXISTS test.view;
+        DROP TABLE IF EXISTS test.consumer;
+
+        CREATE TABLE test.kafka (key UInt64, value String)
+            ENGINE = Kafka
+            SETTINGS kafka_broker_list = 'kafka1:19092',
+                     kafka_topic_list = 'duplicates_when_commit_failed',
+                     kafka_group_name = 'duplicates_when_commit_failed',
+                     kafka_format = 'JSONEachRow',
+                     kafka_max_block_size = 20;
+
+        CREATE TABLE test.view (key UInt64, value String)
+            ENGINE = MergeTree()
+            ORDER BY key;
+
+        CREATE MATERIALIZED VIEW test.consumer TO test.view AS
+            SELECT * FROM test.kafka
+            WHERE NOT sleepEachRow(0.5);
+    ''')
+
+    #print time.strftime("%m/%d/%Y %H:%M:%S")
+    time.sleep(12) # 5-6 sec to connect to kafka, do subscription, and fetch 20 rows, another 10 sec for MV, after that commit should happen
+
+    #print time.strftime("%m/%d/%Y %H:%M:%S")
+    kafka_cluster.pause_container('kafka1')
+    # that timeout it VERY important, and picked after lot of experiments
+    # when too low (<30sec) librdkafka will not report any timeout (alternative is to decrease the default session timeouts for librdkafka)
+    # when too high (>50sec) broker will decide to remove us from the consumer group, and will start answering "Broker: Unknown member"
+    time.sleep(40)
+
+    #print time.strftime("%m/%d/%Y %H:%M:%S")
+    kafka_cluster.unpause_container('kafka1')
+
+    #kafka_cluster.open_bash_shell('instance')
+
+    # connection restored and it will take a while until next block will be flushed
+    # it takes years on CI :\
+    time.sleep(30)
+
+    # as it's a bit tricky to hit the proper moment - let's check in logs if we did it correctly
+    assert instance.contains_in_log("Local: Waiting for coordinator")
+
+    result = instance.query('SELECT count(), uniqExact(key), max(key) FROM test.view')
+    print(result)
+
+    instance.query('''
+        DROP TABLE test.consumer;
+        DROP TABLE test.view;
+    ''')
+
+    assert TSV(result) == TSV('22\t22\t22')
 
 
 

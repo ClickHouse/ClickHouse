@@ -28,7 +28,7 @@ public:
     static constexpr auto name = "range";
     static constexpr size_t max_elements = 100'000'000;
     static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionRange>(context_); }
-    FunctionRange(const Context & context_) : context(context_) {}
+    explicit FunctionRange(const Context & context_) : context(context_) {}
 
 private:
     const Context & context;

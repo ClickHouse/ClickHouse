@@ -6,6 +6,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 struct ArrayFirstImpl
 {
@@ -37,14 +41,14 @@ struct ArrayFirstImpl
                 out->reserve(data.size());
 
                 size_t pos{};
-                for (size_t i = 0; i < offsets.size(); ++i)
+                for (auto offset : offsets)
                 {
-                    if (offsets[i] - pos > 0)
+                    if (offset - pos > 0)
                         out->insert(data[pos]);
                     else
                         out->insertDefault();
 
-                    pos = offsets[i];
+                    pos = offset;
                 }
 
                 return out;
@@ -64,16 +68,16 @@ struct ArrayFirstImpl
         out->reserve(data.size());
 
         size_t pos{};
-        for (size_t i = 0; i < offsets.size(); ++i)
+        for (auto offset : offsets)
         {
             auto exists = false;
-            for (; pos < offsets[i]; ++pos)
+            for (; pos < offset; ++pos)
             {
                 if (filter[pos])
                 {
                     out->insert(data[pos]);
                     exists = true;
-                    pos = offsets[i];
+                    pos = offset;
                     break;
                 }
             }

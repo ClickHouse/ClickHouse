@@ -6,10 +6,10 @@
 
 Чтобы применить модель CatBoost в ClickHouse:
 
-1. [Создайте таблицу](#create-table).
-2. [Вставьте данные в таблицу](#insert-data-to-table).
-3. [Интегрируйте CatBoost в ClickHouse](#integrate-catboost-into-clickhouse) (Опциональный шаг).
-4. [Запустите вывод модели из SQL](#run-model-inference).
+1.  [Создайте таблицу](#create-table).
+2.  [Вставьте данные в таблицу](#insert-data-to-table).
+3.  [Интегрируйте CatBoost в ClickHouse](#integrate-catboost-into-clickhouse) (Опциональный шаг).
+4.  [Запустите вывод модели из SQL](#run-model-inference).
 
 Подробнее об обучении моделей в CatBoost, см. [Обучение и применение моделей](https://catboost.ai/docs/features/training.html#training).
 
@@ -24,7 +24,7 @@
 
 **1.** Скачайте [Docker-образ](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) из реестра:
 
-```bash
+``` bash
 $ docker pull yandex/tutorial-catboost-clickhouse
 ```
 
@@ -32,7 +32,7 @@ $ docker pull yandex/tutorial-catboost-clickhouse
 
 **2.** Проверьте, что Docker-образ успешно скачался:
 
-```bash
+``` bash
 $ docker image ls
 REPOSITORY                            TAG                 IMAGE ID            CREATED             SIZE
 yandex/tutorial-catboost-clickhouse   latest              622e4d17945b        22 hours ago        1.37GB
@@ -40,7 +40,7 @@ yandex/tutorial-catboost-clickhouse   latest              622e4d17945b        22
 
 **3.** Запустите Docker-контейнер основанный на данном образе:
 
-```bash
+``` bash
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 ```
 
@@ -50,7 +50,7 @@ $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 
 **1.** Запустите клиент ClickHouse:
 
-```bash
+``` bash
 $ clickhouse client
 ```
 
@@ -59,19 +59,19 @@ $ clickhouse client
 
 **2.** Создайте таблицу в ClickHouse с помощью следующей команды:
 
-```sql
+``` sql
 :) CREATE TABLE amazon_train
 (
-    date Date MATERIALIZED today(), 
-    ACTION UInt8, 
-    RESOURCE UInt32, 
-    MGR_ID UInt32, 
-    ROLE_ROLLUP_1 UInt32, 
-    ROLE_ROLLUP_2 UInt32, 
-    ROLE_DEPTNAME UInt32, 
-    ROLE_TITLE UInt32, 
-    ROLE_FAMILY_DESC UInt32, 
-    ROLE_FAMILY UInt32, 
+    date Date MATERIALIZED today(),
+    ACTION UInt8,
+    RESOURCE UInt32,
+    MGR_ID UInt32,
+    ROLE_ROLLUP_1 UInt32,
+    ROLE_ROLLUP_2 UInt32,
+    ROLE_DEPTNAME UInt32,
+    ROLE_TITLE UInt32,
+    ROLE_FAMILY_DESC UInt32,
+    ROLE_FAMILY UInt32,
     ROLE_CODE UInt32
 )
 ENGINE = MergeTree ORDER BY date
@@ -79,7 +79,7 @@ ENGINE = MergeTree ORDER BY date
 
 **3.** Выйдите из клиента ClickHouse:
 
-```sql
+``` sql
 :) exit
 ```
 
@@ -89,19 +89,19 @@ ENGINE = MergeTree ORDER BY date
 
 **1.** Выполните следующую команду:
 
-```bash
+``` bash
 $ clickhouse client --host 127.0.0.1 --query 'INSERT INTO amazon_train FORMAT CSVWithNames' < ~/amazon/train.csv
 ```
 
 **2.** Запустите клиент ClickHouse:
 
-```bash
+``` bash
 $ clickhouse client
 ```
 
 **3.** Проверьте, что данные успешно загрузились:
 
-```sql
+``` sql
 :) SELECT count() FROM amazon_train
 
 SELECT count()
@@ -114,8 +114,8 @@ FROM amazon_train
 
 ## 3. Интегрируйте CatBoost в ClickHouse {#integrate-catboost-into-clickhouse}
 
-!!! note "Примечание" 
-    **Опциональный шаг.** Docker-образ содержит все необходимое для запуска CatBoost и ClickHouse.   
+!!! note "Примечание"
+    **Опциональный шаг.** Docker-образ содержит все необходимое для запуска CatBoost и ClickHouse.
 
 Чтобы интегрировать CatBoost в ClickHouse:
 
@@ -131,7 +131,7 @@ FROM amazon_train
 
 **5.** Опишите конфигурацию модели:
 
-```xml
+``` xml
 <models>
     <model>
         <!-- Тип модели. В настоящий момент ClickHouse предоставляет только модель catboost. -->
@@ -148,7 +148,7 @@ FROM amazon_train
 
 **6.** Добавьте в конфигурацию ClickHouse путь к CatBoost и конфигурации модели:
 
-```xml
+``` xml
 <!-- Файл etc/clickhouse-server/config.d/models_config.xml. -->
 <catboost_dynamic_library_path>/home/catboost/data/libcatboostmodel.so</catboost_dynamic_library_path>
 <models_config>/home/catboost/models/*_model.xml</models_config>
@@ -160,9 +160,9 @@ FROM amazon_train
 
 Проверьте, что модель работает:
 
-```sql
-:) SELECT 
-    modelEvaluate('amazon', 
+``` sql
+:) SELECT
+    modelEvaluate('amazon',
                 RESOURCE,
                 MGR_ID,
                 ROLE_ROLLUP_1,
@@ -171,20 +171,20 @@ FROM amazon_train
                 ROLE_TITLE,
                 ROLE_FAMILY_DESC,
                 ROLE_FAMILY,
-                ROLE_CODE) > 0 AS prediction, 
+                ROLE_CODE) > 0 AS prediction,
     ACTION AS target
 FROM amazon_train
 LIMIT 10
 ```
 
-!!! note "Примечание" 
+!!! note "Примечание"
     Функция [modelEvaluate](../query_language/functions/other_functions.md#function-modelevaluate) возвращает кортежи (tuple) с исходными прогнозами по классам для моделей с несколькими классами.
 
 Спрогнозируйте вероятность:
 
-```sql
-:) SELECT 
-    modelEvaluate('amazon', 
+``` sql
+:) SELECT
+    modelEvaluate('amazon',
                 RESOURCE,
                 MGR_ID,
                 ROLE_ROLLUP_1,
@@ -194,23 +194,23 @@ LIMIT 10
                 ROLE_FAMILY_DESC,
                 ROLE_FAMILY,
                 ROLE_CODE) AS prediction,
-    1. / (1 + exp(-prediction)) AS probability, 
+    1. / (1 + exp(-prediction)) AS probability,
     ACTION AS target
 FROM amazon_train
 LIMIT 10
 ```
 
-!!! note "Примечание" 
+!!! note "Примечание"
     Подробнее про функцию [exp()](../query_language/functions/math_functions.md).
 
 Посчитайте логистическую функцию потерь (LogLoss) на всей выборке:
 
-```sql
+``` sql
 :) SELECT -avg(tg * log(prob) + (1 - tg) * log(1 - prob)) AS logloss
-FROM 
+FROM
 (
-    SELECT 
-        modelEvaluate('amazon', 
+    SELECT
+        modelEvaluate('amazon',
                     RESOURCE,
                     MGR_ID,
                     ROLE_ROLLUP_1,
@@ -220,11 +220,11 @@ FROM
                     ROLE_FAMILY_DESC,
                     ROLE_FAMILY,
                     ROLE_CODE) AS prediction,
-        1. / (1. + exp(-prediction)) AS prob, 
+        1. / (1. + exp(-prediction)) AS prob,
         ACTION AS tg
     FROM amazon_train
 )
 ```
 
-!!! note "Примечание" 
+!!! note "Примечание"
     Подробнее про функции [avg()](../query_language/agg_functions/reference.md#agg_function-avg), [log()](../query_language/functions/math_functions.md).

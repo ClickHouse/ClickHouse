@@ -12,13 +12,13 @@ class Context;
 
 /** Implements `replicas` system table, which provides information about the status of the replicated tables.
   */
-class StorageSystemReplicas : public ext::shared_ptr_helper<StorageSystemReplicas>, public IStorage
+class StorageSystemReplicas final : public ext::shared_ptr_helper<StorageSystemReplicas>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageSystemReplicas>;
 public:
     std::string getName() const override { return "SystemReplicas"; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

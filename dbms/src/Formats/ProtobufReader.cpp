@@ -273,30 +273,35 @@ UInt64 ProtobufReader::SimpleReader::continueReadingVarint(UInt64 first_byte)
     char c;
 
 #define PROTOBUF_READER_READ_VARINT_BYTE(byteNo) \
-    in.readStrict(c); \
-    ++cursor; \
-    if constexpr (byteNo < 10) \
+    do \
     { \
-        result |= static_cast<UInt64>(static_cast<UInt8>(c)) << (7 * (byteNo - 1)); \
-        if (likely(!(c & 0x80))) \
-            return result; \
-    } \
-    else \
-    { \
-        if (likely(c == 1)) \
-            return result; \
-    } \
-    if constexpr (byteNo < 9) \
-        result &= ~(static_cast<UInt64>(0x80) << (7 * (byteNo - 1)));
-    PROTOBUF_READER_READ_VARINT_BYTE(2)
-    PROTOBUF_READER_READ_VARINT_BYTE(3)
-    PROTOBUF_READER_READ_VARINT_BYTE(4)
-    PROTOBUF_READER_READ_VARINT_BYTE(5)
-    PROTOBUF_READER_READ_VARINT_BYTE(6)
-    PROTOBUF_READER_READ_VARINT_BYTE(7)
-    PROTOBUF_READER_READ_VARINT_BYTE(8)
-    PROTOBUF_READER_READ_VARINT_BYTE(9)
-    PROTOBUF_READER_READ_VARINT_BYTE(10)
+        in.readStrict(c); \
+        ++cursor; \
+        if constexpr ((byteNo) < 10) \
+        { \
+            result |= static_cast<UInt64>(static_cast<UInt8>(c)) << (7 * ((byteNo) - 1)); \
+            if (likely(!(c & 0x80))) \
+                return result; \
+        } \
+        else \
+        { \
+            if (likely(c == 1)) \
+                return result; \
+        } \
+        if constexpr ((byteNo) < 9) \
+            result &= ~(static_cast<UInt64>(0x80) << (7 * ((byteNo) - 1))); \
+    } while (false)
+
+    PROTOBUF_READER_READ_VARINT_BYTE(2);
+    PROTOBUF_READER_READ_VARINT_BYTE(3);
+    PROTOBUF_READER_READ_VARINT_BYTE(4);
+    PROTOBUF_READER_READ_VARINT_BYTE(5);
+    PROTOBUF_READER_READ_VARINT_BYTE(6);
+    PROTOBUF_READER_READ_VARINT_BYTE(7);
+    PROTOBUF_READER_READ_VARINT_BYTE(8);
+    PROTOBUF_READER_READ_VARINT_BYTE(9);
+    PROTOBUF_READER_READ_VARINT_BYTE(10);
+
 #undef PROTOBUF_READER_READ_VARINT_BYTE
 
     throwUnknownFormat();
@@ -307,28 +312,32 @@ void ProtobufReader::SimpleReader::ignoreVarint()
     char c;
 
 #define PROTOBUF_READER_IGNORE_VARINT_BYTE(byteNo) \
-    in.readStrict(c); \
-    ++cursor; \
-    if constexpr (byteNo < 10) \
+    do \
     { \
-        if (likely(!(c & 0x80))) \
-            return; \
-    } \
-    else \
-    { \
-        if (likely(c == 1)) \
-            return; \
-    }
-    PROTOBUF_READER_IGNORE_VARINT_BYTE(1)
-    PROTOBUF_READER_IGNORE_VARINT_BYTE(2)
-    PROTOBUF_READER_IGNORE_VARINT_BYTE(3)
-    PROTOBUF_READER_IGNORE_VARINT_BYTE(4)
-    PROTOBUF_READER_IGNORE_VARINT_BYTE(5)
-    PROTOBUF_READER_IGNORE_VARINT_BYTE(6)
-    PROTOBUF_READER_IGNORE_VARINT_BYTE(7)
-    PROTOBUF_READER_IGNORE_VARINT_BYTE(8)
-    PROTOBUF_READER_IGNORE_VARINT_BYTE(9)
-    PROTOBUF_READER_IGNORE_VARINT_BYTE(10)
+        in.readStrict(c); \
+        ++cursor; \
+        if constexpr ((byteNo) < 10) \
+        { \
+            if (likely(!(c & 0x80))) \
+                return; \
+        } \
+        else \
+        { \
+            if (likely(c == 1)) \
+                return; \
+        } \
+    } while (false)
+
+    PROTOBUF_READER_IGNORE_VARINT_BYTE(1);
+    PROTOBUF_READER_IGNORE_VARINT_BYTE(2);
+    PROTOBUF_READER_IGNORE_VARINT_BYTE(3);
+    PROTOBUF_READER_IGNORE_VARINT_BYTE(4);
+    PROTOBUF_READER_IGNORE_VARINT_BYTE(5);
+    PROTOBUF_READER_IGNORE_VARINT_BYTE(6);
+    PROTOBUF_READER_IGNORE_VARINT_BYTE(7);
+    PROTOBUF_READER_IGNORE_VARINT_BYTE(8);
+    PROTOBUF_READER_IGNORE_VARINT_BYTE(9);
+    PROTOBUF_READER_IGNORE_VARINT_BYTE(10);
 #undef PROTOBUF_READER_IGNORE_VARINT_BYTE
 
     throwUnknownFormat();
@@ -551,7 +560,6 @@ protected:
     SimpleReader & simple_reader;
     const google::protobuf::FieldDescriptor * field;
 };
-
 
 
 class ProtobufReader::ConverterFromString : public ConverterBaseImpl
@@ -847,7 +855,7 @@ private:
     std::unique_ptr<ProtobufReader::IConverter> ProtobufReader::createConverter<field_type_id>( \
         const google::protobuf::FieldDescriptor * field) \
     { \
-        return std::make_unique<ConverterFromNumber<field_type_id, field_type>>(simple_reader, field); \
+        return std::make_unique<ConverterFromNumber<field_type_id, field_type>>(simple_reader, field); /* NOLINT */ \
     }
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT32, Int64);
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT32, Int64);
@@ -862,7 +870,6 @@ PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::Fi
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FLOAT, float);
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_DOUBLE, double);
 #undef PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS
-
 
 
 class ProtobufReader::ConverterFromBool : public ConverterBaseImpl

@@ -159,7 +159,7 @@ private:
     ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserUnaryMinusExpression>()};
 
 protected:
-    const char * getName() const  override{ return "multiplicative expression"; }
+    const char * getName() const  override { return "multiplicative expression"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {
@@ -167,17 +167,35 @@ protected:
     }
 };
 
+/// DATE operator. "DATE '2001-01-01'" would be parsed as "toDate('2001-01-01')".
+class ParserDateOperatorExpression : public IParserBase
+{
+protected:
+    ParserMultiplicativeExpression next_parser;
+
+    const char * getName() const  override { return "DATE operator expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
+
+/// TIMESTAMP operator. "TIMESTAMP '2001-01-01 12:34:56'" would be parsed as "toDateTime('2001-01-01 12:34:56')".
+class ParserTimestampOperatorExpression : public IParserBase
+{
+protected:
+    ParserDateOperatorExpression next_parser;
+
+    const char * getName() const  override { return "TIMESTAMP operator expression"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+};
 
 /// Optional conversion to INTERVAL data type. Example: "INTERVAL x SECOND" parsed as "toIntervalSecond(x)".
 class ParserIntervalOperatorExpression : public IParserBase
 {
 protected:
-    ParserMultiplicativeExpression next_parser;
+    ParserTimestampOperatorExpression next_parser;
 
-    const char * getName() const  override{ return "INTERVAL operator expression"; }
+    const char * getName() const  override { return "INTERVAL operator expression"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
-
 
 class ParserAdditiveExpression : public IParserBase
 {
@@ -186,7 +204,7 @@ private:
     ParserLeftAssociativeBinaryOperatorList operator_parser {operators, std::make_unique<ParserIntervalOperatorExpression>()};
 
 protected:
-    const char * getName() const  override{ return "additive expression"; }
+    const char * getName() const  override { return "additive expression"; }
 
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
     {

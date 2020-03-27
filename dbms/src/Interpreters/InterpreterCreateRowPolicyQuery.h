@@ -2,6 +2,7 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
+#include <optional>
 
 
 namespace DB
@@ -17,9 +18,9 @@ public:
 
     BlockIO execute() override;
 
-private:
-    void updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query);
+    static void updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query);
 
+private:
     ASTPtr query_ptr;
     Context & context;
 };

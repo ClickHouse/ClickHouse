@@ -1,3 +1,4 @@
+#define CURL_CA_BUNDLE "/etc/ssl/certs/ca-certificates.crt"
 #define CURL_DISABLE_FTP
 #define CURL_DISABLE_TFTP
 #define CURL_DISABLE_LDAP
@@ -9,9 +10,14 @@
 #define SIZEOF_CURL_OFF_T 8
 #define SIZEOF_SIZE_T 8
 
+#define HAVE_ALARM
 #define HAVE_FCNTL_O_NONBLOCK
+#define HAVE_GETADDRINFO
 #define HAVE_LONGLONG
 #define HAVE_POLL_FINE
+#define HAVE_SIGACTION
+#define HAVE_SIGNAL
+#define HAVE_SIGSETJMP
 #define HAVE_SOCKET
 #define HAVE_STRUCT_TIMEVAL
 
@@ -34,5 +40,11 @@
 #define HAVE_ERRNO_H
 #define HAVE_FCNTL_H
 #define HAVE_NETDB_H
+#define HAVE_NETINET_IN_H
+#define HAVE_SETJMP_H
 #define HAVE_SYS_STAT_H
 #define HAVE_UNISTD_H
+
+#define ENABLE_IPV6
+#define USE_OPENSSL
+#define USE_THREADS_POSIX

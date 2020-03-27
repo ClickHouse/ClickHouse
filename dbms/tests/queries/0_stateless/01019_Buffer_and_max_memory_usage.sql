@@ -35,3 +35,6 @@ SET min_insert_block_size_rows=100e3;
 INSERT INTO buffer_ SELECT toUInt64(number) FROM system.numbers LIMIT toUInt64(10e6+1);
 -- Check that 10e6 rows had been flushed from the query, not from the background worker.
 SELECT count() FROM buffer_;
+
+DROP TABLE null_;
+DROP TABLE buffer_;

@@ -20,9 +20,9 @@
     M(ReadBufferAIOReadBytes, "") \
     M(WriteBufferAIOWrite, "") \
     M(WriteBufferAIOWriteBytes, "") \
-    M(ReadCompressedBytes, "") \
-    M(CompressedReadBufferBlocks, "") \
-    M(CompressedReadBufferBytes, "") \
+    M(ReadCompressedBytes, "Number of bytes (the number of bytes before decompression) read from compressed sources (files, network).") \
+    M(CompressedReadBufferBlocks, "Number of compressed blocks (the blocks of data that are compressed independent of each other) read from compressed sources (files, network).") \
+    M(CompressedReadBufferBytes, "Number of uncompressed bytes (the number of bytes after decompression) read from compressed sources (files, network).") \
     M(UncompressedCacheHits, "") \
     M(UncompressedCacheMisses, "") \
     M(UncompressedCacheWeightLost, "") \
@@ -51,9 +51,9 @@
     M(QueryMaskingRulesMatch, "Number of times query masking rules was successfully matched.") \
     \
     M(ReplicatedPartFetches, "Number of times a data part was downloaded from replica of a ReplicatedMergeTree table.") \
-    M(ReplicatedPartFailedFetches, "") \
+    M(ReplicatedPartFailedFetches, "Number of times a data part was failed to download from replica of a ReplicatedMergeTree table.") \
     M(ObsoleteReplicatedParts, "") \
-    M(ReplicatedPartMerges, "") \
+    M(ReplicatedPartMerges, "Number of times data parts of ReplicatedMergeTree tables were successfully merged.") \
     M(ReplicatedPartFetchesOfMerged, "Number of times we prefer to download already merged part from replica of ReplicatedMergeTree table instead of performing a merge ourself (usually we prefer doing a merge ourself to save network traffic). This happens when we have not all source parts to perform a merge or when the data part is old enough.") \
     M(ReplicatedPartMutations, "") \
     M(ReplicatedPartChecks, "") \
@@ -86,10 +86,10 @@
     M(ZooKeeperBytesSent, "") \
     M(ZooKeeperBytesReceived, "") \
     \
-    M(DistributedConnectionFailTry, "") \
+    M(DistributedConnectionFailTry, "Total count when distributed connection fails with retry") \
     M(DistributedConnectionMissingTable, "") \
     M(DistributedConnectionStaleReplica, "") \
-    M(DistributedConnectionFailAtAll, "") \
+    M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished") \
     \
     M(CompileAttempt, "Number of times a compilation of generated C++ code was initiated.") \
     M(CompileSuccess, "Number of times a compilation of generated C++ code was successful.") \
@@ -110,7 +110,7 @@
     M(ReadBackoff, "Number of times the number of query processing threads was lowered due to slow reads.") \
     \
     M(ReplicaYieldLeadership, "Number of times Replicated table was yielded its leadership due to large replication lag relative to other replicas.") \
-    M(ReplicaPartialShutdown, "") \
+    M(ReplicaPartialShutdown, "How many times Replicated table has to deinitialize its state due to session expiration in ZooKeeper. The state is reinitialized every time when ZooKeeper is available again.") \
     \
     M(SelectedParts, "Number of data parts selected to read from a MergeTree table.") \
     M(SelectedRanges, "Number of (non-adjacent) ranges in all data parts selected to read from a MergeTree table.") \
@@ -160,7 +160,7 @@
     M(RWLockAcquiredWriteLocks, "") \
     M(RWLockReadersWaitMilliseconds, "") \
     M(RWLockWritersWaitMilliseconds, "") \
-    M(NetworkErrors, "") \
+    M(DNSError, "Total count of errors in DNS resolution") \
     \
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (not that this is a sum).") \
     M(UserTimeMicroseconds, "Total time spent in processing (queries and other tasks) threads executing CPU instructions in user space. This include time CPU pipeline was stalled due to cache misses, branch mispredictions, hyper-threading, etc.") \

@@ -6,12 +6,14 @@ nav:
   - 'ClickHouse Features that Can Be Considered Disadvantages': 'introduction/features_considered_disadvantages.md'
   - 'Performance': 'introduction/performance.md'
   - 'History': 'introduction/history.md'
+  - 'Adopters': 'introduction/adopters.md'
 
 - 'Getting Started':
   - 'hidden': 'getting_started/index.md'
   - 'Installation': 'getting_started/install.md'
   - 'Tutorial': 'getting_started/tutorial.md'
   - 'Example Datasets':
+    - 'Introduction': 'getting_started/example_datasets/index.md'
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'New York Taxi Data': 'getting_started/example_datasets/nyc_taxi.md'
     - 'AMPLab Big Data Benchmark': 'getting_started/example_datasets/amplab_benchmark.md'
@@ -19,12 +21,14 @@ nav:
     - 'Terabyte Click Logs from Criteo': 'getting_started/example_datasets/criteo.md'
     - 'Star Schema Benchmark': 'getting_started/example_datasets/star_schema.md'
     - 'Yandex.Metrica Data': 'getting_started/example_datasets/metrica.md'
+  - 'Playground': 'getting_started/playground.md'
 
 - 'Interfaces':
   - 'Introduction': 'interfaces/index.md'
   - 'Command-Line Client': 'interfaces/cli.md'
   - 'Native Interface (TCP)': 'interfaces/tcp.md'
   - 'HTTP Interface': 'interfaces/http.md'
+  - 'MySQL Interface': 'interfaces/mysql.md'
   - 'Input and Output Formats': 'interfaces/formats.md'
   - 'JDBC Driver': 'interfaces/jdbc.md'
   - 'ODBC Driver': 'interfaces/odbc.md'
@@ -77,6 +81,7 @@ nav:
     - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
+    - 'GenerateRandom': 'operations/table_engines/generate.md'
 
 - 'SQL Reference':
   - 'hidden': 'query_language/index.md'
@@ -140,6 +145,8 @@ nav:
     - 'odbc': 'query_language/table_functions/odbc.md'
     - 'hdfs': 'query_language/table_functions/hdfs.md'
     - 'input': 'query_language/table_functions/input.md'
+    - 'generateRandom': 'query_language/table_functions/generate.md'
+
   - 'Dictionaries':
     - 'Introduction': 'query_language/dicts/index.md'
     - 'External Dictionaries':
@@ -149,6 +156,7 @@ nav:
       - 'Dictionary Updates': 'query_language/dicts/external_dicts_dict_lifetime.md'
       - 'Sources of External Dictionaries': 'query_language/dicts/external_dicts_dict_sources.md'
       - 'Dictionary Key and Fields': 'query_language/dicts/external_dicts_dict_structure.md'
+      - 'Hierarchical dictionaries': 'query_language/dicts/external_dicts_dict_hierarchical.md'
     - 'Internal Dictionaries': 'query_language/dicts/internal_dicts.md'
   - 'Operators': 'query_language/operators.md'
   - 'Data Types':
@@ -162,6 +170,7 @@ nav:
     - 'UUID': 'data_types/uuid.md'
     - 'Date': 'data_types/date.md'
     - 'DateTime': 'data_types/datetime.md'
+    - 'DateTime64': 'data_types/datetime64.md'
     - 'Enum': 'data_types/enum.md'
     - 'Array(T)': 'data_types/array.md'
     - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
@@ -232,7 +241,11 @@ nav:
 
 - 'What''s New':
   - 'Roadmap': 'roadmap.md'
-  - 'Changelog': 'changelog.md'
+  - 'Changelog':
+    - '2020': 'changelog/index.md'
+    - '2019': 'changelog/2019.md'
+    - '2018': 'changelog/2018.md'
+    - '2017': 'changelog/2017.md'
   - 'Security Changelog': 'security_changelog.md'
 
 - 'F.A.Q.':

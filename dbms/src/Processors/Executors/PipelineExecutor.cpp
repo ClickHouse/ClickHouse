@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int QUOTA_EXPIRED;
     extern const int QUERY_WAS_CANCELLED;
@@ -39,12 +40,26 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     , expand_pipeline_task(nullptr)
     , process_list_element(elem)
 {
-    buildGraph();
+    try
+    {
+        buildGraph();
+    }
+    catch (Exception & exception)
+    {
+        /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
+        /// It is logical error, and we need more information about pipeline.
+        WriteBufferFromOwnString buf;
+        printPipeline(processors, buf);
+        buf.finalize();
+        exception.addMessage("Query pipeline:\n" + buf.str());
+
+        throw;
+    }
 }
 
 bool PipelineExecutor::addEdges(UInt64 node)
 {
-    auto throwUnknownProcessor = [](const IProcessor * proc, const IProcessor * parent, bool from_input_port)
+    auto throw_unknown_processor = [](const IProcessor * proc, const IProcessor * parent, bool from_input_port)
     {
         String msg = "Processor " + proc->getName() + " was found as " + (from_input_port ? "input" : "output")
                      + " for processor " + parent->getName() + ", but not found in list of processors.";
@@ -60,7 +75,7 @@ bool PipelineExecutor::addEdges(UInt64 node)
     {
         auto it = processors_map.find(to_proc);
         if (it == processors_map.end())
-            throwUnknownProcessor(to_proc, cur, true);
+            throw_unknown_processor(to_proc, cur, true);
 
         UInt64 proc_num = it->second;
         auto & edge = edges.emplace_back(proc_num, is_backward, input_port_number, output_port_number, update_list);
@@ -263,7 +278,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
     std::vector<Edge *> updated_direct_edges;
 
     {
-#ifndef N_DEBUG
+#ifndef NDEBUG
         Stopwatch watch;
 #endif
 
@@ -279,7 +294,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
             return false;
         }
 
-#ifndef N_DEBUG
+#ifndef NDEBUG
         node.execution_state->preparation_time_ns += watch.elapsed();
 #endif
 
@@ -468,7 +483,7 @@ void PipelineExecutor::execute(size_t num_threads)
     }
     catch (...)
     {
-#ifndef N_DEBUG
+#ifndef NDEBUG
         LOG_TRACE(log, "Exception while executing query. Current state:\n" << dumpPipeline());
 #endif
         throw;
@@ -491,7 +506,7 @@ void PipelineExecutor::execute(size_t num_threads)
 
 void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads)
 {
-#ifndef N_DEBUG
+#ifndef NDEBUG
     UInt64 total_time_ns = 0;
     UInt64 execution_time_ns = 0;
     UInt64 processing_time_ns = 0;
@@ -577,13 +592,13 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             addJob(state);
 
             {
-#ifndef N_DEBUG
+#ifndef NDEBUG
                 Stopwatch execution_time_watch;
 #endif
 
                 state->job();
 
-#ifndef N_DEBUG
+#ifndef NDEBUG
                 execution_time_ns += execution_time_watch.elapsed();
 #endif
             }
@@ -594,7 +609,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
             if (finished)
                 break;
 
-#ifndef N_DEBUG
+#ifndef NDEBUG
             Stopwatch processing_time_watch;
 #endif
 
@@ -648,21 +663,22 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                     doExpandPipeline(task, false);
             }
 
-#ifndef N_DEBUG
+#ifndef NDEBUG
             processing_time_ns += processing_time_watch.elapsed();
 #endif
         }
     }
 
-#ifndef N_DEBUG
+#ifndef NDEBUG
     total_time_ns = total_time_watch.elapsed();
     wait_time_ns = total_time_ns - execution_time_ns - processing_time_ns;
 
-    LOG_TRACE(log, "Thread finished."
-                     << " Total time: " << (total_time_ns / 1e9) << " sec."
-                     << " Execution time: " << (execution_time_ns / 1e9) << " sec."
-                     << " Processing time: " << (processing_time_ns / 1e9) << " sec."
-                     << " Wait time: " << (wait_time_ns / 1e9) << "sec.");
+    LOG_TRACE(log, std::fixed << std::setprecision(3)
+        << "Thread finished."
+        << " Total time: " << (total_time_ns / 1e9) << " sec."
+        << " Execution time: " << (execution_time_ns / 1e9) << " sec."
+        << " Processing time: " << (processing_time_ns / 1e9) << " sec."
+        << " Wait time: " << (wait_time_ns / 1e9) << " sec.");
 #endif
 }
 
@@ -690,14 +706,14 @@ void PipelineExecutor::executeImpl(size_t num_threads)
     bool finished_flag = false;
 
     SCOPE_EXIT(
-            if (!finished_flag)
-            {
-                finish();
+        if (!finished_flag)
+        {
+            finish();
 
-                for (auto & thread : threads)
-                    if (thread.joinable())
-                        thread.join();
-            }
+            for (auto & thread : threads)
+                if (thread.joinable())
+                    thread.join();
+        }
     );
 
     addChildlessProcessorsToStack(stack);
@@ -769,7 +785,7 @@ String PipelineExecutor::dumpPipeline() const
             WriteBufferFromOwnString buffer;
             buffer << "(" << node.execution_state->num_executed_jobs << " jobs";
 
-#ifndef N_DEBUG
+#ifndef NDEBUG
             buffer << ", execution time: " << node.execution_state->execution_time_ns / 1e9 << " sec.";
             buffer << ", preparation time: " << node.execution_state->preparation_time_ns / 1e9 << " sec.";
 #endif

@@ -44,14 +44,13 @@ void MergeTreeDataPartChecksum::checkEqual(const MergeTreeDataPartChecksum & rhs
         throw Exception("Checksum mismatch for file " + name + " in data part", ErrorCodes::CHECKSUM_DOESNT_MATCH);
 }
 
-void MergeTreeDataPartChecksum::checkSize(const String & path) const
+void MergeTreeDataPartChecksum::checkSize(const DiskPtr & disk, const String & path) const
 {
-    Poco::File file(path);
-    if (!file.exists())
-        throw Exception(path + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
-    UInt64 size = file.getSize();
+    if (!disk->exists(path))
+        throw Exception(fullPath(disk, path) + " doesn't exist", ErrorCodes::FILE_DOESNT_EXIST);
+    UInt64 size = disk->getFileSize(path);
     if (size != file_size)
-        throw Exception(path + " has unexpected size: " + toString(size) + " instead of " + toString(file_size),
+        throw Exception(fullPath(disk, path) + " has unexpected size: " + toString(size) + " instead of " + toString(file_size),
             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART);
 }
 
@@ -78,12 +77,12 @@ void MergeTreeDataPartChecksums::checkEqual(const MergeTreeDataPartChecksums & r
     }
 }
 
-void MergeTreeDataPartChecksums::checkSizes(const String & path) const
+void MergeTreeDataPartChecksums::checkSizes(const DiskPtr & disk, const String & path) const
 {
     for (const auto & it : files)
     {
         const String & name = it.first;
-        it.second.checkSize(path + name);
+        it.second.checkSize(disk, path + name);
     }
 }
 
@@ -102,11 +101,11 @@ bool MergeTreeDataPartChecksums::read(ReadBuffer & in, size_t format_version)
         case 1:
             return false;
         case 2:
-            return read_v2(in);
+            return readV2(in);
         case 3:
-            return read_v3(in);
+            return readV3(in);
         case 4:
-            return read_v4(in);
+            return readV4(in);
         default:
             throw Exception("Bad checksums format version: " + DB::toString(format_version), ErrorCodes::UNKNOWN_FORMAT);
     }
@@ -125,7 +124,7 @@ bool MergeTreeDataPartChecksums::read(ReadBuffer & in)
     return true;
 }
 
-bool MergeTreeDataPartChecksums::read_v2(ReadBuffer & in)
+bool MergeTreeDataPartChecksums::readV2(ReadBuffer & in)
 {
     size_t count;
 
@@ -163,7 +162,7 @@ bool MergeTreeDataPartChecksums::read_v2(ReadBuffer & in)
     return true;
 }
 
-bool MergeTreeDataPartChecksums::read_v3(ReadBuffer & in)
+bool MergeTreeDataPartChecksums::readV3(ReadBuffer & in)
 {
     size_t count;
 
@@ -191,10 +190,10 @@ bool MergeTreeDataPartChecksums::read_v3(ReadBuffer & in)
     return true;
 }
 
-bool MergeTreeDataPartChecksums::read_v4(ReadBuffer & from)
+bool MergeTreeDataPartChecksums::readV4(ReadBuffer & from)
 {
     CompressedReadBuffer in{from};
-    return read_v3(in);
+    return readV3(in);
 }
 
 void MergeTreeDataPartChecksums::write(WriteBuffer & to) const
@@ -373,29 +372,29 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
     num_compressed_files = 0;
     num_uncompressed_files = 0;
 
-    SipHash hash_of_all_files_;
-    SipHash hash_of_uncompressed_files_;
-    SipHash uncompressed_hash_of_compressed_files_;
+    SipHash hash_of_all_files_state;
+    SipHash hash_of_uncompressed_files_state;
+    SipHash uncompressed_hash_of_compressed_files_state;
 
     for (const auto & elem : full_checksums_.files)
     {
         const String & name = elem.first;
         const auto & checksum = elem.second;
 
-        updateHash(hash_of_all_files_, name);
-        hash_of_all_files_.update(checksum.file_hash);
+        updateHash(hash_of_all_files_state, name);
+        hash_of_all_files_state.update(checksum.file_hash);
 
         if (!checksum.is_compressed)
         {
             ++num_uncompressed_files;
-            updateHash(hash_of_uncompressed_files_, name);
-            hash_of_uncompressed_files_.update(checksum.file_hash);
+            updateHash(hash_of_uncompressed_files_state, name);
+            hash_of_uncompressed_files_state.update(checksum.file_hash);
         }
         else
         {
             ++num_compressed_files;
-            updateHash(uncompressed_hash_of_compressed_files_, name);
-            uncompressed_hash_of_compressed_files_.update(checksum.uncompressed_hash);
+            updateHash(uncompressed_hash_of_compressed_files_state, name);
+            uncompressed_hash_of_compressed_files_state.update(checksum.uncompressed_hash);
         }
     }
 
@@ -404,9 +403,9 @@ void MinimalisticDataPartChecksums::computeTotalChecksums(const MergeTreeDataPar
         hash.get128(data.first, data.second);
     };
 
-    get_hash(hash_of_all_files_, hash_of_all_files);
-    get_hash(hash_of_uncompressed_files_, hash_of_uncompressed_files);
-    get_hash(uncompressed_hash_of_compressed_files_, uncompressed_hash_of_compressed_files);
+    get_hash(hash_of_all_files_state, hash_of_all_files);
+    get_hash(hash_of_uncompressed_files_state, hash_of_uncompressed_files);
+    get_hash(uncompressed_hash_of_compressed_files_state, uncompressed_hash_of_compressed_files);
 }
 
 String MinimalisticDataPartChecksums::getSerializedString(const MergeTreeDataPartChecksums & full_checksums, bool minimalistic)

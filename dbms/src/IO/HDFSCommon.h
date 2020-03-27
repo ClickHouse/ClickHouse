@@ -51,7 +51,7 @@ using HDFSFSPtr = std::unique_ptr<std::remove_pointer_t<hdfsFS>, detail::HDFSFsD
 
 // set read/connect timeout, default value in libhdfs3 is about 1 hour, and too large
 /// TODO Allow to tune from query Settings.
-HDFSBuilderPtr createHDFSBuilder(const std::string & hdfs_uri);
+HDFSBuilderPtr createHDFSBuilder(const std::string & uri_str);
 HDFSFSPtr createHDFSFS(hdfsBuilder * builder);
 }
 #endif

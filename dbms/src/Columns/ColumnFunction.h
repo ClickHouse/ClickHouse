@@ -11,6 +11,10 @@ using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 
 /** A column containing a lambda expression.
@@ -95,6 +99,11 @@ public:
     void updateHashWithValue(size_t, SipHash &) const override
     {
         throw Exception("updateHashWithValue is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void updateWeakHash32(WeakHash32 &) const override
+    {
+        throw Exception("updateWeakHash32 is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }
 
     void popBack(size_t) override

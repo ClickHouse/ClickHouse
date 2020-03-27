@@ -12,21 +12,16 @@
 #include <Interpreters/Context.h>
 #include <Storages/StorageLog.h>
 #include <Common/typeid_cast.h>
+#include <Common/tests/gtest_global_context.h>
 
 #include <memory>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 #if !__clang__
 #    pragma GCC diagnostic push
 #    pragma GCC diagnostic ignored "-Wsuggest-override"
 #endif
 
-DB::Context createContext()
-{
-    auto context = DB::Context::createGlobal();
-    context.makeGlobalContext();
-    context.setPath("./");
-    return context;
-}
 
 DB::StoragePtr createStorage(DB::DiskPtr & disk)
 {
@@ -43,41 +38,33 @@ DB::StoragePtr createStorage(DB::DiskPtr & disk)
     return table;
 }
 
-std::unique_ptr<DB::Context> context;
-
 template <typename T>
 class StorageLogTest : public testing::Test
 {
 public:
-    static void SetUpTestSuite()
-    {
-        // Create context only once.
-        if (!context)
-            context = std::make_unique<DB::Context>(createContext());
-    }
 
     void SetUp() override
     {
-        disk_ = createDisk<T>();
-        table_ = createStorage(disk_);
+        disk = createDisk<T>();
+        table = createStorage(disk);
     }
 
     void TearDown() override
     {
-        table_->shutdown();
-        destroyDisk<T>(disk_);
+        table->shutdown();
+        destroyDisk<T>(disk);
     }
 
-    const DB::DiskPtr & getDisk() { return disk_; }
-    DB::StoragePtr & getTable() { return table_; }
+    const DB::DiskPtr & getDisk() { return disk; }
+    DB::StoragePtr & getTable() { return table; }
 
 private:
-    DB::DiskPtr disk_;
-    DB::StoragePtr table_;
+    DB::DiskPtr disk;
+    DB::StoragePtr table;
 };
 
 
-typedef testing::Types<DB::DiskMemory, DB::DiskLocal> DiskImplementations;
+using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
@@ -109,7 +96,7 @@ std::string writeData(int rows, DB::StoragePtr & table)
         block.insert(column);
     }
 
-    BlockOutputStreamPtr out = table->write({}, *context);
+    BlockOutputStreamPtr out = table->write({}, getContext());
     out->write(block);
 
     return data;
@@ -123,9 +110,9 @@ std::string readData(DB::StoragePtr & table)
     Names column_names;
     column_names.push_back("a");
 
-    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(*context);
+    QueryProcessingStage::Enum stage = table->getQueryProcessingStage(getContext());
 
-    BlockInputStreamPtr in = table->read(column_names, {}, *context, stage, 8192, 1)[0];
+    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, getContext(), stage, 8192, 1)[0]));
 
     Block sample;
     {
@@ -136,7 +123,7 @@ std::string readData(DB::StoragePtr & table)
 
     std::ostringstream ss;
     WriteBufferFromOStream out_buf(ss);
-    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, *context);
+    BlockOutputStreamPtr output = FormatFactory::instance().getOutput("Values", out_buf, sample, getContext());
 
     copyData(*in, *output);
 

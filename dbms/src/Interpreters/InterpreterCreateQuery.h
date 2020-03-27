@@ -6,6 +6,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Common/ThreadPool.h>
+#include <Access/AccessRightsElement.h>
 
 
 namespace DB

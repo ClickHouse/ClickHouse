@@ -28,10 +28,10 @@ SELECT a, b, c FROM pk_order ORDER BY a DESC, b DESC, c DESC;
 
 DROP TABLE IF EXISTS pk_order;
 
-CREATE TABLE pk_order (d DateTime, a Int32, b Int32) ENGINE = MergeTree ORDER BY (d, a) 
+CREATE TABLE pk_order (d DateTime, a Int32, b Int32) ENGINE = MergeTree ORDER BY (d, a)
     PARTITION BY toDate(d) SETTINGS index_granularity=1;
 
-INSERT INTO pk_order 
+INSERT INTO pk_order
     SELECT toDateTime('2019-05-05 00:00:00') + INTERVAL number % 10 DAY, number, intHash32(number) from numbers(100);
 
 set max_block_size = 1;
@@ -52,4 +52,4 @@ CREATE TABLE pk_order (a Int, b Int) ENGINE = MergeTree ORDER BY (a / b);
 INSERT INTO pk_order SELECT number % 10 + 1, number % 6 + 1 from numbers(100);
 SELECT * FROM pk_order ORDER BY (a / b), a LIMIT 5;
 
-
+DROP TABLE pk_order;
