@@ -91,7 +91,8 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
             get_translations(dirname, lang),
             newstyle=True
         )
-        env.filters['chunks'] = lambda line: [line[i:i+4096] for i in range(0, len(line), 4096)]
+        chunk_size = 10240
+        env.filters['chunks'] = lambda line: [line[i:i+chunk_size] for i in range(0, len(line), chunk_size)]
         return env
 
 
