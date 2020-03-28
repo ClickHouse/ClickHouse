@@ -453,7 +453,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
     inner_create_query->database = database_name;
     inner_create_query->table = table_name;
 
-    auto inner_select_query = dynamic_pointer_cast<ASTSelectQuery>(getInnerQuery());
+    auto inner_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(getInnerQuery());
 
     Aliases aliases;
     QueryAliasesVisitor::Data query_aliases_data{aliases};
@@ -499,7 +499,6 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
     {
         new_storage->set(new_storage->engine, makeASTFunction("AggregatingMergeTree"));
 
-        // auto inner_select_query = std::dynamic_pointer_cast<ASTSelectQuery>(getInnerQuery());
         for (auto & child : inner_select_query->groupBy()->children)
             if (auto * ast_with_alias = dynamic_cast<ASTWithAlias *>(child.get()))
                 ast_with_alias->setAlias("");

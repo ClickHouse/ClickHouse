@@ -15,7 +15,7 @@ class IAST;
 class WindowViewBlockInputStream;
 using ASTPtr = std::shared_ptr<IAST>;
 
-class StorageWindowView : public ext::shared_ptr_helper<StorageWindowView>, public IStorage
+class StorageWindowView final : public ext::shared_ptr_helper<StorageWindowView>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageWindowView>;
     friend class TimestampTransformation;
