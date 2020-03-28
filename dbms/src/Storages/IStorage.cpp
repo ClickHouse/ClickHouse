@@ -324,10 +324,10 @@ TableStructureReadLockHolder IStorage::lockStructureForShare(const String & quer
     return result;
 }
 
-TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_id)
+TableStructureWriteLockHolder IStorage::lockAlterIntention()
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_lock = std::unique_lock(alter_lock);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
@@ -336,7 +336,7 @@ TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_
 
 void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
 {
-    if (!lock_holder.alter_intention_lock)
+    if (!lock_holder.alter_lock)
         throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     lock_holder.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
@@ -345,7 +345,7 @@ void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_hol
 TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_lock = std::unique_lock(alter_lock);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);

@@ -203,7 +203,7 @@ public:
 
     /// Acquire this lock at the start of ALTER to lock out other ALTERs and make sure that only you
     /// can modify the table structure. It can later be upgraded to the exclusive lock.
-    TableStructureWriteLockHolder lockAlterIntention(const String & query_id);
+    TableStructureWriteLockHolder lockAlterIntention();
 
     /// Upgrade alter intention lock to the full exclusive structure lock. This is done by ALTER queries
     /// to ensure that no other query uses the table structure and it can be safely changed.
@@ -472,7 +472,7 @@ private:
     /// If you hold this lock exclusively, you can be sure that no other structure modifying queries
     /// (e.g. ALTER, DROP) are concurrently executing. But queries that only read table structure
     /// (e.g. SELECT, INSERT) can continue to execute.
-    mutable RWLock alter_intention_lock = RWLockImpl::create();
+    mutable std::mutex alter_lock;
 
     /// Lock for the table column structure (names, types, etc.) and data path.
     /// It is taken in exclusive mode by queries that modify them (e.g. RENAME, ALTER and DROP)

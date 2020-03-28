@@ -236,7 +236,7 @@ void StorageMergeTree::alter(
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
 
-        /// We release all locks except alter_intention_lock which allows
+        /// We release all locks except alter_lock which allows
         /// to execute alter queries sequentially
         table_lock_holder.releaseAllExceptAlterIntention();
 
