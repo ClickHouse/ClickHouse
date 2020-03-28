@@ -16,11 +16,13 @@ SRCS(
     CacheDictionary.cpp
     CacheDictionary_generate1.cpp
     CacheDictionary_generate2.cpp
+    CacheDictionary_generate3.cpp
     ClickHouseDictionarySource.cpp
     ComplexKeyCacheDictionary.cpp
     ComplexKeyCacheDictionary_createAttributeWithType.cpp
     ComplexKeyCacheDictionary_generate1.cpp
     ComplexKeyCacheDictionary_generate2.cpp
+    ComplexKeyCacheDictionary_generate3.cpp
     ComplexKeyCacheDictionary_setAttributeValue.cpp
     ComplexKeyCacheDictionary_setDefaultAttributeValue.cpp
     ComplexKeyHashedDictionary.cpp
@@ -29,6 +31,7 @@ SRCS(
     DictionarySourceFactory.cpp
     DictionarySourceHelpers.cpp
     DictionaryStructure.cpp
+    Embedded/RegionsNames.cpp
     ExecutableDictionarySource.cpp
     ExternalQueryBuilder.cpp
     FileDictionarySource.cpp
@@ -48,6 +51,13 @@ SRCS(
     TrieDictionary.cpp
     writeParenthesisedString.cpp
     XDBCDictionarySource.cpp
+    Embedded/GeoDictionariesLoader.cpp
+    Embedded/GeodataProviders/HierarchiesProvider.cpp
+    Embedded/GeodataProviders/NamesProvider.cpp
+    Embedded/RegionsHierarchies.cpp
+    Embedded/RegionsHierarchy.cpp
+    Embedded/GeodataProviders/HierarchyFormatReader.cpp
+    Embedded/GeodataProviders/NamesFormatReader.cpp
 )
 
 END()

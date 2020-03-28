@@ -5,12 +5,12 @@ PEERDIR(
 )
 
 SRCS(
-    AllowedClientHosts.cpp
     AccessControlManager.cpp
-    AccessRights.cpp
     AccessRightsContext.cpp
     AccessRightsContextFactory.cpp
+    AccessRights.cpp
     AccessRightsElement.cpp
+    AllowedClientHosts.cpp
     Authentication.cpp
     CurrentRolesInfo.cpp
     DiskAccessStorage.cpp
@@ -19,15 +19,16 @@ SRCS(
     IAccessStorage.cpp
     MemoryAccessStorage.cpp
     MultipleAccessStorage.cpp
-    Quota.cpp
     QuotaContext.cpp
     QuotaContextFactory.cpp
-    Role.cpp
+    Quota.cpp
     RoleContext.cpp
     RoleContextFactory.cpp
-    RowPolicy.cpp
+    Role.cpp
     RowPolicyContext.cpp
     RowPolicyContextFactory.cpp
+    RowPolicy.cpp
+    SettingsConstraints.cpp
     User.cpp
     UsersConfigAccessStorage.cpp
 )

@@ -15,12 +15,15 @@ SRCS(
     ColumnConst.cpp
     ColumnDecimal.cpp
     ColumnFixedString.cpp
+    ColumnFunction.cpp
     ColumnLowCardinality.cpp
     ColumnNullable.cpp
     ColumnsCommon.cpp
     ColumnString.cpp
     ColumnTuple.cpp
     ColumnVector.cpp
+    FilterDescription.cpp
+    getLeastSuperColumn.cpp
     IColumn.cpp
 )
 

@@ -2,7 +2,11 @@
 
 #include <type_traits>
 #include <Common/Exception.h>
-#include <Common/config.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #include <DataTypes/NumberTraits.h>
 
 

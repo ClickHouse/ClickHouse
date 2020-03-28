@@ -1,6 +1,9 @@
 #pragma once
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #include <Functions/IFunctionImpl.h>
 #include <DataTypes/Native.h>
 

@@ -17,6 +17,7 @@ SRCS(
     NamesAndTypes.cpp
     Settings.cpp
     SettingsCollection.cpp
+    BackgroundSchedulePool.cpp
 )
 
 END()

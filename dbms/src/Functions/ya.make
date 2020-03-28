@@ -1,11 +1,15 @@
 LIBRARY()
 
 PEERDIR(
+    clickhouse/contrib/consistent-hashing
+    clickhouse/contrib/consistent-hashing-sumbur
     clickhouse/contrib/croaring
+    clickhouse/contrib/libdivide
     clickhouse/contrib/murmurhash
     clickhouse/dbms/src/Common
     clickhouse/dbms/src/Dictionaries
     contrib/libs/farmhash
+    contrib/libs/fastops/fastops
     contrib/libs/hyperscan
     contrib/libs/metrohash
     contrib/libs/rapidjson
@@ -13,17 +17,38 @@ PEERDIR(
 )
 
 SRCS(
+    abs.cpp
+    addDays.cpp
+    addHours.cpp
+    addMinutes.cpp
+    addMonths.cpp
+    addQuarters.cpp
+    addressToLine.cpp
+    addressToSymbol.cpp
+    addSeconds.cpp
+    addWeeks.cpp
+    addYears.cpp
     array/array.cpp
+    array/arrayAll.cpp
+    array/arrayCompact.cpp
     array/arrayConcat.cpp
+    array/arrayCount.cpp
     array/arrayDistinct.cpp
     array/arrayElement.cpp
     array/arrayEnumerate.cpp
     array/arrayEnumerateDense.cpp
     array/arrayEnumerateDenseRanked.cpp
+    array/arrayEnumerateRanked.cpp
     array/arrayEnumerateUniq.cpp
     array/arrayEnumerateUniqRanked.cpp
+    array/arrayExists.cpp
+    array/arrayFill.cpp
+    array/arrayFilter.cpp
+    array/arrayFirst.cpp
+    array/arrayFirstIndex.cpp
     array/arrayFlatten.cpp
     array/arrayIntersect.cpp
+    array/arrayMap.cpp
     array/arrayPopBack.cpp
     array/arrayPopFront.cpp
     array/arrayPushBack.cpp
@@ -32,6 +57,9 @@ SRCS(
     array/arrayResize.cpp
     array/arrayReverse.cpp
     array/arraySlice.cpp
+    array/arraySort.cpp
+    array/arraySplit.cpp
+    array/arraySum.cpp
     array/arrayUniq.cpp
     array/arrayWithConstant.cpp
     array/arrayZip.cpp
@@ -44,7 +72,38 @@ SRCS(
     array/indexOf.cpp
     array/range.cpp
     array/registerFunctionsArray.cpp
+    array/arrayCumSum.cpp
+    array/arrayCumSumNonNegative.cpp
+    array/arrayDifference.cpp
+    bitAnd.cpp
+    bitBoolMaskAnd.cpp
+    bitBoolMaskOr.cpp
+    bitCount.cpp
+    bitNot.cpp
+    bitOr.cpp
+    bitRotateLeft.cpp
+    bitRotateRight.cpp
+    bitShiftLeft.cpp
+    bitShiftRight.cpp
+    bitSwapLastTwo.cpp
+    bitTest.cpp
+    bitTestAll.cpp
+    bitTestAny.cpp
+    bitWrapperFunc.cpp
+    bitXor.cpp
+    caseWithExpression.cpp
+    dateDiff.cpp
+    demangle.cpp
+    divide.cpp
+    e.cpp
+    equals.cpp
+    exp.cpp
+    exp10.cpp
+    exp2.cpp
+    extractTimeZoneFromFunctionArguments.cpp
+    formatDateTime.cpp
     FunctionFactory.cpp
+    FunctionHelpers.cpp
     FunctionsBitmap.cpp
     FunctionsCoding.cpp
     FunctionsConversion.cpp
@@ -53,7 +112,6 @@ SRCS(
     FunctionsExternalModels.cpp
     FunctionsFormatting.cpp
     FunctionsHashing.cpp
-    FunctionHelpers.cpp
     FunctionsJSON.cpp
     FunctionsLogical.cpp
     FunctionsRound.cpp
@@ -61,16 +119,55 @@ SRCS(
     FunctionsStringRegex.cpp
     FunctionsStringSearch.cpp
     FunctionsStringSimilarity.cpp
+    GatherUtils/concat.cpp
     GatherUtils/createArraySink.cpp
     GatherUtils/createArraySource.cpp
+    GatherUtils/createValueSource.cpp
     GatherUtils/has.cpp
+    GatherUtils/push.cpp
+    GatherUtils/resizeConstantSize.cpp
+    GatherUtils/resizeDynamicSize.cpp
     GatherUtils/sliceDynamicOffsetBounded.cpp
     GatherUtils/sliceDynamicOffsetUnbounded.cpp
     GatherUtils/sliceFromLeftConstantOffsetBounded.cpp
     GatherUtils/sliceFromLeftConstantOffsetUnbounded.cpp
     GatherUtils/sliceFromRightConstantOffsetBounded.cpp
     GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
+    gcd.cpp
+    geohashDecode.cpp
+    geohashEncode.cpp
+    geohashesInBox.cpp
+    greatCircleDistance.cpp
+    greater.cpp
+    greaterOrEquals.cpp
+    greatest.cpp
+    if.cpp
     IFunction.cpp
+    intDiv.cpp
+    intDivOrZero.cpp
+    intExp10.cpp
+    intExp2.cpp
+    jumpConsistentHash.cpp
+    lcm.cpp
+    least.cpp
+    less.cpp
+    lessOrEquals.cpp
+    log.cpp
+    log10.cpp
+    log2.cpp
+    minus.cpp
+    modulo.cpp
+    moduloOrZero.cpp
+    multiIf.cpp
+    multiply.cpp
+    negate.cpp
+    notEquals.cpp
+    now.cpp
+    now64.cpp
+    pi.cpp
+    plus.cpp
+    pointInEllipses.cpp
+    pointInPolygon.cpp
     registerFunctions.cpp
     registerFunctionsArithmetic.cpp
     registerFunctionsComparison.cpp
@@ -88,7 +185,199 @@ SRCS(
     registerFunctionsString.cpp
     registerFunctionsTuple.cpp
     registerFunctionsVisitParam.cpp
+    roundAge.cpp
+    roundDuration.cpp
+    roundToExp2.cpp
+    sqrt.cpp
+    subtractDays.cpp
+    subtractHours.cpp
+    subtractMinutes.cpp
+    subtractMonths.cpp
+    subtractQuarters.cpp
+    subtractSeconds.cpp
+    subtractWeeks.cpp
+    subtractYears.cpp
+    sumburConsistentHash.cpp
+    timeSlot.cpp
+    timeSlots.cpp
+    toCustomWeek.cpp
+    today.cpp
+    toDayOfMonth.cpp
+    toDayOfWeek.cpp
+    toDayOfYear.cpp
+    toHour.cpp
+    toISOWeek.cpp
+    toISOYear.cpp
+    toMinute.cpp
+    toMonday.cpp
+    toMonth.cpp
+    toQuarter.cpp
+    toRelativeDayNum.cpp
+    toRelativeHourNum.cpp
+    toRelativeMinuteNum.cpp
+    toRelativeMonthNum.cpp
+    toRelativeQuarterNum.cpp
+    toRelativeSecondNum.cpp
+    toRelativeWeekNum.cpp
+    toRelativeYearNum.cpp
+    toSecond.cpp
+    toStartOfDay.cpp
+    toStartOfFifteenMinutes.cpp
+    toStartOfFiveMinute.cpp
+    toStartOfHour.cpp
+    toStartOfInterval.cpp
+    toStartOfISOYear.cpp
+    toStartOfMinute.cpp
+    toStartOfMonth.cpp
+    toStartOfQuarter.cpp
+    toStartOfTenMinutes.cpp
+    toStartOfYear.cpp
+    toTime.cpp
+    toTimeZone.cpp
+    toYear.cpp
+    toYYYYMM.cpp
+    toYYYYMMDD.cpp
+    toYYYYMMDDhhmmss.cpp
+    trap.cpp
     URL/registerFunctionsURL.cpp
+    yandexConsistentHash.cpp
+    yesterday.cpp
+    GeoUtils.cpp
+    sigmoid.cpp
+    atan.cpp
+    acos.cpp
+    asin.cpp
+    tan.cpp
+    cos.cpp
+    sin.cpp
+    tgamma.cpp
+    lgamma.cpp
+    erfc.cpp
+    erf.cpp
+    cbrt.cpp
+    blockSize.cpp
+    defaultValueOfArgumentType.cpp
+    dumpColumnStructure.cpp
+    toColumnTypeName.cpp
+    blockSerializedSize.cpp
+    getSizeOfEnumType.cpp
+    toTypeName.cpp
+    visibleWidth.cpp
+    FunctionFQDN.cpp
+    hostName.cpp
+    currentRowPolicies.cpp
+    currentQuota.cpp
+    currentDatabase.cpp
+    pow.cpp
+    tanh.cpp
+    isFinite.cpp
+    hasColumnInTable.cpp
+    bar.cpp
+    replicate.cpp
+    array/arrayJoin.cpp
+    identity.cpp
+    ignoreExceptNull.cpp
+    ignore.cpp
+    materialize.cpp
+    sleepEachRow.cpp
+    sleep.cpp
+    neighbor.cpp
+    rowNumberInAllBlocks.cpp
+    rowNumberInBlock.cpp
+    blockNumber.cpp
+    currentUser.cpp
+    FunctionJoinGet.cpp
+    in.cpp
+    lowCardinalityKeys.cpp
+    lowCardinalityIndices.cpp
+    toLowCardinality.cpp
+    finalizeAggregation.cpp
+    runningDifferenceStartingWithFirstValue.cpp
+    runningDifference.cpp
+    runningAccumulate.cpp
+    timezone.cpp
+    ifNull.cpp
+    coalesce.cpp
+    isNotNull.cpp
+    isNull.cpp
+    getScalar.cpp
+    getMacro.cpp
+    transform.cpp
+    URL/basename.cpp
+    evalMLMethod.cpp
+    filesystem.cpp
+    uptime.cpp
+    version.cpp
+    throwIf.cpp
+    ifNotFinite.cpp
+    isNaN.cpp
+    isInfinite.cpp
+    lengthUTF8.cpp
+    array/length.cpp
+    notEmpty.cpp
+    empty.cpp
+    repeat.cpp
+    reinterpretAsFixedString.cpp
+    reinterpretAsString.cpp
+    reinterpretStringAs.cpp
+    randomPrintableASCII.cpp
+    generateUUIDv4.cpp
+    randConstant.cpp
+    rand64.cpp
+    rand.cpp
+    appendTrailingCharIfAbsent.cpp
+    substring.cpp
+    formatString.cpp
+    concat.cpp
+    reverseUTF8.cpp
+    CRC.cpp
+    reverse.cpp
+    upperUTF8.cpp
+    lowerUTF8.cpp
+    upper.cpp
+    lower.cpp
+    toValidUTF8.cpp
+    assumeNotNull.cpp
+    nullIf.cpp
+    URL/protocol.cpp
+    visitParamExtractString.cpp
+    visitParamExtractRaw.cpp
+    visitParamExtractBool.cpp
+    visitParamExtractFloat.cpp
+    visitParamExtractInt.cpp
+    visitParamExtractUInt.cpp
+    visitParamHas.cpp
+    tupleElement.cpp
+    regexpQuoteMeta.cpp
+    trim.cpp
+    startsWith.cpp
+    isValidUTF8.cpp
+    toNullable.cpp
+    URL/URLPathHierarchy.cpp
+    URL/URLHierarchy.cpp
+    URL/extractURLParameterNames.cpp
+    URL/extractURLParameters.cpp
+    URL/extractURLParameter.cpp
+    URL/queryStringAndFragment.cpp
+    URL/fragment.cpp
+    URL/queryString.cpp
+    URL/pathFull.cpp
+    URL/path.cpp
+    URL/topLevelDomain.cpp
+    URL/firstSignificantSubdomain.cpp
+    URL/domainWithoutWWW.cpp
+    URL/domain.cpp
+    tuple.cpp
+    endsWith.cpp
+    URL/cutToFirstSignificantSubdomain.cpp
+    URL/cutWWW.cpp
+    URL/cutQueryString.cpp
+    URL/cutFragment.cpp
+    URL/cutQueryStringAndFragment.cpp
+    URL/cutURLParameter.cpp
+    URL/decodeURLComponent.cpp
+    URL/tldLookup.generated.cpp
+    FunctionsRandom.cpp
 )
 
 END()

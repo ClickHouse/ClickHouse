@@ -5,31 +5,104 @@ PEERDIR(
 )
 
 SRCS(
+    ASTAlterQuery.cpp
+    ASTAsterisk.cpp
+    ASTColumnDeclaration.cpp
+    ASTColumnsMatcher.cpp
+    ASTConstraintDeclaration.cpp
+    ASTCreateQuery.cpp
     ASTCreateQuotaQuery.cpp
     ASTCreateRoleQuery.cpp
     ASTCreateRowPolicyQuery.cpp
     ASTCreateUserQuery.cpp
     ASTDictionaryAttributeDeclaration.cpp
+    ASTDictionary.cpp
+    ASTDropAccessEntityQuery.cpp
+    ASTDropQuery.cpp
     ASTExpressionList.cpp
     ASTFunction.cpp
     ASTFunctionWithKeyValueArguments.cpp
     ASTGenericRoleSet.cpp
     ASTGrantQuery.cpp
     ASTIdentifier.cpp
+    ASTInsertQuery.cpp
+    ASTKillQueryQuery.cpp
     ASTLiteral.cpp
+    ASTOptimizeQuery.cpp
+    ASTOrderByElement.cpp
+    ASTPartition.cpp
+    ASTQualifiedAsterisk.cpp
+    ASTQueryParameter.cpp
+    ASTQueryWithOnCluster.cpp
+    ASTQueryWithOutput.cpp
+    ASTQueryWithTableAndOutput.cpp
+    ASTSampleRatio.cpp
+    ASTSelectQuery.cpp
+    ASTSelectWithUnionQuery.cpp
+    ASTSetRoleQuery.cpp
+    ASTShowCreateAccessEntityQuery.cpp
+    ASTShowGrantsQuery.cpp
+    ASTShowQuotasQuery.cpp
+    ASTShowRowPoliciesQuery.cpp
+    ASTShowTablesQuery.cpp
+    ASTSubquery.cpp
+    ASTSystemQuery.cpp
+    ASTTablesInSelectQuery.cpp
+    ASTTTLElement.cpp
     ASTWithAlias.cpp
+    CommonParsers.cpp
     ExpressionElementParsers.cpp
     ExpressionListParsers.cpp
     formatAST.cpp
     IAST.cpp
+    iostream_debug_helpers.cpp
     IParserBase.cpp
+    Lexer.cpp
+    parseDatabaseAndTableName.cpp
+    parseIdentifierOrStringLiteral.cpp
+    parseIntervalKind.cpp
     parseQuery.cpp
+    ParserAlterQuery.cpp
+    ParserCase.cpp
+    ParserCheckQuery.cpp
+    ParserCreateQuery.cpp
     ParserCreateQuotaQuery.cpp
     ParserCreateRoleQuery.cpp
     ParserCreateRowPolicyQuery.cpp
     ParserCreateUserQuery.cpp
+    ParserDescribeTableQuery.cpp
+    ParserDictionaryAttributeDeclaration.cpp
+    ParserDictionary.cpp
+    ParserDropAccessEntityQuery.cpp
+    ParserDropQuery.cpp
+    ParserGenericRoleSet.cpp
     ParserGrantQuery.cpp
+    ParserInsertQuery.cpp
+    ParserKillQueryQuery.cpp
+    ParserOptimizeQuery.cpp
+    ParserPartition.cpp
+    ParserQuery.cpp
+    ParserQueryWithOutput.cpp
+    ParserRenameQuery.cpp
+    ParserSampleRatio.cpp
+    ParserSelectQuery.cpp
+    ParserSelectWithUnionQuery.cpp
+    ParserSetQuery.cpp
+    ParserSetRoleQuery.cpp
+    ParserShowCreateAccessEntityQuery.cpp
+    ParserShowGrantsQuery.cpp
+    ParserShowQuotasQuery.cpp
+    ParserShowRowPoliciesQuery.cpp
+    ParserShowTablesQuery.cpp
+    ParserSystemQuery.cpp
+    ParserTablePropertiesQuery.cpp
+    ParserTablesInSelectQuery.cpp
+    ParserUnionQueryElement.cpp
+    ParserUseQuery.cpp
+    ParserWatchQuery.cpp
+    parseUserName.cpp
     queryToString.cpp
+    TokenIterator.cpp
 )
 
 END()

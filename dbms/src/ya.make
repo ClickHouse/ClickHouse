@@ -7,6 +7,7 @@ PEERDIR(
     clickhouse/dbms/src/Columns
     clickhouse/dbms/src/Compression
     clickhouse/dbms/src/Core
+    clickhouse/dbms/src/Databases
     clickhouse/dbms/src/DataStreams
     clickhouse/dbms/src/DataTypes
     clickhouse/dbms/src/Dictionaries

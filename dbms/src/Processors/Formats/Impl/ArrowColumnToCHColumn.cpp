@@ -1,4 +1,7 @@
-#include "config_formats.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_formats.h"
+#endif
+
 #include "ArrowColumnToCHColumn.h"
 
 #if USE_ORC || USE_PARQUET

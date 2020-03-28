@@ -7,7 +7,10 @@
 #include <Columns/ColumnDecimal.h>
 #include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
-#include "config_functions.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#endif
 
 /** More efficient implementations of mathematical functions are possible when using a separate library.
   * Disabled due to license compatibility limitations.

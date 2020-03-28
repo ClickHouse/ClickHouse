@@ -12,6 +12,11 @@ PEERDIR(
 )
 
 SRCS(
+    CachedCompressedReadBuffer.cpp
+    CompressedReadBufferBase.cpp
+    CompressedReadBuffer.cpp
+    CompressedReadBufferFromFile.cpp
+    CompressedWriteBuffer.cpp
     CompressionCodecDelta.cpp
     CompressionCodecDoubleDelta.cpp
     CompressionCodecGorilla.cpp
@@ -21,10 +26,6 @@ SRCS(
     CompressionCodecT64.cpp
     CompressionCodecZSTD.cpp
     CompressionFactory.cpp
-    CompressedReadBuffer.cpp
-    CompressedReadBufferBase.cpp
-    CompressedReadBufferFromFile.cpp
-    CompressedWriteBuffer.cpp
     ICompressionCodec.cpp
     LZ4_decompress_faster.cpp
 )

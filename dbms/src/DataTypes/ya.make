@@ -6,18 +6,20 @@ PEERDIR(
 )
 
 SRCS(
+    convertMySQLDataType.cpp
     DataTypeAggregateFunction.cpp
     DataTypeArray.cpp
     DataTypeCustomIPv4AndIPv6.cpp
     DataTypeCustomSimpleAggregateFunction.cpp
     DataTypeCustomSimpleTextSerialization.cpp
     DataTypeDate.cpp
-    DataTypeDateTime.cpp
     DataTypeDateTime64.cpp
+    DataTypeDateTime.cpp
     DataTypeDecimalBase.cpp
     DataTypeEnum.cpp
     DataTypeFactory.cpp
     DataTypeFixedString.cpp
+    DataTypeFunction.cpp
     DataTypeInterval.cpp
     DataTypeLowCardinality.cpp
     DataTypeLowCardinalityHelpers.cpp
@@ -29,7 +31,9 @@ SRCS(
     DataTypeString.cpp
     DataTypeTuple.cpp
     DataTypeUUID.cpp
+    FieldToDataType.cpp
     getLeastSupertype.cpp
+    getMostSubtype.cpp
     IDataType.cpp
     NestedUtils.cpp
 )

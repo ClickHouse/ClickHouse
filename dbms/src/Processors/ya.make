@@ -8,13 +8,20 @@ PEERDIR(
 SRCS(
     Chunk.cpp
     ConcatProcessor.cpp
+    DelayedPortsProcessor.cpp
+    Executors/ParallelPipelineExecutor.cpp
     Executors/PipelineExecutor.cpp
+    Executors/SequentialPipelineExecutor.cpp
+    Executors/TreeExecutorBlockInputStream.cpp
+    ForkProcessor.cpp
     Formats/IInputFormat.cpp
+    Formats/Impl/ArrowColumnToCHColumn.cpp
     Formats/Impl/AvroRowInputFormat.cpp
     Formats/Impl/AvroRowOutputFormat.cpp
     Formats/Impl/BinaryRowInputFormat.cpp
     Formats/Impl/BinaryRowOutputFormat.cpp
     Formats/Impl/CapnProtoRowInputFormat.cpp
+    Formats/Impl/ConstantExpressionTemplate.cpp
     Formats/Impl/CSVRowInputFormat.cpp
     Formats/Impl/CSVRowOutputFormat.cpp
     Formats/Impl/JSONCompactEachRowRowInputFormat.cpp
@@ -27,8 +34,8 @@ SRCS(
     Formats/Impl/MySQLOutputFormat.cpp
     Formats/Impl/NativeFormat.cpp
     Formats/Impl/NullFormat.cpp
-    Formats/Impl/ODBCDriverBlockOutputFormat.cpp
     Formats/Impl/ODBCDriver2BlockOutputFormat.cpp
+    Formats/Impl/ODBCDriverBlockOutputFormat.cpp
     Formats/Impl/ORCBlockInputFormat.cpp
     Formats/Impl/ParquetBlockInputFormat.cpp
     Formats/Impl/ParquetBlockOutputFormat.cpp
@@ -48,17 +55,49 @@ SRCS(
     Formats/Impl/VerticalRowOutputFormat.cpp
     Formats/Impl/XMLRowOutputFormat.cpp
     Formats/IOutputFormat.cpp
+    Formats/IRowInputFormat.cpp
+    Formats/IRowOutputFormat.cpp
     Formats/LazyOutputFormat.cpp
     Formats/OutputStreamToOutputFormat.cpp
+    Formats/RowInputFormatWithDiagnosticInfo.cpp
+    IAccumulatingTransform.cpp
+    IInflatingTransform.cpp
     IProcessor.cpp
+    ISimpleTransform.cpp
     ISink.cpp
     ISource.cpp
+    LimitTransform.cpp
     Pipe.cpp
     Port.cpp
     QueryPipeline.cpp
+    ResizeProcessor.cpp
     Sources/SinkToOutputStream.cpp
     Sources/SourceFromInputStream.cpp
     Sources/SourceWithProgress.cpp
+    Transforms/AddingMissedTransform.cpp
+    Transforms/AggregatingTransform.cpp
+    Transforms/ConvertingTransform.cpp
+    Transforms/CreatingSetsTransform.cpp
+    Transforms/CubeTransform.cpp
+    Transforms/DistinctTransform.cpp
+    Transforms/ExpressionTransform.cpp
+    Transforms/ExtremesTransform.cpp
+    Transforms/FillingTransform.cpp
+    Transforms/FilterTransform.cpp
+    Transforms/FinishSortingTransform.cpp
+    Transforms/InflatingExpressionTransform.cpp
+    Transforms/LimitByTransform.cpp
+    Transforms/LimitsCheckingTransform.cpp
+    Transforms/MaterializingTransform.cpp
+    Transforms/MergeSortingTransform.cpp
+    Transforms/MergingAggregatedMemoryEfficientTransform.cpp
+    Transforms/MergingAggregatedTransform.cpp
+    Transforms/MergingSortedTransform.cpp
+    Transforms/PartialSortingTransform.cpp
+    Transforms/ReverseTransform.cpp
+    Transforms/RollupTransform.cpp
+    Transforms/SortingTransform.cpp
+    Transforms/TotalsHavingTransform.cpp
 )
 
 END()
