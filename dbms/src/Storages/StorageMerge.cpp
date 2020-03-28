@@ -364,7 +364,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
     {
         auto & table = iterator->table();
         if (table.get() != this)
-            selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id), iterator->name());
+            selected_tables.emplace_back(table, table->lockStructureForShare(query_id), iterator->name());
 
         iterator->next();
     }
@@ -389,7 +389,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
         if (storage.get() != this)
         {
-            selected_tables.emplace_back(storage, storage->lockStructureForShare(false, query_id), iterator->name());
+            selected_tables.emplace_back(storage, storage->lockStructureForShare(query_id), iterator->name());
             virtual_column->insert(iterator->name());
         }
 
