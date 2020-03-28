@@ -299,13 +299,13 @@ Depending on dictionary [layout](dicts/external_dicts_dict_layout.md) one or mor
 
 For more information, see [External Dictionaries](dicts/external_dicts.md) section.
 
-## CREATE USER {#create-user}
+## CREATE USER {#create-user-statement}
 
 Creates a user account.
 
 ClickHouse allows to configure user accounts in the [user.xml](../operations/settings/settings_users.md) file. The `CREATE USER` statement is an alternative way of creating user accounts.
 
-### Syntax
+### Syntax {#create-user-syntax}
 
 ```sql
 CREATE USER [IF NOT EXISTS | OR REPLACE] name
@@ -361,7 +361,7 @@ CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
 This query creates the user account `mira` protected by the password `qwerty`. Also user should start client app at the host where the ClickHouse server runs.
 
 
-## CREATE ROLE {#create-role}
+## CREATE ROLE {#create-role-statement}
 
 Creates a role.
 
@@ -382,7 +382,7 @@ User can have a default role which applies at user login. To set the default rol
 
 To revoke a role, use the [REVOKE](revoke.md) statement.
 
-To delete role, use the [DROP ROLE](misc.md#drop-role) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
+To delete role, use the [DROP ROLE](misc.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
 
 ### Example
 
@@ -406,7 +406,7 @@ SET ROLE accountant;
 SELECT * FROM db.*;
 ```
 
-## CREATE ROW POLICY {#create-row-policy}
+## CREATE ROW POLICY {#create-row-policy-statement}
 
 Creates a filter for rows, which a user can read from a table. Also, you can create row filters in the [user settings](../operations/settings/settings_users.md#user-databases-settings).
 

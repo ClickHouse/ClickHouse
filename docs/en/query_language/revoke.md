@@ -1,45 +1,30 @@
 # REVOKE
 
-Помимо GRANT существуют еще другие способы этим управлять. Есть `REVOKE` - это, соответственно, отозвать право. То есть то, что дали грантом, отозвали `REVOKE`. Самая первая команда, если мы право хотим отнять у пользователя, то выполняем:
+Revokes privileges from users or roles.
 
+## Syntax {#revoke-syntax}
+
+**Revoking privileges from users**
+
+``` sql
+REVOKE privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user | CURRENT_USER} [,...]
 ```
-REVOKE access_type[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user_name | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | CURRENT_USER} [,...]
+
+**Revoking roles from users**
+
+``` sql
+REVOKE [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 ```
-```
-REVOKE [ADMIN OPTION FOR] role [,...] FROM {user_name | role_name | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
-```
 
-С `REVOKE` такая история. Можно отнять только то право, которое у пользователя есть. Причем то, чего нет, отнять нельзя, и никаких ошибок об этом не пишется, просто оно не отнимается. 
+## Description {#revoke-description}
 
-Если я сейчас напишу вместо `REVOKE SELECT(x, y)` просто `REVOKE SELECT`, то если у него было право на `SELECT(x, y)`, оно и отнимется. То есть отнимается то, что есть.
-
-Если мы напишем `REVOKE ALL PRIVILEGES`, из этого отнюдь не следует, что сейчас у пользователя Васи `ALL PRIVILEGES`. Это означает, что мы у него отнимем все, что было.
-
-Отрабатывает это иерархически, одни команды включают другие. То есть `ALL PRIVILEGES` - это все биты установленные, `SELECT` - это один бит установленный, `ALTER` - это некоторый набор битов установленный.
-
-Еще момент интересный. Пользователь (админ) создает табличку, дает права некоторым пользователям, и она свободно живет. После чего ты не знаешь, когда сделать `REVOKE`, и у тебя зависают права доступа к таблицам времени, в первую очередь. То есть создается табличка, и у нее <span style="color: red;">там какой-то хеш</span>. И они во время жизни создаются. Интересует механизм, как отозвать все гранты на дропе таблицы, потому что эти таблицы заспамят.
-
-Есть вариант написать `REVOKE`, например, так: `REVOKE ALL PRIVILEGES ON db.table FROM ALL` - отозвать от всех пользователей право делать любые операции с этой таблицей. 
-
-Пусть пользователю создали временную таблицу и разрешили в нее записывать. А админ уже к ней никогда не придет: у него есть скрипт только к созданию таблички, приходить отдельно и чистить права он не готов, он дал пользователю право дропнуть ее. Но если ты не отзовешь эти права, у тебя твоя таблица с привилегиями замусорится в конечном итоге, потому что создается тысячи таблиц в день. Это, на самом деле, из-за вот этого момента (время жизни прав доступа не привязано к таблице). Админ не готов приходить раз в день и делать `REVOKE` на все таблицы, которые реально удалили, потому что он готов только дать `DROP` на табличку.
+To revoke some privilege you can use a privilege of wider scope then you plan to revoke. For example, if a user has the `SELECT (x,y)` privilege, administrator can perform `REVOKE SELECT(x,y) ...`, or `REVOKE SELECT * ...`, or even `REVOKE ALL PRIVILEGES ...` query to revoke this privilege.
 
 
-Для `REVOKE` можно писать:
+### Partial Revokes {partial-revokes-dscr}
 
-- `FROM <пользователь>`
-- `FROM <несколько пользователей (через запятую)>`
-- `FROM ALL` - это означает: отозвать право от всех пользователей, в том числе и от того, кто выполняет эту команду.
+By default you can't revoke a part of a privilege. For example, if a user has the `SELECT *.*` privilege you can't revoke from it a privilege to read date from some table or database.
 
-### partial_revokes
+You can enable to revoke a privilege for subobject of the initial object by the [partial_revokes](../operations/settings/settings.md#partial-revokes-setting) setting. If `partial_revokes = 1` you can, for example? revoke a privilege to read from some individual database or a table.
 
-Есть (в MySQL подсмотрел) `partial_revokes` - такая системная переменная, которая позволяет `REVOKE` чуть-чуть настроить, чтобы он работал чуть-чуть иначе. Я пример написал: 
 
-Пример - partial_revokes.png
-
-Если мы даем право на `*.*`, потом отзываем право на некую секретную базу данных, то так как при `REVOKE` не сошлось `secretdb` (это право не на тот объект, на какой оно давалось), то ничего не отзовется, и у него по-прежнему будет право делать везде `SELECT`. Ошибку при этом не выведет, просто молча. Можно `SHOW GRANTS` посмотреть, чтобы узнать, какой там выдан GRANT. 
-
-`partial_revokes`, соответственно, позволяет все-таки выполнить эту задачу, то есть оно позволяет именно отозвать права на подобъект. Дали право на `*.*`, отозвали право на конкретную базу данных.
-
-Если бы этого не было, то было бы очень трудно решать задачу права на `ALTER`, но только не на `ALTER INDEX`. Мне бы пришлось тогда перечислять все альтеры. Это, на самом деле, работает даже с `partial_revokes=0`, потому что `partial_revokes` управляет именно когда отзывается не часть прав, а права у подобъекта. То есть у таблицы базы данных, например, дается право на базу данных, отзывается право на таблицу. Если мы даем право на `ALTER` на таблицу и отзываем, допустим, право `INDEX` на ту же таблицу, то оно работает хоть так, хоть так. После этого сделаем `SHOW GRANTS` и увидим, что пользователю даны права `UPDATE`, `DELETE`, `ALTER COLUMN`, `ALTER CONSTRAINT`, `MODIFY TTL` и так далее по списку. Когда мы даем право на `ALTER`, то у нас, на самом деле, дается право на весь список. Я вот как раз битсеты эти упоминал, они здесь очень хорошо работают. Потому что `REVOKE`, на самом деле, просто часть этих битов сбросит. 
-
-Отностительно опции `partial_revokes=1` у меня были сомнения. Вроде бы стандарт - это как раз `partial_revokes=0`, то есть он просто ближе к стандарту, в MySQL тоже сделана переменная ровно с таким же именем.

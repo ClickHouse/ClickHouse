@@ -1192,4 +1192,15 @@ Type: URL
 
 Default value: Empty
 
+## partial_revokes {#partial-revokes-setting}
+
+Restricts or allows [partial revokes](../../query_language/revoke.md).
+
+Possible values:
+
+- 0 — Restricts partial revokes.
+- 1 — Allows partial revokes.
+
+Default value: 0.
+
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

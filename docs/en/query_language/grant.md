@@ -2,7 +2,7 @@
 
 Grants [privileges](#grant-privileges) to a ClickHouse user account or a role.
 
-To revoke privileges, use the [REVOKE](revoke.md) statement. Also you can list granted privileges by the [SHOW GRANTS](show.md#show-grants) statement.
+To revoke privileges, use the [REVOKE](revoke.md) statement. Also you can list granted privileges by the [SHOW GRANTS](show.md#show-grants-statement) statement.
 
 ## Syntax {#grant-syntax}
 

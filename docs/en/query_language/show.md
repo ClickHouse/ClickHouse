@@ -95,22 +95,58 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 └──────────────┘
 ```
 
-## SHOW GRANTS {#show-grants}
 
-- `SHOW GRANTS FOR vasya;` показывает то, что разрешено пользователю `vasya`; 
-- `SHOW GRANTS;` показывает то, что разрешено текущему пользователю.
 
-То есть, по сути, `SHOW GRANTS` печатает все эти графы. Если было несколько команд, то он все их печатает. 
+## SHOW GRANTS {#show-grants-statement}
 
-Команды `SHOW GRANTS FOR <объект (таблица)>`
+Shows privileges for a user.
 
-## SHOW CREATE USER {#show-create-user}
+### Syntax {#show-grants-syntax}
 
-`SHOW CREATE USER` не показывает пароли. В остальном, по сути, только хосты показывает. Видимо, из соображений секьюрности так правильнее. Мы можем показывать хеш, но, наверное, тоже не стоит этого делать.
+``` sql
+SHOW GRANTS [FOR user]
+```
 
-## SHOW ROW POLICY {#show-row-policy}
+If user is not specified, the query returns privileges for the current user.
 
-`SHOW CREATE ROW POLICY filter ON mydb.mytable;`
+
+
+## SHOW CREATE USER {#show-create-user-statement}
+
+Shows parameters that were used at a [user creation](create.md#create-user-statement).
+
+`SHOW CREATE USER` doesn't output user passwords.
+
+### Syntax {#show-create-user-syntax}
+
+``` sql
+SHOW CREATE USER [name | CURRENT_USER]
+```
+
+
+
+## SHOW CREATE ROLE {#show-create-role-statement}
+
+Shows parameters that were used at a [role creation](create.md#create-role-statement)
+
+### Syntax {#show-create-role-syntax}
+
+``` sql
+SHOW CREATE ROLE name
+```
+
+
+
+## SHOW CREATE ROW POLICY {#show-create-row-policy-statement}
+
+Shows parameters that were used at a [row policy creation](create.md#create-row-policy-statement)
+
+### Syntax {#show-create-row-policy-syntax}
+
+```sql
+SHOW CREATE [ROW] POLICY name ON [database.]table
+```
+
 
 
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
