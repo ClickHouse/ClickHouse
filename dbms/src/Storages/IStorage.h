@@ -205,11 +205,6 @@ public:
     /// can modify the table structure. It can later be upgraded to the exclusive lock.
     TableStructureWriteLockHolder lockAlterIntention(const String & query_id);
 
-    /// Upgrade alter intention lock and make sure that no new data is inserted into the table.
-    /// This is used by the ALTER MODIFY of the MergeTree storage to consistently determine
-    /// the set of parts that needs to be altered.
-    void lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id);
-
     /// Upgrade alter intention lock to the full exclusive structure lock. This is done by ALTER queries
     /// to ensure that no other query uses the table structure and it can be safely changed.
     void lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id);
