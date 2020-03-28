@@ -6,12 +6,12 @@ import argparse
 import datetime
 import logging
 import os
-import platform
 import shutil
 import subprocess
 import sys
 import time
 
+import jinja2
 import livereload
 import markdown.util
 
@@ -117,13 +117,11 @@ def build_for_lang(lang, args):
             }
         ]
 
-        plugins = []
-        if not args.no_docs_macros:
-            plugins.append('macros')
+        plugins = ['macros']
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
-        cfg = config.load_config(
+        raw_config = dict(
             config_file=config_path,
             site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
             site_url=f'https://clickhouse.tech/docs/{lang}/',
@@ -151,11 +149,21 @@ def build_for_lang(lang, args):
             }
         )
 
-        mkdocs_build.build(cfg)
+        cfg = config.load_config(**raw_config)
+
+        try:
+            mkdocs_build.build(cfg)
+        except jinja2.exceptions.TemplateError:
+            if not args.version_prefix:
+                raise
+            mdx_clickhouse.PatchedMacrosPlugin.disabled = True
+            mkdocs_build.build(cfg)
 
         if not args.skip_single_page:
             build_single_page_version(lang, args, cfg)
-        
+
+        mdx_clickhouse.PatchedMacrosPlugin.disabled = False
+
         logging.info(f'Finished building {lang} docs')
 
     except exceptions.ConfigurationError as e:

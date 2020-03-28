@@ -78,6 +78,8 @@ def get_translations(dirname, lang):
 
 
 class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
+    disabled = False
+
     def on_config(self, config):
         super(PatchedMacrosPlugin, self).on_config(config)
         self.env.comment_start_string = '{##'
@@ -94,6 +96,16 @@ class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
         chunk_size = 10240
         env.filters['chunks'] = lambda line: [line[i:i+chunk_size] for i in range(0, len(line), chunk_size)]
         return env
+
+    def render(self, markdown):
+        if not self.disabled:
+            return self.render_impl(markdown)
+        else:
+            return markdown
+
+    def render_impl(self, markdown):
+        md_template = self.env.from_string(markdown)
+        return md_template.render(**self.variables)
 
 
 macros.plugin.MacrosPlugin = PatchedMacrosPlugin

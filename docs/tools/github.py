@@ -6,7 +6,6 @@ import os
 import sys
 import tarfile
 
-import jinja2
 import requests
 
 import util
@@ -52,11 +51,7 @@ def process_release(args, callback, release):
         args.version_prefix = name
         args.is_stable_release = True
         args.docs_dir = os.path.join(base_dir, os.listdir(base_dir)[0], 'docs')
-        try:
-            callback(args)
-        except jinja2.exceptions.TemplateSyntaxError:
-            args.no_docs_macros = True
-            callback(args)
+        callback(args)
 
 
 def build_releases(args, callback):
