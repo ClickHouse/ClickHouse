@@ -336,14 +336,6 @@ TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_
     return result;
 }
 
-void IStorage::lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
-{
-    if (!lock_holder.alter_intention_lock)
-        throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-    lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-}
-
 void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
 {
     if (!lock_holder.alter_intention_lock)
