@@ -841,24 +841,41 @@ Columns:
 
 -   `name` (String) — Setting name.
 -   `value` (String) — Setting value.
+-   `description` (String) — Setting description.
+-   `type` (String) — Setting type.
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
+-   `min` (Nullable(String)) — Get minimum allowed value (if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `max` (Nullable(String)) — Get maximum allowed value (if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `readonly` (UInt8) — Can user change this setting (for more info, look into [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
 
 Example:
 
 ``` sql
-SELECT *
+SELECT name, value
 FROM system.settings
 WHERE changed
 ```
 
 ``` text
-┌─name───────────────────┬─value───────┬─changed─┐
-│ max_threads            │ 8           │       1 │
-│ use_uncompressed_cache │ 0           │       1 │
-│ load_balancing         │ random      │       1 │
-│ max_memory_usage       │ 10000000000 │       1 │
-└────────────────────────┴─────────────┴─────────┘
+┌─name───────────────────┬─value───────┐
+│ max_threads            │ 8           │
+│ use_uncompressed_cache │ 0           │
+│ load_balancing         │ random      │
+│ max_memory_usage       │ 10000000000 │
+└────────────────────────┴─────────────┘
 ```
+
+## system.merge\_tree\_settings {#system-merge_tree_settings}
+
+Contains information about settings for `MergeTree` tables.
+
+Columns:
+
+-   `name` (String) — Setting name.
+-   `value` (String) — Setting value.
+-   `description` (String) — Setting description.
+-   `type` (String) — Setting type.
+-   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
 ## system.table\_engines {#system-table-engines}
 
