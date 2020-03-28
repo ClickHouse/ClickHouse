@@ -18,9 +18,9 @@ namespace DB
 class StorageFileBlockInputStream;
 class StorageFileBlockOutputStream;
 
-class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public IStorage
+class StorageFile final : public StorageHelper<StorageFile>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageFile>;
+    friend struct StorageHelper<StorageFile>;
 public:
     std::string getName() const override { return "File"; }
 

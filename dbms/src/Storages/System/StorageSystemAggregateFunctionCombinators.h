@@ -7,10 +7,10 @@
 
 namespace DB
 {
-class StorageSystemAggregateFunctionCombinators final : public ext::shared_ptr_helper<StorageSystemAggregateFunctionCombinators>,
+class StorageSystemAggregateFunctionCombinators final : public StorageHelper<StorageSystemAggregateFunctionCombinators>,
                                                   public IStorageSystemOneBlock<StorageSystemAggregateFunctionCombinators>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemAggregateFunctionCombinators>;
+    friend struct StorageHelper<StorageSystemAggregateFunctionCombinators>;
 protected:
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 

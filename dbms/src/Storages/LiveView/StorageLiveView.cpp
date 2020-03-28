@@ -387,7 +387,7 @@ void StorageLiveView::checkTableCanBeDropped() const
     }
 }
 
-void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, const UInt64 & timeout)
+void StorageLiveView::noUsersThread(boost::intrusive_ptr<StorageLiveView> storage, const UInt64 & timeout)
 {
     bool drop_table = false;
 
@@ -464,8 +464,7 @@ void StorageLiveView::startNoUsersThread(const UInt64 & timeout)
             no_users_thread_wakeup = false;
         }
         if (!is_dropped)
-            no_users_thread = std::thread(&StorageLiveView::noUsersThread,
-                std::static_pointer_cast<StorageLiveView>(shared_from_this()), timeout);
+            no_users_thread = std::thread(&StorageLiveView::noUsersThread, this, timeout);
     }
 
     start_no_users_thread_called = false;
@@ -567,7 +566,7 @@ BlockInputStreams StorageLiveView::watch(
     if (query.is_watch_events)
     {
         auto reader = std::make_shared<LiveViewEventsBlockInputStream>(
-            std::static_pointer_cast<StorageLiveView>(shared_from_this()),
+            this,
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
             temporary_live_view_timeout);
@@ -598,7 +597,7 @@ BlockInputStreams StorageLiveView::watch(
     else
     {
         auto reader = std::make_shared<LiveViewBlockInputStream>(
-            std::static_pointer_cast<StorageLiveView>(shared_from_this()),
+            this,
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
             context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
             temporary_live_view_timeout);

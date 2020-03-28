@@ -12,9 +12,9 @@ class Context;
 
 /** Implements the `replication_queue` system table, which allows you to view the replication queues for the replicated tables.
   */
-class StorageSystemReplicationQueue final : public ext::shared_ptr_helper<StorageSystemReplicationQueue>, public IStorageSystemOneBlock<StorageSystemReplicationQueue>
+class StorageSystemReplicationQueue final : public StorageHelper<StorageSystemReplicationQueue>, public IStorageSystemOneBlock<StorageSystemReplicationQueue>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemReplicationQueue>;
+    friend struct StorageHelper<StorageSystemReplicationQueue>;
 public:
     std::string getName() const override { return "SystemReplicationQueue"; }
 

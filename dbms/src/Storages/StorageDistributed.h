@@ -31,9 +31,9 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   * You can pass one address, not several.
   * In this case, the table can be considered remote, rather than distributed.
   */
-class StorageDistributed final : public ext::shared_ptr_helper<StorageDistributed>, public IStorage
+class StorageDistributed final : public StorageHelper<StorageDistributed>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageDistributed>;
+    friend struct StorageHelper<StorageDistributed>;
     friend class DistributedBlockOutputStream;
     friend class StorageDistributedDirectoryMonitor;
 
@@ -117,8 +117,8 @@ public:
     /// Apply the following settings:
     /// - optimize_skip_unused_shards
     /// - force_optimize_skip_unused_shards
-    ClusterPtr getOptimizedCluster(const Context &, const ASTPtr & query_ptr) const;
-    ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const;
+    ClusterPtr getOptimizedCluster(const Context &, const ASTPtr & query_ptr);
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context);
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 

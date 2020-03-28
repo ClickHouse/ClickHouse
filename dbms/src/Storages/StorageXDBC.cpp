@@ -113,7 +113,7 @@ namespace
     template <typename BridgeHelperMixin>
     void registerXDBCStorage(StorageFactory & factory, const std::string & name)
     {
-        factory.registerStorage(name, [name](const StorageFactory::Arguments & args)
+        factory.registerStorage(name, [name](const StorageFactory::Arguments & args) -> StoragePtr
         {
             ASTs & engine_args = args.engine_args;
 
@@ -127,7 +127,7 @@ namespace
             BridgeHelperPtr bridge_helper = std::make_shared<XDBCBridgeHelper<BridgeHelperMixin>>(args.context,
                 args.context.getSettingsRef().http_receive_timeout.value,
                 engine_args[0]->as<ASTLiteral &>().value.safeGet<String>());
-            return std::make_shared<StorageXDBC>(args.table_id,
+            return StorageXDBC::create(args.table_id,
                 engine_args[1]->as<ASTLiteral &>().value.safeGet<String>(),
                 engine_args[2]->as<ASTLiteral &>().value.safeGet<String>(),
                 args.columns,

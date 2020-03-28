@@ -13,14 +13,14 @@ class Context;
 /** Implements the `quota_usage` system tables, which allows you to get information about
   * how the quotas are used by all users.
   */
-class StorageSystemQuotaUsage final : public ext::shared_ptr_helper<StorageSystemQuotaUsage>, public IStorageSystemOneBlock<StorageSystemQuotaUsage>
+class StorageSystemQuotaUsage final : public StorageHelper<StorageSystemQuotaUsage>, public IStorageSystemOneBlock<StorageSystemQuotaUsage>
 {
 public:
     std::string getName() const override { return "SystemQuotaUsage"; }
     static NamesAndTypesList getNamesAndTypes();
 
 protected:
-    friend struct ext::shared_ptr_helper<StorageSystemQuotaUsage>;
+    friend struct StorageHelper<StorageSystemQuotaUsage>;
     using IStorageSystemOneBlock::IStorageSystemOneBlock;
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const override;
 };

@@ -37,9 +37,9 @@ class Context;
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer final : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
+class StorageBuffer final : public StorageHelper<StorageBuffer>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageBuffer>;
+friend struct StorageHelper<StorageBuffer>;
 friend class BufferSource;
 friend class BufferBlockOutputStream;
 

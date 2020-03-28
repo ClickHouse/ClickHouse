@@ -5,9 +5,9 @@
 
 namespace DB
 {
-class StorageSystemFormats final : public ext::shared_ptr_helper<StorageSystemFormats>, public IStorageSystemOneBlock<StorageSystemFormats>
+class StorageSystemFormats final : public StorageHelper<StorageSystemFormats>, public IStorageSystemOneBlock<StorageSystemFormats>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemFormats>;
+    friend struct StorageHelper<StorageSystemFormats>;
 protected:
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 

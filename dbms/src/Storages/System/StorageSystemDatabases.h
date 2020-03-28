@@ -12,9 +12,9 @@ class Context;
 
 /** Implements `databases` system table, which allows you to get information about all databases.
   */
-class StorageSystemDatabases final : public ext::shared_ptr_helper<StorageSystemDatabases>, public IStorageSystemOneBlock<StorageSystemDatabases>
+class StorageSystemDatabases final : public StorageHelper<StorageSystemDatabases>, public IStorageSystemOneBlock<StorageSystemDatabases>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemDatabases>;
+    friend struct StorageHelper<StorageSystemDatabases>;
 public:
     std::string getName() const override
     {

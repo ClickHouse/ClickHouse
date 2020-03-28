@@ -12,9 +12,9 @@
 namespace DB
 {
 
-class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
+class StorageMaterializedView final : public StorageHelper<StorageMaterializedView>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageMaterializedView>;
+    friend struct StorageHelper<StorageMaterializedView>;
 public:
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }

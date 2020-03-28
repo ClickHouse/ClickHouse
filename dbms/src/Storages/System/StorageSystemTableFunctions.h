@@ -6,10 +6,10 @@
 namespace DB
 {
 
-class StorageSystemTableFunctions final : public ext::shared_ptr_helper<StorageSystemTableFunctions>,
+class StorageSystemTableFunctions final : public StorageHelper<StorageSystemTableFunctions>,
                                     public IStorageSystemOneBlock<StorageSystemTableFunctions>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemTableFunctions>;
+    friend struct StorageHelper<StorageSystemTableFunctions>;
 protected:
 
     using IStorageSystemOneBlock::IStorageSystemOneBlock;

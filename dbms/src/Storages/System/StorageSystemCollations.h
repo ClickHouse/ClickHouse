@@ -5,10 +5,10 @@
 namespace DB
 {
 
-class StorageSystemCollations final : public ext::shared_ptr_helper<StorageSystemCollations>,
+class StorageSystemCollations final : public StorageHelper<StorageSystemCollations>,
                                 public IStorageSystemOneBlock<StorageSystemCollations>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemCollations>;
+    friend struct StorageHelper<StorageSystemCollations>;
 protected:
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 

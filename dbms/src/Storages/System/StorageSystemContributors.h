@@ -11,10 +11,10 @@ class Context;
 
 /** System table "contributors" with list of clickhouse contributors
   */
-class StorageSystemContributors final : public ext::shared_ptr_helper<StorageSystemContributors>,
+class StorageSystemContributors final : public StorageHelper<StorageSystemContributors>,
                                   public IStorageSystemOneBlock<StorageSystemContributors>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemContributors>;
+    friend struct StorageHelper<StorageSystemContributors>;
 protected:
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 

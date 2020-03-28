@@ -25,7 +25,6 @@ namespace DB
 
 class IAST;
 using ASTPtr = std::shared_ptr<IAST>;
-using StoragePtr = std::shared_ptr<IStorage>;
 
 class InterpreterWatchQuery : public IInterpreter
 {

@@ -14,9 +14,9 @@ class Context;
  * columns in data parts for tables of MergeTree family.
  */
 class StorageSystemPartsColumns final
-        : public ext::shared_ptr_helper<StorageSystemPartsColumns>, public StorageSystemPartsBase
+        : public StorageHelper<StorageSystemPartsColumns>, public StorageSystemPartsBase
 {
-    friend struct ext::shared_ptr_helper<StorageSystemPartsColumns>;
+    friend struct StorageHelper<StorageSystemPartsColumns>;
 public:
     std::string getName() const override { return "SystemPartsColumns"; }
 

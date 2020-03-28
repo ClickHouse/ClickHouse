@@ -227,7 +227,7 @@ public:
     }
 };
 
-void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & columns, ConstStoragePtr storage)
+void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & columns, StoragePtr storage)
 {
     auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns, storage);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
@@ -587,7 +587,7 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : global_context.getCluster(cluster_name);
 }
 
-ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, const ASTPtr & query_ptr) const
+ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, const ASTPtr & query_ptr)
 {
     ClusterPtr cluster = getCluster();
     const Settings & settings = context.getSettingsRef();
@@ -644,7 +644,7 @@ void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
-ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const
+ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context)
 {
     const auto & select = query_ptr->as<ASTSelectQuery &>();
 
@@ -663,7 +663,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const ASTPtr
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
     }
 
-    replaceConstantExpressions(condition_ast, context, getColumns().getAll(), shared_from_this());
+    replaceConstantExpressions(condition_ast, context, getColumns().getAll(), StoragePtr(this));
     const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards

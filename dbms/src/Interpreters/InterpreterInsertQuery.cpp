@@ -122,7 +122,7 @@ BlockIO InterpreterInsertQuery::execute()
     if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
     {
         // Distributed INSERT SELECT
-        std::shared_ptr<StorageDistributed> storage_src;
+        boost::intrusive_ptr<StorageDistributed> storage_src;
         auto & select = query.select->as<ASTSelectWithUnionQuery &>();
         auto new_query = std::dynamic_pointer_cast<ASTInsertQuery>(query.clone());
         if (select.list_of_selects->children.size() == 1)
@@ -132,7 +132,7 @@ BlockIO InterpreterInsertQuery::execute()
 
             if (joined_tables.tablesCount() == 1)
             {
-                storage_src = std::dynamic_pointer_cast<StorageDistributed>(joined_tables.getLeftTableStorage());
+                storage_src = dynamic_cast<StorageDistributed *>(joined_tables.getLeftTableStorage().get());
                 if (storage_src)
                 {
                     const auto select_with_union_query = std::make_shared<ASTSelectWithUnionQuery>();
@@ -148,7 +148,7 @@ BlockIO InterpreterInsertQuery::execute()
             }
         }
 
-        auto storage_dst = std::dynamic_pointer_cast<StorageDistributed>(table);
+        auto storage_dst = dynamic_cast<StorageDistributed *>(table.get());
 
         if (storage_src && storage_dst && storage_src->cluster_name == storage_dst->cluster_name)
         {

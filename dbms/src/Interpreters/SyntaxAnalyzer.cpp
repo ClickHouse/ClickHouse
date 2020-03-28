@@ -778,6 +778,22 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
     required_source_columns.swap(source_columns);
 }
 
+
+SyntaxAnalyzerResult::SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, StoragePtr storage_, bool add_virtuals)
+    : storage(storage_)
+    , source_columns(source_columns_)
+{
+    collectSourceColumns(add_virtuals);
+}
+
+SyntaxAnalyzerResult::SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_)
+    : source_columns(source_columns_)
+{
+    collectSourceColumns(true);
+}
+
+
+
 SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     ASTPtr & query,
     SyntaxAnalyzerResult && result,
@@ -863,7 +879,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage) const
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, StoragePtr storage) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
@@ -882,6 +898,11 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTy
     assertNoAggregates(query, "in wrong place");
     result.collectUsedColumns(query);
     return std::make_shared<const SyntaxAnalyzerResult>(result);
+}
+
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns) const
+{
+    return analyze(query, source_columns, {});
 }
 
 void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings & settings)

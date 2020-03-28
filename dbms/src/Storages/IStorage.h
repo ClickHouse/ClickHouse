@@ -19,6 +19,8 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
+#include <boost/smart_ptr/intrusive_ptr.hpp>
+#include <boost/smart_ptr/intrusive_ref_counter.hpp>
 
 #include <optional>
 #include <shared_mutex>
@@ -71,6 +73,7 @@ struct ColumnSize
     }
 };
 
+
 /** Storage. Describes the table. Responsible for
   * - storage of the table data;
   * - the definition in which files (or not in files) the data is stored;
@@ -78,7 +81,7 @@ struct ColumnSize
   * - data storage structure (compression, etc.)
   * - concurrent access to data (locks, etc.)
   */
-class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromotion<IStorage>
+class IStorage : public boost::intrusive_ref_counter<IStorage>, public TypePromotion<IStorage>
 {
 public:
     IStorage() = delete;
@@ -478,6 +481,18 @@ private:
     /// It is taken in exclusive mode by queries that modify them (e.g. RENAME, ALTER and DROP)
     /// and in share mode by other queries.
     mutable RWLock structure_lock = RWLockImpl::create();
+};
+
+
+/// Derive storages from this class.
+template <typename T>
+struct StorageHelper
+{
+    template <typename... TArgs>
+    static boost::intrusive_ptr<T> create(TArgs &&... args)
+    {
+        return boost::intrusive_ptr<T>(new T(std::forward<TArgs>(args)...));
+    }
 };
 
 }

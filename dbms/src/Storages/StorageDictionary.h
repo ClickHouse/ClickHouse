@@ -19,9 +19,9 @@ struct DictionaryStructure;
 struct IDictionaryBase;
 class ExternalDictionaries;
 
-class StorageDictionary final : public ext::shared_ptr_helper<StorageDictionary>, public IStorage
+class StorageDictionary final : public StorageHelper<StorageDictionary>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageDictionary>;
+    friend struct StorageHelper<StorageDictionary>;
 public:
     std::string getName() const override { return "Dictionary"; }
 

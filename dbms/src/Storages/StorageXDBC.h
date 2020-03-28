@@ -12,7 +12,7 @@ namespace DB
   * Example ENGINE = odbc('dsn=test', table)
   * Read only.
   */
-class StorageXDBC : public IStorageURLBase
+class StorageXDBC : public StorageHelper<StorageXDBC>, IStorageURLBase
 {
 public:
 

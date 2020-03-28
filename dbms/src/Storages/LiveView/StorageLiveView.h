@@ -38,9 +38,9 @@ using ASTPtr = std::shared_ptr<IAST>;
 using BlocksMetadataPtr = std::shared_ptr<BlocksMetadata>;
 using MergeableBlocksPtr = std::shared_ptr<MergeableBlocks>;
 
-class StorageLiveView final : public ext::shared_ptr_helper<StorageLiveView>, public IStorage
+class StorageLiveView final : public StorageHelper<StorageLiveView>, public IStorage
 {
-friend struct ext::shared_ptr_helper<StorageLiveView>;
+friend struct StorageHelper<StorageLiveView>;
 friend class LiveViewBlockInputStream;
 friend class LiveViewEventsBlockInputStream;
 friend class LiveViewBlockOutputStream;
@@ -194,7 +194,7 @@ private:
 
     /// Background thread for temporary tables
     /// which drops this table if there are no users
-    static void noUsersThread(std::shared_ptr<StorageLiveView> storage, const UInt64 & timeout);
+    static void noUsersThread(boost::intrusive_ptr<StorageLiveView> storage, const UInt64 & timeout);
     std::mutex no_users_thread_mutex;
     std::thread no_users_thread;
     std::atomic<bool> shutdown_called = false;

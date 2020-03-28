@@ -14,9 +14,9 @@ class Context;
 
 /** Implements the system table `disks`, which allows you to get information about all disks.
 */
-class StorageSystemDisks final : public ext::shared_ptr_helper<StorageSystemDisks>, public IStorage
+class StorageSystemDisks final : public StorageHelper<StorageSystemDisks>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageSystemDisks>;
+    friend struct StorageHelper<StorageSystemDisks>;
 public:
     std::string getName() const override { return "SystemDisks"; }
 

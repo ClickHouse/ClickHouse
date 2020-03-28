@@ -317,7 +317,8 @@ SetPtr SelectQueryExpressionAnalyzer::isPlainStorageSetInSubquery(const ASTPtr &
     const auto storage = DatabaseCatalog::instance().getTable(table_id);
     if (storage->getName() != "Set")
         return nullptr;
-    const auto storage_set = std::dynamic_pointer_cast<StorageSet>(storage);
+    const auto storage_set = dynamic_cast<StorageSet *>(storage.get());
+    assert(storage_set);
     return storage_set->getSet();
 }
 
@@ -956,7 +957,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     const ASTSelectQuery & query = *query_analyzer.getSelectQuery();
     const Context & context = query_analyzer.context;
     const Settings & settings = context.getSettingsRef();
-    const ConstStoragePtr & storage = query_analyzer.storage();
+    const StoragePtr & storage = query_analyzer.storage();
 
     bool finalized = false;
     size_t where_step_num = 0;

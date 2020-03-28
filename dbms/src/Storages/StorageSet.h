@@ -57,9 +57,9 @@ private:
   *  and also written to a file-backup, for recovery after a restart.
   * Reading from the table is not possible directly - it is possible to specify only the right part of the IN statement.
   */
-class StorageSet final : public ext::shared_ptr_helper<StorageSet>, public StorageSetOrJoinBase
+class StorageSet final : public StorageHelper<StorageSet>, public StorageSetOrJoinBase
 {
-friend struct ext::shared_ptr_helper<StorageSet>;
+friend struct StorageHelper<StorageSet>;
 
 public:
     String getName() const override { return "Set"; }

@@ -12,9 +12,9 @@ class Context;
 
 /// Implements the `mutations` system table, which provides information about the status of mutations
 /// in the MergeTree tables.
-class StorageSystemMutations final : public ext::shared_ptr_helper<StorageSystemMutations>, public IStorageSystemOneBlock<StorageSystemMutations>
+class StorageSystemMutations final : public StorageHelper<StorageSystemMutations>, public IStorageSystemOneBlock<StorageSystemMutations>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemMutations>;
+    friend struct StorageHelper<StorageSystemMutations>;
 public:
     String getName() const override { return "SystemMutations"; }
 

@@ -232,7 +232,7 @@ public:
     }
 
     StorageFileSource(
-        std::shared_ptr<StorageFile> storage_,
+        boost::intrusive_ptr<StorageFile> storage_,
         const Context & context_,
         UInt64 max_block_size_,
         FilesInfoPtr files_info_,
@@ -359,7 +359,7 @@ public:
     }
 
 private:
-    std::shared_ptr<StorageFile> storage;
+    boost::intrusive_ptr<StorageFile> storage;
     FilesInfoPtr files_info;
     String current_path;
     Block sample_block;
@@ -406,8 +406,6 @@ Pipes StorageFile::read(
             files_info->need_file_column = true;
     }
 
-    auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
-
     if (num_streams > paths.size())
         num_streams = paths.size();
 
@@ -416,7 +414,7 @@ Pipes StorageFile::read(
 
     for (size_t i = 0; i < num_streams; ++i)
         pipes.emplace_back(std::make_shared<StorageFileSource>(
-            this_ptr, context, max_block_size, files_info, getColumns().getDefaults()));
+            this, context, max_block_size, files_info, getColumns().getDefaults()));
 
     return pipes;
 }

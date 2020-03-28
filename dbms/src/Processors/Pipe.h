@@ -1,6 +1,9 @@
 #pragma once
+
 #include <Processors/IProcessor.h>
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Storages/IStorage_fwd.h>
+
 
 namespace DB
 {
@@ -8,8 +11,6 @@ namespace DB
 class Pipe;
 using Pipes = std::vector<Pipe>;
 
-class IStorage;
-using StoragePtr = std::shared_ptr<IStorage>;
 
 /// Pipe is a set of processors which represents the part of pipeline with single output.
 /// All processors in pipe are connected. All ports are connected except the output one.

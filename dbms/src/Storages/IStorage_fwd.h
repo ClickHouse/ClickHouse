@@ -1,17 +1,20 @@
 #pragma once
 
-#include <Core/Types.h>
-
 #include <map>
-#include <memory>
+#include <string>
+
+#include <boost/smart_ptr/intrusive_ptr.hpp>
+
 
 namespace DB
 {
 
 class IStorage;
 
-using ConstStoragePtr = std::shared_ptr<const IStorage>;
-using StoragePtr = std::shared_ptr<IStorage>;
-using Tables = std::map<String, StoragePtr>;
+void intrusive_ptr_add_ref(IStorage *);
+void intrusive_ptr_release(IStorage *);
+
+using StoragePtr = boost::intrusive_ptr<IStorage>;
+using Tables = std::map<std::string, StoragePtr>;
 
 }

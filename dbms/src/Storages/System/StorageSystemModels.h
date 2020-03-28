@@ -10,9 +10,9 @@ namespace DB
 class Context;
 
 
-class StorageSystemModels final : public ext::shared_ptr_helper<StorageSystemModels>, public IStorageSystemOneBlock<StorageSystemModels>
+class StorageSystemModels final : public StorageHelper<StorageSystemModels>, public IStorageSystemOneBlock<StorageSystemModels>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemModels>;
+    friend struct StorageHelper<StorageSystemModels>;
 public:
     std::string getName() const override { return "SystemModels"; }
 

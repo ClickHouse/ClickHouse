@@ -279,7 +279,7 @@ void DatabaseLazy::clearExpiredTables() const
         String table_name = expired_tables.front().table_name;
         auto it = tables_cache.find(table_name);
 
-        if (!it->second.table || it->second.table.unique())
+        if (!it->second.table || it->second.table->use_count() <= 1)
         {
             LOG_DEBUG(log, "Drop table " << backQuote(it->first) << " from cache.");
             it->second.table.reset();

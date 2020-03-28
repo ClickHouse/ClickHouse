@@ -354,8 +354,10 @@ void DatabaseMySQL::cleanOutdatedTables()
     {
         for (auto iterator = outdated_tables.begin(); iterator != outdated_tables.end();)
         {
-            if (!iterator->unique())
+            if ((*iterator)->use_count() > 1)
+            {
                 ++iterator;
+            }
             else
             {
                 const auto table_lock = (*iterator)->lockAlterIntention();

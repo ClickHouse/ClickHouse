@@ -16,9 +16,9 @@ class Context;
 /// Allows to introspect stack trace of all server threads.
 /// It acts like an embedded debugger.
 /// More than one instance of this table cannot be used.
-class StorageSystemStackTrace final : public ext::shared_ptr_helper<StorageSystemStackTrace>, public IStorageSystemOneBlock<StorageSystemStackTrace>
+class StorageSystemStackTrace final : public StorageHelper<StorageSystemStackTrace>, public IStorageSystemOneBlock<StorageSystemStackTrace>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemStackTrace>;
+    friend struct StorageHelper<StorageSystemStackTrace>;
 public:
     String getName() const override { return "SystemStackTrace"; }
     static NamesAndTypesList getNamesAndTypes();

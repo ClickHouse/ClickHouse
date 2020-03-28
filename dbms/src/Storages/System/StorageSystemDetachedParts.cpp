@@ -19,10 +19,10 @@ namespace DB
   * column and column aliases which we don't need.
   */
 class StorageSystemDetachedParts final :
-    public ext::shared_ptr_helper<StorageSystemDetachedParts>,
+    public StorageHelper<StorageSystemDetachedParts>,
     public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageSystemDetachedParts>;
+    friend struct StorageHelper<StorageSystemDetachedParts>;
 public:
     std::string getName() const override { return "SystemDetachedParts"; }
 

@@ -69,7 +69,7 @@ Pipes StorageInput::read(const Names & /*column_names*/,
     if (query_context.getInputBlocksReaderCallback())
     {
         /// Send structure to the client.
-        query_context.initializeInput(shared_from_this());
+        query_context.initializeInput(this);
         pipes.emplace_back(std::make_shared<StorageInputSource>(query_context, getSampleBlock()));
         return pipes;
     }

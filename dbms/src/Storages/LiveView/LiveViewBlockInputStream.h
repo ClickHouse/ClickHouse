@@ -24,7 +24,7 @@ public:
             storage->startNoUsersThread(temporary_live_view_timeout_sec);
     }
 
-    LiveViewBlockInputStream(std::shared_ptr<StorageLiveView> storage_,
+    LiveViewBlockInputStream(boost::intrusive_ptr<StorageLiveView> storage_,
         std::shared_ptr<BlocksPtr> blocks_ptr_,
         std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_,
         std::shared_ptr<bool> active_ptr_,
@@ -190,7 +190,7 @@ protected:
     }
 
 private:
-    std::shared_ptr<StorageLiveView> storage;
+    boost::intrusive_ptr<StorageLiveView> storage;
     std::shared_ptr<BlocksPtr> blocks_ptr;
     std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr;
     std::weak_ptr<bool> active_ptr;

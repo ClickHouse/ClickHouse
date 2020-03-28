@@ -6,7 +6,6 @@
 #include <Interpreters/Context.h>
 
 #include <Poco/Semaphore.h>
-#include <ext/shared_ptr_helper.h>
 
 #include <mutex>
 #include <atomic>
@@ -24,9 +23,9 @@ namespace DB
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka final : public ext::shared_ptr_helper<StorageKafka>, public IStorage
+class StorageKafka final : public StorageHelper<StorageKafka>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageKafka>;
+    friend struct StorageHelper<StorageKafka>;
 public:
     std::string getName() const override { return "Kafka"; }
 

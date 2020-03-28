@@ -43,7 +43,7 @@ public:
     }
     /// length default -2 because we want LIMIT to specify number of updates so that LIMIT 1 waits for 1 update
     /// and LIMIT 0 just returns data without waiting for any updates
-    LiveViewEventsBlockInputStream(std::shared_ptr<StorageLiveView> storage_,
+    LiveViewEventsBlockInputStream(boost::intrusive_ptr<StorageLiveView> storage_,
         std::shared_ptr<BlocksPtr> blocks_ptr_,
         std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_,
         std::shared_ptr<bool> active_ptr_,
@@ -221,7 +221,7 @@ protected:
     }
 
 private:
-    std::shared_ptr<StorageLiveView> storage;
+    boost::intrusive_ptr<StorageLiveView> storage;
     std::shared_ptr<BlocksPtr> blocks_ptr;
     std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr;
     std::weak_ptr<bool> active_ptr;

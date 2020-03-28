@@ -11,9 +11,9 @@ namespace DB
 {
 
 /// Provides information about Graphite configuration.
-class StorageSystemGraphite final : public ext::shared_ptr_helper<StorageSystemGraphite>, public IStorageSystemOneBlock<StorageSystemGraphite>
+class StorageSystemGraphite final : public StorageHelper<StorageSystemGraphite>, public IStorageSystemOneBlock<StorageSystemGraphite>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemGraphite>;
+    friend struct StorageHelper<StorageSystemGraphite>;
 public:
     std::string getName() const override { return "SystemGraphite"; }
 

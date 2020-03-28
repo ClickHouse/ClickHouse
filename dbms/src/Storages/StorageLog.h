@@ -15,11 +15,11 @@ namespace DB
 /** Implements simple table engine without support of indices.
   * The data is stored in a compressed form.
   */
-class StorageLog final : public ext::shared_ptr_helper<StorageLog>, public IStorage
+class StorageLog final : public StorageHelper<StorageLog>, public IStorage
 {
     friend class LogSource;
     friend class LogBlockOutputStream;
-    friend struct ext::shared_ptr_helper<StorageLog>;
+    friend struct StorageHelper<StorageLog>;
 
 public:
     String getName() const override { return "Log"; }

@@ -11,9 +11,9 @@ class Context;
 
 /** Implements system table 'columns', that allows to get information about columns for every table.
   */
-class StorageSystemColumns final : public ext::shared_ptr_helper<StorageSystemColumns>, public IStorage
+class StorageSystemColumns final : public StorageHelper<StorageSystemColumns>, public IStorage
 {
-    friend struct ext::shared_ptr_helper<StorageSystemColumns>;
+    friend struct StorageHelper<StorageSystemColumns>;
 public:
     std::string getName() const override { return "SystemColumns"; }
 

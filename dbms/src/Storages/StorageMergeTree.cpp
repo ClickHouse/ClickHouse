@@ -691,7 +691,7 @@ bool StorageMergeTree::tryMutatePart()
 
                 if (!commands_for_size_validation.empty())
                 {
-                    MutationsInterpreter interpreter(shared_from_this(), commands_for_size_validation, global_context, false);
+                    MutationsInterpreter interpreter(this, commands_for_size_validation, global_context, false);
                     commands_size += interpreter.evaluateCommandsSize();
                 }
 
@@ -1114,7 +1114,7 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
     auto lock1 = lockStructureForShare(context.getCurrentQueryId());
     auto lock2 = dest_table->lockStructureForShare(context.getCurrentQueryId());
 
-    auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
+    auto dest_table_storage = dynamic_cast<StorageMergeTree *>(dest_table.get());
     if (!dest_table_storage)
         throw Exception("Table " + getStorageID().getNameForLogs() + " supports movePartitionToTable only for MergeTree family of table engines."
                         " Got " + dest_table->getName(), ErrorCodes::NOT_IMPLEMENTED);

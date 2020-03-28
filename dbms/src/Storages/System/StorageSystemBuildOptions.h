@@ -12,9 +12,9 @@ class Context;
 
 /** System table "build_options" with many params used for clickhouse building
   */
-class StorageSystemBuildOptions final : public ext::shared_ptr_helper<StorageSystemBuildOptions>, public IStorageSystemOneBlock<StorageSystemBuildOptions>
+class StorageSystemBuildOptions final : public StorageHelper<StorageSystemBuildOptions>, public IStorageSystemOneBlock<StorageSystemBuildOptions>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemBuildOptions>;
+    friend struct StorageHelper<StorageSystemBuildOptions>;
 protected:
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 

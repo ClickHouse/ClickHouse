@@ -6,10 +6,10 @@
 namespace DB
 {
 
-class StorageSystemDataTypeFamilies final : public ext::shared_ptr_helper<StorageSystemDataTypeFamilies>,
+class StorageSystemDataTypeFamilies final : public StorageHelper<StorageSystemDataTypeFamilies>,
                                       public IStorageSystemOneBlock<StorageSystemDataTypeFamilies>
 {
-    friend struct ext::shared_ptr_helper<StorageSystemDataTypeFamilies>;
+    friend struct StorageHelper<StorageSystemDataTypeFamilies>;
 protected:
     void fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & query_info) const override;
 

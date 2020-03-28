@@ -4907,7 +4907,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     auto lock1 = lockStructureForShare(context.getCurrentQueryId());
     auto lock2 = dest_table->lockStructureForShare(context.getCurrentQueryId());
 
-    auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(dest_table);
+    auto dest_table_storage = dynamic_cast<StorageReplicatedMergeTree *>(dest_table.get());
     if (!dest_table_storage)
         throw Exception("Table " + getStorageID().getNameForLogs() + " supports movePartitionToTable only for ReplicatedMergeTree family of table engines."
                         " Got " + dest_table->getName(), ErrorCodes::NOT_IMPLEMENTED);
