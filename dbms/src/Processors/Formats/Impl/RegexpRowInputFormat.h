@@ -36,7 +36,7 @@ public:
 private:
     bool readField(size_t index, MutableColumns & columns);
     void readFieldsFromMatch(MutableColumns & columns, RowReadExtension & ext);
-    ColumnFormat stringToFormat(const String & format);
+    static ColumnFormat stringToFormat(const String & format);
 
     PeekableReadBuffer buf;
     const FormatSettings format_settings;
