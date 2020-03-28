@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # AgregaciónMergeTree {#aggregatingmergetree}
 
 El motor hereda de [Método de codificación de datos:](mergetree.md#table_engines-mergetree), alterando la lógica para la fusión de partes de datos. ClickHouse reemplaza todas las filas con la misma clave principal (o más exactamente, con la misma [clave de clasificación](mergetree.md)) con una sola fila (dentro de una parte de datos) que almacena una combinación de estados de funciones agregadas.

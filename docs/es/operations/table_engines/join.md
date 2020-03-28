@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Unir {#join}
 
 Estructura de datos preparada para usar en [UNIR](../../query_language/select.md#select-join) operación.

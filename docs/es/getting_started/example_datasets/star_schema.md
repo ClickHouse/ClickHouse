@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Estrella Schema Benchmark {#star-schema-benchmark}
 
 Compilación de dbgen:

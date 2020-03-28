@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para generar números pseudoaleatorios {#functions-for-generating-pseudo-random-numbers}
 
 Se utilizan generadores no criptográficos de números pseudoaleatorios.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones de introspección {#introspection-functions}
 
 Puede utilizar las funciones descritas en este capítulo para [ELFO](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) y [ENANO](https://en.wikipedia.org/wiki/DWARF) para la creación de perfiles de consultas.

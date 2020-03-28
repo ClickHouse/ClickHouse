@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Consultas del sistema {#query-language-system}
 
 -   [Cargar DICCIONARIOS](#query_language-system-reload-dictionaries)

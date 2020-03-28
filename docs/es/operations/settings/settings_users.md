@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Configuración del usuario {#user-settings}
 
 El `users` sección de la `user.xml` el archivo de configuración contiene la configuración del usuario.

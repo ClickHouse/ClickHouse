@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Primeros pasos {#getting-started}
 
 Si eres nuevo en ClickHouse y quieres tener una sensación práctica de su rendimiento, antes que nada, debes pasar por el [proceso de instalación](install.md). Después de eso puedes:

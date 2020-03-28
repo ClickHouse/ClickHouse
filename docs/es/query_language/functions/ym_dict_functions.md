@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para trabajar con Yandex.Métrica, diccionarios {#functions-for-working-with-yandex-metrica-dictionaries}
 
 Para que las funciones a continuación funcionen, la configuración del servidor debe especificar las rutas y direcciones para obtener todo el Yandex.Diccionarios Metrica. Los diccionarios se cargan en la primera llamada de cualquiera de estas funciones. Si no se pueden cargar las listas de referencia, se produce una excepción.

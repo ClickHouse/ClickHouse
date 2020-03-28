@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Configuración del servidor {#server-settings}
 
 ## builtin\_dictionaries\_reload\_interval {#builtin-dictionaries-reload-interval}

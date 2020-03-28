@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Formatos para datos de entrada y salida {#formats}
 
 ClickHouse puede aceptar y devolver datos en varios formatos. Se puede utilizar un formato admitido para la entrada para analizar los datos proporcionados a `INSERT`s, para llevar a cabo `SELECT`s de una tabla respaldada por archivos como File, URL o HDFS, o para leer un diccionario externo. Se puede utilizar un formato compatible con la salida para organizar el

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## Lanzamiento de ClickHouse v20.3 {#clickhouse-release-v20-3}
 
 ### Todos los derechos reservados. {#clickhouse-release-v20-3-3-6-2020-03-17}
