@@ -517,9 +517,9 @@ void StorageLiveView::drop(TableStructureWriteLockHolder &)
     condition.notify_all();
 }
 
-void StorageLiveView::refresh(const Context & context)
+void StorageLiveView::refresh()
 {
-    auto alter_lock = lockAlterIntention(context.getCurrentQueryId());
+    auto alter_lock = lockAlterIntention();
     {
         std::lock_guard lock(mutex);
         if (getNewBlocks())

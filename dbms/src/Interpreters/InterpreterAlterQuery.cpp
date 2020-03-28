@@ -101,7 +101,7 @@ BlockIO InterpreterAlterQuery::execute()
             switch (command.type)
             {
                 case LiveViewCommand::REFRESH:
-                    live_view->refresh(context);
+                    live_view->refresh();
                     break;
             }
         }
@@ -109,7 +109,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!alter_commands.empty())
     {
-        auto table_lock_holder = table->lockAlterIntention(context.getCurrentQueryId());
+        auto table_lock_holder = table->lockAlterIntention();
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, context);
         alter_commands.prepare(metadata);

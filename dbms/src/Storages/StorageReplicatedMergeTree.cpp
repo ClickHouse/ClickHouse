@@ -3210,7 +3210,7 @@ void StorageReplicatedMergeTree::alter(
         alter_entry.emplace();
         mutation_znode.reset();
 
-        /// We can safely read structure, because we guarded with alter_intention_lock
+        /// We can safely read structure, because we guarded with alter_lock
         if (is_readonly)
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
