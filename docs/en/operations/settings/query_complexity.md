@@ -16,7 +16,7 @@ It can take one of two values: `throw` or `break`. Restrictions on aggregation (
 
 `any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don’t add new keys to the set.
 
-## max\_memory\_usage {#settings-max-memory-usage}
+## max\_memory\_usage {#settings_max_memory_usage}
 
 The maximum amount of RAM to use for running a query on a single server.
 
@@ -73,7 +73,7 @@ A maximum number of unique keys received from aggregation. This setting lets you
 What to do when the number of unique keys for aggregation exceeds the limit: ‘throw’, ‘break’, or ‘any’. By default, throw.
 Using the ‘any’ value lets you run an approximation of GROUP BY. The quality of this approximation depends on the statistical nature of the data.
 
-## max\_bytes\_before\_external\_group\_by {#settings-max-bytes-before-external-group-by}
+## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
 Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../query_language/select.md#select-group-by-in-external-memory).
 
@@ -96,7 +96,7 @@ A maximum number of bytes before sorting.
 
 What to do if the number of rows received before sorting exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
-## max\_result\_rows {#setting-max-result-rows}
+## max\_result\_rows {#setting-max_result_rows}
 
 Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
 
@@ -223,7 +223,7 @@ A maximum number of bytes (uncompressed data) that can be passed to a remote ser
 
 What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
 
-## max\_rows\_in\_join {#settings-max-rows-in-join}
+## max\_rows\_in\_join {#settings-max_rows_in_join}
 
 Limits the number of rows in the hash table that is used when joining tables.
 
@@ -240,7 +240,7 @@ Possible values:
 
 Default value: 0.
 
-## max\_bytes\_in\_join {#settings-max-bytes-in-join}
+## max\_bytes\_in\_join {#settings-max_bytes_in_join}
 
 Limits the size in bytes of the hash table used when joining tables.
 
@@ -257,7 +257,7 @@ Possible values:
 
 Default value: 0.
 
-## join\_overflow\_mode {#settings-join-overflow-mode}
+## join\_overflow\_mode {#settings-join_overflow_mode}
 
 Defines what action ClickHouse performs when any of the following join limits is reached:
 

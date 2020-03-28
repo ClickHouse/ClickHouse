@@ -44,7 +44,7 @@ If `enable_optimize_predicate_expression = 1`, then the execution time of these 
 
 If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer, because the `WHERE` clause applies to all the data after the subquery finishes.
 
-## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback-to-stale-replicas-for-distributed-queries}
+## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
 Forces a query to an out-of-date replica if updated data is not available. See [Replication](../table_engines/replication.md).
 
@@ -54,7 +54,7 @@ Used when performing `SELECT` from a distributed table that points to replicated
 
 By default, 1 (enabled).
 
-## force\_index\_by\_date {#settings-force-index-by-date}
+## force\_index\_by\_date {#settings-force_index_by_date}
 
 Disables query execution if the index can’t be used by date.
 
@@ -80,7 +80,7 @@ Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/func
 
 It makes sense to disable it if the server has millions of tiny tables that are constantly being created and destroyed.
 
-## enable\_http\_compression {#settings-enable-http-compression}
+## enable\_http\_compression {#settings-enable_http_compression}
 
 Enables or disables data compression in the response to an HTTP request.
 
@@ -93,7 +93,7 @@ Possible values:
 
 Default value: 0.
 
-## http\_zlib\_compression\_level {#settings-http-zlib-compression-level}
+## http\_zlib\_compression\_level {#settings-http_zlib_compression_level}
 
 Sets the level of data compression in the response to an HTTP request if [enable\_http\_compression = 1](#settings-enable_http_compression).
 
@@ -101,7 +101,7 @@ Possible values: Numbers from 1 to 9.
 
 Default value: 3.
 
-## http\_native\_compression\_disable\_checksumming\_on\_decompress {#settings-http-native-compression-disable-checksumming-on-decompress}
+## http\_native\_compression\_disable\_checksumming\_on\_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
 
 Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
 
@@ -114,7 +114,7 @@ Possible values:
 
 Default value: 0.
 
-## send\_progress\_in\_http\_headers {#settings-send-progress-in-http-headers}
+## send\_progress\_in\_http\_headers {#settings-send_progress_in_http_headers}
 
 Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
 
@@ -127,7 +127,7 @@ Possible values:
 
 Default value: 0.
 
-## max\_http\_get\_redirects {#setting-max-http-get-redirects}
+## max\_http\_get\_redirects {#setting-max_http_get_redirects}
 
 Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../query_language/create/#create-table-query) query and by the [url](../../query_language/table_functions/url.md) table function.
 
@@ -138,7 +138,7 @@ Possible values:
 
 Default value: 0.
 
-## input\_format\_allow\_errors\_num {#settings-input-format-allow-errors-num}
+## input\_format\_allow\_errors\_num {#settings-input_format_allow_errors_num}
 
 Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
 
@@ -150,7 +150,7 @@ If an error occurred while reading rows but the error counter is still less than
 
 If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
-## input\_format\_allow\_errors\_ratio {#settings-input-format-allow-errors-ratio}
+## input\_format\_allow\_errors\_ratio {#settings-input_format_allow_errors_ratio}
 
 Sets the maximum percentage of errors allowed when reading from text formats (CSV, TSV, etc.).
 The percentage of errors is set as a floating-point number between 0 and 1.
@@ -163,7 +163,7 @@ If an error occurred while reading rows but the error counter is still less than
 
 If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
 
-## input\_format\_values\_interpret\_expressions {#settings-input-format-values-interpret-expressions}
+## input\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
 
 Enables or disables the full SQL parser if the fast stream parser can’t parse the data. This setting is used only for the [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
 
@@ -213,7 +213,7 @@ INSERT INTO datetime_t SELECT now()
 Ok.
 ```
 
-## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input-format-values-deduce-templates-of-expressions}
+## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
 Enables or disables template deduction for an SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows to parse and interpret expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse will try to deduce template of an expression, parse the following rows using this template and evaluate the expression on a batch of successfully parsed rows. For the following query:
 
@@ -241,7 +241,7 @@ When this setting is enabled, ClickHouse will check the actual type of literal a
 When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` or `Int64` instead of `UInt64` for `42`), but it may cause overflow and precision issues.
 Enabled by default.
 
-## input\_format\_defaults\_for\_omitted\_fields {#session-settings-input-format-defaults-for-omitted-fields}
+## input\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
 When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) and [TabSeparated](../../interfaces/formats.md#tabseparated) formats.
 
@@ -285,7 +285,7 @@ Possible values:
 
 Default value: 0.
 
-## input\_format\_import\_nested\_json {#settings-input-format-import-nested-json}
+## input\_format\_import\_nested\_json {#settings-input_format_import_nested_json}
 
 Enables or disables the insertion of JSON data with nested objects.
 
@@ -322,7 +322,7 @@ Possible values:
 
 Default value: 1.
 
-## date\_time\_input\_format {#settings-date-time-input-format}
+## date\_time\_input\_format {#settings-date_time_input_format}
 
 Allows choosing a parser of the text representation of date and time.
 
@@ -345,7 +345,7 @@ See also:
 -   [DateTime data type.](../../data_types/datetime.md)
 -   [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
 
-## join\_default\_strictness {#settings-join-default-strictness}
+## join\_default\_strictness {#settings-join_default_strictness}
 
 Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
 
@@ -358,7 +358,7 @@ Possible values:
 
 Default value: `ALL`.
 
-## join\_any\_take\_last\_row {#settings-join-any-take-last-row}
+## join\_any\_take\_last\_row {#settings-join_any_take_last_row}
 
 Changes behaviour of join operations with `ANY` strictness.
 
@@ -378,7 +378,7 @@ See also:
 -   [Join table engine](../table_engines/join.md)
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
-## join\_use\_nulls {#join-use-nulls}
+## join\_use\_nulls {#join_use_nulls}
 
 Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
@@ -389,7 +389,7 @@ Possible values:
 
 Default value: 0.
 
-## max\_block\_size {#setting-max-block-size}
+## max\_block\_size {#setting-max_block_size}
 
 In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of the block (in a count of rows) to load from tables. The block size shouldn’t be too small, so that the expenditures on each block are still noticeable, but not too large so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
 
@@ -514,7 +514,7 @@ Example:
 log_query_threads=1
 ```
 
-## max\_insert\_block\_size {#settings-max-insert-block-size}
+## max\_insert\_block\_size {#settings-max_insert_block_size}
 
 The size of blocks to form for insertion into a table.
 This setting only applies in cases when the server forms the blocks.
@@ -526,7 +526,7 @@ Default value: 1,048,576.
 
 The default is slightly more than `max_block_size`. The reason for this is because certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion and a large enough block size allow sorting more data in RAM.
 
-## max\_replica\_delay\_for\_distributed\_queries {#settings-max-replica-delay-for-distributed-queries}
+## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
 Disables lagging replicas for distributed queries. See [Replication](../../operations/table_engines/replication.md).
 
@@ -536,7 +536,7 @@ Default value: 300.
 
 Used when performing `SELECT` from a distributed table that points to replicated tables.
 
-## max\_threads {#settings-max-threads}
+## max\_threads {#settings-max_threads}
 
 The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the ‘max\_distributed\_connections’ parameter).
 
@@ -585,7 +585,7 @@ We are writing a URL column with the String type (average size of 60 bytes per v
 
 There usually isn’t any reason to change this setting.
 
-## max\_query\_size {#settings-max-query-size}
+## max\_query\_size {#settings-max_query_size}
 
 The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
 The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
@@ -648,7 +648,7 @@ Default value: 3.
 Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
 For more information, see the section “Extreme values”.
 
-## use\_uncompressed\_cache {#setting-use-uncompressed-cache}
+## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
 Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed\_cache\_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
@@ -674,7 +674,7 @@ The default value is 7500.
 
 The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
 
-## load\_balancing {#settings-load-balancing}
+## load\_balancing {#settings-load_balancing}
 
 Specifies the algorithm of replicas selection that is used for distributed query processing.
 
@@ -685,7 +685,7 @@ ClickHouse supports the following algorithms of choosing replicas:
 -   [In order](#load_balancing-in_order)
 -   [First or random](#load_balancing-first_or_random)
 
-### Random (by default) {#load-balancing-random}
+### Random (by default) {#load_balancing-random}
 
 ``` sql
 load_balancing = random
@@ -694,7 +694,7 @@ load_balancing = random
 The number of errors is counted for each replica. The query is sent to the replica with the fewest errors, and if there are several of these, to anyone of them.
 Disadvantages: Server proximity is not accounted for; if the replicas have different data, you will also get different data.
 
-### Nearest Hostname {#load-balancing-nearest-hostname}
+### Nearest Hostname {#load_balancing-nearest_hostname}
 
 ``` sql
 load_balancing = nearest_hostname
@@ -708,7 +708,7 @@ This method might seem primitive, but it doesn’t require external data about n
 Thus, if there are equivalent replicas, the closest one by name is preferred.
 We can also assume that when sending a query to the same server, in the absence of failures, a distributed query will also go to the same servers. So even if different data is placed on the replicas, the query will return mostly the same results.
 
-### In Order {#load-balancing-in-order}
+### In Order {#load_balancing-in_order}
 
 ``` sql
 load_balancing = in_order
@@ -717,7 +717,7 @@ load_balancing = in_order
 Replicas with the same number of errors are accessed in the same order as they are specified in the configuration.
 This method is appropriate when you know exactly which replica is preferable.
 
-### First or Random {#load-balancing-first-or-random}
+### First or Random {#load_balancing-first_or_random}
 
 ``` sql
 load_balancing = first_or_random
@@ -751,7 +751,7 @@ See the section “WITH TOTALS modifier”.
 The threshold for `totals_mode = 'auto'`.
 See the section “WITH TOTALS modifier”.
 
-## max\_parallel\_replicas {#settings-max-parallel-replicas}
+## max\_parallel\_replicas {#settings-max_parallel_replicas}
 
 The maximum number of replicas for each shard when executing a query.
 For consistency (to get different parts of the same data split), this option only works when the sampling key is set.
@@ -773,15 +773,15 @@ If the value is 1 or more, compilation occurs asynchronously in a separate threa
 Compiled code is required for each different combination of aggregate functions used in the query and the type of keys in the GROUP BY clause.
 The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don’t use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
-## output\_format\_json\_quote\_64bit\_integers {#session-settings-output-format-json-quote-64bit-integers}
+## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
 
 If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
 
-## format\_csv\_delimiter {#settings-format-csv-delimiter}
+## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
 The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
 
-## input\_format\_csv\_unquoted\_null\_literal\_as\_null {#settings-input-format-csv-unquoted-null-literal-as-null}
+## input\_format\_csv\_unquoted\_null\_literal\_as\_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
 For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
 
@@ -793,7 +793,7 @@ Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
 
 Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
 
-## insert\_quorum {#settings-insert-quorum}
+## insert\_quorum {#settings-insert_quorum}
 
 Enables the quorum writes.
 
@@ -820,7 +820,7 @@ See also:
 -   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## insert\_quorum\_timeout {#settings-insert-quorum-timeout}
+## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
 
 Write to quorum timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
 
@@ -831,7 +831,7 @@ See also:
 -   [insert\_quorum](#settings-insert_quorum)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
-## select\_sequential\_consistency {#settings-select-sequential-consistency}
+## select\_sequential\_consistency {#settings-select_sequential_consistency}
 
 Enables or disables sequential consistency for `SELECT` queries:
 
@@ -926,7 +926,7 @@ Possible values:
 
 Default value: 0.
 
-## count\_distinct\_implementation {#settings-count-distinct-implementation}
+## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
 Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../query_language/agg_functions/reference.md#agg_function-count) construction.
 
@@ -940,7 +940,7 @@ Possible values:
 
 Default value: `uniqExact`.
 
-## skip\_unavailable\_shards {#settings-skip-unavailable-shards}
+## skip\_unavailable\_shards {#settings-skip_unavailable_shards}
 
 Enables or disables silently skipping of unavailable shards.
 
@@ -970,13 +970,13 @@ Possible values:
 
 Default value: 0.
 
-## optimize\_skip\_unused\_shards {#settings-optimize-skip-unused-shards}
+## optimize\_skip\_unused\_shards {#settings-optimize_skip_unused_shards}
 
 Enables or disables skipping of unused shards for SELECT queries that have sharding key condition in PREWHERE/WHERE (assumes that the data is distributed by sharding key, otherwise do nothing).
 
 Default value: 0
 
-## force\_optimize\_skip\_unused\_shards {#settings-force-optimize-skip-unused-shards}
+## force\_optimize\_skip\_unused\_shards {#settings-force_optimize_skip_unused_shards}
 
 Enables or disables query execution if [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled exception will be thrown.
 
@@ -988,7 +988,18 @@ Possible values:
 
 Default value: 0
 
-## optimize\_throw\_if\_noop {#setting-optimize-throw-if-noop}
+## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
+
+Reset [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) for nested `Distributed` table
+
+Possible values:
+
+-   1 — Enabled.
+-   0 — Disabled.
+
+Default value: 0.
+
+## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
 Enables or disables throwing an exception if an [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query didn’t perform a merge.
 
@@ -1001,7 +1012,7 @@ Possible values:
 
 Default value: 0.
 
-## distributed\_replica\_error\_half\_life {#settings-distributed-replica-error-half-life}
+## distributed\_replica\_error\_half\_life {#settings-distributed_replica_error_half_life}
 
 -   Type: seconds
 -   Default value: 60 seconds
@@ -1013,7 +1024,7 @@ See also:
 -   [Table engine Distributed](../../operations/table_engines/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 
-## distributed\_replica\_error\_cap {#settings-distributed-replica-error-cap}
+## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
 
 -   Type: unsigned int
 -   Default value: 1000
@@ -1025,7 +1036,7 @@ See also:
 -   [Table engine Distributed](../../operations/table_engines/distributed.md)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
-## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed-directory-monitor-sleep-time-ms}
+## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
 
 Base interval for the [Distributed](../table_engines/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
 
@@ -1035,7 +1046,7 @@ Possible values:
 
 Default value: 100 milliseconds.
 
-## distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed-directory-monitor-max-sleep-time-ms}
+## distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
 Maximum interval for the [Distributed](../table_engines/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) setting.
 
@@ -1045,7 +1056,7 @@ Possible values:
 
 Default value: 30000 milliseconds (30 seconds).
 
-## distributed\_directory\_monitor\_batch\_inserts {#distributed-directory-monitor-batch-inserts}
+## distributed\_directory\_monitor\_batch\_inserts {#distributed_directory_monitor_batch_inserts}
 
 Enables/disables sending of inserted data in batches.
 
@@ -1073,7 +1084,7 @@ Lower values mean higher priority. Threads with low `nice` priority values are e
 
 Default value: 0.
 
-## query\_profiler\_real\_time\_period\_ns {#query-profiler-real-time-period-ns}
+## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
 
 Sets the period for a real clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). Real clock timer counts wall-clock time.
 
@@ -1096,7 +1107,7 @@ See also:
 
 -   System table [trace\_log](../system_tables.md#system_tables-trace_log)
 
-## query\_profiler\_cpu\_time\_period\_ns {#query-profiler-cpu-time-period-ns}
+## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
 Sets the period for a CPU clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). This timer counts only CPU time.
 
@@ -1119,7 +1130,7 @@ See also:
 
 -   System table [trace\_log](../system_tables.md#system_tables-trace_log)
 
-## allow\_introspection\_functions {#settings-allow-introspection-functions}
+## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
 Enables of disables [introspections functions](../../query_language/functions/introspection.md) for query profiling.
 
@@ -1149,7 +1160,7 @@ Enable order-preserving parallel parsing of data formats. Supported only for TSV
 
 The minimum chunk size in bytes, which each thread will parse in parallel.
 
-## output\_format\_avro\_codec {#settings-output-format-avro-codec}
+## output\_format\_avro\_codec {#settings-output_format_avro_codec}
 
 Sets the compression codec used for output Avro file.
 
@@ -1163,7 +1174,7 @@ Possible values:
 
 Default value: `snappy` (if available) or `deflate`.
 
-## output\_format\_avro\_sync\_interval {#settings-output-format-avro-sync-interval}
+## output\_format\_avro\_sync\_interval {#settings-output_format_avro_sync_interval}
 
 Sets minimum data size (in bytes) between synchronization markers for output Avro file.
 
@@ -1173,7 +1184,7 @@ Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
 
 Default value: 32768 (32 KiB)
 
-## format\_avro\_schema\_registry\_url {#settings-format-avro-schema-registry-url}
+## format\_avro\_schema\_registry\_url {#settings-format_avro_schema_registry_url}
 
 Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format
 

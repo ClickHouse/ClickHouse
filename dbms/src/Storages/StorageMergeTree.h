@@ -109,9 +109,6 @@ private:
     BackgroundProcessingPool::TaskHandle merging_mutating_task_handle;
     BackgroundProcessingPool::TaskHandle moving_task_handle;
 
-    std::vector<MergeTreeData::AlterDataPartTransactionPtr> prepareAlterTransactions(
-        const ColumnsDescription & new_columns, const IndicesDescription & new_indices, const Context & context);
-
     void loadMutations();
 
     /** Determines what parts should be merged and merges it.
@@ -121,6 +118,8 @@ private:
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
     BackgroundProcessingPoolTaskResult movePartsTask();
+
+    void mutateImpl(const MutationCommands & commands, size_t mutations_sync);
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
@@ -135,7 +134,6 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
-    void clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);

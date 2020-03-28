@@ -1,4 +1,4 @@
-# Репликация данных {#table-engines-replication}
+# Репликация данных {#table_engines-replication}
 
 Репликация поддерживается только для таблиц семейства MergeTree:
 

@@ -59,7 +59,7 @@ SELECT toTypeName(0), toTypeName(0 + 0), toTypeName(0 + 0 + 0), toTypeName(0 + 0
 用反转符号计算一个数字。结果始终是签名的。
 Calculates a number with the reverse sign. The result is always signed.
 
-## abs(a) {#arithm-func-abs}
+## abs(a) {#arithm_func-abs}
 
 计算数字（a）的绝对值。也就是说，如果a ＆lt; 0，它返回-a。对于无符号类型，它不执行任何操作。对于有符号整数类型，它返回无符号数。
 

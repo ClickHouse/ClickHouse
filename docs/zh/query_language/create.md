@@ -249,7 +249,7 @@ SELECT a, b, c FROM (SELECT ...)
 ## CREATE DICTIONARY {#create-dictionary-query}
 
 ``` sql
-CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name
+CREATE DICTIONARY [IF NOT EXISTS] [db.]dictionary_name [ON CLUSTER cluster]
 (
     key1 type1  [DEFAULT|EXPRESSION expr1] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],
     key2 type2  [DEFAULT|EXPRESSION expr2] [HIERARCHICAL|INJECTIVE|IS_OBJECT_ID],

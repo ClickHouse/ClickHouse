@@ -1,4 +1,4 @@
-# Método de codificación de datos: {#table-engines-mergetree}
+# Método de codificación de datos: {#table_engines-mergetree}
 
 El `MergeTree` motor y otros motores de esta familia (`*MergeTree`) son los motores de mesa ClickHouse más robustos.
 
@@ -25,7 +25,7 @@ Principales características:
 !!! info "INFO"
     El [Fusionar](merge.md) el motor no pertenece al `*MergeTree` Familia.
 
-## Creación de una tabla {#table-engine-mergetree-creating-a-table}
+## Creación de una tabla {#table_engine-mergetree-creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -244,7 +244,7 @@ ClickHouse no puede usar un índice si los valores de la clave principal en el r
 
 ClickHouse usa esta lógica no solo para secuencias de días del mes, sino para cualquier clave principal que represente una secuencia parcialmente monotónica.
 
-### Índices de saltos de datos (experimental) {#table-engine-mergetree-data-skipping-indexes}
+### Índices de saltos de datos (experimental) {#table_engine-mergetree-data_skipping-indexes}
 
 La declaración de índice se encuentra en la sección de columnas del `CREATE` consulta.
 
@@ -365,7 +365,7 @@ Para el acceso simultáneo a tablas, usamos versiones múltiples. En otras palab
 
 La lectura de una tabla se paralela automáticamente.
 
-## TTL para columnas y tablas {#table-engine-mergetree-ttl}
+## TTL para columnas y tablas {#table_engine-mergetree-ttl}
 
 Determina la duración de los valores.
 
@@ -475,7 +475,7 @@ Si realiza el `SELECT` consulta entre fusiones, puede obtener datos caducados. P
 
 [Artículo Original](https://clickhouse.tech/docs/es/operations/table_engines/mergetree/) <!--hide-->
 
-## Uso de varios dispositivos de bloque para el almacenamiento de datos {#table-engine-mergetree-multiple-volumes}
+## Uso de varios dispositivos de bloque para el almacenamiento de datos {#table_engine-mergetree-multiple-volumes}
 
 ### Implantación {#introduction}
 
@@ -492,7 +492,7 @@ La parte de datos es la unidad móvil mínima para `MergeTree`-mesas de motor. L
 
 Los nombres dados a las entidades descritas se pueden encontrar en las tablas del sistema, [sistema.almacenamiento\_policies](../system_tables.md#system_tables-storage_policies) y [sistema.Discoteca](../system_tables.md#system_tables-disks). Para aplicar una de las directivas de almacenamiento configuradas para una tabla, `storage_policy` establecimiento de `MergeTree`-mesas de la familia del motor.
 
-### Configuración {#table-engine-mergetree-multiple-volumes-configure}
+### Configuración {#table_engine-mergetree-multiple-volumes-configure}
 
 Los discos, los volúmenes y las políticas de almacenamiento deben declararse `<storage_configuration>` etiqueta ya sea en el archivo principal `config.xml` o en un archivo distinto en el `config.d` Directorio.
 

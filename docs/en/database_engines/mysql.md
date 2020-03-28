@@ -24,7 +24,7 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 -   `user` — MySQL user.
 -   `password` — User password.
 
-## Data Types Support {#data-types-support}
+## Data Types Support {#data_types-support}
 
 | MySQL                            | ClickHouse                                  |
 |----------------------------------|---------------------------------------------|

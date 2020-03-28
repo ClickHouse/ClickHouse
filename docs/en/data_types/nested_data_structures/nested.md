@@ -1,6 +1,6 @@
 # Nested(Name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
 
-A nested data structure is like a nested table. The parameters of a nested data structure – the column names and types – are specified the same way as in a CREATE query. Each table row can correspond to any number of rows in a nested data structure.
+A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../query_language/create.md) query. Each table row can correspond to any number of rows in a nested data structure.
 
 Example:
 
@@ -31,7 +31,7 @@ This example declares the `Goals` nested data structure, which contains data abo
 
 Only a single nesting level is supported. Columns of nested structures containing arrays are equivalent to multidimensional arrays, so they have limited support (there is no support for storing these columns in tables with the MergeTree engine).
 
-In most cases, when working with a nested data structure, its individual columns are specified. To do this, the column names are separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
+In most cases, when working with a nested data structure, its columns are specified with column names separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 
 Example:
 
@@ -94,6 +94,6 @@ For an INSERT query, you should pass all the component column arrays of a nested
 
 For a DESCRIBE query, the columns in a nested data structure are listed separately in the same way.
 
-The ALTER query is very limited for elements in a nested data structure.
+The ALTER query for elements in a nested data structure has limitations.
 
 [Original article](https://clickhouse.tech/docs/en/data_types/nested_data_structures/nested/) <!--hide-->

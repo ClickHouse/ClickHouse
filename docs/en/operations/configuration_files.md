@@ -1,4 +1,4 @@
-# Configuration Files {#configuration-files}
+# Configuration Files {#configuration_files}
 
 ClickHouse supports multi-file configuration management. The main server configuration file is `/etc/clickhouse-server/config.xml`. Other files must be in the `/etc/clickhouse-server/config.d` directory.
 
@@ -17,9 +17,12 @@ The config can also define “substitutions”. If an element has the `incl` att
 
 Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
 
-The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the ‘users\_config’ element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
+The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the `users_config` element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
 
-In addition, `users_config` may have overrides in files from the `users_config.d` directory (for example, `users.d`) and substitutions. For example, you can have separate config file for each user like this:
+Users configuration can be splitted into separate files similar to `config.xml` and `config.d/`.
+Directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
+Directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
+For example, you can have separate config file for each user like this:
 
 ``` bash
 $ cat /etc/clickhouse-server/users.d/alice.xml

@@ -24,7 +24,6 @@
 
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/Set.h>
@@ -163,7 +162,7 @@ void ExpressionAnalyzer::analyzeAggregation()
     if (select_query)
     {
         bool is_array_join_left;
-        ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
+        ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList(is_array_join_left);
         if (array_join_expression_list)
         {
             getRootActionsNoMakeSet(array_join_expression_list, true, temp_actions, false);
@@ -468,7 +467,7 @@ bool SelectQueryExpressionAnalyzer::appendArrayJoin(ExpressionActionsChain & cha
     const auto * select_query = getSelectQuery();
 
     bool is_array_join_left;
-    ASTPtr array_join_expression_list = select_query->array_join_expression_list(is_array_join_left);
+    ASTPtr array_join_expression_list = select_query->arrayJoinExpressionList(is_array_join_left);
     if (!array_join_expression_list)
         return false;
 
@@ -957,12 +956,12 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
     const ASTSelectQuery & query = *query_analyzer.getSelectQuery();
     const Context & context = query_analyzer.context;
     const Settings & settings = context.getSettingsRef();
-    const StoragePtr & storage = query_analyzer.storage();
+    const ConstStoragePtr & storage = query_analyzer.storage();
 
     bool finalized = false;
     size_t where_step_num = 0;
 
-    auto finalizeChain = [&](ExpressionActionsChain & chain)
+    auto finalize_chain = [&](ExpressionActionsChain & chain)
     {
         if (!finalized)
         {
@@ -977,7 +976,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         ExpressionActionsChain chain(context);
         Names additional_required_columns_after_prewhere;
 
-        if (storage && (query.sample_size() || settings.parallel_replicas_count > 1))
+        if (storage && (query.sampleSize() || settings.parallel_replicas_count > 1))
         {
             Names columns_for_sampling = storage->getColumnsRequiredForSampling();
             additional_required_columns_after_prewhere.insert(additional_required_columns_after_prewhere.end(),
@@ -1056,7 +1055,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
             query_analyzer.appendAggregateFunctionsArguments(chain, only_types || !first_stage);
             before_aggregation = chain.getLastActions();
 
-            finalizeChain(chain);
+            finalize_chain(chain);
 
             if (query_analyzer.appendHaving(chain, only_types || !second_stage))
             {
@@ -1090,7 +1089,7 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
         query_analyzer.appendProjectResult(chain);
         final_projection = chain.getLastActions();
 
-        finalizeChain(chain);
+        finalize_chain(chain);
     }
 
     /// Before executing WHERE and HAVING, remove the extra columns from the block (mostly the aggregation keys).

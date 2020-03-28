@@ -12,7 +12,7 @@ Returns 0 for an empty array, or 1 for a non-empty array.
 The result type is UInt8.
 The function also works for strings.
 
-## length {#array-functions-length}
+## length {#array_functions-length}
 
 Returns the number of items in the array.
 The result type is UInt64.
@@ -208,7 +208,7 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 └──────────────────────────────────────┘
 ```
 
-## arrayEnumerate(arr) {#array-functions-arrayenumerate}
+## arrayEnumerate(arr) {#array_functions-arrayenumerate}
 
 Returns the array \[1, 2, 3, …, length (arr) \]
 
@@ -472,7 +472,7 @@ SELECT arraySlice([1, 2, NULL, 4, 5], 2, 3) AS res
 
 Array elements set to `NULL` are handled as normal values.
 
-## arraySort(\[func,\] arr, …) {#array-functions-sort}
+## arraySort(\[func,\] arr, …) {#array_functions-sort}
 
 Sorts the elements of the `arr` array in ascending order. If the `func` function is specified, sorting order is determined by the result of the `func` function applied to the elements of the array. If `func` accepts multiple arguments, the `arraySort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arraySort` description.
 
@@ -572,7 +572,7 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 !!! note "Note"
     To improve sorting efficiency, the [Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform) is used.
 
-## arrayReverseSort(\[func,\] arr, …) {#array-functions-reverse-sort}
+## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
 Sorts the elements of the `arr` array in descending order. If the `func` function is specified, `arr` is sorted according to the result of the `func` function applied to the elements of the array, and then the sorted array is reversed. If `func` accepts multiple arguments, the `arrayReverseSort` function is passed several arrays that the arguments of `func` will correspond to. Detailed examples are shown at the end of `arrayReverseSort` description.
 
@@ -770,7 +770,7 @@ Result:
 └────────────────────────────────┘
 ```
 
-## arrayEnumerateDense(arr) {#array-functions-arrayenumeratedense}
+## arrayEnumerateDense(arr) {#array_functions-arrayenumeratedense}
 
 Returns an array of the same size as the source array, indicating where each element first appears in the source array.
 
@@ -804,17 +804,30 @@ SELECT
 └──────────────┴───────────┘
 ```
 
-## arrayReduce(agg\_func, arr1, …) {#array-functions-arrayreduce}
+## arrayReduce {#arrayreduce}
 
 Applies an aggregate function to array elements and returns its result. The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`. When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
 
-Example:
+**Syntax**
 
-``` sql
+```sql
+arrayReduce(agg_func, arr1, arr2, ..., arrN)
+```
+
+**Parameters**
+
+* `agg_func` — The name of an aggregate function which should be a constant [string](../../data_types/string.md).
+* `arr` — Any number of [array](../../data_types/array.md) type columns as the parameters of the aggregation function.
+
+**Returned value**
+
+**Example**
+
+```sql
 SELECT arrayReduce('max', [1, 2, 3])
 ```
 
-``` text
+```text
 ┌─arrayReduce('max', [1, 2, 3])─┐
 │                             3 │
 └───────────────────────────────┘
@@ -822,13 +835,11 @@ SELECT arrayReduce('max', [1, 2, 3])
 
 If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
 
-Example:
-
-``` sql
+```sql
 SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 ```
 
-``` text
+```text
 ┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
 │                                    3 │
 └──────────────────────────────────────┘
@@ -836,17 +847,51 @@ SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 
 Example with a parametric aggregate function:
 
-``` sql
+```sql
 SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 ```
 
-``` text
+```text
 ┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
 │                                                           4 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayReverse(arr) {#array-functions-arrayreverse}
+## arrayReduceInRanges {#arrayreduceinranges}
+
+Applies an aggregate function to array elements in given ranges and returns an array containing the result corresponding to each range. The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
+
+**Syntax**
+
+```sql
+arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
+```
+
+**Parameters**
+
+* `agg_func` — The name of an aggregate function which should be a constant [string](../../data_types/string.md).
+* `ranges` — The ranges to aggretate which should be an [array](../../data_types/array.md) of [tuples](../../data_types/tuple.md) which containing the index and the length of each range.
+* `arr` — Any number of [array](../../data_types/array.md) type columns as the parameters of the aggregation function.
+
+**Returned value**
+
+**Example**
+
+```sql
+SELECT arrayReduceInRanges(
+    'sum',
+    [(1, 5), (2, 3), (3, 4), (4, 4)],
+    [1000000, 200000, 30000, 4000, 500, 60, 7]
+) AS res
+```
+
+```text
+┌─res─────────────────────────┐
+│ [1234500,234000,34560,4567] │
+└─────────────────────────────┘
+```
+
+## arrayReverse(arr) {#arrayreverse}
 
 Returns an array of the same size as the original array containing the elements in reverse order.
 
@@ -969,6 +1014,35 @@ Result:
 ┌─arrayZip(['a', 'b', 'c'], ['d', 'e', 'f'])─┐
 │ [('a','d'),('b','e'),('c','f')]            │
 └────────────────────────────────────────────┘
+```
+
+## arrayAUC {#arrayauc}
+Calculate AUC (Area Under the Curve, which is a concept in machine learning, see more details: https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
+
+**Syntax**
+```sql
+arrayAUC(arr_scores, arr_labels)
+```
+
+**Parameters**
+- `arr_scores` —  scores prediction model gives.
+- `arr_labels` —  labels of samples, usually 1 for positive sample and 0 for negtive sample.
+
+**Returned value**
+Returns AUC value with type Float64.
+
+**Example**
+Query:
+```sql
+select arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])
+```
+
+Result:
+
+```text
+┌─arrayAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1])─┐
+│                                          0.75 │
+└────────────────────────────────────────-----──┘
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/array_functions/) <!--hide-->

@@ -79,11 +79,11 @@ namespace
 
 void ODBCBridge::handleHelp(const std::string &, const std::string &)
 {
-    Poco::Util::HelpFormatter helpFormatter(options());
-    helpFormatter.setCommand(commandName());
-    helpFormatter.setHeader("HTTP-proxy for odbc requests");
-    helpFormatter.setUsage("--http-port <port>");
-    helpFormatter.format(std::cerr);
+    Poco::Util::HelpFormatter help_formatter(options());
+    help_formatter.setCommand(commandName());
+    help_formatter.setHeader("HTTP-proxy for odbc requests");
+    help_formatter.setUsage("--http-port <port>");
+    help_formatter.format(std::cerr);
 
     stopOptionsProcessing();
 }

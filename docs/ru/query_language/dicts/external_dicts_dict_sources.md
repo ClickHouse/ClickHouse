@@ -42,7 +42,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
 
-## Локальный файл {#dicts-external-dicts-dict-sources-local-file}
+## Локальный файл {#dicts-external_dicts_dict_sources-local_file}
 
 Пример настройки:
 
@@ -66,7 +66,7 @@ SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 -   `path` — Абсолютный путь к файлу.
 -   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
 
-## Исполняемый файл {#dicts-external-dicts-dict-sources-executable}
+## Исполняемый файл {#dicts-external_dicts_dict_sources-executable}
 
 Работа с исполняемым файлом зависит от [размещения словаря в памяти](external_dicts_dict_layout.md). Если тип размещения словаря `cache` и `complex_key_cache`, то ClickHouse запрашивает необходимые ключи, отправляя запрос в `STDIN` исполняемого файла.
 
@@ -92,7 +92,7 @@ SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
 -   `command` — Абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
 -   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
 
-## HTTP(s) {#dicts-external-dicts-dict-sources-http}
+## HTTP(s) {#dicts-external_dicts_dict_sources-http}
 
 Работа с HTTP(s) сервером зависит от [размещения словаря в памяти](external_dicts_dict_layout.md). Если тип размещения словаря `cache` и `complex_key_cache`, то ClickHouse запрашивает необходимые ключи, отправляя запрос методом `POST`.
 
@@ -135,7 +135,7 @@ SOURCE(HTTP(
 -   `url` — URL источника.
 -   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
 
-## ODBC {#dicts-external-dicts-dict-sources-odbc}
+## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
 Этим способом можно подключить любую базу данных, имеющую ODBC драйвер.
 
@@ -378,7 +378,7 @@ LIFETIME(MIN 300 MAX 360)
 
 ## СУБД {#subd}
 
-### MySQL {#dicts-external-dicts-dict-sources-mysql}
+### MySQL {#dicts-external_dicts_dict_sources-mysql}
 
 Пример настройки:
 
@@ -475,7 +475,7 @@ SOURCE(MYSQL(
 ))
 ```
 
-### ClickHouse {#dicts-external-dicts-dict-sources-clickhouse}
+### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
 
 Пример настройки:
 
@@ -518,7 +518,7 @@ SOURCE(CLICKHOUSE(
 -   `where` — условие выбора. Может отсутствовать.
 -   `invalidate_query` — запрос для проверки статуса словаря. Необязательный параметр. Читайте подробнее в разделе [Обновление словарей](external_dicts_dict_lifetime.md).
 
-### MongoDB {#dicts-external-dicts-dict-sources-mongodb}
+### MongoDB {#dicts-external_dicts_dict_sources-mongodb}
 
 Пример настройки:
 
@@ -557,7 +557,7 @@ SOURCE(MONGO(
 - `db` — имя базы данных.
 - `collection` — имя коллекции.
 
-### Redis {#dicts-external-dicts-dict-sources-redis}
+### Redis {#dicts-external_dicts_dict_sources-redis}
 
 Пример настройки:
 

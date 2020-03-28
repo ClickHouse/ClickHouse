@@ -1,4 +1,4 @@
-# Replicación de datos {#table-engines-replication}
+# Replicación de datos {#table_engines-replication}
 
 La replicación solo se admite para tablas de la familia MergeTree:
 

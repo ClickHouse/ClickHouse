@@ -33,13 +33,13 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 └────────────────────┴────────┘
 ```
 
-## MD5 {#hash-functions-md5}
+## MD5 {#hash_functions-md5}
 
 Calcula el MD5 de una cadena y devuelve el conjunto de bytes resultante como FixedString(16).
 Si no necesita MD5 en particular, pero necesita un hash criptográfico de 128 bits decente, use el ‘sipHash128’ función en su lugar.
 Si desea obtener el mismo resultado que la salida de la utilidad md5sum, use lower(hex(MD5(s)) .
 
-## sipHash64 {#hash-functions-siphash64}
+## sipHash64 {#hash_functions-siphash64}
 
 Producir un [SipHash](https://131002.net/siphash/) hachís valor.
 
@@ -76,7 +76,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 └──────────────────────┴────────┘
 ```
 
-## sipHash128 {#hash-functions-siphash128}
+## sipHash128 {#hash_functions-siphash128}
 
 Calcula SipHash a partir de una cadena.
 Acepta un argumento de tipo String. ¿Cómo puedo hacerlo?
@@ -178,7 +178,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 └──────────────────────┴────────┘
 ```
 
-## Nombre de la red inalámbrica (SSID): {#hash-functions-javahash}
+## Nombre de la red inalámbrica (SSID): {#hash_functions-javahash}
 
 Calcular [Nivel de Cifrado WEP](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) de una cuerda. Esta función hash no es rápida ni tiene una buena calidad. La única razón para usarlo es cuando este algoritmo ya se usa en otro sistema y debe calcular exactamente el mismo resultado.
 

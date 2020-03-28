@@ -1,4 +1,4 @@
-# ColapsarMergeTree {#table-engine-collapsingmergetree}
+# ColapsarMergeTree {#table_engine-collapsingmergetree}
 
 El motor hereda de [Método de codificación de datos:](mergetree.md) y agrega la lógica de las filas que colapsan al algoritmo de fusión de partes de datos.
 
@@ -57,7 +57,7 @@ Todos los parámetros excepto `sign` el mismo significado que en `MergeTree`.
 
 </details>
 
-## Derrumbar {#table-engine-collapsingmergetree-collapsing}
+## Derrumbar {#table_engine-collapsingmergetree-collapsing}
 
 ### Datos {#data}
 
@@ -105,7 +105,7 @@ Por qué necesitamos 2 filas para cada cambio leído en el [Algoritmo](#table_en
 2.  Las matrices de largo crecimiento en columnas reducen la eficiencia del motor debido a la carga para escribir. Los datos más sencillos, mayor será la eficiencia.
 3.  El `SELECT` Los resultados dependen en gran medida de la consistencia del historial de cambios de objetos. Sea preciso al preparar los datos para insertarlos. Puede obtener resultados impredecibles en datos incoherentes, por ejemplo, valores negativos para métricas no negativas, como la profundidad de la sesión.
 
-### Algoritmo {#table-engine-collapsingmergetree-collapsing-algorithm}
+### Algoritmo {#table_engine-collapsingmergetree-collapsing-algorithm}
 
 Cuando ClickHouse combina partes de datos, cada grupo de filas consecutivas tiene la misma clave de ordenación (`ORDER BY`) se reduce a no más de dos filas, una con `Sign = 1` (“state” fila) y otro con `Sign = -1` (“cancel” fila). En otras palabras, las entradas colapsan.
 

@@ -283,9 +283,6 @@ private:
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     ReplicatedMergeTreeRestartingThread restarting_thread;
 
-    /// An event that awakens `alter` method from waiting for the completion of the ALTER query.
-    zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
-
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
 
@@ -333,11 +330,6 @@ private:
 
     void getCommitPartOps(Coordination::Requests & ops, MutableDataPartPtr & part, const String & block_id_path = "") const;
 
-    /// Updates info about part columns and checksums in ZooKeeper and commits transaction if successful.
-    void updatePartHeaderInZooKeeperAndCommit(
-        const zkutil::ZooKeeperPtr & zookeeper,
-        AlterDataPartTransaction & transaction);
-
     /// Adds actions to `ops` that remove a part from ZooKeeper.
     /// Set has_children to true for "old-style" parts (those with /columns and /checksums child znodes).
     void removePartFromZooKeeper(const String & part_name, Coordination::Requests & ops, bool has_children);
@@ -380,8 +372,6 @@ private:
     /// and set it into entry.actual_new_part_name. After that tries to fetch this new covering part.
     /// If fetch was not successful, clears entry.actual_new_part_name.
     bool executeFetch(LogEntry & entry);
-
-    void executeClearColumnOrIndexInPartition(const LogEntry & entry);
 
     bool executeReplaceRange(const LogEntry & entry);
 
@@ -517,7 +507,6 @@ private:
     std::optional<Cluster::Address> findClusterAddress(const ReplicatedMergeTreeAddress & leader_address) const;
 
     // Partition helpers
-    void clearColumnOrIndexInPartition(const ASTPtr & partition, LogEntry && entry, const Context & query_context);
     void dropPartition(const ASTPtr & query, const ASTPtr & partition, bool detach, const Context & query_context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & query_context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & query_context);

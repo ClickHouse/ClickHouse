@@ -50,4 +50,4 @@ $ clickhouse-client --query "SELECT * from table" --format FormatName > result.t
 
 See [clickhouse-client](../interfaces/cli.md).
 
-[Original article](https://clickhouse.tech/docs/en/faq/general/) <!--hide-->
+{## [Original article](https://clickhouse.tech/docs/en/faq/general/) ##}

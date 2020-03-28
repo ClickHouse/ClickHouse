@@ -33,13 +33,13 @@ SELECT halfMD5(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')
 └────────────────────┴────────┘
 ```
 
-## MD5 {#hash-functions-md5}
+## MD5 {#hash_functions-md5}
 
 Вычисляет MD5 от строки и возвращает полученный набор байт в виде FixedString(16).
 Если вам не нужен конкретно MD5, а нужен неплохой криптографический 128-битный хэш, то используйте вместо этого функцию sipHash128.
 Если вы хотите получить такой же результат, как выдаёт утилита md5sum, напишите lower(hex(MD5(s))).
 
-## sipHash64 {#hash-functions-siphash64}
+## sipHash64 {#hash_functions-siphash64}
 
 Генерирует 64-х битное значение [SipHash](https://131002.net/siphash/).
 
@@ -76,7 +76,7 @@ SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00
 └──────────────────────┴────────┘
 ```
 
-## sipHash128 {#hash-functions-siphash128}
+## sipHash128 {#hash_functions-siphash128}
 
 Вычисляет SipHash от строки.
 Принимает аргумент типа String. Возвращает FixedString(16).
@@ -178,7 +178,7 @@ SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:0
 └──────────────────────┴────────┘
 ```
 
-## javaHash {#hash-functions-javahash}
+## javaHash {#hash_functions-javahash}
 
 Вычисляет [JavaHash](http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452) от строки. `JavaHash` не отличается ни скоростью, ни качеством, поэтому эту функцию следует считать устаревшей. Используйте эту функцию, если вам необходимо получить значение хэша по такому же алгоритму.
 

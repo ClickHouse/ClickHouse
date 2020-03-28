@@ -8,7 +8,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
-#include <Access/AccessRightsContext.h>
+#include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemDictionaries.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>
@@ -25,7 +25,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
     return {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
-        {"status", std::make_shared<DataTypeEnum8>(ExternalLoader::getStatusEnumAllPossibleValues())},
+        {"status", std::make_shared<DataTypeEnum8>(getStatusEnumAllPossibleValues())},
         {"origin", std::make_shared<DataTypeString>()},
         {"type", std::make_shared<DataTypeString>()},
         {"key", std::make_shared<DataTypeString>()},
@@ -49,8 +49,8 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & /*query_info*/) const
 {
-    const auto access_rights = context.getAccessRights();
-    const bool check_access_for_dictionaries = !access_rights->isGranted(AccessType::SHOW);
+    const auto access = context.getAccess();
+    const bool check_access_for_dictionaries = !access->isGranted(AccessType::SHOW_DICTIONARIES);
 
     const auto & external_dictionaries = context.getExternalDictionariesLoader();
     for (const auto & load_result : external_dictionaries.getCurrentLoadResults())
@@ -74,7 +74,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         }
 
         if (check_access_for_dictionaries
-            && !access_rights->isGranted(AccessType::SHOW, database.empty() ? IDictionary::NO_DATABASE_TAG : database, short_name))
+            && !access->isGranted(AccessType::SHOW_DICTIONARIES, database.empty() ? IDictionary::NO_DATABASE_TAG : database, short_name))
             continue;
 
         size_t i = 0;

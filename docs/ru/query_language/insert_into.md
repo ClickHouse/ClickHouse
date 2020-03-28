@@ -43,7 +43,7 @@ INSERT INTO t FORMAT TabSeparated
 
 Если в таблице объявлены [ограничения](create.md#constraints), то их выполнимость будет проверена для каждой вставляемой строки. Если для хотя бы одной строки ограничения не будут выполнены, запрос будет остановлен.
 
-### Вставка результатов `SELECT` {#insert-query-insert-select}
+### Вставка результатов `SELECT` {#insert_query_insert-select}
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...

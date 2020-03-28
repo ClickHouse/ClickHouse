@@ -14,6 +14,7 @@ NamesAndTypesList SystemMergeTreeSettings::getNamesAndTypes()
         {"value",       std::make_shared<DataTypeString>()},
         {"changed",     std::make_shared<DataTypeUInt8>()},
         {"description", std::make_shared<DataTypeString>()},
+        {"type",        std::make_shared<DataTypeString>()},
     };
 }
 
@@ -25,6 +26,7 @@ void SystemMergeTreeSettings::fillData(MutableColumns & res_columns, const Conte
         res_columns[1]->insert(setting.getValueAsString());
         res_columns[2]->insert(setting.isChanged());
         res_columns[3]->insert(setting.getDescription().toString());
+        res_columns[4]->insert(setting.getType().toString());
     }
 }
 

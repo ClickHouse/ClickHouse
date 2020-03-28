@@ -19,7 +19,7 @@
 -   [arrayFirst](#higher_order_functions-array-first)
 -   [arrayFirstIndex](#higher_order_functions-array-first-index)
 
-### arrayMap(func, arr1, …) {#higher-order-functions-array-map}
+### arrayMap(func, arr1, …) {#higher_order_functions-array-map}
 
 Вернуть массив, полученный на основе результатов применения функции `func` к каждому элементу массива `arr`.
 
@@ -49,7 +49,7 @@ SELECT arrayMap((x, y) -> (x, y), [1, 2, 3], [4, 5, 6]) AS res
 
 Обратите внимание, что у функции `arrayMap` первый аргумент (лямбда-функция) не может быть опущен.
 
-### arrayFilter(func, arr1, …) {#higher-order-functions-array-filter}
+### arrayFilter(func, arr1, …) {#higher_order_functions-array-filter}
 
 Вернуть массив, содержащий только те элементы массива `arr1`, для которых функция `func` возвращает не 0.
 
@@ -82,7 +82,7 @@ SELECT
 
 Обратите внимание, что у функции `arrayFilter` первый аргумент (лямбда-функция) не может быть опущен.
 
-### arrayCount(\[func,\] arr1, …) {#higher-order-functions-array-count}
+### arrayCount(\[func,\] arr1, …) {#higher_order_functions-array-count}
 
 Вернуть количество элементов массива `arr`, для которых функция func возвращает не 0. Если func не указана - вернуть количество ненулевых элементов массива.
 
@@ -98,13 +98,13 @@ SELECT
 
 Вернуть сумму значений функции `func`. Если функция не указана - просто вернуть сумму элементов массива.
 
-### arrayFirst(func, arr1, …) {#higher-order-functions-array-first}
+### arrayFirst(func, arr1, …) {#higher_order_functions-array-first}
 
 Вернуть первый элемент массива `arr1`, для которого функция func возвращает не 0.
 
 Обратите внимание, что у функции `arrayFirst` первый аргумент (лямбда-функция) не может быть опущен.
 
-### arrayFirstIndex(func, arr1, …) {#higher-order-functions-array-first-index}
+### arrayFirstIndex(func, arr1, …) {#higher_order_functions-array-first-index}
 
 Вернуть индекс первого элемента массива `arr1`, для которого функция func возвращает не 0.
 

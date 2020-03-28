@@ -1,6 +1,6 @@
 #include <Interpreters/InterpreterCreateRowPolicyQuery.h>
 #include <Parsers/ASTCreateRowPolicyQuery.h>
-#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
@@ -27,7 +27,7 @@ namespace
     void updateRowPolicyFromQueryImpl(
         RowPolicy & policy,
         const ASTCreateRowPolicyQuery & query,
-        const std::optional<GenericRoleSet> & roles_from_query = {},
+        const std::optional<ExtendedRoleSet> & roles_from_query = {},
         const String & current_database = {})
     {
         if (query.alter)
@@ -48,15 +48,15 @@ namespace
         for (const auto & [index, condition] : query.conditions)
             policy.conditions[index] = condition ? serializeAST(*condition) : String{};
 
-        const GenericRoleSet * roles = nullptr;
-        std::optional<GenericRoleSet> temp_role_set;
+        const ExtendedRoleSet * roles = nullptr;
+        std::optional<ExtendedRoleSet> temp_role_set;
         if (roles_from_query)
             roles = &*roles_from_query;
         else if (query.roles)
             roles = &temp_role_set.emplace(*query.roles);
 
         if (roles)
-            policy.roles = *roles;
+            policy.to_roles = *roles;
     }
 }
 
@@ -67,9 +67,9 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     auto & access_control = context.getAccessControlManager();
     context.checkAccess(query.alter ? AccessType::ALTER_POLICY : AccessType::CREATE_POLICY);
 
-    std::optional<GenericRoleSet> roles_from_query;
+    std::optional<ExtendedRoleSet> roles_from_query;
     if (query.roles)
-        roles_from_query = GenericRoleSet{*query.roles, access_control, context.getUserID()};
+        roles_from_query = ExtendedRoleSet{*query.roles, access_control, context.getUserID()};
 
     const String current_database = context.getCurrentDatabase();
 

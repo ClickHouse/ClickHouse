@@ -304,11 +304,11 @@ SELECT toFixedString('foo\0bar', 8) AS s, toStringCutToZero(s) AS s_cut
 
 Функции принимают строку и интерпретируют байты, расположенные в начале строки, как число в host order (little endian). Если строка имеет недостаточную длину, то функции работают так, как будто строка дополнена необходимым количеством нулевых байт. Если строка длиннее, чем нужно, то лишние байты игнорируются. Дата интерпретируется, как число дней с начала unix-эпохи, а дата-с-временем - как число секунд с начала unix-эпохи.
 
-## reinterpretAsString {#type-conversion-functions-reinterpretasstring}
+## reinterpretAsString {#type_conversion_functions-reinterpretAsString}
 
 Функция принимает число или дату или дату-с-временем и возвращает строку, содержащую байты, представляющие соответствующее значение в host order (little endian). При этом, отбрасываются нулевые байты с конца. Например, значение 255 типа UInt32 будет строкой длины 1 байт.
 
-## CAST(x, t) {#type-conversion-function-cast}
+## CAST(x, t) {#type_conversion_function-cast}
 
 Преобразует x в тип данных t.
 Поддерживается также синтаксис CAST(x AS t).

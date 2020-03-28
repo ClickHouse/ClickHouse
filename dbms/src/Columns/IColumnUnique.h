@@ -136,6 +136,11 @@ public:
     {
         throw Exception("Method scatter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
+
+    void updateWeakHash32(WeakHash32 &) const override
+    {
+        throw Exception("Method updateWeakHash32 is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
 };
 
 using ColumnUniquePtr = IColumnUnique::ColumnUniquePtr;

@@ -42,7 +42,7 @@ Los atributos se describen en el cuerpo de la consulta:
 -   `PRIMARY KEY` — [Columna clave](external_dicts_dict_structure.md#ext_dict_structure-key)
 -   `AttrName AttrType` — [Columna de datos](external_dicts_dict_structure.md#ext_dict_structure-attributes). Puede haber un número múltiple de atributos.
 
-## Clave {#ext-dict-structure-key}
+## Clave {#ext_dict_structure-key}
 
 ClickHouse admite los siguientes tipos de claves:
 
@@ -54,7 +54,7 @@ Una estructura xml puede contener `<id>` o `<key>`. La consulta DDL debe contene
 !!! warning "Advertencia"
     No debe describir la clave como un atributo.
 
-### Tecla numérica {#ext-dict-numeric-key}
+### Tecla numérica {#ext_dict-numeric-key}
 
 Tipo: `UInt64`.
 
@@ -122,7 +122,7 @@ PRIMARY KEY field1, field2
 
 Para una consulta al `dictGet*` función, una tupla se pasa como la clave. Ejemplo: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-## Atributo {#ext-dict-structure-attributes}
+## Atributo {#ext_dict_structure-attributes}
 
 Ejemplo de configuración:
 

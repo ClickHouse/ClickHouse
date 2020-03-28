@@ -169,7 +169,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 -   [Interval](../data_types/special_data_types/interval.md) data type
 -   [toInterval](functions/type_conversion_functions.md#function-tointerval) type convertion functions
 
-## CASE条件表达式 {#operator-case}
+## CASE条件表达式 {#operator_case}
 
 ``` sql
 CASE [x]

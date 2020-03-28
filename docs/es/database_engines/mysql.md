@@ -24,7 +24,7 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 -   `user` — Usuario de MySQL.
 -   `password` — Contraseña de usuario.
 
-## Soporte de tipos de datos {#data-types-support}
+## Soporte de tipos de datos {#data_types-support}
 
 | MySQL                             | Haga clic en Casa                           |
 |-----------------------------------|---------------------------------------------|

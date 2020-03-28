@@ -19,7 +19,7 @@
 -   使用’id’键获取dict\_name字典中attr\_name属性的值。`dict_name`和`attr_name`是常量字符串。`id`必须是UInt64。
     如果字典中没有`id`键，则返回字典描述中指定的默认值。
 
-## dictGetTOrDefault {#ext-dict-functions-dictgettordefault}
+## dictGetTOrDefault {#ext_dict_functions-dictgettordefault}
 
 `dictGetTOrDefault('dict_name', 'attr_name', id, default)`
 

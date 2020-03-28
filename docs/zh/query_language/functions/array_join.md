@@ -1,4 +1,4 @@
-# arrayJoin函数 {#functions-arrayjoin}
+# arrayJoin函数 {#functions_arrayjoin}
 
 这是一个非常有用的函数。
 

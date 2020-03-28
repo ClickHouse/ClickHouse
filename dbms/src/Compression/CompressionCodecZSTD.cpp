@@ -57,7 +57,7 @@ void CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_s
 }
 
 CompressionCodecZSTD::CompressionCodecZSTD(int level_)
-    :level(level_)
+    : level(level_)
 {
 }
 

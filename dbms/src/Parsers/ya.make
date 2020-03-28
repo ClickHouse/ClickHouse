@@ -22,7 +22,6 @@ SRCS(
     ASTExpressionList.cpp
     ASTFunction.cpp
     ASTFunctionWithKeyValueArguments.cpp
-    ASTGenericRoleSet.cpp
     ASTGrantQuery.cpp
     ASTIdentifier.cpp
     ASTInsertQuery.cpp
@@ -75,7 +74,6 @@ SRCS(
     ParserDictionary.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
-    ParserGenericRoleSet.cpp
     ParserGrantQuery.cpp
     ParserInsertQuery.cpp
     ParserKillQueryQuery.cpp

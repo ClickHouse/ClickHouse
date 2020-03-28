@@ -1,4 +1,4 @@
-# Nombre de tipo) {#data-type-nullable}
+# Nombre de tipo) {#data_type-nullable}
 
 Permite almacenar marcador especial ([NULO](../query_language/syntax.md)) que denota “missing value” con los valores normales permitidos por `TypeName`. Por ejemplo, un `Nullable(Int8)` Tipo columna puede almacenar `Int8` valores de tipo, y las filas que no tienen un valor almacenarán `NULL`.
 

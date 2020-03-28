@@ -124,7 +124,7 @@ namespace DB
         for (const auto i : ext::range(0, size))
             columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
-        const auto insertValueByIdx = [this, &columns](size_t idx, const auto & value)
+        const auto insert_value_by_idx = [this, &columns](size_t idx, const auto & value)
         {
             if (description.types[idx].second)
             {
@@ -170,9 +170,9 @@ namespace DB
                     /// null string means 'no value for requested key'
                     if (!value.isNull())
                     {
-                        insertValueByIdx(0, primary_key);
-                        insertValueByIdx(1, secondary_key);
-                        insertValueByIdx(2, value);
+                        insert_value_by_idx(0, primary_key);
+                        insert_value_by_idx(1, secondary_key);
+                        insert_value_by_idx(2, value);
                         ++num_rows;
                     }
                 }
@@ -198,8 +198,8 @@ namespace DB
                 /// Null string means 'no value for requested key'
                 if (!value.isNull())
                 {
-                    insertValueByIdx(0, key);
-                    insertValueByIdx(1, value);
+                    insert_value_by_idx(0, key);
+                    insert_value_by_idx(1, value);
                 }
             }
             cursor += need_values;

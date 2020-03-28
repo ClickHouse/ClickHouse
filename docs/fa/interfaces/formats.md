@@ -816,7 +816,7 @@ See also [how to read/write length-delimited protobuf messages in popular langua
 
 ClickHouse Avro format supports reading and writing [Avro data files](http://avro.apache.org/docs/current/spec.html#Object+Container+Files).
 
-### Data Types Matching {#data-types-matching}
+### Data Types Matching {#data_types-matching}
 
 The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -882,7 +882,7 @@ Schemas are cached once resolved.
 
 Schema Registry URL is configured with [format\_avro\_schema\_registry\_url](../operations/settings/settings.md#settings-format_avro_schema_registry_url)
 
-### Data Types Matching {#data-types-matching-1}
+### Data Types Matching {#data_types-matching-1}
 
 Same as [Avro](#data-format-avro)
 
@@ -924,7 +924,7 @@ SELECT * FROM topic1_stream;
 
 [Apache Parquet](http://parquet.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. ClickHouse supports read and write operations for this format.
 
-### Data Types Matching {#data-types-matching-2}
+### Data Types Matching {#data_types-matching-2}
 
 The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` and `SELECT` queries.
 
@@ -972,7 +972,7 @@ To exchange data with Hadoop, you can use [HDFS table engine](../operations/tabl
 
 [Apache ORC](https://orc.apache.org/) is a columnar storage format widespread in the Hadoop ecosystem. You can only insert data in this format to ClickHouse.
 
-### Data Types Matching {#data-types-matching-3}
+### Data Types Matching {#data_types-matching-3}
 
 The table below shows supported data types and how they match ClickHouse [data types](../data_types/index.md) in `INSERT` queries.
 

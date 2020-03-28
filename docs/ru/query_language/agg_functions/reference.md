@@ -1,6 +1,6 @@
 # Справочник функций {#spravochnik-funktsii}
 
-## count {#agg-function-count}
+## count {#agg_function-count}
 
 Вычисляет количество строк или не NULL значений .
 
@@ -67,7 +67,7 @@ SELECT count(DISTINCT num) FROM t
 
 Этот пример показывает, что `count(DISTINCT num)` выполняется с помощью функции `uniqExact` в соответствии со значением настройки `count_distinct_implementation`.
 
-## any(x) {#agg-function-any}
+## any(x) {#agg_function-any}
 
 Выбирает первое попавшееся значение.
 Порядок выполнения запроса может быть произвольным и даже каждый раз разным, поэтому результат данной функции недетерминирован.
@@ -77,7 +77,7 @@ SELECT count(DISTINCT num) FROM t
 
 При наличии в запросе `SELECT` секции `GROUP BY` или хотя бы одной агрегатной функции, ClickHouse (в отличие от, например, MySQL) требует, чтобы все выражения в секциях `SELECT`, `HAVING`, `ORDER BY` вычислялись из ключей или из агрегатных функций. То есть, каждый выбираемый из таблицы столбец, должен использоваться либо в ключах, либо внутри агрегатных функций. Чтобы получить поведение, как в MySQL, вы можете поместить остальные столбцы в агрегатную функцию `any`.
 
-## anyHeavy(x) {#agg-function-anyheavy}
+## anyHeavy(x) {#agg_function-anyheavy}
 
 Выбирает часто встречающееся значение с помощью алгоритма «[heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf)». Если существует значение, которое встречается чаще, чем в половине случаев, в каждом потоке выполнения запроса, то возвращается данное значение. В общем случае, результат недетерминирован.
 
@@ -104,7 +104,7 @@ FROM ontime
 └───────┘
 ```
 
-## anyLast(x) {#agg-function-anylast}
+## anyLast(x) {#agg_function-anylast}
 
 Выбирает последнее попавшееся значение.
 Результат так же недетерминирован, как и для функции `any`.
@@ -279,11 +279,11 @@ num
 3
 ```
 
-## min(x) {#agg-function-min}
+## min(x) {#agg_function-min}
 
 Вычисляет минимум.
 
-## max(x) {#agg-function-max}
+## max(x) {#agg_function-max}
 
 Вычисляет максимум.
 
@@ -315,12 +315,12 @@ SELECT argMin(user, salary) FROM salary
 
 Вычисляет значение arg при максимальном значении val. Если есть несколько разных значений arg для максимальных значений val, то выдаётся первое попавшееся из таких значений.
 
-## sum(x) {#agg-function-sum}
+## sum(x) {#agg_function-sum}
 
 Вычисляет сумму.
 Работает только для чисел.
 
-## sumWithOverflow(x) {#agg-function-sumwithoverflow}
+## sumWithOverflow(x) {#agg_function-sumwithoverflow}
 
 Вычисляет сумму чисел, используя для результата тот же тип данных, что и для входных параметров. Если сумма выйдет за максимальное значение для заданного типа данных, то функция вернёт ошибку.
 
@@ -508,22 +508,22 @@ FROM (
 
 ## timeSeriesGroupRateSum(uid, ts, val) {#agg-function-timeseriesgroupratesum}
 
-Аналогично timeSeriesGroupRateSum, timeSeriesGroupRateSum будет вычислять производные по timestamp для рядов, а затем суммировать полученные производные для всех рядов для одного значения timestamp.
+Аналогично timeSeriesGroupSum, timeSeriesGroupRateSum будет вычислять производные по timestamp для рядов, а затем суммировать полученные производные для всех рядов для одного значения timestamp.
 Также ряды должны быть отсортированы по возрастанию timestamp.
 
-Для пример из описания timeSeriesGroupRateSum результат будет следующим:
+Для пример из описания timeSeriesGroupSum результат будет следующим:
 
 ``` text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
 ```
 
-## avg(x) {#agg-function-avg}
+## avg(x) {#agg_function-avg}
 
 Вычисляет среднее.
 Работает только для чисел.
 Результат всегда Float64.
 
-## uniq {#agg-function-uniq}
+## uniq {#agg_function-uniq}
 
 Приближённо вычисляет количество различных значений аргумента.
 
@@ -560,7 +560,7 @@ uniq(x[, ...])
 -   [uniqHLL12](#agg_function-uniqhll12)
 -   [uniqExact](#agg_function-uniqexact)
 
-## uniqCombined {#agg-function-uniqcombined}
+## uniqCombined {#agg_function-uniqcombined}
 
 Приближённо вычисляет количество различных значений аргумента.
 
@@ -608,11 +608,11 @@ uniqCombined(HLL_precision)(x[, ...])
 -   [uniqHLL12](#agg_function-uniqhll12)
 -   [uniqExact](#agg_function-uniqexact)
 
-## uniqCombined64 {#agg-function-uniqcombined64}
+## uniqCombined64 {#agg_function-uniqcombined64}
 
 Использует 64-битный хэш для всех типов, в отличие от [uniqCombined](#agg_function-uniqcombined).
 
-## uniqHLL12 {#agg-function-uniqhll12}
+## uniqHLL12 {#agg_function-uniqhll12}
 
 Вычисляет приблизительное число различных значений аргументов, используя алгоритм [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog).
 
@@ -648,7 +648,7 @@ uniqHLL12(x[, ...])
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqExact](#agg_function-uniqexact)
 
-## uniqExact {#agg-function-uniqexact}
+## uniqExact {#agg_function-uniqexact}
 
 Вычисляет точное количество различных значений аргументов.
 
@@ -670,7 +670,7 @@ uniqExact(x[, ...])
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x), groupArray(max\_size)(x) {#agg-function-grouparray}
+## groupArray(x), groupArray(max\_size)(x) {#agg_function-grouparray}
 
 Составляет массив из значений аргумента.
 Значения в массив могут быть добавлены в любом (недетерминированном) порядке.
@@ -691,7 +691,7 @@ uniqExact(x[, ...])
 -   Значение по умолчанию для подстановки на пустые позиции.
 -   Длина результирующего массива. Например, если вы хотите получать массивы одинакового размера для всех агрегатных ключей. При использовании этого параметра значение по умолчанию задавать обязательно.
 
-## groupArrayMovingSum {#agg-function-grouparraymovingsum}
+## groupArrayMovingSum {#agg_function-grouparraymovingsum}
 
 Вычисляет скользящую сумму входных значений.
 
@@ -764,7 +764,7 @@ FROM t
 └────────────┴─────────────────────────────────┴────────────────────────┘
 ```
 
-## groupArrayMovingAvg {#agg-function-grouparraymovingavg}
+## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
 
 Вычисляет скользящее среднее для входных значений.
 
@@ -1554,11 +1554,11 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## stochasticLinearRegression {#agg-functions-stochasticlinearregression}
+## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
 
 Функция реализует стохастическую линейную регрессию. Поддерживает пользовательские параметры для скорости обучения, коэффициента регуляризации L2, размера mini-batch и имеет несколько методов обновления весов ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (по умолчанию), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
-### Параметры {#agg-functions-stochasticlinearregression-parameters}
+### Параметры {#agg_functions-stochasticlinearregression-parameters}
 
 Есть 4 настраиваемых параметра. Они передаются в функцию последовательно, однако не обязательно указывать все, используются значения по умолчанию, однако хорошая модель требует некоторой настройки параметров.
 
@@ -1571,7 +1571,7 @@ stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 3.  Размер mini-batch задаёт количество элементов, чьи градиенты будут вычислены и просуммированы при выполнении одного шага градиентного спуска. Чистый стохастический спуск использует один элемент, однако использование mini-batch (около 10 элементов) делает градиентные шаги более стабильными. По умолчанию `15`.
 4.  Метод обновления весов, можно выбрать один из следующих: `Adam` (по умолчанию), `SGD`, `Momentum`, `Nesterov`. `Momentum` и `Nesterov` более требовательные к вычислительным ресурсам и памяти, однако они имеют высокую скорость схождения и устойчивости методов стохастического градиента.
 
-### Использование {#agg-functions-stochasticlinearregression-usage}
+### Использование {#agg_functions-stochasticlinearregression-usage}
 
 `stochasticLinearRegression` используется на двух этапах: построение модели и предсказание новых данных. Чтобы построить модель и сохранить её состояние для дальнейшего использования, мы используем комбинатор `-State`.
 Для прогнозирования мы используем функцию [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), которая принимает в качестве аргументов состояние и свойства для прогнозирования.
@@ -1611,7 +1611,7 @@ evalMLMethod(model, param1, param2) FROM test_data
 
 `test_data` — это таблица, подобная `train_data`, но при этом может не содержать целевое значение.
 
-### Примечания {#agg-functions-stochasticlinearregression-notes}
+### Примечания {#agg_functions-stochasticlinearregression-notes}
 
 1.  Объединить две модели можно следующим запросом:
 
@@ -1638,11 +1638,11 @@ evalMLMethod(model, param1, param2) FROM test_data
 -   [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
 -   [Отличие линейной от логистической регрессии.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
-## stochasticLogisticRegression {#agg-functions-stochasticlogisticregression}
+## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
 
 Функция реализует стохастическую логистическую регрессию. Её можно использовать для задачи бинарной классификации, функция поддерживает те же пользовательские параметры, что и stochasticLinearRegression и работает таким же образом.
 
-### Параметры {#agg-functions-stochasticlogisticregression-parameters}
+### Параметры {#agg_functions-stochasticlogisticregression-parameters}
 
 Параметры те же, что и в stochasticLinearRegression:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.

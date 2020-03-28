@@ -49,7 +49,7 @@ WriteBufferToKafkaProducer::~WriteBufferToKafkaProducer()
     assert(rows == 0 && chunks.empty());
 }
 
-void WriteBufferToKafkaProducer::count_row(const Columns & columns, size_t current_row)
+void WriteBufferToKafkaProducer::countRow(const Columns & columns, size_t current_row)
 {
 
     if (++rows % max_rows == 0)

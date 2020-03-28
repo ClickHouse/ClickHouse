@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import ast
 import collections
 import csv
 import itertools
@@ -8,14 +9,12 @@ import sys
 import traceback
 
 report_errors = []
-status = 'success'
-message = 'See the report'
-message_array = []
 error_tests = 0
 slow_average_tests = 0
 faster_queries = 0
 slower_queries = 0
 unstable_queries = 0
+very_unstable_queries = 0
 
 print("""
 <!DOCTYPE html>
@@ -180,15 +179,43 @@ printSimpleTable('Slow on client',
     ['Client time, s', 'Server time, s', 'Ratio', 'Query'],
     slow_on_client_rows)
 
-unstable_rows = tsvRows('unstable-queries.tsv')
-unstable_queries += len(unstable_rows)
-printSimpleTable('Unstable queries',
-    [
-        'Old, s', 'New, s', 'Relative difference (new&nbsp;-&nbsp;old)/old',
-        'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',
-        'Test', 'Query'
-    ],
-    unstable_rows)
+def print_unstable_queries():
+    global unstable_queries
+    global very_unstable_queries
+
+    unstable_rows = tsvRows('unstable-queries.tsv')
+    if not unstable_rows:
+        return
+
+    unstable_queries += len(unstable_rows)
+
+    columns = [
+        'Old, s', #0
+        'New, s', #1
+        'Relative difference (new&nbsp;-&nbsp;old)/old', #2
+        'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]', #3
+        'Test', #4
+        'Query' #5
+    ]
+
+    print(tableStart('Unstable queries'))
+    print(tableHeader(columns))
+
+    attrs = ['' for c in columns]
+    for r in unstable_rows:
+        rd = ast.literal_eval(r[3])
+        # Note the zero-based array index, this is rd[3] in SQL.
+        if rd[2] > 0.2:
+            very_unstable_queries += 1
+            attrs[3] = 'style="background: #ffb0a0"'
+        else:
+            attrs[3] = ''
+
+        print(tableRow(r, attrs))
+
+    print(tableEnd())
+
+print_unstable_queries()
 
 run_error_rows = tsvRows('run-errors.tsv')
 error_tests += len(run_error_rows)
@@ -242,6 +269,8 @@ def print_test_times():
 
 print_test_times()
 
+# Add the errors reported by various steps of comparison script
+report_errors += [l.strip() for l in open('report-errors.rep')]
 if len(report_errors):
     print(tableStart('Errors while building the report'))
     print(tableHeader(['Error']))
@@ -259,6 +288,10 @@ print("""
 </html>
 """)
 
+status = 'success'
+message = 'See the report'
+message_array = []
+
 if slow_average_tests:
     status = 'failure'
     message_array.append(str(slow_average_tests) + ' too long')
@@ -267,10 +300,14 @@ if faster_queries:
     message_array.append(str(faster_queries) + ' faster')
 
 if slower_queries:
+    status = 'failure'
     message_array.append(str(slower_queries) + ' slower')
 
 if unstable_queries:
     message_array.append(str(unstable_queries) + ' unstable')
+
+if very_unstable_queries:
+    status = 'failure'
 
 error_tests += slow_average_tests
 if error_tests:

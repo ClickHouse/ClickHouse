@@ -185,7 +185,7 @@ Nota:
 
 El operador condicional calcula los valores de b y c, luego verifica si se cumple la condición a y luego devuelve el valor correspondiente. Si `b` o `C` es una [arrayJoin()](functions/array_join.md#functions_arrayjoin) función, cada fila se replicará independientemente de la “a” condición.
 
-## Expresión condicional {#operator-case}
+## Expresión condicional {#operator_case}
 
 ``` sql
 CASE [x]
