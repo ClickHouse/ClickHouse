@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Common/RWLock.h>
+#include <mutex>
+#include <shared_mutex>
+
 
 namespace DB
 {
@@ -17,7 +19,10 @@ struct TableStructureWriteLockHolder
 
     void releaseAllExceptAlterIntention()
     {
-        structure_lock.reset();
+        if (structure_unique_lock)
+            structure_unique_lock.unlock();
+        else if (structure_shared_lock)
+            structure_shared_lock.unlock();
     }
 
 private:
@@ -25,7 +30,9 @@ private:
 
     /// Order is important.
     std::unique_lock<std::mutex> alter_lock;
-    RWLockImpl::LockHolder structure_lock;
+
+    std::shared_lock<std::shared_mutex> structure_shared_lock;
+    std::unique_lock<std::shared_mutex> structure_unique_lock;
 };
 
 struct TableStructureReadLockHolder
@@ -38,8 +45,8 @@ struct TableStructureReadLockHolder
 private:
     friend class IStorage;
 
-    /// Order is important.
-    RWLockImpl::LockHolder structure_lock;
+    std::shared_ptr<std::shared_lock<std::shared_mutex>> structure_shared_lock;
+    std::shared_ptr<std::unique_lock<std::shared_mutex>> structure_unique_lock;
 };
 
 }

@@ -17,10 +17,10 @@
 #include <Storages/ColumnDependency.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
-#include <Common/RWLock.h>
 #include <Common/TypePromotion.h>
 
 #include <optional>
+#include <mutex>
 #include <shared_mutex>
 
 
@@ -199,7 +199,7 @@ public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of
     /// the query. If will_add_new_data is true, this means that the query will add new data to the table
     /// (INSERT or a parts merge).
-    TableStructureReadLockHolder lockStructureForShare(const String & query_id);
+    TableStructureReadLockHolder lockStructureForShare();
 
     /// Acquire this lock at the start of ALTER to lock out other ALTERs and make sure that only you
     /// can modify the table structure. It can later be upgraded to the exclusive lock.
@@ -207,10 +207,10 @@ public:
 
     /// Upgrade alter intention lock to the full exclusive structure lock. This is done by ALTER queries
     /// to ensure that no other query uses the table structure and it can be safely changed.
-    void lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id);
+    void lockStructureExclusively(TableStructureWriteLockHolder & lock_holder);
 
     /// Acquire the full exclusive lock immediately. No other queries can run concurrently.
-    TableStructureWriteLockHolder lockExclusively(const String & query_id);
+    TableStructureWriteLockHolder lockExclusively();
 
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
@@ -477,7 +477,7 @@ private:
     /// Lock for the table column structure (names, types, etc.) and data path.
     /// It is taken in exclusive mode by queries that modify them (e.g. RENAME, ALTER and DROP)
     /// and in share mode by other queries.
-    mutable RWLock structure_lock = RWLockImpl::create();
+    mutable std::shared_mutex structure_lock;
 };
 
 }

@@ -314,10 +314,10 @@ bool IStorage::isVirtualColumn(const String & column_name) const
     return getColumns().get(column_name).is_virtual;
 }
 
-TableStructureReadLockHolder IStorage::lockStructureForShare(const String & query_id)
+TableStructureReadLockHolder IStorage::lockStructureForShare()
 {
     TableStructureReadLockHolder result;
-    result.structure_lock = structure_lock->getLock(RWLockImpl::Read, query_id);
+    result.structure_shared_lock = std::make_shared<std::shared_lock<std::shared_mutex>>(structure_lock);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
@@ -334,15 +334,15 @@ TableStructureWriteLockHolder IStorage::lockAlterIntention()
     return result;
 }
 
-void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
+void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder)
 {
     if (!lock_holder.alter_lock)
         throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    lock_holder.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
+    lock_holder.structure_unique_lock = std::unique_lock(structure_lock);
 }
 
-TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
+TableStructureWriteLockHolder IStorage::lockExclusively()
 {
     TableStructureWriteLockHolder result;
     result.alter_lock = std::unique_lock(alter_lock);
@@ -350,7 +350,7 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
-    result.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
+    result.structure_unique_lock = std::unique_lock(structure_lock);
 
     return result;
 }
@@ -365,7 +365,7 @@ void IStorage::alter(
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder);
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);

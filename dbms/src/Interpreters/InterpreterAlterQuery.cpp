@@ -82,7 +82,7 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!mutation_commands.empty())
     {
-        auto table_lock_holder = table->lockStructureForShare(context.getCurrentQueryId());
+        auto table_lock_holder = table->lockStructureForShare();
         MutationsInterpreter(table, mutation_commands, context, false).validate(table_lock_holder);
         table->mutate(mutation_commands, context);
     }

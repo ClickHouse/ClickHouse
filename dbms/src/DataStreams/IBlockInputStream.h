@@ -109,7 +109,7 @@ public:
     size_t checkDepth(size_t max_depth) const { return checkDepthImpl(max_depth, max_depth); }
 
     /// Do not allow to change the table while the blocks stream and its children are alive.
-    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
+    void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.emplace_back(lock); }
 
     /// Get information about execution speed.
     const BlockStreamProfileInfo & getProfileInfo() const { return info; }

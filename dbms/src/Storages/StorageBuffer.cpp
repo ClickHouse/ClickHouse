@@ -168,7 +168,7 @@ Pipes StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        auto destination_lock = destination->lockStructureForShare(context.getCurrentQueryId());
+        auto destination_lock = destination->lockStructureForShare();
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
@@ -728,7 +728,7 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const S
 
 void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder);
 
     auto table_id = getStorageID();
     checkAlterIsPossible(params, context.getSettingsRef());

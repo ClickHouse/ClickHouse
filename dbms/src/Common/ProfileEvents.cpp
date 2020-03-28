@@ -156,10 +156,6 @@
     M(DataAfterMutationDiffersFromReplica, "") \
     M(PolygonsAddedToPool, "") \
     M(PolygonsInPoolAllocatedBytes, "") \
-    M(RWLockAcquiredReadLocks, "") \
-    M(RWLockAcquiredWriteLocks, "") \
-    M(RWLockReadersWaitMilliseconds, "") \
-    M(RWLockWritersWaitMilliseconds, "") \
     M(DNSError, "Total count of errors in DNS resolution") \
     \
     M(RealTimeMicroseconds, "Total (wall clock) time spent in processing (queries and other tasks) threads (not that this is a sum).") \
