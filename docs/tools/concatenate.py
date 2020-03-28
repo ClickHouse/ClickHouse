@@ -46,10 +46,14 @@ def concatenate(lang, docs_path, single_page_file):
 
                 single_page_file.write('\n')
 
+                in_metadata = False
                 for l in f:
+                    if l.startswith('---'):
+                        in_metadata = not in_metadata
                     if l.startswith('#'):
                         l = '#' + l
-                    single_page_file.write(l)
+                    if not in_metadata:
+                        single_page_file.write(l)
         except IOError as e:
             logging.warning(str(e))
 
