@@ -804,17 +804,30 @@ SELECT
 └──────────────┴───────────┘
 ```
 
-## arrayReduce(agg\_func, arr1, …) {#array-functions-arrayreduce}
+## arrayReduce {#arrayreduce}
 
 Applies an aggregate function to array elements and returns its result. The name of the aggregation function is passed as a string in single quotes `'max'`, `'sum'`. When using parametric aggregate functions, the parameter is indicated after the function name in parentheses `'uniqUpTo(6)'`.
 
-Example:
+**Syntax**
 
-``` sql
+```sql
+arrayReduce(agg_func, arr1, arr2, ..., arrN)
+```
+
+**Parameters**
+
+* `agg_func` — The name of an aggregate function which should be a constant [string](../../data_types/string.md).
+* `arr` — Any number of [array](../../data_types/array.md) type columns as the parameters of the aggregation function.
+
+**Returned value**
+
+**Example**
+
+```sql
 SELECT arrayReduce('max', [1, 2, 3])
 ```
 
-``` text
+```text
 ┌─arrayReduce('max', [1, 2, 3])─┐
 │                             3 │
 └───────────────────────────────┘
@@ -822,13 +835,11 @@ SELECT arrayReduce('max', [1, 2, 3])
 
 If an aggregate function takes multiple arguments, then this function must be applied to multiple arrays of the same size.
 
-Example:
-
-``` sql
+```sql
 SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 ```
 
-``` text
+```text
 ┌─arrayReduce('maxIf', [3, 5], [1, 0])─┐
 │                                    3 │
 └──────────────────────────────────────┘
@@ -836,17 +847,51 @@ SELECT arrayReduce('maxIf', [3, 5], [1, 0])
 
 Example with a parametric aggregate function:
 
-``` sql
+```sql
 SELECT arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
 ```
 
-``` text
+```text
 ┌─arrayReduce('uniqUpTo(3)', [1, 2, 3, 4, 5, 6, 7, 8, 9, 10])─┐
 │                                                           4 │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-## arrayReverse(arr) {#array_functions-arrayreverse}
+## arrayReduceInRanges {#arrayreduceinranges}
+
+Applies an aggregate function to array elements in given ranges and returns an array containing the result corresponding to each range. The function will return the same result as multiple `arrayReduce(agg_func, arraySlice(arr1, index, length), ...)`.
+
+**Syntax**
+
+```sql
+arrayReduceInRanges(agg_func, ranges, arr1, arr2, ..., arrN)
+```
+
+**Parameters**
+
+* `agg_func` — The name of an aggregate function which should be a constant [string](../../data_types/string.md).
+* `ranges` — The ranges to aggretate which should be an [array](../../data_types/array.md) of [tuples](../../data_types/tuple.md) which containing the index and the length of each range.
+* `arr` — Any number of [array](../../data_types/array.md) type columns as the parameters of the aggregation function.
+
+**Returned value**
+
+**Example**
+
+```sql
+SELECT arrayReduceInRanges(
+    'sum',
+    [(1, 5), (2, 3), (3, 4), (4, 4)],
+    [1000000, 200000, 30000, 4000, 500, 60, 7]
+) AS res
+```
+
+```text
+┌─res─────────────────────────┐
+│ [1234500,234000,34560,4567] │
+└─────────────────────────────┘
+```
+
+## arrayReverse(arr) {#arrayreverse}
 
 Returns an array of the same size as the original array containing the elements in reverse order.
 
