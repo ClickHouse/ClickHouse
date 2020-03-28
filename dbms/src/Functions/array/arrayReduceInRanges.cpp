@@ -218,7 +218,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
         ranges_begin = ranges_end;
         ranges_end = (*ranges_offsets)[i];
 
-        /// We will allocate pre-aggregation places for each `minimun_place << level` rows.
+        /// We will allocate pre-aggregation places for each `minimum_place << level` rows.
         /// The value of `level` starts from 0, and it will never exceed the number of bits in a `size_t`.
         /// We calculate the offset (and thus size) of those places in each level.
         size_t place_offsets[sizeof(size_t) * 8];
