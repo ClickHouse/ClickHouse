@@ -238,7 +238,7 @@ void StorageMergeTree::alter(
 
         /// We release all locks except alter_intention_lock which allows
         /// to execute alter queries sequentially
-        table_lock_holder.releaseAllExpectAlterIntention();
+        table_lock_holder.releaseAllExceptAlterIntention();
 
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
