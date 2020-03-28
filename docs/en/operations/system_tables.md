@@ -842,7 +842,7 @@ Columns:
 -   `name` (String) — Setting name.
 -   `value` (String) — Setting value.
 -   `description` (String) — Setting description.
--   `type` (String) — Setting type.
+-   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 -   `min` (Nullable(String)) — Get minimum allowed value (if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
 -   `max` (Nullable(String)) — Get maximum allowed value (if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
@@ -874,7 +874,7 @@ Columns:
 -   `name` (String) — Setting name.
 -   `value` (String) — Setting value.
 -   `description` (String) — Setting description.
--   `type` (String) — Setting type.
+-   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
 ## system.table\_engines {#system-table-engines}
