@@ -217,7 +217,7 @@ protected:
                     if (need_lock_structure)
                     {
                         table = tables_it->table();
-                        lock = table->lockStructureForShare(false, context.getCurrentQueryId());
+                        lock = table->lockStructureForShare(context.getCurrentQueryId());
                     }
                 }
                 catch (const Exception & e)
