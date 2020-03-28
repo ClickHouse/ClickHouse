@@ -19,7 +19,7 @@ using Scalars = std::map<String, Block>;
 
 struct SyntaxAnalyzerResult
 {
-    StoragePtr storage;
+    ConstStoragePtr storage;
     std::shared_ptr<AnalyzedJoin> analyzed_join;
 
     NamesAndTypesList source_columns;
@@ -51,7 +51,7 @@ struct SyntaxAnalyzerResult
 
     bool maybe_optimize_trivial_count = false;
 
-    SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, StoragePtr storage_ = {}, bool add_virtuals = true)
+    SyntaxAnalyzerResult(const NamesAndTypesList & source_columns_, ConstStoragePtr storage_ = {}, bool add_virtuals = true)
         : storage(storage_)
         , source_columns(source_columns_)
     {
@@ -86,7 +86,7 @@ public:
     {}
 
     /// Analyze and rewrite not select query
-    SyntaxAnalyzerResultPtr analyze(ASTPtr & query, const NamesAndTypesList & source_columns_, StoragePtr storage = {}) const;
+    SyntaxAnalyzerResultPtr analyze(ASTPtr & query, const NamesAndTypesList & source_columns_, ConstStoragePtr storage = {}) const;
 
     /// Analyze and rewrite select query
     SyntaxAnalyzerResultPtr analyzeSelect(

@@ -296,6 +296,12 @@ struct PositionImpl
             prev_needle_offset = needle_offsets[i];
         }
     }
+
+    template <typename... Args>
+    static void vectorFixedConstant(Args &&...)
+    {
+        throw Exception("Functions 'position' don't support FixedString haystack argument", ErrorCodes::ILLEGAL_COLUMN);
+    }
 };
 
 template <typename Impl>
@@ -518,6 +524,12 @@ struct HasTokenImpl
     static void constantVector(Args &&...)
     {
         throw Exception("Function 'hasToken' does not support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
+    }
+
+    template <typename... Args>
+    static void vectorFixedConstant(Args &&...)
+    {
+        throw Exception("Functions 'hasToken' don't support FixedString haystack argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 };
 

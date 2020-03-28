@@ -68,6 +68,9 @@ static FormatSettings getInputFormatSetting(const Settings & settings, const Con
     format_settings.custom.row_before_delimiter = settings.format_custom_row_before_delimiter;
     format_settings.custom.row_after_delimiter = settings.format_custom_row_after_delimiter;
     format_settings.custom.row_between_delimiter = settings.format_custom_row_between_delimiter;
+    format_settings.regexp.regexp = settings.format_regexp;
+    format_settings.regexp.escaping_rule = settings.format_regexp_escaping_rule;
+    format_settings.regexp.skip_unmatched = settings.format_regexp_skip_unmatched;
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (context.hasGlobalContext() && (context.getGlobalContext().getApplicationType() == Context::ApplicationType::SERVER))
@@ -352,12 +355,14 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorAvro(*this);
     registerInputFormatProcessorTemplate(*this);
     registerOutputFormatProcessorTemplate(*this);
+    registerInputFormatProcessorRegexp(*this);
     registerInputFormatProcessorMsgPack(*this);
     registerOutputFormatProcessorMsgPack(*this);
 
     registerFileSegmentationEngineTabSeparated(*this);
     registerFileSegmentationEngineCSV(*this);
     registerFileSegmentationEngineJSONEachRow(*this);
+    registerFileSegmentationEngineRegexp(*this);
 
     registerOutputFormatNull(*this);
 

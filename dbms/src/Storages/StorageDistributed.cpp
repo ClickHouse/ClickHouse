@@ -227,9 +227,9 @@ public:
     }
 };
 
-void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & columns)
+void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & columns, ConstStoragePtr storage)
 {
-    auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns, storage);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
     InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
@@ -662,7 +662,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
     }
 
-    replaceConstantExpressions(condition_ast, context, getColumns().getAllPhysical() /** TODO: sharding_key_column_name */);
+    replaceConstantExpressions(condition_ast, context, getColumns().getAll(), shared_from_this());
     const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
