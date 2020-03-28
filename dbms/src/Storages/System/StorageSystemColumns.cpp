@@ -103,7 +103,7 @@ protected:
 
                 try
                 {
-                    table_lock = storage->lockStructureForShare(false, query_id);
+                    table_lock = storage->lockStructureForShare(query_id);
                 }
                 catch (const Exception & e)
                 {

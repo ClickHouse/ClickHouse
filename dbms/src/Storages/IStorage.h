@@ -199,7 +199,7 @@ public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of
     /// the query. If will_add_new_data is true, this means that the query will add new data to the table
     /// (INSERT or a parts merge).
-    TableStructureReadLockHolder lockStructureForShare(bool will_add_new_data, const String & query_id);
+    TableStructureReadLockHolder lockStructureForShare(const String & query_id);
 
     /// Acquire this lock at the start of ALTER to lock out other ALTERs and make sure that only you
     /// can modify the table structure. It can later be upgraded to the exclusive lock.
@@ -473,11 +473,6 @@ private:
     /// (e.g. ALTER, DROP) are concurrently executing. But queries that only read table structure
     /// (e.g. SELECT, INSERT) can continue to execute.
     mutable RWLock alter_intention_lock = RWLockImpl::create();
-
-    /// It is taken for share for the entire INSERT query and the entire merge of the parts (for MergeTree).
-    /// ALTER COLUMN queries acquire an exclusive lock to ensure that no new parts with the old structure
-    /// are added to the table and thus the set of parts to modify doesn't change.
-    mutable RWLock new_data_structure_lock = RWLockImpl::create();
 
     /// Lock for the table column structure (names, types, etc.) and data path.
     /// It is taken in exclusive mode by queries that modify them (e.g. RENAME, ALTER and DROP)
