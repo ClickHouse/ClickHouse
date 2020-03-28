@@ -236,7 +236,7 @@ void replaceConstantExpressions(ASTPtr & node, const Context & context, const Na
     visitor.visit(node);
 }
 
-} // \anonymous
+}
 
 
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
