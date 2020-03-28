@@ -112,8 +112,9 @@ bool RegexpRowInputFormat::readRow(MutableColumns & columns, RowReadExtension & 
 
     size_t line_size = 0;
 
-    do {
-        char *pos = find_first_symbols<'\n', '\r'>(buf.position(), buf.buffer().end());
+    do
+    {
+        char * pos = find_first_symbols<'\n', '\r'>(buf.position(), buf.buffer().end());
         line_size += pos - buf.position();
         buf.position() = pos;
     } while (buf.position() == buf.buffer().end() && !buf.eof());
