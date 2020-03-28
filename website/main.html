@@ -30,7 +30,7 @@
 
 {% block content %}
 {% include "templates/docs/nav.html" %}
-<div class="container-fluid">
+<div class="container-fluid{% if direction == 'rtl' %} text-right{% endif %}" >
     <div class="row justify-content-end{% if not single_page %} justify-content-xl-center{% endif %}">
         {% include "templates/docs/sidebar.html" %}
         {% include "templates/docs/content.html" %}
