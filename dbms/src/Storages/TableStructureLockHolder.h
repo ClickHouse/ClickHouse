@@ -15,7 +15,7 @@ struct TableStructureWriteLockHolder
         *this = TableStructureWriteLockHolder();
     }
 
-    void releaseAllExpectAlterIntention()
+    void releaseAllExceptAlterIntention()
     {
         new_data_structure_lock.reset();
         structure_lock.reset();
