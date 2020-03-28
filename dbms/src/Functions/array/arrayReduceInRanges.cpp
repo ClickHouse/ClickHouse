@@ -328,15 +328,7 @@ void FunctionArrayReduceInRanges::executeImpl(Block & block, const ColumnNumbers
             size_t place_end = local_end / minimum_step;
 
             AggregateDataPtr place = arena->alignedAlloc(agg_func.sizeOfData(), agg_func.alignOfData());
-            try
-            {
-                agg_func.create(place);
-            }
-            catch (...)
-            {
-                agg_func.destroy(place);
-                throw;
-            }
+            agg_func.create(place);
 
             SCOPE_EXIT({
                 agg_func.destroy(place);
