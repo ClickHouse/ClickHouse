@@ -42,11 +42,13 @@ public:
 
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
+    std::optional<UInt64> totalRows() const override;
+
 private:
     /// The data itself. `list` - so that when inserted to the end, the existing iterators are not invalidated.
     BlocksList data;
 
-    std::mutex mutex;
+    mutable std::mutex mutex;
 
 protected:
     StorageMemory(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_);
