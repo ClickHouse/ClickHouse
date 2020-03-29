@@ -63,3 +63,10 @@ cluster() GROUP BY ORDER BY
 0
 1
 2
+LEFT JOIN
+0	0
+1	1
+RIGHT JOIN
+0	0
+1	1
+0	2
