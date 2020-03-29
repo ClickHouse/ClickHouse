@@ -51,6 +51,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"sampling_key", std::make_shared<DataTypeString>()},
         {"storage_policy", std::make_shared<DataTypeString>()},
         {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
     }));
 }
 
@@ -208,6 +209,10 @@ protected:
                             res_columns[res_index++]->insertDefault();
 
                         // total_rows
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // total_bytes
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
                     }
@@ -392,6 +397,16 @@ protected:
                     auto total_rows = table->totalRows();
                     if (total_rows)
                         res_columns[res_index++]->insert(*total_rows);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    assert(table != nullptr);
+                    auto total_bytes = table->totalBytes();
+                    if (total_bytes)
+                        res_columns[res_index++]->insert(*total_bytes);
                     else
                         res_columns[res_index++]->insertDefault();
                 }
