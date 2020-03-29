@@ -128,7 +128,7 @@
     color: #efefef;
 }
 
-.toc-left .nav {
+#toc .nav {
     flex-wrap: nowrap !important;
 }
 

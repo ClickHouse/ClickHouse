@@ -41,7 +41,7 @@ def process_buffer(buffer, new_value, item=None, is_header=False):
         if text.endswith(' ') and not translated_text.endswith(' '):
             translated_text = translated_text + ' '
 
-        title_case = is_header and translate.target_language == 'en' and text[0].isupper()
+        title_case = is_header and translate.default_target_language == 'en' and text[0].isupper()
         title_case_whitelist = {'a', 'an', 'the', 'and', 'or'}
         for token in translated_text.split(' '):
             if title_case and not token.isupper():
