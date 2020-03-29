@@ -88,8 +88,10 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
 
-     /// The structure of the subordinate table is not checked and does not change.
-     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    /// The structure of the subordinate table is not checked and does not change.
+    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+
+    std::optional<UInt64> totalRows() const override;
 
     ~StorageBuffer() override;
 
@@ -100,7 +102,7 @@ private:
     {
         time_t first_write_time = 0;
         Block data;
-        std::mutex mutex;
+        mutable std::mutex mutex;
     };
 
     /// There are `num_shards` of independent buffers.
