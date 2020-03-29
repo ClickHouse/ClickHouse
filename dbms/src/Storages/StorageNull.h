@@ -48,6 +48,10 @@ public:
     {
         return {0};
     }
+    std::optional<UInt64> totalBytes() const override
+    {
+        return {0};
+    }
 
 private:
 
