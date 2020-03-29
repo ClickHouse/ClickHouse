@@ -43,6 +43,7 @@ public:
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
     std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalBytes() const override;
 
 private:
     /// The data itself. `list` - so that when inserted to the end, the existing iterators are not invalidated.
