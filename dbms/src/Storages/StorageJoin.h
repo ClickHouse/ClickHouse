@@ -51,6 +51,7 @@ private:
     SizeLimits limits;
     ASTTableJoin::Kind kind;                    /// LEFT | INNER ...
     ASTTableJoin::Strictness strictness;        /// ANY | ALL
+    bool overwrite;
 
     std::shared_ptr<AnalyzedJoin> table_join;
     HashJoinPtr join;
