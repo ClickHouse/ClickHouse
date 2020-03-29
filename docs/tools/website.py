@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import os
 import shutil
@@ -89,7 +90,9 @@ def minify_website(args):
         command = f'cat {css_in} > {css_out}'
     logging.info(command)
     output = subprocess.check_output(command, shell=True)
-    logging.info(output)
+    logging.debug(output)
+    with open(css_out, 'rb') as f:
+        css_digest = hashlib.sha3_224(f.read()).hexdigest()[0:8]
 
     if args.minify:
         logging.info('Minifying website')
@@ -108,6 +111,7 @@ def minify_website(args):
                     content = f.read().decode('utf-8')
                 if filename.endswith('.html'):
                     content = htmlmin.minify(content, remove_empty_space=False)
+                    content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
                 elif filename.endswith('.css'):
                     content = cssmin.cssmin(content)
                 elif filename.endswith('.js'):
