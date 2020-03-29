@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -49,6 +50,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"primary_key", std::make_shared<DataTypeString>()},
         {"sampling_key", std::make_shared<DataTypeString>()},
         {"storage_policy", std::make_shared<DataTypeString>()},
+        {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
     }));
 }
 
@@ -202,6 +204,10 @@ protected:
                             res_columns[res_index++]->insertDefault();
 
                         // storage_policy
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // total_rows
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
                     }
@@ -376,6 +382,16 @@ protected:
                     auto policy = table->getStoragePolicy();
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    assert(table != nullptr);
+                    auto total_rows = table->totalRows();
+                    if (total_rows)
+                        res_columns[res_index++]->insert(*total_rows);
                     else
                         res_columns[res_index++]->insertDefault();
                 }
