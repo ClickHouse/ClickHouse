@@ -940,6 +940,10 @@ This table contains the following columns (the column type is shown in brackets)
       - [Distributed](table_engines/distributed.md#distributed)
 
 -   `total_rows` (Nullable(UInt64)) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `Null` (including underying `Buffer` table).
+-   `total_bytes` (Nullable(UInt64)) - Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `Null` (**does not** includes any underlying storage).
+
+      - If the table stores data on disk, returns used space on disk (i.e. compressed).
+      - If the table stores data in memory, returns approximated number of used bytes in memory.
 
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
