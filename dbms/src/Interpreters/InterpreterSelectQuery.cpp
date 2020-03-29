@@ -716,6 +716,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     const Settings & settings = context->getSettingsRef();
     auto & expressions = analysis_result;
     auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
+    bool first_stage_order_by_only = false;
 
     if (options.only_analyze)
     {
@@ -775,7 +776,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
             options.to_stage == QueryProcessingStage::WithMergeableState)
-            throw Exception("Distributed on Distributed is not supported", ErrorCodes::NOT_IMPLEMENTED);
+            first_stage_order_by_only = true;
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
@@ -899,7 +900,10 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executeExpression(pipeline, expressions.before_order_and_select);
                 executeDistinct(pipeline, true, expressions.selected_columns);
             }
+        }
 
+        if (expressions.first_stage || first_stage_order_by_only)
+        {
             /** For distributed query processing,
               *  if no GROUP, HAVING set,
               *  but there is an ORDER or LIMIT,
@@ -927,7 +931,10 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                         executePreLimit(pipeline);
                 }
             }
+        }
 
+        if (expressions.first_stage)
+        {
             // If there is no global subqueries, we can run subqueries only when receive them on server.
             if (!query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
                 executeSubqueriesInSetsAndJoins(pipeline, subqueries_for_sets);
