@@ -141,51 +141,67 @@ protected:
                         size_t src_index = 0;
                         size_t res_index = 0;
 
+                        // database
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // name
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.first);
 
+                        // engine
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
+                        // is_temporary
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(1u);
 
+                        // data_paths
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // metadata_path
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // metadata_modification_time
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // dependencies_database
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // dependencies_table
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // create_table_query
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // engine_full
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
+                        // partition_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // sorting_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // primary_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // sampling_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // storage_policy
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
                     }
