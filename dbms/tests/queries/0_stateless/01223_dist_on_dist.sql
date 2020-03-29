@@ -26,6 +26,11 @@ select * from cluster(test_cluster_two_shards, currentDatabase(), dist_01223) or
 select 'cluster() GROUP BY ORDER BY';
 select * from cluster(test_cluster_two_shards, currentDatabase(), dist_01223) group by key order by key;
 
+select 'LEFT JOIN';
+select toInt32(number) key, b.key from numbers(2) a left join (select distinct * from dist_01223) b using key order by b.key;
+select 'RIGHT JOIN';
+select toInt32(number) key, b.key from numbers(2) a right join (select distinct * from dist_01223) b using key order by b.key;
+
 drop table dist_01223;
 drop table dist_layer_01223;
 drop table data_01223;
