@@ -5,6 +5,7 @@ create table if not exists dist_01223 as data_01223 Engine=Distributed(test_clus
 select * from dist_01223;
 
 insert into data_01223 select * from numbers(3);
+
 select 'DISTINCT ORDER BY';
 select distinct * from dist_01223 order by key;
 select 'GROUP BY ORDER BY';
@@ -30,6 +31,20 @@ select 'LEFT JOIN';
 select toInt32(number) key, b.key from numbers(2) a left join (select distinct * from dist_01223) b using key order by b.key;
 select 'RIGHT JOIN';
 select toInt32(number) key, b.key from numbers(2) a right join (select distinct * from dist_01223) b using key order by b.key;
+
+-- more data for GROUP BY
+insert into data_01223 select number%3 from numbers(30);
+
+-- group_by_two_level_threshold
+select 'GROUP BY ORDER BY group_by_two_level_threshold';
+select * from dist_01223 group by key order by key settings
+group_by_two_level_threshold=1,
+group_by_two_level_threshold_bytes=1;
+
+-- distributed_aggregation_memory_efficient
+select 'GROUP BY ORDER BY distributed_aggregation_memory_efficient';
+select * from dist_01223 group by key order by key settings
+distributed_aggregation_memory_efficient=1;
 
 drop table dist_01223;
 drop table dist_layer_01223;
