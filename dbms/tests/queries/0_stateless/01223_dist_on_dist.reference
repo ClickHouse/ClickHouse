@@ -1,0 +1,65 @@
+DISTINCT ORDER BY
+0
+1
+2
+GROUP BY ORDER BY
+0
+1
+2
+GROUP BY ORDER BY LIMIT
+0
+HAVING
+1
+1
+1
+1
+GROUP BY HAVING
+1
+ORDER BY
+0
+0
+0
+0
+1
+1
+1
+1
+2
+2
+2
+2
+ORDER BY LIMIT
+0
+ORDER BY LIMIT BY
+0
+1
+2
+cluster() ORDER BY
+0
+0
+0
+0
+0
+0
+0
+0
+1
+1
+1
+1
+1
+1
+1
+1
+2
+2
+2
+2
+2
+2
+2
+2
+cluster() GROUP BY ORDER BY
+0
+1
+2
