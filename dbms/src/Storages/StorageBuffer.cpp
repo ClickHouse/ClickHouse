@@ -744,6 +744,17 @@ std::optional<UInt64> StorageBuffer::totalRows() const
     return rows + *underlying_rows;
 }
 
+std::optional<UInt64> StorageBuffer::totalBytes() const
+{
+    UInt64 bytes = 0;
+    for (auto & buffer : buffers)
+    {
+        std::lock_guard lock(buffer.mutex);
+        bytes += buffer.data.bytes();
+    }
+    return bytes;
+}
+
 void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
