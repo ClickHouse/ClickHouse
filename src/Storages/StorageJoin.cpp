@@ -39,7 +39,7 @@ StorageJoin::StorageJoin(
     ASTTableJoin::Strictness strictness_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    bool overwrite,
+    bool overwrite_,
     const Context & context_)
     : StorageSetOrJoinBase{relative_path_, database_name_, table_name_, columns_, constraints_, context_}
     , key_names(key_names_)
@@ -47,6 +47,7 @@ StorageJoin::StorageJoin(
     , limits(limits_)
     , kind(kind_)
     , strictness(strictness_)
+    , overwrite(overwrite_)
 {
     for (const auto & key : key_names)
         if (!getColumns().hasPhysical(key))
@@ -65,7 +66,7 @@ void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteL
     Poco::File(path + "tmp/").createDirectories();
 
     increment = 0;
-    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns());
+    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns(), overwrite);
 }
 
 
