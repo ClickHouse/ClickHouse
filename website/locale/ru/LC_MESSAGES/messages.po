@@ -86,7 +86,7 @@ msgstr "Помогите документации ClickHouse, отредакти
 
 #: templates/docs/content.html:31
 msgid "Built from"
-msgstr "Собранный из"
+msgstr "Собрано из"
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
@@ -158,7 +158,7 @@ msgstr "Рабочее Пространство ClickHouse Slack"
 
 #: templates/index/community.html:82
 msgid "Multipurpose public hangout"
-msgstr "Универсальная общественная тусовка"
+msgstr "Универсальное публичное сообщество"
 
 #: templates/index/community.html:101
 msgid "Ask any questions"
@@ -182,11 +182,11 @@ msgstr "Обсуждения по электронной почте"
 
 #: templates/index/community.html:142
 msgid "Like ClickHouse?"
-msgstr "Как В Клик-Хаусе?"
+msgstr "Нравится ClickHouse?"
 
 #: templates/index/community.html:142
 msgid "Help to spread the word about it via"
-msgstr "Помогите распространить информацию об этом через"
+msgstr "Помогите распространить информацию о нём через"
 
 #: templates/index/community.html:143
 msgid "and"
