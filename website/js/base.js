@@ -17,6 +17,7 @@ $(document).ready(function () {
         var navbar_toggle = $('#navbar-toggle');
 
         navbar_toggle.collapse('hide');
+        $('.algolia-autocomplete .ds-dropdown-menu').hide();
 
         if (target_id && target_id.startsWith('logo-')) {
             selector = '#';
