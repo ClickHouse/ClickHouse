@@ -161,6 +161,3 @@ a.btn-outline-yellow {
 .dots-cc {
     background: #fff url('/images/dots.svg') repeat-y 50% -17.5%;
 }
-
-{% include "css/docs.css" %}
-{% include "css/highlight.css" %}

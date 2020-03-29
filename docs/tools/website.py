@@ -1,6 +1,7 @@
 import logging
 import os
 import shutil
+import subprocess
 
 import cssmin
 import htmlmin
@@ -47,6 +48,7 @@ def build_website(args):
         ignore=shutil.ignore_patterns(
             '*.md',
             '*.sh',
+            '*.css',
             'build',
             'docs',
             'public',
@@ -62,7 +64,7 @@ def build_website(args):
                 continue
 
             path = os.path.join(root, filename)
-            if not (filename.endswith('.html') or filename.endswith('.css') or filename.endswith('.js')):
+            if not (filename.endswith('.html') or filename.endswith('.js')):
                 continue
             logging.info('Processing %s', path)
             with open(path, 'rb') as f:
@@ -76,6 +78,19 @@ def build_website(args):
 
 
 def minify_website(args):
+    css_in = f"'{args.website_dir}/css/bootstrap.css' " \
+        f"'{args.website_dir}/css/base.css' '{args.website_dir}/css/docs.css' " \
+        f"'{args.website_dir}/css/highlight.css'"
+    css_out = f'{args.output_dir}/css/base.css'
+    if args.minify:
+        command = f"purifycss -w '*algolia*' --min {css_in} '{args.output_dir}/*.html' " \
+            f"'{args.output_dir}/docs/en/**/*.html' '{args.website_dir}/js/**/*.js' > {css_out}"
+    else:
+        command = f'cat {css_in} > {css_out}'
+    logging.info(command)
+    output = subprocess.check_output(command, shell=True)
+    logging.info(output)
+
     if args.minify:
         logging.info('Minifying website')
         for root, _, filenames in os.walk(args.output_dir):
