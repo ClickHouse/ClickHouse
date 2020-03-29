@@ -22,7 +22,7 @@ WHERE table = 'check_system_tables'
 FORMAT PrettyCompactNoEscapes;
 
 INSERT INTO check_system_tables VALUES (1, 1, 1);
-SELECT total_rows FROM system.tables WHERE name = 'check_system_tables';
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 
 DROP TABLE IF EXISTS check_system_tables;
 
@@ -69,23 +69,23 @@ FORMAT PrettyCompactNoEscapes;
 
 DROP TABLE IF EXISTS check_system_tables;
 
-SELECT 'Check total_rows for TinyLog';
+SELECT 'Check total_bytes/total_rows for TinyLog';
 CREATE TABLE check_system_tables (key UInt8) ENGINE = TinyLog();
-SELECT total_rows FROM system.tables WHERE name = 'check_system_tables';
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 INSERT INTO check_system_tables VALUES (1);
-SELECT total_rows FROM system.tables WHERE name = 'check_system_tables';
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 DROP TABLE check_system_tables;
 
-SELECT 'Check total_rows for Memory';
-CREATE TABLE check_system_tables (key UInt8) ENGINE = Memory();
-SELECT total_rows FROM system.tables WHERE name = 'check_system_tables';
+SELECT 'Check total_bytes/total_rows for Memory';
+CREATE TABLE check_system_tables (key UInt16) ENGINE = Memory();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 INSERT INTO check_system_tables VALUES (1);
-SELECT total_rows FROM system.tables WHERE name = 'check_system_tables';
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 DROP TABLE check_system_tables;
 
-SELECT 'Check total_rows for Buffer';
-CREATE TABLE check_system_tables_null (key UInt8) ENGINE = Null();
-CREATE TABLE check_system_tables (key UInt8) ENGINE = Buffer(
+SELECT 'Check total_bytes/total_rows for Buffer';
+CREATE TABLE check_system_tables_null (key UInt16) ENGINE = Null();
+CREATE TABLE check_system_tables (key UInt16) ENGINE = Buffer(
     currentDatabase(),
     check_system_tables_null,
     2,
@@ -93,8 +93,8 @@ CREATE TABLE check_system_tables (key UInt8) ENGINE = Buffer(
     100, 100, /* min_rows /max_rows */
     0,   1e6  /* min_bytes/max_bytes */
 );
-SELECT total_rows FROM system.tables WHERE name = 'check_system_tables';
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 INSERT INTO check_system_tables SELECT * FROM numbers_mt(50);
-SELECT total_rows FROM system.tables WHERE name = 'check_system_tables';
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 DROP TABLE check_system_tables;
 DROP TABLE check_system_tables_null;
