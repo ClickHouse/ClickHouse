@@ -4,6 +4,7 @@
 #include <Parsers/parseUserName.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ExpressionListParsers.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/ParserExtendedRoleSet.h>
@@ -168,34 +169,38 @@ namespace
                 else if (ParserKeyword{"NAME REGEXP"}.ignore(pos, expected))
                 {
                     ASTPtr ast;
-                    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
                         return false;
 
-                    new_hosts.addNameRegexp(ast->as<const ASTLiteral &>().value.safeGet<String>());
+                    for (const auto & name_regexp_ast : ast->children)
+                        new_hosts.addNameRegexp(name_regexp_ast->as<const ASTLiteral &>().value.safeGet<String>());
                 }
                 else if (ParserKeyword{"NAME"}.ignore(pos, expected))
                 {
                     ASTPtr ast;
-                    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
                         return false;
 
-                    new_hosts.addName(ast->as<const ASTLiteral &>().value.safeGet<String>());
+                    for (const auto & name_ast : ast->children)
+                        new_hosts.addName(name_ast->as<const ASTLiteral &>().value.safeGet<String>());
                 }
                 else if (ParserKeyword{"IP"}.ignore(pos, expected))
                 {
                     ASTPtr ast;
-                    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
                         return false;
 
-                    new_hosts.addSubnet(ast->as<const ASTLiteral &>().value.safeGet<String>());
+                    for (const auto & subnet_ast : ast->children)
+                        new_hosts.addSubnet(subnet_ast->as<const ASTLiteral &>().value.safeGet<String>());
                 }
                 else if (ParserKeyword{"LIKE"}.ignore(pos, expected))
                 {
                     ASTPtr ast;
-                    if (!ParserStringLiteral{}.parse(pos, ast, expected))
+                    if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
                         return false;
 
-                    new_hosts.addLikePattern(ast->as<const ASTLiteral &>().value.safeGet<String>());
+                    for (const auto & pattern_ast : ast->children)
+                        new_hosts.addLikePattern(pattern_ast->as<const ASTLiteral &>().value.safeGet<String>());
                 }
                 else
                     return false;
