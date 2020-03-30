@@ -4,6 +4,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 ReplacingSortedTransform::ReplacingSortedTransform(
     size_t num_inputs, const Block & header,
     SortDescription description_, const String & version_column,
@@ -76,6 +81,11 @@ void ReplacingSortedTransform::insertRow()
 
     merged_data.insertRow(*selected_row.all_columns, selected_row.row_num, selected_row.owned_chunk->getNumRows());
     selected_row.clear();
+}
+
+void ReplacingSortedTransform::work()
+{
+    merge();
 }
 
 void ReplacingSortedTransform::merge()

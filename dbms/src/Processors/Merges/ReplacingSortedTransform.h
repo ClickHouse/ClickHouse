@@ -23,13 +23,14 @@ public:
         bool use_average_block_sizes = false);
 
     String getName() const override { return "ReplacingSorted"; }
+    void work() override;
 
 protected:
     void initializeInputs() override;
     void consume(Chunk chunk, size_t input_number) override;
 
 private:
-    Logger * log = &Logger::get("ReplacingSortedBlockInputStream");
+    Logger * log = &Logger::get("ReplacingSortedTransform");
 
     SortDescription description;
     ssize_t version_column_number = -1;
