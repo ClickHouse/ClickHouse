@@ -10,11 +10,10 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunctionImpl.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <common/StringRef.h>
+#include <vector>
 
-#include <optional>
 
 namespace DB
 {
