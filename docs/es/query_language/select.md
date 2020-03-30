@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # SELECCIONAR consultas Sintaxis {#select-queries-syntax}
 
 `SELECT` realiza la recuperación de datos.

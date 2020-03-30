@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Utilidad ClickHouse {#clickhouse-utility}
 
 -   [Sistema abierto.](clickhouse-local.md) — Permite ejecutar consultas SQL en datos sin detener el servidor ClickHouse, similar a cómo `awk` hace esto.

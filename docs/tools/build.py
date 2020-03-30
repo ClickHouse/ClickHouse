@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+
 from __future__ import unicode_literals
 
 import argparse
@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 
+import jinja2
 import livereload
 import markdown.util
 
@@ -53,9 +54,10 @@ def build_for_lang(lang, args):
     try:
         theme_cfg = {
             'name': None,
-            'custom_dir': os.path.join(os.path.dirname(__file__), args.theme_dir),
+            'custom_dir': os.path.join(os.path.dirname(__file__), '..', args.theme_dir),
             'language': lang,
             'direction': 'rtl' if lang == 'fa' else 'ltr',
+            # TODO: cleanup
             'feature': {
                 'tabs': False
             },
@@ -66,8 +68,6 @@ def build_for_lang(lang, args):
             'font': False,
             'logo': 'images/logo.svg',
             'favicon': 'assets/images/favicon.ico',
-            'include_search_page': False,
-            'search_index_only': False,
             'static_templates': ['404.html'],
             'extra': {
                 'now': int(time.mktime(datetime.datetime.now().timetuple()))  # TODO better way to avoid caching
@@ -83,21 +83,48 @@ def build_for_lang(lang, args):
             'fa': 'مستندات %sClickHouse'
         }
 
+        languages = {
+            'en': 'English',
+            'zh': '中文',
+            'es': 'Español',
+            'ru': 'Русский',
+            'ja': '日本語',
+            'fa': 'فارسی'
+        }
+
+        assert len(site_names) == len(languages)
+
         if args.version_prefix:
             site_dir = os.path.join(args.docs_output_dir, args.version_prefix, lang)
         else:
             site_dir = os.path.join(args.docs_output_dir, lang)
 
-        plugins = ['search']
-        if not args.no_docs_macros:
-            plugins.append('macros')
+        markdown_extensions = [
+            'mdx_clickhouse',
+            'admonition',
+            'attr_list',
+            'codehilite',
+            'nl2br',
+            'sane_lists',
+            'pymdownx.magiclink',
+            'pymdownx.superfences',
+            'extra',
+            {
+                'toc': {
+                    'permalink': True,
+                    'slugify': mdx_clickhouse.slugify
+                }
+            }
+        ]
+
+        plugins = ['macros']
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
-        cfg = config.load_config(
+        raw_config = dict(
             config_file=config_path,
             site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
-            site_url=f'https://clickhouse.yandex/docs/{lang}/',
+            site_url=f'https://clickhouse.tech/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=site_dir,
             strict=not args.version_prefix,
@@ -108,39 +135,35 @@ def build_for_lang(lang, args):
             repo_url='https://github.com/ClickHouse/ClickHouse/',
             edit_uri=f'edit/master/docs/{lang}',
             extra_css=[f'assets/stylesheets/custom.css?{args.rev_short}'],
-            markdown_extensions=[
-                'mdx_clickhouse',
-                'admonition',
-                'attr_list',
-                'codehilite',
-                'nl2br',
-                'sane_lists',
-                'pymdownx.magiclink',
-                'pymdownx.superfences',
-                'extra',
-                {
-                    'toc': {
-                        'permalink': True,
-                        'slugify': mdx_clickhouse.slugify
-                    }
-                }
-            ],
+            markdown_extensions=markdown_extensions,
             plugins=plugins,
             extra={
                 'stable_releases': args.stable_releases,
                 'version_prefix': args.version_prefix,
+                'single_page': False,
                 'rev':       args.rev,
                 'rev_short': args.rev_short,
                 'rev_url':   args.rev_url,
-                'events':    args.events
+                'events':    args.events,
+                'languages': languages
             }
         )
 
-        mkdocs_build.build(cfg)
+        cfg = config.load_config(**raw_config)
+
+        try:
+            mkdocs_build.build(cfg)
+        except jinja2.exceptions.TemplateError:
+            if not args.version_prefix:
+                raise
+            mdx_clickhouse.PatchedMacrosPlugin.disabled = True
+            mkdocs_build.build(cfg)
 
         if not args.skip_single_page:
             build_single_page_version(lang, args, cfg)
-        
+
+        mdx_clickhouse.PatchedMacrosPlugin.disabled = False
+
         logging.info(f'Finished building {lang} docs')
 
     except exceptions.ConfigurationError as e:
@@ -150,6 +173,8 @@ def build_for_lang(lang, args):
 def build_single_page_version(lang, args, cfg):
     logging.info(f'Building single page version for {lang}')
     os.environ['SINGLE_PAGE'] = '1'
+    extra = cfg.data['extra']
+    extra['single_page'] = True
 
     with util.autoremoved_file(os.path.join(args.docs_dir, lang, 'single.md')) as single_md:
         concatenate(lang, args.docs_dir, single_md)
@@ -167,9 +192,7 @@ def build_single_page_version(lang, args, cfg):
                 cfg.load_dict({
                     'docs_dir': docs_temp_lang,
                     'site_dir': site_temp,
-                    'extra': {
-                        'single_page': True
-                    },
+                    'extra': extra,
                     'nav': [
                         {cfg.data.get('site_name'): 'single.md'}
                     ]
@@ -199,12 +222,11 @@ def build_single_page_version(lang, args, cfg):
 
                 if not args.version_prefix:  # maybe enable in future
                     with util.temp_dir() as test_dir:
+                        extra['single_page'] = False
                         cfg.load_dict({
                             'docs_dir': docs_temp_lang,
                             'site_dir': test_dir,
-                            'extra': {
-                                'single_page': False
-                            },
+                            'extra': extra,
                             'nav': [
                                 {cfg.data.get('site_name'): 'single.md'}
                             ]
@@ -218,6 +240,11 @@ def build_single_page_version(lang, args, cfg):
 
 
 def write_redirect_html(out_path, to_url):
+    out_dir = os.path.dirname(out_path)
+    try:
+        os.makedirs(out_dir)
+    except OSError:
+        pass
     with open(out_path, 'w') as f:
         f.write(f'''<!DOCTYPE HTML>
 <html lang="en-US">
@@ -238,11 +265,6 @@ def write_redirect_html(out_path, to_url):
 def build_redirect_html(args, from_path, to_path):
     for lang in args.lang.split(','):
         out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
-        out_dir = os.path.dirname(out_path)
-        try:
-            os.makedirs(out_dir)
-        except OSError:
-            pass
         version_prefix = args.version_prefix + '/' if args.version_prefix else '/'
         target_path = to_path.replace('.md', '/')
         to_url = f'/docs{version_prefix}{lang}/{target_path}'
@@ -251,19 +273,10 @@ def build_redirect_html(args, from_path, to_path):
 
 
 def build_redirects(args):
-    lang_re_fragment = args.lang.replace(',', '|')
-    rewrites = []
-
     with open(os.path.join(args.docs_dir, 'redirects.txt'), 'r') as f:
         for line in f:
             from_path, to_path = line.split(' ', 1)
             build_redirect_html(args, from_path, to_path)
-            from_path = '^/docs/(' + lang_re_fragment + ')/' + from_path.replace('.md', '/?') + '$'
-            to_path = '/docs/$1/' + to_path.replace('.md', '/')
-            rewrites.append(' '.join(['rewrite', from_path, to_path, 'permanent;']))
-
-    with open(os.path.join(args.docs_output_dir, 'redirects.conf'), 'w') as f:
-        f.write('\n'.join(rewrites))
 
 
 def build_docs(args):
@@ -304,14 +317,15 @@ def build(args):
 
 if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
-
+    website_dir = os.path.join('..', 'website')
     arg_parser = argparse.ArgumentParser()
     arg_parser.add_argument('--lang', default='en,es,ru,zh,ja,fa')
     arg_parser.add_argument('--docs-dir', default='.')
-    arg_parser.add_argument('--theme-dir', default='mkdocs-material-theme')
-    arg_parser.add_argument('--website-dir', default=os.path.join('..', 'website'))
+    arg_parser.add_argument('--theme-dir', default=website_dir)
+    arg_parser.add_argument('--website-dir', default=website_dir)
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')
+    arg_parser.add_argument('--stable-releases-limit', type=int, default='10')
     arg_parser.add_argument('--version-prefix', type=str, default='')
     arg_parser.add_argument('--is-stable-release', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')
@@ -336,7 +350,7 @@ if __name__ == '__main__':
     args.docs_output_dir = os.path.join(os.path.abspath(args.output_dir), 'docs')
 
     from github import choose_latest_releases, get_events
-    args.stable_releases = choose_latest_releases() if args.enable_stable_releases else []
+    args.stable_releases = choose_latest_releases(args) if args.enable_stable_releases else []
     args.rev = subprocess.check_output('git rev-parse HEAD', shell=True).decode('utf-8').strip()
     args.rev_short = subprocess.check_output('git rev-parse --short HEAD', shell=True).decode('utf-8').strip()
     args.rev_url = f'https://github.com/ClickHouse/ClickHouse/commit/{args.rev}'
@@ -350,10 +364,11 @@ if __name__ == '__main__':
         new_args = sys.executable + ' ' + ' '.join(new_args)
 
         server = livereload.Server()
-        server.watch(args.website_dir + '**/*', livereload.shell(new_args, cwd='tools', shell=True))
         server.watch(args.docs_dir + '**/*', livereload.shell(new_args, cwd='tools', shell=True))
+        server.watch(args.website_dir + '**/*', livereload.shell(new_args, cwd='tools', shell=True))
         server.serve(
             root=args.output_dir,
+            host='0.0.0.0',
             port=args.livereload
         )
         sys.exit(0)

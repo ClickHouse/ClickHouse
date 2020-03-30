@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Descripción del producto {#float32-float64}
 
 [Números de punto flotante](https://en.wikipedia.org/wiki/IEEE_754).

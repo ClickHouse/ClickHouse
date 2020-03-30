@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64 {#uint8-uint16-uint32-uint64-int8-int16-int32-int64}
 
 Enteros de longitud fija, con o sin signo.

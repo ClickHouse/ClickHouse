@@ -406,8 +406,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
 
     loadColumns(require_columns_checksums);
     loadChecksums(require_columns_checksums);
-    calculateColumnsSizesOnDisk();
     loadIndexGranularity();
+    calculateColumnsSizesOnDisk();
     loadIndex();     /// Must be called after loadIndexGranularity as it uses the value of `index_granularity`
     loadRowsCount(); /// Must be called after loadIndex() as it uses the value of `index_granularity`.
     loadPartitionAndMinMaxIndex();

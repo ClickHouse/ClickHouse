@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Un tiempo {#ontime}
 
 Este conjunto de datos se puede obtener de dos maneras:

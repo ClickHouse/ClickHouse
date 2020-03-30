@@ -123,7 +123,7 @@ public:
     void startup() override;
     void shutdown() override;
 
-    void refresh(const Context & context);
+    void refresh();
 
     Pipes read(
         const Names & column_names,

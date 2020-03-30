@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Cadena {#string}
 
 Cuerdas de una longitud arbitraria. La longitud no está limitada. El valor puede contener un conjunto arbitrario de bytes, incluidos los bytes nulos.

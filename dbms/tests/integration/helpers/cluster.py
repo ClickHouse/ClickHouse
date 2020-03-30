@@ -10,6 +10,7 @@ import socket
 import subprocess
 import time
 import urllib
+import httplib
 import xml.dom.minidom
 import logging
 import docker
@@ -474,7 +475,7 @@ class ClickHouseCluster:
                 instance.client = Client(instance.ip_address, command=self.client_bin_path)
 
             self.is_up = True
-        
+
         except BaseException, e:
             print "Failed to start cluster: "
             print str(e)
@@ -506,6 +507,13 @@ class ClickHouseCluster:
         if sanitizer_assert_instance is not None:
             raise Exception("Sanitizer assert found in {} for instance {}".format(self.docker_logs_path, sanitizer_assert_instance))
 
+    def pause_container(self, instance_name):
+        subprocess_check_call(self.base_cmd + ['pause', instance_name])
+    #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGSTOP', instance_name])
+
+    def unpause_container(self, instance_name):
+        subprocess_check_call(self.base_cmd + ['unpause', instance_name])
+    #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGCONT', instance_name])
 
     def open_bash_shell(self, instance_name):
         os.system(' '.join(self.base_cmd + ['exec', instance_name, '/bin/bash']))
@@ -654,7 +662,7 @@ class ClickHouseInstance:
         return self.client.query_and_get_answer_with_error(sql, stdin, timeout, settings, user, password)
 
     # Connects to the instance via HTTP interface, sends a query and returns the answer
-    def http_query(self, sql, data=None, params=None, user=None, password=None):
+    def http_query(self, sql, data=None, params=None, user=None, password=None, expect_fail_and_get_error=False):
         if params is None:
             params = {}
         else:
@@ -670,7 +678,23 @@ class ClickHouseInstance:
 
         url = "http://" + auth + self.ip_address + ":8123/?" + urllib.urlencode(params)
 
-        return urllib.urlopen(url, data).read()
+        open_result = urllib.urlopen(url, data)
+
+        def http_code_and_message():
+            return str(open_result.getcode()) + " " + httplib.responses[open_result.getcode()] + ": " + open_result.read()
+            
+        if expect_fail_and_get_error:
+            if open_result.getcode() == 200:
+                raise Exception("ClickHouse HTTP server is expected to fail, but succeeded: " + open_result.read())
+            return http_code_and_message()
+        else:
+            if open_result.getcode() != 200:
+                raise Exception("ClickHouse HTTP server returned " + http_code_and_message())
+            return open_result.read()
+
+    # Connects to the instance via HTTP interface, sends a query, expects an error and return the error message
+    def http_query_and_get_error(self, sql, data=None, params=None, user=None, password=None):
+        return self.http_query(sql=sql, data=data, params=params, user=user, password=password, expect_fail_and_get_error=True)
 
     def kill_clickhouse(self, stop_start_wait_sec=5):
         pid = self.get_process_pid("clickhouse")

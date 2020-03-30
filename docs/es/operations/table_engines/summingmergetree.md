@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # SummingMergeTree {#summingmergetree}
 
 El motor hereda de [Método de codificación de datos:](mergetree.md#table_engines-mergetree). La diferencia es que al fusionar partes de datos para `SummingMergeTree` ClickHouse reemplaza todas las filas con la misma clave primaria (o más exactamente, con la misma [clave de clasificación](mergetree.md)) con una fila que contiene valores resumidos para las columnas con el tipo de datos numérico. Si la clave de ordenación está compuesta de manera que un solo valor de clave corresponde a un gran número de filas, esto reduce significativamente el volumen de almacenamiento y acelera la selección de datos.

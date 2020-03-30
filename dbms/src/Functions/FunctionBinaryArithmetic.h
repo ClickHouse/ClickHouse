@@ -833,6 +833,19 @@ public:
                         type_res = std::make_shared<LeftDataType>(left.getPrecision(), left.getScale());
                     else if constexpr (IsDataTypeDecimal<RightDataType>)
                         type_res = std::make_shared<RightDataType>(right.getPrecision(), right.getScale());
+                    else if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime>)
+                    {
+                        // Special case for DateTime: binary OPS should reuse timezone
+                        // of DateTime argument as timezeone of result type.
+                        // NOTE: binary plus/minus are not allowed on DateTime64, and we are not handling it here.
+
+                        const TimezoneMixin * tz = nullptr;
+                        if constexpr (std::is_same_v<RightDataType, DataTypeDateTime>)
+                                tz = &right;
+                        if constexpr (std::is_same_v<LeftDataType, DataTypeDateTime>)
+                                tz = &left;
+                        type_res = std::make_shared<ResultDataType>(*tz);
+                    }
                     else
                         type_res = std::make_shared<ResultDataType>();
                     return true;

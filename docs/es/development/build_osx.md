@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Cómo crear ClickHouse en Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
 Build debería funcionar en Mac OS X 10.15 (Catalina)

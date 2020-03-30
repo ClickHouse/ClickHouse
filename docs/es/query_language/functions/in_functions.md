@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para implementar el operador IN {#functions-for-implementing-the-in-operator}
 
 ## Información de uso {#in-functions}
