@@ -18,8 +18,8 @@ ORDER BY id;
 
 INSERT INTO database_for_dict.table_for_dict VALUES (1, 100, -100, 'clickhouse'), (2, 3, 4, 'database'), (5, 6, 7, 'columns'), (10, 9, 8, '');
 INSERT INTO database_for_dict.table_for_dict SELECT number, 0, -1, 'a' FROM system.numbers WHERE number NOT IN (1, 2, 5, 10) LIMIT 370;
-INSERT INTO database_for_dict.table_for_dict SELECT number, 0, -1, 'b' FROM system.numbers LIMIT 370, 370;
-INSERT INTO database_for_dict.table_for_dict SELECT number, 0, -1, 'c' FROM system.numbers LIMIT 700, 370;
+INSERT INTO database_for_dict.table_for_dict SELECT number, 0, -1, 'b' FROM system.numbers WHERE number NOT IN (1, 2, 5, 10) LIMIT 370, 370;
+INSERT INTO database_for_dict.table_for_dict SELECT number, 0, -1, 'c' FROM system.numbers WHERE number NOT IN (1, 2, 5, 10) LIMIT 700, 370;
 
 DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
 
@@ -55,11 +55,11 @@ CREATE TABLE database_for_dict.keys_table
 ENGINE = StripeLog();
 
 INSERT INTO database_for_dict.keys_table VALUES (1);
-INSERT INTO database_for_dict.keys_table SELECT intHash64(number) FROM system.numbers LIMIT 370;
+INSERT INTO database_for_dict.keys_table SELECT 11 + intHash64(number) % 1200 FROM system.numbers LIMIT 370;
 INSERT INTO database_for_dict.keys_table VALUES (2);
-INSERT INTO database_for_dict.keys_table SELECT intHash64(number) FROM system.numbers LIMIT 370, 370;
+INSERT INTO database_for_dict.keys_table SELECT 11 + intHash64(number) % 1200 FROM system.numbers LIMIT 370, 370;
 INSERT INTO database_for_dict.keys_table VALUES (5);
-INSERT INTO database_for_dict.keys_table SELECT intHash64(number) FROM system.numbers LIMIT 700, 370;
+INSERT INTO database_for_dict.keys_table SELECT 11 + intHash64(number) % 1200 FROM system.numbers LIMIT 700, 370;
 INSERT INTO database_for_dict.keys_table VALUES (10);
 
 DROP DICTIONARY IF EXISTS database_for_dict.ssd_dict;
@@ -99,8 +99,8 @@ SELECT 'VALUES FROM DISK AND RAM BUFFER';
 SELECT sum(dictGetUInt64('database_for_dict.ssd_dict', 'a', toUInt64(id))) FROM database_for_dict.keys_table;
 
 SELECT 'HAS';
--- 1 2 5 10
-SELECT id FROM database_for_dict.keys_table WHERE dictHas('database_for_dict.ssd_dict', toUInt64(id)) ORDER BY id;
+-- 1006
+SELECT count() FROM database_for_dict.keys_table WHERE dictHas('database_for_dict.ssd_dict', toUInt64(id));
 
 SELECT 'VALUES NOT FROM TABLE';
 -- 0 -1 none
