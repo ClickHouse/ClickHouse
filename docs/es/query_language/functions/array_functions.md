@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para trabajar con matrices {#functions-for-working-with-arrays}
 
 ## vaciar {#function-empty}

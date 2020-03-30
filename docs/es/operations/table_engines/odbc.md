@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # ODBC {#table-engine-odbc}
 
 Permite que ClickHouse se conecte a bases de datos externas a través de [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).

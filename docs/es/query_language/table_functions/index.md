@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones de tabla {#table-functions}
 
 Las funciones de tabla son métodos para construir tablas.

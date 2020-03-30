@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para trabajar con diccionarios externos {#ext_dict_functions}
 
 Para obtener información sobre cómo conectar y configurar diccionarios externos, consulte [Diccionarios externos](../dicts/external_dicts.md).

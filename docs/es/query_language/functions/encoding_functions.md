@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones de codificación {#encoding-functions}
 
 ## char {#char}

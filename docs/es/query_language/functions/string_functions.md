@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para trabajar con cadenas {#functions-for-working-with-strings}
 
 ## Vaciar {#empty}

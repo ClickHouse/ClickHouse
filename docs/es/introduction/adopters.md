@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Adoptadores de ClickHouse {#clickhouse-adopters}
 
 !!! warning "Descargo"

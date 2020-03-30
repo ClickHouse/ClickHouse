@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Diccionarios externos {#dicts-external-dicts}
 
 Puede agregar sus propios diccionarios de varias fuentes de datos. El origen de datos de un diccionario puede ser un archivo ejecutable o de texto local, un recurso HTTP u otro DBMS. Para obtener más información, consulte “[Fuentes para diccionarios externos](external_dicts_dict_sources.md)”.

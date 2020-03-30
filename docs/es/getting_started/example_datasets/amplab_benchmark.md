@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Referencia de Big Data de AMPLab {#amplab-big-data-benchmark}
 
 Ver https://amplab.cs.berkeley.edu/benchmark/

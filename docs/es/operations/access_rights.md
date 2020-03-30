@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Derechos de acceso {#access-rights}
 
 Los usuarios y los derechos de acceso se configuran en la configuración del usuario. Esto suele ser `users.xml`.
