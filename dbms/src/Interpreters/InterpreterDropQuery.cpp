@@ -75,10 +75,7 @@ BlockIO InterpreterDropQuery::executeToTable(
 
     auto table_id = context.resolveStorageID(table_id_, Context::ResolveOrdinary);
 
-    std::unique_ptr<DDLGuard> ddl_guard;
-    if (auto db = DatabaseCatalog::instance().tryGetDatabase(table_id.database_name))   //FIXME
-        if (db->getEngineName() != "Atomic")
-            ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
+    auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
     auto [database, table] = tryGetDatabaseAndTable(table_id.database_name, table_id.table_name, query.if_exists);
 
@@ -115,12 +112,11 @@ BlockIO InterpreterDropQuery::executeToTable(
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->checkTableCanBeDropped();
 
+            table->shutdown();
+
             TableStructureWriteLockHolder table_lock;
             if (database->getEngineName() != "Atomic")
-            {
-                table->shutdown();
                 table_lock = table->lockExclusively(context.getCurrentQueryId());
-            }
 
             database->dropTable(context, table_id.table_name, query.no_delay);
         }

@@ -539,26 +539,13 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     String current_database = context.getCurrentDatabase();
 
-    String metadata_path_tmp;
-    bool created_tmp = false;
-    SCOPE_EXIT({ if (created_tmp) Poco::File(metadata_path_tmp).remove(); });
-
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
         auto database_name = create.database.empty() ? current_database : create.database;
         auto database = DatabaseCatalog::instance().getDatabase(database_name);
-
-        //TODO do we really need it? refactor it if we do
-        if (database->getEngineName() == "Atomic")
-        {
-            metadata_path_tmp = database->getObjectMetadataPath(create.table) + ".tmp";
-            if (!Poco::File(metadata_path_tmp).createFile())
-                throw Exception("Cannot attach table because of concurrent query.", ErrorCodes::TABLE_ALREADY_EXISTS);
-            created_tmp = true;
-        }
-
         bool if_not_exists = create.if_not_exists;
+
         // Table SQL definition is available even if the table is detached
         auto query = database->getCreateTableQuery(context, create.table);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
@@ -622,8 +609,7 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
           */
-        if (database->getEngineName() != "Atomic")
-            guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
+        guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
         if (database->isTableExist(context, table_name))

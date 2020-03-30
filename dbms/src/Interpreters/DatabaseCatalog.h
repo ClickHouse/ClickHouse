@@ -185,7 +185,6 @@ private:
         StoragePtr table;
         String metadata_path;
         time_t drop_time;
-        bool need_shutdown{true};
     };
     using TablesMarkedAsDropped = std::list<TableMarkedAsDropped>;
 
