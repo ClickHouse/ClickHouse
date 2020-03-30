@@ -28,6 +28,8 @@
             <database_push>default</database_push>
             <table_push>hits</table_push>
 
+            <number_of_splits>2</number_of_splits>
+
             <enabled_partitions>3 4 5 6 1 2 0   </enabled_partitions>
 
             <!-- Engine of destination tables -->

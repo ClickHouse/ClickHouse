@@ -1564,6 +1564,10 @@ std::vector<MergeTreeMutationStatus> ReplicatedMergeTreeQueue::getMutationsStatu
     return result;
 }
 
+ReplicatedMergeTreeQueue::QueueLocks ReplicatedMergeTreeQueue::lockQueue()
+{
+    return QueueLocks(state_mutex, pull_logs_to_queue_mutex, update_mutations_mutex);
+}
 
 ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
     ReplicatedMergeTreeQueue & queue_, zkutil::ZooKeeperPtr & zookeeper)

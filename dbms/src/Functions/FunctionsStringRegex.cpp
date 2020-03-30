@@ -245,6 +245,166 @@ struct MatchImpl
         }
     }
 
+    /// Very carefully crafted copy-paste.
+    static void vectorFixedConstant(
+        const ColumnString::Chars & data, size_t n, const std::string & pattern, PaddedPODArray<UInt8> & res)
+    {
+        if (data.empty())
+            return;
+
+        String strstr_pattern;
+        /// A simple case where the LIKE expression reduces to finding a substring in a string
+        if (like && likePatternIsStrstr(pattern, strstr_pattern))
+        {
+            const UInt8 * begin = data.data();
+            const UInt8 * pos = begin;
+            const UInt8 * end = pos + data.size();
+
+            size_t i = 0;
+            const UInt8 * next_pos = begin;
+
+            /// If pattern is larger than string size - it cannot be found.
+            if (strstr_pattern.size() <= n)
+            {
+                Volnitsky searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
+
+                /// We will search for the next occurrence in all rows at once.
+                while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+                {
+                    /// Let's determine which index it refers to.
+                    while (next_pos + n <= pos)
+                    {
+                        res[i] = revert;
+                        next_pos += n;
+                        ++i;
+                    }
+                    next_pos += n;
+
+                    /// We check that the entry does not pass through the boundaries of strings.
+                    if (pos + strstr_pattern.size() <= next_pos)
+                        res[i] = !revert;
+                    else
+                        res[i] = revert;
+
+                    pos = next_pos;
+                    ++i;
+                }
+            }
+
+            /// Tail, in which there can be no substring.
+            if (i < res.size())
+                memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
+        }
+        else
+        {
+            size_t size = data.size() / n;
+
+            const auto & regexp = Regexps::get<like, true>(pattern);
+
+            std::string required_substring;
+            bool is_trivial;
+            bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
+
+            regexp->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+
+            if (required_substring.empty())
+            {
+                if (!regexp->getRE2()) /// An empty regexp. Always matches.
+                {
+                    if (size)
+                        memset(res.data(), 1, size * sizeof(res[0]));
+                }
+                else
+                {
+                    size_t offset = 0;
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        res[i] = revert
+                            ^ regexp->getRE2()->Match(
+                                  re2_st::StringPiece(reinterpret_cast<const char *>(&data[offset]), n),
+                                  0,
+                                  n,
+                                  re2_st::RE2::UNANCHORED,
+                                  nullptr,
+                                  0);
+
+                        offset += n;
+                    }
+                }
+            }
+            else
+            {
+                /// NOTE This almost matches with the case of LikePatternIsStrstr.
+
+                const UInt8 * begin = data.data();
+                const UInt8 * pos = begin;
+                const UInt8 * end = pos + data.size();
+
+                size_t i = 0;
+                const UInt8 * next_pos = begin;
+
+                /// If required substring is larger than string size - it cannot be found.
+                if (strstr_pattern.size() <= n)
+                {
+                    Volnitsky searcher(required_substring.data(), required_substring.size(), end - pos);
+
+                    /// We will search for the next occurrence in all rows at once.
+                    while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+                    {
+                        /// Let's determine which index it refers to.
+                        while (next_pos + n <= pos)
+                        {
+                            res[i] = revert;
+                            next_pos += n;
+                            ++i;
+                        }
+                        next_pos += n;
+
+                        if (pos + strstr_pattern.size() <= next_pos)
+                        {
+                            /// And if it does not, if necessary, we check the regexp.
+
+                            if (is_trivial)
+                                res[i] = !revert;
+                            else
+                            {
+                                const char * str_data = reinterpret_cast<const char *>(next_pos - n);
+
+                                /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
+                                *  so that it can match when `required_substring` occurs into the string several times,
+                                *  and at the first occurrence, the regexp is not a match.
+                                */
+
+                                if (required_substring_is_prefix)
+                                    res[i] = revert
+                                        ^ regexp->getRE2()->Match(
+                                            re2_st::StringPiece(str_data, n),
+                                            reinterpret_cast<const char *>(pos) - str_data,
+                                            n,
+                                            re2_st::RE2::UNANCHORED,
+                                            nullptr,
+                                            0);
+                                else
+                                    res[i] = revert
+                                        ^ regexp->getRE2()->Match(
+                                            re2_st::StringPiece(str_data, n), 0, n, re2_st::RE2::UNANCHORED, nullptr, 0);
+                            }
+                        }
+                        else
+                            res[i] = revert;
+
+                        pos = next_pos;
+                        ++i;
+                    }
+                }
+
+                /// Tail, in which there can be no substring.
+                if (i < res.size())
+                    memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
+            }
+        }
+    }
+
     template <typename... Args>
     static void vectorVector(Args &&...)
     {

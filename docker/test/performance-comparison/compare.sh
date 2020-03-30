@@ -167,6 +167,8 @@ function get_profiles
     left/clickhouse client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
     right/clickhouse client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
     right/clickhouse client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
+    left/clickhouse client --port 9001 --query "system flush logs"
+    right/clickhouse client --port 9002 --query "system flush logs"
 
     left/clickhouse client --port 9001 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
     left/clickhouse client --port 9001 --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
@@ -395,7 +397,7 @@ unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
-grep -H -m2 'Exception:[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+grep -H -m2 '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
 }
 
 case "$stage" in

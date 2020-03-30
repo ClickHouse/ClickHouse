@@ -1,3 +1,7 @@
+#include <signal.h>
+#include <setjmp.h>
+#include <unistd.h>
+
 #include <new>
 #include <iostream>
 #include <vector>
@@ -117,6 +121,159 @@ bool isClickhouseApp(const std::string & app_suffix, std::vector<char *> & argv)
     std::string app_name = "clickhouse-" + app_suffix;
     return !argv.empty() && (app_name == argv[0] || endsWith(argv[0], "/" + app_name));
 }
+
+
+enum class InstructionFail
+{
+    NONE = 0,
+    SSE3 = 1,
+    SSSE3 = 2,
+    SSE4_1 = 3,
+    SSE4_2 = 4,
+    AVX = 5,
+    AVX2 = 6,
+    AVX512 = 7
+};
+
+const char * instructionFailToString(InstructionFail fail)
+{
+    switch (fail)
+    {
+        case InstructionFail::NONE:
+            return "NONE";
+        case InstructionFail::SSE3:
+            return "SSE3";
+        case InstructionFail::SSSE3:
+            return "SSSE3";
+        case InstructionFail::SSE4_1:
+            return "SSE4.1";
+        case InstructionFail::SSE4_2:
+            return "SSE4.2";
+        case InstructionFail::AVX:
+            return "AVX";
+        case InstructionFail::AVX2:
+            return "AVX2";
+        case InstructionFail::AVX512:
+            return "AVX512";
+    }
+    __builtin_unreachable();
+}
+
+
+sigjmp_buf jmpbuf;
+
+[[noreturn]] void sigIllCheckHandler(int, siginfo_t *, void *)
+{
+    siglongjmp(jmpbuf, 1);
+}
+
+/// Check if necessary SSE extensions are available by trying to execute some sse instructions.
+/// If instruction is unavailable, SIGILL will be sent by kernel.
+void checkRequiredInstructionsImpl(volatile InstructionFail & fail)
+{
+#if defined(__SSE3__)
+    fail = InstructionFail::SSE3;
+    __asm__ volatile ("addsubpd %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if defined(__SSSE3__)
+    fail = InstructionFail::SSSE3;
+    __asm__ volatile ("pabsw %%xmm0, %%xmm0" : : : "xmm0");
+
+#endif
+
+#if defined(__SSE4_1__)
+    fail = InstructionFail::SSE4_1;
+    __asm__ volatile ("pmaxud %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if defined(__SSE4_2__)
+    fail = InstructionFail::SSE4_2;
+    __asm__ volatile ("pcmpgtq %%xmm0, %%xmm0" : : : "xmm0");
+#endif
+
+#if defined(__AVX__)
+    fail = InstructionFail::AVX;
+    __asm__ volatile ("vaddpd %%ymm0, %%ymm0, %%ymm0" : : : "ymm0");
+#endif
+
+#if defined(__AVX2__)
+    fail = InstructionFail::AVX2;
+    __asm__ volatile ("vpabsw %%ymm0, %%ymm0" : : : "ymm0");
+#endif
+
+#if defined(__AVX512__)
+    fail = InstructionFail::AVX512;
+    __asm__ volatile ("vpabsw %%zmm0, %%zmm0" : : : "zmm0");
+#endif
+
+    fail = InstructionFail::NONE;
+}
+
+/// This function is safe to use in static initializers.
+void writeError(const char * data, size_t size)
+{
+    while (size != 0)
+    {
+        ssize_t res = ::write(STDERR_FILENO, data, size);
+
+        if ((-1 == res || 0 == res) && errno != EINTR)
+            _Exit(1);
+
+        if (res > 0)
+        {
+            data += res;
+            size -= res;
+        }
+    }
+}
+
+/// Check SSE and others instructions availability. Calls exit on fail.
+/// This function must be called as early as possible, even before main, because static initializers may use unavailable instructions.
+void checkRequiredInstructions()
+{
+    struct sigaction sa{};
+    struct sigaction sa_old{};
+    sa.sa_sigaction = sigIllCheckHandler;
+    sa.sa_flags = SA_SIGINFO;
+    auto signal = SIGILL;
+    if (sigemptyset(&sa.sa_mask) != 0
+        || sigaddset(&sa.sa_mask, signal) != 0
+        || sigaction(signal, &sa, &sa_old) != 0)
+    {
+        /// You may wonder about strlen.
+        /// Typical implementation of strlen is using SSE4.2 or AVX2.
+        /// But this is not the case because it's compiler builtin and is executed at compile time.
+
+        const char * msg = "Can not set signal handler\n";
+        writeError(msg, strlen(msg));
+        _Exit(1);
+    }
+
+    volatile InstructionFail fail = InstructionFail::NONE;
+
+    if (sigsetjmp(jmpbuf, 1))
+    {
+        const char * msg1 = "Instruction check fail. The CPU does not support ";
+        writeError(msg1, strlen(msg1));
+        const char * msg2 = instructionFailToString(fail);
+        writeError(msg2, strlen(msg2));
+        const char * msg3 = " instruction set.\n";
+        writeError(msg3, strlen(msg3));
+        _Exit(1);
+    }
+
+    checkRequiredInstructionsImpl(fail);
+
+    if (sigaction(signal, &sa_old, nullptr))
+    {
+        const char * msg = "Can not set signal handler\n";
+        writeError(msg, strlen(msg));
+        _Exit(1);
+    }
+}
+
+struct Checker { Checker() { checkRequiredInstructions(); } } checker;
 
 }
 

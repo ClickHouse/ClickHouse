@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Combinadores de funciones agregadas {#aggregate_functions_combinators}
 
 El nombre de una función agregada puede tener un sufijo anexado. Esto cambia la forma en que funciona la función de agregado.

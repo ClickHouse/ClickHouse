@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Establecer {#set}
 
 Un conjunto de datos que siempre está en la memoria RAM. Está diseñado para su uso en el lado derecho del operador IN (consulte la sección “IN operators”).

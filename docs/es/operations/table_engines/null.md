@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Nulo {#null}
 
 Al escribir en una tabla Null, los datos se ignoran. Al leer desde una tabla Null, la respuesta está vacía.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Distribuido {#distributed}
 
 **Las tablas con motor distribuido no almacenan ningún dato por sí mismas**, pero permite el procesamiento de consultas distribuidas en varios servidores.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Método de codificación de datos: {#clickhouse-copier}
 
 Copia datos de las tablas de un clúster en tablas de otro (o del mismo) clúster.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para buscar y reemplazar en cadenas {#functions-for-searching-and-replacing-in-strings}
 
 ## replaceOne(pajar, patrón, reemplazo) {#replaceonehaystack-pattern-replacement}

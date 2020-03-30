@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Motores de mesa {#table_engines}
 
 El motor de tabla (tipo de tabla) determina:

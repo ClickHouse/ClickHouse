@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones hash {#hash-functions}
 
 Las funciones Hash se pueden usar para la barajada pseudoaleatoria determinista de elementos.

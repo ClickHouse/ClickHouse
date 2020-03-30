@@ -199,16 +199,11 @@ public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of
     /// the query. If will_add_new_data is true, this means that the query will add new data to the table
     /// (INSERT or a parts merge).
-    TableStructureReadLockHolder lockStructureForShare(bool will_add_new_data, const String & query_id);
+    TableStructureReadLockHolder lockStructureForShare(const String & query_id);
 
     /// Acquire this lock at the start of ALTER to lock out other ALTERs and make sure that only you
     /// can modify the table structure. It can later be upgraded to the exclusive lock.
-    TableStructureWriteLockHolder lockAlterIntention(const String & query_id);
-
-    /// Upgrade alter intention lock and make sure that no new data is inserted into the table.
-    /// This is used by the ALTER MODIFY of the MergeTree storage to consistently determine
-    /// the set of parts that needs to be altered.
-    void lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id);
+    TableStructureWriteLockHolder lockAlterIntention();
 
     /// Upgrade alter intention lock to the full exclusive structure lock. This is done by ALTER queries
     /// to ensure that no other query uses the table structure and it can be safely changed.
@@ -220,8 +215,12 @@ public:
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
       *  for example, the request can be partially processed on a remote server.)
+      *
+      * SelectQueryInfo is required since the stage can depends on the query
+      * (see Distributed() engine and optimize_skip_unused_shards).
       */
-    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const { return QueryProcessingStage::FetchColumns; }
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const { return getQueryProcessingStage(context, {}); }
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, const ASTPtr &) const { return QueryProcessingStage::FetchColumns; }
 
     /** Watch live changes to the table.
      * Accepts a list of columns to read, as well as a description of the query,
@@ -473,12 +472,7 @@ private:
     /// If you hold this lock exclusively, you can be sure that no other structure modifying queries
     /// (e.g. ALTER, DROP) are concurrently executing. But queries that only read table structure
     /// (e.g. SELECT, INSERT) can continue to execute.
-    mutable RWLock alter_intention_lock = RWLockImpl::create();
-
-    /// It is taken for share for the entire INSERT query and the entire merge of the parts (for MergeTree).
-    /// ALTER COLUMN queries acquire an exclusive lock to ensure that no new parts with the old structure
-    /// are added to the table and thus the set of parts to modify doesn't change.
-    mutable RWLock new_data_structure_lock = RWLockImpl::create();
+    mutable std::mutex alter_lock;
 
     /// Lock for the table column structure (names, types, etc.) and data path.
     /// It is taken in exclusive mode by queries that modify them (e.g. RENAME, ALTER and DROP)

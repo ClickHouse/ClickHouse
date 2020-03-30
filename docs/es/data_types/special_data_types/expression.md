@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Expresion {#expression}
 
 Se utiliza para representar expresiones lambda en funciones de orden superior.

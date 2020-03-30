@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # JDBC {#table-engine-jdbc}
 
 Permite que ClickHouse se conecte a bases de datos externas a través de [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).

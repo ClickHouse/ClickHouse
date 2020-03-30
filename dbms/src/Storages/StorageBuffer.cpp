@@ -135,7 +135,7 @@ private:
 };
 
 
-QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context) const
+QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context, const ASTPtr & query_ptr) const
 {
     if (destination_id)
     {
@@ -144,7 +144,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        return destination->getQueryProcessingStage(context);
+        return destination->getQueryProcessingStage(context, query_ptr);
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -168,7 +168,7 @@ Pipes StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        auto destination_lock = destination->lockStructureForShare(false, context.getCurrentQueryId());
+        auto destination_lock = destination->lockStructureForShare(context.getCurrentQueryId());
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
