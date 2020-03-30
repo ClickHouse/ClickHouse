@@ -214,14 +214,11 @@ def build_single_page_version(lang, args, cfg):
                 )
 
                 if not args.skip_pdf:
-                    single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
-                    single_page_pdf = single_page_index_html.replace('index.html', f'clickhouse_{lang}.pdf')
-                    create_pdf_command = ['wkhtmltopdf', '--print-media-type', '--log-level', 'warn', single_page_index_html, single_page_pdf]
-                    logging.info(' '.join(create_pdf_command))
-                    subprocess.check_call(' '.join(create_pdf_command), shell=True)
-
-                if not args.version_prefix:  # maybe enable in future
                     with util.temp_dir() as test_dir:
+                        single_page_index_html = os.path.join(test_dir, 'single', 'index.html')
+                        single_page_pdf = os.path.abspath(
+                            os.path.join(single_page_output_path, f'clickhouse_{lang}.pdf')
+                        )
                         extra['single_page'] = False
                         cfg.load_dict({
                             'docs_dir': docs_temp_lang,
@@ -232,11 +229,22 @@ def build_single_page_version(lang, args, cfg):
                             ]
                         })
                         mkdocs_build.build(cfg)
+                        create_pdf_command = [
+                            'wkhtmltopdf',
+                            '--print-media-type',
+                            '--log-level', 'warn',
+                            single_page_index_html, single_page_pdf
+                        ]
                         if args.save_raw_single_page:
                             shutil.copytree(test_dir, args.save_raw_single_page)
+                        logging.info(' '.join(create_pdf_command))
+                        subprocess.check_call(' '.join(create_pdf_command), shell=True)
 
-                        test.test_single_page(os.path.join(test_dir, 'single', 'index.html'), lang)
-    logging.info(f'Finished building single page version for {lang}')
+                        if not args.version_prefix:  # maybe enable in future
+                            test.test_single_page(
+                                os.path.join(test_dir, 'single', 'index.html'), lang)
+
+        logging.info(f'Finished building single page version for {lang}')
 
 
 def write_redirect_html(out_path, to_url):
