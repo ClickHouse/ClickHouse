@@ -1,4 +1,4 @@
-$(document).ready(function () {
+(function () {
     var logo_text = $('#logo-text');
     if (logo_text.length) {
         var name = logo_text.attr('alt').trim().toLowerCase();
@@ -79,7 +79,4 @@ $(document).ready(function () {
         }
     }
     window.onbeforeprint = beforePrint;
-});
-
-{% include "js/index.js" %}
-{% include "js/docs.js" %}
+})();

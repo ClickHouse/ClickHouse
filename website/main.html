@@ -23,8 +23,6 @@
 {% set data_single_page = 'true' if config.extra.single_page else 'false' %}
 {% set extra_html_attrs = 'data-version="' + data_version + '" data-single-page="' + data_single_page + '"' %}
 {% set extra_body_attrs = 'data-spy="scroll" data-target="#toc" data-offset="80"' %}
-{% set extra_css = ["https://cdn.jsdelivr.net/npm/docsearch.js@2/dist/cdn/docsearch.min.css"] %}
-{% set extra_js = ["https://cdn.jsdelivr.net/npm/docsearch.js@2/dist/cdn/docsearch.min.js"] %}
 
 {% extends "templates/base.html" %}
 

@@ -1,8 +1,9 @@
 function onResize() {
+    var window_height = $(window).height();
     $('#sidebar, #toc.toc-right').css({
-        'height': ($(window).height() - $('#top-nav').height()) + 'px'
+        'height': (window_height - $('#top-nav').height()) + 'px'
     });
-    $('body').attr('data-offset', $(window).height().toString());
+    $('body').attr('data-offset', window_height.toString());
     var sidebar = $('#sidebar');
     var languages = $('#languages-dropdown')
     var single_page_switch = $('#single-page-switch');
