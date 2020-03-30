@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Interpreters/QueryNormalizer.h>
+#include <Core/Settings.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ExpressionListParsers.h>
