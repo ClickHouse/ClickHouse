@@ -22,7 +22,6 @@ public:
             IDatabase & to_database,
             const String & to_table_name) override;
 
-    //void removeTable(const Context & context, const String & table_name) override;
     void dropTable(const Context & context, const String & table_name, bool no_delay) override;
 
     void attachTable(const String & name, const StoragePtr & table, const String & relative_table_path) override;
@@ -47,11 +46,13 @@ private:
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                            const String & table_metadata_tmp_path, const String & table_metadata_path) override;
 
+    void assertDetachedTableNotInUse(const UUID & uuid);
+    void cleenupDetachedTables();
+
     //TODO store path in DatabaseWithOwnTables::tables
     std::map<String, String> table_name_to_path;
 
-
-
+    std::map<UUID, StoragePtr> detached_tables;
 };
 
 }

@@ -52,6 +52,7 @@ void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, 
 {
     assert(relative_table_path != data_path && !relative_table_path.empty());
     std::lock_guard lock(mutex);
+    assertDetachedTableNotInUse(table->getStorageID().uuid);
     DatabaseWithDictionaries::attachTableUnlocked(name, table, relative_table_path);
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
 }
@@ -61,6 +62,7 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
     std::lock_guard lock(mutex);
     auto table = DatabaseWithDictionaries::detachTableUnlocked(name);
     table_name_to_path.erase(name);
+    detached_tables.emplace(table->getStorageID().uuid, table);
     return table;
 }
 
@@ -138,6 +140,7 @@ void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore
 
 void DatabaseAtomic::shutdown()
 {
+
     DatabaseWithDictionaries::shutdown();
 }
 
@@ -148,6 +151,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     try
     {
         std::lock_guard lock{mutex};
+        assertDetachedTableNotInUse(query.uuid);
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);
         attachTableUnlocked(query.table, table, table_data_path);   /// Should never throw
         table_name_to_path.emplace(query.table, table_data_path);
@@ -171,6 +175,26 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
         throw Exception("Cannot alter table because it was renamed", ErrorCodes::CANNOT_ASSIGN_ALTER);
 
     renameExchange(table_metadata_tmp_path, table_metadata_path);
+}
+
+void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
+{
+    cleenupDetachedTables();
+    if (detached_tables.count(uuid))
+        throw Exception("Cannot attach table with UUID " + toString(uuid) +
+              ", because it was detached but still used by come query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
+}
+
+void DatabaseAtomic::cleenupDetachedTables()
+{
+    auto it = detached_tables.begin();
+    while (it != detached_tables.end())
+    {
+        if (it->second.unique())
+            it = detached_tables.erase(it);
+        else
+            ++it;
+    }
 }
 
 }
