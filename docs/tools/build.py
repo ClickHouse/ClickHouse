@@ -241,7 +241,7 @@ def build_single_page_version(lang, args, cfg):
                         with socketserver.TCPServer(
                                 ('', port_for_pdf), http.server.SimpleHTTPRequestHandler
                         ) as httpd:
-                            logging.info(f"Serving for {lang} pdf at port {port_for_pdf}")
+                            logging.info(f"serving for pdf at port {port_for_pdf}")
                             thread = threading.Thread(target=httpd.serve_forever)
                             with util.cd(test_dir):
                                 thread.start()
@@ -257,7 +257,6 @@ def build_single_page_version(lang, args, cfg):
                                 logging.info(' '.join(create_pdf_command))
                                 subprocess.check_call(' '.join(create_pdf_command), shell=True)
                                 httpd.shutdown()
-                                thread.join(timeout=5.0)
 
                         if not args.version_prefix:  # maybe enable in future
                             test.test_single_page(

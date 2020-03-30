@@ -1064,7 +1064,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     auto check_trivial_count_query = [&]() -> std::optional<AggregateDescription>
     {
         if (!settings.optimize_trivial_count_query || !syntax_analyzer_result->maybe_optimize_trivial_count || !storage
-            || query.sampleSize() || query.sampleOffset() || query.final() || query.prewhere() || query.where()
+            || query.sampleSize() || query.sampleOffset() || query.final() || query.prewhere() || query.where() || query.groupBy()
             || !query_analyzer->hasAggregation() || processing_stage != QueryProcessingStage::FetchColumns)
             return {};
 
