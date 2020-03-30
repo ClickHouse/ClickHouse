@@ -529,12 +529,12 @@ avgWeighted(x, weight)
 - `x` — Values. [Integer](../../data_types/int_uint.md) or [floating-point](../../data_types/float.md).
 - `weight` — Weights of the values. [Integer](../../data_types/int_uint.md) or [floating-point](../../data_types/float.md).
 
-Type of all the arguments (both `x` and `weight`) must be the same.
+Type of `x` and `weight` must be the same.
 
 **Returned value**
 
-- Weighted mean. Type: [floating-point](../../data_types/float.md).
-- If all the weights are equal to 0, function returns `NaN`.
+- Weighted mean. Type: [Float](../../data_types/float.md).
+- `NaN`. If all the weights are equal to 0.
 
 **Example**
 
@@ -1372,3 +1372,4 @@ SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_
 
 
 [Original article](https://clickhouse.yandex/docs/en/query_language/agg_functions/reference/) <!--hide-->
+docs/ru/query_language/agg_functions/reference.md
