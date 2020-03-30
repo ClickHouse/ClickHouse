@@ -4,10 +4,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Defines.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/config_version.h>
-#include <port/unistd.h>
+#include <unistd.h>
 
 
 namespace DB

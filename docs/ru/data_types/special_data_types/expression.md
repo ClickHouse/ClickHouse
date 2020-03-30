@@ -1,5 +1,5 @@
-# Expression
+# Expression {#expression}
 
 Используется для представления лямбда-выражений в функциях высшего порядка.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/special_data_types/expression/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/special_data_types/expression/) <!--hide-->

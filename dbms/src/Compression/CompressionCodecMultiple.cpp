@@ -17,7 +17,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int UNKNOWN_CODEC;
 extern const int CORRUPTED_DATA;
 }
 
@@ -26,9 +25,9 @@ CompressionCodecMultiple::CompressionCodecMultiple(Codecs codecs_)
 {
 }
 
-UInt8 CompressionCodecMultiple::getMethodByte() const
+uint8_t CompressionCodecMultiple::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::Multiple);
+    return static_cast<uint8_t>(CompressionMethodByte::Multiple);
 }
 
 String CompressionCodecMultiple::getCodecDesc() const
@@ -99,18 +98,20 @@ void CompressionCodecMultiple::doDecompressData(const char * source, UInt32 sour
     /// Insert all data into compressed buf
     source_size -= (compression_methods_size + 1);
 
-    for (long idx = compression_methods_size - 1; idx >= 0; --idx)
+    for (int idx = compression_methods_size - 1; idx >= 0; --idx)
     {
         UInt8 compression_method = source[idx + 1];
         const auto codec = CompressionCodecFactory::instance().get(compression_method);
-        compressed_buf.resize(compressed_buf.size() + codec->getAdditionalSizeAtTheEndOfBuffer());
+        auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
+
+        compressed_buf.resize(compressed_buf.size() + additional_size_at_the_end_of_buffer);
         UInt32 uncompressed_size = ICompressionCodec::readDecompressedBlockSize(compressed_buf.data());
 
         if (idx == 0 && uncompressed_size != decompressed_size)
             throw Exception("Wrong final decompressed size in codec Multiple, got " + toString(uncompressed_size) +
                 ", expected " + toString(decompressed_size), ErrorCodes::CORRUPTED_DATA);
 
-        uncompressed_buf.resize(uncompressed_size + codec->getAdditionalSizeAtTheEndOfBuffer());
+        uncompressed_buf.resize(uncompressed_size + additional_size_at_the_end_of_buffer);
         codec->decompress(compressed_buf.data(), source_size, uncompressed_buf.data());
         uncompressed_buf.swap(compressed_buf);
         source_size = uncompressed_size;

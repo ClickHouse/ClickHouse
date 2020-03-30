@@ -20,13 +20,13 @@ class StorageDistributedDirectoryMonitor
 {
 public:
     StorageDistributedDirectoryMonitor(
-        StorageDistributed & storage_, std::string name_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_);
+        StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_);
 
     ~StorageDistributedDirectoryMonitor();
 
     static ConnectionPoolPtr createPool(const std::string & name, const StorageDistributed & storage);
 
-    void updatePath();
+    void updatePath(const std::string & new_path);
 
     void flushAllData();
 
@@ -47,7 +47,6 @@ private:
 
     StorageDistributed & storage;
     const ConnectionPoolPtr pool;
-    const std::string name;
     std::string path;
 
     const bool should_batch_inserts = false;
@@ -71,7 +70,7 @@ private:
     ThreadFromGlobalPool thread{&StorageDistributedDirectoryMonitor::run, this};
 
     /// Read insert query and insert settings for backward compatible.
-    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, Logger * log);
+    static void readHeader(ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Logger * log);
 
     friend class DirectoryMonitorBlockInputStream;
 };

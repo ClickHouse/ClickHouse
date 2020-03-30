@@ -1,5 +1,5 @@
-#if !defined(__APPLE__) && !defined(__FreeBSD__)
-#include <sched.h>
+#if defined (OS_LINUX)
+#   include <sched.h>
 #endif
 
 #include <iostream>
@@ -8,8 +8,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/Stopwatch.h>
 #include <Core/Defines.h>
-#include "AvalancheTest.h"  /// Taken from SMHasher.
-#include <port/clock.h>
 
 
 static void setAffinity()
@@ -180,9 +178,9 @@ static inline size_t tabulation(UInt64 x)
 };
     size_t res = 0;
 
-    for (size_t i = 0; i < 8; ++i)
+    for (const auto & rand : random)
     {
-        res ^= random[i][UInt8(x)];
+        res ^= rand[UInt8(x)];
         x >>= 8;
     }
 
@@ -254,28 +252,13 @@ static inline void test(size_t n, const UInt64 * data, const char * name)
         std::cerr << "Latency of ";
         report(name, n, watch.elapsedSeconds(), tsc_diff, res);
     }
-
-    /// quality. Methods are taken from SMHasher.
-    {
-        auto wrapper = [](const void * blob, const int, const uint32_t, void * out)
-        {
-            *reinterpret_cast<UInt32*>(out) = Func(*reinterpret_cast<const UInt64 *>(blob));
-        };
-
-        std::cerr << "Avalanche: " << std::endl;
-        AvalancheTest<UInt64, UInt32>(wrapper, 300000);
-    //    std::cerr << "Bit Independence Criteria: " << std::endl;
-    //    BicTest3<UInt64, UInt32>(wrapper, 2000000);
-
-        std::cerr << std::endl;
-    }
 }
 
 
 int main(int argc, char ** argv)
 {
-    size_t n = (atoi(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
-    size_t method = argc <= 2 ? 0 : atoi(argv[2]);
+    size_t n = (std::stol(argv[1]) + (BUF_SIZE - 1)) / BUF_SIZE * BUF_SIZE;
+    size_t method = argc <= 2 ? 0 : std::stol(argv[2]);
 
     std::cerr << std::fixed << std::setprecision(2);
 

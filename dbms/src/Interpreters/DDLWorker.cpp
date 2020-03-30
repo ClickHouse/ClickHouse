@@ -12,29 +12,32 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDistributed.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Access/AccessRightsElement.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
-#include <common/sleep.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/Lock.h>
+#include <Common/isLocalAddress.h>
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/Lock.h>
-#include <Common/isLocalAddress.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
+#include <common/sleep.h>
 #include <random>
 #include <pcg_random.hpp>
 #include <Poco/Net/NetException.h>
@@ -45,16 +48,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_FORMAT_VERSION;
-    extern const int INCONSISTENT_TABLE_ACCROSS_SHARDS;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int UNFINISHED;
-    extern const int UNKNOWN_STATUS_OF_DISTRIBUTED_DDL_TASK;
     extern const int QUERY_IS_PROHIBITED;
 }
 
@@ -555,7 +555,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
         current_context = std::make_unique<Context>(context);
         current_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         current_context->setCurrentQueryId(""); // generate random query_id
-        executeQuery(istr, ostr, false, *current_context, {}, {});
+        executeQuery(istr, ostr, false, *current_context, {});
     }
     catch (...)
     {
@@ -626,8 +626,8 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
                 if (!query_with_table->table.empty())
                 {
                     /// It's not CREATE DATABASE
-                    String database = query_with_table->database.empty() ? context.getCurrentDatabase() : query_with_table->database;
-                    storage = context.tryGetTable(database, query_with_table->table);
+                    auto table_id = context.resolveStorageID(*query_with_table, Context::ResolveOrdinary);
+                    storage = DatabaseCatalog::instance().tryGetTable(table_id);
                 }
 
                 /// For some reason we check consistency of cluster definition only
@@ -668,7 +668,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 }
 
 
-bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const StoragePtr storage) const
+bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const StoragePtr storage)
 {
     /// Pure DROP queries have to be executed on each node separately
     if (auto query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)
@@ -686,9 +686,15 @@ void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, Sto
     const auto & shard_info = task.cluster->getShardsInfo().at(task.host_shard_num);
     bool config_is_replicated_shard = shard_info.hasInternalReplication();
 
+    if (dynamic_cast<const StorageDistributed *>(storage.get()))
+    {
+        LOG_TRACE(log, "Table " + backQuote(table) + " is distributed, skip checking config.");
+        return;
+    }
+
     if (storage->supportsReplication() && !config_is_replicated_shard)
     {
-        throw Exception("Table '" + table + "' is replicated, but shard #" + toString(task.host_shard_num + 1) +
+        throw Exception("Table " + backQuote(table) + " is replicated, but shard #" + toString(task.host_shard_num + 1) +
             " isn't replicated according to its cluster definition."
             " Possibly <internal_replication>true</internal_replication> is forgotten in the cluster config.",
             ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
@@ -696,7 +702,7 @@ void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, Sto
 
     if (!storage->supportsReplication() && config_is_replicated_shard)
     {
-        throw Exception("Table '" + table + "' isn't replicated, but shard #" + toString(task.host_shard_num + 1) +
+        throw Exception("Table " + backQuote(table) + " isn't replicated, but shard #" + toString(task.host_shard_num + 1) +
             " is replicated according to its cluster definition", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
     }
 }
@@ -788,7 +794,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
         /// Does nothing if wasn't previously locked
         lock->unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<long>(0, 1000)(rng)));
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 1000)(rng)));
     }
 
     /// Not executed by leader so was not executed at all
@@ -1242,7 +1248,7 @@ private:
 };
 
 
-BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, NameSet && query_databases)
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context, AccessRightsElements && query_required_access)
 {
     /// Remove FORMAT <fmt> and INTO OUTFILE <file> if exists
     ASTPtr query_ptr = query_ptr_->clone();
@@ -1271,51 +1277,77 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     ClusterPtr cluster = context.getCluster(query->cluster);
     DDLWorker & ddl_worker = context.getDDLWorker();
 
-    /// Check database access rights, assume that all servers have the same users config
-    NameSet databases_to_access;
-    const String & current_database = context.getCurrentDatabase();
-
+    /// Enumerate hosts which will be used to send query.
     Cluster::AddressesWithFailover shards = cluster->getShardsAddresses();
-
     std::vector<HostID> hosts;
-    bool use_shard_default_db = false;
-    bool use_local_default_db = false;
     for (const auto & shard : shards)
     {
         for (const auto & addr : shard)
-        {
             hosts.emplace_back(addr);
+    }
 
-            /// Expand empty database name to shards' default (o current) database name
-            for (const String & database : query_databases)
+    if (hosts.empty())
+        throw Exception("No hosts defined to execute distributed DDL query", ErrorCodes::LOGICAL_ERROR);
+
+    /// The current database in a distributed query need to be replaced with either
+    /// the local current database or a shard's default database.
+    bool need_replace_current_database
+        = (std::find_if(
+               query_required_access.begin(),
+               query_required_access.end(),
+               [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); })
+           != query_required_access.end());
+
+    if (need_replace_current_database)
+    {
+        bool use_local_default_database = false;
+        Strings shard_default_databases;
+        for (const auto & shard : shards)
+        {
+            for (const auto & addr : shard)
             {
-                if (database.empty())
-                {
-                    bool has_shard_default_db = !addr.default_database.empty();
-                    use_shard_default_db |= has_shard_default_db;
-                    use_local_default_db |= !has_shard_default_db;
-                    databases_to_access.emplace(has_shard_default_db ? addr.default_database : current_database);
-                }
+                if (!addr.default_database.empty())
+                    shard_default_databases.push_back(addr.default_database);
                 else
-                    databases_to_access.emplace(database);
+                    use_local_default_database = true;
+            }
+        }
+        std::sort(shard_default_databases.begin(), shard_default_databases.end());
+        shard_default_databases.erase(std::unique(shard_default_databases.begin(), shard_default_databases.end()), shard_default_databases.end());
+        assert(use_local_default_database || !shard_default_databases.empty());
+
+        if (use_local_default_database && !shard_default_databases.empty())
+            throw Exception("Mixed local default DB and shard default DB in DDL query", ErrorCodes::NOT_IMPLEMENTED);
+
+        if (use_local_default_database)
+        {
+            const String & current_database = context.getCurrentDatabase();
+            AddDefaultDatabaseVisitor visitor(current_database);
+            visitor.visitDDL(query_ptr);
+
+            query_required_access.replaceEmptyDatabase(current_database);
+        }
+        else
+        {
+            size_t old_num_elements = query_required_access.size();
+            for (size_t i = 0; i != old_num_elements; ++i)
+            {
+                auto & element = query_required_access[i];
+                if (element.isEmptyDatabase())
+                {
+                    element.setDatabase(shard_default_databases[0]);
+                    for (size_t j = 1; j != shard_default_databases.size(); ++j)
+                    {
+                        query_required_access.push_back(element);
+                        query_required_access.back().setDatabase(shard_default_databases[j]);
+                    }
+                }
             }
         }
     }
 
-    if (use_shard_default_db && use_local_default_db)
-        throw Exception("Mixed local default DB and shard default DB in DDL query", ErrorCodes::NOT_IMPLEMENTED);
-
-    if (databases_to_access.empty())
-        throw Exception("No databases to access in distributed DDL query", ErrorCodes::LOGICAL_ERROR);
-
-    for (const String & database : databases_to_access)
-        context.checkDatabaseAccessRights(database);
-
-    if (use_local_default_db)
-    {
-        AddDefaultDatabaseVisitor visitor(current_database);
-        visitor.visitDDL(query_ptr);
-    }
+    /// Check access rights, assume that all servers have the same users config
+    context.checkAccess(query_required_access);
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);

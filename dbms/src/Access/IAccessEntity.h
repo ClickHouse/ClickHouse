@@ -20,6 +20,8 @@ struct IAccessEntity
     std::type_index getType() const { return typeid(*this); }
     static String getTypeName(std::type_index type);
     const String getTypeName() const { return getTypeName(getType()); }
+    static const char * getKeyword(std::type_index type);
+    const char * getKeyword() const { return getKeyword(getType()); }
 
     template <typename EntityType>
     bool isTypeOf() const { return isTypeOf(typeid(EntityType)); }

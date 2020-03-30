@@ -2,9 +2,9 @@
 
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFile.h>
 
-#include <mutex>
 #include <Poco/DirectoryIterator.h>
 #include <Poco/File.h>
 
@@ -61,15 +61,43 @@ public:
 
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
+    void createFile(const String & path) override;
+
     void moveFile(const String & from_path, const String & to_path) override;
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<ReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
+    void copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path) override;
 
-    std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) override;
+    void listFiles(const String & path, std::vector<String> & file_names) override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold) const override;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode,
+        size_t estimated_size,
+        size_t aio_threshold) override;
+
+    void remove(const String & path) override;
+
+    void removeRecursive(const String & path) override;
+
+    void setLastModified(const String & path, const Poco::Timestamp & timestamp) override;
+
+    Poco::Timestamp getLastModified(const String & path) override;
+
+    void setReadOnly(const String & path) override;
+
+    void createHardLink(const String & src_path, const String & dst_path) override;
 
 private:
     bool tryReserve(UInt64 bytes);
@@ -79,61 +107,10 @@ private:
     const String disk_path;
     const UInt64 keep_free_space_bytes;
 
-    /// Used for reservation counters modification
-    static std::mutex mutex;
     UInt64 reserved_bytes = 0;
     UInt64 reservation_count = 0;
+
+    static std::mutex reservation_mutex;
 };
-
-using DiskLocalPtr = std::shared_ptr<DiskLocal>;
-
-
-class DiskLocalDirectoryIterator : public IDiskDirectoryIterator
-{
-public:
-    explicit DiskLocalDirectoryIterator(const String & disk_path_, const String & dir_path_) :
-        dir_path(dir_path_), iter(disk_path_ + dir_path_) {}
-
-    void next() override { ++iter; }
-
-    bool isValid() const override { return iter != Poco::DirectoryIterator(); }
-
-    String path() const override
-    {
-        if (iter->isDirectory())
-            return dir_path + iter.name() + '/';
-        else
-            return dir_path + iter.name();
-    }
-
-private:
-    String dir_path;
-    Poco::DirectoryIterator iter;
-};
-
-class DiskLocalReservation : public IReservation
-{
-public:
-    DiskLocalReservation(const DiskLocalPtr & disk_, UInt64 size_)
-        : disk(disk_), size(size_), metric_increment(CurrentMetrics::DiskSpaceReservedForMerge, size_)
-    {
-    }
-
-    UInt64 getSize() const override { return size; }
-
-    DiskPtr getDisk() const override { return disk; }
-
-    void update(UInt64 new_size) override;
-
-    ~DiskLocalReservation() override;
-
-private:
-    DiskLocalPtr disk;
-    UInt64 size;
-    CurrentMetrics::Increment metric_increment;
-};
-
-class DiskFactory;
-void registerDiskLocal(DiskFactory & factory);
 
 }

@@ -65,7 +65,7 @@ ForkProcessor::Status ForkProcessor::prepare()
         {
             ++num_processed_outputs;
             if (num_processed_outputs == num_active_outputs)
-                output.push(std::move(data));  /// Can push because no full or unneeded outputs.
+                output.push(std::move(data)); // NOLINT Can push because no full or unneeded outputs.
             else
                 output.push(data.clone());
         }
@@ -76,6 +76,5 @@ ForkProcessor::Status ForkProcessor::prepare()
 }
 
 }
-
 
 

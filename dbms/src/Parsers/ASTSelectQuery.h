@@ -8,6 +8,7 @@ namespace DB
 {
 
 struct ASTTablesInSelectQueryElement;
+struct StorageID;
 
 
 /** SELECT query
@@ -15,7 +16,7 @@ struct ASTTablesInSelectQueryElement;
 class ASTSelectQuery : public IAST
 {
 public:
-    enum class Expression : UInt8
+    enum class Expression : uint8_t
     {
         WITH,
         SELECT,
@@ -77,14 +78,15 @@ public:
     }
 
     /// Compatibility with old parser of tables list. TODO remove
-    ASTPtr sample_size() const;
-    ASTPtr sample_offset() const;
-    ASTPtr array_join_expression_list(bool & is_left) const;
-    ASTPtr array_join_expression_list() const;
+    ASTPtr sampleSize() const;
+    ASTPtr sampleOffset() const;
+    ASTPtr arrayJoinExpressionList(bool & is_left) const;
+    ASTPtr arrayJoinExpressionList() const;
     const ASTTablesInSelectQueryElement * join() const;
     bool final() const;
     bool withFill() const;
     void replaceDatabaseAndTable(const String & database_name, const String & table_name);
+    void replaceDatabaseAndTable(const StorageID & table_id);
     void addTableFunction(ASTPtr & table_function_ptr);
 
 protected:

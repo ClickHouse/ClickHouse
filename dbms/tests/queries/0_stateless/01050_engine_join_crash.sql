@@ -7,9 +7,9 @@ CREATE TABLE testJoinTable (number UInt64, data String) ENGINE = Join(ANY, INNER
 
 INSERT INTO testJoinTable VALUES (1, '1'), (2, '2'), (3, '3');
 
-SELECT * FROM (SELECT * FROM numbers(10)) INNER JOIN testJoinTable USING number; -- { serverError 264 }
-SELECT * FROM (SELECT * FROM numbers(10)) INNER JOIN (SELECT * FROM testJoinTable) USING number;
-SELECT * FROM (SELECT * FROM numbers(10)) ANY INNER JOIN testJoinTable USING number;
+SELECT * FROM (SELECT * FROM numbers(10)) js1 INNER JOIN testJoinTable USING number; -- { serverError 264 }
+SELECT * FROM (SELECT * FROM numbers(10)) js1 INNER JOIN (SELECT * FROM testJoinTable) js2 USING number;
+SELECT * FROM (SELECT * FROM numbers(10)) js1 ANY INNER JOIN testJoinTable USING number;
 SELECT * FROM testJoinTable;
 
 DROP TABLE testJoinTable;

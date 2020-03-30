@@ -4,13 +4,13 @@
 
 Примеры применения:
 
-- Выгрузка данных из ClickHouse в файл.
-- Преобразование данных из одного формата в другой.
-- Обновление данных в ClickHouse редактированием файла на диске.
+-   Выгрузка данных из ClickHouse в файл.
+-   Преобразование данных из одного формата в другой.
+-   Обновление данных в ClickHouse редактированием файла на диске.
 
-## Использование движка в сервере ClickHouse
+## Использование движка в сервере ClickHouse {#ispolzovanie-dvizhka-v-servere-clickhouse}
 
-```sql
+``` sql
 File(Format)
 ```
 
@@ -22,14 +22,14 @@ File(Format)
 
 Можно вручную создать в хранилище каталог таблицы, поместить туда файл, затем на сервере ClickHouse добавить ([ATTACH](../../query_language/misc.md)) информацию о таблице, соответствующей имени каталога и прочитать из файла данные.
 
-!!! warning
+!!! warning "Warning"
     Будьте аккуратны с этой функциональностью, поскольку сервер ClickHouse не отслеживает внешние изменения данных. Если в файл будет производиться запись одновременно со стороны сервера ClickHouse и с внешней стороны, то результат непредсказуем.
 
 **Пример:**
 
 **1.** Создадим на сервере таблицу `file_engine_table`:
 
-```sql
+``` sql
 CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSeparated)
 ```
 
@@ -37,43 +37,43 @@ CREATE TABLE file_engine_table (name String, value UInt32) ENGINE=File(TabSepara
 
 **2.** Вручную создадим файл `/var/lib/clickhouse/data/default/file_engine_table/data.TabSeparated` с содержимым:
 
-```bash
+``` bash
 $cat data.TabSeparated
-one	1
-two	2
+one 1
+two 2
 ```
 
 **3.** Запросим данные:
 
-```sql
+``` sql
 SELECT * FROM file_engine_table
 ```
 
-```text
+``` text
 ┌─name─┬─value─┐
 │ one  │     1 │
 │ two  │     2 │
 └──────┴───────┘
 ```
 
-## Использование движка в clickhouse-local
+## Использование движка в clickhouse-local {#ispolzovanie-dvizhka-v-clickhouse-local}
 
 В [clickhouse-local](../utils/clickhouse-local.md) движок в качестве параметра принимает не только формат, но и путь к файлу. В том числе можно указать стандартные потоки ввода/вывода цифровым или буквенным обозначением `0` или `stdin`, `1` или `stdout`.
 
 **Пример:**
 
-```bash
+``` bash
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 
-## Детали реализации
+## Детали реализации {#detali-realizatsii}
 
-- Поддерживается одновременное выполнение множества запросов `SELECT`, запросы `INSERT` могут выполняться только последовательно.
-- Поддерживается создание ещё не существующего файла при запросе `INSERT`.
-- Для существующих файлов `INSERT` записывает в конец файла.
-- Не поддерживается:
-    - использование операций `ALTER` и `SELECT...SAMPLE`;
-    - индексы;
-    - репликация.
+-   Поддерживается одновременное выполнение множества запросов `SELECT`, запросы `INSERT` могут выполняться только последовательно.
+-   Поддерживается создание ещё не существующего файла при запросе `INSERT`.
+-   Для существующих файлов `INSERT` записывает в конец файла.
+-   Не поддерживается:
+    -   использование операций `ALTER` и `SELECT...SAMPLE`;
+    -   индексы;
+    -   репликация.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/file/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/file/) <!--hide-->

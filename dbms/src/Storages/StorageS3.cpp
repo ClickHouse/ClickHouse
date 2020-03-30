@@ -18,10 +18,20 @@
 #include <Formats/FormatFactory.h>
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
+#include <DataStreams/narrowBlockInputStreams.h>
+
+#include <DataTypes/DataTypeString.h>
 
 #include <aws/s3/S3Client.h>
+#include <aws/s3/model/ListObjectsRequest.h>
+
+#include <Common/parseGlobs.h>
+#include <Common/quoteString.h>
+#include <re2/re2.h>
+
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -29,28 +39,51 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int UNEXPECTED_EXPRESSION;
+    extern const int S3_ERROR;
 }
 
 
 namespace
 {
-    class StorageS3BlockInputStream : public IBlockInputStream
+    class StorageS3Source : public SourceWithProgress
     {
     public:
-        StorageS3BlockInputStream(
+
+        static Block getHeader(Block sample_block, bool with_path_column, bool with_file_column)
+        {
+            if (with_path_column)
+                sample_block.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_path"});
+            if (with_file_column)
+                sample_block.insert({DataTypeString().createColumn(), std::make_shared<DataTypeString>(), "_file"});
+
+            return sample_block;
+        }
+
+        StorageS3Source(
+            bool need_path,
+            bool need_file,
             const String & format,
-            const String & name_,
+            String name_,
             const Block & sample_block,
             const Context & context,
+            const ColumnDefaults & column_defaults,
             UInt64 max_block_size,
             const CompressionMethod compression_method,
             const std::shared_ptr<Aws::S3::S3Client> & client,
             const String & bucket,
             const String & key)
-            : name(name_)
+            : SourceWithProgress(getHeader(sample_block, need_path, need_file))
+            , name(std::move(name_))
+            , with_file_column(need_file)
+            , with_path_column(need_path)
+            , file_path(bucket + "/" + key)
         {
             read_buf = wrapReadBufferWithCompressionMethod(std::make_unique<ReadBufferFromS3>(client, bucket, key), compression_method);
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+
+            if (!column_defaults.empty())
+                reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
         }
 
         String getName() const override
@@ -58,30 +91,48 @@ namespace
             return name;
         }
 
-        Block readImpl() override
+        Chunk generate() override
         {
-            return reader->read();
-        }
+            if (!reader)
+                return {};
 
-        Block getHeader() const override
-        {
-            return reader->getHeader();
-        }
+            if (!initialized)
+            {
+                reader->readSuffix();
+                initialized = true;
+            }
 
-        void readPrefixImpl() override
-        {
-            reader->readPrefix();
-        }
+            if (auto block = reader->read())
+            {
+                auto columns = block.getColumns();
+                UInt64 num_rows = block.rows();
 
-        void readSuffixImpl() override
-        {
+                if (with_path_column)
+                    columns.push_back(DataTypeString().createColumnConst(num_rows, file_path)->convertToFullColumnIfConst());
+                if (with_file_column)
+                {
+                    size_t last_slash_pos = file_path.find_last_of('/');
+                    columns.push_back(DataTypeString().createColumnConst(num_rows, file_path.substr(
+                            last_slash_pos + 1))->convertToFullColumnIfConst());
+                }
+
+                return Chunk(std::move(columns), num_rows);
+            }
+
             reader->readSuffix();
+            reader.reset();
+
+            return {};
         }
 
     private:
         String name;
         std::unique_ptr<ReadBuffer> read_buf;
         BlockInputStreamPtr reader;
+        bool initialized = false;
+        bool with_file_column = false;
+        bool with_path_column = false;
+        String file_path;
     };
 
     class StorageS3BlockOutputStream : public IBlockOutputStream
@@ -144,7 +195,10 @@ StorageS3::StorageS3(
     const ConstraintsDescription & constraints_,
     Context & context_,
     const String & compression_method_ = "")
-    : IStorage(table_id_, columns_)
+    : IStorage(table_id_, ColumnsDescription({
+            {"_path", std::make_shared<DataTypeString>()},
+            {"_file", std::make_shared<DataTypeString>()}
+        }, true))
     , uri(uri_)
     , context_global(context_)
     , format_name(format_name_)
@@ -158,29 +212,96 @@ StorageS3::StorageS3(
 }
 
 
-BlockInputStreams StorageS3::read(
+namespace
+{
+
+/* "Recursive" directory listing with matched paths as a result.
+ * Have the same method in StorageFile.
+ */
+Strings listFilesWithRegexpMatching(Aws::S3::S3Client & client, const S3::URI & globbed_uri)
+{
+    if (globbed_uri.bucket.find_first_of("*?{") != globbed_uri.bucket.npos)
+    {
+        throw Exception("Expression can not have wildcards inside bucket name", ErrorCodes::UNEXPECTED_EXPRESSION);
+    }
+
+    const String key_prefix = globbed_uri.key.substr(0, globbed_uri.key.find_first_of("*?{"));
+    if (key_prefix.size() == globbed_uri.key.size())
+    {
+        return {globbed_uri.key};
+    }
+
+    Aws::S3::Model::ListObjectsRequest request;
+    request.SetBucket(globbed_uri.bucket);
+    request.SetPrefix(key_prefix);
+
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(globbed_uri.key));
+    Strings result;
+    Aws::S3::Model::ListObjectsOutcome outcome;
+    int page = 0;
+    do
+    {
+        ++page;
+        outcome = client.ListObjects(request);
+        if (!outcome.IsSuccess())
+        {
+            throw Exception("Could not list objects in bucket " + quoteString(request.GetBucket())
+                    + " with prefix " + quoteString(request.GetPrefix())
+                    + ", page " + std::to_string(page), ErrorCodes::S3_ERROR);
+        }
+
+        for (const auto & row : outcome.GetResult().GetContents())
+        {
+            String key = row.GetKey();
+            if (re2::RE2::FullMatch(key, matcher))
+                result.emplace_back(std::move(key));
+        }
+
+        request.SetMarker(outcome.GetResult().GetNextMarker());
+    }
+    while (outcome.GetResult().GetIsTruncated());
+
+    return result;
+}
+
+}
+
+
+Pipes StorageS3::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
     QueryProcessingStage::Enum /*processed_stage*/,
     size_t max_block_size,
-    unsigned /*num_streams*/)
+    unsigned num_streams)
 {
-    BlockInputStreamPtr block_input = std::make_shared<StorageS3BlockInputStream>(
-        format_name,
-        getName(),
-        getHeaderBlock(column_names),
-        context,
-        max_block_size,
-        chooseCompressionMethod(uri.endpoint, compression_method),
-        client,
-        uri.bucket,
-        uri.key);
+    Pipes pipes;
+    bool need_path_column = false;
+    bool need_file_column = false;
+    for (const auto & column : column_names)
+    {
+        if (column == "_path")
+            need_path_column = true;
+        if (column == "_file")
+            need_file_column = true;
+    }
 
-    auto column_defaults = getColumns().getDefaults();
-    if (column_defaults.empty())
-        return {block_input};
-    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
+    for (const String & key : listFilesWithRegexpMatching(*client, uri))
+        pipes.emplace_back(std::make_shared<StorageS3Source>(
+            need_path_column,
+            need_file_column,
+            format_name,
+            getName(),
+            getHeaderBlock(column_names),
+            context,
+            getColumns().getDefaults(),
+            max_block_size,
+            chooseCompressionMethod(uri.endpoint, compression_method),
+            client,
+            uri.bucket,
+            key));
+
+    return narrowPipes(std::move(pipes), num_streams);
 }
 
 BlockOutputStreamPtr StorageS3::write(const ASTPtr & /*query*/, const Context & /*context*/)
@@ -201,8 +322,8 @@ void registerStorageS3(StorageFactory & factory)
             throw Exception(
                 "Storage S3 requires 2 to 5 arguments: url, [access_key_id, secret_access_key], name of used format and [compression_method].", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (size_t i = 0; i < engine_args.size(); ++i)
-            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
 
         String url = engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
         Poco::URI uri (url);

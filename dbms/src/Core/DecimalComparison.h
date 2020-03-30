@@ -17,6 +17,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int DECIMAL_OVERFLOW;
 }
 
@@ -190,7 +191,7 @@ private:
                 const ColumnConst * c0_const = checkAndGetColumnConst<ColVecA>(c0.get());
                 A a = c0_const->template getValue<A>();
                 if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                    constant_vector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
+                    constantVector<scale_left, scale_right>(a, c1_vec->getData(), vec_res, scale);
                 else
                     throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
@@ -199,7 +200,7 @@ private:
                 const ColumnConst * c1_const = checkAndGetColumnConst<ColVecB>(c1.get());
                 B b = c1_const->template getValue<B>();
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
-                    vector_constant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
+                    vectorConstant<scale_left, scale_right>(c0_vec->getData(), b, vec_res, scale);
                 else
                     throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
             }
@@ -208,7 +209,7 @@ private:
                 if (const ColVecA * c0_vec = checkAndGetColumn<ColVecA>(c0.get()))
                 {
                     if (const ColVecB * c1_vec = checkAndGetColumn<ColVecB>(c1.get()))
-                        vector_vector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
+                        vectorVector<scale_left, scale_right>(c0_vec->getData(), c1_vec->getData(), vec_res, scale);
                     else
                         throw Exception("Wrong column in Decimal comparison", ErrorCodes::LOGICAL_ERROR);
                 }
@@ -259,7 +260,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE vector_vector(const ArrayA & a, const ArrayB & b, PaddedPODArray<UInt8> & c,
+    static void NO_INLINE vectorVector(const ArrayA & a, const ArrayB & b, PaddedPODArray<UInt8> & c,
                                         CompareInt scale)
     {
         size_t size = a.size();
@@ -278,7 +279,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE vector_constant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    static void NO_INLINE vectorConstant(const ArrayA & a, B b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = a.size();
         const A * a_pos = a.data();
@@ -294,7 +295,7 @@ private:
     }
 
     template <bool scale_left, bool scale_right>
-    static void NO_INLINE constant_vector(A a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
+    static void NO_INLINE constantVector(A a, const ArrayB & b, PaddedPODArray<UInt8> & c, CompareInt scale)
     {
         size_t size = b.size();
         const B * b_pos = b.data();

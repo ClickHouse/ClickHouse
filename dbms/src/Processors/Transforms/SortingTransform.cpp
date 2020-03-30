@@ -22,6 +22,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
+}
 
 MergeSorter::MergeSorter(Chunks chunks_, SortDescription & description_, size_t max_merged_block_size_, UInt64 limit_)
     : chunks(std::move(chunks_)), description(description_), max_merged_block_size(max_merged_block_size_), limit(limit_)
@@ -241,12 +246,13 @@ IProcessor::Status SortingTransform::prepareConsume()
         if (input.isFinished())
             return Status::Finished;
 
-        input.setNeeded();
-
         if (!input.hasData())
+        {
+            input.setNeeded();
             return Status::NeedData;
+        }
 
-        current_chunk = input.pull();
+        current_chunk = input.pull(true);
     }
 
     /// Now consume.

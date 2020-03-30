@@ -13,7 +13,7 @@ namespace DB
 class FillingBlockInputStream : public IBlockInputStream
 {
 public:
-    FillingBlockInputStream(const BlockInputStreamPtr & input, const SortDescription & fill_description_);
+    FillingBlockInputStream(const BlockInputStreamPtr & input, const SortDescription & sort_description_);
 
     String getName() const override { return "Filling"; }
 

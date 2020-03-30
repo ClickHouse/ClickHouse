@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <common/Types.h>
+#include <common/types.h>
 #include <Common/intExp.h>
 
 
@@ -14,6 +14,7 @@ namespace DB
 
 struct Null {};
 
+/// @note Except explicitly described you should not assume on TypeIndex numbers and/or their orders in this enum.
 enum class TypeIndex
 {
     Nothing = 0,
@@ -31,7 +32,6 @@ enum class TypeIndex
     Float64,
     Date,
     DateTime,
-    DateTime32 = DateTime,
     DateTime64,
     String,
     FixedString,
@@ -51,7 +51,8 @@ enum class TypeIndex
     LowCardinality,
 };
 
-using UInt8 = uint8_t;
+using UInt8 = char8_t;      /// This is needed for more strict aliasing. https://godbolt.org/z/xpJBSb https://stackoverflow.com/a/57453713
+
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
@@ -158,8 +159,6 @@ using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
 
-// TODO (nemkov): consider making a strong typedef
-//using DateTime32 = time_t;
 using DateTime64 = Decimal64;
 
 template <> struct TypeName<Decimal32>   { static const char * get() { return "Decimal32";   } };

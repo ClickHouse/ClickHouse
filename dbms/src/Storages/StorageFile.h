@@ -18,13 +18,13 @@ namespace DB
 class StorageFileBlockInputStream;
 class StorageFileBlockOutputStream;
 
-class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
+class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageFile>;
 public:
     std::string getName() const override { return "File"; }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -53,14 +53,14 @@ public:
     };
 
 protected:
-    friend class StorageFileBlockInputStream;
+    friend class StorageFileSource;
     friend class StorageFileBlockOutputStream;
 
     /// From file descriptor
     StorageFile(int table_fd_, CommonArguments args);
 
     /// From user's file
-    StorageFile(const std::string & table_path_, const std::string & user_files_absolute_path, CommonArguments args);
+    StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args);
 
     /// From table in database
     StorageFile(const std::string & relative_table_dir_path, CommonArguments args);

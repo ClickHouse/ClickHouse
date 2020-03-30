@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ILLEGAL_COLUMN;
 }
 
 /** Get scalar value of sub queries from query context via IAST::Hash.
@@ -28,7 +27,7 @@ public:
         return std::make_shared<FunctionGetScalar>(context);
     }
 
-    FunctionGetScalar(const Context & context_) : context(context_) {}
+    explicit FunctionGetScalar(const Context & context_) : context(context_) {}
 
     String getName() const override
     {

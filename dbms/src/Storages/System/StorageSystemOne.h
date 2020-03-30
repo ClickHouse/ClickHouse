@@ -15,13 +15,13 @@ class Context;
   * Used when the table is not specified in the query.
   * Analog of the DUAL table in Oracle and MySQL.
   */
-class StorageSystemOne : public ext::shared_ptr_helper<StorageSystemOne>, public IStorage
+class StorageSystemOne final : public ext::shared_ptr_helper<StorageSystemOne>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageSystemOne>;
 public:
     std::string getName() const override { return "SystemOne"; }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

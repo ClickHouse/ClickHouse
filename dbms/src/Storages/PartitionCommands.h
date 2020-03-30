@@ -20,8 +20,6 @@ struct PartitionCommand
     {
         ATTACH_PARTITION,
         MOVE_PARTITION,
-        CLEAR_COLUMN,
-        CLEAR_INDEX,
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
         FETCH_PARTITION,
@@ -33,8 +31,6 @@ struct PartitionCommand
     Type type;
 
     ASTPtr partition;
-    Field column_name;
-    Field index_name;
 
     /// true for DETACH PARTITION.
     bool detach = false;
@@ -64,18 +60,15 @@ struct PartitionCommand
         TABLE,
     };
 
-    MoveDestinationType move_destination_type;
+    std::optional<MoveDestinationType> move_destination_type;
+
 
     String move_destination_name;
 
     static std::optional<PartitionCommand> parse(const ASTAlterCommand * command);
 };
 
-class PartitionCommands : public std::vector<PartitionCommand>
-{
-public:
-    void validate(const IStorage & table);
-};
+using PartitionCommands = std::vector<PartitionCommand>;
 
 
 }

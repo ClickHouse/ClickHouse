@@ -23,7 +23,7 @@ Block InternalTextLogsQueue::getSampleBlock()
         {std::make_shared<DataTypeUInt32>(),   "event_time_microseconds"},
         {std::make_shared<DataTypeString>(),   "host_name"},
         {std::make_shared<DataTypeString>(),   "query_id"},
-        {std::make_shared<DataTypeUInt32>(),   "thread_number"},
+        {std::make_shared<DataTypeUInt64>(),   "thread_id"},
         {std::make_shared<DataTypeInt8>(),     "priority"},
         {std::make_shared<DataTypeString>(),   "source"},
         {std::make_shared<DataTypeString>(),   "text"}
@@ -50,7 +50,8 @@ const char * InternalTextLogsQueue::getPriorityName(int priority)
 {
     /// See Poco::Message::Priority
 
-    static const char * PRIORITIES [] = {
+    static constexpr const char * const PRIORITIES[] =
+    {
         "Unknown",
         "Fatal",
         "Critical",

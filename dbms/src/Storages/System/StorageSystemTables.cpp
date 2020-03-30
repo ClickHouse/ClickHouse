@@ -2,10 +2,12 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Databases/IDatabase.h>
+#include <Access/ContextAccess.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/queryToString.h>
@@ -14,6 +16,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Disks/DiskSpaceMonitor.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -21,7 +25,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int TABLE_IS_DROPPED;
 }
 
@@ -47,6 +50,8 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"primary_key", std::make_shared<DataTypeString>()},
         {"sampling_key", std::make_shared<DataTypeString>()},
         {"storage_policy", std::make_shared<DataTypeString>()},
+        {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
     }));
 }
 
@@ -54,7 +59,7 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
 static ColumnPtr getFilteredDatabases(const ASTPtr & query, const Context & context)
 {
     MutableColumnPtr column = ColumnString::create();
-    for (const auto & db : context.getDatabases())
+    for (const auto & db : DatabaseCatalog::instance().getDatabases())
         column->insert(db.first);
 
     Block block { ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "database") };
@@ -78,32 +83,33 @@ static bool needLockStructure(const DatabasePtr & database, const Block & header
     return false;
 }
 
-class TablesBlockInputStream : public IBlockInputStream
+class TablesBlockSource : public SourceWithProgress
 {
 public:
-    TablesBlockInputStream(
+    TablesBlockSource(
         std::vector<UInt8> columns_mask_,
-        Block header_,
+        Block header,
         UInt64 max_block_size_,
         ColumnPtr databases_,
         const Context & context_)
-        : columns_mask(std::move(columns_mask_))
-        , header(std::move(header_))
+        : SourceWithProgress(std::move(header))
+        , columns_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
         , databases(std::move(databases_))
         , context(context_) {}
 
     String getName() const override { return "Tables"; }
-    Block getHeader() const override { return header; }
 
 protected:
-    Block readImpl() override
+    Chunk generate() override
     {
         if (done)
             return {};
 
-        Block res = header;
-        MutableColumns res_columns = header.cloneEmptyColumns();
+        MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
+
+        const auto access = context.getAccess();
+        const bool check_access_for_databases = !access->isGranted(AccessType::SHOW_TABLES);
 
         size_t rows_count = 0;
         while (rows_count < max_block_size)
@@ -114,9 +120,9 @@ protected:
             while (database_idx < databases->size() && (!tables_it || !tables_it->isValid()))
             {
                 database_name = databases->getDataAt(database_idx).toString();
-                database = context.tryGetDatabase(database_name);
+                database = DatabaseCatalog::instance().tryGetDatabase(database_name);
 
-                if (!database || !context.hasDatabaseAccessRights(database_name))
+                if (!database)
                 {
                     /// Database was deleted just now or the user has no access.
                     ++database_idx;
@@ -133,85 +139,112 @@ protected:
                 {
                     Tables external_tables = context.getSessionContext().getExternalTables();
 
-                    for (auto table : external_tables)
+                    for (auto & table : external_tables)
                     {
                         size_t src_index = 0;
                         size_t res_index = 0;
 
+                        // database
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // name
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.first);
 
+                        // engine
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
+                        // is_temporary
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(1u);
 
+                        // data_paths
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // metadata_path
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // metadata_modification_time
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // dependencies_database
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // dependencies_table
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // create_table_query
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // engine_full
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
+                        // partition_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // sorting_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // primary_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // sampling_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // storage_policy
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // total_rows
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // total_bytes
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
                     }
                 }
 
-                res.setColumns(std::move(res_columns));
+                UInt64 num_rows = res_columns.at(0)->size();
                 done = true;
-                return res;
+                return Chunk(std::move(res_columns), num_rows);
             }
+
+            const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
                 tables_it = database->getTablesWithDictionaryTablesIterator(context);
 
-            const bool need_lock_structure = needLockStructure(database, header);
+            const bool need_lock_structure = needLockStructure(database, getPort().getHeader());
 
             for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
             {
                 auto table_name = tables_it->name();
-                StoragePtr table = nullptr;
+                if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+                    continue;
 
+                StoragePtr table = nullptr;
                 TableStructureReadLockHolder lock;
 
                 try
                 {
                     if (need_lock_structure)
                     {
-                        if (!table)
-                            table = tables_it->table();
-                        lock = table->lockStructureForShare(false, context.getCurrentQueryId());
+                        table = tables_it->table();
+                        lock = table->lockStructureForShare(context.getCurrentQueryId());
                     }
                 }
                 catch (const Exception & e)
@@ -234,8 +267,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     res_columns[res_index++]->insert(table->getName());
                 }
 
@@ -244,9 +276,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
-
+                    assert(table != nullptr);
                     Array table_paths_array;
                     auto paths = table->getDataPaths();
                     table_paths_array.reserve(paths.size());
@@ -266,7 +296,7 @@ protected:
                     Array dependencies_database_name_array;
                     if (columns_mask[src_index] || columns_mask[src_index + 1])
                     {
-                        const auto dependencies = context.getDependencies(StorageID(database_name, table_name));
+                        const auto dependencies = DatabaseCatalog::instance().getDependencies(StorageID(database_name, table_name));
 
                         dependencies_table_name_array.reserve(dependencies.size());
                         dependencies_database_name_array.reserve(dependencies.size());
@@ -317,8 +347,7 @@ protected:
                 ASTPtr expression_ptr;
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getPartitionKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -327,8 +356,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getSortingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -337,8 +365,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getPrimaryKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -347,8 +374,7 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     if ((expression_ptr = table->getSamplingKeyAST()))
                         res_columns[res_index++]->insert(queryToString(expression_ptr));
                     else
@@ -357,23 +383,41 @@ protected:
 
                 if (columns_mask[src_index++])
                 {
-                    if (!table)
-                        table = tables_it->table();
+                    assert(table != nullptr);
                     auto policy = table->getStoragePolicy();
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
                     else
                         res_columns[res_index++]->insertDefault();
                 }
+
+                if (columns_mask[src_index++])
+                {
+                    assert(table != nullptr);
+                    auto total_rows = table->totalRows();
+                    if (total_rows)
+                        res_columns[res_index++]->insert(*total_rows);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    assert(table != nullptr);
+                    auto total_bytes = table->totalBytes();
+                    if (total_bytes)
+                        res_columns[res_index++]->insert(*total_bytes);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
             }
         }
 
-        res.setColumns(std::move(res_columns));
-        return res;
+        UInt64 num_rows = res_columns.at(0)->size();
+        return Chunk(std::move(res_columns), num_rows);
     }
 private:
     std::vector<UInt8> columns_mask;
-    Block header;
     UInt64 max_block_size;
     ColumnPtr databases;
     size_t database_idx = 0;
@@ -385,7 +429,7 @@ private:
 };
 
 
-BlockInputStreams StorageSystemTables::read(
+Pipes StorageSystemTables::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -413,8 +457,12 @@ BlockInputStreams StorageSystemTables::read(
     }
 
     ColumnPtr filtered_databases_column = getFilteredDatabases(query_info.query, context);
-    return {std::make_shared<TablesBlockInputStream>(
-        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context)};
+
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<TablesBlockSource>(
+        std::move(columns_mask), std::move(res_block), max_block_size, std::move(filtered_databases_column), context));
+
+    return pipes;
 }
 
 }

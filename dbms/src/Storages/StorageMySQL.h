@@ -6,6 +6,7 @@
 #include <ext/shared_ptr_helper.h>
 
 #include <Storages/IStorage.h>
+#include <Interpreters/Context.h>
 #include <mysqlxx/Pool.h>
 
 
@@ -16,7 +17,7 @@ namespace DB
   * Use ENGINE = mysql(host_port, database_name, table_name, user_name, password)
   * Read only.
   */
-class StorageMySQL : public ext::shared_ptr_helper<StorageMySQL>, public IStorage
+class StorageMySQL final : public ext::shared_ptr_helper<StorageMySQL>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMySQL>;
 public:
@@ -33,7 +34,7 @@ public:
 
     std::string getName() const override { return "MySQL"; }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

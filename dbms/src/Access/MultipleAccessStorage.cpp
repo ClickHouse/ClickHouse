@@ -7,8 +7,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_ENTITY_FOUND_DUPLICATES;
+    extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
 }
 
 
@@ -30,16 +30,10 @@ namespace
 
 
 MultipleAccessStorage::MultipleAccessStorage(
-    std::vector<std::unique_ptr<Storage>> nested_storages_, size_t index_of_nested_storage_for_insertion_)
+    std::vector<std::unique_ptr<Storage>> nested_storages_)
     : IAccessStorage(joinStorageNames(nested_storages_))
     , nested_storages(std::move(nested_storages_))
-    , nested_storage_for_insertion(nested_storages[index_of_nested_storage_for_insertion_].get())
     , ids_cache(512 /* cache size */)
-{
-}
-
-
-MultipleAccessStorage::~MultipleAccessStorage()
 {
 }
 
@@ -162,13 +156,39 @@ String MultipleAccessStorage::readNameImpl(const UUID & id) const
 }
 
 
+bool MultipleAccessStorage::canInsertImpl(const AccessEntityPtr & entity) const
+{
+    for (const auto & nested_storage : nested_storages)
+    {
+        if (nested_storage->canInsert(entity))
+            return true;
+    }
+    return false;
+}
+
+
 UUID MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists)
 {
-    auto id = replace_if_exists ? nested_storage_for_insertion->insertOrReplace(entity) : nested_storage_for_insertion->insert(entity);
+    IAccessStorage * nested_storage_for_insertion = nullptr;
+    for (const auto & nested_storage : nested_storages)
+    {
+        if (nested_storage->canInsert(entity))
+        {
+            nested_storage_for_insertion = nested_storage.get();
+            break;
+        }
+    }
 
+    if (!nested_storage_for_insertion)
+    {
+        throw Exception(
+            "Not found a storage to insert " + entity->getTypeName() + backQuote(entity->getName()),
+            ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND);
+    }
+
+    auto id = replace_if_exists ? nested_storage_for_insertion->insertOrReplace(entity) : nested_storage_for_insertion->insert(entity);
     std::lock_guard lock{ids_cache_mutex};
     ids_cache.set(id, std::make_shared<Storage *>(nested_storage_for_insertion));
-
     return id;
 }
 
@@ -185,41 +205,21 @@ void MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 }
 
 
-IAccessStorage::SubscriptionPtr MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     auto storage = findStorage(id);
     if (!storage)
-        return nullptr;
+        return {};
     return storage->subscribeForChanges(id, handler);
 }
 
 
-IAccessStorage::SubscriptionPtr MultipleAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
+ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
 {
-    std::vector<SubscriptionPtr> subscriptions;
+    ext::scope_guard subscriptions;
     for (const auto & nested_storage : nested_storages)
-    {
-        auto subscription = nested_storage->subscribeForChanges(type, handler);
-        if (subscription)
-            subscriptions.emplace_back(std::move(subscription));
-    }
-
-    if (subscriptions.empty())
-        return nullptr;
-
-    if (subscriptions.size() == 1)
-        return std::move(subscriptions[0]);
-
-    class SubscriptionImpl : public Subscription
-    {
-    public:
-        SubscriptionImpl(std::vector<SubscriptionPtr> subscriptions_)
-            : subscriptions(std::move(subscriptions_)) {}
-    private:
-        std::vector<SubscriptionPtr> subscriptions;
-    };
-
-    return std::make_unique<SubscriptionImpl>(std::move(subscriptions));
+        subscriptions.join(nested_storage->subscribeForChanges(type, handler));
+    return subscriptions;
 }
 
 

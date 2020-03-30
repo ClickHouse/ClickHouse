@@ -24,6 +24,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int EMPTY_DATA_PASSED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int DUPLICATE_COLUMN;
@@ -63,7 +64,6 @@ DataTypeTuple::DataTypeTuple(const DataTypes & elems_, const Strings & names_)
             throw Exception("Names of tuple elements must be unique", ErrorCodes::DUPLICATE_COLUMN);
     }
 }
-
 
 
 std::string DataTypeTuple::doGetName() const
@@ -529,7 +529,7 @@ size_t DataTypeTuple::getSizeOfValueInMemory() const
 }
 
 
-static DataTypePtr create(const String & /*type_name*/, const ASTPtr & arguments)
+static DataTypePtr create(const ASTPtr & arguments)
 {
     if (!arguments || arguments->children.empty())
         throw Exception("Tuple cannot be empty", ErrorCodes::EMPTY_DATA_PASSED);
@@ -568,7 +568,7 @@ void registerDataTypeTuple(DataTypeFactory & factory)
 void registerDataTypeNested(DataTypeFactory & factory)
 {
     /// Nested(...) data type is just a sugar for Array(Tuple(...))
-    factory.registerDataType("Nested", [&factory](const String & /*type_name*/, const ASTPtr & arguments)
+    factory.registerDataType("Nested", [&factory](const ASTPtr & arguments)
     {
         return std::make_shared<DataTypeArray>(factory.get("Tuple", arguments));
     });

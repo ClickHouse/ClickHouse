@@ -79,7 +79,6 @@ void SetOrJoinBlockOutputStream::writeSuffix()
 }
 
 
-
 BlockOutputStreamPtr StorageSetOrJoinBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
 {
     UInt64 id = ++increment;
@@ -104,7 +103,6 @@ StorageSetOrJoinBase::StorageSetOrJoinBase(
     base_path = context_.getPath();
     path = base_path + relative_path_;
 }
-
 
 
 StorageSet::StorageSet(

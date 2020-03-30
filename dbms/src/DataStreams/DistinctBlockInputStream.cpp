@@ -20,7 +20,7 @@ Block DistinctBlockInputStream::readImpl()
 {
     /// Execute until end of stream or until
     /// a block with some new records will be gotten.
-    while (1)
+    while (true)
     {
         if (no_more_rows)
             return Block();

@@ -14,22 +14,21 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
 }
 
 /// 0b11 -- can be true and false at the same time
-const Field UNKNOWN_FIELD(3u);
+static const Field UNKNOWN_FIELD(3u);
 
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(const MergeTreeIndexSet & index_)
-    : IMergeTreeIndexGranule()
-    , index(index_)
+    : index(index_)
     , block(index.header.cloneEmpty()) {}
 
 MergeTreeIndexGranuleSet::MergeTreeIndexGranuleSet(
     const MergeTreeIndexSet & index_, MutableColumns && mutable_columns_)
-    : IMergeTreeIndexGranule()
-    , index(index_)
+    : index(index_)
     , block(index.header.cloneWithColumns(std::move(mutable_columns_))) {}
 
 void MergeTreeIndexGranuleSet::serializeBinary(WriteBuffer & ostr) const
@@ -216,14 +215,11 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         const SelectQueryInfo & query,
         const Context & context,
         const MergeTreeIndexSet &index_)
-        : IMergeTreeIndexCondition(), index(index_)
+        : index(index_)
 {
-    for (size_t i = 0, size = index.columns.size(); i < size; ++i)
-    {
-        std::string name = index.columns[i];
+    for (const auto & name : index.columns)
         if (!key_columns.count(name))
             key_columns.insert(name);
-    }
 
     const auto & select = query.query->as<ASTSelectQuery &>();
 
@@ -236,8 +232,6 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         expression_ast = select.where()->clone();
     else if (select.prewhere())
         expression_ast = select.prewhere()->clone();
-    else
-        expression_ast = std::make_shared<ASTLiteral>(UNKNOWN_FIELD);
 
     useless = checkASTUseless(expression_ast);
     /// Do not proceed if index is useless for this query.
@@ -248,7 +242,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
     /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/src/Storages/MergeTree/BoolMask.h).
     traverseAST(expression_ast);
 
-    auto syntax_analyzer_result = SyntaxAnalyzer(context, {}).analyze(
+    auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(
             expression_ast, index.header.getNamesAndTypesList());
     actions = ExpressionAnalyzer(expression_ast, syntax_analyzer_result, context).getActions(true);
 }
@@ -260,12 +254,15 @@ bool MergeTreeIndexConditionSet::alwaysUnknownOrTrue() const
 
 bool MergeTreeIndexConditionSet::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx_granule) const
 {
+    if (useless)
+        return true;
+
     auto granule = std::dynamic_pointer_cast<MergeTreeIndexGranuleSet>(idx_granule);
     if (!granule)
         throw Exception(
                 "Set index condition got a granule with the wrong type.", ErrorCodes::LOGICAL_ERROR);
 
-    if (useless || !granule->size() || (index.max_rows && granule->size() > index.max_rows))
+    if (useless || granule->empty() || (index.max_rows && granule->size() > index.max_rows))
         return true;
 
     Block result = granule->block;
@@ -345,7 +342,7 @@ bool MergeTreeIndexConditionSet::atomFromAST(ASTPtr & node) const
     return false;
 }
 
-bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
+bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node)
 {
     /// Functions AND, OR, NOT. Replace with bit*.
     auto * func = node->as<ASTFunction>();
@@ -361,7 +358,7 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
 
         func->name = "__bitSwapLastTwo";
     }
-    else if (func->name == "and" || func->name == "indexHint")
+    else if (func->name == "and")
     {
         auto last_arg = args.back();
         args.pop_back();
@@ -405,8 +402,11 @@ bool MergeTreeIndexConditionSet::operatorFromAST(ASTPtr & node) const
     return true;
 }
 
-bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic) const
+bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr & node, bool atomic) const
 {
+    if (!node)
+        return true;
+
     if (const auto * func = node->as<ASTFunction>())
     {
         if (key_columns.count(func->getColumnName()))
@@ -414,7 +414,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic
 
         const ASTs & args = func->arguments->children;
 
-        if (func->name == "and" || func->name == "indexHint")
+        if (func->name == "and")
             return checkASTUseless(args[0], atomic) && checkASTUseless(args[1], atomic);
         else if (func->name == "or")
             return checkASTUseless(args[0], atomic) || checkASTUseless(args[1], atomic);
@@ -422,7 +422,7 @@ bool MergeTreeIndexConditionSet::checkASTUseless(const ASTPtr &node, bool atomic
             return checkASTUseless(args[0], atomic);
         else
             return std::any_of(args.begin(), args.end(),
-                    [this](const auto & arg) { return checkASTUseless(arg, true); });
+                [this](const auto & arg) { return checkASTUseless(arg, true); });
     }
     else if (const auto * literal = node->as<ASTLiteral>())
         return !atomic && literal->value.get<bool>();
@@ -471,8 +471,7 @@ std::unique_ptr<IMergeTreeIndex> setIndexCreator(
 
 
     ASTPtr expr_list = MergeTreeData::extractKeyExpressionList(node->expr->clone());
-    auto syntax = SyntaxAnalyzer(context, {}).analyze(
-            expr_list, new_columns);
+    auto syntax = SyntaxAnalyzer(context).analyze(expr_list, new_columns);
     auto unique_expr = ExpressionAnalyzer(expr_list, syntax, context).getActions(false);
 
     auto sample = ExpressionAnalyzer(expr_list, syntax, context)

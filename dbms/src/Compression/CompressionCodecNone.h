@@ -11,7 +11,7 @@ namespace DB
 class CompressionCodecNone : public ICompressionCodec
 {
 public:
-    UInt8 getMethodByte() const override;
+    uint8_t getMethodByte() const override;
 
     String getCodecDesc() const override;
 

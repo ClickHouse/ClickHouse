@@ -1,4 +1,4 @@
-#include <port/unistd.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -47,6 +47,7 @@ using Ports = std::vector<UInt16>;
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_BLOCK_SIGNAL;
     extern const int BAD_ARGUMENTS;
     extern const int EMPTY_DATA_PASSED;
 }
@@ -58,11 +59,11 @@ public:
             bool cumulative_, bool secure_, const String & default_database_,
             const String & user_, const String & password_, const String & stage,
             bool randomize_, size_t max_iterations_, double max_time_,
-            const String & json_path_, size_t confidence_, const Settings & settings_)
+            const String & json_path_, size_t confidence_, const String & query_id_, const Settings & settings_)
         :
         concurrency(concurrency_), delay(delay_), queue(concurrency), randomize(randomize_),
         cumulative(cumulative_), max_iterations(max_iterations_), max_time(max_time_),
-        confidence(confidence_), json_path(json_path_), settings(settings_),
+        json_path(json_path_), confidence(confidence_), query_id(query_id_), settings(settings_),
         global_context(Context::createGlobal()), pool(concurrency)
     {
         const auto secure = secure_ ? Protocol::Secure::Enable : Protocol::Secure::Disable;
@@ -101,7 +102,7 @@ public:
 
     }
 
-    void initialize(Poco::Util::Application & self [[maybe_unused]])
+    void initialize(Poco::Util::Application & self [[maybe_unused]]) override
     {
         std::string home_path;
         const char * home_path_cstr = getenv("HOME");
@@ -111,7 +112,7 @@ public:
         configReadClient(config(), home_path);
     }
 
-    int main(const std::vector<std::string> &)
+    int main(const std::vector<std::string> &) override
     {
         if (!json_path.empty() && Poco::File(json_path).exists()) /// Clear file with previous results
             Poco::File(json_path).remove();
@@ -144,8 +145,9 @@ private:
     bool cumulative;
     size_t max_iterations;
     double max_time;
-    size_t confidence;
     String json_path;
+    size_t confidence;
+    std::string query_id;
     Settings settings;
     Context global_context;
     QueryProcessingStage::Enum query_processing_stage;
@@ -366,6 +368,8 @@ private:
         RemoteBlockInputStream stream(
             *(*connection_entries[connection_index]),
             query, {}, global_context, &settings, nullptr, Scalars(), Tables(), query_processing_stage);
+        if (!query_id.empty())
+            stream.setQueryId(query_id);
 
         Progress progress;
         stream.setProgressCallback([&progress](const Progress & value) { progress.incrementPiecewiseAtomically(value); });
@@ -492,7 +496,7 @@ private:
 
 public:
 
-    ~Benchmark()
+    ~Benchmark() override
     {
         shutdown = true;
     }
@@ -534,6 +538,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             ("database",      value<std::string>()->default_value("default"),   "")
             ("stacktrace",                                                      "print stack traces of exceptions")
             ("confidence",    value<size_t>()->default_value(5),                "set the level of confidence for T-test [0=80%, 1=90%, 2=95%, 3=98%, 4=99%, 5=99.5%(default)")
+            ("query_id",      value<std::string>()->default_value(""),         "")
         ;
 
         Settings settings;
@@ -572,6 +577,7 @@ int mainEntryClickHouseBenchmark(int argc, char ** argv)
             options["timelimit"].as<double>(),
             options["json"].as<std::string>(),
             options["confidence"].as<size_t>(),
+            options["query_id"].as<std::string>(),
             settings);
         return benchmark.run();
     }

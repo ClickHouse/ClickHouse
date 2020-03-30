@@ -14,8 +14,10 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/parseColumnsListForTableFunction.h>
 
+#include <Access/AccessFlags.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Interpreters/Context.h>
 #include "registerTableFunctions.h"
 
 
@@ -24,6 +26,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -71,6 +74,8 @@ StoragePtr TableFunctionValues::executeImpl(const ASTPtr & ast_function, const C
     if (args.size() < 2)
         throw Exception("Table function '" + getName() + "' requires 2 or more arguments: structure and values.",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    context.checkAccess(AccessType::values);
 
     /// Parsing first argument as table structure and creating a sample block
     std::string structure = args[0]->as<ASTLiteral &>().value.safeGet<String>();

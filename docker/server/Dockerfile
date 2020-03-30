@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 ARG repository="deb http://repo.yandex.ru/clickhouse/deb/stable/ main/"
-ARG version=20.2.1.*
+ARG version=20.4.1.*
 ARG gosu_ver=1.10
 
 RUN apt-get update \
@@ -33,6 +33,7 @@ RUN locale-gen en_US.UTF-8
 ENV LANG en_US.UTF-8
 ENV LANGUAGE en_US:en
 ENV LC_ALL en_US.UTF-8
+ENV TZ UTC
 
 RUN mkdir /docker-entrypoint-initdb.d
 
