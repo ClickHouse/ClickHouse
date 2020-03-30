@@ -138,6 +138,9 @@ void CollapsingSortedTransform::insertRows()
         }
     }
 
+    first_negative_row.clear();
+    last_positive_row.clear();
+
     if (out_row_sources_buf)
         out_row_sources_buf->write(
                 reinterpret_cast<const char *>(current_row_sources.data()),

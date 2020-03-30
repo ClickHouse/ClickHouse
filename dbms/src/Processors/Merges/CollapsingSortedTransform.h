@@ -56,7 +56,6 @@ private:
     /// Chunks currently being merged.
     using SourceChunks = std::vector<detail::SharedChunkPtr>;
     SourceChunks source_chunks;
-
     SortCursorImpls cursors;
 
     SortingHeap<SortCursor> queue;

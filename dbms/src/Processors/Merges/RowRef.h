@@ -104,7 +104,7 @@ inline void intrusive_ptr_release(SharedChunk * ptr)
 /// We do not copy data itself, because it may be potentially changed for each row. Performance for `set` is important.
 struct RowRef
 {
-    detail::SharedChunkPtr owned_chunk;
+    detail::SharedChunkPtr owned_chunk = nullptr;
 
     ColumnRawPtrs * all_columns = nullptr;
     ColumnRawPtrs * sort_columns = nullptr;
@@ -118,7 +118,15 @@ struct RowRef
         std::swap(row_num, other.row_num);
     }
 
-    bool empty() const { return all_columns == nullptr; }
+    bool empty() const { return owned_chunk == nullptr; }
+
+    void clear()
+    {
+        owned_chunk.reset();
+        all_columns = nullptr;
+        sort_columns = nullptr;
+        row_num = 0;
+    }
 
     void set(SortCursor & cursor, SharedChunkPtr chunk)
     {
