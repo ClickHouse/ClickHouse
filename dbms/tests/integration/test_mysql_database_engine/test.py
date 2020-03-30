@@ -99,3 +99,24 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
         assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '10000'
 
         mysql_node.query("DROP DATABASE test_database")
+
+
+def test_clickhouse_join_for_mysql_database(started_cluster):
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+        mysql_node.query("CREATE DATABASE IF NOT EXISTS test")
+        mysql_node.query("CREATE TABLE test.t1_mysql_local ("
+                         "pays    VARCHAR(55) DEFAULT 'FRA' NOT NULL, "
+                         "service VARCHAR(5)  DEFAULT ''    NOT NULL,"
+                         "opco    CHAR(3)     DEFAULT ''    NOT NULL"
+                         ")")
+        mysql_node.query("CREATE TABLE test.t2_mysql_local ("
+                         "service VARCHAR(5) DEFAULT '' NOT NULL,"
+                         "opco    VARCHAR(5) DEFAULT ''"
+                         ")")
+        clickhouse_node.query("CREATE TABLE default.t1_remote_mysql AS mysql('mysql1:3306,'test','t1_mysql_local','root','clickhouse')")
+        clickhouse_node.query("CREATE TABLE default.t2_remote_mysql AS mysql('mysql1:3306,'test','t2_mysql_local','root','clickhouse')")
+        assert clickhouse_node.query("SELECT s.pays "
+                              "FROM default.t1_remote_mysql AS s "
+                              "LEFT JOIN default.t1_remote_mysql AS s_ref "
+                              "ON (s_ref.opco = s.opco AND s_ref.service = s.service)") == ''
+        mysql_node.query("DROP DATABASE test")
