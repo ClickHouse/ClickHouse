@@ -17,7 +17,6 @@ namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -46,11 +45,11 @@ public:
 
 private:
     template <typename T>
-    bool executeNumber(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
+    static bool executeNumber(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
 
-    bool executeFixedString(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
-    bool executeString(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
-    bool executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
+    static bool executeFixedString(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data);
+    static bool executeString(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
+    static bool executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data);
 };
 
 
@@ -76,7 +75,7 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
     const IColumn * src_inner_col = src_nullable_col ? &src_nullable_col->getNestedColumn() : &src_data;
     IColumn * res_inner_col = res_nullable_col ? &res_nullable_col->getNestedColumn() : &res_data;
 
-    false
+    false // NOLINT
         || executeNumber<UInt8>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt16>(*src_inner_col, offsets, *res_inner_col)
         || executeNumber<UInt32>(*src_inner_col, offsets, *res_inner_col)
@@ -101,15 +100,15 @@ void FunctionArrayReverse::executeImpl(Block & block, const ColumnNumbers & argu
 }
 
 
-bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_offsets, IColumn & res_data)
+bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const ColumnArray::Offsets & src_array_offsets, IColumn & res_data)
 {
-    size_t size = src_offsets.size();
+    size_t size = src_array_offsets.size();
     res_data.reserve(size);
 
     ColumnArray::Offset src_prev_offset = 0;
     for (size_t i = 0; i < size; ++i)
     {
-        ssize_t src_index = src_offsets[i] - 1;
+        ssize_t src_index = src_array_offsets[i] - 1;
 
         while (src_index >= ssize_t(src_prev_offset))
         {
@@ -117,7 +116,7 @@ bool FunctionArrayReverse::executeGeneric(const IColumn & src_data, const Column
             --src_index;
         }
 
-        src_prev_offset = src_offsets[i];
+        src_prev_offset = src_array_offsets[i];
     }
 
     return true;

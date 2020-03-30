@@ -18,6 +18,7 @@ namespace DB
 
     namespace ErrorCodes
     {
+        extern const int BAD_ARGUMENTS;
         extern const int ILLEGAL_COLUMN;
         extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     }
@@ -34,7 +35,7 @@ public:
     {
         return std::make_shared<FunctionEvalMLMethod>(context);
     }
-    FunctionEvalMLMethod(const Context & context_) : context(context_)
+    explicit FunctionEvalMLMethod(const Context & context_) : context(context_)
     {}
 
     String getName() const override

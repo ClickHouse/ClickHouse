@@ -23,7 +23,7 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
 
     client1.send('DROP TABLE IF EXISTS test.lv')
     client1.expect(prompt)
-    client1.send(' DROP TABLE IF EXISTS test.mt')
+    client1.send('DROP TABLE IF EXISTS test.mt')
     client1.expect(prompt)
     client1.send('CREATE TABLE test.mt (a Int32) Engine=MergeTree order by tuple()')
     client1.expect(prompt)

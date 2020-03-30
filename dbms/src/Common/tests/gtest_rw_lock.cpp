@@ -3,7 +3,7 @@
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
 #include <Common/Stopwatch.h>
-#include <common/Types.h>
+#include <common/types.h>
 #include <Common/ThreadPool.h>
 #include <random>
 #include <pcg_random.hpp>
@@ -23,7 +23,7 @@ namespace DB
 }
 
 
-TEST(Common, RWLock_1)
+TEST(Common, RWLock1)
 {
     constexpr int cycles = 1000;
     const std::vector<size_t> pool_sizes{1, 2, 4, 8};
@@ -90,7 +90,7 @@ TEST(Common, RWLock_1)
     }
 }
 
-TEST(Common, RWLock_Recursive)
+TEST(Common, RWLockRecursive)
 {
     constexpr auto cycles = 10000;
 
@@ -132,7 +132,7 @@ TEST(Common, RWLock_Recursive)
 }
 
 
-TEST(Common, RWLock_Deadlock)
+TEST(Common, RWLockDeadlock)
 {
     static auto lock1 = RWLockImpl::create();
     static auto lock2 = RWLockImpl::create();
@@ -200,7 +200,7 @@ TEST(Common, RWLock_Deadlock)
 }
 
 
-TEST(Common, RWLock_PerfTest_Readers)
+TEST(Common, RWLockPerfTestReaders)
 {
     constexpr int cycles = 100000; // 100k
     const std::vector<size_t> pool_sizes{1, 2, 4, 8};

@@ -6,7 +6,7 @@ if (USE_INCLUDE_WHAT_YOU_USE)
 endif ()
 
 if (USE_CLANG_TIDY)
-    set (CMAKE_CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
 if(COMPILER_PIPE)
@@ -21,8 +21,6 @@ else()
 endif()
 include(../cmake/limit_jobs.cmake)
 
-include(cmake/find_vectorclass.cmake)
-
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config.h)
 
@@ -36,9 +34,9 @@ if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
 endif ()
 
-if (NOT NO_WERROR)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
+if (USE_DEBUG_HELPERS)
+    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/base -include ${ClickHouse_SOURCE_DIR}/dbms/src/Core/iostream_debug_helpers.h")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
@@ -176,8 +174,12 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wsizeof-array-argument)
     # Warn for suspicious length parameters to certain string and memory built-in functions if the argument uses sizeof
     add_cxx_compile_options(-Wsizeof-pointer-memaccess)
-    # Warn about overriding virtual functions that are not marked with the override keyword
-    add_cxx_compile_options(-Wsuggest-override)
+
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9)
+        # Warn about overriding virtual functions that are not marked with the override keyword
+        add_cxx_compile_options(-Wsuggest-override)
+    endif ()
+
     # Warn whenever a switch statement has an index of boolean type and the case values are outside the range of a boolean type
     add_cxx_compile_options(-Wswitch-bool)
     # Warn if a self-comparison always evaluates to true or false
@@ -188,11 +190,6 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wunused)
     # Warn if vector operation is not implemented via SIMD capabilities of the architecture
     add_cxx_compile_options(-Wvector-operation-performance)
-endif ()
-
-if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/libs/libcommon/include -include ${ClickHouse_SOURCE_DIR}/dbms/src/Core/iostream_debug_helpers.h")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
 if (COMPILER_GCC)
@@ -394,8 +391,6 @@ target_link_libraries(clickhouse_common_io
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
-        PRIVATE
-    apple_rt
         PUBLIC
     roaring
 )
@@ -576,9 +571,6 @@ dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
-
-# also for copy_headers.sh:
-target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 
 add_subdirectory (programs)
 add_subdirectory (tests)

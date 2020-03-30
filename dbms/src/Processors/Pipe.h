@@ -40,7 +40,7 @@ public:
 
     /// Specify quotas and limits for every ISourceWithProgress.
     void setLimits(const SourceWithProgress::LocalLimits & limits);
-    void setQuota(const std::shared_ptr<QuotaContext> & quota);
+    void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
 
     /// Set information about preferred executor number for sources.
     void pinSources(size_t executor_number);

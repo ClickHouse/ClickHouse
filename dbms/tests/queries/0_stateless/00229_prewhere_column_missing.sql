@@ -16,7 +16,7 @@ select *, length(arr) as l from prewhere_column_missing;
 select *, length(arr) as l from prewhere_column_missing where l = 0;
 select *, length(arr) as l from prewhere_column_missing prewhere l = 0;
 
-alter table prewhere_column_missing add column hash_x default intHash64(x);
+alter table prewhere_column_missing add column hash_x UInt64 default intHash64(x);
 
 select * from prewhere_column_missing;
 select * from prewhere_column_missing where hash_x = intHash64(x);

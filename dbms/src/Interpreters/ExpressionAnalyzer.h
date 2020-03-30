@@ -9,6 +9,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
@@ -51,7 +52,7 @@ struct ExpressionAnalyzerData
     bool has_global_subqueries = false;
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
-    Tables external_tables;
+    TemporaryTablesMapping external_tables;
 };
 
 
@@ -121,7 +122,7 @@ protected:
 
     SyntaxAnalyzerResultPtr syntax;
 
-    const StoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
+    const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
     const AnalyzedJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
@@ -230,11 +231,12 @@ public:
         const SyntaxAnalyzerResultPtr & syntax_analyzer_result_,
         const Context & context_,
         const NameSet & required_result_columns_ = {},
-        size_t subquery_depth_ = 0,
-        bool do_global_ = false)
-    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, subquery_depth_, do_global_)
-    ,   required_result_columns(required_result_columns_)
-    {}
+        bool do_global_ = false,
+        const SelectQueryOptions & options_ = {})
+    :   ExpressionAnalyzer(query_, syntax_analyzer_result_, context_, options_.subquery_depth, do_global_)
+    ,   required_result_columns(required_result_columns_), query_options(options_)
+    {
+    }
 
     /// Does the expression have aggregate functions or a GROUP BY or HAVING section.
     bool hasAggregation() const { return has_aggregation; }
@@ -248,7 +250,7 @@ public:
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
-    const Tables & getExternalTables() const { return external_tables; }
+    const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
 
     ExpressionActionsPtr simpleSelectActions();
 
@@ -260,6 +262,7 @@ public:
 private:
     /// If non-empty, ignore all expressions not from this list.
     NameSet required_result_columns;
+    SelectQueryOptions query_options;
 
     /**
       * Create Set from a subquery or a table expression in the query. The created set is suitable for using the index.
@@ -272,7 +275,7 @@ private:
       * Because while making set we will read data from StorageSet which is not allowed.
       * Returns valid SetPtr from StorageSet if the latter is used after IN or nullptr otherwise.
       */
-    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_of_table_name);
+    SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
 
     JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
     void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,

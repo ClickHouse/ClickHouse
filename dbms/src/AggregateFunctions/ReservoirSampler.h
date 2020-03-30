@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <climits>
 #include <sstream>
-#include <common/Types.h>
+#include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>

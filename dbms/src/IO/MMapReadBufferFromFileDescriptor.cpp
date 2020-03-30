@@ -100,7 +100,7 @@ int MMapReadBufferFromFileDescriptor::getFD() const
     return fd;
 }
 
-off_t MMapReadBufferFromFileDescriptor::getPositionInFile()
+off_t MMapReadBufferFromFileDescriptor::getPosition()
 {
     return count();
 }

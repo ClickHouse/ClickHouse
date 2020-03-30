@@ -30,7 +30,13 @@ struct TextLogElement
 
 class TextLog : public SystemLog<TextLogElement>
 {
-    using SystemLog<TextLogElement>::SystemLog;
+public:
+    TextLog(
+        Context & context_,
+        const String & database_name_,
+        const String & table_name_,
+        const String & storage_def_,
+        size_t flush_interval_milliseconds_);
 };
 
 }

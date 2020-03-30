@@ -13,4 +13,9 @@ inline bool functionIsInOrGlobalInOperator(const std::string & name)
     return functionIsInOperator(name) || name == "globalIn" || name == "globalNotIn";
 }
 
+inline bool functionIsLikeOperator(const std::string & name)
+{
+    return name == "like" || name == "notLike";
+}
+
 }

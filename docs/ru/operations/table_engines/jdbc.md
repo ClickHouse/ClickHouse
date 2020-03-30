@@ -1,4 +1,4 @@
-# JDBC
+# JDBC {#jdbc}
 
 Позволяет ClickHouse подключаться к внешним базам данных с помощью [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
@@ -6,28 +6,30 @@
 
 Движок поддерживает тип данных [Nullable](../../data_types/nullable.md).
 
-## Создание таблицы
+## Создание таблицы {#sozdanie-tablitsy}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
 ENGINE = JDBC(dbms_uri, external_database, external_table)
 ```
 
 **Параметры движка**
 
-- `dbms_uri` — URI внешней СУБД.
+-   `dbms_uri` — URI внешней СУБД.
 
-    Формат: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
-Пример для MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
+        Формат: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
 
-- `external_database` — база данных во внешней СУБД.
-- `external_table` — таблица в `external_database`.
+    Пример для MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
-## Пример использования
+-   `external_database` — база данных во внешней СУБД.
+
+-   `external_table` — таблица в `external_database`.
+
+## Пример использования {#primer-ispolzovaniia}
 
 Создадим таблицу в на сервере MySQL с помощью консольного клиента MySQL:
 
-```text
+``` text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -50,13 +52,15 @@ mysql> select * from test;
 
 Создадим таблицу на сервере ClickHouse и получим из неё данные:
 
-```sql
+``` sql
 CREATE TABLE jdbc_table ENGINE JDBC('jdbc:mysql://localhost:3306/?user=root&password=root', 'test', 'test')
 ```
-```sql
+
+``` sql
 DESCRIBE TABLE jdbc_table
 ```
-```text
+
+``` text
 ┌─name───────────────┬─type───────────────┬─default_type─┬─default_expression─┐
 │ int_id             │ Int32              │              │                    │
 │ int_nullable       │ Nullable(Int32)    │              │                    │
@@ -64,18 +68,20 @@ DESCRIBE TABLE jdbc_table
 │ float_nullable     │ Nullable(Float32)  │              │                    │
 └────────────────────┴────────────────────┴──────────────┴────────────────────┘
 ```
-```sql
+
+``` sql
 SELECT *
 FROM jdbc_table
 ```
-```text
+
+``` text
 ┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
 │      1 │         ᴺᵁᴸᴸ │     2 │           ᴺᵁᴸᴸ │
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## Смотрите также
+## Смотрите также {#smotrite-takzhe}
 
-- [Табличная функция JDBC](../../query_language/table_functions/jdbc.md).
+-   [Табличная функция JDBC](../../query_language/table_functions/jdbc.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/jdbc/) <!--hide-->

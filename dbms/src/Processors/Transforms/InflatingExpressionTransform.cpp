@@ -28,7 +28,7 @@ void InflatingExpressionTransform::transform(Chunk & chunk)
         if (expression->resultIsAlwaysEmpty())
         {
             stopReading();
-            chunk = Chunk(getOutputPort().getHeader().getColumns(), 0);
+            chunk.clear();
             return;
         }
     }

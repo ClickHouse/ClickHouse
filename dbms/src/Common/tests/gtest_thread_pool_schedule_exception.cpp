@@ -13,7 +13,7 @@ static bool check()
 
     try
     {
-        for (size_t i = 0; i < 100; ++i)
+        for (size_t i = 0; i < 500; ++i)
             pool.scheduleOrThrowOnError([] {});    /// An exception will be rethrown from this method.
     }
     catch (const std::runtime_error &)

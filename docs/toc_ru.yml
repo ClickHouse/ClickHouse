@@ -7,12 +7,14 @@ nav:
   - 'Производительность': 'introduction/performance.md'
   - 'История': 'introduction/history.md'
   - 'Информационная поддержка': 'introduction/info.md'
+  - 'Пользователи': 'introduction/adopters.md'
 
 - 'Начало работы':
   - 'hidden': 'getting_started/index.md'
   - 'Установка': 'getting_started/install.md'
   - 'Руководство для начинающих': 'getting_started/tutorial.md'
   - 'Тестовые наборы данных':
+    - 'Введение': 'getting_started/example_datasets/index.md'
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'Данные о такси в Нью-Йорке': 'getting_started/example_datasets/nyc_taxi.md'
     - 'AMPLab Big Data Benchmark': 'getting_started/example_datasets/amplab_benchmark.md'
@@ -20,6 +22,7 @@ nav:
     - 'Терабайт логов кликов от Criteo': 'getting_started/example_datasets/criteo.md'
     - 'Схема «Звезда»': 'getting_started/example_datasets/star_schema.md'
     - 'Данные Яндекс.Метрики': 'getting_started/example_datasets/metrica.md'
+  - 'Playground': 'getting_started/playground.md'
 
 - 'Интерфейсы':
   - 'Введение': 'interfaces/index.md'
@@ -40,6 +43,7 @@ nav:
 - 'Движки баз данных':
     - 'Введение': 'database_engines/index.md'
     - 'MySQL': 'database_engines/mysql.md'
+    - 'Lazy': 'database_engines/lazy.md'
 
 - 'Движки таблиц':
   - 'Введение': 'operations/table_engines/index.md'
@@ -78,6 +82,7 @@ nav:
     - 'MaterializedView': 'operations/table_engines/materializedview.md'
     - 'Memory': 'operations/table_engines/memory.md'
     - 'Buffer': 'operations/table_engines/buffer.md'
+    - 'GenerateRandom': 'operations/table_engines/generate.md'
 
 - 'Справка по SQL':
   - 'hidden': 'query_language/index.md'
@@ -141,6 +146,7 @@ nav:
     - 'odbc': 'query_language/table_functions/odbc.md'
     - 'hdfs': 'query_language/table_functions/hdfs.md'
     - 'input': 'query_language/table_functions/input.md'
+    - 'generateRandom': 'query_language/table_functions/generate.md'
   - 'Словари':
     - 'Введение': 'query_language/dicts/index.md'
     - 'Внешние словари':
@@ -164,6 +170,7 @@ nav:
     - 'UUID': 'data_types/uuid.md'
     - 'Date': 'data_types/date.md'
     - 'DateTime': 'data_types/datetime.md'
+    - 'DateTime64': 'data_types/datetime64.md'
     - 'Enum': 'data_types/enum.md'
     - 'Array(T)': 'data_types/array.md'
     - 'AggregateFunction(name, types_of_arguments...)': 'data_types/nested_data_structures/aggregatefunction.md'
@@ -217,6 +224,7 @@ nav:
     - 'Введение': 'operations/utils/index.md'
     - 'clickhouse-copier': 'operations/utils/clickhouse-copier.md'
     - 'clickhouse-local': 'operations/utils/clickhouse-local.md'
+    - 'clickhouse-benchmark': 'operations/utils/clickhouse-benchmark.md'
 
 - 'Разработка':
   - 'hidden': 'development/index.md'
@@ -226,12 +234,17 @@ nav:
   - 'Как собрать ClickHouse на Linux': 'development/build.md'
   - 'Как собрать ClickHouse на Mac OS X': 'development/build_osx.md'
   - 'Как собрать ClickHouse на Linux для Mac OS X': 'development/build_cross_osx.md'
+  - 'Как собрать ClickHouse на Linux для AARCH64 (ARM64)': 'development/build_cross_arm.md'
   - 'Как писать код на C++': 'development/style.md'
   - 'Как запустить тесты': 'development/tests.md'
   - 'Сторонние библиотеки': 'development/contrib.md'
 
 - 'Что нового':
-  - 'Changelog': 'changelog.md'
+  - 'Changelog':
+    - '2020': 'changelog/index.md'
+    - '2019': 'changelog/2019.md'
+    - '2018': 'changelog/2018.md'
+    - '2017': 'changelog/2017.md'
   - 'Security changelog': 'security_changelog.md'
   - 'Roadmap': 'roadmap.md'
   - 'Подробный roadmap 2020': 'extended_roadmap.md'
