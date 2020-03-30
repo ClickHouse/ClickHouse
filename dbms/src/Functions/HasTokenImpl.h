@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
+
 /** Token search the string, means that needle must be surrounded by some separator chars, like whitespace or puctuation.
   */
 template <typename TokenSearcher, bool negate_result = false>
