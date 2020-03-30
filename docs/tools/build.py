@@ -79,6 +79,7 @@ def build_for_lang(lang, args):
         site_names = {
             'en': 'ClickHouse %s Documentation',
             'es': 'Documentación de ClickHouse %s',
+            'fr': 'Documentation ClickHouse %s',
             'ru': 'Документация ClickHouse %s',
             'zh': 'ClickHouse文档 %s',
             'ja': 'ClickHouseドキュメント %s',
@@ -89,6 +90,7 @@ def build_for_lang(lang, args):
             'en': 'English',
             'zh': '中文',
             'es': 'Español',
+            'fr': 'Français',
             'ru': 'Русский',
             'ja': '日本語',
             'fa': 'فارسی'
