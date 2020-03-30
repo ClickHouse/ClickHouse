@@ -186,6 +186,14 @@ private:
             {
                 return event_idx + 1;
             }
+            else if (strict_order && first_event && events_timestamp[event_idx - 1] == -1)
+            {
+                for (size_t event = 0; event < events_timestamp.size(); ++event)
+                {
+                    if (events_timestamp[event] == -1)
+                        return event;
+                }
+            }
             else if (events_timestamp[event_idx - 1] >= 0 && timestamp <= events_timestamp[event_idx - 1] + window)
             {
                 events_timestamp[event_idx] = events_timestamp[event_idx - 1];
