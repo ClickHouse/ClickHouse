@@ -510,11 +510,11 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             // generated a unique column name for it. Use it instead of a generic
             // display name.
             auto child_column_name = child->getColumnName();
-            auto asLiteral = dynamic_cast<const ASTLiteral *>(child.get());
-            if (asLiteral)
+            auto as_literal = dynamic_cast<const ASTLiteral *>(child.get());
+            if (as_literal)
             {
-                assert(!asLiteral->unique_column_name.empty());
-                child_column_name = asLiteral->unique_column_name;
+                assert(!as_literal->unique_column_name.empty());
+                child_column_name = as_literal->unique_column_name;
             }
 
             if (data.hasColumn(child_column_name))
