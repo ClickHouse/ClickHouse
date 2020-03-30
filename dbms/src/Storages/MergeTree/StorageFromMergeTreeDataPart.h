@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Storages/IStorage.h>
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Core/Defines.h>
 
@@ -13,7 +13,7 @@ namespace DB
 {
 
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFromMergeTreeDataPart : public ext::shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
+class StorageFromMergeTreeDataPart final : public ext::shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageFromMergeTreeDataPart>;
 public:
@@ -32,7 +32,6 @@ public:
     }
 
 
-
     bool supportsIndexForIn() const override { return true; }
 
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
@@ -40,10 +39,23 @@ public:
         return part->storage.mayBenefitFromIndexForIn(left_in_operand, query_context);
     }
 
+    bool hasAnyTTL() const override { return part->storage.hasAnyTTL(); }
+    bool hasRowsTTL() const override { return part->storage.hasRowsTTL(); }
+
+    ColumnDependencies getColumnDependencies(const NameSet & updated_columns) const override
+    {
+        return part->storage.getColumnDependencies(updated_columns);
+    }
+
     StorageInMemoryMetadata getInMemoryMetadata() const override
     {
         return part->storage.getInMemoryMetadata();
     }
+
+
+    bool hasSortingKey() const { return part->storage.hasSortingKey(); }
+
+    Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
 
 
 protected:

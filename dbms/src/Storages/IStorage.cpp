@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
     extern const int DUPLICATE_COLUMN;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
@@ -25,8 +26,6 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TYPE_MISMATCH;
-    extern const int SETTINGS_ARE_NOT_SUPPORTED;
-    extern const int UNKNOWN_SETTING;
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -279,10 +278,10 @@ void IStorage::check(const Block & block, bool need_all) const
 
     if (need_all && names_in_block.size() < columns_map.size())
     {
-        for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
+        for (const auto & available_column : available_columns)
         {
-            if (!names_in_block.count(it->name))
-                throw Exception("Expected column " + it->name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+            if (!names_in_block.count(available_column.name))
+                throw Exception("Expected column " + available_column.name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
 }
@@ -315,11 +314,9 @@ bool IStorage::isVirtualColumn(const String & column_name) const
     return getColumns().get(column_name).is_virtual;
 }
 
-TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
+TableStructureReadLockHolder IStorage::lockStructureForShare(const String & query_id)
 {
     TableStructureReadLockHolder result;
-    if (will_add_new_data)
-        result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Read, query_id);
     result.structure_lock = structure_lock->getLock(RWLockImpl::Read, query_id);
 
     if (is_dropped)
@@ -327,43 +324,32 @@ TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_d
     return result;
 }
 
-TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_id)
+TableStructureWriteLockHolder IStorage::lockAlterIntention()
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_lock = std::unique_lock(alter_lock);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
     return result;
 }
 
-void IStorage::lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
-{
-    if (!lock_holder.alter_intention_lock)
-        throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-    lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-}
-
 void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
 {
-    if (!lock_holder.alter_intention_lock)
+    if (!lock_holder.alter_lock)
         throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    if (!lock_holder.new_data_structure_lock)
-        lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
     lock_holder.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
 }
 
 TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_lock = std::unique_lock(alter_lock);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
-    result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
     result.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
 
     return result;
@@ -371,12 +357,7 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 
 StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 {
-    return
-    {
-        .columns = getColumns(),
-        .indices = getIndices(),
-        .constraints = getConstraints(),
-    };
+    return StorageInMemoryMetadata(getColumns(), getIndices(), getConstraints());
 }
 
 void IStorage::alter(
@@ -388,7 +369,7 @@ void IStorage::alter(
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
     setColumns(std::move(metadata.columns));
 }
 

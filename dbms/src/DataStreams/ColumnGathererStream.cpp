@@ -10,10 +10,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int INCOMPATIBLE_COLUMNS;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
-    extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int EMPTY_DATA_PASSED;
     extern const int RECEIVED_EMPTY_DATA;
 }

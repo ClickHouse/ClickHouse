@@ -8,8 +8,6 @@
 
 #include <boost/noncopyable.hpp>
 
-#include <common/likely.h>
-
 #include <Core/Defines.h>
 #include <Core/Types.h>
 #include <Common/Exception.h>

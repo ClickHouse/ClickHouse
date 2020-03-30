@@ -1,5 +1,7 @@
 #include "FunctionsStringRegex.h"
 #include "FunctionsStringSearch.h"
+#include "FunctionsMultiStringSearch.h"
+#include "FunctionsStringSearchToString.h"
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
@@ -35,6 +37,9 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int CANNOT_ALLOCATE_MEMORY;
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int TOO_MANY_BYTES;
@@ -93,7 +98,7 @@ struct MatchImpl
 
     using ResultType = UInt8;
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & data, const ColumnString::Offsets & offsets, const std::string & pattern, PaddedPODArray<UInt8> & res)
     {
         if (offsets.empty())
@@ -242,15 +247,175 @@ struct MatchImpl
         }
     }
 
+    /// Very carefully crafted copy-paste.
+    static void vectorFixedConstant(
+        const ColumnString::Chars & data, size_t n, const std::string & pattern, PaddedPODArray<UInt8> & res)
+    {
+        if (data.empty())
+            return;
+
+        String strstr_pattern;
+        /// A simple case where the LIKE expression reduces to finding a substring in a string
+        if (like && likePatternIsStrstr(pattern, strstr_pattern))
+        {
+            const UInt8 * begin = data.data();
+            const UInt8 * pos = begin;
+            const UInt8 * end = pos + data.size();
+
+            size_t i = 0;
+            const UInt8 * next_pos = begin;
+
+            /// If pattern is larger than string size - it cannot be found.
+            if (strstr_pattern.size() <= n)
+            {
+                Volnitsky searcher(strstr_pattern.data(), strstr_pattern.size(), end - pos);
+
+                /// We will search for the next occurrence in all rows at once.
+                while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+                {
+                    /// Let's determine which index it refers to.
+                    while (next_pos + n <= pos)
+                    {
+                        res[i] = revert;
+                        next_pos += n;
+                        ++i;
+                    }
+                    next_pos += n;
+
+                    /// We check that the entry does not pass through the boundaries of strings.
+                    if (pos + strstr_pattern.size() <= next_pos)
+                        res[i] = !revert;
+                    else
+                        res[i] = revert;
+
+                    pos = next_pos;
+                    ++i;
+                }
+            }
+
+            /// Tail, in which there can be no substring.
+            if (i < res.size())
+                memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
+        }
+        else
+        {
+            size_t size = data.size() / n;
+
+            const auto & regexp = Regexps::get<like, true>(pattern);
+
+            std::string required_substring;
+            bool is_trivial;
+            bool required_substring_is_prefix; /// for `anchored` execution of the regexp.
+
+            regexp->getAnalyzeResult(required_substring, is_trivial, required_substring_is_prefix);
+
+            if (required_substring.empty())
+            {
+                if (!regexp->getRE2()) /// An empty regexp. Always matches.
+                {
+                    if (size)
+                        memset(res.data(), 1, size * sizeof(res[0]));
+                }
+                else
+                {
+                    size_t offset = 0;
+                    for (size_t i = 0; i < size; ++i)
+                    {
+                        res[i] = revert
+                            ^ regexp->getRE2()->Match(
+                                  re2_st::StringPiece(reinterpret_cast<const char *>(&data[offset]), n),
+                                  0,
+                                  n,
+                                  re2_st::RE2::UNANCHORED,
+                                  nullptr,
+                                  0);
+
+                        offset += n;
+                    }
+                }
+            }
+            else
+            {
+                /// NOTE This almost matches with the case of LikePatternIsStrstr.
+
+                const UInt8 * begin = data.data();
+                const UInt8 * pos = begin;
+                const UInt8 * end = pos + data.size();
+
+                size_t i = 0;
+                const UInt8 * next_pos = begin;
+
+                /// If required substring is larger than string size - it cannot be found.
+                if (strstr_pattern.size() <= n)
+                {
+                    Volnitsky searcher(required_substring.data(), required_substring.size(), end - pos);
+
+                    /// We will search for the next occurrence in all rows at once.
+                    while (pos < end && end != (pos = searcher.search(pos, end - pos)))
+                    {
+                        /// Let's determine which index it refers to.
+                        while (next_pos + n <= pos)
+                        {
+                            res[i] = revert;
+                            next_pos += n;
+                            ++i;
+                        }
+                        next_pos += n;
+
+                        if (pos + strstr_pattern.size() <= next_pos)
+                        {
+                            /// And if it does not, if necessary, we check the regexp.
+
+                            if (is_trivial)
+                                res[i] = !revert;
+                            else
+                            {
+                                const char * str_data = reinterpret_cast<const char *>(next_pos - n);
+
+                                /** Even in the case of `required_substring_is_prefix` use UNANCHORED check for regexp,
+                                *  so that it can match when `required_substring` occurs into the string several times,
+                                *  and at the first occurrence, the regexp is not a match.
+                                */
+
+                                if (required_substring_is_prefix)
+                                    res[i] = revert
+                                        ^ regexp->getRE2()->Match(
+                                            re2_st::StringPiece(str_data, n),
+                                            reinterpret_cast<const char *>(pos) - str_data,
+                                            n,
+                                            re2_st::RE2::UNANCHORED,
+                                            nullptr,
+                                            0);
+                                else
+                                    res[i] = revert
+                                        ^ regexp->getRE2()->Match(
+                                            re2_st::StringPiece(str_data, n), 0, n, re2_st::RE2::UNANCHORED, nullptr, 0);
+                            }
+                        }
+                        else
+                            res[i] = revert;
+
+                        pos = next_pos;
+                        ++i;
+                    }
+                }
+
+                /// Tail, in which there can be no substring.
+                if (i < res.size())
+                    memset(&res[i], revert, (res.size() - i) * sizeof(res[0]));
+            }
+        }
+    }
+
     template <typename... Args>
-    static void vector_vector(Args &&...)
+    static void vectorVector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     /// Search different needles in single haystack.
     template <typename... Args>
-    static void constant_vector(Args &&...)
+    static void constantVector(Args &&...)
     {
         throw Exception("Functions 'like' and 'match' don't support non-constant needle argument", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -266,22 +431,22 @@ struct MultiMatchAnyImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = false;
-    static auto ReturnType()
+    static auto getReturnType()
     {
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
         PaddedPODArray<Type> & res,
         PaddedPODArray<UInt64> & offsets)
     {
-        vector_constant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
+        vectorConstant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
@@ -303,8 +468,8 @@ struct MultiMatchAnyImpl
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
         auto on_match = []([[maybe_unused]] unsigned int id,
-                           unsigned long long /* from */,
-                           unsigned long long /* to */,
+                           unsigned long long /* from */, // NOLINT
+                           unsigned long long /* to */, // NOLINT
                            unsigned int /* flags */,
                            void * context) -> int
         {
@@ -348,7 +513,7 @@ struct MultiMatchAnyImpl
         memset(accum.data(), 0, accum.size());
         for (size_t j = 0; j < needles.size(); ++j)
         {
-            MatchImpl<false, false>::vector_constant(haystack_data, haystack_offsets, needles[j].toString(), accum);
+            MatchImpl<false, false>::vectorConstant(haystack_data, haystack_offsets, needles[j].toString(), accum);
             for (size_t i = 0; i < res.size(); ++i)
             {
                 if constexpr (FindAny)
@@ -369,22 +534,22 @@ struct MultiMatchAllIndicesImpl
     /// Variable for understanding, if we used offsets for the output, most
     /// likely to determine whether the function returns ColumnVector of ColumnArray.
     static constexpr bool is_column_array = true;
-    static auto ReturnType()
+    static auto getReturnType()
     {
         return std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>());
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
         PaddedPODArray<Type> & res,
         PaddedPODArray<UInt64> & offsets)
     {
-        vector_constant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
+        vectorConstant(haystack_data, haystack_offsets, needles, res, offsets, std::nullopt);
     }
 
-    static void vector_constant(
+    static void vectorConstant(
         const ColumnString::Chars & haystack_data,
         const ColumnString::Offsets & haystack_offsets,
         const std::vector<StringRef> & needles,
@@ -404,8 +569,8 @@ struct MultiMatchAllIndicesImpl
         MultiRegexps::ScratchPtr smart_scratch(scratch);
 
         auto on_match = [](unsigned int id,
-                           unsigned long long /* from */,
-                           unsigned long long /* to */,
+                           unsigned long long /* from */, // NOLINT
+                           unsigned long long /* to */, // NOLINT
                            unsigned int /* flags */,
                            void * context) -> int
         {
@@ -515,7 +680,7 @@ struct ReplaceRegexpImpl
     {
         Instructions instructions;
 
-        String now = "";
+        String now;
         for (size_t i = 0; i < s.size(); ++i)
         {
             if (s[i] == '\\' && i + 1 < s.size())
@@ -649,7 +814,7 @@ struct ReplaceRegexpImpl
         }
     }
 
-    static void vector_fixed(
+    static void vectorFixed(
         const ColumnString::Chars & data,
         size_t n,
         const std::string & needle,
@@ -760,7 +925,7 @@ struct ReplaceStringImpl
 
     /// Note: this function converts fixed-length strings to variable-length strings
     ///       and each variable-length string should ends with zero byte.
-    static void vector_fixed(
+    static void vectorFixed(
         const ColumnString::Chars & data,
         size_t n,
         const std::string & needle,
@@ -895,7 +1060,7 @@ public:
         String needle = c1_const->getValue<String>();
         String replacement = c2_const->getValue<String>();
 
-        if (needle.size() == 0)
+        if (needle.empty())
             throw Exception("Length of the second argument of function replace must be greater than 0.", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
         if (const ColumnString * col = checkAndGetColumn<ColumnString>(column_src.get()))
@@ -907,7 +1072,7 @@ public:
         else if (const ColumnFixedString * col_fixed = checkAndGetColumn<ColumnFixedString>(column_src.get()))
         {
             auto col_res = ColumnString::create();
-            Impl::vector_fixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
+            Impl::vectorFixed(col_fixed->getChars(), col_fixed->getN(), needle, replacement, col_res->getChars(), col_res->getOffsets());
             block.getByPosition(result).column = std::move(col_res);
         }
         else

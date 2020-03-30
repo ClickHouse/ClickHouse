@@ -30,6 +30,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_comment_column("COMMENT COLUMN");
     ParserKeyword s_modify_order_by("MODIFY ORDER BY");
     ParserKeyword s_modify_ttl("MODIFY TTL");
+    ParserKeyword s_materialize_ttl("MATERIALIZE TTL");
     ParserKeyword s_modify_setting("MODIFY SETTING");
     ParserKeyword s_modify_query("MODIFY QUERY");
 
@@ -457,6 +458,16 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             if (!parser_ttl_list.parse(pos, command->ttl, expected))
                 return false;
             command->type = ASTAlterCommand::MODIFY_TTL;
+        }
+        else if (s_materialize_ttl.ignore(pos, expected))
+        {
+            command->type = ASTAlterCommand::MATERIALIZE_TTL;
+
+            if (s_in_partition.ignore(pos, expected))
+            {
+                if (!parser_partition.parse(pos, command->partition, expected))
+                    return false;
+            }
         }
         else if (s_modify_setting.ignore(pos, expected))
         {

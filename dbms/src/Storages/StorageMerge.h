@@ -13,7 +13,7 @@ namespace DB
 /** A table that represents the union of an arbitrary number of other tables.
   * All tables must have the same structure.
   */
-class StorageMerge : public ext::shared_ptr_helper<StorageMerge>, public IStorage
+class StorageMerge final : public ext::shared_ptr_helper<StorageMerge>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMerge>;
 public:
@@ -31,7 +31,7 @@ public:
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, const ASTPtr &) const override;
 
     Pipes read(
         const Names & column_names,
@@ -64,7 +64,7 @@ private:
     template <typename F>
     StoragePtr getFirstTable(F && predicate) const;
 
-    DatabaseTablesIteratorPtr getDatabaseIterator(const Context & context) const;
+    DatabaseTablesIteratorPtr getDatabaseIterator() const;
 
 protected:
     StorageMerge(
@@ -81,7 +81,7 @@ protected:
         const SelectQueryInfo & query_info, const QueryProcessingStage::Enum & processed_stage,
         const UInt64 max_block_size, const Block & header, const StorageWithLockAndName & storage_with_lock,
         Names & real_column_names,
-        Context & modified_context, size_t streams_num, bool has_table_virtual_column,
+        const std::shared_ptr<Context> & modified_context, size_t streams_num, bool has_table_virtual_column,
         bool concat_streams = false);
 
     void convertingSourceStream(const Block & header, const Context & context, ASTPtr & query,

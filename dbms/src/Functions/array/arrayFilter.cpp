@@ -6,6 +6,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 /** arrayFilter(x -> predicate, array) - leave in the array only the elements for which the expression is true.
   */

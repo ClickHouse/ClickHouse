@@ -91,7 +91,7 @@ struct SettingMaxThreads
     void deserialize(ReadBuffer & buf, SettingsBinaryFormat format);
 
     void setAuto();
-    UInt64 getAutoValue() const;
+    static UInt64 getAutoValue();
 };
 
 
@@ -345,6 +345,7 @@ private:
 
         StringRef name;
         StringRef description;
+        StringRef type;
         bool is_important;
         IsChangedFunction is_changed;
         GetStringFunction get_string;
@@ -391,6 +392,7 @@ public:
         const_reference(const const_reference & src) = default;
         const StringRef & getName() const { return member->name; }
         const StringRef & getDescription() const { return member->description; }
+        const StringRef & getType() const { return member->type; }
         bool isChanged() const { return member->is_changed(*collection); }
         Field getValue() const;
         String getValueAsString() const { return member->get_string(*collection); }

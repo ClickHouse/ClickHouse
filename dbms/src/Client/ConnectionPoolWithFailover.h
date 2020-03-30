@@ -44,8 +44,8 @@ public:
 
     /** Allocates connection to work. */
     Entry get(const ConnectionTimeouts & timeouts,
-              const Settings * settings = nullptr,
-              bool force_connected = true) override; /// From IConnectionPool
+              const Settings * settings,
+              bool force_connected) override; /// From IConnectionPool
 
     /** Allocates up to the specified number of connections to work.
       * Connections provide access to different replicas of one shard.

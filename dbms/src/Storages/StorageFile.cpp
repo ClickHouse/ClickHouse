@@ -43,7 +43,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_WRITE_TO_FILE_DESCRIPTOR;
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int CANNOT_TRUNCATE_FILE;
     extern const int DATABASE_ACCESS_DENIED;
@@ -51,7 +52,6 @@ namespace ErrorCodes
     extern const int UNKNOWN_IDENTIFIER;
     extern const int INCORRECT_FILE_NAME;
     extern const int FILE_DOESNT_EXIST;
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
 }
 
 namespace
@@ -60,7 +60,7 @@ namespace
 /* Recursive directory listing with matched paths as a result.
  * Have the same method in StorageHDFS.
  */
-static std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
+std::vector<std::string> listFilesWithRegexpMatching(const std::string & path_for_ls, const std::string & for_match)
 {
     const size_t first_glob = for_match.find_first_of("*?{");
 
@@ -105,13 +105,13 @@ static std::vector<std::string> listFilesWithRegexpMatching(const std::string & 
     return result;
 }
 
-static std::string getTablePath(const std::string & table_dir_path, const std::string & format_name)
+std::string getTablePath(const std::string & table_dir_path, const std::string & format_name)
 {
     return table_dir_path + "/data." + escapeForFileName(format_name);
 }
 
 /// Both db_dir_path and table_path must be converted to absolute paths (in particular, path cannot contain '..').
-static void checkCreationIsAllowed(const Context & context_global, const std::string & db_dir_path, const std::string & table_path)
+void checkCreationIsAllowed(const Context & context_global, const std::string & db_dir_path, const std::string & table_path)
 {
     if (context_global.getApplicationType() != Context::ApplicationType::SERVER)
         return;
@@ -386,8 +386,6 @@ Pipes StorageFile::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    const ColumnsDescription & columns_ = getColumns();
-    auto column_defaults = columns_.getDefaults();
     BlockInputStreams blocks_input;
 
     if (use_table_fd)   /// need to call ctr BlockInputStream
@@ -417,7 +415,8 @@ Pipes StorageFile::read(
     pipes.reserve(num_streams);
 
     for (size_t i = 0; i < num_streams; ++i)
-        pipes.emplace_back(std::make_shared<StorageFileSource>(this_ptr, context, max_block_size, files_info, column_defaults));
+        pipes.emplace_back(std::make_shared<StorageFileSource>(
+            this_ptr, context, max_block_size, files_info, getColumns().getDefaults()));
 
     return pipes;
 }
@@ -546,7 +545,7 @@ void registerStorageFile(StorageFactory & factory)
     {
         ASTs & engine_args = args.engine_args;
 
-        if (!(engine_args.size() >= 1 && engine_args.size() <= 3))
+        if (!(engine_args.size() >= 1 && engine_args.size() <= 3))  // NOLINT
             throw Exception(
                 "Storage File requires from 1 to 3 arguments: name of used format, source and compression_method.",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);

@@ -140,7 +140,7 @@
 	url = https://github.com/ClickHouse-Extras/libc-headers.git
 [submodule "contrib/replxx"]
 	path = contrib/replxx
-	url = https://github.com/AmokHuginnsson/replxx.git
+	url = https://github.com/ClickHouse-Extras/replxx.git
 [submodule "contrib/ryu"]
 	path = contrib/ryu
 	url = https://github.com/ClickHouse-Extras/ryu.git
@@ -148,3 +148,6 @@
 	path = contrib/avro
 	url = https://github.com/ClickHouse-Extras/avro.git
 	ignore = untracked
+[submodule "website/images/feathericons"]
+	path = website/images/feathericons
+	url = https://github.com/feathericons/feather

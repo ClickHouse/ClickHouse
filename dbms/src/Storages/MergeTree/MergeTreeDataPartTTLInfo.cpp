@@ -36,7 +36,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
     if (json.has("columns"))
     {
         const JSON & columns = json["columns"];
-        for (auto col : columns)
+        for (auto col : columns) // NOLINT
         {
             MergeTreeDataPartTTLInfo ttl_info;
             ttl_info.min = col["min"].getUInt();
@@ -58,7 +58,7 @@ void MergeTreeDataPartTTLInfos::read(ReadBuffer & in)
     if (json.has("moves"))
     {
         const JSON & moves = json["moves"];
-        for (auto move : moves)
+        for (auto move : moves) // NOLINT
         {
             MergeTreeDataPartTTLInfo ttl_info;
             ttl_info.min = move["min"].getUInt();
@@ -96,9 +96,9 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
     {
         if (!columns_ttl.empty())
             writeString(",", out);
-        writeString("\"table\":{\"min\":", out);
+        writeString(R"("table":{"min":)", out);
         writeIntText(table_ttl.min, out);
-        writeString(",\"max\":", out);
+        writeString(R"(,"max":)", out);
         writeIntText(table_ttl.max, out);
         writeString("}", out);
     }
@@ -106,17 +106,17 @@ void MergeTreeDataPartTTLInfos::write(WriteBuffer & out) const
     {
         if (!columns_ttl.empty() || table_ttl.min)
             writeString(",", out);
-        writeString("\"moves\":[", out);
+        writeString(R"("moves":[)", out);
         for (auto it = moves_ttl.begin(); it != moves_ttl.end(); ++it)
         {
             if (it != moves_ttl.begin())
                 writeString(",", out);
 
-            writeString("{\"expression\":", out);
+            writeString(R"({"expression":)", out);
             writeString(doubleQuoteString(it->first), out);
-            writeString(",\"min\":", out);
+            writeString(R"(,"min":)", out);
             writeIntText(it->second.min, out);
-            writeString(",\"max\":", out);
+            writeString(R"(,"max":)", out);
             writeIntText(it->second.max, out);
             writeString("}", out);
         }

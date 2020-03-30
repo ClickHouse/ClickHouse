@@ -83,7 +83,7 @@ Pipes StorageMySQL::read(
     Pipes pipes;
     /// TODO: rewrite MySQLBlockInputStream
     pipes.emplace_back(std::make_shared<SourceFromInputStream>(
-            std::make_shared<MySQLBlockInputStream>(pool.Get(), query, sample_block, max_block_size_)));
+            std::make_shared<MySQLBlockInputStream>(pool.get(), query, sample_block, max_block_size_)));
 
     return pipes;
 }
@@ -175,7 +175,7 @@ public:
         return splitted_blocks;
     }
 
-    std::string dumpNamesWithBackQuote(const Block & block) const
+    static std::string dumpNamesWithBackQuote(const Block & block)
     {
         WriteBufferFromOwnString out;
         for (auto it = block.begin(); it != block.end(); ++it)
@@ -186,7 +186,6 @@ public:
         }
         return out.str();
     }
-
 
 private:
     const StorageMySQL & storage;
@@ -200,7 +199,7 @@ private:
 BlockOutputStreamPtr StorageMySQL::write(
     const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.Get(), context.getSettingsRef().mysql_max_rows_to_insert);
+    return std::make_shared<StorageMySQLBlockOutputStream>(*this, remote_database_name, remote_table_name, pool.get(), context.getSettingsRef().mysql_max_rows_to_insert);
 }
 
 void registerStorageMySQL(StorageFactory & factory)
@@ -214,8 +213,8 @@ void registerStorageMySQL(StorageFactory & factory)
                 "Storage MySQL requires 5-7 parameters: MySQL('host:port', database, table, 'user', 'password'[, replace_query, 'on_duplicate_clause']).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        for (size_t i = 0; i < engine_args.size(); ++i)
-            engine_args[i] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[i], args.local_context);
+        for (auto & engine_arg : engine_args)
+            engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.local_context);
 
         /// 3306 is the default MySQL port.
         auto parsed_host_port = parseAddress(engine_args[0]->as<ASTLiteral &>().value.safeGet<String>(), 3306);

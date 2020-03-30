@@ -47,7 +47,7 @@ void sliceDynamicOffsetBounded(IArraySource & src, IArraySink & sink, const ICol
 
 void sliceHas(IArraySource & first, IArraySource & second, bool all, ColumnUInt8 & result);
 
-void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_back);
+void push(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, bool push_front);
 
 void resizeDynamicSize(IArraySource & array_source, IValueSource & value_source, IArraySink & sink, const IColumn & size_column);
 

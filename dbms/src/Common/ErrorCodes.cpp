@@ -443,7 +443,7 @@ namespace ErrorCodes
     extern const int CANNOT_PTHREAD_ATTR = 468;
     extern const int VIOLATED_CONSTRAINT = 469;
     extern const int QUERY_IS_NOT_SUPPORTED_IN_LIVE_VIEW = 470;
-    extern const int SETTINGS_ARE_NOT_SUPPORTED = 471;
+    extern const int INVALID_SETTING_VALUE = 471;
     extern const int READONLY_SETTING = 472;
     extern const int DEADLOCK_AVOIDED = 473;
     extern const int INVALID_TEMPLATE_FORMAT = 474;
@@ -467,7 +467,7 @@ namespace ErrorCodes
     extern const int ACCESS_ENTITY_NOT_FOUND = 492;
     extern const int ACCESS_ENTITY_ALREADY_EXISTS = 493;
     extern const int ACCESS_ENTITY_FOUND_DUPLICATES = 494;
-    extern const int ACCESS_ENTITY_STORAGE_READONLY = 495;
+    extern const int ACCESS_STORAGE_READONLY = 495;
     extern const int QUOTA_REQUIRES_CLIENT_KEY = 496;
     extern const int ACCESS_DENIED = 497;
     extern const int LIMIT_BY_WITH_TIES_IS_NOT_SUPPORTED = 498;
@@ -482,7 +482,15 @@ namespace ErrorCodes
     extern const int UNKNOWN_ACCESS_TYPE = 508;
     extern const int INVALID_GRANT = 509;
     extern const int CACHE_DICTIONARY_UPDATE_FAIL = 510;
-    extern const int NO_REMOTE_SHARD_AVAILABLE = 511;
+    extern const int UNKNOWN_ROLE = 511;
+    extern const int SET_NON_GRANTED_ROLE = 512;
+    extern const int UNKNOWN_PART_TYPE = 513;
+    extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND = 514;
+    extern const int INCORRECT_ACCESS_ENTITY_DEFINITION = 515;
+    extern const int AUTHENTICATION_FAILED = 516;
+    extern const int CANNOT_ASSIGN_ALTER = 517;
+    extern const int CANNOT_COMMIT_OFFSET = 518;
+    extern const int NO_REMOTE_SHARD_AVAILABLE = 519;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

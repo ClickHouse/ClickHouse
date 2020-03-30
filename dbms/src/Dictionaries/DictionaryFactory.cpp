@@ -9,6 +9,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int EXCESSIVE_ELEMENT_IN_CONFIG;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
@@ -57,8 +58,8 @@ DictionaryPtr DictionaryFactory::create(
 
 DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, const Context & context) const
 {
-    auto configurationFromAST = getDictionaryConfigurationFromAST(ast);
-    return DictionaryFactory::create(name, *configurationFromAST, "dictionary", context, true);
+    auto configuration = getDictionaryConfigurationFromAST(ast);
+    return DictionaryFactory::create(name, *configuration, "dictionary", context, true);
 }
 
 bool DictionaryFactory::isComplex(const std::string & layout_type) const

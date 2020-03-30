@@ -15,6 +15,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int BAD_TYPE_OF_FIELD;
+}
+
 class IFunction;
 using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 
@@ -206,10 +211,17 @@ public:
     FieldWithInfinity(Field && field_);
 
     static FieldWithInfinity getMinusInfinity();
-    static FieldWithInfinity getPlusinfinity();
+    static FieldWithInfinity getPlusInfinity();
 
     bool operator<(const FieldWithInfinity & other) const;
     bool operator==(const FieldWithInfinity & other) const;
+
+    Field getFieldIfFinite() const
+    {
+        if (type != NORMAL)
+            throw Exception("Trying to get field of infinite type", ErrorCodes::BAD_TYPE_OF_FIELD);
+        return field;
+    }
 
 private:
     Field field;
@@ -237,9 +249,9 @@ public:
         const Names & key_column_names,
         const ExpressionActionsPtr & key_expr);
 
-    /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `parallelogram`.
-    BoolMask checkInParallelogram(
-        const std::vector<Range> & parallelogram,
+    /// Whether the condition and its negation are feasible in the direct product of single column ranges specified by `hyperrectangle`.
+    BoolMask checkInHyperrectangle(
+        const std::vector<Range> & hyperrectangle,
         const DataTypes & data_types) const;
 
     /// Whether the condition and its negation are (independently) feasible in the key range.
@@ -370,7 +382,7 @@ private:
 
     void traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants);
     bool tryParseAtomFromAST(const ASTPtr & node, const Context & context, Block & block_with_constants, RPNElement & out);
-    bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
+    static bool tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out);
 
     /** Is node the key column
       *  or expression in which column of key is wrapped by chain of functions,

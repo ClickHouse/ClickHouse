@@ -119,4 +119,9 @@ private:
     Container columns;
 };
 
+/// Validate default expressions and corresponding types compatibility, i.e.
+/// default expression result can be casted to column_type. Also checks, that we
+/// don't have strange constructions in default expression like SELECT query or
+/// arrayJoin function.
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, const Context & context);
 }

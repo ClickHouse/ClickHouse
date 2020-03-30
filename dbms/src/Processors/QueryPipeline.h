@@ -21,8 +21,61 @@ class IOutputFormat;
 
 class QueryPipeline
 {
+private:
+    /// It's a wrapper over std::vector<OutputPort *>
+    /// Is needed to support invariant for max_parallel_streams (see comment below).
+    class Streams
+    {
+    public:
+        auto size() const { return data.size(); }
+        auto begin() { return data.begin(); }
+        auto end() { return data.end(); }
+        auto & front() { return data.front(); }
+        auto & back() { return data.back(); }
+        auto & at(size_t pos) { return data.at(pos); }
+        auto & operator[](size_t pos) { return data[pos]; }
+
+        void clear() { data.clear(); }
+        void reserve(size_t size_) { data.reserve(size_); }
+
+        void addStream(OutputPort * port)
+        {
+            data.push_back(port);
+            max_parallel_streams = std::max<size_t>(max_parallel_streams, data.size());
+        }
+
+        void addStreams(Streams & other)
+        {
+            data.insert(data.end(), other.begin(), other.end());
+            max_parallel_streams = std::max<size_t>(max_parallel_streams, data.size());
+        }
+
+        void assign(std::initializer_list<OutputPort *> list)
+        {
+            data = list;
+            max_parallel_streams = std::max<size_t>(max_parallel_streams, data.size());
+        }
+
+        size_t maxParallelStreams() const { return max_parallel_streams; }
+
+    private:
+        std::vector<OutputPort *> data;
+
+        /// It is the max number of processors which can be executed in parallel for each step.
+        /// Logically, it is the upper limit on the number of threads needed to execute this pipeline.
+        /// Initially, it is the number of sources. It may be increased after resize, aggregation, etc.
+        /// This number is never decreased, and it is calculated as max(streams.size()) over all streams while building.
+        size_t max_parallel_streams = 0;
+    };
+
 public:
     QueryPipeline() = default;
+    QueryPipeline(QueryPipeline &&) = default;
+    ~QueryPipeline() = default;
+    QueryPipeline(const QueryPipeline &) = delete;
+    QueryPipeline & operator= (const QueryPipeline & rhs) = delete;
+
+    QueryPipeline & operator= (QueryPipeline && rhs);
 
     /// All pipes must have same header.
     void init(Pipes pipes);
@@ -87,22 +140,41 @@ public:
     void setProgressCallback(const ProgressCallback & callback);
     void setProcessListElement(QueryStatus * elem);
 
-    /// Call after execution.
-    void finalize();
+    /// Recommend number of threads for pipeline execution.
+    size_t getNumThreads() const
+    {
+        auto num_threads = streams.maxParallelStreams();
 
+        if (max_threads)
+            num_threads = std::min(num_threads, max_threads);
+
+        return std::max<size_t>(1, num_threads);
+    }
+
+    /// Set upper limit for the recommend number of threads
     void setMaxThreads(size_t max_threads_) { max_threads = max_threads_; }
-    size_t getMaxThreads() const { return max_threads; }
 
     /// Convert query pipeline to single pipe.
     Pipe getPipe() &&;
 
 private:
+    /// Destruction order: processors, header, locks, temporary storages, local contexts
+
+    /// Some Streams (or Processors) may implicitly use Context or temporary Storage created by Interpreter.
+    /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
+    /// because QueryPipeline is alive until query is finished.
+    std::vector<std::shared_ptr<Context>> interpreter_context;
+    std::vector<StoragePtr> storage_holders;
+    TableStructureReadLocks table_locks;
+
+    /// Common header for each stream.
+    Block current_header;
 
     /// All added processors.
     Processors processors;
 
     /// Port for each independent "stream".
-    std::vector<OutputPort *> streams;
+    Streams streams;
 
     /// Special ports for extremes and totals having.
     OutputPort * totals_having_port = nullptr;
@@ -111,30 +183,21 @@ private:
     /// If resize processor was added to pipeline.
     bool has_resize = false;
 
-    /// Common header for each stream.
-    Block current_header;
-
-    TableStructureReadLocks table_locks;
-
-    /// Some Streams (or Processors) may implicitly use Context or temporary Storage created by Interpreter.
-    /// But lifetime of Streams is not nested in lifetime of Interpreters, so we have to store it here,
-    /// because QueryPipeline is alive until query is finished.
-    std::vector<std::shared_ptr<Context>> interpreter_context;
-    std::vector<StoragePtr> storage_holders;
-
     IOutputFormat * output_format = nullptr;
 
+    /// Limit on the number of threads. Zero means no limit.
+    /// Sometimes, more streams are created then the number of threads for more optimal execution.
     size_t max_threads = 0;
 
     QueryStatus * process_list_element = nullptr;
 
     void checkInitialized();
-    void checkSource(const ProcessorPtr & source, bool can_have_totals);
+    static void checkSource(const ProcessorPtr & source, bool can_have_totals);
 
     template <typename TProcessorGetter>
     void addSimpleTransformImpl(const TProcessorGetter & getter);
 
-    void calcRowsBeforeLimit();
+    void initRowsBeforeLimit();
 };
 
 }

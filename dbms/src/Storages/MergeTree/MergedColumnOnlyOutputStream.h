@@ -5,6 +5,8 @@
 namespace DB
 {
 
+class MergeTreeDataPartWriterWide;
+
 /// Writes only those columns that are in `header`
 class MergedColumnOnlyOutputStream final : public IMergedBlockOutputStream
 {
@@ -13,26 +15,23 @@ public:
     /// Pass empty 'already_written_offset_columns' first time then and pass the same object to subsequent instances of MergedColumnOnlyOutputStream
     ///  if you want to serialize elements of Nested data structure in different instances of MergedColumnOnlyOutputStream.
     MergedColumnOnlyOutputStream(
-        MergeTreeData & storage_, const Block & header_, const String & part_path_, bool sync_,
+        const MergeTreeDataPartPtr & data_part, const Block & header_, bool sync_,
         CompressionCodecPtr default_codec_, bool skip_offsets_,
         const std::vector<MergeTreeIndexPtr> & indices_to_recalc_,
-        WrittenOffsetColumns & already_written_offset_columns_,
-        const MergeTreeIndexGranularity & index_granularity_,
-        const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr);
+        WrittenOffsetColumns * offset_columns_ = nullptr,
+        const MergeTreeIndexGranularity & index_granularity = {},
+        const MergeTreeIndexGranularityInfo * index_granularity_info_ = nullptr,
+        bool is_writing_temp_files = false);
 
     Block getHeader() const override { return header; }
     void write(const Block & block) override;
     void writeSuffix() override;
-    MergeTreeData::DataPart::Checksums writeSuffixAndGetChecksums();
+    MergeTreeData::DataPart::Checksums
+    writeSuffixAndGetChecksums(MergeTreeData::MutableDataPartPtr & new_part, MergeTreeData::DataPart::Checksums & all_checksums);
 
 private:
     Block header;
-
     bool sync;
-    bool skip_offsets;
-
-    /// To correctly write Nested elements column-by-column.
-    WrittenOffsetColumns & already_written_offset_columns;
 };
 
 

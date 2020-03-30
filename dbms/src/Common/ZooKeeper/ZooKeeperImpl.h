@@ -88,7 +88,6 @@ using namespace DB;
 struct ZooKeeperRequest;
 
 
-
 /** Usage scenario: look at the documentation for IKeeper class.
   */
 class ZooKeeper : public IKeeper
@@ -197,7 +196,7 @@ private:
     using RequestsQueue = ConcurrentBoundedQueue<RequestInfo>;
 
     RequestsQueue requests_queue{1};
-    void pushRequest(RequestInfo && request);
+    void pushRequest(RequestInfo && info);
 
     using Operations = std::map<XID, RequestInfo>;
 

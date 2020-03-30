@@ -156,9 +156,11 @@ public:
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
-    const char * deserializeAndInsertFromArena(const char * pos) override;
+    const char * deserializeAndInsertFromArena(const char * src_arena) override;
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
+
+    void updateWeakHash32(WeakHash32 & hash) const override;
 
     size_t byteSize() const override;
 
@@ -204,6 +206,8 @@ public:
     }
 
     void getExtremes(Field & min, Field & max) const override;
+
+    bool structureEquals(const IColumn &) const override;
 };
 
 

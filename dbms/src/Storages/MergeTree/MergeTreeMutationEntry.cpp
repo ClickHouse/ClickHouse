@@ -7,26 +7,29 @@
 #include <Poco/File.h>
 #include <Poco/Path.h>
 
+#include <utility>
+
 
 namespace DB
 {
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, const String & path_prefix_, Int64 tmp_number)
+MergeTreeMutationEntry::MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk_, const String & path_prefix_, Int64 tmp_number)
     : create_time(time(nullptr))
     , commands(std::move(commands_))
+    , disk(std::move(disk_))
     , path_prefix(path_prefix_)
     , file_name("tmp_mutation_" + toString(tmp_number) + ".txt")
     , is_temp(true)
 {
     try
     {
-        WriteBufferFromFile out(path_prefix + file_name);
-        out << "format version: 1\n"
+        auto out = disk->writeFile(path_prefix + file_name);
+        *out << "format version: 1\n"
             << "create time: " << LocalDateTime(create_time) << "\n";
-        out << "commands: ";
-        commands.writeText(out);
-        out << "\n";
-        out.sync();
+        *out << "commands: ";
+        commands.writeText(*out);
+        *out << "\n";
+        out->sync();
     }
     catch (...)
     {
@@ -39,7 +42,7 @@ void MergeTreeMutationEntry::commit(Int64 block_number_)
 {
     block_number = block_number_;
     String new_file_name = "mutation_" + toString(block_number) + ".txt";
-    Poco::File(path_prefix + file_name).renameTo(path_prefix + new_file_name);
+    disk->moveFile(path_prefix + file_name, path_prefix + new_file_name);
     is_temp = false;
     file_name = new_file_name;
 }
@@ -48,17 +51,17 @@ void MergeTreeMutationEntry::removeFile()
 {
     if (!file_name.empty())
     {
-        Poco::File file(path_prefix + file_name);
-        if (!file.exists())
+        if (!disk->exists(path_prefix + file_name))
             return;
 
-        file.remove(false);
+        disk->remove(path_prefix + file_name);
         file_name.clear();
     }
 }
 
-MergeTreeMutationEntry::MergeTreeMutationEntry(const String & path_prefix_, const String & file_name_)
-    : path_prefix(path_prefix_)
+MergeTreeMutationEntry::MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_)
+    : disk(std::move(disk_))
+    , path_prefix(path_prefix_)
     , file_name(file_name_)
     , is_temp(false)
 {
@@ -66,20 +69,19 @@ MergeTreeMutationEntry::MergeTreeMutationEntry(const String & path_prefix_, cons
     file_name_buf >> "mutation_" >> block_number >> ".txt";
     assertEOF(file_name_buf);
 
-    ReadBufferFromFile buf(path_prefix + file_name);
+    auto buf = disk->readFile(path_prefix + file_name);
 
-    buf >> "format version: 1\n";
+    *buf >> "format version: 1\n";
 
     LocalDateTime create_time_dt;
-    buf >> "create time: " >> create_time_dt >> "\n";
+    *buf >> "create time: " >> create_time_dt >> "\n";
     create_time = create_time_dt;
 
-    buf >> "commands: ";
-    commands.readText(buf);
-    buf >> "\n";
+    *buf >> "commands: ";
+    commands.readText(*buf);
+    *buf >> "\n";
 
-    assertEOF(buf);
-
+    assertEOF(*buf);
 }
 
 MergeTreeMutationEntry::~MergeTreeMutationEntry()

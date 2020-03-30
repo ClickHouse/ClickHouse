@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 #include <Common/BitHelpers.h>
+#include <Poco/UTF8Encoding.h>
 
 #ifdef __SSE2__
 #include <emmintrin.h>
@@ -70,6 +71,27 @@ inline size_t countCodePoints(const UInt8 * data, size_t size)
         res += static_cast<Int8>(*data) > static_cast<Int8>(0xBF);
 
     return res;
+}
+
+template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+int convert(const CharT * bytes)
+{
+    static const Poco::UTF8Encoding utf8;
+    return utf8.convert(reinterpret_cast<const uint8_t *>(bytes));
+}
+
+template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+int convert(int ch, CharT * bytes, int length)
+{
+    static const Poco::UTF8Encoding utf8;
+    return utf8.convert(ch, reinterpret_cast<uint8_t *>(bytes), length);
+}
+
+template <typename CharT, typename = std::enable_if_t<sizeof(CharT) == 1>>
+int queryConvert(const CharT * bytes, int length)
+{
+    static const Poco::UTF8Encoding utf8;
+    return utf8.queryConvert(reinterpret_cast<const uint8_t *>(bytes), length);
 }
 
 /// returns UTF-8 wcswidth. Invalid sequence is treated as zero width character.

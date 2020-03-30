@@ -2,12 +2,14 @@
 
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/IAST_fwd.h>
+#include <Core/UUID.h>
 
 
 namespace DB
 {
 class Context;
 class ASTShowCreateAccessEntityQuery;
+struct IAccessEntity;
 
 
 /** Returns a single item containing a statement which could be used to create a specified role.
@@ -23,15 +25,14 @@ public:
     bool ignoreQuota() const override { return true; }
     bool ignoreLimits() const override { return true; }
 
-private:
-    ASTPtr query_ptr;
-    const Context & context;
+    static ASTPtr getAttachQuery(const IAccessEntity & entity);
 
+private:
     BlockInputStreamPtr executeImpl();
     ASTPtr getCreateQuery(const ASTShowCreateAccessEntityQuery & show_query) const;
-    ASTPtr getCreateUserQuery(const ASTShowCreateAccessEntityQuery & show_query) const;
-    ASTPtr getCreateQuotaQuery(const ASTShowCreateAccessEntityQuery & show_query) const;
-    ASTPtr getCreateRowPolicyQuery(const ASTShowCreateAccessEntityQuery & show_query) const;
+
+    ASTPtr query_ptr;
+    const Context & context;
 };
 
 

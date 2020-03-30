@@ -8,6 +8,7 @@
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
+#include <Common/ExternalLoaderStatus.h>
 
 
 namespace DB
@@ -47,19 +48,7 @@ class ExternalLoader
 public:
     using LoadablePtr = std::shared_ptr<const IExternalLoadable>;
     using Loadables = std::vector<LoadablePtr>;
-
-    enum class Status
-    {
-        NOT_LOADED, /// Object hasn't been tried to load. This is an initial state.
-        LOADED, /// Object has been loaded successfully.
-        FAILED, /// Object has been failed to load.
-        LOADING, /// Object is being loaded right now for the first time.
-        FAILED_AND_RELOADING, /// Object was failed to load before and it's being reloaded right now.
-        LOADED_AND_RELOADING, /// Object was loaded successfully before and it's being reloaded right now.
-        NOT_EXIST, /// Object with this name wasn't found in the configuration.
-    };
-
-    static std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues();
+    using Status = ExternalLoaderStatus;
 
     using Duration = std::chrono::milliseconds;
     using TimePoint = std::chrono::system_clock::time_point;
@@ -71,6 +60,7 @@ public:
         LoadablePtr object;
         String origin;
         TimePoint loading_start_time;
+        TimePoint last_successful_update_time;
         Duration loading_duration;
         std::exception_ptr exception;
         std::string repository_name;
@@ -225,8 +215,5 @@ private:
     const String type_name;
     Poco::Logger * log;
 };
-
-String toString(ExternalLoader::Status status);
-std::ostream & operator<<(std::ostream & out, ExternalLoader::Status status);
 
 }
