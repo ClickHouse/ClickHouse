@@ -533,7 +533,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (ignore)
         return false;
 
-    if (type == DROP_COLUMN || type == DROP_INDEX)
+    if (type == DROP_COLUMN || type == DROP_INDEX || type == RENAME_COLUMN)
         return true;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
@@ -598,6 +598,12 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(const S
             result.partition = partition;
 
         result.predicate = nullptr;
+    }
+    else if (type == RENAME_COLUMN)
+    {
+        result.type = MutationCommand::Type::RENAME_COLUMN;
+        result.column_name = column_name;
+        result.rename_to = rename_to;
     }
 
     result.ast = ast->clone();

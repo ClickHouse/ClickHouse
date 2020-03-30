@@ -469,6 +469,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
 
     if (!only_check)
     {
+        LOG_DEBUG(log, "SETTING UP COLUMNS:" << metadata.columns.toString());
         setColumns(std::move(metadata.columns));
 
         order_by_ast = metadata.order_by_ast;
@@ -3595,8 +3596,13 @@ MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const 
 
     AlterConversions result{};
     for (const auto & command : commands)
+    {
         if (command.type == MutationCommand::Type::RENAME_COLUMN)
+        {
             result.rename_map[command.column_name] = command.rename_to;
+            LOG_DEBUG(log, "Add to rename map:" << command.column_name);
+        }
+    }
 
     return result;
 }
