@@ -3599,7 +3599,7 @@ MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const 
     {
         if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
-            result.rename_map[command.column_name] = command.rename_to;
+            result.rename_map[command.rename_to] = command.column_name;
             LOG_DEBUG(log, "Add to rename map:" << command.column_name);
         }
     }
