@@ -1,12 +1,14 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 
+#include <utility>
+
 
 namespace DB
 {
 
 MergeTreeIndexReader::MergeTreeIndexReader(
     MergeTreeIndexPtr index_, MergeTreeData::DataPartPtr part_, size_t marks_count_, const MarkRanges & all_mark_ranges_)
-    : index(index_), stream(
+    : index(std::move(index_)), stream(
         part_->getFullPath() + index->getFileName(), ".idx", marks_count_,
         all_mark_ranges_, nullptr, false, nullptr,
         part_->getFileSizeOrZero(index->getFileName() + ".idx"), 0, 0, DBMS_DEFAULT_BUFFER_SIZE,

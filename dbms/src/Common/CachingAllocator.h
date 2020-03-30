@@ -25,7 +25,6 @@
 namespace DB::ErrorCodes
 {
 extern const int CANNOT_ALLOCATE_MEMORY;
-extern const int CANNOT_MUNMAP;
 }
 
 struct CachingAllocatorStats
@@ -52,6 +51,8 @@ struct CachingAllocatorStats
     size_t secondary_evictions {0};
 };
 
+struct NoGetSizeFunction {};
+
 /**
  * Thread-safe caching allocator interface.
  * Uses mmap as an [de]allocator tool.
@@ -72,7 +73,13 @@ struct CachingAllocatorStats
  * Performance: few million ops/sec from single thread, less in case of concurrency.
  * Fragmentation is usually less than 10%.
  */
-template <typename TKey, typename TMapped, typename THash = std::hash<TKey>>
+template <typename TKey, typename TMapped,
+    typename THash = std::hash<TKey>,
+    typename TGetSize = NoGetSizeFunction,
+    typename = std::enable_if_t<
+        std::is_same_v<TGetSize, NoGetSizeFunction> ||
+        std::is_invocable_r_v<size_t, std::declval<TGetSize>()>
+        >>
 class CachingAllocator : private boost::noncopyable
 {
 private:
@@ -94,7 +101,7 @@ public:
     using Mapped = TMapped;
     using Hash   = THash;
 
-    using MemoryRegionPtr = std::shared_ptr<MemoryRegion>;
+    using MappedPtr = std::shared_ptr<Mapped>;
 
     explicit CachingAllocator(size_t max_total_size_) noexcept: max_total_size(max_total_size_) {}
 
@@ -154,7 +161,7 @@ public:
         secondary_evictions = 0;
     }
 
-    inline MemoryRegionPtr get(const Key& key)
+    inline MappedPtr get(const Key& key)
     {
         std::lock_guard lock(mutex);
 
@@ -198,12 +205,12 @@ public:
      *      False on cache hit (including a concurrent cache hit), true on cache miss).
      */
     template <typename GetSize, typename Init>
-    inline std::pair<MemoryRegionPtr, bool> getOrSet(const Key & key, GetSize && get_size, Init && initialize)
+    inline std::pair<MappedPtr, bool> getOrSet(const Key & key, GetSize && get_size, Init && initialize)
     {
         InsertionAttemptDisposer disposer;
         InsertionAttempt * attempt;
 
-        MemoryRegionPtr out = getImpl(key, disposer, attempt);
+        MappedPtr out = getImpl(key, disposer, attempt);
 
         if (out)
             return {out, false}; // value was found in the cache.
@@ -271,6 +278,11 @@ public:
         }
     }
 
+    template <typename Init, typename = std::enable_if_t<!std::is_same_v<TGetSize>>>
+    inline std::pair<MappedPtr, bool> getOrSet(const Key & key, Init && initialize) {
+        return getOrSet(key, get_size_func, std::forward<Init>(initialize));
+    }
+
     /**
      * @note Metadata is allocated by a usual allocator (malloc/new) so its memory usage is not accounted.
      */
@@ -305,6 +317,8 @@ public:
     }
 
 private:
+    TGetSize get_size_func;
+
     /**
      * Each memory region can be:
      * - Free: not holding any data.
@@ -521,10 +535,7 @@ private:
         ~MemoryChunk()
         {
             if (ptr && 0 != munmap(ptr, size))
-                DB::throwFromErrno(
-                    "Allocator: Cannot munmap " +
-                    formatReadableSizeWithBinarySuffix(size) + ".",
-                    DB::ErrorCodes::CANNOT_MUNMAP);
+                std::cerr << "Allocator: Cannot munmap " << formatReadableSizeWithBinarySuffix(size) << ".";
         }
 
         MemoryChunk(MemoryChunk && other) noexcept : ptr(other.ptr), size(other.size)
@@ -623,7 +634,34 @@ private:
         ~RegionMetadata() = default;
     };
 
-    inline MemoryRegionPtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
+    struct MemoryRegionDeleter
+    {
+        MemoryRegionDeleter(CachingAllocator& cache_, RegionMetadata& metadata_) noexcept :
+        cache(cache_), metadata(metadata_)
+        {
+
+        }
+
+        void operator()(Mapped * ptr) const noexcept
+        {
+            std::lock_guard cache_lock(cache.mutex);
+
+            --metadata.refcount;
+
+            if (metadata.refcount == 0)
+                cache.unused_allocated_regions.push_back(metadata);
+
+            cache.total_size_in_use -= metadata.size;
+
+            delete ptr;
+        }
+
+    private:
+        CachingAllocator & cache;
+        RegionMetadata & metadata;
+    };
+
+    inline MappedPtr getImpl(const Key& key, InsertionAttemptDisposer& disposer, InsertionAttempt *& attempt)
     {
         {
             std::lock_guard cache_lock(mutex);
@@ -634,6 +672,8 @@ private:
             {
                 ++hits;
 
+                ///TODO
+                return std::shared_ptr<Mapped>(, MemoryRegionDeleter(*this, *region_it));
                 return std::make_shared<MemoryRegion>(*this, *region_it);
             }
 
