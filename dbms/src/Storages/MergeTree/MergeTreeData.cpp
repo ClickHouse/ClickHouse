@@ -469,7 +469,6 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
 
     if (!only_check)
     {
-        LOG_DEBUG(log, "SETTING UP COLUMNS:" << metadata.columns.toString());
         setColumns(std::move(metadata.columns));
 
         order_by_ast = metadata.order_by_ast;
