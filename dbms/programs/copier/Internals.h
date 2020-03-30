@@ -19,7 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/KeeperException.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/typeid_cast.h>
 #include <Common/ClickHouseRevision.h>
@@ -31,6 +31,7 @@
 #include <Common/ThreadStatus.h>
 #include <Client/Connection.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/Cluster.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterExistsQuery.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
@@ -74,11 +75,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NO_ZOOKEEPER;
-    extern const int BAD_ARGUMENTS;
-    extern const int UNKNOWN_TABLE;
-    extern const int UNFINISHED;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -135,7 +132,6 @@ struct TaskStateWithOwner
 };
 
 
-
 struct ShardPriority
 {
     UInt8 is_remote = 1;
@@ -149,14 +145,14 @@ struct ShardPriority
     }
 };
 
-/// Execution status of a task
-enum class PartitionTaskStatus
+/// Execution status of a task.
+/// Is used for: partition copying task status, partition piece copying task status, partition moving task status.
+enum class TaskStatus
 {
     Active,
     Finished,
     Error,
 };
-
 
 struct MultiTransactionInfo
 {
@@ -178,6 +174,35 @@ Block getBlockWithAllStreamData(const BlockInputStreamPtr & stream);
 bool isExtendedDefinitionStorage(const ASTPtr & storage_ast);
 
 ASTPtr extractPartitionKey(const ASTPtr & storage_ast);
+
+/*
+* Choosing a Primary Key that Differs from the Sorting Key
+* It is possible to specify a primary key (an expression with values that are written in the index file for each mark)
+* that is different from the sorting key (an expression for sorting the rows in data parts).
+* In this case the primary key expression tuple must be a prefix of the sorting key expression tuple.
+* This feature is helpful when using the SummingMergeTree and AggregatingMergeTree table engines.
+* In a common case when using these engines, the table has two types of columns: dimensions and measures.
+* Typical queries aggregate values of measure columns with arbitrary GROUP BY and filtering by dimensions.
+* Because SummingMergeTree and AggregatingMergeTree aggregate rows with the same value of the sorting key,
+* it is natural to add all dimensions to it. As a result, the key expression consists of a long list of columns
+* and this list must be frequently updated with newly added dimensions.
+* In this case it makes sense to leave only a few columns in the primary key that will provide efficient
+* range scans and add the remaining dimension columns to the sorting key tuple.
+* ALTER of the sorting key is a lightweight operation because when a new column is simultaneously added t
+* o the table and to the sorting key, existing data parts don't need to be changed.
+* Since the old sorting key is a prefix of the new sorting key and there is no data in the newly added column,
+* the data is sorted by both the old and new sorting keys at the moment of table modification.
+*
+* */
+ASTPtr extractPrimaryKey(const ASTPtr & storage_ast);
+
+ASTPtr extractOrderBy(const ASTPtr & storage_ast);
+
+String createCommaSeparatedStringFrom(const Names & names);
+
+Names extractPrimaryKeyColumnNames(const ASTPtr & storage_ast);
+
+String extractReplicatedTableZookeeperPath(const ASTPtr & storage_ast);
 
 ShardPriority getReplicasPriority(const Cluster::Addresses & replicas, const std::string & local_hostname, UInt8 random);
 

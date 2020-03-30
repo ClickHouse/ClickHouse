@@ -1,10 +1,10 @@
 #include <Parsers/ParserGrantQuery.h>
 #include <Parsers/ASTGrantQuery.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
-#include <Parsers/ParserGenericRoleSet.h>
+#include <Parsers/ParserExtendedRoleSet.h>
 #include <boost/algorithm/string/predicate.hpp>
 
 
@@ -33,9 +33,7 @@ namespace
             if (pos_->type != TokenType::BareWord)
                 return false;
             std::string_view word{pos_->begin, pos_->size()};
-            if (boost::iequals(word, "ON") || boost::iequals(word, "TO") || boost::iequals(word, "FROM"))
-                return false;
-            return true;
+            return !(boost::iequals(word, "ON") || boost::iequals(word, "TO") || boost::iequals(word, "FROM"));
         };
 
         expected.add(pos, "access type");
@@ -211,21 +209,21 @@ namespace
     }
 
 
-    bool parseRoles(IParser::Pos & pos, Expected & expected, std::shared_ptr<ASTGenericRoleSet> & roles)
+    bool parseRoles(IParser::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTExtendedRoleSet> & roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ASTPtr ast;
-            if (!ParserGenericRoleSet{}.allowAll(false).allowCurrentUser(false).parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableAllKeyword(false).enableCurrentUserKeyword(false).useIDMode(id_mode).parse(pos, ast, expected))
                 return false;
 
-            roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
+            roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
             return true;
         });
     }
 
 
-    bool parseToRoles(IParser::Pos & pos, Expected & expected, ASTGrantQuery::Kind kind, std::shared_ptr<ASTGenericRoleSet> & to_roles)
+    bool parseToRoles(IParser::Pos & pos, Expected & expected, ASTGrantQuery::Kind kind, std::shared_ptr<ASTExtendedRoleSet> & to_roles)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -242,10 +240,10 @@ namespace
             }
 
             ASTPtr ast;
-            if (!ParserGenericRoleSet{}.allowAll(kind == Kind::REVOKE).parse(pos, ast, expected))
+            if (!ParserExtendedRoleSet{}.enableAllKeyword(kind == Kind::REVOKE).parse(pos, ast, expected))
                 return false;
 
-            to_roles = typeid_cast<std::shared_ptr<ASTGenericRoleSet>>(ast);
+            to_roles = typeid_cast<std::shared_ptr<ASTExtendedRoleSet>>(ast);
             return true;
         });
     }
@@ -254,6 +252,14 @@ namespace
 
 bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    bool attach = false;
+    if (attach_mode)
+    {
+        if (!ParserKeyword{"ATTACH"}.ignore(pos, expected))
+            return false;
+        attach = true;
+    }
+
     using Kind = ASTGrantQuery::Kind;
     Kind kind;
     if (ParserKeyword{"GRANT"}.ignore(pos, expected))
@@ -274,11 +280,11 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     AccessRightsElements elements;
-    std::shared_ptr<ASTGenericRoleSet> roles;
-    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, roles))
+    std::shared_ptr<ASTExtendedRoleSet> roles;
+    if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, attach, roles))
         return false;
 
-    std::shared_ptr<ASTGenericRoleSet> to_roles;
+    std::shared_ptr<ASTExtendedRoleSet> to_roles;
     if (!parseToRoles(pos, expected, kind, to_roles))
         return false;
 
@@ -299,6 +305,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     node = query;
 
     query->kind = kind;
+    query->attach = attach;
     query->access_rights_elements = std::move(elements);
     query->roles = std::move(roles);
     query->to_roles = std::move(to_roles);

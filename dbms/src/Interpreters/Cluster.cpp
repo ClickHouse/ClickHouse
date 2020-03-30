@@ -28,7 +28,7 @@ namespace
 {
 
 /// Default shard weight.
-static constexpr UInt32 default_weight = 1;
+constexpr UInt32 default_weight = 1;
 
 inline bool isLocalImpl(const Cluster::Address & address, const Poco::Net::SocketAddress & resolved_address, UInt16 clickhouse_port)
 {
@@ -135,11 +135,22 @@ std::pair<String, UInt16> Cluster::Address::fromString(const String & host_port_
 }
 
 
-String Cluster::Address::toFullString() const
+String Cluster::Address::toFullString(bool use_compact_format) const
 {
-    return
-        ((shard_index == 0) ? "" : "shard" + std::to_string(shard_index)) +
-        ((replica_index == 0) ? "" : "_replica" + std::to_string(replica_index));
+    if (use_compact_format)
+    {
+        return ((shard_index == 0) ? "" : "shard" + std::to_string(shard_index))
+            + ((replica_index == 0) ? "" : "_replica" + std::to_string(replica_index));
+    }
+    else
+    {
+        return
+            escapeForFileName(user)
+            + (password.empty() ? "" : (':' + escapeForFileName(password))) + '@'
+            + escapeForFileName(host_name) + ':' + std::to_string(port)
+            + (default_database.empty() ? "" : ('#' + escapeForFileName(default_database)))
+            + ((secure == Protocol::Secure::Enable) ? "+secure" : "");
+    }
 }
 
 Cluster::Address Cluster::Address::fromFullString(const String & full_string)
@@ -333,7 +344,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config, const Setting
                     {
                         if (internal_replication)
                         {
-                            auto dir_name = replica_addresses.back().toFullString();
+                            auto dir_name = replica_addresses.back().toFullString(settings.use_compact_format_in_distributed_parts_names);
                             if (first)
                                 dir_name_for_internal_replication = dir_name;
                             else
@@ -483,7 +494,6 @@ std::unique_ptr<Cluster> Cluster::getClusterWithMultipleShards(const std::vector
 }
 
 Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Settings & settings)
-    : shards_info{}, addresses_with_failover{}
 {
     if (from.addresses_with_failover.empty())
         throw Exception("Cluster is empty", ErrorCodes::LOGICAL_ERROR);
@@ -525,7 +535,6 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
 
 Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector<size_t> & indices)
-    : shards_info{}
 {
     for (size_t index : indices)
     {

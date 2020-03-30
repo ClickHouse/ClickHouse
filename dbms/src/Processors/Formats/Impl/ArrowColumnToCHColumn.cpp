@@ -23,8 +23,6 @@ namespace DB
         extern const int UNKNOWN_TYPE;
         extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
         extern const int CANNOT_READ_ALL_DATA;
-        extern const int EMPTY_DATA_PASSED;
-        extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
         extern const int CANNOT_CONVERT_TYPE;
         extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
         extern const int THERE_IS_NO_COLUMN;

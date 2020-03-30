@@ -24,6 +24,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
     extern const int UNSUPPORTED_JOIN_KEYS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int INCOMPATIBLE_TYPE_OF_JOIN;
@@ -41,7 +43,7 @@ StorageJoin::StorageJoin(
     ASTTableJoin::Strictness strictness_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
-    bool overwrite,
+    bool overwrite_,
     const Context & context_)
     : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_}
     , key_names(key_names_)
@@ -49,6 +51,7 @@ StorageJoin::StorageJoin(
     , limits(limits_)
     , kind(kind_)
     , strictness(strictness_)
+    , overwrite(overwrite_)
 {
     for (const auto & key : key_names)
         if (!getColumns().hasPhysical(key))
@@ -67,7 +70,7 @@ void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteL
     Poco::File(path + "tmp/").createDirectories();
 
     increment = 0;
-    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns());
+    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns(), overwrite);
 }
 
 
@@ -92,7 +95,7 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) co
 }
 
 
-void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block); }
+void StorageJoin::insertBlock(const Block & block) { join->addJoinedBlock(block, true); }
 size_t StorageJoin::getSize() const { return join->getTotalRowCount(); }
 
 

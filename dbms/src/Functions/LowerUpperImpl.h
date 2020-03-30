@@ -17,7 +17,7 @@ struct LowerUpperImpl
         array(data.data(), data.data() + data.size(), res_data.data());
     }
 
-    static void vector_fixed(const ColumnString::Chars & data, size_t /*n*/, ColumnString::Chars & res_data)
+    static void vectorFixed(const ColumnString::Chars & data, size_t /*n*/, ColumnString::Chars & res_data)
     {
         res_data.resize(data.size());
         array(data.data(), data.data() + data.size(), res_data.data());

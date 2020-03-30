@@ -16,13 +16,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int POCO_EXCEPTION;
 }
 
 class Exception : public Poco::Exception
 {
 public:
-    Exception();
+    Exception() = default;
     Exception(const std::string & msg, int code);
 
     enum CreateFromPocoTag { CreateFromPoco };

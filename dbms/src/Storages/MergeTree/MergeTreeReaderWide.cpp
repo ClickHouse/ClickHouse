@@ -1,10 +1,12 @@
-#include <DataTypes/NestedUtils.h>
-#include <DataTypes/DataTypeArray.h>
-#include <Common/escapeForFileName.h>
-#include <Columns/ColumnArray.h>
-#include <Interpreters/evaluateMissingDefaults.h>
 #include <Storages/MergeTree/MergeTreeReaderWide.h>
+
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/NestedUtils.h>
+#include <Interpreters/inplaceBlockConversions.h>
+#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
+#include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
 
@@ -20,29 +22,37 @@ namespace
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NOT_FOUND_EXPECTED_DATA_PART;
     extern const int MEMORY_LIMIT_EXCEEDED;
-    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 MergeTreeReaderWide::MergeTreeReaderWide(
-    const DataPartWidePtr & data_part_,
-    const NamesAndTypesList & columns_,
+    DataPartWidePtr data_part_,
+    NamesAndTypesList columns_,
     UncompressedCache * uncompressed_cache_,
     MarkCache * mark_cache_,
-    const MarkRanges & mark_ranges_,
-    const MergeTreeReaderSettings & settings_,
-    const ValueSizeMap & avg_value_size_hints_,
+    MarkRanges mark_ranges_,
+    MergeTreeReaderSettings settings_,
+    IMergeTreeDataPart::ValueSizeMap avg_value_size_hints_,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
     clockid_t clock_type_)
-    : IMergeTreeReader(data_part_, columns_
-    , uncompressed_cache_, mark_cache_, mark_ranges_
-    , settings_, avg_value_size_hints_)
+    : IMergeTreeReader(
+        std::move(data_part_), std::move(columns_), uncompressed_cache_, std::move(mark_cache_),
+        std::move(mark_ranges_), std::move(settings_), std::move(avg_value_size_hints_))
 {
     try
     {
+        for (const NameAndTypePair & column_from_part : data_part->getColumns())
+        {
+            columns_from_part[column_from_part.name] = column_from_part.type;
+        }
+
         for (const NameAndTypePair & column : columns)
-            addStreams(column.name, *column.type, profile_callback_, clock_type_);
+        {
+            if (columns_from_part.count(column.name))
+                addStreams(column.name, *columns_from_part[column.name], profile_callback_, clock_type_);
+            else
+                addStreams(column.name, *column.type, profile_callback_, clock_type_);
+        }
     }
     catch (...)
     {
@@ -72,12 +82,17 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            auto & [name, type] = *name_and_type;
+            String & name = name_and_type->name;
+            DataTypePtr type;
+            if (columns_from_part.count(name))
+                type = columns_from_part[name];
+            else
+                type = name_and_type->type;
 
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;
             if (!append)
-                res_columns[pos] = name_and_type->type->createColumn();
+                res_columns[pos] = type->createColumn();
 
             /// To keep offsets shared. TODO Very dangerous. Get rid of this.
             MutableColumnPtr column = res_columns[pos]->assumeMutable();
@@ -139,7 +154,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
             storage.reportBrokenPart(data_part->name);
 
         /// Better diagnostics.
-        e.addMessage("(while reading from part " + path + " "
+        e.addMessage("(while reading from part " + data_part->getFullPath() + " "
                      "from mark " + toString(from_mark) + " "
                      "with max_rows_to_read = " + toString(max_rows_to_read) + ")");
         throw;
@@ -173,8 +188,8 @@ void MergeTreeReaderWide::addStreams(const String & name, const IDataType & type
             return;
 
         streams.emplace(stream_name, std::make_unique<MergeTreeReaderStream>(
-            path + stream_name, DATA_FILE_EXTENSION, data_part->getMarksCount(),
-            all_mark_ranges, settings, mark_cache,
+            data_part->disk, data_part->getFullRelativePath() + stream_name, DATA_FILE_EXTENSION,
+            data_part->getMarksCount(), all_mark_ranges, settings, mark_cache,
             uncompressed_cache, data_part->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
             &data_part->index_granularity_info,
             profile_callback, clock_type));

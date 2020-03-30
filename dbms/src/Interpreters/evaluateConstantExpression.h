@@ -50,6 +50,6 @@ ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Cont
   *         or empty blocks if condition is always false,
   *         or nothing if condition can't be folded to a set of constants.
   */
-std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & condition, const ExpressionActionsPtr & target_expr);
+std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & node, const ExpressionActionsPtr & target_expr);
 
 }

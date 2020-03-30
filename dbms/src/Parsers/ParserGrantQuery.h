@@ -11,8 +11,14 @@ namespace DB
   */
 class ParserGrantQuery : public IParserBase
 {
+public:
+    ParserGrantQuery & enableAttachMode(bool enable) { attach_mode = enable; return *this; }
+
 protected:
     const char * getName() const override { return "GRANT or REVOKE query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    bool attach_mode = false;
 };
 }

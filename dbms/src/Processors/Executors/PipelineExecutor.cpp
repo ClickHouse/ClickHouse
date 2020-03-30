@@ -18,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TOO_MANY_ROWS_OR_BYTES;
     extern const int QUOTA_EXPIRED;
     extern const int QUERY_WAS_CANCELLED;
@@ -39,12 +40,26 @@ PipelineExecutor::PipelineExecutor(Processors & processors_, QueryStatus * elem)
     , expand_pipeline_task(nullptr)
     , process_list_element(elem)
 {
-    buildGraph();
+    try
+    {
+        buildGraph();
+    }
+    catch (Exception & exception)
+    {
+        /// If exception was thrown while pipeline initialization, it means that query pipeline was not build correctly.
+        /// It is logical error, and we need more information about pipeline.
+        WriteBufferFromOwnString buf;
+        printPipeline(processors, buf);
+        buf.finalize();
+        exception.addMessage("Query pipeline:\n" + buf.str());
+
+        throw;
+    }
 }
 
 bool PipelineExecutor::addEdges(UInt64 node)
 {
-    auto throwUnknownProcessor = [](const IProcessor * proc, const IProcessor * parent, bool from_input_port)
+    auto throw_unknown_processor = [](const IProcessor * proc, const IProcessor * parent, bool from_input_port)
     {
         String msg = "Processor " + proc->getName() + " was found as " + (from_input_port ? "input" : "output")
                      + " for processor " + parent->getName() + ", but not found in list of processors.";
@@ -60,7 +75,7 @@ bool PipelineExecutor::addEdges(UInt64 node)
     {
         auto it = processors_map.find(to_proc);
         if (it == processors_map.end())
-            throwUnknownProcessor(to_proc, cur, true);
+            throw_unknown_processor(to_proc, cur, true);
 
         UInt64 proc_num = it->second;
         auto & edge = edges.emplace_back(proc_num, is_backward, input_port_number, output_port_number, update_list);

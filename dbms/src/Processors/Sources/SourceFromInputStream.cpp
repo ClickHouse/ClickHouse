@@ -5,6 +5,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool force_add_aggregating_info_)
     : ISourceWithProgress(stream_->getHeader())
@@ -91,6 +95,13 @@ void SourceFromInputStream::work()
     if (!typeid_cast<const RemoteBlockInputStream *>(stream.get()))
         stream->cancel(false);
 
+    if (rows_before_limit)
+    {
+        auto & info = stream->getProfileInfo();
+        if (info.hasAppliedLimit())
+            rows_before_limit->add(info.getRowsBeforeLimit());
+    }
+
     stream->readSuffix();
 
     if (auto totals_block = stream->getTotals())
@@ -116,6 +127,13 @@ Chunk SourceFromInputStream::generate()
     auto block = stream->read();
     if (!block && !isCancelled())
     {
+        if (rows_before_limit)
+        {
+            auto & info = stream->getProfileInfo();
+            if (info.hasAppliedLimit())
+                rows_before_limit->add(info.getRowsBeforeLimit());
+        }
+
         stream->readSuffix();
 
         if (auto totals_block = stream->getTotals())

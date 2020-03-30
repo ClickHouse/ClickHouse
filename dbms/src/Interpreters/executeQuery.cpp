@@ -24,7 +24,7 @@
 
 #include <Storages/StorageInput.h>
 
-#include <Access/QuotaContext.h>
+#include <Access/EnabledQuota.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/QueryLog.h>
@@ -41,6 +41,7 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Parsers/ASTWatchQuery.h>
 
+
 namespace ProfileEvents
 {
     extern const Event QueryMaskingRulesMatch;
@@ -51,8 +52,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int QUERY_IS_TOO_LARGE;
     extern const int INTO_OUTFILE_NOT_ALLOWED;
     extern const int QUERY_WAS_CANCELLED;
 }
@@ -150,7 +149,8 @@ static void logException(Context & context, QueryLogElement & elem)
 static void onExceptionBeforeStart(const String & query_for_logging, Context & context, time_t current_time)
 {
     /// Exception before the query execution.
-    context.getQuota()->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
+    if (auto quota = context.getQuota())
+        quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
     const Settings & settings = context.getSettingsRef();
 
@@ -251,7 +251,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
     BlockIO res;
     QueryPipeline & pipeline = res.pipeline;
 
-    String query_for_logging = "";
+    String query_for_logging;
 
     try
     {
@@ -309,12 +309,15 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         auto interpreter = InterpreterFactory::get(ast, context, stage);
         bool use_processors = settings.experimental_use_processors && allow_processors && interpreter->canExecuteWithProcessors();
 
-        QuotaContextPtr quota;
+        std::shared_ptr<const EnabledQuota> quota;
         if (!interpreter->ignoreQuota())
         {
             quota = context.getQuota();
-            quota->used(Quota::QUERIES, 1);
-            quota->checkExceeded(Quota::ERRORS);
+            if (quota)
+            {
+                quota->used(Quota::QUERIES, 1);
+                quota->checkExceeded(Quota::ERRORS);
+            }
         }
 
         IBlockInputStream::LocalLimits limits;
@@ -332,9 +335,9 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         if (auto * insert_interpreter = typeid_cast<const InterpreterInsertQuery *>(&*interpreter))
         {
             /// Save insertion table (not table function). TODO: support remote() table function.
-            auto db_table = insert_interpreter->getDatabaseTable();
-            if (!db_table.second.empty())
-                context.setInsertionTable(std::move(db_table));
+            auto table_id = insert_interpreter->getDatabaseTable();
+            if (!table_id.empty())
+                context.setInsertionTable(std::move(table_id));
         }
 
         if (process_list_entry)
@@ -488,9 +491,10 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 }
             };
 
-            auto exception_callback = [elem, &context, log_queries] () mutable
+            auto exception_callback = [elem, &context, log_queries, quota(quota)] () mutable
             {
-                context.getQuota()->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
+                if (quota)
+                    quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
                 elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
 
@@ -557,7 +561,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         throw;
     }
 
-    return std::make_tuple(ast, res);
+    return std::make_tuple(ast, std::move(res));
 }
 
 
@@ -593,8 +597,7 @@ void executeQuery(
     WriteBuffer & ostr,
     bool allow_into_outfile,
     Context & context,
-    std::function<void(const String &, const String &)> set_content_type_and_format,
-    std::function<void(const String &)> set_query_id)
+    std::function<void(const String &, const String &, const String &, const String &)> set_result_details)
 {
     PODArray<char> parse_buf;
     const char * begin;
@@ -683,11 +686,8 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            if (set_content_type_and_format)
-                set_content_type_and_format(out->getContentType(), format_name);
-
-            if (set_query_id)
-                set_query_id(context.getClientInfo().current_query_id);
+            if (set_result_details)
+                set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
 
             if (ast->as<ASTWatchQuery>())
             {
@@ -745,20 +745,15 @@ void executeQuery(
                 out->onProgress(progress);
             });
 
-            if (set_content_type_and_format)
-                set_content_type_and_format(out->getContentType(), format_name);
-
-            if (set_query_id)
-                set_query_id(context.getClientInfo().current_query_id);
+            if (set_result_details)
+                set_result_details(context.getClientInfo().current_query_id, out->getContentType(), format_name, DateLUT::instance().getTimeZone());
 
             pipeline.setOutput(std::move(out));
 
             {
                 auto executor = pipeline.execute();
-                executor->execute(context.getSettingsRef().max_threads);
+                executor->execute(pipeline.getNumThreads());
             }
-
-            pipeline.finalize();
         }
     }
     catch (...)

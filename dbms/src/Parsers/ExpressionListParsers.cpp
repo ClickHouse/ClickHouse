@@ -74,7 +74,6 @@ const char * ParserTupleElementExpression::operators[] =
 };
 
 
-
 bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     bool first = true;
@@ -111,10 +110,7 @@ bool ParserList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
     }
 
-    if (!allow_empty && first)
-        return false;
-
-    return true;
+    return allow_empty || !first;
 }
 
 
@@ -141,7 +137,7 @@ bool ParserLeftAssociativeBinaryOperatorList::parseImpl(Pos & pos, ASTPtr & node
     bool first = true;
 
     auto current_depth = pos.depth;
-    while (1)
+    while (true)
     {
         if (first)
         {
@@ -599,21 +595,92 @@ bool ParserNullityChecking::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     return true;
 }
 
+bool ParserDateOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto begin = pos;
+
+    /// If no DATE keyword, go to the nested parser.
+    if (!ParserKeyword("DATE").ignore(pos, expected))
+        return next_parser.parse(pos, node, expected);
+
+    ASTPtr expr;
+    if (!ParserStringLiteral().parse(pos, expr, expected))
+    {
+        pos = begin;
+        return next_parser.parse(pos, node, expected);
+    }
+
+    /// the function corresponding to the operator
+    auto function = std::make_shared<ASTFunction>();
+
+    /// function arguments
+    auto exp_list = std::make_shared<ASTExpressionList>();
+
+    /// the first argument of the function is the previous element, the second is the next one
+    function->name = "toDate";
+    function->arguments = exp_list;
+    function->children.push_back(exp_list);
+
+    exp_list->children.push_back(expr);
+
+    node = function;
+    return true;
+}
+
+bool ParserTimestampOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    auto begin = pos;
+
+    /// If no TIMESTAMP keyword, go to the nested parser.
+    if (!ParserKeyword("TIMESTAMP").ignore(pos, expected))
+        return next_parser.parse(pos, node, expected);
+
+    ASTPtr expr;
+    if (!ParserStringLiteral().parse(pos, expr, expected))
+    {
+        pos = begin;
+        return next_parser.parse(pos, node, expected);
+    }
+
+    /// the function corresponding to the operator
+    auto function = std::make_shared<ASTFunction>();
+
+    /// function arguments
+    auto exp_list = std::make_shared<ASTExpressionList>();
+
+    /// the first argument of the function is the previous element, the second is the next one
+    function->name = "toDateTime";
+    function->arguments = exp_list;
+    function->children.push_back(exp_list);
+
+    exp_list->children.push_back(expr);
+
+    node = function;
+    return true;
+}
 
 bool ParserIntervalOperatorExpression::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    /// If no INTERVAL keyword, go to nested parser.
+    auto begin = pos;
+
+    /// If no INTERVAL keyword, go to the nested parser.
     if (!ParserKeyword("INTERVAL").ignore(pos, expected))
         return next_parser.parse(pos, node, expected);
 
     ASTPtr expr;
     /// Any expression can be inside, because operator surrounds it.
     if (!ParserExpressionWithOptionalAlias(false).parse(pos, expr, expected))
-        return false;
+    {
+        pos = begin;
+        return next_parser.parse(pos, node, expected);
+    }
 
     IntervalKind interval_kind;
     if (!parseIntervalKind(pos, expected, interval_kind))
-        return false;
+    {
+        pos = begin;
+        return next_parser.parse(pos, node, expected);
+    }
 
     /// the function corresponding to the operator
     auto function = std::make_shared<ASTFunction>();

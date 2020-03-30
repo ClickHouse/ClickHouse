@@ -1,6 +1,10 @@
 #include <Parsers/ParserCreateRoleQuery.h>
 #include <Parsers/ASTCreateRoleQuery.h>
 #include <Parsers/CommonParsers.h>
+#include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSettingsProfileElement.h>
+#include <Parsers/ParserSettingsProfileElement.h>
 #include <Parsers/parseUserName.h>
 
 
@@ -18,18 +22,43 @@ namespace
             return parseRoleName(pos, expected, new_name);
         });
     }
+
+    bool parseSettings(IParserBase::Pos & pos, Expected & expected, bool id_mode, std::shared_ptr<ASTSettingsProfileElements> & settings)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            if (!ParserKeyword{"SETTINGS"}.ignore(pos, expected))
+                return false;
+
+            ASTPtr new_settings_ast;
+            if (!ParserSettingsProfileElements{}.useIDMode(id_mode).parse(pos, new_settings_ast, expected))
+                return false;
+
+            if (!settings)
+                settings = std::make_shared<ASTSettingsProfileElements>();
+            const auto & new_settings = new_settings_ast->as<const ASTSettingsProfileElements &>();
+            settings->elements.insert(settings->elements.end(), new_settings.elements.begin(), new_settings.elements.end());
+            return true;
+        });
+    }
 }
 
 
 bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    bool alter;
-    if (ParserKeyword{"CREATE ROLE"}.ignore(pos, expected))
-        alter = false;
-    else if (ParserKeyword{"ALTER ROLE"}.ignore(pos, expected))
-        alter = true;
+    bool alter = false;
+    if (attach_mode)
+    {
+        if (!ParserKeyword{"ATTACH ROLE"}.ignore(pos, expected))
+            return false;
+    }
     else
-        return false;
+    {
+        if (ParserKeyword{"ALTER ROLE"}.ignore(pos, expected))
+            alter = true;
+        else if (!ParserKeyword{"CREATE ROLE"}.ignore(pos, expected))
+            return false;
+    }
 
     bool if_exists = false;
     bool if_not_exists = false;
@@ -52,18 +81,29 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
 
     String new_name;
-    if (alter)
-        parseRenameTo(pos, expected, new_name);
+    std::shared_ptr<ASTSettingsProfileElements> settings;
+    while (true)
+    {
+        if (alter && parseRenameTo(pos, expected, new_name))
+            continue;
+
+        if (parseSettings(pos, expected, attach_mode, settings))
+            continue;
+
+        break;
+    }
 
     auto query = std::make_shared<ASTCreateRoleQuery>();
     node = query;
 
     query->alter = alter;
+    query->attach = attach_mode;
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
     query->name = std::move(name);
     query->new_name = std::move(new_name);
+    query->settings = std::move(settings);
 
     return true;
 }

@@ -21,14 +21,14 @@ public:
     static FunctionPtr create(const Context & context_) { return std::make_shared<FunctionCaseWithExpression>(context_); }
 
 public:
-    FunctionCaseWithExpression(const Context & context_) : context(context_) {}
+    explicit FunctionCaseWithExpression(const Context & context_) : context(context_) {}
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     String getName() const override { return name; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
     {
-        if (!args.size())
+        if (args.empty())
             throw Exception{"Function " + getName() + " expects at least 1 arguments",
                 ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
@@ -46,7 +46,7 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count) override
     {
-        if (!args.size())
+        if (args.empty())
             throw Exception{"Function " + getName() + " expects at least 1 argument",
                 ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION};
 
@@ -122,7 +122,5 @@ void registerFunctionCaseWithExpression(FunctionFactory & factory)
 }
 
 }
-
-
 
 

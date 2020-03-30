@@ -4,7 +4,6 @@
         <tag>comparison</tag>
     </tags>
 
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>

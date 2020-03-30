@@ -18,8 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int BAD_ARGUMENTS;
 }
 
 struct ComparePairFirst final
@@ -57,6 +56,9 @@ struct AggregateFunctionWindowFunnelData
 
     void merge(const AggregateFunctionWindowFunnelData & other)
     {
+        if (other.events_list.empty())
+            return;
+
         const auto size = events_list.size();
 
         events_list.insert(std::begin(other.events_list), std::end(other.events_list));
@@ -140,7 +142,9 @@ class AggregateFunctionWindowFunnel final
 private:
     UInt64 window;
     UInt8 events_size;
-    UInt8 strict;
+    UInt8 strict;   // When the 'strict' is set, it applies conditions only for the not repeating values.
+    UInt8 strict_order; // When the 'strict_order' is set, it doesn't allow interventions of other events.
+                        // In the case of 'A->B->D->C', it stops finding 'A->B->C' at the 'D' and the max event level is 2.
 
 
     // Loop through the entire events_list, update the event timestamp value
@@ -151,7 +155,7 @@ private:
     {
         if (data.size() == 0)
             return 0;
-        if (events_size == 1)
+        if (!strict_order && events_size == 1)
             return 1;
 
         const_cast<Data &>(data).sort();
@@ -160,13 +164,24 @@ private:
         /// timestamp defaults to -1, which unsigned timestamp value never meet
         /// there may be some bugs when UInt64 type timstamp overflows Int64, but it works on most cases.
         std::vector<Int64> events_timestamp(events_size, -1);
+        bool first_event = false;
         for (const auto & pair : data.events_list)
         {
             const T & timestamp = pair.first;
             const auto & event_idx = pair.second - 1;
 
-            if (event_idx == 0)
+            if (strict_order && event_idx == -1)
+            {
+                if (first_event)
+                    break;
+                else
+                    continue;
+            }
+            else if (event_idx == 0)
+            {
                 events_timestamp[0] = timestamp;
+                first_event = true;
+            }
             else if (strict && events_timestamp[event_idx] >= 0)
             {
                 return event_idx + 1;
@@ -199,11 +214,14 @@ public:
         window = params.at(0).safeGet<UInt64>();
 
         strict = 0;
+        strict_order = 0;
         for (size_t i = 1; i < params.size(); ++i)
         {
             String option = params.at(i).safeGet<String>();
             if (option.compare("strict") == 0)
                 strict = 1;
+            else if (option.compare("strict_order") == 0)
+                strict_order = 1;
             else
                 throw Exception{"Aggregate function " + getName() + " doesn't support a parameter: " + option, ErrorCodes::BAD_ARGUMENTS};
         }
@@ -216,14 +234,21 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
+        bool has_event = false;
         const auto timestamp = assert_cast<const ColumnVector<T> *>(columns[0])->getData()[row_num];
         // reverse iteration and stable sorting are needed for events that are qualified by more than one condition.
         for (auto i = events_size; i > 0; --i)
         {
             auto event = assert_cast<const ColumnVector<UInt8> *>(columns[i])->getData()[row_num];
             if (event)
+            {
                 this->data(place).add(timestamp, i);
+                has_event = true;
+            }
         }
+
+        if (strict_order && !has_event)
+            this->data(place).add(timestamp, 0);
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena *) const override

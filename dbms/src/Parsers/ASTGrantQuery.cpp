@@ -1,5 +1,5 @@
 #include <Parsers/ASTGrantQuery.h>
-#include <Parsers/ASTGenericRoleSet.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Common/quoteString.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/sort.hpp>
@@ -97,7 +97,7 @@ namespace
     }
 
 
-    void formatToRoles(const ASTGenericRoleSet & to_roles, ASTGrantQuery::Kind kind, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTExtendedRoleSet & to_roles, ASTGrantQuery::Kind kind, const IAST::FormatSettings & settings)
     {
         using Kind = ASTGrantQuery::Kind;
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << ((kind == Kind::GRANT) ? " TO " : " FROM ")
@@ -121,7 +121,7 @@ ASTPtr ASTGrantQuery::clone() const
 
 void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << ((kind == Kind::GRANT) ? "GRANT" : "REVOKE")
+    settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach ? "ATTACH " : "") << ((kind == Kind::GRANT) ? "GRANT" : "REVOKE")
                   << (settings.hilite ? IAST::hilite_none : "") << " ";
 
     if (kind == Kind::REVOKE)

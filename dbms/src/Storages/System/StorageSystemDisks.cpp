@@ -41,7 +41,7 @@ Pipes StorageSystemDisks::read(
 
     const auto & disk_selector = context.getDiskSelector();
 
-    for (const auto & [disk_name, disk_ptr] : disk_selector.getDisksMap())
+    for (const auto & [disk_name, disk_ptr] : disk_selector->getDisksMap())
     {
         col_name->insert(disk_name);
         col_path->insert(disk_ptr->getPath());

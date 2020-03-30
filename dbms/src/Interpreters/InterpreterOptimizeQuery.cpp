@@ -12,7 +12,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int BAD_ARGUMENTS;
 }
 
 
@@ -25,7 +24,8 @@ BlockIO InterpreterOptimizeQuery::execute()
 
     context.checkAccess(getRequiredAccess());
 
-    StoragePtr table = context.getTable(ast.database, ast.table);
+    auto table_id = context.resolveStorageID(ast, Context::ResolveOrdinary);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
     table->optimize(query_ptr, ast.partition, ast.final, ast.deduplicate, context);
     return {};
 }

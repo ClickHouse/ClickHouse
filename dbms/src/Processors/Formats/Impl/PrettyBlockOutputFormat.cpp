@@ -13,7 +13,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
 }
 
 
@@ -54,8 +53,8 @@ void PrettyBlockOutputFormat::calculateWidths(
         for (size_t j = 0; j < num_rows; ++j)
         {
             {
-                WriteBufferFromString out_(serialized_value);
-                elem.type->serializeAsText(*column, j, out_, format_settings);
+                WriteBufferFromString out_serialize(serialized_value);
+                elem.type->serializeAsText(*column, j, out_serialize, format_settings);
             }
 
             widths[i][j] = std::min<UInt64>(format_settings.pretty.max_column_pad_width,
@@ -198,7 +197,7 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
 void PrettyBlockOutputFormat::writeValueWithPadding(
         const IColumn & column, const IDataType & type, size_t row_num, size_t value_width, size_t pad_to_width)
 {
-    auto writePadding = [&]()
+    auto write_padding = [&]()
     {
         for (size_t k = 0; k < pad_to_width - value_width; ++k)
             writeChar(' ', out);
@@ -206,13 +205,13 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
 
     if (type.shouldAlignRightInPrettyFormats())
     {
-        writePadding();
+        write_padding();
         type.serializeAsText(column, row_num, out, format_settings);
     }
     else
     {
         type.serializeAsText(column, row_num, out, format_settings);
-        writePadding();
+        write_padding();
     }
 }
 

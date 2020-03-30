@@ -23,7 +23,7 @@ class Context;
   *  In multithreaded case, if even_distributed is False, implementation with atomic is used,
   *     and result is always in [0 ... limit - 1] range.
   */
-class StorageSystemNumbers : public ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
+class StorageSystemNumbers final : public ext::shared_ptr_helper<StorageSystemNumbers>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageSystemNumbers>;
 public:
@@ -48,7 +48,7 @@ private:
 protected:
     /// If even_distribution is true, numbers are distributed evenly between streams.
     /// Otherwise, streams concurrently increment atomic.
-    StorageSystemNumbers(const std::string & name_, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt, UInt64 offset_ = 0, bool even_distribution_ = true);
+    StorageSystemNumbers(const StorageID & table_id, bool multithreaded_, std::optional<UInt64> limit_ = std::nullopt, UInt64 offset_ = 0, bool even_distribution_ = true);
 };
 
 }

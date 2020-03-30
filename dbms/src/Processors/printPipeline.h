@@ -42,6 +42,9 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     {
         for (const auto & port : processor->getOutputs())
         {
+            if (!port.isConnected())
+                continue;
+
             const IProcessor & curr = *processor;
             const IProcessor & next = port.getInputPort().getProcessor();
 

@@ -9,7 +9,6 @@ namespace DB
 {
 class ASTCreateRowPolicyQuery;
 struct RowPolicy;
-struct GenericRoleSet;
 
 
 class InterpreterCreateRowPolicyQuery : public IInterpreter
@@ -19,9 +18,9 @@ public:
 
     BlockIO execute() override;
 
-private:
-    void updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query, const std::optional<GenericRoleSet> & roles_from_query);
+    static void updateRowPolicyFromQuery(RowPolicy & policy, const ASTCreateRowPolicyQuery & query);
 
+private:
     ASTPtr query_ptr;
     Context & context;
 };

@@ -37,7 +37,6 @@
 #include <mutex>
 
 
-
 namespace CurrentMetrics
 {
     extern const Metric DistributedSend;
@@ -54,6 +53,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_LINK;
@@ -290,7 +290,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, &settings);
+                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, &settings, &context.getClientInfo());
                 job.stream->writePrefix();
             }
 
@@ -530,7 +530,7 @@ void DistributedBlockOutputStream::writeAsyncImpl(const Block & block, const siz
         std::vector<std::string> dir_names;
         for (const auto & address : cluster->getShardsAddresses()[shard_id])
             if (!address.is_local)
-                dir_names.push_back(address.toFullString());
+                dir_names.push_back(address.toFullString(context.getSettingsRef().use_compact_format_in_distributed_parts_names));
 
         if (!dir_names.empty())
             writeToShard(block, dir_names);
@@ -598,6 +598,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             writeVarUInt(ClickHouseRevision::get(), header_buf);
             writeStringBinary(query_string, header_buf);
             context.getSettingsRef().serialize(header_buf);
+            context.getClientInfo().write(header_buf, ClickHouseRevision::get());
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);

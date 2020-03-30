@@ -24,7 +24,7 @@ namespace DB
 /** Implements a Kafka queue table engine that can be used as a persistent queue / buffer,
   * or as a basic building block for creating pipelines with a continuous insertion / ETL.
   */
-class StorageKafka : public ext::shared_ptr_helper<StorageKafka>, public IStorage
+class StorageKafka final : public ext::shared_ptr_helper<StorageKafka>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageKafka>;
 public:
@@ -47,8 +47,6 @@ public:
     BlockOutputStreamPtr write(
         const ASTPtr & query,
         const Context & context) override;
-
-    void updateDependencies() override;
 
     void pushReadBuffer(ConsumerBufferPtr buf);
     ConsumerBufferPtr popReadBuffer();

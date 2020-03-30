@@ -2,6 +2,8 @@
 #include <iomanip>
 #include <sstream>
 
+#include <common/logger_useful.h>
+
 #include <DataStreams/MergingSortedBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
 
@@ -12,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 
@@ -22,6 +23,7 @@ MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     : description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
     , average_block_sizes(average_block_sizes_), source_blocks(inputs_.size())
     , cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
+    , log(&Logger::get("MergingSortedBlockInputStream"))
 {
     children.insert(children.end(), inputs_.begin(), inputs_.end());
     header = children.at(0)->getHeader();

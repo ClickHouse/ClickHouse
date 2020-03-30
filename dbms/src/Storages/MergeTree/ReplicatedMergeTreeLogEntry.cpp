@@ -1,6 +1,7 @@
 #include <Common/ZooKeeper/Types.h>
 
 #include <Storages/MergeTree/ReplicatedMergeTreeLogEntry.h>
+#include <Storages/MergeTree/ReplicatedMergeTreeTableMetadata.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -9,6 +10,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_FORMAT_VERSION;
+    extern const int LOGICAL_ERROR;
+}
 
 
 void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
@@ -40,6 +46,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
             out << new_part_name;
             break;
 
+        /// NOTE: Deprecated.
         case CLEAR_COLUMN:
             out << "clear_column\n"
                 << escape << column_name
@@ -47,6 +54,7 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << new_part_name;
             break;
 
+        /// NOTE: Deprecated.
         case CLEAR_INDEX:
             out << "clear_index\n"
                 << escape << index_name
@@ -64,6 +72,23 @@ void ReplicatedMergeTreeLogEntryData::writeText(WriteBuffer & out) const
                 << source_parts.at(0) << "\n"
                 << "to\n"
                 << new_part_name;
+
+            if (isAlterMutation())
+                out << "\nalter_version\n" << alter_version;
+            break;
+
+        case ALTER_METADATA: /// Just make local /metadata and /columns consistent with global
+            out << "alter\n";
+            out << "alter_version\n";
+            out << alter_version<< "\n";
+            out << "have_mutation\n";
+            out << have_mutation << "\n";
+            out << "columns_str_size:\n";
+            out << columns_str.size() << "\n";
+            out << columns_str << "\n";
+            out << "metadata_str_size:\n";
+            out << metadata_str.size() << "\n";
+            out << metadata_str;
             break;
 
         default:
@@ -105,6 +130,7 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
 
     in >> type_str >> "\n";
 
+    bool trailing_newline_found = false;
     if (type_str == "get")
     {
         type = GET_PART;
@@ -131,12 +157,12 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
         detach = type_str == "detach";
         in >> new_part_name;
     }
-    else if (type_str == "clear_column")
+    else if (type_str == "clear_column") /// NOTE: Deprecated.
     {
         type = CLEAR_COLUMN;
         in >> escape >> column_name >> "\nfrom\n" >> new_part_name;
     }
-    else if (type_str == "clear_index")
+    else if (type_str == "clear_index") /// NOTE: Deprecated.
     {
         type = CLEAR_INDEX;
         in >> escape >> index_name >> "\nfrom\n" >> new_part_name;
@@ -155,9 +181,36 @@ void ReplicatedMergeTreeLogEntryData::readText(ReadBuffer & in)
            >> "to\n"
            >> new_part_name;
         source_parts.push_back(source_part);
+
+        in >> "\n";
+
+        if (in.eof())
+            trailing_newline_found = true;
+        else if (checkString("alter_version\n", in))
+            in >> alter_version;
+    }
+    else if (type_str == "alter")
+    {
+        type = ALTER_METADATA;
+        in >> "alter_version\n";
+        in >> alter_version;
+        in >> "\nhave_mutation\n";
+        in >> have_mutation;
+        in >> "\ncolumns_str_size:\n";
+        size_t columns_size;
+        in >> columns_size >> "\n";
+        columns_str.resize(columns_size);
+        in.readStrict(&columns_str[0], columns_size);
+        in >> "\nmetadata_str_size:\n";
+        size_t metadata_size;
+        in >> metadata_size >> "\n";
+        metadata_str.resize(metadata_size);
+        in.readStrict(&metadata_str[0], metadata_size);
     }
 
-    in >> "\n";
+    if (!trailing_newline_found)
+        in >> "\n";
+
     if (checkString("part_type: ", in))
     {
         String part_type_str;

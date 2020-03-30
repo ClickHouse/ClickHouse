@@ -14,6 +14,7 @@ static const UInt64 max_block_size = 8192;
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int PATH_ACCESS_DENIED;
 }
 
@@ -47,6 +48,7 @@ FileDictionarySource::FileDictionarySource(const FileDictionarySource & other)
 
 BlockInputStreamPtr FileDictionarySource::loadAll()
 {
+    LOG_TRACE(&Poco::Logger::get("FileDictionary"), "loadAll " + toString());
     auto in_ptr = std::make_unique<ReadBufferFromFile>(filepath);
     auto stream = context.getInputFormat(format, *in_ptr, sample_block, max_block_size);
     last_modification = getLastModification();
@@ -68,7 +70,7 @@ Poco::Timestamp FileDictionarySource::getLastModification() const
 
 void registerDictionarySourceFile(DictionarySourceFactory & factory)
 {
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -84,7 +86,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
         return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context, check_config);
     };
 
-    factory.registerSource("file", createTableSource);
+    factory.registerSource("file", create_table_source);
 }
 
 }

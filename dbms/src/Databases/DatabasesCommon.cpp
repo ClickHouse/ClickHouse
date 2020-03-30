@@ -13,11 +13,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
-    extern const int LOGICAL_ERROR;
-    extern const int DICTIONARY_ALREADY_EXISTS;
 }
 
 DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const String & logger)
@@ -66,17 +63,28 @@ bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 {
-    StoragePtr res;
-    {
-        std::lock_guard lock(mutex);
-        if (dictionaries.count(table_name))
-            throw Exception("Cannot detach dictionary " + database_name + "." + table_name + " as table, use DETACH DICTIONARY query.", ErrorCodes::UNKNOWN_TABLE);
+    std::lock_guard lock(mutex);
+    return detachTableUnlocked(table_name);
+}
 
-        auto it = tables.find(table_name);
-        if (it == tables.end())
-            throw Exception("Table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
-        res = it->second;
-        tables.erase(it);
+StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
+{
+    StoragePtr res;
+    if (dictionaries.count(table_name))
+        throw Exception("Cannot detach dictionary " + database_name + "." + table_name + " as table, use DETACH DICTIONARY query.", ErrorCodes::UNKNOWN_TABLE);
+
+    auto it = tables.find(table_name);
+    if (it == tables.end())
+        throw Exception("Table " + backQuote(database_name) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+    res = it->second;
+    tables.erase(it);
+
+    auto table_id = res->getStorageID();
+    if (table_id.hasUUID())
+    {
+        /// For now it's the only database, which contains storages with UUID
+        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE);
+        DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
     }
 
     return res;
@@ -85,8 +93,20 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table)
 {
     std::lock_guard lock(mutex);
+    attachTableUnlocked(table_name, table);
+}
+
+void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table)
+{
     if (!tables.emplace(table_name, table).second)
         throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
+    auto table_id = table->getStorageID();
+    if (table_id.hasUUID())
+    {
+        /// For now it's the only database, which contains storages with UUID
+        assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE);
+        DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
+    }
 }
 
 void DatabaseWithOwnTablesBase::shutdown()

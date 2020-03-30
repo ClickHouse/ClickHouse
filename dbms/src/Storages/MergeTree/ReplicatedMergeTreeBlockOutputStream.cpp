@@ -20,13 +20,11 @@ namespace ErrorCodes
 {
     extern const int TOO_FEW_LIVE_REPLICAS;
     extern const int UNSATISFIED_QUORUM_FOR_PREVIOUS_WRITE;
-    extern const int CHECKSUM_DOESNT_MATCH;
     extern const int UNEXPECTED_ZOOKEEPER_ERROR;
     extern const int NO_ZOOKEEPER;
     extern const int READONLY;
     extern const int UNKNOWN_STATUS_OF_INSERT;
     extern const int INSERT_WAS_DEDUPLICATED;
-    extern const int KEEPER_EXCEPTION;
     extern const int TIMEOUT_EXCEEDED;
     extern const int NO_ACTIVE_REPLICAS;
 }

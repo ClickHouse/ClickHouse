@@ -13,7 +13,7 @@ namespace DB
 {
 
 /// A Storage that allows reading from a single MergeTree data part.
-class StorageFromMergeTreeDataPart : public ext::shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
+class StorageFromMergeTreeDataPart final : public ext::shared_ptr_helper<StorageFromMergeTreeDataPart>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageFromMergeTreeDataPart>;
 public:
@@ -30,7 +30,6 @@ public:
         return MergeTreeDataSelectExecutor(part->storage).readFromParts(
                 {part}, column_names, query_info, context, max_block_size, num_streams);
     }
-
 
 
     bool supportsIndexForIn() const override { return true; }
@@ -52,6 +51,11 @@ public:
     {
         return part->storage.getInMemoryMetadata();
     }
+
+
+    bool hasSortingKey() const { return part->storage.hasSortingKey(); }
+
+    Names getSortingKeyColumns() const override { return part->storage.getSortingKeyColumns(); }
 
 
 protected:
