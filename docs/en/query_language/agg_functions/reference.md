@@ -514,6 +514,55 @@ Calculates the average.
 Only works for numbers.
 The result is always Float64.
 
+## avgWeighted {#avgweighted}
+
+Calculates the [weighted arithmetic mean](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
+
+**Syntax** 
+
+```sql
+avgWeighted(x, weight)
+```
+
+**Parameters** 
+
+- `x` — Values. [Integer](../../data_types/int_uint.md) or [floating-point](../../data_types/float.md).
+- `weight` — Weights of the values. [Integer](../../data_types/int_uint.md) or [floating-point](../../data_types/float.md).
+
+Type of all the arguments (both `x` and `weight`) must be the same.
+
+**Returned value**
+
+- Weighted mean. Type: [floating-point](../../data_types/float.md).
+- If all the weights are equal to 0, function returns `NaN`.
+
+**Example**
+
+Query:
+
+``` sql
+SELECT avgWeighted(x, weight)
+FROM
+(
+    SELECT
+        t.1 AS x,
+        t.2 AS weight
+    FROM
+    (
+        SELECT arrayJoin([(4, 1), (1, 0), (10, 2)]) AS t
+    )
+)
+```
+
+Result:
+
+```text
+┌─avgWeighted(x, weight)─┐
+│                      8 │
+└────────────────────────┘
+```
+
+
 ## uniq {#agg_function-uniq}
 
 Calculates the approximate number of different values of the argument.
