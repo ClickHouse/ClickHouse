@@ -138,10 +138,12 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
         {
             //std::cerr << "current block is totally less or equals\n";
 
-            /// If there are already data in the current block, we first return it. We'll get here again the next time we call the merge function.
+            /// If there are already data in the current block, we first return it.
+            /// We'll get here again the next time we call the merge function.
             if (merged_data.mergedRows() != 0)
             {
                 //std::cerr << "merged rows is non-zero\n";
+                merged_data.flush();
                 return;
             }
 

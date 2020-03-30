@@ -53,6 +53,9 @@ protected:
                 columns.emplace_back(column.type->createColumn());
         }
 
+        /// Pull will be called at next prepare call.
+        void flush() { need_flush = true; }
+
         void insertRow(const ColumnRawPtrs & raw_columns, size_t row, size_t block_size)
         {
             size_t num_columns = raw_columns.size();
@@ -79,7 +82,7 @@ protected:
                     column = (*column->cut(0, num_rows)).mutate();
             }
 
-            was_chunk_inserted = true;
+            need_flush = true;
             total_merged_rows += num_rows;
             merged_rows = num_rows;
 
@@ -102,16 +105,16 @@ protected:
             sum_blocks_granularity = 0;
             ++total_chunks;
             total_allocated_bytes += chunk.allocatedBytes();
-            was_chunk_inserted = false;
+            need_flush = false;
 
             return chunk;
         }
 
         bool hasEnoughRows() const
         {
-            /// If full chunk was inserted, then we must pull it.
+            /// If full chunk was or is going to be inserted, then we must pull it.
             /// It is needed for fast-forward optimization.
-            if (was_chunk_inserted)
+            if (need_flush)
                 return true;
 
             /// Never return more then max_block_size.
@@ -145,7 +148,7 @@ protected:
         const UInt64 max_block_size;
         const bool use_average_block_size;
 
-        bool was_chunk_inserted = false;
+        bool need_flush = false;
     };
 
     MergedData merged_data;
