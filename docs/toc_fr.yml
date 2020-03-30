@@ -1,244 +1,244 @@
 nav:
-- "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435":
-  - "\u041E\u0431\u0437\u043E\u0440": index.md
-  - "\u041E\u0442\u043B\u0438\u0447\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0435 \u043E\u0441\u043E\u0431\u0435\u043D\u043D\u043E\u0441\u0442\u0438 ClickHouse": introduction/distinctive_features.md
-  - "\u041E\u0441\u043E\u0431\u0435\u043D\u043D\u043E\u0441\u0442\u0438 ClickHouse, \u043A\u043E\u0442\u043E\u0440\u044B\u0435 \u043C\u043E\u0436\u043D\u043E \u0441\u0447\u0438\u0442\u0430\u0442\u044C \u043D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043A\u0430\u043C\u0438": introduction/features_considered_disadvantages.md
-  - "\u041F\u0440\u0435\u0434\u0441\u0442\u0430\u0432\u043B\u0435\u043D\u0438\u0435": introduction/performance.md
-  - "\u0418\u0441\u0442\u043E\u0440\u0438\u044F": introduction/history.md
-  - "\u0410\u0434\u0435\u043F\u0442\u044B": introduction/adopters.md
-- "\u043F\u0440\u0438\u0441\u0442\u0443\u043F\u0430\u044F \u043A \u0440\u0430\u0431\u043E\u0442\u0435":
+- Introduction:
+  - "Aper\xE7u": index.md
+  - "Caract\xE9ristiques distinctives de ClickHouse": introduction/distinctive_features.md
+  - "Caract\xE9ristiques de ClickHouse qui peuvent \xEAtre consid\xE9r\xE9es comme des inconv\xE9nients": introduction/features_considered_disadvantages.md
+  - Performance: introduction/performance.md
+  - Histoire: introduction/history.md
+  - Adoptant: introduction/adopters.md
+- Prise En Main:
   - hidden: getting_started/index.md
-  - "\u0423\u0441\u0442\u0430\u043D\u043E\u0432\u043A\u0430": getting_started/install.md
-  - "\u0420\u0443\u043A\u043E\u0432\u043E\u0434\u0441\u0442\u0432\u043E": getting_started/tutorial.md
-  - "\u041F\u0440\u0438\u043C\u0435\u0440\u044B \u041D\u0430\u0431\u043E\u0440\u043E\u0432 \u0414\u0430\u043D\u043D\u044B\u0445":
-    - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": getting_started/example_datasets/index.md
-    - "\u0411\u043B\u0430\u0433\u043E\u0432\u0440\u0435\u043C\u0435\u043D\u043D\u0430": getting_started/example_datasets/ontime.md
-    - "\u0414\u0430\u043D\u043D\u044B\u0435 \u041E \u0422\u0430\u043A\u0441\u0438 \u0412 \u041D\u044C\u044E-\u0419\u043E\u0440\u043A\u0435": getting_started/example_datasets/nyc_taxi.md
-    - "\u0411\u043E\u043B\u044C\u0448\u0430\u044F \u0418\u0441\u0445\u043E\u0434\u043D\u044B\u0435 \u0414\u0430\u043D\u043D\u044B\u0435 AMPLab ": getting_started/example_datasets/amplab_benchmark.md
-    - "\u0412\u0438\u043A\u0438\u0441\u0442\u0430\u0442": getting_started/example_datasets/wikistat.md
-    - "\u0422\u0435\u0440\u0430\u0431\u0430\u0439\u0442\u043D\u044B\u0435 \u0436\u0443\u0440\u043D\u0430\u043B\u044B \u043A\u043B\u0438\u043A\u043E\u0432 \u043E\u0442 Criteo": getting_started/example_datasets/criteo.md
-    - "\u0417\u0432\u0435\u0437\u0434\u043D\u0430\u044F \u0421\u0445\u0435\u043C\u0430 \u0411\u0435\u043D\u0447\u043C\u0430\u0440\u043A": getting_started/example_datasets/star_schema.md
-    - "\u042F\u043D\u0434\u0435\u043A\u0441.\u0414\u0430\u043D\u043D\u044B\u0435 \u041C\u0435\u0442\u0440\u0438\u043A\u0438": getting_started/example_datasets/metrica.md
-  - "\u0418\u0433\u0440\u043E\u0432\u0430\u044F \u043F\u043B\u043E\u0449\u0430\u0434\u043A\u0430": getting_started/playground.md
-- "\u041C\u0435\u0436\u0444\u0430\u0437\u043D\u044B\u0435 \u0433\u0440\u0430\u043D\u0438\u0446\u044B":
-  - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": interfaces/index.md
-  - "\u043A\u043B\u0438\u0435\u043D\u0442 \u043A\u043E\u043C\u0430\u043D\u0434\u043D\u043E\u0439 \u0441\u0442\u0440\u043E\u043A\u0438": interfaces/cli.md
-  - "\u0421\u043E\u0431\u0441\u0442\u0432\u0435\u043D\u043D\u044B\u0439 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441 (TCP)": interfaces/tcp.md
-  - "\u0418\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441 HTTP": interfaces/http.md
-  - "\u0418\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441 MySQL": interfaces/mysql.md
-  - "\u0412\u0445\u043E\u0434\u043D\u044B\u0435 \u0438 \u0432\u044B\u0445\u043E\u0434\u043D\u044B\u0435 \u0444\u043E\u0440\u043C\u0430\u0442\u044B": interfaces/formats.md
-  - "\u0434\u0440\u0430\u0439\u0432\u0435\u0440 JDBC": interfaces/jdbc.md
-  - "\u0434\u0440\u0430\u0439\u0432\u0435\u0440 ODBC": interfaces/odbc.md
-  - "\u041A\u043B\u0438\u0435\u043D\u0442\u0441\u043A\u0430\u044F \u0411\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430 C++ ": interfaces/cpp.md
-  - "\u0441\u0442\u043E\u0440\u043E\u043D\u043D\u0438\u0439":
-    - "\u043A\u043B\u0438\u0435\u043D\u0442\u0441\u043A\u0430\u044F \u0431\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0430": interfaces/third-party/client_libraries.md
-    - "\u0418\u043D\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438": interfaces/third-party/integrations.md
-    - "\u0432\u0438\u0437\u0443\u0430\u043B\u044C\u043D\u044B\u0439 \u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441": interfaces/third-party/gui.md
-    - "\u041F\u043E\u043B\u043D\u043E\u043C\u043E\u0447\u0438\u044F": interfaces/third-party/proxy.md
-- "\u0414\u0432\u0438\u0433\u0430\u0442\u0435\u043B\u0438":
-  - "\u0422\u0430\u0431\u043B\u0438\u0446\u0430 \u0414\u0432\u0438\u0433\u0430\u0442\u0435\u043B\u0435\u0439":
-    - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": operations/table_engines/index.md
-    - "MergeTree \u0421\u0435\u043C\u044C\u0438":
+  - Installation: getting_started/install.md
+  - Tutoriel: getting_started/tutorial.md
+  - "Exemple De Jeux De Donn\xE9es":
+    - Introduction: getting_started/example_datasets/index.md
+    - OnTime: getting_started/example_datasets/ontime.md
+    - "New York Taxi Donn\xE9es": getting_started/example_datasets/nyc_taxi.md
+    - AMPLab Big Data Benchmark: getting_started/example_datasets/amplab_benchmark.md
+    - WikiStat: getting_started/example_datasets/wikistat.md
+    - "T\xE9raoctet click Logs de Criteo": getting_started/example_datasets/criteo.md
+    - "R\xE9f\xE9rence Du Sch\xE9ma En \xC9toile": getting_started/example_datasets/star_schema.md
+    - "Yandex.Metrica De Donn\xE9es": getting_started/example_datasets/metrica.md
+  - "R\xE9cr\xE9ation": getting_started/playground.md
+- Interface:
+  - Introduction: interfaces/index.md
+  - Client De Ligne De Commande: interfaces/cli.md
+  - Interface Native (TCP): interfaces/tcp.md
+  - Interface HTTP: interfaces/http.md
+  - Interface MySQL: interfaces/mysql.md
+  - "Formats d'entr\xE9e et de sortie": interfaces/formats.md
+  - JDBC: interfaces/jdbc.md
+  - Pilote ODBC: interfaces/odbc.md
+  - "Biblioth\xE8que Client C++ ": interfaces/cpp.md
+  - tiers:
+    - "Biblioth\xE8ques Clientes": interfaces/third-party/client_libraries.md
+    - "Int\xE9gration": interfaces/third-party/integrations.md
+    - Les Interfaces Visuelles: interfaces/third-party/gui.md
+    - Proxy: interfaces/third-party/proxy.md
+- Moteur:
+  - Moteurs De Table:
+    - Introduction: operations/table_engines/index.md
+    - Famille MergeTree:
       - MergeTree: operations/table_engines/mergetree.md
-      - "\u0440\u0435\u043F\u043B\u0438\u043A\u0430\u0446\u0438\u044F \u0434\u0430\u043D\u043D\u044B\u0445": operations/table_engines/replication.md
-      - "\u0420\u0443\u0447\u043D\u043E\u0439 \u041A\u043B\u044E\u0447": operations/table_engines/custom_partitioning_key.md
+      - "R\xE9plication Des Donn\xE9es": operations/table_engines/replication.md
+      - "Cl\xE9 De Partitionnement Personnalis\xE9e": operations/table_engines/custom_partitioning_key.md
       - ReplacingMergeTree: operations/table_engines/replacingmergetree.md
       - SummingMergeTree: operations/table_engines/summingmergetree.md
       - AggregatingMergeTree: operations/table_engines/aggregatingmergetree.md
-      - "\u041A\u043E\u043B\u043B\u0430\u043F\u0441\u0438\u043D\u0433\u043C\u0435\u0440\u0433\u0435\u0442\u0440\u0438": operations/table_engines/collapsingmergetree.md
+      - CollapsingMergeTree: operations/table_engines/collapsingmergetree.md
       - VersionedCollapsingMergeTree: operations/table_engines/versionedcollapsingmergetree.md
       - GraphiteMergeTree: operations/table_engines/graphitemergetree.md
-    - "\u0421\u0435\u043C\u0435\u0439\u043D\u044B\u0439 \u0416\u0443\u0440\u043D\u0430\u043B ":
-      - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": operations/table_engines/log_family.md
-      - "\u0421\u0442\u0440\u0438\u043F\u0435\u043B\u043E\u0433": operations/table_engines/stripelog.md
-      - "\u041B\u043E\u0433": operations/table_engines/log.md
+    - Journal De La Famille:
+      - Introduction: operations/table_engines/log_family.md
+      - StripeLog: operations/table_engines/stripelog.md
+      - Journal: operations/table_engines/log.md
       - TinyLog: operations/table_engines/tinylog.md
-    - "\u0418\u043D\u0442\u0435\u0433\u0440\u0430\u0446\u0438\u0438":
-      - "\u041A\u0430\u0444\u043A\u0430": operations/table_engines/kafka.md
+    - "Int\xE9gration":
+      - Kafka: operations/table_engines/kafka.md
       - MySQL: operations/table_engines/mysql.md
       - JDBC: operations/table_engines/jdbc.md
       - ODBC: operations/table_engines/odbc.md
       - HDFS: operations/table_engines/hdfs.md
-    - "\u041E\u0441\u043E\u0431\u044B\u0439":
-      - "\u0420\u0430\u0441\u043F\u0440\u0435\u0434\u0435\u043B\u0435\u043D\u043D\u044B\u0439": operations/table_engines/distributed.md
-      - "\u0412\u043D\u0435\u0448\u043D\u0438\u0435 \u0434\u0430\u043D\u043D\u044B\u0435": operations/table_engines/external_data.md
-      - "\u0421\u043B\u043E\u0432\u0430\u0440\u044C": operations/table_engines/dictionary.md
-      - "\u041F\u043E\u0433\u043B\u043E\u0449\u0430\u0442\u044C": operations/table_engines/merge.md
-      - "\u0424\u0430\u0439\u043B": operations/table_engines/file.md
-      - "\u041D\u0443\u043B\u0435\u0432\u043E\u0439": operations/table_engines/null.md
-      - "\u041D\u0430\u0431\u043E\u0440": operations/table_engines/set.md
-      - "\u041F\u0440\u0438\u0441\u043E\u0435\u0434\u0438\u043D\u044F\u0439\u0442\u0435\u0441\u044C": operations/table_engines/join.md
+    - "Sp\xE9cial":
+      - "Distribu\xE9": operations/table_engines/distributed.md
+      - "De donn\xE9es externes": operations/table_engines/external_data.md
+      - Dictionnaire: operations/table_engines/dictionary.md
+      - Fusionner: operations/table_engines/merge.md
+      - Fichier: operations/table_engines/file.md
+      - 'NULL': operations/table_engines/null.md
+      - "D\xE9finir": operations/table_engines/set.md
+      - Rejoindre: operations/table_engines/join.md
       - URL: operations/table_engines/url.md
-      - "\u0421\u043C\u043E\u0442\u0440\u0435\u0442\u044C": operations/table_engines/view.md
+      - Vue: operations/table_engines/view.md
       - MaterializedView: operations/table_engines/materializedview.md
-      - "\u041F\u0430\u043C\u044F\u0442\u044C": operations/table_engines/memory.md
-      - "\u0411\u0443\u0444\u0435\u0440": operations/table_engines/buffer.md
+      - "M\xE9moire": operations/table_engines/memory.md
+      - Tampon: operations/table_engines/buffer.md
       - GenerateRandom: operations/table_engines/generate.md
-  - "\u043F\u0440\u043E\u0446\u0435\u0441\u0441\u043E\u0440 \u0431\u0430\u0437\u044B \u0434\u0430\u043D\u043D\u044B\u0445":
-    - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": database_engines/index.md
+  - "Moteurs De Base De Donn\xE9es":
+    - Introduction: database_engines/index.md
     - MySQL: database_engines/mysql.md
-    - "\u041B\u0435\u043D\u0438\u0432\u044B\u0439": database_engines/lazy.md
-- "\u0421\u0441\u044B\u043B\u043A\u0430 \u043D\u0430 SQL":
+    - Paresseux: database_engines/lazy.md
+- "R\xE9f\xE9rence SQL":
   - hidden: query_language/index.md
-  - "\u0421\u0438\u043D\u0442\u0430\u043A\u0441\u0438\u0441": query_language/syntax.md
-  - "\u0417\u0430\u044F\u0432\u043B\u0435\u043D\u0438\u044F":
+  - Syntaxe: query_language/syntax.md
+  - "D\xE9claration":
     - SELECT: query_language/select.md
     - INSERT INTO: query_language/insert_into.md
     - CREATE: query_language/create.md
     - ALTER: query_language/alter.md
     - SYSTEM: query_language/system.md
     - SHOW: query_language/show.md
-    - "\u0414\u0440\u0443\u0433\u043E\u0439": query_language/misc.md
-  - "\u0424\u0443\u043D\u043A\u0446\u0438\u0438":
-    - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": query_language/functions/index.md
-    - "\u0410\u0440\u0438\u0444\u043C\u0435\u0442\u0438\u043A\u0430": query_language/functions/arithmetic_functions.md
-    - "\u0421\u0440\u0430\u0432\u043D\u0435\u043D\u0438\u0435": query_language/functions/comparison_functions.md
-    - "\u041B\u043E\u0433\u0438\u0447\u0435\u0441\u043A\u0438\u0439": query_language/functions/logical_functions.md
-    - "\u043F\u0440\u0435\u043E\u0431\u0440\u0430\u0437\u043E\u0432\u0430\u043D\u0438\u0435 \u0442\u0438\u043F\u043E\u0432": query_language/functions/type_conversion_functions.md
-    - "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441 \u0434\u0430\u0442\u0430\u043C\u0438 \u0438 \u0432\u0440\u0435\u043C\u0435\u043D\u0435\u043C": query_language/functions/date_time_functions.md
-    - "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441\u043E \u0441\u0442\u0440\u0443\u043D\u0430\u043C\u0438": query_language/functions/string_functions.md
-    - "\u0414\u043B\u044F \u041F\u043E\u0438\u0441\u043A\u0430 \u0421\u0442\u0440\u043E\u043A": query_language/functions/string_search_functions.md
-    - "\u0414\u043B\u044F \u0437\u0430\u043C\u0435\u043D\u044B \u0432 \u0441\u0442\u0440\u043E\u043A\u0430\u0445": query_language/functions/string_replace_functions.md
-    - "\u0423\u0441\u043B\u043E\u0432\u043D\u044B\u0439 ": query_language/functions/conditional_functions.md
-    - "\u041C\u0430\u0442\u0435\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438\u0439": query_language/functions/math_functions.md
-    - "\u041E\u043A\u0440\u0443\u0433\u043B\u0435\u043D\u0438\u0435": query_language/functions/rounding_functions.md
-    - "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441 \u043C\u0430\u0441\u0441\u0438\u0432\u0430\u043C\u0438": query_language/functions/array_functions.md
-    - "\u0420\u0430\u0437\u0434\u0435\u043B\u0435\u043D\u0438\u0435 \u0438 \u0441\u043B\u0438\u044F\u043D\u0438\u0435 \u0441\u0442\u0440\u043E\u043A \u0438 \u043C\u0430\u0441\u0441\u0438\u0432\u043E\u0432": query_language/functions/splitting_merging_functions.md
-    - "\u041D\u0435\u043C\u043D\u043E\u0433\u043E": query_language/functions/bit_functions.md
-    - "\u0420\u0430\u0441\u0442\u0440\u043E\u0432\u044B\u0439": query_language/functions/bitmap_functions.md
-    - "\u0413\u0430\u0448\u0438\u0448": query_language/functions/hash_functions.md
-    - "\u0413\u0435\u043D\u0435\u0440\u0430\u0446\u0438\u044F \u041F\u0441\u0435\u0432\u0434\u043E\u0441\u043B\u0443\u0447\u0430\u0439\u043D\u044B\u0445 \u0427\u0438\u0441\u0435\u043B": query_language/functions/random_functions.md
-    - "\u041A\u043E\u0434\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435": query_language/functions/encoding_functions.md
-    - "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441 UUID": query_language/functions/uuid_functions.md
-    - "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441 URL-\u0430\u0434\u0440\u0435\u0441\u0430\u043C\u0438": query_language/functions/url_functions.md
-    - "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441 IP-\u0430\u0434\u0440\u0435\u0441\u0430\u043C\u0438": query_language/functions/ip_address_functions.md
-    - "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441 JSON.": query_language/functions/json_functions.md
-    - "\u0432\u044B\u0441\u0448\u0438\u0439 \u043F\u043E\u0440\u044F\u0434\u043E\u043A": query_language/functions/higher_order_functions.md
-    - "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441 \u0432\u043D\u0435\u0448\u043D\u0438\u043C\u0438 \u0441\u043B\u043E\u0432\u0430\u0440\u044F\u043C\u0438": query_language/functions/ext_dict_functions.md
-    - "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441 \u042F\u043D\u0434\u0435\u043A\u0441\u043E\u043C.\u0421\u043B\u043E\u0432\u0430\u0440\u0438 \u041C\u0435\u0442\u0440\u0438\u043A\u0438": query_language/functions/ym_dict_functions.md
-    - "\u0420\u0435\u0430\u043B\u0438\u0437\u0430\u0446\u0438\u044F \u0432 \u041E\u043F\u0435\u0440\u0430\u0442\u043E\u0440": query_language/functions/in_functions.md
+    - Autre: query_language/misc.md
+  - Fonction:
+    - Introduction: query_language/functions/index.md
+    - "Arithm\xE9tique": query_language/functions/arithmetic_functions.md
+    - Comparaison: query_language/functions/comparison_functions.md
+    - Logique: query_language/functions/logical_functions.md
+    - La Conversion De Type: query_language/functions/type_conversion_functions.md
+    - Travailler avec les Dates et les heures: query_language/functions/date_time_functions.md
+    - "Travailler avec des cha\xEEnes": query_language/functions/string_functions.md
+    - "Pour Rechercher Des Cha\xEEnes": query_language/functions/string_search_functions.md
+    - "Pour remplacer dans les cha\xEEnes": query_language/functions/string_replace_functions.md
+    - 'Conditionnel ': query_language/functions/conditional_functions.md
+    - "Math\xE9matique": query_language/functions/math_functions.md
+    - Arrondi: query_language/functions/rounding_functions.md
+    - Travailler avec des tableaux: query_language/functions/array_functions.md
+    - "Fractionnement et fusion de cha\xEEnes et de tableaux": query_language/functions/splitting_merging_functions.md
+    - Bit: query_language/functions/bit_functions.md
+    - Bitmap: query_language/functions/bitmap_functions.md
+    - Hachage: query_language/functions/hash_functions.md
+    - "La G\xE9n\xE9ration De Nombres Pseudo-Al\xE9atoires": query_language/functions/random_functions.md
+    - Encodage: query_language/functions/encoding_functions.md
+    - Travailler avec UUID: query_language/functions/uuid_functions.md
+    - Travailler avec des URL: query_language/functions/url_functions.md
+    - Travailler avec des adresses IP: query_language/functions/ip_address_functions.md
+    - Travailler avec JSON.: query_language/functions/json_functions.md
+    - "D'Ordre Sup\xE9rieur": query_language/functions/higher_order_functions.md
+    - Travailler avec des dictionnaires externes: query_language/functions/ext_dict_functions.md
+    - Travailler avec Yandex.Dictionnaires Metrica: query_language/functions/ym_dict_functions.md
+    - "Mise en \u0153uvre de L'op\xE9rateur IN": query_language/functions/in_functions.md
     - arrayJoin: query_language/functions/array_join.md
-    - "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441 \u0433\u0435\u043E\u0433\u0440\u0430\u0444\u0438\u0447\u0435\u0441\u043A\u0438\u043C\u0438 \u043A\u043E\u043E\u0440\u0434\u0438\u043D\u0430\u0442\u0430\u043C\u0438": query_language/functions/geo.md
-    - "\u0420\u0430\u0431\u043E\u0442\u0430 \u0441 \u043D\u0443\u043B\u0435\u0432\u044B\u043C\u0438 \u0430\u0440\u0433\u0443\u043C\u0435\u043D\u0442\u0430\u043C\u0438": query_language/functions/functions_for_nulls.md
-    - "\u0424\u0443\u043D\u043A\u0446\u0438\u0438 \u041C\u0430\u0448\u0438\u043D\u043D\u043E\u0433\u043E \u041E\u0431\u0443\u0447\u0435\u043D\u0438\u044F": query_language/functions/machine_learning_functions.md
-    - "\u0421\u0430\u043C\u043E\u0430\u043D\u0430\u043B\u0438\u0437": query_language/functions/introspection.md
-    - "\u0414\u0440\u0443\u0433\u043E\u0439": query_language/functions/other_functions.md
-  - "\u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u0430\u044F \u0444\u0443\u043D\u043A\u0446\u0438\u044F":
-    - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": query_language/agg_functions/index.md
-    - "\u0421\u0441\u044B\u043B\u043A\u0430": query_language/agg_functions/reference.md
-    - "\u041A\u043E\u043C\u0431\u0438\u043D\u0430\u0442\u043E\u0440\u044B \u0430\u0433\u0440\u0435\u0433\u0430\u0442\u043D\u044B\u0445 \u0444\u0443\u043D\u043A\u0446\u0438\u0439": query_language/agg_functions/combinators.md
-    - "\u041F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u0438\u0447\u0435\u0441\u043A\u0438\u0435 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u0447\u0435\u0441\u043A\u0438\u0435 \u0444\u0443\u043D\u043A\u0446\u0438\u0438": query_language/agg_functions/parametric_functions.md
-  - "\u0442\u0430\u0431\u043B\u0438\u0447\u043D\u0430\u044F \u0444\u0443\u043D\u043A\u0446\u0438\u044F":
-    - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": query_language/table_functions/index.md
-    - "\u0444\u0430\u0439\u043B": query_language/table_functions/file.md
-    - "\u043F\u043E\u0433\u043B\u043E\u0449\u0430\u0442\u044C": query_language/table_functions/merge.md
-    - "\u0447\u0438\u0441\u043B\u0430": query_language/table_functions/numbers.md
-    - "\u0443\u0434\u0430\u043B\u0435\u043D\u043D\u044B\u0439": query_language/table_functions/remote.md
-    - "URL-\u0430\u0434\u0440\u0435\u0441": query_language/table_functions/url.md
-    - "\u0432 MySQL": query_language/table_functions/mysql.md
-    - "\u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441 jdbc": query_language/table_functions/jdbc.md
-    - "\u0438\u043D\u0442\u0435\u0440\u0444\u0435\u0439\u0441 ODBC": query_language/table_functions/odbc.md
-    - "\u0441\u0438\u0441\u0442\u0435\u043C\u044B HDFS": query_language/table_functions/hdfs.md
-    - "\u0432\u0445\u043E\u0434": query_language/table_functions/input.md
+    - "Travailler avec des coordonn\xE9es g\xE9ographiques": query_language/functions/geo.md
+    - Travailler avec des arguments nullables: query_language/functions/functions_for_nulls.md
+    - Fonctions D'Apprentissage Automatique: query_language/functions/machine_learning_functions.md
+    - Introspection: query_language/functions/introspection.md
+    - Autre: query_language/functions/other_functions.md
+  - "Les Fonctions D'Agr\xE9gation":
+    - Introduction: query_language/agg_functions/index.md
+    - "R\xE9f\xE9rence": query_language/agg_functions/reference.md
+    - "Combinateurs de fonction d'agr\xE9gat": query_language/agg_functions/combinators.md
+    - "Fonctions d'agr\xE9gat param\xE9triques": query_language/agg_functions/parametric_functions.md
+  - Les Fonctions De Table:
+    - Introduction: query_language/table_functions/index.md
+    - fichier: query_language/table_functions/file.md
+    - fusionner: query_language/table_functions/merge.md
+    - nombre: query_language/table_functions/numbers.md
+    - distant: query_language/table_functions/remote.md
+    - URL: query_language/table_functions/url.md
+    - mysql: query_language/table_functions/mysql.md
+    - jdbc: query_language/table_functions/jdbc.md
+    - ODBC: query_language/table_functions/odbc.md
+    - hdfs: query_language/table_functions/hdfs.md
+    - "entr\xE9e": query_language/table_functions/input.md
     - generateRandom: query_language/table_functions/generate.md
-  - "\u0421\u043B\u043E\u0432\u0430\u0440\u0438":
-    - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": query_language/dicts/index.md
-    - "\u0412\u043D\u0435\u0448\u043D\u0438\u0435 \u0421\u043B\u043E\u0432\u0430\u0440\u0438":
-      - "\u043E\u0431\u0449\u0435\u0435 \u043E\u043F\u0438\u0441\u0430\u043D\u0438\u0435": query_language/dicts/external_dicts.md
-      - "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430 \u0432\u043D\u0435\u0448\u043D\u0435\u0433\u043E \u0441\u043B\u043E\u0432\u0430\u0440\u044F": query_language/dicts/external_dicts_dict.md
-      - "\u0425\u0440\u0430\u043D\u0435\u043D\u0438\u0435 \u0441\u043B\u043E\u0432\u0430\u0440\u0435\u0439 \u0432 \u043F\u0430\u043C\u044F\u0442\u0438": query_language/dicts/external_dicts_dict_layout.md
-      - "\u041E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u0435 \u0421\u043B\u043E\u0432\u0430\u0440\u044F": query_language/dicts/external_dicts_dict_lifetime.md
-      - "\u0418\u0441\u0442\u043E\u0447\u043D\u0438\u043A\u0438 \u0432\u043D\u0435\u0448\u043D\u0438\u0445 \u0441\u043B\u043E\u0432\u0430\u0440\u0435\u0439": query_language/dicts/external_dicts_dict_sources.md
-      - "\u041A\u043B\u044E\u0447 \u0438 \u043F\u043E\u043B\u044F \u0441\u043B\u043E\u0432\u0430\u0440\u044F": query_language/dicts/external_dicts_dict_structure.md
-      - "\u0418\u0435\u0440\u0430\u0440\u0445\u0438\u0447\u0435\u0441\u043A\u0438\u0435 \u0441\u043B\u043E\u0432\u0430\u0440\u0438": query_language/dicts/external_dicts_dict_hierarchical.md
-    - "\u0432\u043D\u0443\u0442\u0440\u0435\u043D\u043D\u0438\u0439 \u0441\u043B\u043E\u0432\u0430\u0440\u044C": query_language/dicts/internal_dicts.md
-  - "\u041E\u043F\u0435\u0440\u0430\u0442\u043E\u0440\u044B": query_language/operators.md
-  - "\u0442\u0438\u043F \u0434\u0430\u043D\u043D\u044B\u0445":
-    - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": data_types/index.md
-    - "\u0422\u0438\u043F Uint8, \u0422\u0438\u043F\u0430 Uint16, \u0422\u0438\u043F Uint32, Uint64 \u0412, Int8, \u0422\u0438\u043F\u0430 INT16, Int32 \u0418 Int64 \u0417\u043D\u0430\u0447\u0435\u043D\u0438\u0435 \u0422\u0438\u043F\u0430": data_types/int_uint.md
+  - Dictionnaire:
+    - Introduction: query_language/dicts/index.md
+    - Dictionnaires Externes:
+      - "Description G\xE9n\xE9rale": query_language/dicts/external_dicts.md
+      - Configuration D'un dictionnaire externe: query_language/dicts/external_dicts_dict.md
+      - "Stockage des dictionnaires en m\xE9moire": query_language/dicts/external_dicts_dict_layout.md
+      - "Mises \xC0 Jour Du Dictionnaire": query_language/dicts/external_dicts_dict_lifetime.md
+      - Sources de dictionnaires externes: query_language/dicts/external_dicts_dict_sources.md
+      - "Cl\xE9 et champs du dictionnaire": query_language/dicts/external_dicts_dict_structure.md
+      - "Dictionnaires hi\xE9rarchiques": query_language/dicts/external_dicts_dict_hierarchical.md
+    - Dictionnaires Internes: query_language/dicts/internal_dicts.md
+  - "Op\xE9rateur": query_language/operators.md
+  - "Types De Donn\xE9es":
+    - Introduction: data_types/index.md
+    - UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64: data_types/int_uint.md
     - Float32, Float64: data_types/float.md
-    - "\u0414\u0435\u0441\u044F\u0442\u0438\u0447\u043D\u044B\u0439": data_types/decimal.md
-    - "\u041B\u043E\u0433\u0438\u0447\u0435\u0441\u043A\u0438\u0439": data_types/boolean.md
-    - "\u0421\u0442\u0440\u043E\u043A\u0430": data_types/string.md
-    - FixedString(N): data_types/fixedstring.md
+    - "D\xE9cimal": data_types/decimal.md
+    - "Bool\xE9en": data_types/boolean.md
+    - "Cha\xEEne": data_types/string.md
+    - FixedString (N): data_types/fixedstring.md
     - UUID: data_types/uuid.md
-    - "\u0414\u0430\u0442\u0430": data_types/date.md
-    - "\u0437\u043D\u0430\u0447\u0435\u043D\u0438\u0435 datetime": data_types/datetime.md
+    - Date: data_types/date.md
+    - DateTime: data_types/datetime.md
     - DateTime64: data_types/datetime64.md
-    - "\u041F\u0435\u0440\u0435\u0447\u0438\u0441\u043B\u0435\u043D\u0438\u0435": data_types/enum.md
-    - "\u041C\u0430\u0441\u0441\u0438\u0432 (T)": data_types/array.md
-    - "AggregateFunction(\u0438\u043C\u044F, types_of_arguments...)": data_types/nested_data_structures/aggregatefunction.md
-    - "\u041A\u043E\u0440\u0442\u0435\u0436(T1, T2, ...)": data_types/tuple.md
-    - "\u0417\u043D\u0430\u0447\u0435\u043D\u0438\u0435 null": data_types/nullable.md
-    - "\u0412\u043B\u043E\u0436\u0435\u043D\u043D\u044B\u0435 \u0421\u0442\u0440\u0443\u043A\u0442\u0443\u0440\u044B \u0414\u0430\u043D\u043D\u044B\u0445":
+    - Enum: data_types/enum.md
+    - Array(T): data_types/array.md
+    - AggregateFunction (nom, types_of_arguments...): data_types/nested_data_structures/aggregatefunction.md
+    - Tuple (T1, T2,...): data_types/tuple.md
+    - Nullable: data_types/nullable.md
+    - "Structures De Donn\xE9es Imbriqu\xE9es":
       - hidden: data_types/nested_data_structures/index.md
-      - "\u0412\u043B\u043E\u0436\u0435\u043D\u043D\u044B\u0435(\u0422\u0438\u043F1 \u0418\u043C\u044F1, \u0422\u0438\u043F2 \u0418\u043C\u044F2, ...)": data_types/nested_data_structures/nested.md
-    - "\u0421\u043F\u0435\u0446\u0438\u0430\u043B\u044C\u043D\u044B\u0435 \u0422\u0438\u043F\u044B \u0414\u0430\u043D\u043D\u044B\u0445":
+      - "Imbriqu\xE9e(Type1 Nom1, Nom2 Type2, ...)": data_types/nested_data_structures/nested.md
+    - "Types De Donn\xE9es Sp\xE9ciaux":
       - hidden: data_types/special_data_types/index.md
-      - "\u0412\u044B\u0440\u0430\u0436\u0435\u043D\u0438\u0435": data_types/special_data_types/expression.md
-      - "\u041D\u0430\u0431\u043E\u0440": data_types/special_data_types/set.md
-      - "\u041D\u0438\u0447\u0435\u0433\u043E": data_types/special_data_types/nothing.md
-      - "\u0418\u043D\u0442\u0435\u0440\u0432\u0430\u043B": data_types/special_data_types/interval.md
-    - "\u0414\u043E\u043C\u0435\u043D\u044B":
-      - "\u041E\u0431\u0437\u043E\u0440": data_types/domains/overview.md
-      - "\u041F\u0440\u043E\u0442\u043E\u043A\u043E\u043B IPv4": data_types/domains/ipv4.md
-      - "\u041F\u0440\u043E\u0442\u043E\u043A\u043E\u043B IPv6": data_types/domains/ipv6.md
-- "\u041D\u0430\u043F\u0440\u0430\u0432\u043B\u044F\u044E\u0449\u0438\u0435":
-  - "\u041E\u0431\u0437\u043E\u0440": guides/index.md
-  - "\u041F\u0440\u0438\u043C\u0435\u043D\u0435\u043D\u0438\u0435 \u041C\u043E\u0434\u0435\u043B\u0435\u0439 CatBoost": guides/apply_catboost_model.md
-- "\u041E\u043F\u0435\u0440\u0430\u0446\u0438\u0438":
-  - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": operations/index.md
-  - "\u0422\u0440\u0435\u0431\u043E\u0432\u0430\u043D\u0438\u044F": operations/requirements.md
-  - "\u041C\u043E\u043D\u0438\u0442\u043E\u0440\u0438\u043D\u0433": operations/monitoring.md
-  - "\u0414\u0438\u0430\u0433\u043D\u043E\u0441\u0442\u0438\u043A\u0430": operations/troubleshooting.md
-  - "\u041E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0438\u0435 ClickHouse": operations/update.md
-  - "\u043F\u0440\u0430\u0432\u043E \u0434\u043E\u0441\u0442\u0443\u043F\u0430": operations/access_rights.md
-  - "\u0440\u0435\u0437\u0435\u0440\u0432\u043D\u043E\u0435 \u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0434\u0430\u043D\u043D\u044B\u0445": operations/backup.md
-  - "\u043A\u043E\u043D\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u043E\u043D\u043D\u044B\u0439 \u0444\u0430\u0439\u043B": operations/configuration_files.md
-  - "\u0420\u0430\u0437\u043D\u0430\u0440\u044F\u0434\u043A\u0430": operations/quotas.md
-  - "\u0441\u0438\u0441\u0442\u0435\u043C\u043D\u0430\u044F \u0442\u0430\u0431\u043B\u0438\u0446\u0430": operations/system_tables.md
-  - "\u043E\u043F\u0442\u0438\u043C\u0438\u0437\u0430\u0446\u0438\u044F \u043F\u0440\u043E\u0438\u0437\u0432\u043E\u0434\u0438\u0442\u0435\u043B\u044C\u043D\u043E\u0441\u0442\u0438":
-    - "\u041F\u0440\u043E\u0444\u0438\u043B\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u0417\u0430\u043F\u0440\u043E\u0441\u043E\u0432": operations/performance/sampling_query_profiler.md
-  - "\u0422\u0435\u0441\u0442\u0438\u0440\u043E\u0432\u0430\u043D\u0438\u0435 \u041E\u0431\u043E\u0440\u0443\u0434\u043E\u0432\u0430\u043D\u0438\u044F": operations/performance_test.md
-  - "\u041F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u044B \u041A\u043E\u043D\u0444\u0438\u0433\u0443\u0440\u0430\u0446\u0438\u0438 \u0421\u0435\u0440\u0432\u0435\u0440\u0430":
-    - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": operations/server_settings/index.md
-    - "\u043F\u0430\u0440\u0430\u043C\u0435\u0442\u0440\u044B \u0441\u0435\u0440\u0432\u0435\u0440\u0430": operations/server_settings/settings.md
-  - "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438":
-    - "\u0412\u0441\u0442\u0443\u043F\u043B\u0435\u043D\u0438\u0435": operations/settings/index.md
-    - "\u0420\u0430\u0437\u0440\u0435\u0448\u0435\u043D\u0438\u044F \u0434\u043B\u044F \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432": operations/settings/permissions_for_queries.md
-    - "\u041E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0438\u044F \u043D\u0430 \u0441\u043B\u043E\u0436\u043D\u043E\u0441\u0442\u044C \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432": operations/settings/query_complexity.md
-    - "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": operations/settings/settings.md
-    - "\u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438 \u041F\u0440\u043E\u0444\u0438\u043B\u0435\u0439": operations/settings/settings_profiles.md
-    - "\u041E\u0433\u0440\u0430\u043D\u0438\u0447\u0435\u043D\u0438\u044F \u043D\u0430 \u041D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0438": operations/settings/constraints_on_settings.md
-    - "\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u0442\u0435\u043B\u044C\u0441\u043A\u0430\u044F \u043D\u0430\u0441\u0442\u0440\u043E\u0439\u043A\u0430": operations/settings/settings_users.md
-  - "\u041A\u043E\u043C\u043C\u0443\u043D\u0430\u043B\u044C\u043D\u044B\u0435 \u0443\u0441\u043B\u0443\u0433\u0438":
-    - "\u041E\u0431\u0437\u043E\u0440": operations/utils/index.md
-    - "clickhouse-\u043A\u043E\u043F\u0438\u0440\u043E\u0432\u0430\u043B\u044C\u043D\u044B\u0439 \u0430\u043F\u043F\u0430\u0440\u0430\u0442": operations/utils/clickhouse-copier.md
-    - "clickhouse-\u043C\u0435\u0441\u0442\u043D\u044B\u0435": operations/utils/clickhouse-local.md
-    - "clickhouse-\u0431\u0435\u043D\u0447\u043C\u0430\u0440\u043A": operations/utils/clickhouse-benchmark.md
-  - "\u0420\u0435\u043A\u043E\u043C\u0435\u043D\u0434\u0430\u0446\u0438\u0438 \u041F\u043E \u0418\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D\u0438\u044E": operations/tips.md
-- "\u0420\u0430\u0437\u0432\u0438\u0442\u0438\u0435":
+      - Expression: data_types/special_data_types/expression.md
+      - "D\xE9finir": data_types/special_data_types/set.md
+      - Rien: data_types/special_data_types/nothing.md
+      - Intervalle: data_types/special_data_types/interval.md
+    - Domaine:
+      - "Aper\xE7u": data_types/domains/overview.md
+      - IPv4: data_types/domains/ipv4.md
+      - IPv6: data_types/domains/ipv6.md
+- Guide:
+  - "Aper\xE7u": guides/index.md
+  - "Application Des Mod\xE8les CatBoost": guides/apply_catboost_model.md
+- "Op\xE9rations":
+  - Introduction: operations/index.md
+  - Exigence: operations/requirements.md
+  - Surveiller: operations/monitoring.md
+  - "D\xE9pannage": operations/troubleshooting.md
+  - "Mise \xC0 Jour De ClickHouse": operations/update.md
+  - "Les Droits D'Acc\xE8s": operations/access_rights.md
+  - "La Sauvegarde Des Donn\xE9es": operations/backup.md
+  - Fichiers De Configuration: operations/configuration_files.md
+  - Quota: operations/quotas.md
+  - "Les Tables Syst\xE8me": operations/system_tables.md
+  - Optimisation Des Performances:
+    - "Profilage De Requ\xEAte": operations/performance/sampling_query_profiler.md
+  - "Tester Le Mat\xE9riel": operations/performance_test.md
+  - "Param\xE8tres De Configuration Du Serveur":
+    - Introduction: operations/server_settings/index.md
+    - "Les Param\xE8tres Du Serveur": operations/server_settings/settings.md
+  - "Param\xE8tre":
+    - Introduction: operations/settings/index.md
+    - "Autorisations pour les requ\xEAtes": operations/settings/permissions_for_queries.md
+    - "Restrictions sur la complexit\xE9 des requ\xEAtes": operations/settings/query_complexity.md
+    - "Param\xE8tre": operations/settings/settings.md
+    - "Les Param\xE8tres Des Profils": operations/settings/settings_profiles.md
+    - "Contraintes sur les param\xE8tres": operations/settings/constraints_on_settings.md
+    - "Les Param\xE8tres De L'Utilisateur": operations/settings/settings_users.md
+  - Utilitaire:
+    - "Aper\xE7u": operations/utils/index.md
+    - clickhouse-copieur: operations/utils/clickhouse-copier.md
+    - clickhouse-local: operations/utils/clickhouse-local.md
+    - clickhouse-benchmark: operations/utils/clickhouse-benchmark.md
+  - Recommandations D'Utilisation: operations/tips.md
+- "D\xE9veloppement":
   - hidden: development/index.md
-  - "\u0418\u043D\u0441\u0442\u0440\u0443\u043A\u0446\u0438\u044F \u0414\u043B\u044F \u041D\u0430\u0447\u0438\u043D\u0430\u044E\u0449\u0438\u0445 \u0420\u0430\u0437\u0440\u0430\u0431\u043E\u0442\u0447\u0438\u043A\u043E\u0432 ClickHouse": development/developer_instruction.md
-  - "\u041E\u0431\u0437\u043E\u0440 \u0430\u0440\u0445\u0438\u0442\u0435\u043A\u0442\u0443\u0440\u044B ClickHouse": development/architecture.md
-  - "\u041F\u0440\u043E\u0441\u043C\u043E\u0442\u0440 \u0418\u0441\u0445\u043E\u0434\u043D\u043E\u0433\u043E \u041A\u043E\u0434\u0430 ClickHouse": development/browse_code.md
-  - "\u041A\u0430\u043A \u043F\u043E\u0441\u0442\u0440\u043E\u0438\u0442\u044C ClickHouse \u043D\u0430 Linux": development/build.md
-  - "\u041A\u0430\u043A \u043F\u043E\u0441\u0442\u0440\u043E\u0438\u0442\u044C ClickHouse \u043D\u0430 Mac OS X": development/build_osx.md
-  - "\u041A\u0430\u043A \u043F\u043E\u0441\u0442\u0440\u043E\u0438\u0442\u044C ClickHouse \u043D\u0430 Linux \u0434\u043B\u044F Mac OS X": development/build_cross_osx.md
-  - "\u041A\u0430\u043A \u043F\u043E\u0441\u0442\u0440\u043E\u0438\u0442\u044C ClickHouse \u043D\u0430 Linux \u0434\u043B\u044F AARCH64 (ARM64)": development/build_cross_arm.md
-  - "\u041A\u0430\u043A \u043D\u0430\u043F\u0438\u0441\u0430\u0442\u044C \u043A\u043E\u0434 \u043D\u0430 \u044F\u0437\u044B\u043A\u0435 C++ ": development/style.md
-  - "\u041A\u0430\u043A \u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C \u0442\u0435\u0441\u0442\u044B ClickHouse": development/tests.md
-  - "\u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0435\u043C\u044B\u0435 \u0421\u0442\u043E\u0440\u043E\u043D\u043D\u0438\u0435 \u0411\u0438\u0431\u043B\u0438\u043E\u0442\u0435\u043A\u0438": development/contrib.md
-- "\u041A\u043E\u043C\u043C\u0435\u0440\u0447\u0435\u0441\u043A\u0438\u0439":
-  - "\u041F\u043E\u0441\u0442\u0430\u0432\u0449\u0438\u043A\u0438 \u041E\u0431\u043B\u0430\u0447\u043D\u044B\u0445 \u0423\u0441\u043B\u0443\u0433": commercial/cloud.md
-- "\u0427\u0442\u043E \u0442\u0443\u0442 \u043D\u043E\u0432\u043E\u0433\u043E":
-  - "\u0414\u043E\u0440\u043E\u0436\u043D\u0430\u044F \u043A\u0430\u0440\u0442\u0430": roadmap.md
-  - "\u0421\u043F\u0438\u0441\u043E\u043A \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439":
+  - "Le D\xE9butant Clickhouse Developer Instruction": development/developer_instruction.md
+  - Vue d'ensemble de L'Architecture ClickHouse: development/architecture.md
+  - Parcourir Le Code Source De ClickHouse: development/browse_code.md
+  - Comment Construire ClickHouse sur Linux: development/build.md
+  - Comment Construire ClickHouse sur Mac OS X: development/build_osx.md
+  - Comment Construire ClickHouse sur Linux pour Mac OS X: development/build_cross_osx.md
+  - Comment Construire ClickHouse sur Linux pour AARCH64 (ARM64): development/build_cross_arm.md
+  - "Comment \xE9crire du Code C++ ": development/style.md
+  - "Comment ex\xE9cuter des Tests ClickHouse": development/tests.md
+  - "Biblioth\xE8ques Tierces Utilis\xE9es": development/contrib.md
+- Commercial:
+  - Fournisseurs De Services Cloud: commercial/cloud.md
+- Ce qui est Nouveau:
+  - Feuille de route: roadmap.md
+  - Changelog:
     - '2020': changelog/index.md
     - '2019': changelog/2019.md
     - '2018': changelog/2018.md
     - '2017': changelog/2017.md
-  - "\u0421\u043F\u0438\u0441\u043E\u043A \u0418\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439 \u0411\u0435\u0437\u043E\u043F\u0430\u0441\u043D\u043E\u0441\u0442\u0438": security_changelog.md
+  - "S\xE9curit\xE9 Changelog": security_changelog.md
 - F.A.Q.:
-  - "\u043E\u0431\u0449\u0438\u0439 \u0432\u043E\u043F\u0440\u043E\u0441": faq/general.md
+  - "Questions G\xE9n\xE9rales": faq/general.md
 

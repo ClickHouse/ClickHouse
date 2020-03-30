@@ -1,4 +1,4 @@
-# Spanish translations for PROJECT.
+# French translations for PROJECT.
 # Copyright (C) 2020 ORGANIZATION
 # This file is distributed under the same license as the PROJECT project.
 # FIRST AUTHOR <EMAIL@ADDRESS>, 2020.
@@ -8,11 +8,11 @@ msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
 "POT-Creation-Date: 2020-03-30 15:12+0300\n"
-"PO-Revision-Date: 2020-03-26 10:19+0300\n"
+"PO-Revision-Date: 2020-03-30 15:12+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
-"Language: es\n"
-"Language-Team: es <LL@li.org>\n"
-"Plural-Forms: nplurals=2; plural=(n != 1)\n"
+"Language: fr\n"
+"Language-Team: fr <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n > 1)\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
@@ -21,7 +21,7 @@ msgstr ""
 #: templates/common_meta.html:5 templates/common_meta.html:9
 #: templates/common_meta.html:16
 msgid "ClickHouse DBMS"
-msgstr "Sistema abierto."
+msgstr "SGBD ClickHouse"
 
 #: templates/common_meta.html:11
 msgid ""
@@ -29,9 +29,9 @@ msgid ""
 "that allows generating analytical data reports in real time using SQL "
 "queries."
 msgstr ""
-"ClickHouse es un sistema de gestión de bases de datos orientado a "
-"columnas de código abierto que permite generar informes de datos "
-"analíticos en tiempo real utilizando consultas SQL."
+"ClickHouse est un système de gestion de base de données orienté colonne "
+"open source qui permet de générer des rapports de données analytiques en "
+"temps réel à l'aide de requêtes SQL."
 
 #: templates/common_meta.html:19
 msgid ""
@@ -47,23 +47,23 @@ msgstr ""
 
 #: templates/footer.html:8
 msgid "ClickHouse source code is published under the Apache 2.0 License."
-msgstr "El código fuente de ClickHouse se publica bajo la licencia Apache 2.0."
+msgstr "Le code source de ClickHouse est publié sous la licence Apache 2.0."
 
 #: templates/footer.html:8
 msgid ""
 "Software is distributed on an \"AS IS\" BASIS, WITHOUT WARRANTIES OR "
 "CONDITIONS OF ANY KIND, either express or implied."
 msgstr ""
-"El software se distribuye \"TAL CUAL\", SIN GARANTÍAS O CONDICIONES DE "
-"NINGÚN TIPO, ya sea expresa o implícita."
+"Le logiciel est distribué \"tel quel\", sans garantie ni condition "
+"d'AUCUNE SORTE, expresse ou implicite."
 
 #: templates/footer.html:11
 msgid "Yandex LLC"
-msgstr "Sistema abierto."
+msgstr "Yandex LLC"
 
 #: templates/docs/content.html:6
 msgid "Help wanted!"
-msgstr "Ayuda quería!"
+msgstr "Demander de l'aide!"
 
 #: templates/docs/content.html:7
 msgid ""
@@ -73,131 +73,129 @@ msgid ""
 "codebase and waits for fellow native speakers to make it more human-"
 "readable."
 msgstr ""
-"El siguiente contenido de esta página de documentación ha sido traducido "
-"por máquina. Pero a diferencia de otros sitios web, no se hace sobre la "
-"marcha. Este texto traducido vive en el repositorio de GitHub junto con "
-"la base de código principal de ClickHouse y espera a que otros hablantes "
-"nativos lo hagan más legible por humanos."
+"Le contenu suivant de cette page de documentation a été traduit à la "
+"machine. Mais contrairement à d'autres sites web, il ne se fait pas à la "
+"volée. Ce texte traduit vit sur le dépôt GitHub aux côtés de la base de "
+"code ClickHouse principale et attend que d'autres locuteurs natifs le "
+"rendent plus lisible par l'homme."
 
 #: templates/docs/content.html:10
 msgid "Help ClickHouse documentation by editing this page"
-msgstr "Ayuda a la documentación de ClickHouse editando esta página"
+msgstr "Aide clickhouse documentation en éditant cette page"
 
 #: templates/docs/content.html:31
 msgid "Built from"
-msgstr "Construido a partir de"
+msgstr "Construit à partir de"
 
 #: templates/docs/sidebar.html:3
 msgid "Multi-page or single-page"
-msgstr "Multi-página o de una sola página"
+msgstr "Multi-page ou une seule page"
 
 #: templates/docs/sidebar.html:5
 msgid "Multi-page version"
-msgstr "Versión de varias páginas"
+msgstr "Multi-version de la page"
 
 #: templates/docs/sidebar.html:8
 msgid "Single-page version"
-msgstr "Versión de una sola página"
+msgstr "Version d'une seule page"
 
 #: templates/docs/sidebar.html:13
 msgid "Version"
-msgstr "Versión"
+msgstr "Version"
 
 #: templates/docs/sidebar.html:13 templates/docs/sidebar.html:19
 msgid "latest"
-msgstr "reciente"
+msgstr "dernier"
 
 #: templates/docs/sidebar.html:36
 msgid "PDF version"
-msgstr "Versión PDF"
+msgstr "Version PDF"
 
 #: templates/docs/toc.html:8
 msgid "Table of Contents"
-msgstr "Tabla de contenido"
+msgstr "Table des matières"
 
 #: templates/index/community.html:4
 msgid "ClickHouse community"
-msgstr "ClickHouse de la comunidad"
+msgstr "Clickhouse communauté"
 
 #: templates/index/community.html:13 templates/index/community.html:14
 msgid "ClickHouse YouTube Channel"
-msgstr "ClickHouse Canal de YouTube"
+msgstr "ClickHouse Chaîne YouTube"
 
 #: templates/index/community.html:25 templates/index/community.html:26
 msgid "ClickHouse Official Twitter Account"
-msgstr "Cuenta oficial de Twitter de ClickHouse"
+msgstr "ClickHouse Compte Twitter Officiel"
 
 #: templates/index/community.html:36 templates/index/community.html:37
 msgid "ClickHouse at Telegram"
-msgstr "ClickHouse en Telegram"
+msgstr "ClickHouse au Télégramme"
 
 #: templates/index/community.html:41
 msgid "Chat with real users in "
-msgstr "Chatear con usuarios reales en "
+msgstr "Discuter avec de vrais utilisateurs dans "
 
 #: templates/index/community.html:44 templates/index/community.html:116
 msgid "English"
-msgstr "Ingl"
+msgstr "Anglais"
 
 #: templates/index/community.html:45
 msgid "or in"
-msgstr "o en"
+msgstr "ou dans"
 
 #: templates/index/community.html:47 templates/index/community.html:117
 msgid "Russian"
-msgstr "Ruso"
+msgstr "Russe"
 
 #: templates/index/community.html:65
 msgid "Open GitHub issue to ask for help or to file a feature request"
 msgstr ""
-"Abra el problema de GitHub para pedir ayuda o para presentar una "
-"solicitud de función"
+"Ouvrir GitHub question de demander de l'aide, ou pour déposer une demande"
+" de fonctionnalité"
 
 #: templates/index/community.html:76 templates/index/community.html:77
 msgid "ClickHouse Slack Workspace"
-msgstr "Espacio de trabajo de ClickHouse Slack"
+msgstr "Espace De Travail ClickHouse Slack"
 
 #: templates/index/community.html:82
 msgid "Multipurpose public hangout"
-msgstr "Lugar de reunión público multiusos"
+msgstr "Lieu de rencontre public polyvalent"
 
 #: templates/index/community.html:101
 msgid "Ask any questions"
-msgstr "Haga cualquier pregunta"
+msgstr "Posez toutes les questions"
 
 #: templates/index/community.html:115
 msgid "ClickHouse Blog"
-msgstr ""
-"Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n "
-"ElectrÃ³nica"
+msgstr "Clickhouse Blog"
 
 #: templates/index/community.html:116
 msgid "in"
-msgstr "en"
+msgstr "dans"
 
 #: templates/index/community.html:128 templates/index/community.html:129
 msgid "ClickHouse at Google Groups"
-msgstr "ClickHouse en Grupos de Google"
+msgstr "ClickHouse à Google Groupes"
 
 #: templates/index/community.html:133
 msgid "Email discussions"
-msgstr "Discusiones por correo electrónico"
+msgstr "Discussions par courriel"
 
 #: templates/index/community.html:142
 msgid "Like ClickHouse?"
-msgstr "¿Te gusta ClickHouse?"
+msgstr "Comme ClickHouse?"
 
 #: templates/index/community.html:142
 msgid "Help to spread the word about it via"
-msgstr "Ayuda a correr la voz al respecto a través de"
+msgstr "Aider à passer le mot à ce sujet via"
 
 #: templates/index/community.html:143
 msgid "and"
-msgstr "y"
+msgstr "et"
 
 #: templates/index/community.html:155
 msgid "Hosting ClickHouse Meetups"
-msgstr "Grupos de Meetup de Hosting ClickHouse"
+msgstr "Accueil Clickhouse Meetups"
 
 #: templates/index/community.html:157
 msgid ""
@@ -206,69 +204,69 @@ msgid ""
 "Please, feel this form if you want to become one or want to meet "
 "ClickHouse core team for any other reason."
 msgstr ""
-"Las reuniones de ClickHouse son esenciales para fortalecer la comunidad "
-"en todo el mundo, pero no podrían ser posibles sin la ayuda de los "
-"organizadores locales. Por favor, sienta este formulario si desea "
-"convertirse en uno o quiere conocer al equipo central de ClickHouse por "
-"cualquier otra razón."
+"Les rencontres ClickHouse sont essentielles pour renforcer la communauté "
+"dans le monde entier, mais elles ne pourraient pas être possibles sans "
+"l'aide d'organisateurs locaux. S'il vous plaît, sentez ce formulaire si "
+"vous voulez devenir l'une ou souhaitez rencontrer ClickHouse équipe de "
+"base pour toute autre raison."
 
 #: templates/index/community.html:159
 msgid "ClickHouse Meetup"
-msgstr "Haga clic en Meetup de Casa"
+msgstr "Clickhouse Meetup"
 
 #: templates/index/community.html:165
 msgid "Name"
-msgstr "Nombre"
+msgstr "Nom"
 
 #: templates/index/community.html:168
 msgid "Email"
-msgstr "Correo"
+msgstr "Courriel"
 
 #: templates/index/community.html:171
 msgid "Company"
-msgstr "Empresa"
+msgstr "Entreprise"
 
 #: templates/index/community.html:174
 msgid "City"
-msgstr "Ciudad"
+msgstr "Ville"
 
 #: templates/index/community.html:179
 msgid "We'd like to host a public ClickHouse Meetup"
-msgstr "Nos gustaría organizar un Meetup público de ClickHouse"
+msgstr "Nous aimerions organiser un Meetup public ClickHouse"
 
 #: templates/index/community.html:185
 msgid "We'd like to invite Yandex ClickHouse team to our office"
-msgstr "Nos gustaría invitar al equipo de Yandex ClickHouse a nuestra oficina"
+msgstr "Nous aimerions inviter l'équipe de Yandex ClickHouse à notre bureau"
 
 #: templates/index/community.html:191
 msgid "We'd like to invite Yandex ClickHouse team to another event we organize"
 msgstr ""
-"Nos gustaría invitar al equipo de Yandex ClickHouse a otro evento que "
-"organizamos"
+"Nous aimerions inviter l'équipe de Yandex ClickHouse à un autre événement"
+" que nous organisons"
 
 #: templates/index/community.html:197
 msgid "We're interested in commercial consulting, support or managed service"
 msgstr ""
-"Estamos interesados en consultoría comercial, soporte o servicio "
-"gestionado"
+"Nous sommes intéressés par le conseil commercial, le soutien ou le "
+"service géré"
 
 #: templates/index/community.html:201
 msgid "Additional comments"
-msgstr "Comentarios adicionales"
+msgstr "Commentaires supplémentaires"
 
 #: templates/index/community.html:203
 msgid "Send"
-msgstr "Enviar"
+msgstr "Envoyer"
 
 #: templates/index/community.html:212
 msgid ""
 "If you have any more thoughts or questions, feel free to contact Yandex "
 "ClickHouse team directly at"
 msgstr ""
-"Si tiene más pensamientos o preguntas, no dude en ponerse en contacto con"
-" el equipo de Yandex ClickHouse directamente en"
+"Si vous avez d'autres pensées ou questions, n'hésitez pas à contacter "
+"L'équipe Yandex ClickHouse directement à"
 
 #: templates/index/community.html:213
 msgid "turn on JavaScript to see email address"
-msgstr "activar JavaScript para ver la dirección de correo electrónico"
+msgstr "activer JavaScript pour voir l'adresse e-mail"
 
