@@ -39,11 +39,6 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         std::move(data_part_), std::move(columns_), uncompressed_cache_, std::move(mark_cache_),
         std::move(mark_ranges_), std::move(settings_), std::move(avg_value_size_hints_))
 {
-    LOG_DEBUG(&Poco::Logger::get("ReaderWide"), "Alter conversions size:" << alter_conversions.rename_map.size());
-    for (const auto & [rename_to, rename_from] : alter_conversions.rename_map)
-    {
-        LOG_DEBUG(&Poco::Logger::get("ReaderWide"), "RENAME T:" << rename_to << " F:" << rename_from);
-    }
     try
     {
         for (const NameAndTypePair & column_from_part : data_part->getColumns())

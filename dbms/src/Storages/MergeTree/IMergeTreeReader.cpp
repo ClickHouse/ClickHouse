@@ -32,8 +32,6 @@ IMergeTreeReader::IMergeTreeReader(const MergeTreeData::DataPartPtr & data_part_
     , all_mark_ranges(all_mark_ranges_)
     , alter_conversions(storage.getAlterConversionsForPart(data_part))
 {
-    LOG_DEBUG(&Poco::Logger::get("IMergeTreeReader"), "Columns to read:" << columns_.toString());
-    LOG_DEBUG(&Poco::Logger::get("IMergeTreeReader"), "Columns in part:" << data_part_->getColumns().toString());
 }
 
 IMergeTreeReader::~IMergeTreeReader() = default;

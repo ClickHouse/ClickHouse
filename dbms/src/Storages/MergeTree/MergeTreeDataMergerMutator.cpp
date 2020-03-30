@@ -991,8 +991,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames);
 
 
-    LOG_DEBUG(&Poco::Logger::get("MergerMutator"), "COMMANDS FOR INTERPRETER:" << for_interpreter.size());
-    LOG_DEBUG(&Poco::Logger::get("MergerMutator"), "COMMANDS FOR RENAMES:" << for_file_renames.size());
     UInt64 watch_prev_elapsed = 0;
     MergeStageProgress stage_progress(1.0);
 
@@ -1015,7 +1013,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     /// It shouldn't be changed by mutation.
     new_data_part->index_granularity_info = source_part->index_granularity_info;
     new_data_part->setColumns(getColumnsForNewDataPart(source_part, updated_header, all_columns, for_file_renames));
-    LOG_DEBUG(&Poco::Logger::get("MergerMutator"), "New data part columns:" << new_data_part->getColumns().toString());
     new_data_part->partition.assign(source_part->partition);
 
     auto disk = new_data_part->disk;
@@ -1065,7 +1062,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         NameToNameMap files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
 
 
-        LOG_DEBUG(&Poco::Logger::get("MergerMutator"), "FILES RENAME MAP:" << files_to_rename.size());
         if (need_remove_expired_values)
             files_to_skip.insert("ttl.txt");
 
@@ -1079,7 +1075,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
             auto rename_it = files_to_rename.find(it->name());
             if (rename_it != files_to_rename.end())
             {
-                LOG_DEBUG(&Poco::Logger::get("MergerMutator"), "RENAME IT FOUND:" << rename_it->first << " to " << rename_it->second);
                 if (rename_it->second.empty())
                     continue;
                 destination += rename_it->second;
@@ -1089,7 +1084,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 destination += it->name();
             }
 
-            LOG_DEBUG(&Poco::Logger::get("MergerMutator"), "HARDLINKING FROM:" << it->path() << " TO " << destination);
             disk->createHardLink(it->path(), destination);
         }
 
@@ -1335,7 +1329,6 @@ NameToNameMap MergeTreeDataMergerMutator::collectFilesForRenames(
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
-            LOG_DEBUG(&Poco::Logger::get("collectFilesForRenames"), "Has mutation command");
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
             {
                 String stream_from = IDataType::getFileNameForStream(command.column_name, substream_path);
@@ -1401,7 +1394,6 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
     for (auto it = all_columns.begin(); it != all_columns.end();)
     {
-        LOG_DEBUG(&Poco::Logger::get("getColumnsForNewDataPart"), "Looking at column:" << it->name);
         if (updated_header.has(it->name))
         {
             auto updated_type = updated_header.getByName(it->name).type;
