@@ -97,7 +97,7 @@ if (ENABLE_JEMALLOC)
         endif ()
     endif ()
 
-    target_compile_definitions(jemalloc INTERFACE USE_JEMALLOC=1)
+    set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_JEMALLOC=1)
 
     message (STATUS "Using jemalloc")
 else ()
