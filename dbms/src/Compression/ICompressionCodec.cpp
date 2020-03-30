@@ -9,23 +9,12 @@
 #include <Compression/CompressionFactory.h>
 
 
-namespace ProfileEvents
-{
-    extern const Event ReadCompressedBytes;
-    extern const Event CompressedReadBufferBlocks;
-    extern const Event CompressedReadBufferBytes;
-}
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int CHECKSUM_DOESNT_MATCH;
-    extern const int TOO_LARGE_SIZE_COMPRESSED;
-    extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int CANNOT_DECOMPRESS;
-    extern const int SEEK_POSITION_OUT_OF_BOUND;
     extern const int CORRUPTED_DATA;
 }
 
@@ -50,7 +39,7 @@ UInt32 ICompressionCodec::decompress(const char * source, UInt32 source_size, ch
         throw Exception("Can't decompress data: the compressed data size (" + toString(source_size)
             + ", this should include header size) is less than the header size (" + toString(header_size) + ")", ErrorCodes::CORRUPTED_DATA);
 
-    UInt8 method = source[0];
+    uint8_t method = source[0];
     if (method != getMethodByte())
         throw Exception("Can't decompress data with codec byte " + toString(method) + " from codec with byte " + toString(method), ErrorCodes::CANNOT_DECOMPRESS);
 
@@ -72,9 +61,9 @@ UInt32 ICompressionCodec::readDecompressedBlockSize(const char * source)
 }
 
 
-UInt8 ICompressionCodec::readMethod(const char * source)
+uint8_t ICompressionCodec::readMethod(const char * source)
 {
-    return static_cast<UInt8>(source[0]);
+    return static_cast<uint8_t>(source[0]);
 }
 
 }

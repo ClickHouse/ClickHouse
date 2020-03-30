@@ -13,8 +13,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int BAD_ARGUMENTS;
     extern const int BAD_CAST;
 }
 
@@ -112,7 +112,7 @@ public:
     virtual ~IWeightsUpdater() = default;
 
     /// Calls GradientComputer to update current mini-batch
-    virtual void add_to_batch(
+    virtual void addToBatch(
         std::vector<Float64> & batch_gradient,
         IGradientComputer & gradient_computer,
         const std::vector<Float64> & weights,
@@ -176,7 +176,7 @@ public:
 
     Nesterov(Float64 alpha) : alpha_(alpha) {}
 
-    void add_to_batch(
+    void addToBatch(
         std::vector<Float64> & batch_gradient,
         IGradientComputer & gradient_computer,
         const std::vector<Float64> & weights,
@@ -209,7 +209,7 @@ public:
         beta2_powered_ = beta2_;
     }
 
-    void add_to_batch(
+    void addToBatch(
             std::vector<Float64> & batch_gradient,
             IGradientComputer & gradient_computer,
             const std::vector<Float64> & weights,
@@ -289,7 +289,7 @@ private:
 
     /** The function is called when we want to flush current batch and update our weights
       */
-    void update_state();
+    void updateState();
 };
 
 

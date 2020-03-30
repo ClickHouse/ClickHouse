@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 /// inspired by https://github.com/cyb70289/utf8/
 struct ValidUTF8Impl
 {
@@ -300,9 +304,9 @@ SOFTWARE.
         }
     }
 
-    static void vector_fixed_to_constant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt8 & /*res*/) {}
+    static void vectorFixedToConstant(const ColumnString::Chars & /*data*/, size_t /*n*/, UInt8 & /*res*/) {}
 
-    static void vector_fixed_to_vector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res)
+    static void vectorFixedToVector(const ColumnString::Chars & data, size_t n, PaddedPODArray<UInt8> & res)
     {
         size_t size = data.size() / n;
         for (size_t i = 0; i < size; ++i)

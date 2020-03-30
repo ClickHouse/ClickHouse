@@ -236,7 +236,7 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
     Poco::Data::ODBC::Connector::registerConnector();
 #endif
 
-    auto createTableSource = [=](const DictionaryStructure & dict_struct,
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
                                  const Poco::Util::AbstractConfiguration & config,
                                  const std::string & config_prefix,
                                  Block & sample_block,
@@ -256,12 +256,12 @@ void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
                         ErrorCodes::SUPPORT_IS_DISABLED};
 #endif
     };
-    factory.registerSource("odbc", createTableSource);
+    factory.registerSource("odbc", create_table_source);
 }
 
 void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
 {
-    auto createTableSource = [=](const DictionaryStructure & /* dict_struct */,
+    auto create_table_source = [=](const DictionaryStructure & /* dict_struct */,
                                  const Poco::Util::AbstractConfiguration & /* config */,
                                  const std::string & /* config_prefix */,
                                  Block & /* sample_block */,
@@ -272,7 +272,7 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
         //        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".connection_string"));
         //        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".jdbc", sample_block, context, bridge);
     };
-    factory.registerSource("jdbc", createTableSource);
+    factory.registerSource("jdbc", create_table_source);
 }
 
 

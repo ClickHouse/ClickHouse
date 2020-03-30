@@ -14,16 +14,11 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int TYPE_MISMATCH;
     extern const int UNKNOWN_LOAD_BALANCING;
     extern const int UNKNOWN_OVERFLOW_MODE;
-    extern const int ILLEGAL_OVERFLOW_MODE;
     extern const int UNKNOWN_TOTALS_MODE;
-    extern const int UNKNOWN_COMPRESSION_METHOD;
     extern const int UNKNOWN_DISTRIBUTED_PRODUCT_MODE;
-    extern const int UNKNOWN_GLOBAL_SUBQUERIES_METHOD;
-    extern const int UNKNOWN_JOIN_STRICTNESS;
-    extern const int UNKNOWN_LOG_LEVEL;
+    extern const int UNKNOWN_JOIN;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int UNKNOWN_SETTING;
@@ -170,7 +165,7 @@ void SettingMaxThreads::set(const Field & x)
     if (x.getType() == Field::Types::String)
         set(get<const String &>(x));
     else
-        set(safeGet<UInt64>(x));
+        set(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), x));
 }
 
 void SettingMaxThreads::set(const String & x)
@@ -213,7 +208,7 @@ void SettingMaxThreads::setAuto()
     is_auto = true;
 }
 
-UInt64 SettingMaxThreads::getAutoValue() const
+UInt64 SettingMaxThreads::getAutoValue()
 {
     static auto res = getNumberOfPhysicalCPUCores();
     return res;
@@ -251,7 +246,7 @@ void SettingTimespan<io_unit>::set(const Field & x)
     if (x.getType() == Field::Types::String)
         set(get<const String &>(x));
     else
-        set(safeGet<UInt64>(x));
+        set(applyVisitor(FieldVisitorConvertToNumber<UInt64>(), x));
 }
 
 template <SettingTimespanIO io_unit>
@@ -396,7 +391,6 @@ void SettingEnum<EnumType, Tag>::set(const Field & x)
 }
 
 
-
 String SettingURI::toString() const
 {
     return value.toString();
@@ -471,7 +465,7 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
     case static_cast<UnderlyingType>(EnumType::NAME): return IO_NAME;
 
 #define IMPLEMENT_SETTING_ENUM_FROM_STRING_HELPER_(NAME, IO_NAME) \
-    if (s == IO_NAME) \
+    if (s == (IO_NAME)) \
     { \
         set(EnumType::NAME); \
         return; \
@@ -480,7 +474,7 @@ void SettingURI::deserialize(ReadBuffer & buf, SettingsBinaryFormat)
 #define IMPLEMENT_SETTING_ENUM_CONCAT_NAMES_HELPER_(NAME, IO_NAME) \
     if (!all_io_names.empty()) \
         all_io_names += ", "; \
-    all_io_names += String("'") + IO_NAME + "'";
+    all_io_names += String("'") + (IO_NAME) + "'";
 
 
 #define LOAD_BALANCING_LIST_OF_NAMES(M) \
@@ -495,8 +489,14 @@ IMPLEMENT_SETTING_ENUM(LoadBalancing, LOAD_BALANCING_LIST_OF_NAMES, ErrorCodes::
     M(Unspecified, "") \
     M(ALL, "ALL") \
     M(ANY, "ANY")
-IMPLEMENT_SETTING_ENUM(JoinStrictness, JOIN_STRICTNESS_LIST_OF_NAMES, ErrorCodes::UNKNOWN_JOIN_STRICTNESS)
+IMPLEMENT_SETTING_ENUM(JoinStrictness, JOIN_STRICTNESS_LIST_OF_NAMES, ErrorCodes::UNKNOWN_JOIN) // NOLINT
 
+#define JOIN_ALGORITHM_NAMES(M) \
+    M(AUTO, "auto") \
+    M(HASH, "hash") \
+    M(PARTIAL_MERGE, "partial_merge") \
+    M(PREFER_PARTIAL_MERGE, "prefer_partial_merge")
+IMPLEMENT_SETTING_ENUM(JoinAlgorithm, JOIN_ALGORITHM_NAMES, ErrorCodes::UNKNOWN_JOIN)
 
 #define TOTALS_MODE_LIST_OF_NAMES(M) \
     M(BEFORE_HAVING, "before_having") \

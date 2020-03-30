@@ -3,6 +3,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 IAccumulatingTransform::IAccumulatingTransform(Block input_header, Block output_header)
     : IProcessor({std::move(input_header)}, {std::move(output_header)}),

@@ -13,6 +13,10 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 
 /** Scheme of operation:
@@ -109,8 +113,8 @@ void MergingAggregatedMemoryEfficientBlockInputStream::readSuffix()
 
     finalize();
 
-    for (size_t i = 0; i < children.size(); ++i)
-        children[i]->readSuffix();
+    for (auto & child : children)
+        child->readSuffix();
 }
 
 

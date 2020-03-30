@@ -28,6 +28,10 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
 #define LIST_OF_MERGE_TREE_SETTINGS(M)                                 \
     M(SettingUInt64, index_granularity, 8192, "How many rows correspond to one primary key value.", 0) \
     \
+    /** Data storing format settigns. */ \
+    M(SettingUInt64, min_bytes_for_wide_part, 0, "Minimal uncompressed size in bytes to create part in wide format instead of compact", 0) \
+    M(SettingUInt64, min_rows_for_wide_part, 0, "Minimal number of rows to create part in wide format instead of compact", 0) \
+    \
     /** Merge settings. */ \
     M(SettingUInt64, merge_max_block_size, DEFAULT_MERGE_BLOCK_SIZE, "How many rows in blocks should be formed for merge operations.", 0) \
     M(SettingUInt64, max_bytes_to_merge_at_max_space_in_pool, 150ULL * 1024 * 1024 * 1024, "Maximum in total size of parts to merge, when there are maximum free threads in background pool (or entries in replication queue).", 0) \
@@ -106,6 +110,11 @@ struct MergeTreeSettings : public SettingsCollection<MergeTreeSettings>
     static bool isReadonlySetting(const String & name)
     {
         return name == "index_granularity" || name == "index_granularity_bytes";
+    }
+
+    static bool isPartFormatSetting(const String & name)
+    {
+        return name == "min_bytes_for_wide_part" || name == "min_rows_for_wide_part";
     }
 };
 

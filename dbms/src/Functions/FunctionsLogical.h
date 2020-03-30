@@ -18,7 +18,6 @@
 #endif
 
 
-
 /** Logical functions AND, OR, XOR and NOT support three-valued (or ternary) logic
   * https://en.wikibooks.org/wiki/Structured_Query_Language/NULLs_and_the_Three_Valued_Logic
   *

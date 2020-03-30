@@ -16,6 +16,7 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/typeid_cast.h>
 #include <Interpreters/ReplaceQueryParameterVisitor.h>
+#include <Poco/Util/AbstractConfiguration.h>
 
 
 namespace DB
@@ -65,12 +66,6 @@ ASTPtr evaluateConstantExpressionAsLiteral(const ASTPtr & node, const Context & 
     /// If it's already a literal.
     if (node->as<ASTLiteral>())
         return node;
-
-    /// Skip table functions.
-    if (const auto * table_func_ptr = node->as<ASTFunction>())
-        if (TableFunctionFactory::instance().isTableFunctionName(table_func_ptr->name))
-            return node;
-
     return std::make_shared<ASTLiteral>(evaluateConstantExpression(node, context).first);
 }
 
@@ -82,14 +77,33 @@ ASTPtr evaluateConstantExpressionOrIdentifierAsLiteral(const ASTPtr & node, cons
     return evaluateConstantExpressionAsLiteral(node, context);
 }
 
+ASTPtr evaluateConstantExpressionForDatabaseName(const ASTPtr & node, const Context & context)
+{
+    ASTPtr res = evaluateConstantExpressionOrIdentifierAsLiteral(node, context);
+    auto & literal = res->as<ASTLiteral &>();
+    if (literal.value.safeGet<String>().empty())
+    {
+        String current_database = context.getCurrentDatabase();
+        if (current_database.empty())
+        {
+            /// Table was created on older version of ClickHouse and CREATE contains not folded expression.
+            /// Current database is not set yet during server startup, so we cannot evaluate it correctly.
+            literal.value = context.getConfigRef().getString("default_database", "default");
+        }
+        else
+            literal.value = current_database;
+    }
+    return res;
+}
+
 namespace
 {
     using Conjunction = ColumnsWithTypeAndName;
     using Disjunction = std::vector<Conjunction>;
 
-    Disjunction analyzeEquals(const ASTIdentifier * identifier, const ASTLiteral * literal, const ExpressionActionsPtr & expr)
+    Disjunction analyzeEquals(const ASTIdentifier * identifier, const Field & value, const ExpressionActionsPtr & expr)
     {
-        if (!identifier || !literal)
+        if (!identifier || value.isNull())
         {
             return {};
         }
@@ -102,8 +116,10 @@ namespace
             if (name == identifier->name)
             {
                 ColumnWithTypeAndName column;
-                // FIXME: what to do if field is not convertable?
-                column.column = type->createColumnConst(1, convertFieldToType(literal->value, *type));
+                Field converted = convertFieldToType(value, *type);
+                if (converted.isNull())
+                    return {};
+                column.column = type->createColumnConst(1, converted);
                 column.name = name;
                 column.type = type;
                 return {{std::move(column)}};
@@ -111,6 +127,16 @@ namespace
         }
 
         return {};
+    }
+
+    Disjunction analyzeEquals(const ASTIdentifier * identifier, const ASTLiteral * literal, const ExpressionActionsPtr & expr)
+    {
+        if (!identifier || !literal)
+        {
+            return {};
+        }
+
+        return analyzeEquals(identifier, literal->value, expr);
     }
 
     Disjunction andDNF(const Disjunction & left, const Disjunction & right)
@@ -158,33 +184,44 @@ namespace
             const auto * left = fn->arguments->children.front().get();
             const auto * right = fn->arguments->children.back().get();
             const auto * identifier = left->as<ASTIdentifier>();
-            const auto * inner_fn = right->as<ASTFunction>();
-
-            if (!inner_fn)
-            {
-                return {};
-            }
-
-            const auto * tuple = inner_fn->children.front()->as<ASTExpressionList>();
-
-            if (!tuple)
-            {
-                return {};
-            }
 
             Disjunction result;
 
-            for (const auto & child : tuple->children)
+            if (const auto * tuple_func = right->as<ASTFunction>(); tuple_func && tuple_func->name == "tuple")
             {
-                const auto * literal = child->as<ASTLiteral>();
-                const auto dnf = analyzeEquals(identifier, literal, expr);
-
-                if (dnf.empty())
+                const auto * tuple_elements = tuple_func->children.front()->as<ASTExpressionList>();
+                for (const auto & child : tuple_elements->children)
                 {
-                    return {};
-                }
+                    const auto * literal = child->as<ASTLiteral>();
+                    const auto dnf = analyzeEquals(identifier, literal, expr);
 
-                result.insert(result.end(), dnf.begin(), dnf.end());
+                    if (dnf.empty())
+                    {
+                        return {};
+                    }
+
+                    result.insert(result.end(), dnf.begin(), dnf.end());
+                }
+            }
+            else if (const auto * tuple_literal = right->as<ASTLiteral>();
+                tuple_literal && tuple_literal->value.getType() == Field::Types::Tuple)
+            {
+                const auto & tuple = tuple_literal->value.get<const Tuple &>();
+                for (const auto & child : tuple)
+                {
+                    const auto dnf = analyzeEquals(identifier, child, expr);
+
+                    if (dnf.empty())
+                    {
+                        return {};
+                    }
+
+                    result.insert(result.end(), dnf.begin(), dnf.end());
+                }
+            }
+            else
+            {
+                return {};
             }
 
             return result;
@@ -259,21 +296,21 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
             return {};
         }
 
-        auto hasRequiredColumns = [&target_expr](const Block & block) -> bool
+        auto has_required_columns = [&target_expr](const Block & block) -> bool
         {
             for (const auto & name : target_expr->getRequiredColumns())
             {
-                bool hasColumn = false;
+                bool has_column = false;
                 for (const auto & column_name : block.getNames())
                 {
                     if (column_name == name)
                     {
-                        hasColumn = true;
+                        has_column = true;
                         break;
                     }
                 }
 
-                if (!hasColumn)
+                if (!has_column)
                     return false;
             }
 
@@ -285,7 +322,7 @@ std::optional<Blocks> evaluateExpressionOverConstantCondition(const ASTPtr & nod
             Block block(conjunct);
 
             // Block should contain all required columns from `target_expr`
-            if (!hasRequiredColumns(block))
+            if (!has_required_columns(block))
             {
                 return {};
             }

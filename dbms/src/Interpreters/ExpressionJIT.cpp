@@ -137,7 +137,7 @@ struct SymbolResolver : public llvm::orc::SymbolResolver
 {
     llvm::LegacyJITSymbolResolver & impl;
 
-    SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
+    explicit SymbolResolver(llvm::LegacyJITSymbolResolver & impl_) : impl(impl_) {}
 
     llvm::orc::SymbolNameSet getResponsibilitySet(const llvm::orc::SymbolNameSet & symbols) final
     {
@@ -152,7 +152,7 @@ struct SymbolResolver : public llvm::orc::SymbolResolver
             bool has_resolved = false;
             impl.lookup({*symbol}, [&](llvm::Expected<llvm::JITSymbolResolver::LookupResult> resolved)
             {
-                if (resolved && resolved->size())
+                if (resolved && !resolved->empty())
                 {
                     query->notifySymbolMetRequiredState(symbol, resolved->begin()->second);
                     has_resolved = true;
@@ -198,7 +198,7 @@ struct LLVMContext
     /// returns used memory
     void compileAllFunctionsToNativeCode()
     {
-        if (!module->size())
+        if (module->empty())
             return;
         llvm::PassManagerBuilder pass_manager_builder;
         llvm::legacy::PassManager mpm;
@@ -346,7 +346,7 @@ static void compileFunctionToLLVMByteCode(LLVMContext & context, const IFunction
         }
     }
     ValuePlaceholders arguments(arg_types.size());
-    for (size_t i = 0; i < arguments.size(); ++i)
+    for (size_t i = 0; i < arguments.size(); ++i) // NOLINT
     {
         arguments[i] = [&b, &col = columns[i], &type = arg_types[i]]() -> llvm::Value *
         {
@@ -528,27 +528,27 @@ bool LLVMFunction::hasInformationAboutMonotonicity() const
 
 LLVMFunction::Monotonicity LLVMFunction::getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const
 {
-    const IDataType * type_ = &type;
-    Field left_ = left;
-    Field right_ = right;
+    const IDataType * type_ptr = &type;
+    Field left_mut = left;
+    Field right_mut = right;
     Monotonicity result(true, true, true);
     /// monotonicity is only defined for unary functions, so the chain must describe a sequence of nested calls
     for (size_t i = 0; i < originals.size(); ++i)
     {
-        Monotonicity m = originals[i]->getMonotonicityForRange(*type_, left_, right_);
+        Monotonicity m = originals[i]->getMonotonicityForRange(*type_ptr, left_mut, right_mut);
         if (!m.is_monotonic)
             return m;
         result.is_positive ^= !m.is_positive;
         result.is_always_monotonic &= m.is_always_monotonic;
         if (i + 1 < originals.size())
         {
-            if (left_ != Field())
-                applyFunction(*originals[i], left_);
-            if (right_ != Field())
-                applyFunction(*originals[i], right_);
+            if (left_mut != Field())
+                applyFunction(*originals[i], left_mut);
+            if (right_mut != Field())
+                applyFunction(*originals[i], right_mut);
             if (!m.is_positive)
-                std::swap(left_, right_);
-            type_ = originals[i]->getReturnType().get();
+                std::swap(left_mut, right_mut);
+            type_ptr = originals[i]->getReturnType().get();
         }
     }
     return result;
@@ -699,10 +699,10 @@ void compileFunctions(
             fused[*dep].insert(fused[*dep].end(), fused[i].begin(), fused[i].end());
     }
 
-    for (size_t i = 0; i < actions.size(); ++i)
+    for (auto & action : actions)
     {
-        if (actions[i].type == ExpressionAction::APPLY_FUNCTION && actions[i].is_function_compiled)
-            actions[i].function = actions[i].function_base->prepare({}, {}, 0); /// Arguments are not used for LLVMFunction.
+        if (action.type == ExpressionAction::APPLY_FUNCTION && action.is_function_compiled)
+            action.function = action.function_base->prepare({}, {}, 0); /// Arguments are not used for LLVMFunction.
     }
 }
 

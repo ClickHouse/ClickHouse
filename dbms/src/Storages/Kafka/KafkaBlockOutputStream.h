@@ -11,7 +11,6 @@ class KafkaBlockOutputStream : public IBlockOutputStream
 {
 public:
     explicit KafkaBlockOutputStream(StorageKafka & storage_, const Context & context_);
-    ~KafkaBlockOutputStream() override;
 
     Block getHeader() const override;
 

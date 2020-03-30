@@ -3,7 +3,8 @@
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeUUID.h>
-#include <Access/QuotaContext.h>
+#include <Access/EnabledQuota.h>
+#include <Access/QuotaUsageInfo.h>
 #include <Core/Field.h>
 
 

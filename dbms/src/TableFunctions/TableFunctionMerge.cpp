@@ -9,7 +9,7 @@
 #include <Access/AccessFlags.h>
 #include <TableFunctions/TableFunctionMerge.h>
 #include <TableFunctions/TableFunctionFactory.h>
-#include "registerTableFunctions.h"
+#include <TableFunctions/registerTableFunctions.h>
 
 
 namespace DB
@@ -31,7 +31,7 @@ static NamesAndTypesList chooseColumns(const String & source_database, const Str
     StoragePtr any_table;
 
     {
-        auto database = context.getDatabase(source_database);
+        auto database = DatabaseCatalog::instance().getDatabase(source_database);
         auto iterator = database->getTablesIterator(context, table_name_match);
 
         if (iterator->isValid())
@@ -62,7 +62,7 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Co
             " - name of source database and regexp for table names.",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    args[0] = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context);
+    args[0] = evaluateConstantExpressionForDatabaseName(args[0], context);
     args[1] = evaluateConstantExpressionAsLiteral(args[1], context);
 
     String source_database = args[0]->as<ASTLiteral &>().value.safeGet<String>();

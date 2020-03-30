@@ -1,15 +1,15 @@
-# OnTime
+# OnTime {#ontime}
 
 Этот датасет может быть получен двумя способами:
 
-- импорт из сырых данных;
-- скачивание готовых партиций.
+-   импорт из сырых данных;
+-   скачивание готовых партиций.
 
-## Импорт из сырых данных
+## Импорт из сырых данных {#import-iz-syrykh-dannykh}
 
 Скачивание данных (из `https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh`):
 
-```bash
+``` bash
 for s in `seq 1987 2018`
 do
 for m in `seq 1 12`
@@ -21,7 +21,7 @@ done
 
 Создание таблицы:
 
-```sql
+``` sql
 CREATE TABLE `ontime` (
   `Year` UInt16,
   `Quarter` UInt8,
@@ -132,18 +132,21 @@ CREATE TABLE `ontime` (
   `Div5LongestGTime` String,
   `Div5WheelsOff` String,
   `Div5TailNum` String
-) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192)
+) ENGINE = MergeTree
+PARTITION BY Year
+ORDER BY (Carrier, FlightDate)
+SETTINGS index_granularity = 8192;
 ```
 
 Загрузка данных:
 
-```bash
+``` bash
 $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-## Скачивание готовых партиций
+## Скачивание готовых партиций {#skachivanie-gotovykh-partitsii}
 
-```bash
+``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
 $ tar xvf ontime.tar -C /var/lib/clickhouse # путь к папке с данными ClickHouse
 $ # убедитесь, что установлены корректные права доступа на файлы
@@ -151,15 +154,15 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "SELECT COUNT(*) FROM datasets.ontime"
 ```
 
-!!!info
+!!! info "Info"
     Если вы собираетесь выполнять запросы, приведенные ниже, то к имени таблицы
-    нужно добавить имя базы, `datasets.ontime`.
+нужно добавить имя базы, `datasets.ontime`.
 
-## Запросы:
+## Запросы: {#zaprosy}
 
 Q0.
 
-```sql
+``` sql
 SELECT avg(c1)
 FROM
 (
@@ -171,7 +174,7 @@ FROM
 
 Q1. Количество полетов в день с 2000 по 2008 года
 
-```sql
+``` sql
 SELECT DayOfWeek, count(*) AS c
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
@@ -181,7 +184,7 @@ ORDER BY c DESC;
 
 Q2. Количество полетов, задержанных более чем на 10 минут, с группировкой по дням неделе, за 2000-2008 года
 
-```sql
+``` sql
 SELECT DayOfWeek, count(*) AS c
 FROM ontime
 WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
@@ -191,7 +194,7 @@ ORDER BY c DESC;
 
 Q3. Количество задержек по аэропортам за 2000-2008
 
-```sql
+``` sql
 SELECT Origin, count(*) AS c
 FROM ontime
 WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
@@ -202,7 +205,7 @@ LIMIT 10;
 
 Q4. Количество задержек по перевозчикам за 2007 год
 
-```sql
+``` sql
 SELECT Carrier, count(*)
 FROM ontime
 WHERE DepDelay>10 AND Year=2007
@@ -212,7 +215,7 @@ ORDER BY count(*) DESC;
 
 Q5. Процент задержек по перевозчикам за 2007 год
 
-```sql
+``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
@@ -224,7 +227,7 @@ FROM
         AND Year=2007
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -238,17 +241,17 @@ ORDER BY c3 DESC;
 
 Более оптимальная версия того же запроса:
 
-```sql
+``` sql
 SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year=2007
 GROUP BY Carrier
-ORDER BY Carrier
+ORDER BY c3 DESC
 ```
 
 Q6. Предыдущий запрос за более широкий диапазон лет, 2000-2008
 
-```sql
+``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
 FROM
 (
@@ -260,7 +263,7 @@ FROM
         AND Year>=2000 AND Year<=2008
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -274,17 +277,17 @@ ORDER BY c3 DESC;
 
 Более оптимальная версия того же запроса:
 
-```sql
+``` sql
 SELECT Carrier, avg(DepDelay>10)*100 AS c3
 FROM ontime
 WHERE Year>=2000 AND Year<=2008
 GROUP BY Carrier
-ORDER BY Carrier;
+ORDER BY c3 DESC;
 ```
 
 Q7. Процент полетов, задержанных на более 10 минут, в разбивке по годам
 
-```sql
+``` sql
 SELECT Year, c1/c2
 FROM
 (
@@ -295,7 +298,7 @@ FROM
     WHERE DepDelay>10
     GROUP BY Year
 )
-ANY INNER JOIN
+JOIN
 (
     select
         Year,
@@ -308,8 +311,8 @@ ORDER BY Year;
 
 Более оптимальная версия того же запроса:
 
-```sql
-SELECT Year, avg(DepDelay>10)
+``` sql
+SELECT Year, avg(DepDelay>10)*100
 FROM ontime
 GROUP BY Year
 ORDER BY Year;
@@ -317,7 +320,7 @@ ORDER BY Year;
 
 Q8. Самые популярные направления по количеству напрямую соединенных городов для различных диапазонов лет
 
-```sql
+``` sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u F
 ROM ontime
 WHERE Year>=2000 and Year<=2010
@@ -328,7 +331,7 @@ LIMIT 10;
 
 Q9.
 
-```sql
+``` sql
 SELECT Year, count(*) AS c1
 FROM ontime
 GROUP BY Year;
@@ -336,7 +339,7 @@ GROUP BY Year;
 
 Q10.
 
-```sql
+``` sql
 SELECT
    min(Year), max(Year), Carrier, count(*) AS cnt,
    sum(ArrDelayMinutes>30) AS flights_delayed,
@@ -354,7 +357,7 @@ LIMIT 1000;
 
 Бонус:
 
-```sql
+``` sql
 SELECT avg(cnt)
 FROM
 (
@@ -392,11 +395,11 @@ LIMIT 10;
 
 Данный тест производительности был создан Вадимом Ткаченко, статьи по теме:
 
--   <https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/>
--   <https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/>
--   <https://www.percona.com/blog/2009/11/02/air-traffic-queries-in-infinidb-early-alpha/>
--   <https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/>
--   <https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/>
--   <http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html>
+-   https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/
+-   https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/
+-   https://www.percona.com/blog/2009/11/02/air-traffic-queries-in-infinidb-early-alpha/
+-   https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/
+-   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
+-   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/getting_started/example_datasets/ontime/) <!--hide-->

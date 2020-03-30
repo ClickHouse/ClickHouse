@@ -23,7 +23,6 @@ using VolumePtr = std::shared_ptr<Volume>;
 
 namespace ErrorCodes
 {
-    extern const int NOT_ENOUGH_SPACE;
 }
 /** Merges stream of sorted each-separately blocks to sorted as-a-whole stream of blocks.
   * If data to sort is too much, could use external sorting, with temporary files.

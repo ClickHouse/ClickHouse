@@ -24,8 +24,14 @@ namespace DB
   */
 class ParserCreateQuotaQuery : public IParserBase
 {
+public:
+    ParserCreateQuotaQuery & enableAttachMode(bool enable_) { attach_mode = enable_; return *this; }
+
 protected:
     const char * getName() const override { return "CREATE QUOTA or ALTER QUOTA query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+private:
+    bool attach_mode = false;
 };
 }
