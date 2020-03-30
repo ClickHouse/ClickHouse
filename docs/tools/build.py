@@ -257,6 +257,7 @@ def build_single_page_version(lang, args, cfg):
                                 logging.info(' '.join(create_pdf_command))
                                 subprocess.check_call(' '.join(create_pdf_command), shell=True)
                                 httpd.shutdown()
+                                thread.join(timeout=5.0)
 
                         if not args.version_prefix:  # maybe enable in future
                             test.test_single_page(
