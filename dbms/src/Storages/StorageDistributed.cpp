@@ -53,8 +53,8 @@
 
 namespace
 {
-static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
-static const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
+const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY = 1;
+const UInt64 FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS           = 2;
 }
 
 namespace DB
@@ -62,9 +62,9 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int STORAGE_REQUIRES_PARAMETER;
     extern const int BAD_ARGUMENTS;
-    extern const int READONLY;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
     extern const int INFINITE_LOOP;
@@ -110,8 +110,7 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 ASTPtr createInsertToRemoteTableQuery(const std::string & database, const std::string & table, const Block & sample_block_non_materialized)
 {
     auto query = std::make_shared<ASTInsertQuery>();
-    query->database = database;
-    query->table = table;
+    query->table_id = StorageID(database, table);
 
     auto columns = std::make_shared<ASTExpressionList>();
     query->columns = columns;
@@ -194,19 +193,54 @@ std::string makeFormattedListOfShards(const ClusterPtr & cluster)
     return os.str();
 }
 
-}
-
-
-/// For destruction of std::unique_ptr of type that is incomplete in class definition.
-StorageDistributed::~StorageDistributed() = default;
-
-static ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, NamesAndTypesList columns, bool project)
+ExpressionActionsPtr buildShardingKeyExpression(const ASTPtr & sharding_key, const Context & context, const NamesAndTypesList & columns, bool project)
 {
     ASTPtr query = sharding_key;
     auto syntax_result = SyntaxAnalyzer(context).analyze(query, columns);
     return ExpressionAnalyzer(query, syntax_result, context).getActions(project);
 }
 
+class ReplacingConstantExpressionsMatcher
+{
+public:
+    using Data = Block;
+
+    static bool needChildVisit(ASTPtr &, const ASTPtr &)
+    {
+        return true;
+    }
+
+    static void visit(ASTPtr & node, Block & block_with_constants)
+    {
+        if (!node->as<ASTFunction>())
+            return;
+
+        std::string name = node->getColumnName();
+        if (block_with_constants.has(name))
+        {
+            auto result = block_with_constants.getByName(name);
+            if (!isColumnConst(*result.column))
+                return;
+
+            node = std::make_shared<ASTLiteral>(assert_cast<const ColumnConst &>(*result.column).getField());
+        }
+    }
+};
+
+void replaceConstantExpressions(ASTPtr & node, const Context & context, const NamesAndTypesList & columns, ConstStoragePtr storage)
+{
+    auto syntax_result = SyntaxAnalyzer(context).analyze(node, columns, storage);
+    Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
+
+    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
+    visitor.visit(node);
+}
+
+}
+
+
+/// For destruction of std::unique_ptr of type that is incomplete in class definition.
+StorageDistributed::~StorageDistributed() = default;
 
 StorageDistributed::StorageDistributed(
     const StorageID & id_,
@@ -286,7 +320,7 @@ void StorageDistributed::createStorage()
     }
     else
     {
-        auto policy = global_context.getStoragePolicySelector()[storage_policy];
+        auto policy = global_context.getStoragePolicySelector()->get(storage_policy);
         if (policy->getVolumes().size() != 1)
              throw Exception("Policy for Distributed table, should have exactly one volume", ErrorCodes::BAD_ARGUMENTS);
         volume = policy->getVolume(0);
@@ -319,13 +353,8 @@ StoragePtr StorageDistributed::createWithOwnCluster(
     return res;
 }
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context) const
-{
-    auto cluster = getCluster();
-    return getQueryProcessingStage(context, cluster);
-}
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ClusterPtr & cluster) const
+static QueryProcessingStage::Enum getQueryProcessingStageImpl(const Context & context, const ClusterPtr & cluster)
 {
     const Settings & settings = context.getSettingsRef();
 
@@ -340,7 +369,13 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Con
                                 : QueryProcessingStage::WithMergeableState;
 }
 
-BlockInputStreams StorageDistributed::read(
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ASTPtr & query_ptr) const
+{
+    auto cluster = getOptimizedCluster(context, query_ptr);
+    return getQueryProcessingStageImpl(context, cluster);
+}
+
+Pipes StorageDistributed::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -348,9 +383,7 @@ BlockInputStreams StorageDistributed::read(
     const size_t /*max_block_size*/,
     const unsigned /*num_streams*/)
 {
-    auto cluster = getCluster();
-
-    const Settings & settings = context.getSettingsRef();
+    auto cluster = getOptimizedCluster(context, query_info.query);
 
     const auto & modified_query_ast = rewriteSelectQuery(
         query_info.query, remote_database, remote_table, remote_table_function_ptr);
@@ -368,52 +401,10 @@ BlockInputStreams StorageDistributed::read(
         ? ClusterProxy::SelectStreamFactory(
             header, processed_stage, remote_table_function_ptr, scalars, has_virtual_shard_num_column, context.getExternalTables())
         : ClusterProxy::SelectStreamFactory(
-            header, processed_stage, QualifiedTableName{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
-
-    UInt64 force = settings.force_optimize_skip_unused_shards;
-    if (settings.optimize_skip_unused_shards)
-    {
-        ClusterPtr smaller_cluster;
-        auto table_id = getStorageID();
-
-        if (has_sharding_key)
-        {
-            smaller_cluster = skipUnusedShards(cluster, query_info);
-
-            if (smaller_cluster)
-            {
-                cluster = smaller_cluster;
-                LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
-                               "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
-                               " " << makeFormattedListOfShards(cluster));
-            }
-        }
-
-        if (!smaller_cluster)
-        {
-            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
-                           (has_sharding_key ? "" : "(no sharding key)") << ": "
-                           "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
-                           "the query will be sent to all shards of the cluster");
-
-            if (force)
-            {
-                std::stringstream exception_message;
-                if (!has_sharding_key)
-                    exception_message << "No sharding key";
-                else
-                    exception_message << "Sharding key " << sharding_key_column_name << " is not used";
-
-                if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS)
-                    throw Exception(exception_message.str(), ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS);
-                if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY && has_sharding_key)
-                    throw Exception(exception_message.str(), ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS);
-            }
-        }
-    }
+            header, processed_stage, StorageID{remote_database, remote_table}, scalars, has_virtual_shard_num_column, context.getExternalTables());
 
     return ClusterProxy::executeQuery(
-        select_stream_factory, cluster, modified_query_ast, context, settings);
+        select_stream_factory, cluster, modified_query_ast, context, context.getSettingsRef(), query_info);
 }
 
 
@@ -469,13 +460,16 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
     checkAlterIsPossible(params, context.getSettingsRef());
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    context.getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
     setColumns(std::move(metadata.columns));
 }
 
 
 void StorageDistributed::startup()
 {
+    if (remote_database.empty() && !remote_table_function_ptr)
+        LOG_WARNING(log, "Name of remote database is empty. Default database will be used implicitly.");
+
     if (!volume)
         return;
 
@@ -536,6 +530,13 @@ namespace
 }
 
 
+StoragePolicyPtr StorageDistributed::getStoragePolicy() const
+{
+    if (storage_policy.empty())
+        return {};
+    return global_context.getStoragePolicySelector()->get(storage_policy);
+}
+
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
     if (getColumns().hasPhysical(column_name))
@@ -593,6 +594,51 @@ ClusterPtr StorageDistributed::getCluster() const
     return owned_cluster ? owned_cluster : global_context.getCluster(cluster_name);
 }
 
+ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, const ASTPtr & query_ptr) const
+{
+    ClusterPtr cluster = getCluster();
+    const Settings & settings = context.getSettingsRef();
+    auto table_id = getStorageID();
+
+    if (!settings.optimize_skip_unused_shards)
+        return cluster;
+
+    if (has_sharding_key)
+    {
+        ClusterPtr optimized = skipUnusedShards(cluster, query_ptr, context);
+
+        if (optimized)
+        {
+            LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() << ": "
+                           "Skipping irrelevant shards - the query will be sent to the following shards of the cluster (shard numbers): "
+                           " " << makeFormattedListOfShards(cluster));
+            return optimized;
+        }
+    }
+
+    LOG_DEBUG(log, "Reading from " << table_id.getNameForLogs() <<
+                   (has_sharding_key ? "" : " (no sharding key)") << ": "
+                   "Unable to figure out irrelevant shards from WHERE/PREWHERE clauses - "
+                   "the query will be sent to all shards of the cluster");
+
+    UInt64 force = settings.force_optimize_skip_unused_shards;
+    if (force)
+    {
+        std::stringstream exception_message;
+        if (!has_sharding_key)
+            exception_message << "No sharding key";
+        else
+            exception_message << "Sharding key " << sharding_key_column_name << " is not used";
+
+        if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_ALWAYS)
+            throw Exception(exception_message.str(), ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS);
+        if (force == FORCE_OPTIMIZE_SKIP_UNUSED_SHARDS_HAS_SHARDING_KEY && has_sharding_key)
+            throw Exception(exception_message.str(), ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS);
+    }
+
+    return cluster;
+}
+
 void StorageDistributed::ClusterNodeData::flushAllData()
 {
     directory_monitor->flushAllData();
@@ -605,9 +651,9 @@ void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
 
 /// Returns a new cluster with fewer shards if constant folding for `sharding_key_expr` is possible
 /// using constraints from "PREWHERE" and "WHERE" conditions, otherwise returns `nullptr`
-ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info)
+ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const
 {
-    const auto & select = query_info.query->as<ASTSelectQuery &>();
+    const auto & select = query_ptr->as<ASTSelectQuery &>();
 
     if (!select.prewhere() && !select.where())
     {
@@ -624,6 +670,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
         condition_ast = select.prewhere() ? select.prewhere()->clone() : select.where()->clone();
     }
 
+    replaceConstantExpressions(condition_ast, context, getColumns().getAll(), shared_from_this());
     const auto blocks = evaluateExpressionOverConstantCondition(condition_ast, sharding_key_expr);
 
     // Can't get definite answer if we can skip any shards
@@ -639,7 +686,7 @@ ClusterPtr StorageDistributed::skipUnusedShards(ClusterPtr cluster, const Select
         if (!block.has(sharding_key_column_name))
             throw Exception("sharding_key_expr should evaluate as a single row", ErrorCodes::TOO_MANY_ROWS);
 
-        const auto result = block.getByName(sharding_key_column_name);
+        const ColumnWithTypeAndName & result = block.getByName(sharding_key_column_name);
         const auto selector = createSelector(cluster, result);
 
         shards.insert(selector.begin(), selector.end());
@@ -660,8 +707,8 @@ void StorageDistributed::flushClusterNodesAllData()
     std::lock_guard lock(cluster_nodes_mutex);
 
     /// TODO: Maybe it should be executed in parallel
-    for (auto it = cluster_nodes_data.begin(); it != cluster_nodes_data.end(); ++it)
-        it->second.flushAllData();
+    for (auto & node : cluster_nodes_data)
+        node.second.flushAllData();
 }
 
 void StorageDistributed::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name,
@@ -719,7 +766,7 @@ void registerStorageDistributed(StorageFactory & factory)
                 "policy to store data in (optional).",
                 ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-        String cluster_name = getClusterName(*engine_args[0]);
+        String cluster_name = getClusterNameAndMakeLiteral(engine_args[0]);
 
         engine_args[1] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[1], args.local_context);
         engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);

@@ -56,4 +56,3 @@ class QueryThreadLog : public SystemLog<QueryThreadLogElement>
 }
 
 
-

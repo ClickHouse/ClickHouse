@@ -16,6 +16,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
@@ -139,7 +140,7 @@ void CreatingSetsTransform::work()
         started_cur_subquery = true;
     }
 
-    auto finishCurrentSubquery = [&]()
+    auto finish_current_subquery = [&]()
     {
         if (subquery.set)
             subquery.set->finishInsert();
@@ -165,7 +166,7 @@ void CreatingSetsTransform::work()
     auto block = subquery.source->read();
     if (!block)
     {
-        finishCurrentSubquery();
+        finish_current_subquery();
         return;
     }
 
@@ -197,7 +198,7 @@ void CreatingSetsTransform::work()
     if (done_with_set && done_with_join && done_with_table)
     {
         subquery.source->cancel(false);
-        finishCurrentSubquery();
+        finish_current_subquery();
     }
     else
         elapsed_nanoseconds += watch.elapsedNanoseconds();

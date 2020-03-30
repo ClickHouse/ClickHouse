@@ -12,7 +12,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
 }
 
 class ColumnLowCardinality final : public COWHelper<IColumn, ColumnLowCardinality>
@@ -89,6 +89,8 @@ public:
     {
         return getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
     }
+
+    void updateWeakHash32(WeakHash32 & hash) const override;
 
     ColumnPtr filter(const Filter & filt, ssize_t result_size_hint) const override
     {
@@ -230,6 +232,8 @@ public:
 
         bool containsDefault() const;
 
+        void updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const;
+
     private:
         WrappedPtr positions;
         size_t size_of_type = 0;
@@ -266,7 +270,7 @@ private:
 
         /// Dictionary may be shared for several mutable columns.
         /// Immutable columns may have the same column unique, which isn't necessarily shared dictionary.
-        void setShared(const ColumnPtr & dictionary);
+        void setShared(const ColumnPtr & column_unique_);
         bool isShared() const { return shared; }
 
         /// Create new dictionary with only keys that are mentioned in positions.
@@ -275,8 +279,6 @@ private:
     private:
         WrappedPtr column_unique;
         bool shared = false;
-
-        void checkColumn(const IColumn & column);
     };
 
     Dictionary dictionary;
@@ -285,7 +287,6 @@ private:
     void compactInplace();
     void compactIfSharedDictionary();
 };
-
 
 
 }

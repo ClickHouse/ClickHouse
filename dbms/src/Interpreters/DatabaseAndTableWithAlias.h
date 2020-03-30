@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <optional>
+#include <Core/UUID.h>
 
 
 namespace DB
@@ -24,6 +25,7 @@ struct DatabaseAndTableWithAlias
     String database;
     String table;
     String alias;
+    UUID uuid = UUIDHelpers::Nil;
 
     DatabaseAndTableWithAlias() = default;
     DatabaseAndTableWithAlias(const ASTPtr & identifier_node, const String & current_database = "");
@@ -35,6 +37,12 @@ struct DatabaseAndTableWithAlias
 
     /// Check if it satisfies another db_table name. @note opterion is not symmetric.
     bool satisfies(const DatabaseAndTableWithAlias & table, bool table_may_be_an_alias);
+
+    /// Exactly the same table name
+    bool same(const DatabaseAndTableWithAlias & db_table) const
+    {
+        return database == db_table.database && table == db_table.table && alias == db_table.alias && uuid == db_table.uuid;
+    }
 };
 
 struct TableWithColumnNames
@@ -48,11 +56,11 @@ struct TableWithColumnNames
         , columns(columns_)
     {}
 
-    void addHiddenColumns(const NamesAndTypesList & addition)
-    {
-        for (auto & column : addition)
-            hidden_columns.push_back(column.name);
-    }
+    TableWithColumnNames(const DatabaseAndTableWithAlias table_, Names && columns_, Names && hidden_columns_)
+        : table(table_)
+        , columns(columns_)
+        , hidden_columns(hidden_columns_)
+    {}
 
     bool hasColumn(const String & name) const
     {
@@ -69,9 +77,58 @@ private:
     mutable NameSet columns_set;
 };
 
+struct TableWithColumnNamesAndTypes
+{
+    DatabaseAndTableWithAlias table;
+    NamesAndTypesList columns;
+    NamesAndTypesList hidden_columns;
+
+    TableWithColumnNamesAndTypes(const DatabaseAndTableWithAlias & table_, const NamesAndTypesList & columns_)
+        : table(table_)
+        , columns(columns_)
+    {}
+
+    bool hasColumn(const String & name) const
+    {
+        if (names.empty())
+        {
+            for (auto & col : columns)
+                names.insert(col.name);
+            for (auto & col : hidden_columns)
+                names.insert(col.name);
+        }
+
+        return names.count(name);
+    }
+
+    void addHiddenColumns(const NamesAndTypesList & addition)
+    {
+        hidden_columns.insert(hidden_columns.end(), addition.begin(), addition.end());
+    }
+
+    TableWithColumnNames removeTypes() const
+    {
+        Names out_columns;
+        out_columns.reserve(columns.size());
+        for (auto & col : columns)
+            out_columns.push_back(col.name);
+
+        Names out_hidden_columns;
+        out_hidden_columns.reserve(hidden_columns.size());
+        for (auto & col : hidden_columns)
+            out_hidden_columns.push_back(col.name);
+
+        return TableWithColumnNames(table, std::move(out_columns), std::move(out_hidden_columns));
+    }
+
+private:
+    mutable NameSet names;
+};
+
 std::vector<DatabaseAndTableWithAlias> getDatabaseAndTables(const ASTSelectQuery & select_query, const String & current_database);
 std::optional<DatabaseAndTableWithAlias> getDatabaseAndTable(const ASTSelectQuery & select, size_t table_number);
 
 using TablesWithColumnNames = std::vector<TableWithColumnNames>;
+using TablesWithColumnNamesAndTypes = std::vector<TableWithColumnNames>;
 
 }

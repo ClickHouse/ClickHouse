@@ -17,9 +17,13 @@ void FunctionComparison<GreaterOrEqualsOp, NameGreaterOrEquals>::executeTupleImp
                                                                                   const ColumnsWithTypeAndName & y, size_t tuple_size,
                                                                                   size_t input_rows_count)
 {
-    return executeTupleLessGreaterImpl<
-        FunctionComparison<GreaterOp, NameGreater>,
-        FunctionGreaterOrEquals>(block, result, x, y, tuple_size, input_rows_count);
+    return executeTupleLessGreaterImpl(
+        FunctionFactory::instance().get("greater", context),
+        FunctionFactory::instance().get("greaterOrEquals", context),
+        FunctionFactory::instance().get("and", context),
+        FunctionFactory::instance().get("or", context),
+        FunctionFactory::instance().get("equals", context),
+        block, result, x, y, tuple_size, input_rows_count);
 }
 
 }

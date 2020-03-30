@@ -16,7 +16,7 @@ namespace DB
 class IStorageURLBase : public IStorage
 {
 public:
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -63,7 +63,7 @@ private:
 };
 
 
-class StorageURL : public ext::shared_ptr_helper<StorageURL>, public IStorageURLBase
+class StorageURL final : public ext::shared_ptr_helper<StorageURL>, public IStorageURLBase
 {
     friend struct ext::shared_ptr_helper<StorageURL>;
 public:

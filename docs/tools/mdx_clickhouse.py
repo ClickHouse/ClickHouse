@@ -7,15 +7,16 @@ import os
 import markdown.inlinepatterns
 import markdown.extensions
 import markdown.util
+import macros.plugin
 
 import slugify as slugify_impl
 
 class ClickHouseLinkMixin(object):
 
-    def handleMatch(self, m):
+    def handleMatch(self, m, data):
         single_page = (os.environ.get('SINGLE_PAGE') == '1')
         try:
-            el = super(ClickHouseLinkMixin, self).handleMatch(m)
+            el, start, end = super(ClickHouseLinkMixin, self).handleMatch(m, data)
         except IndexError:
             return
 
@@ -23,21 +24,21 @@ class ClickHouseLinkMixin(object):
             href = el.get('href') or ''
             is_external = href.startswith('http:') or href.startswith('https:')
             if is_external:
-                if not href.startswith('https://clickhouse.yandex'):
-                    el.set('rel', 'external nofollow')
+                if not href.startswith('https://clickhouse.tech'):
+                    el.set('rel', 'external nofollow noreferrer')
             elif single_page:
                 if '#' in href:
                     el.set('href', '#' + href.split('#', 1)[1])
                 else:
                     el.set('href', '#' + href.replace('/index.md', '/').replace('.md', '/'))
-        return el
+        return el, start, end
 
 
-class ClickHouseAutolinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.AutolinkPattern):
+class ClickHouseAutolinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.AutolinkInlineProcessor):
     pass
 
 
-class ClickHouseLinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.LinkPattern):
+class ClickHouseLinkPattern(ClickHouseLinkMixin, markdown.inlinepatterns.LinkInlineProcessor):
     pass
 
 
@@ -59,8 +60,52 @@ class ClickHouseMarkdown(markdown.extensions.Extension):
         md.inlinePatterns['link'] = ClickHouseLinkPattern(markdown.inlinepatterns.LINK_RE, md)
         md.inlinePatterns['autolink'] = ClickHouseAutolinkPattern(markdown.inlinepatterns.AUTOLINK_RE, md)
 
+
 def makeExtension(**kwargs):
     return ClickHouseMarkdown(**kwargs)
 
+
 def slugify(value, separator):
     return slugify_impl.slugify(value, separator=separator, word_boundary=True, save_order=True)
+
+
+def get_translations(dirname, lang):
+    import babel.support
+    return babel.support.Translations.load(
+        dirname=dirname,
+        locales=[lang, 'en']
+    )
+
+
+class PatchedMacrosPlugin(macros.plugin.MacrosPlugin):
+    disabled = False
+
+    def on_config(self, config):
+        super(PatchedMacrosPlugin, self).on_config(config)
+        self.env.comment_start_string = '{##'
+        self.env.comment_end_string = '##}'
+
+    def on_env(self, env, config, files):
+        env.add_extension('jinja2.ext.i18n')
+        dirname = os.path.join(config.data['theme'].dirs[0], 'locale')
+        lang = config.data['theme']['language']
+        env.install_gettext_translations(
+            get_translations(dirname, lang),
+            newstyle=True
+        )
+        chunk_size = 10240
+        env.filters['chunks'] = lambda line: [line[i:i+chunk_size] for i in range(0, len(line), chunk_size)]
+        return env
+
+    def render(self, markdown):
+        if not self.disabled:
+            return self.render_impl(markdown)
+        else:
+            return markdown
+
+    def render_impl(self, markdown):
+        md_template = self.env.from_string(markdown)
+        return md_template.render(**self.variables)
+
+
+macros.plugin.MacrosPlugin = PatchedMacrosPlugin

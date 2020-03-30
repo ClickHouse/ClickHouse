@@ -38,14 +38,34 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         String fields_str;
 
         const auto * tuple_ast = value->as<ASTFunction>();
+        bool surrounded_by_parens = false;
         if (tuple_ast && tuple_ast->name == "tuple")
         {
+            surrounded_by_parens = true;
             const auto * arguments_ast = tuple_ast->arguments->as<ASTExpressionList>();
             if (arguments_ast)
                 fields_count = arguments_ast->children.size();
             else
                 fields_count = 0;
+        }
+        else if (auto literal = value->as<ASTLiteral>())
+        {
+            if (literal->value.getType() == Field::Types::Tuple)
+            {
+                surrounded_by_parens = true;
+                fields_count = literal->value.get<Tuple &>().size();
+            }
+            else
+            {
+                fields_count = 1;
+                fields_str = String(begin->begin, pos->begin - begin->begin);
+            }
+        }
+        else
+            return false;
 
+        if (surrounded_by_parens)
+        {
             Pos left_paren = begin;
             Pos right_paren = pos;
 
@@ -61,13 +81,6 @@ bool ParserPartition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
             fields_str = String(left_paren->end, right_paren->begin - left_paren->end);
         }
-        else if (value->as<ASTLiteral>())
-        {
-            fields_count = 1;
-            fields_str = String(begin->begin, pos->begin - begin->begin);
-        }
-        else
-            return false;
 
         partition->value = value;
         partition->children.push_back(value);

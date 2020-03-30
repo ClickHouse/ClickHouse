@@ -40,8 +40,8 @@ function thread2()
 export -f thread1;
 export -f thread2;
 
-bash -c thread1  &
-bash -c thread2  &
+bash -c thread1 > /dev/null 2>&1 &
+bash -c thread2 > /dev/null 2>&1 &
 
 wait
 echo OK

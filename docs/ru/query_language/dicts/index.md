@@ -1,4 +1,4 @@
-# Словари
+# Словари {#slovari}
 
 Словарь — это отображение (`ключ -> атрибуты`), которое удобно использовать для различного вида справочников.
 
@@ -8,7 +8,7 @@ ClickHouse поддерживает специальные функции для
 
 ClickHouse поддерживает:
 
-- [Встроенные словари](internal_dicts.md#internal_dicts) со специфическим [набором функций](../functions/ym_dict_functions.md).
-- [Подключаемые (внешние) словари](external_dicts.md) с [набором функций](../functions/ext_dict_functions.md).
+-   [Встроенные словари](internal_dicts.md#internal_dicts) со специфическим [набором функций](../functions/ym_dict_functions.md).
+-   [Подключаемые (внешние) словари](external_dicts.md) с [набором функций](../functions/ext_dict_functions.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/) <!--hide-->

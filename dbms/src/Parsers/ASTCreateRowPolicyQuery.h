@@ -8,7 +8,7 @@
 
 namespace DB
 {
-class ASTRoleList;
+class ASTExtendedRoleSet;
 
 /** CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] name ON [database.]table
   *      [AS {PERMISSIVE | RESTRICTIVE}]
@@ -29,6 +29,7 @@ class ASTCreateRowPolicyQuery : public IAST
 {
 public:
     bool alter = false;
+    bool attach = false;
 
     bool if_exists = false;
     bool if_not_exists = false;
@@ -38,10 +39,10 @@ public:
     String new_policy_name;
 
     std::optional<bool> is_restrictive;
-    using ConditionIndex = RowPolicy::ConditionIndex;
-    std::vector<std::pair<ConditionIndex, ASTPtr>> conditions;
+    using ConditionType = RowPolicy::ConditionType;
+    std::vector<std::pair<ConditionType, ASTPtr>> conditions;
 
-    std::shared_ptr<ASTRoleList> roles;
+    std::shared_ptr<ASTExtendedRoleSet> roles;
 
     String getID(char) const override;
     ASTPtr clone() const override;

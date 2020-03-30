@@ -3,6 +3,7 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnVector.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
@@ -12,6 +13,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
 #include <common/StringRef.h>
+
 
 namespace DB
 {
@@ -82,9 +84,18 @@ public:
 
     size_t getNumberOfArguments() const override { return 2; }
 
+    bool useDefaultImplementationForConstants() const override { return Impl::use_default_implementation_for_constants; }
+
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
+    {
+        return Impl::use_default_implementation_for_constants
+            ? ColumnNumbers{1, 2}
+            : ColumnNumbers{};
+    }
+
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!isString(arguments[0]))
+        if (!isStringOrFixedString(arguments[0]))
             throw Exception(
                 "Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
@@ -105,13 +116,16 @@ public:
         const ColumnConst * col_haystack_const = typeid_cast<const ColumnConst *>(&*column_haystack);
         const ColumnConst * col_needle_const = typeid_cast<const ColumnConst *>(&*column_needle);
 
-        if (col_haystack_const && col_needle_const)
+        if constexpr (!Impl::use_default_implementation_for_constants)
         {
-            ResultType res{};
-            Impl::constant_constant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
-            block.getByPosition(result).column
-                = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
-            return;
+            if (col_haystack_const && col_needle_const)
+            {
+                ResultType res{};
+                Impl::constantConstant(col_haystack_const->getValue<String>(), col_needle_const->getValue<String>(), res);
+                block.getByPosition(result).column
+                    = block.getByPosition(result).type->createColumnConst(col_haystack_const->size(), toField(res));
+                return;
+            }
         }
 
         auto col_res = ColumnVector<ResultType>::create();
@@ -120,20 +134,24 @@ public:
         vec_res.resize(column_haystack->size());
 
         const ColumnString * col_haystack_vector = checkAndGetColumn<ColumnString>(&*column_haystack);
+        const ColumnFixedString * col_haystack_vector_fixed = checkAndGetColumn<ColumnFixedString>(&*column_haystack);
         const ColumnString * col_needle_vector = checkAndGetColumn<ColumnString>(&*column_needle);
 
         if (col_haystack_vector && col_needle_vector)
-            Impl::vector_vector(
+            Impl::vectorVector(
                 col_haystack_vector->getChars(),
                 col_haystack_vector->getOffsets(),
                 col_needle_vector->getChars(),
                 col_needle_vector->getOffsets(),
                 vec_res);
         else if (col_haystack_vector && col_needle_const)
-            Impl::vector_constant(
+            Impl::vectorConstant(
                 col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), col_needle_const->getValue<String>(), vec_res);
+        else if (col_haystack_vector_fixed && col_needle_const)
+            Impl::vectorFixedConstant(
+                col_haystack_vector_fixed->getChars(), col_haystack_vector_fixed->getN(), col_needle_const->getValue<String>(), vec_res);
         else if (col_haystack_const && col_needle_vector)
-            Impl::constant_vector(
+            Impl::constantVector(
                 col_haystack_const->getValue<String>(), col_needle_vector->getChars(), col_needle_vector->getOffsets(), vec_res);
         else
             throw Exception(
@@ -265,7 +283,7 @@ public:
         vec_res.resize(column_haystack_size * refs.size());
 
         if (col_haystack_vector)
-            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
+            Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res);
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 
@@ -313,7 +331,7 @@ public:
         if (!array_type || !checkAndGetDataType<DataTypeString>(array_type->getNestedType().get()))
             throw Exception(
                 "Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-        return Impl::ReturnType();
+        return Impl::getReturnType();
     }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
@@ -354,7 +372,7 @@ public:
 
         /// The blame for resizing output is for the callee.
         if (col_haystack_vector)
-            Impl::vector_constant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res);
+            Impl::vectorConstant(col_haystack_vector->getChars(), col_haystack_vector->getOffsets(), refs, vec_res, offsets_res);
         else
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName(), ErrorCodes::ILLEGAL_COLUMN);
 

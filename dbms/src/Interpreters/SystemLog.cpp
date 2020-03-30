@@ -7,6 +7,7 @@
 #include <Interpreters/MetricLog.h>
 
 #include <Poco/Util/AbstractConfiguration.h>
+#include <common/logger_useful.h>
 
 
 namespace DB
@@ -37,6 +38,15 @@ std::shared_ptr<TSystemLog> createSystemLog(
     String database = config.getString(config_prefix + ".database", default_database_name);
     String table = config.getString(config_prefix + ".table", default_table_name);
 
+    if (database != default_database_name)
+    {
+        /// System tables must be loaded before other tables, but loading order is undefined for all databases except `system`
+        LOG_ERROR(&Logger::get("SystemLog"), "Custom database name for a system table specified in config. "
+                                             "Table `" << table << "` will be created in `system` database "
+                                             "instead of `" << database << "`");
+        database = default_database_name;
+    }
+
     String engine;
     if (config.has(config_prefix + ".engine"))
     {
@@ -47,7 +57,8 @@ std::shared_ptr<TSystemLog> createSystemLog(
     else
     {
         String partition_by = config.getString(config_prefix + ".partition_by", "toYYYYMM(event_date)");
-        engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024";
+        engine = "ENGINE = MergeTree PARTITION BY (" + partition_by + ") ORDER BY (event_date, event_time)"
+            "SETTINGS min_bytes_for_wide_part = '10M'"; /// Use polymorphic parts for log tables by default
     }
 
     size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds", DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
@@ -72,8 +83,6 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds");
         metric_log->startCollectMetric(collect_interval_milliseconds);
     }
-
-    part_log_database = config.getString("part_log.database", "system");
 }
 
 

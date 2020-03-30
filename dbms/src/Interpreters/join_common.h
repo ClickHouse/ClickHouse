@@ -22,8 +22,8 @@ ColumnRawPtrs getRawPointers(const Columns & columns);
 void removeLowCardinalityInplace(Block & block);
 
 /// Split key and other columns by keys name list
-ColumnRawPtrs extractKeysForJoin(const Names & key_names_right, const Block & right_sample_block,
-                                 Block & sample_block_with_keys, Block & sample_block_with_columns_to_add);
+void splitAdditionalColumns(const Block & sample_block, const Names & key_names, Block & block_keys, Block & block_others);
+ColumnRawPtrs extractKeysForJoin(const Block & block_keys, const Names & key_names_right);
 
 /// Throw an exception if blocks have different types of key columns. Compare up to Nullability.
 void checkTypesOfKeys(const Block & block_left, const Names & key_names_left, const Block & block_right, const Names & key_names_right);

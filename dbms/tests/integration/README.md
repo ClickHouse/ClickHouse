@@ -14,7 +14,7 @@ Don't use Docker from your system repository.
 
 * [pip](https://pypi.python.org/pypi/pip) and `libpq-dev`. To install: `sudo apt-get install python-pip libpq-dev`
 * [py.test](https://docs.pytest.org/) testing framework. To install: `sudo -H pip install pytest`
-* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install: `sudo -H pip install docker-compose docker dicttoxml kazoo PyMySQL psycopg2 pymongo tzlocal kafka-python protobuf pytest-timeout minio`
+* [docker-compose](https://docs.docker.com/compose/) and additional python libraries. To install: `sudo -H pip install docker-compose docker dicttoxml kazoo PyMySQL psycopg2 pymongo tzlocal kafka-python protobuf pytest-timeout minio rpm-confluent-schemaregistry`
 
 (highly not recommended) If you really want to use OS packages on modern debian/ubuntu instead of "pip": `sudo apt install -y docker docker-compose python-pytest python-dicttoxml python-docker python-pymysql python-pymongo python-tzlocal python-kazoo python-psycopg2 python-kafka python-pytest-timeout python-minio`
 
@@ -40,7 +40,7 @@ docker pull yandex/clickhouse-integration-tests-runner
 Notes:
 * If you want to run integration tests without `sudo` you have to add your user to docker group `sudo usermod -aG docker $USER`. [More information](https://docs.docker.com/install/linux/linux-postinstall/) about docker configuration.
 * If you already had run these tests without `./runner` script you may have problems with pytest cache. It can be removed with `rm -r __pycache__ .pytest_cache/`.
-* Some tests maybe require a lot of resources (CPU, RAM, etc.). Better not try large tests like `test_cluster_copier` or `test_distributed_ddl*` on your notebook.
+* Some tests maybe require a lot of resources (CPU, RAM, etc.). Better not try large tests like `test_cluster_copier` or `test_distributed_ddl*` on your laptop.
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```
@@ -86,13 +86,23 @@ test_odbc_interaction/test.py ......                                     [100%]
 You can just open shell inside a container by overwritting the command:
 ./runner --command=bash
 
+### Rebuilding the docker containers
+
+The main container used for integration tests lives in `docker/test/integration/Dockerfile`. Rebuild it with
+```
+cd docker/test/integration
+docker build -t yandex/clickhouse-integration-test .
+```
+
+The helper container used by the `runner` script is in `dbms/tests/integration/image/Dockerfile`.
+
 ### Adding new tests
 
 To add new test named `foo`, create a directory `test_foo` with an empty `__init__.py` and a file
 named `test.py` containing tests in it. All functions with names starting with `test` will become test cases.
 
 `helpers` directory contains utilities for:
-* Launching a ClickHouse cluster with or without ZooKeeper indocker containers.
+* Launching a ClickHouse cluster with or without ZooKeeper in docker containers.
 * Sending queries to launched instances.
 * Introducing network failures such as severing network link between two instances.
 

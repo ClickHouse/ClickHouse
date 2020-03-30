@@ -47,27 +47,26 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     ASTQueryWithTableAndOutput * show_query;
     if ((show_query = query_ptr->as<ASTShowCreateTableQuery>()))
     {
-        if (show_query->temporary)
-            create_query = context.getCreateExternalTableQuery(show_query->table);
-        else
-        {
-            context.checkAccess(AccessType::SHOW, show_query->database, show_query->table);
-            create_query = context.getDatabase(show_query->database)->getCreateTableQuery(context, show_query->table);
-        }
+        auto resolve_table_type = show_query->temporary ? Context::ResolveExternal : Context::ResolveOrdinary;
+        auto table_id = context.resolveStorageID(*show_query, resolve_table_type);
+        context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
+        create_query = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(context, table_id.table_name);
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDatabaseQuery>()))
     {
         if (show_query->temporary)
             throw Exception("Temporary databases are not possible.", ErrorCodes::SYNTAX_ERROR);
-        context.checkAccess(AccessType::SHOW, show_query->database);
-        create_query = context.getDatabase(show_query->database)->getCreateDatabaseQuery(context);
+        show_query->database = context.resolveDatabase(show_query->database);
+        context.checkAccess(AccessType::SHOW_DATABASES, show_query->database);
+        create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDatabaseQuery(context);
     }
     else if ((show_query = query_ptr->as<ASTShowCreateDictionaryQuery>()))
     {
         if (show_query->temporary)
             throw Exception("Temporary dictionaries are not possible.", ErrorCodes::SYNTAX_ERROR);
-        context.checkAccess(AccessType::SHOW, show_query->database, show_query->table);
-        create_query = context.getDatabase(show_query->database)->getCreateDictionaryQuery(context, show_query->table);
+        show_query->database = context.resolveDatabase(show_query->database);
+        context.checkAccess(AccessType::SHOW_DICTIONARIES, show_query->database, show_query->table);
+        create_query = DatabaseCatalog::instance().getDatabase(show_query->database)->getCreateDictionaryQuery(context, show_query->table);
     }
 
     if (!create_query && show_query && show_query->temporary)

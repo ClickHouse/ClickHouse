@@ -59,14 +59,9 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
     extern const int INCORRECT_QUERY;
-    extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int DUPLICATE_COLUMN;
-    extern const int READONLY;
-    extern const int ILLEGAL_COLUMN;
     extern const int DATABASE_ALREADY_EXISTS;
-    extern const int QUERY_IS_PROHIBITED;
-    extern const int THERE_IS_NO_DEFAULT_VALUE;
     extern const int BAD_DATABASE_FOR_TEMPORARY_TABLE;
     extern const int SUSPICIOUS_TYPE_FOR_LOW_CARDINALITY;
     extern const int DICTIONARY_ALREADY_EXISTS;
@@ -83,10 +78,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 {
     String database_name = create.database;
 
-    auto guard = context.getDDLGuard(database_name, "");
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, "");
 
     /// Database can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard
-    if (context.isDatabaseExist(database_name))
+    if (DatabaseCatalog::instance().isDatabaseExist(database_name))
     {
         if (create.if_not_exists)
             return {};
@@ -147,7 +142,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     bool renamed = false;
     try
     {
-        context.addDatabase(database_name, database);
+        //FIXME is it possible to attach db only after it was loaded? (no, loadStoredObjects adds view dependencies)
+        DatabaseCatalog::instance().attachDatabase(database_name, database);
         added = true;
 
         if (need_write_metadata)
@@ -163,7 +159,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         if (renamed)
             Poco::File(metadata_file_tmp_path).remove();
         if (added)
-            context.detachDatabase(database_name);
+            DatabaseCatalog::instance().detachDatabase(database_name, false, false);
 
         throw;
     }
@@ -319,15 +315,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
     Block defaults_sample_block;
     /// set missing types and wrap default_expression's in a conversion-function if necessary
     if (!default_expr_list->children.empty())
-    {
-        auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, column_names_and_types);
-        const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
-        for (auto & action : actions->getActions())
-            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
-                throw Exception("Cannot CREATE table. Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
-
-        defaults_sample_block = actions->getSampleBlock();
-    }
+        defaults_sample_block = validateColumnsDefaultsAndGetSampleBlock(default_expr_list, column_names_and_types, context);
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
@@ -411,11 +399,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
     }
     else if (!create.as_table.empty())
     {
-        String as_database_name = create.as_database.empty() ? context.getCurrentDatabase() : create.as_database;
-        StoragePtr as_storage = context.getTable(as_database_name, create.as_table);
+        String as_database_name = context.resolveDatabase(create.as_database);
+        StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table});
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
-        as_storage_lock = as_storage->lockStructureForShare(false, context.getCurrentQueryId());
+        as_storage_lock = as_storage->lockStructureForShare(context.getCurrentQueryId());
         properties.columns = as_storage->getColumns();
 
         /// Secondary indices make sense only for MergeTree family of storage engines.
@@ -507,10 +495,10 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
     {
         /// NOTE Getting the structure from the table specified in the AS is done not atomically with the creation of the table.
 
-        String as_database_name = create.as_database.empty() ? context.getCurrentDatabase() : create.as_database;
+        String as_database_name = context.resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
-        ASTPtr as_create_ptr = context.getDatabase(as_database_name)->getCreateTableQuery(context, as_table_name);
+        ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(context, as_table_name);
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
@@ -542,18 +530,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         throw Exception("Temporary tables cannot be inside a database. You should not specify a database for a temporary table.",
             ErrorCodes::BAD_DATABASE_FOR_TEMPORARY_TABLE);
 
+    String current_database = context.getCurrentDatabase();
+
     // If this is a stub ATTACH query, read the query definition from the database
     if (create.attach && !create.storage && !create.columns_list)
     {
         bool if_not_exists = create.if_not_exists;
         // Table SQL definition is available even if the table is detached
-        auto query = context.getDatabase(create.database)->getCreateTableQuery(context, create.table);
+        auto database_name = create.database.empty() ? current_database : create.database;
+        auto query = DatabaseCatalog::instance().getDatabase(database_name)->getCreateTableQuery(context, create.table);
         create = query->as<ASTCreateQuery &>(); // Copy the saved create query, but use ATTACH instead of CREATE
         create.attach = true;
         create.if_not_exists = if_not_exists;
     }
 
-    String current_database = context.getCurrentDatabase();
     if (!create.temporary && create.database.empty())
         create.database = current_database;
     if (!create.to_table.empty() && create.to_database.empty())
@@ -584,16 +574,16 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
 
     DatabasePtr database;
 
-    const String & table_name = create.table;
+    String table_name = create.table;
     bool need_add_to_database = !create.temporary;
     if (need_add_to_database)
     {
-        database = context.getDatabase(create.database);
+        database = DatabaseCatalog::instance().getDatabase(create.database);
 
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
           */
-        guard = context.getDDLGuard(create.database, table_name);
+        guard = DatabaseCatalog::instance().getDDLGuard(create.database, table_name);
 
         /// Table can be created before or it can be created concurrently in another thread, while we were waiting in DDLGuard.
         if (database->isTableExist(context, table_name))
@@ -616,14 +606,23 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
                 throw Exception("Table " + create.database + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
         }
     }
-    else if (context.tryGetExternalTable(table_name) && create.if_not_exists)
-         return false;
+    else
+    {
+        if (context.tryResolveStorageID({"", table_name}, Context::ResolveExternal) && create.if_not_exists)
+            return false;
+
+        auto temporary_table = TemporaryTableHolder(context, properties.columns, query_ptr);
+        context.getSessionContext().addExternalTable(table_name, std::move(temporary_table));
+        return true;
+    }
 
     StoragePtr res;
+    /// NOTE: CREATE query may be rewritten by Storage creator or table function
     if (create.as_table_function)
     {
         const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
+        //FIXME storage will have wrong database name
         res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
     }
     else
@@ -637,10 +636,7 @@ bool InterpreterCreateQuery::doCreateTable(const ASTCreateQuery & create,
             false);
     }
 
-    if (need_add_to_database)
-        database->createTable(context, table_name, res, query_ptr);
-    else
-        context.getSessionContext().addExternalTable(table_name, res, query_ptr);
+    database->createTable(context, table_name, res, query_ptr);
 
     /// We must call "startup" and "shutdown" while holding DDLGuard.
     /// Because otherwise method "shutdown" (from InterpreterDropQuery) can be called before startup
@@ -662,11 +658,7 @@ BlockIO InterpreterCreateQuery::fillTableIfNeeded(const ASTCreateQuery & create)
         && !create.is_view && !create.is_live_view && (!create.is_materialized_view || create.is_populate))
     {
         auto insert = std::make_shared<ASTInsertQuery>();
-
-        if (!create.temporary)
-            insert->database = create.database;
-
-        insert->table = create.table;
+        insert->table_id = {create.database, create.table, create.uuid};
         insert->select = create.select->clone();
 
         if (create.temporary && !context.getSessionContext().hasQueryContext())
@@ -684,12 +676,11 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 {
     String dictionary_name = create.table;
 
-    if (create.database.empty())
-        create.database = context.getCurrentDatabase();
+    create.database = context.resolveDatabase(create.database);
     const String & database_name = create.database;
 
-    auto guard = context.getDDLGuard(database_name, dictionary_name);
-    DatabasePtr database = context.getDatabase(database_name);
+    auto guard = DatabaseCatalog::instance().getDDLGuard(database_name, dictionary_name);
+    DatabasePtr database = DatabaseCatalog::instance().getDatabase(database_name);
 
     if (database->isDictionaryExist(context, dictionary_name))
     {
@@ -703,7 +694,7 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
 
     if (create.attach)
     {
-        auto query = context.getDatabase(database_name)->getCreateDictionaryQuery(context, dictionary_name);
+        auto query = DatabaseCatalog::instance().getDatabase(database_name)->getCreateDictionaryQuery(context, dictionary_name);
         create = query->as<ASTCreateQuery &>();
         create.attach = true;
     }

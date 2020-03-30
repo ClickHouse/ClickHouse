@@ -55,7 +55,7 @@ int main(int argc, char ** argv)
             {"s2", std::make_shared<DataTypeString>()}
         };
 
-        auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, columns);
+        auto syntax_result = SyntaxAnalyzer(context).analyze(ast, columns);
         SelectQueryExpressionAnalyzer analyzer(ast, syntax_result, context);
         ExpressionActionsChain chain(context);
         analyzer.appendSelect(chain, false);
@@ -63,7 +63,7 @@ int main(int argc, char ** argv)
         chain.finalize();
         ExpressionActionsPtr expression = chain.getLastActions();
 
-        size_t n = argc == 2 ? atoi(argv[1]) : 10;
+        size_t n = argc == 2 ? std::stol(argv[1]) : 10;
 
         Block block;
 

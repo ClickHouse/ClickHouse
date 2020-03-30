@@ -12,6 +12,7 @@
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageDistributed.h>
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -19,23 +20,24 @@
 #include <Access/AccessRightsElement.h>
 #include <Common/DNSResolver.h>
 #include <Common/Macros.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
 #include <Common/randomSeed.h>
-#include <common/sleep.h>
+#include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/ZooKeeper/KeeperException.h>
+#include <Common/ZooKeeper/Lock.h>
+#include <Common/isLocalAddress.h>
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
-#include <Common/ZooKeeper/ZooKeeper.h>
-#include <Common/ZooKeeper/KeeperException.h>
-#include <Common/ZooKeeper/Lock.h>
-#include <Common/isLocalAddress.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Poco/Timestamp.h>
+#include <common/sleep.h>
 #include <random>
 #include <pcg_random.hpp>
 #include <Poco/Net/NetException.h>
@@ -46,16 +48,13 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-    extern const int INVALID_CONFIG_PARAMETER;
     extern const int UNKNOWN_FORMAT_VERSION;
-    extern const int INCONSISTENT_TABLE_ACCROSS_SHARDS;
     extern const int INCONSISTENT_CLUSTER_DEFINITION;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int UNFINISHED;
-    extern const int UNKNOWN_STATUS_OF_DISTRIBUTED_DDL_TASK;
     extern const int QUERY_IS_PROHIBITED;
 }
 
@@ -556,7 +555,7 @@ bool DDLWorker::tryExecuteQuery(const String & query, const DDLTask & task, Exec
         current_context = std::make_unique<Context>(context);
         current_context->getClientInfo().query_kind = ClientInfo::QueryKind::SECONDARY_QUERY;
         current_context->setCurrentQueryId(""); // generate random query_id
-        executeQuery(istr, ostr, false, *current_context, {}, {});
+        executeQuery(istr, ostr, false, *current_context, {});
     }
     catch (...)
     {
@@ -627,8 +626,8 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
                 if (!query_with_table->table.empty())
                 {
                     /// It's not CREATE DATABASE
-                    String database = query_with_table->database.empty() ? context.getCurrentDatabase() : query_with_table->database;
-                    storage = context.tryGetTable(database, query_with_table->table);
+                    auto table_id = context.resolveStorageID(*query_with_table, Context::ResolveOrdinary);
+                    storage = DatabaseCatalog::instance().tryGetTable(table_id);
                 }
 
                 /// For some reason we check consistency of cluster definition only
@@ -669,7 +668,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 }
 
 
-bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const StoragePtr storage) const
+bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const StoragePtr storage)
 {
     /// Pure DROP queries have to be executed on each node separately
     if (auto query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)
@@ -687,9 +686,15 @@ void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, Sto
     const auto & shard_info = task.cluster->getShardsInfo().at(task.host_shard_num);
     bool config_is_replicated_shard = shard_info.hasInternalReplication();
 
+    if (dynamic_cast<const StorageDistributed *>(storage.get()))
+    {
+        LOG_TRACE(log, "Table " + backQuote(table) + " is distributed, skip checking config.");
+        return;
+    }
+
     if (storage->supportsReplication() && !config_is_replicated_shard)
     {
-        throw Exception("Table '" + table + "' is replicated, but shard #" + toString(task.host_shard_num + 1) +
+        throw Exception("Table " + backQuote(table) + " is replicated, but shard #" + toString(task.host_shard_num + 1) +
             " isn't replicated according to its cluster definition."
             " Possibly <internal_replication>true</internal_replication> is forgotten in the cluster config.",
             ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
@@ -697,7 +702,7 @@ void DDLWorker::checkShardConfig(const String & table, const DDLTask & task, Sto
 
     if (!storage->supportsReplication() && config_is_replicated_shard)
     {
-        throw Exception("Table '" + table + "' isn't replicated, but shard #" + toString(task.host_shard_num + 1) +
+        throw Exception("Table " + backQuote(table) + " isn't replicated, but shard #" + toString(task.host_shard_num + 1) +
             " is replicated according to its cluster definition", ErrorCodes::INCONSISTENT_CLUSTER_DEFINITION);
     }
 }
@@ -789,7 +794,7 @@ bool DDLWorker::tryExecuteQueryOnLeaderReplica(
 
         /// Does nothing if wasn't previously locked
         lock->unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<long>(0, 1000)(rng)));
+        std::this_thread::sleep_for(std::chrono::milliseconds(std::uniform_int_distribution<int>(0, 1000)(rng)));
     }
 
     /// Not executed by leader so was not executed at all

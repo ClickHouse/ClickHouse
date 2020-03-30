@@ -15,6 +15,7 @@
 #include <Common/tests/gtest_global_context.h>
 
 #include <memory>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 #if !__clang__
 #    pragma GCC diagnostic push
@@ -44,26 +45,26 @@ public:
 
     void SetUp() override
     {
-        disk_ = createDisk<T>();
-        table_ = createStorage(disk_);
+        disk = createDisk<T>();
+        table = createStorage(disk);
     }
 
     void TearDown() override
     {
-        table_->shutdown();
-        destroyDisk<T>(disk_);
+        table->shutdown();
+        destroyDisk<T>(disk);
     }
 
-    const DB::DiskPtr & getDisk() { return disk_; }
-    DB::StoragePtr & getTable() { return table_; }
+    const DB::DiskPtr & getDisk() { return disk; }
+    DB::StoragePtr & getTable() { return table; }
 
 private:
-    DB::DiskPtr disk_;
-    DB::StoragePtr table_;
+    DB::DiskPtr disk;
+    DB::StoragePtr table;
 };
 
 
-typedef testing::Types<DB::DiskMemory, DB::DiskLocal> DiskImplementations;
+using DiskImplementations = testing::Types<DB::DiskMemory, DB::DiskLocal>;
 TYPED_TEST_SUITE(StorageLogTest, DiskImplementations);
 
 // Returns data written to table in Values format.
@@ -111,7 +112,7 @@ std::string readData(DB::StoragePtr & table)
 
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(getContext());
 
-    BlockInputStreamPtr in = table->read(column_names, {}, getContext(), stage, 8192, 1)[0];
+    BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, getContext(), stage, 8192, 1)[0]));
 
     Block sample;
     {
