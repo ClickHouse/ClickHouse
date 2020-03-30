@@ -17,6 +17,8 @@ class ASTLiteral : public ASTWithAlias
 public:
     Field value;
 
+    String unique_column_name;
+
     /// For ConstantExpressionTemplate
     std::optional<TokenIterator> begin;
     std::optional<TokenIterator> end;

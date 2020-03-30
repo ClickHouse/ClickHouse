@@ -197,10 +197,17 @@ SetPtr makeExplicitSet(
 
 static String getUniqueName(const Block & block, const String & prefix)
 {
-    int i = 1;
-    while (block.has(prefix + toString(i)))
-        ++i;
-    return prefix + toString(i);
+    auto result = prefix;
+
+    if (block.has(prefix))
+    {
+        int i = 1;
+        while (block.has(prefix + toString(i)))
+            ++i;
+        result = prefix + "_" + toString(i);
+    }
+
+    return result;
 }
 
 ScopeStack::ScopeStack(const ExpressionActionsPtr & actions, const Context & context_)
@@ -431,7 +438,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     for (size_t arg = 0; arg < node.arguments->children.size(); ++arg)
     {
         auto & child = node.arguments->children[arg];
-        auto child_column_name = child->getColumnName();
 
         const auto * lambda = child->as<ASTFunction>();
         const auto * identifier = child->as<ASTIdentifier>();
@@ -461,7 +467,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             if (!prepared_set->empty())
                 column.name = getUniqueName(data.getSampleBlock(), "__set");
             else
-                column.name = child_column_name;
+                column.name = child->getColumnName();
 
             if (!data.hasColumn(column.name))
             {
@@ -496,6 +502,18 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             /// If the argument is not a lambda expression, call it recursively and find out its type.
             visit(child, data);
+
+            // In the above visit() call, if the argument is a literal, we
+            // generated a unique column name for it. Use it instead of a generic
+            // display name.
+            auto child_column_name = child->getColumnName();
+            auto asLiteral = dynamic_cast<const ASTLiteral *>(child.get());
+            if (asLiteral)
+            {
+                assert(!asLiteral->unique_column_name.empty());
+                child_column_name = asLiteral->unique_column_name;
+            }
+
             if (data.hasColumn(child_column_name))
             {
                 argument_types.push_back(data.getSampleBlock().getByName(child_column_name).type);
@@ -587,18 +605,19 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     }
 }
 
-void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data)
+void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
+    Data & data)
 {
-    CachedColumnName column_name;
-    if (data.hasColumn(column_name.get(ast)))
-        return;
-
     DataTypePtr type = applyVisitor(FieldToDataType(), literal.value);
 
     ColumnWithTypeAndName column;
     column.column = type->createColumnConst(1, convertFieldToType(literal.value, *type));
     column.type = type;
-    column.name = column_name.get(ast);
+
+    // Always create columns for literals with a unique name. Otherwise, there
+    // may be some weird clashes, see 01101_literal_column_clash.
+    column.name = getUniqueName(data.getSampleBlock(), literal.getColumnName());
+    const_cast<ASTLiteral &>(literal).unique_column_name = column.name;
 
     data.addAction(ExpressionAction::addColumn(column));
 }
