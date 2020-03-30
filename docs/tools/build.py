@@ -252,12 +252,14 @@ def build_single_page_version(lang, args, cfg):
                                     '--log-level', 'warn',
                                     f'http://localhost:{port_for_pdf}/single/', single_page_pdf
                                 ]
-                                if args.save_raw_single_page:
-                                    shutil.copytree(test_dir, args.save_raw_single_page)
-                                logging.info(' '.join(create_pdf_command))
-                                subprocess.check_call(' '.join(create_pdf_command), shell=True)
-                                httpd.shutdown()
-                                thread.join(timeout=5.0)
+                                try:
+                                    if args.save_raw_single_page:
+                                        shutil.copytree(test_dir, args.save_raw_single_page)
+                                    logging.info(' '.join(create_pdf_command))
+                                    subprocess.check_call(' '.join(create_pdf_command), shell=True)
+                                finally:
+                                    httpd.shutdown()
+                                    thread.join(timeout=5.0)
 
                         if not args.version_prefix:  # maybe enable in future
                             test.test_single_page(
