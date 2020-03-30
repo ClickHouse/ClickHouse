@@ -138,6 +138,8 @@ public:
 
     size_t appendDefaults(const Attribute & new_keys, const PaddedPODArray<Metadata> & metadata, const size_t begin);
 
+    void clearOldestBlocks();
+
     void flush();
 
     void remove();
@@ -187,6 +189,7 @@ private:
 
     std::optional<Memory<>> memory;
     std::optional<WriteBuffer> write_buffer;
+    uint32_t keys_in_block = 0;
     // std::optional<CompressedWriteBuffer> compressed_buffer;
     // std::optional<HashingWriteBuffer> hashing_buffer;
     // CompressionCodecPtr codec;
