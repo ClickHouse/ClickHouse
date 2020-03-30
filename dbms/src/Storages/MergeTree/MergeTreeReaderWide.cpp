@@ -39,19 +39,38 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         std::move(data_part_), std::move(columns_), uncompressed_cache_, std::move(mark_cache_),
         std::move(mark_ranges_), std::move(settings_), std::move(avg_value_size_hints_))
 {
+    LOG_DEBUG(&Poco::Logger::get("ReaderWide"), "Alter conversions size:" << alter_conversions.rename_map.size());
+    for (const auto & [rename_to, rename_from] : alter_conversions.rename_map)
+    {
+        LOG_DEBUG(&Poco::Logger::get("ReaderWide"), "RENAME T:" << rename_to << " F:" << rename_from);
+    }
     try
     {
         for (const NameAndTypePair & column_from_part : data_part->getColumns())
-        {
             columns_from_part[column_from_part.name] = column_from_part.type;
-        }
 
         for (const NameAndTypePair & column : columns)
         {
             if (columns_from_part.count(column.name))
+            {
+                LOG_DEBUG(&Poco::Logger::get("ReaderWide"), "ADDING STREAM:" << column.name);
                 addStreams(column.name, *columns_from_part[column.name], profile_callback_, clock_type_);
+            }
             else
-                addStreams(column.name, *column.type, profile_callback_, clock_type_);
+            {
+                auto renamed_it = alter_conversions.rename_map.find(column.name);
+                if (renamed_it != alter_conversions.rename_map.end()
+                    && columns_from_part.count(renamed_it->second))
+                {
+                    LOG_DEBUG(&Poco::Logger::get("ReaderWide"), "ADDING RENAMED STREAM:" << renamed_it->second);
+                    addStreams(renamed_it->second, *columns_from_part[renamed_it->second], profile_callback_, clock_type_);
+                }
+                else
+                {
+                    LOG_DEBUG(&Poco::Logger::get("ReaderWide"), "ADDING STREAM:" << column.name);
+                    addStreams(column.name, *column.type, profile_callback_, clock_type_);
+                }
+            }
         }
     }
     catch (...)
@@ -82,7 +101,14 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            String & name = name_and_type->name;
+            String name = name_and_type->name;
+            if (alter_conversions.rename_map.count(name))
+            {
+                String original_name = alter_conversions.rename_map[name];
+                if (!columns_from_part.count(name) && columns_from_part.count(original_name))
+                    name = original_name;
+            }
+
             DataTypePtr type;
             if (columns_from_part.count(name))
                 type = columns_from_part[name];
