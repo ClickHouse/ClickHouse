@@ -72,11 +72,11 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            StringRef source = column_concrete->getDataAt(i);
+            StringRef source = column_concrete->getDataAtWithTerminatingZero(i);
             auto demangled = tryDemangle(source.data);
             if (demangled)
             {
-                result_column->insertDataWithTerminatingZero(demangled.get(), strlen(demangled.get()));
+                result_column->insertDataWithTerminatingZero(demangled.get(), strlen(demangled.get()) + 1);
             }
             else
             {

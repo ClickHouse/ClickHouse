@@ -3,6 +3,7 @@
 #include <Common/NaNUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnConst.h>
 #include <DataStreams/ColumnGathererStream.h>
@@ -13,6 +14,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
     extern const int ILLEGAL_COLUMN;
     extern const int SIZES_OF_NESTED_COLUMNS_ARE_INCONSISTENT;
@@ -41,6 +43,26 @@ void ColumnNullable::updateHashWithValue(size_t n, SipHash & hash) const
         getNestedColumn().updateHashWithValue(n, hash);
 }
 
+void ColumnNullable::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = size();
+
+    if (hash.getData().size() != s)
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    WeakHash32 old_hash = hash;
+    nested_column->updateWeakHash32(hash);
+
+    auto & null_map_data = getNullMapData();
+    auto & hash_data = hash.getData();
+    auto & old_hash_data = old_hash.getData();
+
+    /// Use old data for nulls.
+    for (size_t row = 0; row < s; ++row)
+        if (null_map_data[row])
+            hash_data[row] = old_hash_data[row];
+}
 
 MutableColumnPtr ColumnNullable::cloneResized(size_t new_size) const
 {
@@ -115,7 +137,7 @@ StringRef ColumnNullable::serializeValueIntoArena(size_t n, Arena & arena, char 
 
 const char * ColumnNullable::deserializeAndInsertFromArena(const char * pos)
 {
-    UInt8 val = *reinterpret_cast<const UInt8 *>(pos);
+    UInt8 val = unalignedLoad<UInt8>(pos);
     pos += sizeof(val);
 
     getNullMapData().push_back(val);

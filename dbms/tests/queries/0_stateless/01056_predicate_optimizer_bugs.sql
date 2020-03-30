@@ -1,5 +1,6 @@
 SET enable_debug_queries = 1;
 SET enable_optimize_predicate_expression = 1;
+SET joined_subquery_requires_alias = 0;
 
 -- https://github.com/ClickHouse/ClickHouse/issues/3885
 -- https://github.com/ClickHouse/ClickHouse/issues/5485

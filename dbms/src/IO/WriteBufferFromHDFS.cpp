@@ -26,7 +26,7 @@ struct WriteBufferFromHDFS::WriteBufferFromHDFSImpl
     HDFSBuilderPtr builder;
     HDFSFSPtr fs;
 
-    WriteBufferFromHDFSImpl(const std::string & hdfs_name_)
+    explicit WriteBufferFromHDFSImpl(const std::string & hdfs_name_)
         : hdfs_uri(hdfs_name_)
         , builder(createHDFSBuilder(hdfs_uri))
         , fs(createHDFSFS(builder.get()))

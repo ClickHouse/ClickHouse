@@ -84,19 +84,12 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
         }
         else
         {
-            const auto & identifier = table_expression.database_and_table_name->as<ASTIdentifier &>();
-
-            String database_name;
-            String table_name;
-            std::tie(database_name, table_name) = IdentifierSemantic::extractDatabaseAndTable(identifier);
-
-            if (!database_name.empty() || !context.isExternalTableExist(table_name))
-                context.checkAccess(AccessType::SHOW, database_name, table_name);
-
-            table = context.getTable(database_name, table_name);
+            auto table_id = context.resolveStorageID(table_expression.database_and_table_name);
+            context.checkAccess(AccessType::SHOW_COLUMNS, table_id);
+            table = DatabaseCatalog::instance().getTable(table_id);
         }
 
-        auto table_lock = table->lockStructureForShare(false, context.getInitialQueryId());
+        auto table_lock = table->lockStructureForShare(context.getInitialQueryId());
         columns = table->getColumns();
     }
 

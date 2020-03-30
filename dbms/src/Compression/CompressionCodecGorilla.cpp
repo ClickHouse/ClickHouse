@@ -21,8 +21,6 @@ namespace ErrorCodes
 {
 extern const int CANNOT_COMPRESS;
 extern const int CANNOT_DECOMPRESS;
-extern const int ILLEGAL_SYNTAX_FOR_CODEC_TYPE;
-extern const int ILLEGAL_CODEC_PARAMETER;
 }
 
 namespace
@@ -63,7 +61,7 @@ UInt32 getCompressedDataSize(UInt8 data_bytes_size, UInt32 uncompressed_size)
     return (items_count * max_item_size_bits + 8) / 8;
 }
 
-struct binary_value_info
+struct BinaryValueInfo
 {
     UInt8 leading_zero_bits;
     UInt8 data_bits;
@@ -71,7 +69,7 @@ struct binary_value_info
 };
 
 template <typename T>
-binary_value_info getLeadingAndTrailingBits(const T & value)
+BinaryValueInfo getLeadingAndTrailingBits(const T & value)
 {
     constexpr UInt8 bit_size = sizeof(T) * 8;
 
@@ -79,7 +77,7 @@ binary_value_info getLeadingAndTrailingBits(const T & value)
     const UInt8 tz = getTrailingZeroBits(value);
     const UInt8 data_size = value == 0 ? 0 : static_cast<UInt8>(bit_size - lz - tz);
 
-    return binary_value_info{lz, data_size, tz};
+    return BinaryValueInfo{lz, data_size, tz};
 }
 
 template <typename T>
@@ -101,7 +99,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
 
     T prev_value{};
     // That would cause first XORed value to be written in-full.
-    binary_value_info prev_xored_info{0, 0, 0};
+    BinaryValueInfo prev_xored_info{0, 0, 0};
 
     if (source < source_end)
     {
@@ -120,7 +118,7 @@ UInt32 compressDataForType(const char * source, UInt32 source_size, char * dest,
         source += sizeof(curr_value);
 
         const auto xored_data = curr_value ^ prev_value;
-        const binary_value_info curr_xored_info = getLeadingAndTrailingBits(xored_data);
+        const BinaryValueInfo curr_xored_info = getLeadingAndTrailingBits(xored_data);
 
         if (xored_data == 0)
         {
@@ -179,14 +177,14 @@ void decompressDataForType(const char * source, UInt32 source_size, char * dest)
 
     BitReader reader(source, source_size - sizeof(items_count) - sizeof(prev_value));
 
-    binary_value_info prev_xored_info{0, 0, 0};
+    BinaryValueInfo prev_xored_info{0, 0, 0};
 
     // since data is tightly packed, up to 1 bit per value, and last byte is padded with zeroes,
     // we have to keep track of items to avoid reading more that there is.
     for (UInt32 items_read = 1; items_read < items_count && !reader.eof(); ++items_read)
     {
         T curr_value = prev_value;
-        binary_value_info curr_xored_info = prev_xored_info;
+        BinaryValueInfo curr_xored_info = prev_xored_info;
         T xored_data{};
 
         if (reader.readBit() == 1)
@@ -242,9 +240,9 @@ CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
 {
 }
 
-UInt8 CompressionCodecGorilla::getMethodByte() const
+uint8_t CompressionCodecGorilla::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::Gorilla);
+    return static_cast<uint8_t>(CompressionMethodByte::Gorilla);
 }
 
 String CompressionCodecGorilla::getCodecDesc() const

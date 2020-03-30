@@ -9,7 +9,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Access/AccessRightsContext.h>
+#include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Processors/Sources/NullSource.h>
 
@@ -19,7 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_DROPPED;
 }
 
@@ -63,12 +62,12 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        const std::shared_ptr<const AccessRightsContext> & access_rights_,
+        const std::shared_ptr<const ContextAccess> & access_,
         String query_id_)
         : SourceWithProgress(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
-        , query_id(std::move(query_id_)), total_tables(tables->size()), access_rights(access_rights_)
+        , query_id(std::move(query_id_)), total_tables(tables->size()), access(access_)
     {
     }
 
@@ -83,7 +82,7 @@ protected:
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
         size_t rows_count = 0;
 
-        const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW);
+        const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_COLUMNS);
 
         while (rows_count < max_block_size && db_table_num < total_tables)
         {
@@ -104,7 +103,7 @@ protected:
 
                 try
                 {
-                    table_lock = storage->lockStructureForShare(false, query_id);
+                    table_lock = storage->lockStructureForShare(query_id);
                 }
                 catch (const Exception & e)
                 {
@@ -129,14 +128,14 @@ protected:
                 column_sizes = storage->getColumnSizes();
             }
 
-            bool check_access_for_columns = check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name);
+            bool check_access_for_columns = check_access_for_tables && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name);
 
             for (const auto & column : columns)
             {
                 if (column.is_virtual)
                     continue;
 
-                if (check_access_for_columns && !access_rights->isGranted(AccessType::SHOW, database_name, table_name, column.name))
+                if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
                     continue;
 
                 size_t src_index = 0;
@@ -231,11 +230,11 @@ private:
     String query_id;
     size_t db_table_num = 0;
     size_t total_tables;
-    std::shared_ptr<const AccessRightsContext> access_rights;
+    std::shared_ptr<const ContextAccess> access;
 };
 
 
-Pipes StorageSystemColumns::readWithProcessors(
+Pipes StorageSystemColumns::read(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -267,7 +266,7 @@ Pipes StorageSystemColumns::readWithProcessors(
     Pipes pipes;
 
     {
-        Databases databases = context.getDatabases();
+        Databases databases = DatabaseCatalog::instance().getDatabases();
 
         /// Add `database` column.
         MutableColumnPtr database_column_mut = ColumnString::create();
@@ -333,7 +332,7 @@ Pipes StorageSystemColumns::readWithProcessors(
     pipes.emplace_back(std::make_shared<ColumnsSource>(
             std::move(columns_mask), std::move(header), max_block_size,
             std::move(filtered_database_column), std::move(filtered_table_column), std::move(storages),
-            context.getAccessRights(), context.getCurrentQueryId()));
+            context.getAccess(), context.getCurrentQueryId()));
 
     return pipes;
 }

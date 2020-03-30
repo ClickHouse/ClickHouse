@@ -1,4 +1,4 @@
-# StripeLog
+# StripeLog {#stripelog}
 
 This engine belongs to the family of log engines. See the common properties of log engines and their differences in the [Log Engine Family](log_family.md) article.
 
@@ -6,7 +6,7 @@ Use this engine in scenarios when you need to write many tables with a small amo
 
 ## Creating a Table {#table_engines-stripelog-creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -23,8 +23,8 @@ The `StripeLog` engine stores all the columns in one file. For each `INSERT` que
 
 For each table ClickHouse writes the files:
 
-- `data.bin` — Data file.
-- `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
+-   `data.bin` — Data file.
+-   `index.mrk` — File with marks. Marks contain offsets for each column of each data block inserted.
 
 The `StripeLog` engine does not support the `ALTER UPDATE` and `ALTER DELETE` operations.
 
@@ -36,7 +36,7 @@ The file with marks allows ClickHouse to parallelize the reading of data. This m
 
 Creating a table:
 
-```sql
+``` sql
 CREATE TABLE stripe_log_table
 (
     timestamp DateTime,
@@ -48,7 +48,7 @@ ENGINE = StripeLog
 
 Inserting data:
 
-```sql
+``` sql
 INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The first regular message')
 INSERT INTO stripe_log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
 ```
@@ -57,10 +57,11 @@ We used two `INSERT` queries to create two data blocks inside the `data.bin` fil
 
 ClickHouse uses multiple threads when selecting data. Each thread reads a separate data block and returns resulting rows independently as it finishes. As a result, the order of blocks of rows in the output does not match the order of the same blocks in the input in most cases. For example:
 
-```sql
+``` sql
 SELECT * FROM stripe_log_table
 ```
-```text
+
+``` text
 ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
 │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
 │ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
@@ -72,10 +73,11 @@ SELECT * FROM stripe_log_table
 
 Sorting the results (ascending order by default):
 
-```sql
+``` sql
 SELECT * FROM stripe_log_table ORDER BY timestamp
 ```
-```text
+
+``` text
 ┌───────────timestamp─┬─message_type─┬─message────────────────────┐
 │ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
 │ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │

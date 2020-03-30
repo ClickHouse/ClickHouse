@@ -41,7 +41,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNKNOWN_AGGREGATED_DATA_VARIANT;
-    extern const int NOT_ENOUGH_SPACE;
 }
 
 class IBlockOutputStream;
@@ -73,6 +72,7 @@ using AggregatedDataWithoutKey = AggregateDataPtr;
 using AggregatedDataWithUInt8Key = FixedHashMap<UInt8, AggregateDataPtr>;
 using AggregatedDataWithUInt16Key = FixedHashMap<UInt16, AggregateDataPtr>;
 
+using AggregatedDataWithUInt32Key = HashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64Key = HashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
 using AggregatedDataWithShortStringKey = StringHashMap<AggregateDataPtr>;
@@ -82,6 +82,7 @@ using AggregatedDataWithStringKey = HashMapWithSavedHash<StringRef, AggregateDat
 using AggregatedDataWithKeys128 = HashMap<UInt128, AggregateDataPtr, UInt128HashCRC32>;
 using AggregatedDataWithKeys256 = HashMap<UInt256, AggregateDataPtr, UInt256HashCRC32>;
 
+using AggregatedDataWithUInt32KeyTwoLevel = TwoLevelHashMap<UInt32, AggregateDataPtr, HashCRC32<UInt32>>;
 using AggregatedDataWithUInt64KeyTwoLevel = TwoLevelHashMap<UInt64, AggregateDataPtr, HashCRC32<UInt64>>;
 
 using AggregatedDataWithShortStringKeyTwoLevel = TwoLevelStringHashMap<AggregateDataPtr>;
@@ -350,7 +351,7 @@ struct AggregationMethodSingleLowCardinalityColumn : public SingleColumnMethod
 
 
 /// For the case where all keys are of fixed length, and they fit in N (for example, 128) bits.
-template <typename TData, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false>
+template <typename TData, bool has_nullable_keys_ = false, bool has_low_cardinality_ = false, bool use_cache = true>
 struct AggregationMethodKeysFixed
 {
     using Data = TData;
@@ -366,7 +367,7 @@ struct AggregationMethodKeysFixed
     template <typename Other>
     AggregationMethodKeysFixed(const Other & other) : data(other.data) {}
 
-    using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, Mapped, has_nullable_keys, has_low_cardinality>;
+    using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, Mapped, has_nullable_keys, has_low_cardinality, use_cache>;
 
     static const bool low_cardinality_optimization = false;
 
@@ -503,6 +504,9 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64Key>>         key64;
     std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKey>>               key_string;
     std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKey>>          key_fixed_string;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt16Key, false, false, false>>  keys16;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt32Key>>                   keys32;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt64Key>>                   keys64;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128>>                   keys128;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256>>                   keys256;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKey>>                serialized;
@@ -511,6 +515,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     std::unique_ptr<AggregationMethodOneNumber<UInt64, AggregatedDataWithUInt64KeyTwoLevel>> key64_two_level;
     std::unique_ptr<AggregationMethodStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>       key_string_two_level;
     std::unique_ptr<AggregationMethodFixedStringNoCache<AggregatedDataWithShortStringKeyTwoLevel>>  key_fixed_string_two_level;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt32KeyTwoLevel>>           keys32_two_level;
+    std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithUInt64KeyTwoLevel>>           keys64_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys128TwoLevel>>           keys128_two_level;
     std::unique_ptr<AggregationMethodKeysFixed<AggregatedDataWithKeys256TwoLevel>>           keys256_two_level;
     std::unique_ptr<AggregationMethodSerialized<AggregatedDataWithStringKeyTwoLevel>>        serialized_two_level;
@@ -554,6 +560,9 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(key64,                      false) \
         M(key_string,                 false) \
         M(key_fixed_string,           false) \
+        M(keys16,                    false) \
+        M(keys32,                    false) \
+        M(keys64,                    false) \
         M(keys128,                    false) \
         M(keys256,                    false) \
         M(serialized,                 false) \
@@ -561,6 +570,8 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(key64_two_level,            true) \
         M(key_string_two_level,       true) \
         M(key_fixed_string_two_level, true) \
+        M(keys32_two_level,          true) \
+        M(keys64_two_level,          true) \
         M(keys128_two_level,          true) \
         M(keys256_two_level,          true) \
         M(serialized_two_level,       true) \
@@ -693,6 +704,8 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(key64)            \
         M(key_string)       \
         M(key_fixed_string) \
+        M(keys32)           \
+        M(keys64)           \
         M(keys128)          \
         M(keys256)          \
         M(serialized)       \
@@ -708,6 +721,7 @@ struct AggregatedDataVariants : private boost::noncopyable
     #define APPLY_FOR_VARIANTS_NOT_CONVERTIBLE_TO_TWO_LEVEL(M) \
         M(key8)             \
         M(key16)            \
+        M(keys16)           \
         M(key64_hash64)     \
         M(key_string_hash64)\
         M(key_fixed_string_hash64) \
@@ -743,6 +757,8 @@ struct AggregatedDataVariants : private boost::noncopyable
         M(key64_two_level)            \
         M(key_string_two_level)       \
         M(key_fixed_string_two_level) \
+        M(keys32_two_level)           \
+        M(keys64_two_level)           \
         M(keys128_two_level)          \
         M(keys256_two_level)          \
         M(serialized_two_level)       \
@@ -1083,11 +1099,11 @@ protected:
         AggregateFunctionInstruction * aggregate_instructions) const;
 
     /// For case when there are no keys (all aggregate into one row).
-    void executeWithoutKeyImpl(
+    static void executeWithoutKeyImpl(
         AggregatedDataWithoutKey & res,
         size_t rows,
         AggregateFunctionInstruction * aggregate_instructions,
-        Arena * arena) const;
+        Arena * arena);
 
     template <typename Method>
     void writeToTemporaryFileImpl(

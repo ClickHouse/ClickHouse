@@ -1,5 +1,4 @@
-
-# AggregatingMergeTree
+# AggregatingMergeTree {#aggregatingmergetree}
 
 Движок наследует функциональность [MergeTree](mergetree.md#table_engines-mergetree), изменяя логику слияния кусков данных. Все строки с одинаковым первичным ключом (точнее, с одинаковым [ключом сортировки](mergetree.md)) ClickHouse заменяет на одну (в пределах одного куска данных), которая хранит объединение состояний агрегатных функций.
 
@@ -9,9 +8,9 @@
 
 Использование `AggregatingMergeTree` оправдано только в том случае, когда это уменьшает количество строк на порядки.
 
-## Создание таблицы
+## Создание таблицы {#sozdanie-tablitsy}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -30,13 +29,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 При создании таблицы `AggregatingMergeTree` используются те же [секции](mergetree.md), что и при создании таблицы `MergeTree`.
 
+<details markdown="1">
 
-<details markdown="1"><summary>Устаревший способ создания таблицы</summary>
+<summary>Устаревший способ создания таблицы</summary>
 
-!!! attention
+!!! attention "Attention"
     Не используйте этот способ в новых проектах и по возможности переведите старые проекты на способ описанный выше.
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
@@ -48,7 +48,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 Все параметры имеют то же значение, что в и `MergeTree`.
 </details>
 
-## SELECT/INSERT данных
+## SELECT/INSERT данных {#selectinsert-dannykh}
 
 Для вставки данных используйте `INSERT SELECT` с агрегатными `-State`-функциями.
 
@@ -56,11 +56,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 В запросах `SELECT` значения типа `AggregateFunction` выводятся во всех форматах, которые поддерживает ClickHouse, в виде implementation-specific бинарных данных. Если с помощью `SELECT` выполнить дамп данных, например, в формат `TabSeparated`, то потом этот дамп можно загрузить обратно с помощью запроса `INSERT`.
 
-## Пример агрегирущего материализованного представления
+## Пример агрегирущего материализованного представления {#primer-agregirushchego-materializovannogo-predstavleniia}
 
 Создаём материализованное представление типа `AggregatingMergeTree`, следящее за таблицей `test.visits`:
 
-```sql
+``` sql
 CREATE MATERIALIZED VIEW test.basic
 ENGINE = AggregatingMergeTree() PARTITION BY toYYYYMM(StartDate) ORDER BY (CounterID, StartDate)
 AS SELECT
@@ -74,7 +74,7 @@ GROUP BY CounterID, StartDate;
 
 Вставляем данные в таблицу `test.visits`:
 
-```sql
+``` sql
 INSERT INTO test.visits ...
 ```
 
@@ -82,7 +82,7 @@ INSERT INTO test.visits ...
 
 Чтобы получить агрегированные данные, выполним запрос вида `SELECT ... GROUP BY ...` из представления `test.basic`:
 
-```sql
+``` sql
 SELECT
     StartDate,
     sumMerge(Visits) AS Visits,

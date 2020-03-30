@@ -22,6 +22,10 @@ struct DefaultHash<StringRef> : public StringRefHash {};
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 using Sizes = std::vector<size_t>;
 

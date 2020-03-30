@@ -57,4 +57,4 @@ def test_allowed_host():
     for client_node in expected_to_fail:
         with pytest.raises(Exception) as e:
             query_from_one_node_to_another(client_node, server, "SELECT * FROM test_table")
-        assert "User default is not allowed to connect from address" in str(e)
+        assert "default: Authentication failed" in str(e)

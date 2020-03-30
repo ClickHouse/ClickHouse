@@ -1,5 +1,4 @@
 #include <boost/program_options.hpp>
-#include <boost/algorithm/string.hpp>
 #include <DataStreams/AsynchronousBlockInputStream.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
@@ -8,9 +7,13 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/LimitReadBuffer.h>
 #include <Storages/StorageMemory.h>
-#include <Poco/Net/MessageHeader.h>
-
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Pipe.h>
+#include <Processors/Sources/SinkToOutputStream.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Core/ExternalTable.h>
+#include <Poco/Net/MessageHeader.h>
+#include <common/find_symbols.h>
 
 
 namespace DB
@@ -22,21 +25,27 @@ namespace ErrorCodes
 }
 
 
-ExternalTableData BaseExternalTable::getData(const Context & context)
+ExternalTableDataPtr BaseExternalTable::getData(const Context & context)
 {
     initReadBuffer();
     initSampleBlock();
     auto input = context.getInputFormat(format, *read_buffer, sample_block, DEFAULT_BLOCK_SIZE);
-    return std::make_pair(std::make_shared<AsynchronousBlockInputStream>(input), name);
+    auto stream = std::make_shared<AsynchronousBlockInputStream>(input);
+
+    auto data = std::make_unique<ExternalTableData>();
+    data->table_name = name;
+    data->pipe = std::make_unique<Pipe>(std::make_shared<SourceFromInputStream>(std::move(stream)));
+
+    return data;
 }
 
 void BaseExternalTable::clean()
 {
-    name = "";
-    file = "";
-    format = "";
+    name.clear();
+    file.clear();
+    format.clear();
     structure.clear();
-    sample_block = Block();
+    sample_block.clear();
     read_buffer.reset();
 }
 
@@ -47,23 +56,17 @@ void BaseExternalTable::write()
     std::cerr << "name " << name << std::endl;
     std::cerr << "format " << format << std::endl;
     std::cerr << "structure: \n";
-    for (size_t i = 0; i < structure.size(); ++i)
-        std::cerr << "\t" << structure[i].first << " " << structure[i].second << std::endl;
-}
-
-std::vector<std::string> BaseExternalTable::split(const std::string & s, const std::string & d)
-{
-    std::vector<std::string> res;
-    boost::split(res, s, boost::algorithm::is_any_of(d), boost::algorithm::token_compress_on);
-    return res;
+    for (const auto & elem : structure)
+        std::cerr << '\t' << elem.first << ' ' << elem.second << std::endl;
 }
 
 void BaseExternalTable::parseStructureFromStructureField(const std::string & argument)
 {
-    std::vector<std::string> vals = split(argument, " ,");
+    std::vector<std::string> vals;
+    splitInto<' ', ','>(vals, argument, true);
 
-    if (vals.size() & 1)
-        throw Exception("Odd number of attributes in section structure", ErrorCodes::BAD_ARGUMENTS);
+    if (vals.size() % 2 != 0)
+        throw Exception("Odd number of attributes in section structure: " + std::to_string(vals.size()), ErrorCodes::BAD_ARGUMENTS);
 
     for (size_t i = 0; i < vals.size(); i += 2)
         structure.emplace_back(vals[i], vals[i + 1]);
@@ -71,7 +74,8 @@ void BaseExternalTable::parseStructureFromStructureField(const std::string & arg
 
 void BaseExternalTable::parseStructureFromTypesField(const std::string & argument)
 {
-    std::vector<std::string> vals = split(argument, " ,");
+    std::vector<std::string> vals;
+    splitInto<' ', ','>(vals, argument, true);
 
     for (size_t i = 0; i < vals.size(); ++i)
         structure.emplace_back("_" + toString(i + 1), vals[i]);
@@ -81,11 +85,11 @@ void BaseExternalTable::initSampleBlock()
 {
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();
 
-    for (size_t i = 0; i < structure.size(); ++i)
+    for (const auto & elem : structure)
     {
         ColumnWithTypeAndName column;
-        column.name = structure[i].first;
-        column.type = data_type_factory.get(structure[i].second);
+        column.name = elem.first;
+        column.type = data_type_factory.get(elem.second);
         column.column = column.type->createColumn();
         sample_block.insert(std::move(column));
     }
@@ -156,22 +160,24 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     else
         throw Exception("Neither structure nor types have not been provided for external table " + name + ". Use fields " + name + "_structure or " + name + "_types to do so.", ErrorCodes::BAD_ARGUMENTS);
 
-    ExternalTableData data = getData(context);
+    ExternalTableDataPtr data = getData(context);
 
     /// Create table
     NamesAndTypesList columns = sample_block.getNamesAndTypesList();
-    StoragePtr storage = StorageMemory::create(StorageID("_external", data.second), ColumnsDescription{columns}, ConstraintsDescription{});
-    storage->startup();
-    context.addExternalTable(data.second, storage);
+    auto temporary_table = TemporaryTableHolder(context, ColumnsDescription{columns});
+    auto storage = temporary_table.getTable();
+    context.addExternalTable(data->table_name, std::move(temporary_table));
     BlockOutputStreamPtr output = storage->write(ASTPtr(), context);
 
     /// Write data
-    data.first->readPrefix();
-    output->writePrefix();
-    while (Block block = data.first->read())
-        output->write(block);
-    data.first->readSuffix();
-    output->writeSuffix();
+    auto sink = std::make_shared<SinkToOutputStream>(std::move(output));
+    connect(data->pipe->getPort(), sink->getPort());
+
+    auto processors = std::move(*data->pipe).detachProcessors();
+    processors.push_back(std::move(sink));
+
+    auto executor = std::make_shared<PipelineExecutor>(processors);
+    executor->execute(/*num_threads = */ 1);
 
     /// We are ready to receive the next file, for this we clear all the information received
     clean();

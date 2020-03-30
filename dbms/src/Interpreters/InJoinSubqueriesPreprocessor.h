@@ -35,6 +35,8 @@ class Context;
 class InJoinSubqueriesPreprocessor
 {
 public:
+    using SubqueryTables = std::vector<std::pair<ASTPtr, std::vector<ASTPtr>>>;  /// {subquery, renamed_tables}
+
     struct CheckShardsAndTables
     {
         using Ptr = std::unique_ptr<CheckShardsAndTables>;
@@ -45,15 +47,18 @@ public:
         virtual ~CheckShardsAndTables() {}
     };
 
-    InJoinSubqueriesPreprocessor(const Context & context_, CheckShardsAndTables::Ptr _checker = std::make_unique<CheckShardsAndTables>())
+    InJoinSubqueriesPreprocessor(const Context & context_, SubqueryTables & renamed_tables_,
+                                 CheckShardsAndTables::Ptr _checker = std::make_unique<CheckShardsAndTables>())
         : context(context_)
+        , renamed_tables(renamed_tables_)
         , checker(std::move(_checker))
     {}
 
-    void visit(ASTPtr & query) const;
+    void visit(ASTPtr & ast) const;
 
 private:
     const Context & context;
+    SubqueryTables & renamed_tables;
     CheckShardsAndTables::Ptr checker;
 };
 

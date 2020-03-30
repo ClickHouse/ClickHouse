@@ -15,6 +15,20 @@ public:
 
 using ChunkInfoPtr = std::shared_ptr<const ChunkInfo>;
 
+/**
+ * Chunk is a list of columns with the same length.
+ * Chunk stores the number of rows in a separate field and supports invariant of equal column length.
+ *
+ * Chunk has move-only semantic. It's more lightweight than block cause doesn't store names, types and index_by_name.
+ *
+ * Chunk can have empty set of columns but non-zero number of rows. It helps when only the number of rows is needed.
+ * Chunk can have columns with zero number of rows. It may happen, for example, if all rows were filtered.
+ * Chunk is empty only if it has zero rows and empty list of columns.
+ *
+ * Any ChunkInfo may be attached to chunk.
+ * It may be useful if additional info per chunk is needed. For example, bucket number for aggregated data.
+**/
+
 class Chunk
 {
 public:
@@ -95,7 +109,7 @@ private:
 
 using Chunks = std::vector<Chunk>;
 
-/// Block extension to support delayed defaults. AddingDefaultsProcessor uses it to replace missing values with column defaults.
+/// Extension to support delayed defaults. AddingDefaultsProcessor uses it to replace missing values with column defaults.
 class ChunkMissingValues : public ChunkInfo
 {
 public:

@@ -5,6 +5,9 @@
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+#include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <IO/WriteBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBuffer.h>
@@ -20,7 +23,9 @@
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
 #include <Compression/CompressionFactory.h>
-
+#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/ExpressionActions.h>
 
 namespace DB
 {
@@ -30,6 +35,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_PARSE_TEXT;
+    extern const int THERE_IS_NO_DEFAULT_VALUE;
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, bool is_virtual_)
@@ -419,6 +425,30 @@ ColumnsDescription ColumnsDescription::parse(const String & str)
 
     assertEOF(buf);
     return result;
+}
+
+
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, const Context & context)
+{
+    for (const auto & child : default_expr_list->children)
+        if (child->as<ASTSelectQuery>() || child->as<ASTSelectWithUnionQuery>() || child->as<ASTSubquery>())
+            throw Exception("Select query is not allowed in columns DEFAULT expression", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+
+    try
+    {
+        auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, all_columns);
+        const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
+        for (auto & action : actions->getActions())
+            if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
+                throw Exception("Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
+
+        return actions->getSampleBlock();
+    }
+    catch (Exception & ex)
+    {
+        ex.addMessage("default expression and column type are incompatible.");
+        throw;
+    }
 }
 
 }

@@ -1,5 +1,4 @@
-
-# Nothing
+# Nothing {#nothing}
 
 此数据类型的唯一目的是表示不是期望值的情况。 所以不能创建一个 `Nothing` 类型的值。
 
@@ -7,7 +6,7 @@
 
 `Nothing` 类型也可以用来表示空数组：
 
-```bash
+``` bash
 :) SELECT toTypeName(array())
 
 SELECT toTypeName([])

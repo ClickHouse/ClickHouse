@@ -45,6 +45,7 @@ public:
     bool nextImpl() override;
 
     off_t seek(off_t off, int whence) override;
+    off_t getPosition() override;
 
 private:
     std::unique_ptr<ReadBuffer> initialize();

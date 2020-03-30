@@ -30,6 +30,8 @@
             </enabled_partitions>
             -->
 
+            <number_of_splits>2</number_of_splits>
+
             <!-- Engine of destination tables -->
             <engine>ENGINE=
                 ReplicatedMergeTree('/clickhouse/tables/cluster{cluster}/{shard}/b', '{replica}')

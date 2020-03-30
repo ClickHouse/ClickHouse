@@ -22,7 +22,8 @@ public:
     RemoteBlockOutputStream(Connection & connection_,
                             const ConnectionTimeouts & timeouts,
                             const String & query_,
-                            const Settings * settings_ = nullptr);
+                            const Settings * settings_ = nullptr,
+                            const ClientInfo * client_info_ = nullptr);
 
     Block getHeader() const override { return header; }
 
@@ -38,6 +39,7 @@ private:
     Connection & connection;
     String query;
     const Settings * settings;
+    const ClientInfo * client_info;
     Block header;
     bool finished = false;
 };

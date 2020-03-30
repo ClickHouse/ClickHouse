@@ -85,8 +85,13 @@ public:
 
     Infos getInfo() const;
 
+    /// Checks whether `change` violates these constraints and throws an exception if so.
     void check(const Settings & current_settings, const SettingChange & change) const;
     void check(const Settings & current_settings, const SettingsChanges & changes) const;
+
+    /// Checks whether `change` violates these and clamps the `change` if so.
+    void clamp(const Settings & current_settings, SettingChange & change) const;
+    void clamp(const Settings & current_settings, SettingsChanges & changes) const;
 
     /** Set multiple settings from "profile" (in server configuration file (users.xml), profiles contain groups of multiple settings).
       * The profile can also be set using the `set` functions, like the profile setting.

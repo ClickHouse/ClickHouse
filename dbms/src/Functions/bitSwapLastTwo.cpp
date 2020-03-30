@@ -6,6 +6,7 @@ namespace DB
 {
     namespace ErrorCodes
     {
+        extern const int LOGICAL_ERROR;
         extern const int BAD_CAST;
     }
 
@@ -15,6 +16,7 @@ namespace DB
     struct BitSwapLastTwoImpl
     {
         using ResultType = UInt8;
+        static constexpr const bool allow_fixed_string = false;
 
         static inline ResultType NO_SANITIZE_UNDEFINED apply(A a)
         {

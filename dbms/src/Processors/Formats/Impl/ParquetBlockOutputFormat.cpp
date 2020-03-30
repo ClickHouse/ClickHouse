@@ -60,13 +60,19 @@ static void fillArrowArrayWithNumericColumnData(
     {
         /// Invert values since Arrow interprets 1 as a non-null value, while CH as a null
         arrow_null_bytemap.reserve(null_bytemap->size());
-        for (size_t i = 0, size = null_bytemap->size(); i < size; ++i)
-            arrow_null_bytemap.emplace_back(1 ^ (*null_bytemap)[i]);
+        for (auto is_null : *null_bytemap)
+            arrow_null_bytemap.emplace_back(!is_null);
 
         arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
     }
 
-    status = builder.AppendValues(internal_data.data(), internal_data.size(), arrow_null_bytemap_raw_ptr);
+    if constexpr (std::is_same_v<NumericType, UInt8>)
+        status = builder.AppendValues(
+            reinterpret_cast<const uint8_t *>(internal_data.data()),
+            internal_data.size(),
+            reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+    else
+        status = builder.AppendValues(internal_data.data(), internal_data.size(), reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
     checkStatus(status, write_column->getName());
 
     status = builder.Finish(&arrow_array);
@@ -188,7 +194,13 @@ static void fillArrowArrayWithDecimalColumnData(
         arrow_null_bytemap_raw_ptr = arrow_null_bytemap.data();
     }
 
-    status = builder.AppendValues(reinterpret_cast<const uint8_t*>(internal_data.data()), internal_data.size(), arrow_null_bytemap_raw_ptr);
+    if constexpr (std::is_same_v<NumericType, UInt8>)
+        status = builder.AppendValues(
+            reinterpret_cast<const uint8_t *>(internal_data.data()),
+            internal_data.size(),
+            reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
+    else
+        status = builder.AppendValues(internal_data.data(), internal_data.size(), reinterpret_cast<const uint8_t *>(arrow_null_bytemap_raw_ptr));
     checkStatus(status, write_column->getName());
 
     status = builder.Finish(&arrow_array);
@@ -243,7 +255,7 @@ class OstreamOutputStream : public arrow::io::OutputStream
 {
 public:
     explicit OstreamOutputStream(WriteBuffer & ostr_) : ostr(ostr_) { is_open = true; }
-    ~OstreamOutputStream() override {}
+    ~OstreamOutputStream() override = default;
 
     // FileInterface
     ::arrow::Status Close() override

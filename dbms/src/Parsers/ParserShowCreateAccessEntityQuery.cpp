@@ -22,6 +22,10 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         kind = Kind::QUOTA;
     else if (ParserKeyword{"POLICY"}.ignore(pos, expected) || ParserKeyword{"ROW POLICY"}.ignore(pos, expected))
         kind = Kind::ROW_POLICY;
+    else if (ParserKeyword{"ROLE"}.ignore(pos, expected))
+        kind = Kind::ROLE;
+    else if (ParserKeyword{"SETTINGS PROFILE"}.ignore(pos, expected) || ParserKeyword{"PROFILE"}.ignore(pos, expected))
+        kind = Kind::SETTINGS_PROFILE;
     else
         return false;
 
@@ -35,6 +39,11 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
         if (!parseUserNameOrCurrentUserTag(pos, expected, name, current_user))
             current_user = true;
     }
+    else if (kind == Kind::ROLE)
+    {
+        if (!parseRoleName(pos, expected, name))
+            return false;
+    }
     else if (kind == Kind::ROW_POLICY)
     {
         String & database = row_policy_name.database;
@@ -44,9 +53,8 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
             || !parseDatabaseAndTableName(pos, expected, database, table_name))
             return false;
     }
-    else
+    else if (kind == Kind::QUOTA)
     {
-        assert(kind == Kind::QUOTA);
         if (ParserKeyword{"CURRENT"}.ignore(pos, expected))
         {
             /// SHOW CREATE QUOTA CURRENT
@@ -62,12 +70,18 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
             current_quota = true;
         }
     }
+    else if (kind == Kind::SETTINGS_PROFILE)
+    {
+        if (!parseIdentifierOrStringLiteral(pos, expected, name))
+            return false;
+    }
 
     auto query = std::make_shared<ASTShowCreateAccessEntityQuery>(kind);
     node = query;
 
     query->name = std::move(name);
     query->current_quota = current_quota;
+    query->current_user = current_user;
     query->row_policy_name = std::move(row_policy_name);
 
     return true;

@@ -26,8 +26,8 @@ namespace
 
 StoragePtr tryGetTable(const ASTPtr & database_and_table, const Context & context)
 {
-    DatabaseAndTableWithAlias db_and_table(database_and_table);
-    return context.tryGetTable(db_and_table.database, db_and_table.table);
+    auto table_id = context.resolveStorageID(database_and_table);
+    return DatabaseCatalog::instance().tryGetTable(table_id);
 }
 
 using CheckShardsAndTables = InJoinSubqueriesPreprocessor::CheckShardsAndTables;
@@ -38,6 +38,7 @@ struct NonGlobalTableData
 
     const CheckShardsAndTables & checker;
     const Context & context;
+    std::vector<ASTPtr> & renamed_tables;
     ASTFunction * function = nullptr;
     ASTTableJoin * table_join = nullptr;
 
@@ -95,11 +96,12 @@ private:
 
             String alias = database_and_table->tryGetAlias();
             if (alias.empty())
-                throw Exception("Distributed table should have an alias when distributed_product_mode set to local.",
+                throw Exception("Distributed table should have an alias when distributed_product_mode set to local",
                                 ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED);
 
-            database_and_table = createTableIdentifier(database, table);
-            database_and_table->setAlias(alias);
+            auto & identifier = database_and_table->as<ASTIdentifier &>();
+            renamed_tables.emplace_back(identifier.clone());
+            identifier.resetTable(database, table);
         }
         else
             throw Exception("InJoinSubqueriesPreprocessor: unexpected value of 'distributed_product_mode' setting",
@@ -118,6 +120,7 @@ public:
     {
         const CheckShardsAndTables & checker;
         const Context & context;
+        std::vector<std::pair<ASTPtr, std::vector<ASTPtr>>> & renamed_tables;
     };
 
     static void visit(ASTPtr & node, Data & data)
@@ -139,9 +142,7 @@ public:
                 return false; /// Processed, process others
 
         /// Descent into all children, but not into subqueries of other kind (scalar subqueries), that are irrelevant to us.
-        if (child->as<ASTSelectQuery>())
-            return false;
-        return true;
+        return !child->as<ASTSelectQuery>();
     }
 
 private:
@@ -150,8 +151,11 @@ private:
         if (node.name == "in" || node.name == "notIn")
         {
             auto & subquery = node.arguments->children.at(1);
-            NonGlobalTableVisitor::Data table_data{data.checker, data.context, &node, nullptr};
+            std::vector<ASTPtr> renamed;
+            NonGlobalTableVisitor::Data table_data{data.checker, data.context, renamed, &node, nullptr};
             NonGlobalTableVisitor(table_data).visit(subquery);
+            if (!renamed.empty())
+                data.renamed_tables.emplace_back(subquery, std::move(renamed));
         }
     }
 
@@ -165,8 +169,11 @@ private:
         {
             if (auto & subquery = node.table_expression->as<ASTTableExpression>()->subquery)
             {
-                NonGlobalTableVisitor::Data table_data{data.checker, data.context, nullptr, table_join};
+                std::vector<ASTPtr> renamed;
+                NonGlobalTableVisitor::Data table_data{data.checker, data.context, renamed, nullptr, table_join};
                 NonGlobalTableVisitor(table_data).visit(subquery);
+                if (!renamed.empty())
+                    data.renamed_tables.emplace_back(subquery, std::move(renamed));
             }
         }
     }
@@ -210,7 +217,7 @@ void InJoinSubqueriesPreprocessor::visit(ASTPtr & ast) const
             return;
     }
 
-    NonGlobalSubqueryVisitor::Data visitor_data{*checker, context};
+    NonGlobalSubqueryVisitor::Data visitor_data{*checker, context, renamed_tables};
     NonGlobalSubqueryVisitor(visitor_data).visit(ast);
 }
 
