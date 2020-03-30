@@ -13,7 +13,7 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_ERROR_CODE;
 }
 
 
@@ -74,7 +74,7 @@ public:
             std::cerr << "Success when error expected. It expects server error "
                 << server_error << ", client error " << client_error << "." << std::endl;
             got_exception = true;
-            last_exception = std::make_unique<Exception>("Success when error expected", ErrorCodes::LOGICAL_ERROR); /// return error to OS
+            last_exception = std::make_unique<Exception>("Success when error expected", ErrorCodes::UNEXPECTED_ERROR_CODE); /// return error to OS
             return false;
         }
 

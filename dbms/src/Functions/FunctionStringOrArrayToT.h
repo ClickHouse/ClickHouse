@@ -67,7 +67,7 @@ public:
             if (Impl::is_fixed_to_constant)
             {
                 ResultType res = 0;
-                Impl::vector_fixed_to_constant(col_fixed->getChars(), col_fixed->getN(), res);
+                Impl::vectorFixedToConstant(col_fixed->getChars(), col_fixed->getN(), res);
 
                 block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(col_fixed->size(), toField(res));
             }
@@ -77,7 +77,7 @@ public:
 
                 typename ColumnVector<ResultType>::Container & vec_res = col_res->getData();
                 vec_res.resize(col_fixed->size());
-                Impl::vector_fixed_to_vector(col_fixed->getChars(), col_fixed->getN(), vec_res);
+                Impl::vectorFixedToVector(col_fixed->getChars(), col_fixed->getN(), vec_res);
 
                 block.getByPosition(result).column = std::move(col_res);
             }

@@ -1,10 +1,10 @@
-# MySQL
+# MySQL {#mysql}
 
 Движок MySQL позволяет выполнять запросы `SELECT` над данными, хранящимися на удалённом MySQL сервере.
 
-## Создание таблицы
+## Создание таблицы {#sozdanie-tablitsy}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -17,32 +17,38 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Структура таблицы может отличаться от исходной структуры таблицы MySQL:
 
-- Имена столбцов должны быть такими же, как в исходной таблице MySQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
-- Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [приводить](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
+-   Имена столбцов должны быть такими же, как в исходной таблице MySQL, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
+-   Типы столбцов могут отличаться от типов в исходной таблице MySQL. ClickHouse пытается [приводить](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) значения к типам данных ClickHouse.
 
 **Параметры движка**
 
-- `host:port` — адрес сервера MySQL.
-- `database` — имя базы данных на удалённом сервере.
-- `table` — имя таблицы на удалённом сервере.
-- `user` — пользователь MySQL.
-- `password` — пароль пользователя.
-- `replace_query` — флаг, отвечающий за преобразование запросов `INSERT INTO` в `REPLACE INTO`. Если `replace_query=1`, то запрос заменяется.
-- `on_duplicate_clause` — выражение `ON DUPLICATE KEY on_duplicate_clause`, добавляемое к запросу `INSERT`.
+-   `host:port` — адрес сервера MySQL.
 
-    Пример: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, где `on_duplicate_clause` это `UPDATE c2 = c2 + 1`. Чтобы узнать какие `on_duplicate_clause` можно использовать с секцией `ON DUPLICATE KEY`  обратитесь к [документации MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html).
+-   `database` — имя базы данных на удалённом сервере.
 
-    Чтобы указать `on_duplicate_clause` необходимо передать `0` в параметр `replace_query`. Если одновременно передать `replace_query = 1` и `on_duplicate_clause`, то ClickHouse сгенерирует исключение.
+-   `table` — имя таблицы на удалённом сервере.
 
-Простые условия `WHERE` такие как ` =, !=, >, >=, <, =` выполняются на стороне сервера MySQL.
+-   `user` — пользователь MySQL.
+
+-   `password` — пароль пользователя.
+
+-   `replace_query` — флаг, отвечающий за преобразование запросов `INSERT INTO` в `REPLACE INTO`. Если `replace_query=1`, то запрос заменяется.
+
+-   `on_duplicate_clause` — выражение `ON DUPLICATE KEY on_duplicate_clause`, добавляемое к запросу `INSERT`.
+
+        Пример: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, где `on_duplicate_clause` это `UPDATE c2 = c2 + 1`. Чтобы узнать какие `on_duplicate_clause` можно использовать с секцией `ON DUPLICATE KEY`  обратитесь к [документации MySQL](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html).
+
+        Чтобы указать `on_duplicate_clause` необходимо передать `0` в параметр `replace_query`. Если одновременно передать `replace_query = 1` и `on_duplicate_clause`, то ClickHouse сгенерирует исключение.
+
+Простые условия `WHERE` такие как `=, !=, >, >=, <, =` выполняются на стороне сервера MySQL.
 
 Остальные условия и ограничение выборки `LIMIT` будут выполнены в ClickHouse только после выполнения запроса к MySQL.
 
-## Пример использования
+## Пример использования {#primer-ispolzovaniia}
 
 Таблица в MySQL:
 
-```text
+``` text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -65,7 +71,7 @@ mysql> select * from test;
 
 Таблица в ClickHouse, которая получает данные из созданной ранее таблицы MySQL:
 
-```sql
+``` sql
 CREATE TABLE mysql_table
 (
     `float_nullable` Nullable(Float32),
@@ -74,19 +80,19 @@ CREATE TABLE mysql_table
 ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
 
-```sql
+``` sql
 SELECT * FROM mysql_table
 ```
 
-```text
+``` text
 ┌─float_nullable─┬─int_id─┐
 │           ᴺᵁᴸᴸ │      1 │
 └────────────────┴────────┘
 ```
 
-## Смотрите также
+## Смотрите также {#smotrite-takzhe}
 
-- [Табличная функция 'mysql'](../../query_language/table_functions/mysql.md)
-- [Использование MySQL в качестве источника для внешнего словаря](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
+-   [Табличная функция ‘mysql’](../../query_language/table_functions/mysql.md)
+-   [Использование MySQL в качестве источника для внешнего словаря](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/mysql/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/mysql/) <!--hide-->

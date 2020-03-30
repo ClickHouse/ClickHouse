@@ -33,7 +33,7 @@ HDFSBuilderPtr createHDFSBuilder(const std::string & uri_str)
     if (!user_info.empty() && user_info.front() != ':')
     {
         std::string user;
-        size_t delim_pos = user_info.find(":");
+        size_t delim_pos = user_info.find(':');
         if (delim_pos != std::string::npos)
             user = user_info.substr(0, delim_pos);
         else

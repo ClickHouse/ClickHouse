@@ -1,6 +1,5 @@
 #include <Functions/FunctionsJSON.h>
 #include <Functions/FunctionFactory.h>
-#include "registerFunctions.h"
 
 
 namespace DB

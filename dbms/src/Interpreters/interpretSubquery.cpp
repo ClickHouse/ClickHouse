@@ -8,15 +8,27 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Interpreters/interpretSubquery.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     const ASTPtr & table_expression, const Context & context, size_t subquery_depth, const Names & required_source_columns)
+{
+    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth);
+    return interpretSubquery(table_expression, context, required_source_columns, subquery_options);
+}
+
+std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
+    const ASTPtr & table_expression, const Context & context, const Names & required_source_columns, const SelectQueryOptions & options)
 {
     if (auto * expr = table_expression->as<ASTTableExpression>())
     {
@@ -28,7 +40,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         else if (expr->database_and_table_name)
             table = expr->database_and_table_name;
 
-        return interpretSubquery(table, context, subquery_depth, required_source_columns);
+        return interpretSubquery(table, context, required_source_columns, options);
     }
 
     /// Subquery or table name. The name of the table is similar to the subquery `SELECT * FROM t`.
@@ -51,10 +63,10 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     subquery_settings.max_result_rows = 0;
     subquery_settings.max_result_bytes = 0;
     /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
-    subquery_settings.extremes = 0;
+    subquery_settings.extremes = false;
     subquery_context.setSettings(subquery_settings);
 
-    auto subquery_options = SelectQueryOptions(QueryProcessingStage::Complete, subquery_depth).subquery();
+    auto subquery_options = options.subquery();
 
     ASTPtr query;
     if (table || function)
@@ -72,7 +84,6 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         const auto select_expression_list = select_query->select();
 
         NamesAndTypesList columns;
-
         /// get columns list for target table
         if (function)
         {
@@ -83,10 +94,10 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         }
         else
         {
-            DatabaseAndTableWithAlias database_table(*table);
-            const auto & storage = context.getTable(database_table.database, database_table.table);
+            auto table_id = context.resolveStorageID(table_expression);
+            const auto & storage = DatabaseCatalog::instance().getTable(table_id);
             columns = storage->getColumns().getOrdinary();
-            select_query->replaceDatabaseAndTable(database_table.database, database_table.table);
+            select_query->replaceDatabaseAndTable(table_id);
         }
 
         select_expression_list->children.reserve(columns.size());

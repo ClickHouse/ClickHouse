@@ -2,11 +2,14 @@
 #include <Columns/ColumnsNumber.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
-#include "registerFunctionsArray.h"
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 /** arrayFilter(x -> predicate, array) - leave in the array only the elements for which the expression is true.
   */

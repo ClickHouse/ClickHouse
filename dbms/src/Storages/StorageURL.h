@@ -16,10 +16,7 @@ namespace DB
 class IStorageURLBase : public IStorage
 {
 public:
-    String getTableName() const override { return table_name; }
-    String getDatabaseName() const override { return database_name; }
-
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -29,14 +26,11 @@ public:
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
-    void rename(const String & new_path_to_db, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
-
 protected:
     IStorageURLBase(
         const Poco::URI & uri_,
         const Context & context_,
-        const std::string & database_name_,
-        const std::string & table_name_,
+        const StorageID & id_,
         const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
@@ -48,8 +42,6 @@ protected:
 
 private:
     String format_name;
-    String table_name;
-    String database_name;
 
     virtual std::string getReadMethod() const;
 
@@ -71,20 +63,19 @@ private:
 };
 
 
-class StorageURL : public ext::shared_ptr_helper<StorageURL>, public IStorageURLBase
+class StorageURL final : public ext::shared_ptr_helper<StorageURL>, public IStorageURLBase
 {
     friend struct ext::shared_ptr_helper<StorageURL>;
 public:
     StorageURL(
         const Poco::URI & uri_,
-        const std::string & database_name_,
-        const std::string & table_name_,
+        const StorageID & table_id_,
         const String & format_name_,
         const ColumnsDescription & columns_,
         const ConstraintsDescription & constraints_,
         Context & context_,
         const String & compression_method_)
-        : IStorageURLBase(uri_, context_, database_name_, table_name_, format_name_, columns_, constraints_, compression_method_)
+        : IStorageURLBase(uri_, context_, table_id_, format_name_, columns_, constraints_, compression_method_)
     {
     }
 

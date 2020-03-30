@@ -105,15 +105,15 @@ Block CollapsingSortedBlockInputStream::readImpl()
 }
 
 
-void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
+void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue)
 {
 
     MergeStopCondition stop_condition(average_block_sizes, max_block_size);
     size_t current_block_granularity;
     /// Take rows in correct order and put them into `merged_columns` until the rows no more than `max_block_size`
-    for (; !queue.empty(); ++current_pos)
+    for (; queue.isValid(); ++current_pos)
     {
-        SortCursor current = queue.top();
+        SortCursor current = queue.current();
         current_block_granularity = current->rows;
 
         if (current_key.empty())
@@ -130,8 +130,6 @@ void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, st
             ++blocks_written;
             return;
         }
-
-        queue.pop();
 
         if (key_differs)
         {
@@ -185,8 +183,7 @@ void CollapsingSortedBlockInputStream::merge(MutableColumns & merged_columns, st
 
         if (!current->isLast())
         {
-            current->next();
-            queue.push(current);
+            queue.next();
         }
         else
         {

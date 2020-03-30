@@ -5,7 +5,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnsNumber.h>
-#include "registerFunctionsArray.h"
 
 
 namespace DB
@@ -57,12 +56,10 @@ public:
             ColumnUInt32::Container & res_values = res_nested->getData();
             res_values.resize(array->getData().size());
             ColumnArray::Offset prev_off = 0;
-            for (ColumnArray::Offset i = 0; i < offsets.size(); ++i)
+            for (auto off : offsets)
             {
-                ColumnArray::Offset off = offsets[i];
                 for (ColumnArray::Offset j = prev_off; j < off; ++j)
                     res_values[j] = j - prev_off + 1;
-
                 prev_off = off;
             }
 

@@ -2,6 +2,9 @@
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/parseDatabaseAndTableName.h>
+#include <Parsers/parseUserName.h>
+#include <assert.h>
 
 
 namespace DB
@@ -13,27 +16,64 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
 
     using Kind = ASTShowCreateAccessEntityQuery::Kind;
     Kind kind;
-    if (ParserKeyword{"QUOTA"}.ignore(pos, expected))
+    if (ParserKeyword{"USER"}.ignore(pos, expected))
+        kind = Kind::USER;
+    else if (ParserKeyword{"QUOTA"}.ignore(pos, expected))
         kind = Kind::QUOTA;
+    else if (ParserKeyword{"POLICY"}.ignore(pos, expected) || ParserKeyword{"ROW POLICY"}.ignore(pos, expected))
+        kind = Kind::ROW_POLICY;
+    else if (ParserKeyword{"ROLE"}.ignore(pos, expected))
+        kind = Kind::ROLE;
+    else if (ParserKeyword{"SETTINGS PROFILE"}.ignore(pos, expected) || ParserKeyword{"PROFILE"}.ignore(pos, expected))
+        kind = Kind::SETTINGS_PROFILE;
     else
         return false;
 
     String name;
     bool current_quota = false;
+    bool current_user = false;
+    RowPolicy::FullNameParts row_policy_name;
 
-    if ((kind == Kind::QUOTA) && ParserKeyword{"CURRENT"}.ignore(pos, expected))
+    if (kind == Kind::USER)
     {
-        /// SHOW CREATE QUOTA CURRENT
-        current_quota = true;
+        if (!parseUserNameOrCurrentUserTag(pos, expected, name, current_user))
+            current_user = true;
     }
-    else if (parseIdentifierOrStringLiteral(pos, expected, name))
+    else if (kind == Kind::ROLE)
     {
-        /// SHOW CREATE QUOTA name
+        if (!parseRoleName(pos, expected, name))
+            return false;
     }
-    else
+    else if (kind == Kind::ROW_POLICY)
     {
-        /// SHOW CREATE QUOTA
-        current_quota = true;
+        String & database = row_policy_name.database;
+        String & table_name = row_policy_name.table_name;
+        String & policy_name = row_policy_name.policy_name;
+        if (!parseIdentifierOrStringLiteral(pos, expected, policy_name) || !ParserKeyword{"ON"}.ignore(pos, expected)
+            || !parseDatabaseAndTableName(pos, expected, database, table_name))
+            return false;
+    }
+    else if (kind == Kind::QUOTA)
+    {
+        if (ParserKeyword{"CURRENT"}.ignore(pos, expected))
+        {
+            /// SHOW CREATE QUOTA CURRENT
+            current_quota = true;
+        }
+        else if (parseIdentifierOrStringLiteral(pos, expected, name))
+        {
+            /// SHOW CREATE QUOTA name
+        }
+        else
+        {
+            /// SHOW CREATE QUOTA
+            current_quota = true;
+        }
+    }
+    else if (kind == Kind::SETTINGS_PROFILE)
+    {
+        if (!parseIdentifierOrStringLiteral(pos, expected, name))
+            return false;
     }
 
     auto query = std::make_shared<ASTShowCreateAccessEntityQuery>(kind);
@@ -41,6 +81,8 @@ bool ParserShowCreateAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expe
 
     query->name = std::move(name);
     query->current_quota = current_quota;
+    query->current_user = current_user;
+    query->row_policy_name = std::move(row_policy_name);
 
     return true;
 }

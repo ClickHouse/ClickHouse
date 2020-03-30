@@ -6,6 +6,7 @@
 #include <Interpreters/IInterpreter.h>
 #include <Parsers/queryToString.h>
 #include <Interpreters/ProcessList.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -30,17 +31,23 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     new_settings.max_memory_usage_for_user.changed = false;
     new_settings.max_memory_usage_for_all_queries.changed = false;
 
+    if (settings.force_optimize_skip_unused_shards_no_nested)
+    {
+        new_settings.force_optimize_skip_unused_shards = 0;
+        new_settings.force_optimize_skip_unused_shards.changed = false;
+    }
+
     Context new_context(context);
     new_context.setSettings(new_settings);
 
     return new_context;
 }
 
-BlockInputStreams executeQuery(
+Pipes executeQuery(
     IStreamFactory & stream_factory, const ClusterPtr & cluster,
-    const ASTPtr & query_ast, const Context & context, const Settings & settings)
+    const ASTPtr & query_ast, const Context & context, const Settings & settings, const SelectQueryInfo & query_info)
 {
-    BlockInputStreams res;
+    Pipes res;
 
     const std::string query = queryToString(query_ast);
 
@@ -64,7 +71,7 @@ BlockInputStreams executeQuery(
         throttler = user_level_throttler;
 
     for (const auto & shard_info : cluster->getShardsInfo())
-        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, res);
+        stream_factory.createForShard(shard_info, query, query_ast, new_context, throttler, query_info, res);
 
     return res;
 }

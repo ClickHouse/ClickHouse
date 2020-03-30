@@ -50,9 +50,9 @@ namespace DB
         using ValueType = ExternalResultDescription::ValueType;
 
         template <typename T>
-        inline void insert(IColumn & column, const String & stringValue)
+        inline void insert(IColumn & column, const String & string_value)
         {
-            assert_cast<ColumnVector<T> &>(column).insertValue(parse<T>(stringValue));
+            assert_cast<ColumnVector<T> &>(column).insertValue(parse<T>(string_value));
         }
 
         void insertValue(IColumn & column, const ValueType type, const Poco::Redis::BulkString & bulk_string)
@@ -60,50 +60,50 @@ namespace DB
             if (bulk_string.isNull())
                 throw Exception{"Type mismatch, expected not Null String", ErrorCodes::TYPE_MISMATCH};
 
-            String stringValue = bulk_string.value();
+            const String & string_value = bulk_string.value();
             switch (type)
             {
                 case ValueType::vtUInt8:
-                    insert<UInt8>(column, stringValue);
+                    insert<UInt8>(column, string_value);
                     break;
                 case ValueType::vtUInt16:
-                    insert<UInt16>(column, stringValue);
+                    insert<UInt16>(column, string_value);
                     break;
                 case ValueType::vtUInt32:
-                    insert<UInt32>(column, stringValue);
+                    insert<UInt32>(column, string_value);
                     break;
                 case ValueType::vtUInt64:
-                    insert<UInt64>(column, stringValue);
+                    insert<UInt64>(column, string_value);
                     break;
                 case ValueType::vtInt8:
-                    insert<Int8>(column, stringValue);
+                    insert<Int8>(column, string_value);
                     break;
                 case ValueType::vtInt16:
-                    insert<Int16>(column, stringValue);
+                    insert<Int16>(column, string_value);
                     break;
                 case ValueType::vtInt32:
-                    insert<Int32>(column, stringValue);
+                    insert<Int32>(column, string_value);
                     break;
                 case ValueType::vtInt64:
-                    insert<Int64>(column, stringValue);
+                    insert<Int64>(column, string_value);
                     break;
                 case ValueType::vtFloat32:
-                    insert<Float32>(column, stringValue);
+                    insert<Float32>(column, string_value);
                     break;
                 case ValueType::vtFloat64:
-                    insert<Float64>(column, stringValue);
+                    insert<Float64>(column, string_value);
                     break;
                 case ValueType::vtString:
-                    assert_cast<ColumnString &>(column).insert(parse<String>(stringValue));
+                    assert_cast<ColumnString &>(column).insert(parse<String>(string_value));
                     break;
                 case ValueType::vtDate:
-                    assert_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(stringValue).getDayNum());
+                    assert_cast<ColumnUInt16 &>(column).insertValue(parse<LocalDate>(string_value).getDayNum());
                     break;
                 case ValueType::vtDateTime:
-                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(stringValue)));
+                    assert_cast<ColumnUInt32 &>(column).insertValue(static_cast<UInt32>(parse<LocalDateTime>(string_value)));
                     break;
                 case ValueType::vtUUID:
-                    assert_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(stringValue));
+                    assert_cast<ColumnUInt128 &>(column).insertValue(parse<UUID>(string_value));
                     break;
             }
         }
@@ -124,7 +124,7 @@ namespace DB
         for (const auto i : ext::range(0, size))
             columns[i] = description.sample_block.getByPosition(i).column->cloneEmpty();
 
-        const auto insertValueByIdx = [this, &columns](size_t idx, const auto & value)
+        const auto insert_value_by_idx = [this, &columns](size_t idx, const auto & value)
         {
             if (description.types[idx].second)
             {
@@ -152,8 +152,8 @@ namespace DB
                     break;
 
                 Poco::Redis::Command command_for_values("HMGET");
-                for (auto it = keys_array.begin(); it != keys_array.end(); ++it)
-                    command_for_values.addRedisType(*it);
+                for (const auto & elem : keys_array)
+                    command_for_values.addRedisType(elem);
 
                 auto values = client->execute<RedisArray>(command_for_values);
 
@@ -170,9 +170,9 @@ namespace DB
                     /// null string means 'no value for requested key'
                     if (!value.isNull())
                     {
-                        insertValueByIdx(0, primary_key);
-                        insertValueByIdx(1, secondary_key);
-                        insertValueByIdx(2, value);
+                        insert_value_by_idx(0, primary_key);
+                        insert_value_by_idx(1, secondary_key);
+                        insert_value_by_idx(2, value);
                         ++num_rows;
                     }
                 }
@@ -198,8 +198,8 @@ namespace DB
                 /// Null string means 'no value for requested key'
                 if (!value.isNull())
                 {
-                    insertValueByIdx(0, key);
-                    insertValueByIdx(1, value);
+                    insert_value_by_idx(0, key);
+                    insert_value_by_idx(1, value);
                 }
             }
             cursor += need_values;

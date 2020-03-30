@@ -31,7 +31,7 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = atoi(argv[1]);
+    size_t n = std::stol(argv[1]);
 
     std::vector<Key> data(n);
 

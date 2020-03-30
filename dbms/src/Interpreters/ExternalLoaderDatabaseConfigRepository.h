@@ -12,22 +12,21 @@ namespace DB
 class ExternalLoaderDatabaseConfigRepository : public IExternalLoaderConfigRepository
 {
 public:
-    ExternalLoaderDatabaseConfigRepository(const DatabasePtr & database_, const Context & context_)
-        : database(database_)
-        , context(context_)
-    {
-    }
+    ExternalLoaderDatabaseConfigRepository(IDatabase & database_, const Context & context_);
 
-    std::set<std::string> getAllLoadablesDefinitionNames() const override;
+    const std::string & getName() const override { return name; }
 
-    bool exists(const std::string & loadable_definition_name) const override;
+    std::set<std::string> getAllLoadablesDefinitionNames() override;
+
+    bool exists(const std::string & loadable_definition_name) override;
 
     Poco::Timestamp getUpdateTime(const std::string & loadable_definition_name) override;
 
-    LoadablesConfigurationPtr load(const std::string & loadable_definition_name) const override;
+    LoadablesConfigurationPtr load(const std::string & loadable_definition_name) override;
 
 private:
-    DatabasePtr database;
+    const String name;
+    IDatabase & database;
     Context context;
 };
 

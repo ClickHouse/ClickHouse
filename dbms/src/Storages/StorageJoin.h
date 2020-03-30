@@ -21,7 +21,7 @@ using HashJoinPtr = std::shared_ptr<Join>;
   *
   * When using, JOIN must be of the appropriate type (ANY|ALL LEFT|INNER ...).
   */
-class StorageJoin : public ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
+class StorageJoin final : public ext::shared_ptr_helper<StorageJoin>, public StorageSetOrJoinBase
 {
     friend struct ext::shared_ptr_helper<StorageJoin>;
 public:
@@ -36,7 +36,7 @@ public:
     /// Verify that the data structure is suitable for implementing this type of JOIN.
     void assertCompatible(ASTTableJoin::Kind kind_, ASTTableJoin::Strictness strictness_) const;
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -51,6 +51,7 @@ private:
     SizeLimits limits;
     ASTTableJoin::Kind kind;                    /// LEFT | INNER ...
     ASTTableJoin::Strictness strictness;        /// ANY | ALL
+    bool overwrite;
 
     std::shared_ptr<AnalyzedJoin> table_join;
     HashJoinPtr join;
@@ -62,8 +63,7 @@ private:
 protected:
     StorageJoin(
         const String & relative_path_,
-        const String & database_name_,
-        const String & table_name_,
+        const StorageID & table_id_,
         const Names & key_names_,
         bool use_nulls_,
         SizeLimits limits_,

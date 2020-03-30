@@ -12,7 +12,7 @@ struct DecimalUtilsSplitAndCombineTestParam
     const char * description;
 
     Decimal64 decimal_value;
-    UInt8 scale;
+    uint8_t scale;
 
     DecimalUtils::DecimalComponents<typename Decimal64::NativeType> components;
 };
@@ -57,62 +57,62 @@ void testGetFractional(const DecimalUtilsSplitAndCombineTestParam & param)
 }
 
 // unfortunatelly typed parametrized tests () are not supported in this version of gtest, so I have to emulate by hand.
-TEST_P(DecimalUtilsSplitAndCombineTest, split_Decimal32)
+TEST_P(DecimalUtilsSplitAndCombineTest, splitDecimal32)
 {
     testSplit<Decimal32>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, split_Decimal64)
+TEST_P(DecimalUtilsSplitAndCombineTest, splitDecimal64)
 {
     testSplit<Decimal64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, split_Decimal128)
+TEST_P(DecimalUtilsSplitAndCombineTest, splitDecimal128)
 {
     testSplit<Decimal128>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, combine_Decimal32)
+TEST_P(DecimalUtilsSplitAndCombineTest, combineDecimal32)
 {
     testDecimalFromComponents<Decimal32>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, combine_Decimal64)
+TEST_P(DecimalUtilsSplitAndCombineTest, combineDecimal64)
 {
     testDecimalFromComponents<Decimal64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, combine_Decimal128)
+TEST_P(DecimalUtilsSplitAndCombineTest, combineDecimal128)
 {
     testDecimalFromComponents<Decimal64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getWholePart_Decimal32)
+TEST_P(DecimalUtilsSplitAndCombineTest, getWholePartDecimal32)
 {
     testGetWhole<Decimal32>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getWholePart_Decimal64)
+TEST_P(DecimalUtilsSplitAndCombineTest, getWholePartDecimal64)
 {
     testGetWhole<Decimal64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getWholePart_Decimal128)
+TEST_P(DecimalUtilsSplitAndCombineTest, getWholePartDecimal128)
 {
     testGetWhole<Decimal128>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPart_Decimal32)
+TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPartDecimal32)
 {
     testGetFractional<Decimal32>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPart_Decimal64)
+TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPartDecimal64)
 {
     testGetFractional<Decimal64>(GetParam());
 }
 
-TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPart_Decimal128)
+TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPartDecimal128)
 {
     testGetFractional<Decimal128>(GetParam());
 }
@@ -120,7 +120,7 @@ TEST_P(DecimalUtilsSplitAndCombineTest, getFractionalPart_Decimal128)
 }
 
 // Intentionally small values that fit into 32-bit in order to cover Decimal32, Decimal64 and Decimal128 with single set of data.
-INSTANTIATE_TEST_CASE_P(Basic,
+INSTANTIATE_TEST_SUITE_P(Basic,
     DecimalUtilsSplitAndCombineTest,
     ::testing::ValuesIn(std::initializer_list<DecimalUtilsSplitAndCombineTestParam>{
         {
@@ -168,5 +168,5 @@ INSTANTIATE_TEST_CASE_P(Basic,
                 89
             }
         }
-    }
-),);
+    })
+);

@@ -17,7 +17,8 @@ NamesAndTypesList StorageSystemSettings::getNamesAndTypes()
         {"description", std::make_shared<DataTypeString>()},
         {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
         {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>())},
-        {"readonly", std::make_shared<DataTypeUInt8>()}
+        {"readonly", std::make_shared<DataTypeUInt8>()},
+        {"type", std::make_shared<DataTypeString>()},
     };
 }
 
@@ -59,6 +60,7 @@ void StorageSystemSettings::fillData(MutableColumns & res_columns, const Context
         res_columns[4]->insert(min);
         res_columns[5]->insert(max);
         res_columns[6]->insert(read_only);
+        res_columns[7]->insert(setting.getType().toString());
     }
 }
 

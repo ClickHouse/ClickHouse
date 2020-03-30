@@ -17,6 +17,8 @@
 #include <DataStreams/AddingDefaultsBlockInputStream.h>
 
 #include <Poco/Net/HTTPRequest.h>
+#include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -24,19 +26,21 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int UNACCEPTABLE_URL;
 }
 
 IStorageURLBase::IStorageURLBase(
     const Poco::URI & uri_,
     const Context & context_,
-    const std::string & database_name_,
-    const std::string & table_name_,
+    const StorageID & table_id_,
     const String & format_name_,
     const ColumnsDescription & columns_,
     const ConstraintsDescription & constraints_,
     const String & compression_method_)
-    : uri(uri_), context_global(context_), compression_method(compression_method_), format_name(format_name_), table_name(table_name_), database_name(database_name_)
+    : IStorage(table_id_)
+    , uri(uri_)
+    , context_global(context_)
+    , compression_method(compression_method_)
+    , format_name(format_name_)
 {
     context_global.getRemoteHostFilter().checkURL(uri);
     setColumns(columns_);
@@ -45,34 +49,37 @@ IStorageURLBase::IStorageURLBase(
 
 namespace
 {
-    class StorageURLBlockInputStream : public IBlockInputStream
+    class StorageURLSource : public SourceWithProgress
     {
     public:
-        StorageURLBlockInputStream(const Poco::URI & uri,
+        StorageURLSource(const Poco::URI & uri,
             const std::string & method,
             std::function<void(std::ostream &)> callback,
             const String & format,
-            const String & name_,
+            String name_,
             const Block & sample_block,
             const Context & context,
+            const ColumnDefaults & column_defaults,
             UInt64 max_block_size,
             const ConnectionTimeouts & timeouts,
             const CompressionMethod compression_method)
-            : name(name_)
+            : SourceWithProgress(sample_block), name(std::move(name_))
         {
-            read_buf = getReadBuffer<ReadWriteBufferFromHTTP>(
-                compression_method,
-                uri,
-                method,
-                callback,
-                timeouts,
-                context.getSettingsRef().max_http_get_redirects,
-                Poco::Net::HTTPBasicCredentials{},
-                DBMS_DEFAULT_BUFFER_SIZE,
-                ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
-                context.getRemoteHostFilter());
+            read_buf = wrapReadBufferWithCompressionMethod(
+                std::make_unique<ReadWriteBufferFromHTTP>(
+                    uri,
+                    method,
+                    std::move(callback),
+                    timeouts,
+                    context.getSettingsRef().max_http_get_redirects,
+                    Poco::Net::HTTPBasicCredentials{},
+                    DBMS_DEFAULT_BUFFER_SIZE,
+                    ReadWriteBufferFromHTTP::HTTPHeaderEntries{},
+                    context.getRemoteHostFilter()),
+                compression_method);
 
             reader = FormatFactory::instance().getInput(format, *read_buf, sample_block, context, max_block_size);
+            reader = std::make_shared<AddingDefaultsBlockInputStream>(reader, column_defaults, context);
         }
 
         String getName() const override
@@ -80,30 +87,30 @@ namespace
             return name;
         }
 
-        Block readImpl() override
+        Chunk generate() override
         {
-            return reader->read();
-        }
+            if (!reader)
+                return {};
 
-        Block getHeader() const override
-        {
-            return reader->getHeader();
-        }
+            if (!initialized)
+                reader->readPrefix();
 
-        void readPrefixImpl() override
-        {
-            reader->readPrefix();
-        }
+            initialized = true;
 
-        void readSuffixImpl() override
-        {
+            if (auto block = reader->read())
+                return Chunk(block.getColumns(), block.rows());
+
             reader->readSuffix();
+            reader.reset();
+
+            return {};
         }
 
     private:
         String name;
         std::unique_ptr<ReadBuffer> read_buf;
         BlockInputStreamPtr reader;
+        bool initialized = false;
     };
 
     class StorageURLBlockOutputStream : public IBlockOutputStream
@@ -117,7 +124,9 @@ namespace
             const CompressionMethod compression_method)
             : sample_block(sample_block_)
         {
-            write_buf = getWriteBuffer<WriteBufferFromHTTP>(compression_method, uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts);
+            write_buf = wrapWriteBufferWithCompressionMethod(
+                std::make_unique<WriteBufferFromHTTP>(uri, Poco::Net::HTTPRequest::HTTP_POST, timeouts),
+                compression_method, 3);
             writer = FormatFactory::instance().getOutput(format, *write_buf, sample_block, context);
         }
 
@@ -175,7 +184,7 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(con
 }
 
 
-BlockInputStreams IStorageURLBase::read(const Names & column_names,
+Pipes IStorageURLBase::read(const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,
@@ -187,27 +196,20 @@ BlockInputStreams IStorageURLBase::read(const Names & column_names,
     for (const auto & [param, value] : params)
         request_uri.addQueryParameter(param, value);
 
-    BlockInputStreamPtr block_input = std::make_shared<StorageURLBlockInputStream>(request_uri,
+    Pipes pipes;
+    pipes.emplace_back(std::make_shared<StorageURLSource>(request_uri,
         getReadMethod(),
         getReadPOSTDataCallback(column_names, query_info, context, processed_stage, max_block_size),
         format_name,
         getName(),
         getHeaderBlock(column_names),
         context,
+        getColumns().getDefaults(),
         max_block_size,
         ConnectionTimeouts::getHTTPTimeouts(context),
-        IStorage::chooseCompressionMethod(request_uri.toString(), compression_method));
+        chooseCompressionMethod(request_uri.getPath(), compression_method)));
 
-    auto column_defaults = getColumns().getDefaults();
-    if (column_defaults.empty())
-        return {block_input};
-    return {std::make_shared<AddingDefaultsBlockInputStream>(block_input, column_defaults, context)};
-}
-
-void IStorageURLBase::rename(const String & /*new_path_to_db*/, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
-{
-    table_name = new_table_name;
-    database_name = new_database_name;
+    return pipes;
 }
 
 BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Context & /*context*/)
@@ -215,7 +217,7 @@ BlockOutputStreamPtr IStorageURLBase::write(const ASTPtr & /*query*/, const Cont
     return std::make_shared<StorageURLBlockOutputStream>(
         uri, format_name, getSampleBlock(), context_global,
         ConnectionTimeouts::getHTTPTimeouts(context_global),
-        IStorage::chooseCompressionMethod(uri.toString(), compression_method));
+        chooseCompressionMethod(uri.toString(), compression_method));
 }
 
 void registerStorageURL(StorageFactory & factory)
@@ -246,7 +248,7 @@ void registerStorageURL(StorageFactory & factory)
 
         return StorageURL::create(
             uri,
-            args.database_name, args.table_name,
+            args.table_id,
             format_name,
             args.columns, args.constraints, args.context,
             compression_method);

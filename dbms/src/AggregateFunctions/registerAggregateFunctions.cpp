@@ -42,6 +42,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionSimpleLinearRegression(factory);
         registerAggregateFunctionMoving(factory);
         registerAggregateFunctionCategoricalIV(factory);
+        registerAggregateFunctionAggThrow(factory);
     }
 
     {

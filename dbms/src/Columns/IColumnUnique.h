@@ -4,6 +4,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 class IColumnUnique : public IColumn
 {
@@ -131,6 +135,11 @@ public:
     std::vector<MutableColumnPtr> scatter(IColumn::ColumnIndex, const IColumn::Selector &) const override
     {
         throw Exception("Method scatter is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    void updateWeakHash32(WeakHash32 &) const override
+    {
+        throw Exception("Method updateWeakHash32 is not supported for ColumnUnique.", ErrorCodes::NOT_IMPLEMENTED);
     }
 };
 

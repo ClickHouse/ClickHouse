@@ -33,11 +33,10 @@ def test_config_with_standard_part_log(start_cluster):
     assert node2.query("SELECT * FROM system.part_log") != ""
 
 def test_config_with_non_standard_part_log(start_cluster):
-    node3.query("CREATE DATABASE database_name")
-    assert "table_name" not in node3.query("SHOW TABLES FROM database_name")
-    node3.query("CREATE TABLE test_table(word String, value UInt64) ENGINE=MergeTree() ORDER BY value")
-    assert "table_name" not in node3.query("SHOW TABLES FROM database_name")
+    assert "Table system.table_name doesn't exist" in node3.query_and_get_error("SELECT * FROM system.table_name")
+    node3.query("CREATE TABLE test_table(word String, value UInt64) ENGINE=MergeTree() Order by value")
+    assert "Table system.table_name doesn't exist" in node3.query_and_get_error("SELECT * FROM system.table_name")
     node3.query("INSERT INTO test_table VALUES ('name', 1)")
     time.sleep(10)
-    assert "table_name" in node3.query("SHOW TABLES FROM database_name")
+    assert node3.query("SELECT * FROM system.table_name") != ""
 

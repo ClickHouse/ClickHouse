@@ -50,7 +50,7 @@ struct SmallStringRef
 
     SmallStringRef(const unsigned char * data_, size_t size_) : SmallStringRef(reinterpret_cast<const char *>(data_), size_) {}
     explicit SmallStringRef(const std::string & s) : SmallStringRef(s.data(), s.size()) {}
-    SmallStringRef() {}
+    SmallStringRef() = default;
 
     std::string toString() const { return std::string(data(), size); }
 };
@@ -67,7 +67,7 @@ inline bool operator==(SmallStringRef lhs, SmallStringRef rhs)
 #ifdef __SSE2__
     return memequalSSE2Wide(lhs.data(), rhs.data(), lhs.size);
 #else
-    return false;
+    return 0 == memcmp(lhs.data(), rhs.data(), lhs.size);
 #endif
 }
 
@@ -102,8 +102,8 @@ int main(int argc, char ** argv)
         return 1;
     }
 
-    size_t n = atoi(argv[1]);
-    size_t m = atoi(argv[2]);
+    size_t n = std::stol(argv[1]);
+    size_t m = std::stol(argv[2]);
 
     DB::Arena pool;
     std::vector<StringRef> data(n);

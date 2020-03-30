@@ -1,4 +1,4 @@
-# input
+# input {#input}
 
 `input(structure)` - table function that allows effectively convert and insert data sent to the
 server with given structure to the table with another structure.
@@ -18,18 +18,23 @@ with all transferred data is not created.
 
 **Examples**
 
-- Let the `test` table has the following structure `(a String, b String)`
-and data in `data.csv` has a different structure `(col1 String, col2 Date, col3 Int32)`. Query for insert
-data from the `data.csv` into the `test` table with simultaneous conversion looks like this:
+-   Let the `test` table has the following structure `(a String, b String)`
+    and data in `data.csv` has a different structure `(col1 String, col2 Date, col3 Int32)`. Query for insert
+    data from the `data.csv` into the `test` table with simultaneous conversion looks like this:
 
-```bash
+<!-- -->
+
+``` bash
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT lower(col1), col3 * col3 FROM input('col1 String, col2 Date, col3 Int32') FORMAT CSV";
 ```
 
-- If `data.csv` contains data of the same structure `test_structure` as the table `test` then these two queries are equal: 
-```bash
+-   If `data.csv` contains data of the same structure `test_structure` as the table `test` then these two queries are equal:
+
+<!-- -->
+
+``` bash
 $ cat data.csv | clickhouse-client --query="INSERT INTO test FORMAT CSV"
 $ cat data.csv | clickhouse-client --query="INSERT INTO test SELECT * FROM input('test_structure') FORMAT CSV"
 ```
 
-[Original article](https://clickhouse.yandex/docs/en/query_language/table_functions/input/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/input/) <!--hide-->

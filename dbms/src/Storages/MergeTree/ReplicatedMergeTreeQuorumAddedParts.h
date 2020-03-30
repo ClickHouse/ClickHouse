@@ -8,7 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 
-#include <Storages/MergeTree/MergeTreeDataPart.h>
+#include <Storages/MergeTree/IMergeTreeDataPart.h>
 
 namespace DB
 {
@@ -23,7 +23,7 @@ struct ReplicatedMergeTreeQuorumAddedParts
     MergeTreeDataFormatVersion format_version;
 
     ReplicatedMergeTreeQuorumAddedParts(const MergeTreeDataFormatVersion format_version_)
-    : format_version(format_version_)
+        : format_version(format_version_)
     {}
 
     /// Write new parts in buffer with added parts.
@@ -59,14 +59,14 @@ struct ReplicatedMergeTreeQuorumAddedParts
             assertChar('\n', in);
 
             if (version == 2)
-                added_parts = read_v2(in);
+                added_parts = readV2(in);
         }
         else
-            added_parts = read_v1(in);
+            added_parts = readV1(in);
     }
 
     /// Read added bloks when node in ZooKeeper supports only one partition.
-    PartitionIdToPartName read_v1(ReadBuffer & in)
+    PartitionIdToPartName readV1(ReadBuffer & in)
     {
         PartitionIdToPartName parts_in_quorum;
 
@@ -81,7 +81,7 @@ struct ReplicatedMergeTreeQuorumAddedParts
     }
 
     /// Read blocks when node in ZooKeeper suppors multiple partitions.
-    PartitionIdToPartName read_v2(ReadBuffer & in)
+    PartitionIdToPartName readV2(ReadBuffer & in)
     {
         assertString("parts count: ", in);
 

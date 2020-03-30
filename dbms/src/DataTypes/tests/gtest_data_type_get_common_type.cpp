@@ -14,7 +14,7 @@ static bool operator==(const IDataType & left, const IDataType & right)
     return left.equals(right);
 }
 
-static std::ostream & operator<<(std::ostream & ostr, const IDataType & dt)
+std::ostream & operator<<(std::ostream & ostr, const IDataType & dt)
 {
     return ostr << dt.getName();
 }
@@ -60,7 +60,7 @@ std::ostream & operator<<(std::ostream & ostr, const TypesTestCase & test_case)
 class TypeTest : public ::testing::TestWithParam<TypesTestCase>
 {
 public:
-    void SetUp()
+    void SetUp() override
     {
         const auto & p = GetParam();
         from_types = typesFromString(p.from_types);
@@ -104,7 +104,7 @@ TEST_P(MostSubtypeTest, getLeastSupertype)
     }
 }
 
-INSTANTIATE_TEST_CASE_P(data_type,
+INSTANTIATE_TEST_SUITE_P(data_type,
     LeastSuperTypeTest,
     ::testing::ValuesIn(
         std::initializer_list<TypesTestCase>{
@@ -159,10 +159,10 @@ INSTANTIATE_TEST_CASE_P(data_type,
             {"Tuple(Int64,Int8) Tuple(UInt64)", nullptr},
             {"Array(Int64) Array(String)", nullptr},
         }
-    ),
+    )
 );
 
-INSTANTIATE_TEST_CASE_P(data_type,
+INSTANTIATE_TEST_SUITE_P(data_type,
     MostSubtypeTest,
     ::testing::ValuesIn(
         std::initializer_list<TypesTestCase>{
@@ -210,5 +210,6 @@ INSTANTIATE_TEST_CASE_P(data_type,
             {"Int8 String", nullptr},
             {"Nothing", nullptr},
             {"FixedString(16) FixedString(8) String", nullptr},
-        }),
+        }
+    )
 );

@@ -45,9 +45,6 @@ SELECT * FROM t1 ANY INNER JOIN any_inner_join j USING(x) ORDER BY x, str, s;
 SELECT 'any right';
 SELECT * FROM t1 ANY RIGHT JOIN any_right_join j USING(x) ORDER BY x, str, s;
 
-
-INSERT INTO t1 (x, str) VALUES (2, 'a6');
-
 SELECT 'semi left';
 SELECT * FROM t1 SEMI LEFT JOIN semi_left_join j USING(x) ORDER BY x, str, s;
 

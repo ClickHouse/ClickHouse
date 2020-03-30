@@ -1,6 +1,6 @@
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataTypes/DataTypeDate.h>
-#include <Interpreters/evaluateMissingDefaults.h>
+#include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 
@@ -36,7 +36,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     {
         if (force || isTTLExpired(ttl_info.min))
         {
-            new_ttl_infos.columns_ttl.emplace(name, MergeTreeDataPart::TTLInfo{});
+            new_ttl_infos.columns_ttl.emplace(name, IMergeTreeDataPart::TTLInfo{});
             empty_columns.emplace(name);
 
             auto it = column_defaults.find(name);
@@ -70,7 +70,7 @@ bool TTLBlockInputStream::isTTLExpired(time_t ttl)
 Block TTLBlockInputStream::readImpl()
 {
     /// Skip all data if table ttl is expired for part
-    if (storage.hasTableTTL() && isTTLExpired(old_ttl_infos.table_ttl.max))
+    if (storage.hasRowsTTL() && isTTLExpired(old_ttl_infos.table_ttl.max))
     {
         rows_removed = data_part->rows_count;
         return {};
@@ -80,7 +80,7 @@ Block TTLBlockInputStream::readImpl()
     if (!block)
         return block;
 
-    if (storage.hasTableTTL() && (force || isTTLExpired(old_ttl_infos.table_ttl.min)))
+    if (storage.hasRowsTTL() && (force || isTTLExpired(old_ttl_infos.table_ttl.min)))
         removeRowsWithExpiredTableTTL(block);
 
     removeValuesWithExpiredColumnTTL(block);
@@ -98,7 +98,7 @@ void TTLBlockInputStream::readSuffixImpl()
     new_ttl_infos.updatePartMinMaxTTL(new_ttl_infos.table_ttl.min, new_ttl_infos.table_ttl.max);
 
     data_part->ttl_infos = std::move(new_ttl_infos);
-    data_part->empty_columns = std::move(empty_columns);
+    data_part->expired_columns = std::move(empty_columns);
 
     if (rows_removed)
         LOG_INFO(log, "Removed " << rows_removed << " rows with expired TTL from part " << data_part->name);
@@ -106,10 +106,10 @@ void TTLBlockInputStream::readSuffixImpl()
 
 void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 {
-    storage.ttl_table_entry.expression->execute(block);
+    storage.rows_ttl_entry.expression->execute(block);
 
     const IColumn * ttl_column =
-        block.getByName(storage.ttl_table_entry.result_column).column.get();
+        block.getByName(storage.rows_ttl_entry.result_column).column.get();
 
     const auto & column_names = header.getNames();
     MutableColumns result_columns;
@@ -150,6 +150,10 @@ void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)
     std::vector<String> columns_to_remove;
     for (const auto & [name, ttl_entry] : storage.column_ttl_entries_by_name)
     {
+        /// If we read not all table columns. E.g. while mutation.
+        if (!block.has(name))
+            continue;
+
         const auto & old_ttl_info = old_ttl_infos.columns_ttl[name];
         auto & new_ttl_info = new_ttl_infos.columns_ttl[name];
 

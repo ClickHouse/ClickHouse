@@ -43,7 +43,7 @@ public:
     using GetColumnsFunction = std::function<ColumnsWithTypeAndName(const Columns &, const std::vector<DictionaryAttribute> & attributes)>;
 
     // Used to separate key columns format for storage and view.
-    // Calls get_key_columns_function to get key column for dictionary get fuction call
+    // Calls get_key_columns_function to get key column for dictionary get function call
     // and get_view_columns_function to get key representation.
     // Now used in trie dictionary, where columns are stored as ip and mask, and are showed as string
     DictionaryBlockInputStream(

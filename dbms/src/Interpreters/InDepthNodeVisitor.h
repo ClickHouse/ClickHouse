@@ -59,7 +59,13 @@ public:
     using Data = Data_;
     using TypeToVisit = typename Data::TypeToVisit;
 
-    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return visit_children; }
+    static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
+    {
+        if (node && node->as<TypeToVisit>())
+            return visit_children;
+
+        return true;
+    }
 
     static void visit(T & ast, Data & data)
     {

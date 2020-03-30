@@ -4,6 +4,7 @@
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
 #include <Common/config.h>
+#include <Common/MemorySanitizer.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
 #include <Core/Defines.h>
@@ -226,6 +227,7 @@ void StackTrace::tryCapture()
     size = 0;
 #if USE_UNWIND
     size = unw_backtrace(frames.data(), capacity);
+    __msan_unpoison(frames.data(), size * sizeof(frames[0]));
 #endif
 }
 
@@ -263,7 +265,19 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
         uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
         const void * physical_addr = reinterpret_cast<const void *>(uintptr_t(virtual_addr) - virtual_offset);
 
-        out << i << ". " << physical_addr << " ";
+        out << i << ". ";
+
+        if (object)
+        {
+            if (std::filesystem::exists(object->name))
+            {
+                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
+
+                DB::Dwarf::LocationInfo location;
+                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
+                    out << location.file.toString() << ":" << location.line << ": ";
+            }
+        }
 
         auto symbol = symbol_index.findSymbol(virtual_addr);
         if (symbol)
@@ -274,22 +288,8 @@ static void toStringEveryLineImpl(const StackTrace::Frames & frames, size_t offs
         else
             out << "?";
 
-        out << " ";
-
-        if (object)
-        {
-            if (std::filesystem::exists(object->name))
-            {
-                auto dwarf_it = dwarfs.try_emplace(object->name, *object->elf).first;
-
-                DB::Dwarf::LocationInfo location;
-                if (dwarf_it->second.findAddress(uintptr_t(physical_addr), location, DB::Dwarf::LocationInfoMode::FAST))
-                    out << location.file.toString() << ":" << location.line;
-            }
-            out << " in " << object->name;
-        }
-        else
-            out << "?";
+        out << " @ " << physical_addr;
+        out << " in " << (object ? object->name : "?");
 
         callback(out.str());
         out.str({});
@@ -327,4 +327,16 @@ std::string StackTrace::toString() const
 
     static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
     return func_cached(frames, offset, size);
+}
+
+std::string StackTrace::toString(void ** frames_, size_t offset, size_t size)
+{
+    __msan_unpoison(frames_, size * sizeof(*frames_));
+
+    StackTrace::Frames frames_copy{};
+    for (size_t i = 0; i < size; ++i)
+        frames_copy[i] = frames_[i];
+
+    static SimpleCache<decltype(toStringImpl), &toStringImpl> func_cached;
+    return func_cached(frames_copy, offset, size);
 }

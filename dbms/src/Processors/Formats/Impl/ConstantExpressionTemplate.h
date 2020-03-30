@@ -1,7 +1,6 @@
 #pragma once
 
 #include <Core/Block.h>
-#include <Interpreters/ExpressionActions.h>
 #include <Formats/FormatSettings.h>
 #include <Parsers/TokenIterator.h>
 
@@ -11,6 +10,9 @@ namespace DB
 struct LiteralInfo;
 using LiteralsInfo = std::vector<LiteralInfo>;
 struct SpecialParserType;
+
+class ExpressionActions;
+using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
 /// Deduces template of an expression by replacing literals with dummy columns.
 /// It allows to parse and evaluate similar expressions without using heavy IParsers and ExpressionAnalyzer.
@@ -66,7 +68,7 @@ public:
 
     /// Read expression from istr, assert it has the same structure and the same types of literals (template matches)
     /// and parse literals into temporary columns
-    bool parseExpression(ReadBuffer & istr, const FormatSettings & settings);
+    bool parseExpression(ReadBuffer & istr, const FormatSettings & format_settings, const Settings & settings);
 
     /// Evaluate batch of expressions were parsed using template.
     /// If template was deduced with null_as_default == true, set bits in nulls for NULL values in column_idx, starting from offset.
@@ -75,8 +77,8 @@ public:
     size_t rowsCount() const { return rows_count; }
 
 private:
-    bool tryParseExpression(ReadBuffer & istr, const FormatSettings & settings, size_t & cur_column);
-    bool parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * type, size_t column_idx);
+    bool tryParseExpression(ReadBuffer & istr, const FormatSettings & format_settings, size_t & cur_column, const Settings & settings);
+    bool parseLiteralAndAssertType(ReadBuffer & istr, const IDataType * type, size_t column_idx, const Settings & settings);
 
 private:
     TemplateStructurePtr structure;

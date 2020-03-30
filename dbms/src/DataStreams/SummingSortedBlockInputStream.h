@@ -1,5 +1,7 @@
 #pragma once
 
+#include <queue>
+
 #include <Core/Row.h>
 #include <Core/ColumnNumbers.h>
 #include <Common/AlignedBuffer.h>
@@ -8,12 +10,13 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 
+namespace Poco { class Logger; }
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
 }
 
 
@@ -34,12 +37,19 @@ public:
 
     String getName() const override { return "SummingSorted"; }
 
+    /// Stores numbers of key-columns and value-columns.
+    struct MapDescription
+    {
+        std::vector<size_t> key_col_nums;
+        std::vector<size_t> val_col_nums;
+    };
+
 protected:
     /// Can return 1 more records than max_block_size.
     Block readImpl() override;
 
 private:
-    Logger * log = &Logger::get("SummingSortedBlockInputStream");
+    Poco::Logger * log;
 
     /// Read up to the end.
     bool finished = false;
@@ -119,13 +129,6 @@ private:
         AggregateDescription(const AggregateDescription &) = delete;
     };
 
-    /// Stores numbers of key-columns and value-columns.
-    struct MapDescription
-    {
-        std::vector<size_t> key_col_nums;
-        std::vector<size_t> val_col_nums;
-    };
-
     std::vector<AggregateDescription> columns_to_aggregate;
     std::vector<MapDescription> maps_to_sum;
 
@@ -140,13 +143,10 @@ private:
     /** We support two different cursors - with Collation and without.
      *  Templates are used instead of polymorphic SortCursor and calls to virtual functions.
      */
-    void merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue);
+    void merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue);
 
     /// Insert the summed row for the current group into the result and updates some of per-block flags if the row is not "zero".
     void insertCurrentRowIfNeeded(MutableColumns & merged_columns);
-
-    /// Returns true if merge result is not empty
-    bool mergeMap(const MapDescription & map, Row & row, SortCursor & cursor);
 
     // Add the row under the cursor to the `row`.
     void addRow(SortCursor & cursor);

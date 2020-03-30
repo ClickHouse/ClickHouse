@@ -10,11 +10,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int ZLIB_DEFLATE_FAILED;
-}
-
 /// Performs compression using zlib library and writes compressed data to out_ WriteBuffer.
 class ZlibDeflatingWriteBuffer : public BufferWithOwnMemory<WriteBuffer>
 {

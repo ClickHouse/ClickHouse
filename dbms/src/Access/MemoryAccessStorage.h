@@ -14,7 +14,6 @@ class MemoryAccessStorage : public IAccessStorage
 {
 public:
     MemoryAccessStorage(const String & storage_name_ = "memory");
-    ~MemoryAccessStorage() override;
 
     /// Sets all entities at once.
     void setAll(const std::vector<AccessEntityPtr> & all_entities);
@@ -26,11 +25,12 @@ private:
     bool existsImpl(const UUID & id) const override;
     AccessEntityPtr readImpl(const UUID & id) const override;
     String readNameImpl(const UUID & id) const override;
+    bool canInsertImpl(const AccessEntityPtr &) const override { return true; }
     UUID insertImpl(const AccessEntityPtr & entity, bool replace_if_exists) override;
     void removeImpl(const UUID & id) override;
     void updateImpl(const UUID & id, const UpdateFunc & update_func) override;
-    SubscriptionPtr subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
-    SubscriptionPtr subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const override;
+    ext::scope_guard subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const override;
+    ext::scope_guard subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const override;
     bool hasSubscriptionImpl(const UUID & id) const override;
     bool hasSubscriptionImpl(std::type_index type) const override;
 
@@ -60,6 +60,5 @@ private:
     std::unordered_map<UUID, Entry> entries;               /// We want to search entries both by ID and by the pair of name and type.
     std::unordered_map<NameTypePair, Entry *, Hash> names; /// and by the pair of name and type.
     mutable std::unordered_multimap<std::type_index, OnChangedHandler> handlers_by_type;
-    std::shared_ptr<const MemoryAccessStorage *> shared_ptr_to_this; /// We need weak pointers to `this` to implement subscriptions.
 };
 }

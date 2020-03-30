@@ -1,4 +1,4 @@
-# numbers
+# numbers {#numbers}
 
 `numbers(N)` - возвращает таблицу с единственным столбцом `number` (UInt64), содержащим натуральные числа от `0` до `N-1`.
 `numbers(N, M)` - возвращает таблицу с единственным столбцом `number` (UInt64), содержащим натуральные числа от `N` to `(N + M - 1)`.
@@ -7,15 +7,17 @@
 
 Следующие запросы эквивалентны:
 
-```sql
+``` sql
 SELECT * FROM numbers(10);
 SELECT * FROM numbers(0,10);
 SELECT * FROM system.numbers LIMIT 10;
 ```
+
 Примеры:
-```sql
+
+``` sql
 -- генерация последовательности всех дат от 2010-01-01 до 2010-12-31
 select toDate('2010-01-01') + number as d FROM numbers(365);
 ```
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/query_language/table_functions/numbers/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/table_functions/numbers/) <!--hide-->

@@ -4,7 +4,6 @@
 #include <DataTypes/getLeastSupertype.h>
 #include <Columns/ColumnArray.h>
 #include <Interpreters/castColumn.h>
-#include "registerFunctionsArray.h"
 
 
 namespace DB
@@ -20,7 +19,7 @@ public:
         return std::make_shared<FunctionArray>(context);
     }
 
-    FunctionArray(const Context & context_)
+    explicit FunctionArray(const Context & context_)
         : context(context_)
     {
     }

@@ -20,6 +20,7 @@ struct PrewhereInfo
     ExpressionActionsPtr remove_columns_actions;
     String prewhere_column_name;
     bool remove_prewhere_column = false;
+    bool need_filter = false;
 
     PrewhereInfo() = default;
     explicit PrewhereInfo(ExpressionActionsPtr prewhere_actions_, String prewhere_column_name_)
@@ -79,6 +80,28 @@ struct SelectQueryInfo
     /// Prepared sets are used for indices by storage engine.
     /// Example: x IN (1, 2, 3)
     PreparedSets sets;
+
+    /// Temporary flag is needed to support old pipeline with input streams.
+    /// If enabled, then pipeline returned by storage must be a tree.
+    /// Processors from the tree can't return ExpandPipeline status.
+    mutable bool force_tree_shaped_pipeline = false;
+};
+
+/// RAII class to enable force_tree_shaped_pipeline for SelectQueryInfo.
+/// Looks awful, but I hope it's temporary.
+struct ForceTreeShapedPipeline
+{
+    explicit ForceTreeShapedPipeline(const SelectQueryInfo & info_) : info(info_)
+    {
+        force_tree_shaped_pipeline = info.force_tree_shaped_pipeline;
+        info.force_tree_shaped_pipeline = true;
+    }
+
+    ~ForceTreeShapedPipeline() { info.force_tree_shaped_pipeline = force_tree_shaped_pipeline; }
+
+private:
+    bool force_tree_shaped_pipeline;
+    const SelectQueryInfo & info;
 };
 
 }

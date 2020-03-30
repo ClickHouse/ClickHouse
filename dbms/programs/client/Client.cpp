@@ -1,7 +1,15 @@
 #include "TestHint.h"
 #include "ConnectionParameters.h"
+#include "Suggest.h"
 
-#include <port/unistd.h>
+#if USE_REPLXX
+#   include <common/ReplxxLineReader.h>
+#elif USE_READLINE
+#   include <common/ReadlineLineReader.h>
+#else
+#   include <common/LineReader.h>
+#endif
+
 #include <stdlib.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -18,8 +26,8 @@
 #include <Poco/String.h>
 #include <Poco/File.h>
 #include <Poco/Util/Application.h>
-#include <common/readline_use.h>
 #include <common/find_symbols.h>
+#include <common/LineReader.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
@@ -69,10 +77,6 @@
 #include <common/argsToConfig.h>
 #include <Common/TerminalSize.h>
 
-#if USE_READLINE
-#include "Suggest.h"
-#endif
-
 #ifndef __clang__
 #pragma GCC optimize("-fno-var-tracking-assignments")
 #endif
@@ -89,39 +93,6 @@
 #define DISABLE_LINE_WRAPPING "\033[?7l"
 #define ENABLE_LINE_WRAPPING "\033[?7h"
 
-#if USE_READLINE && RL_VERSION_MAJOR >= 7
-
-#define BRACK_PASTE_PREF "\033[200~"
-#define BRACK_PASTE_SUFF "\033[201~"
-
-#define BRACK_PASTE_LAST '~'
-#define BRACK_PASTE_SLEN 6
-
-/// This handler bypasses some unused macro/event checkings.
-static int clickhouse_rl_bracketed_paste_begin(int /* count */, int /* key */)
-{
-    std::string buf;
-    buf.reserve(128);
-
-    RL_SETSTATE(RL_STATE_MOREINPUT);
-    SCOPE_EXIT(RL_UNSETSTATE(RL_STATE_MOREINPUT));
-    int c;
-    while ((c = rl_read_key()) >= 0)
-    {
-        if (c == '\r')
-            c = '\n';
-        buf.push_back(c);
-        if (buf.size() >= BRACK_PASTE_SLEN && c == BRACK_PASTE_LAST && buf.substr(buf.size() - BRACK_PASTE_SLEN) == BRACK_PASTE_SUFF)
-        {
-            buf.resize(buf.size() - BRACK_PASTE_SLEN);
-            break;
-        }
-    }
-    return static_cast<size_t>(rl_insert_text(buf.c_str())) == buf.size() ? 0 : 1;
-}
-
-#endif
-
 namespace DB
 {
 
@@ -130,23 +101,18 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int NO_DATA_TO_INSERT;
     extern const int BAD_ARGUMENTS;
-    extern const int CANNOT_READ_HISTORY;
-    extern const int CANNOT_APPEND_HISTORY;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int CLIENT_OUTPUT_FORMAT_SPECIFIED;
-    extern const int LOGICAL_ERROR;
-    extern const int CANNOT_SET_SIGNAL_HANDLER;
-    extern const int CANNOT_READLINE;
-    extern const int SYSTEM_ERROR;
     extern const int INVALID_USAGE_OF_INPUT;
+    extern const int DEADLOCK_AVOIDED;
 }
 
 
 class Client : public Poco::Util::Application
 {
 public:
-    Client() {}
+    Client() = default;
 
 private:
     using StringSet = std::unordered_set<String>;
@@ -158,12 +124,14 @@ private:
         "учшеж", "йгшеж", "дщпщгеж",
         "q", "й", "\\q", "\\Q", "\\й", "\\Й", ":q", "Жй"
     };
-    bool is_interactive = true;          /// Use either readline interface or batch mode.
+    bool is_interactive = true;          /// Use either interactive line editing interface or batch mode.
     bool need_render_progress = true;    /// Render query execution progress.
+    bool send_logs    = false;           /// send_logs_level passed, do not use previous cursor position, to avoid overlaps with logs
     bool echo_queries = false;           /// Print queries before execution in batch mode.
     bool ignore_error = false;           /// In case of errors, don't print error message, continue to next query. Only applicable for non-interactive mode.
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
-    bool stdin_is_not_tty = false;       /// stdin is not a terminal.
+    bool stdin_is_a_tty = false;         /// stdin is a terminal.
+    bool stdout_is_a_tty = false;        /// stdout is a terminal.
 
     uint16_t terminal_width = 0;         /// Terminal width is needed to render progress bar.
 
@@ -243,7 +211,7 @@ private:
 
     ConnectionParameters connection_parameters;
 
-    void initialize(Poco::Util::Application & self)
+    void initialize(Poco::Util::Application & self) override
     {
         Poco::Util::Application::initialize(self);
 
@@ -253,16 +221,15 @@ private:
 
         configReadClient(config(), home_path);
 
-        context.makeGlobalContext();
         context.setApplicationType(Context::ApplicationType::CLIENT);
         context.setQueryParameters(query_parameters);
 
         /// settings and limits could be specified in config file, but passed settings has higher priority
-        for (auto && setting : context.getSettingsRef())
+        for (const auto & setting : context.getSettingsRef())
         {
             const String & name = setting.getName().toString();
             if (config().has(name) && !setting.isChanged())
-                setting.setValue(config().getString(name));
+                context.setSetting(name, config().getString(name));
         }
 
         /// Set path for format schema files
@@ -271,7 +238,7 @@ private:
     }
 
 
-    int main(const std::vector<std::string> & /*args*/)
+    int main(const std::vector<std::string> & /*args*/) override
     {
         try
         {
@@ -300,7 +267,7 @@ private:
                 && std::string::npos == embedded_stack_trace_pos)
             {
                 std::cerr << "Stack trace:" << std::endl
-                    << e.getStackTrace().toString();
+                    << e.getStackTraceString();
             }
 
             /// If exception code isn't zero, we should return non-zero return code anyway.
@@ -314,7 +281,7 @@ private:
     }
 
     /// Should we celebrate a bit?
-    bool isNewYearMode()
+    static bool isNewYearMode()
     {
         time_t current_time = time(nullptr);
 
@@ -325,6 +292,75 @@ private:
         LocalDate now(current_time);
         return (now.month() == 12 && now.day() >= 20)
             || (now.month() == 1 && now.day() <= 5);
+    }
+
+    static bool isChineseNewYearMode(const String & local_tz)
+    {
+        /// Days of Dec. 20 in Chinese calendar starting from year 2019 to year 2105
+        static constexpr UInt16 chineseNewYearIndicators[]
+            = {18275, 18659, 19014, 19368, 19752, 20107, 20491, 20845, 21199, 21583, 21937, 22292, 22676, 23030, 23414, 23768, 24122, 24506,
+               24860, 25215, 25599, 25954, 26308, 26692, 27046, 27430, 27784, 28138, 28522, 28877, 29232, 29616, 29970, 30354, 30708, 31062,
+               31446, 31800, 32155, 32539, 32894, 33248, 33632, 33986, 34369, 34724, 35078, 35462, 35817, 36171, 36555, 36909, 37293, 37647,
+               38002, 38386, 38740, 39095, 39479, 39833, 40187, 40571, 40925, 41309, 41664, 42018, 42402, 42757, 43111, 43495, 43849, 44233,
+               44587, 44942, 45326, 45680, 46035, 46418, 46772, 47126, 47510, 47865, 48249, 48604, 48958, 49342};
+
+        /// All time zone names are acquired from https://www.iana.org/time-zones
+        static constexpr const char * chineseNewYearTimeZoneIndicators[] = {
+            /// Time zones celebrating Chinese new year.
+            "Asia/Shanghai",
+            "Asia/Chongqing",
+            "Asia/Harbin",
+            "Asia/Urumqi",
+            "Asia/Hong_Kong",
+            "Asia/Chungking",
+            "Asia/Macao",
+            "Asia/Macau",
+            "Asia/Taipei",
+            "Asia/Singapore",
+
+            /// Time zones celebrating Chinese new year but with different festival names. Let's not print the message for now.
+            // "Asia/Brunei",
+            // "Asia/Ho_Chi_Minh",
+            // "Asia/Hovd",
+            // "Asia/Jakarta",
+            // "Asia/Jayapura",
+            // "Asia/Kashgar",
+            // "Asia/Kuala_Lumpur",
+            // "Asia/Kuching",
+            // "Asia/Makassar",
+            // "Asia/Pontianak",
+            // "Asia/Pyongyang",
+            // "Asia/Saigon",
+            // "Asia/Seoul",
+            // "Asia/Ujung_Pandang",
+            // "Asia/Ulaanbaatar",
+            // "Asia/Ulan_Bator",
+        };
+        static constexpr size_t M = sizeof(chineseNewYearTimeZoneIndicators) / sizeof(chineseNewYearTimeZoneIndicators[0]);
+
+        time_t current_time = time(nullptr);
+
+        if (chineseNewYearTimeZoneIndicators + M
+            == std::find_if(chineseNewYearTimeZoneIndicators, chineseNewYearTimeZoneIndicators + M, [&local_tz](const char * tz)
+            {
+                return tz == local_tz;
+            }))
+            return false;
+
+        /// It's bad to be intrusive.
+        if (current_time % 3 != 0)
+            return false;
+
+        auto days = DateLUT::instance().toDayNum(current_time).toUnderType();
+        for (auto d : chineseNewYearIndicators)
+        {
+            /// Let's celebrate until Lantern Festival
+            if (d <= days && d + 25u >= days)
+                return true;
+            else if (d > days)
+                return false;
+        }
+        return false;
     }
 
     int mainImpl()
@@ -339,7 +375,7 @@ private:
         ///   The value of the option is used as the text of query (or of multiple queries).
         ///   If stdin is not a terminal, INSERT data for the first query is read from it.
         /// - stdin is not a terminal. In this case queries are read from it.
-        if (stdin_is_not_tty || config().has("query"))
+        if (!stdin_is_a_tty || config().has("query"))
             is_interactive = false;
 
         std::cout << std::fixed << std::setprecision(3);
@@ -374,7 +410,7 @@ private:
         connect();
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
-        DateLUT::instance();
+        const auto local_tz = DateLUT::instance().getTimeZone();
         if (!context.getSettingsRef().use_client_time_zone)
         {
             const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
@@ -443,26 +479,12 @@ private:
             if (print_time_to_stderr)
                 throw Exception("time option could be specified only in non-interactive mode", ErrorCodes::BAD_ARGUMENTS);
 
-#if USE_READLINE
-            SCOPE_EXIT({ Suggest::instance().finalize(); });
-            if (server_revision >= Suggest::MIN_SERVER_REVISION
-                && !config().getBool("disable_suggestion", false))
+            if (server_revision >= Suggest::MIN_SERVER_REVISION && !config().getBool("disable_suggestion", false))
             {
                 /// Load suggestion data from the server.
                 Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
-
-                /// Added '.' to the default list. Because it is used to separate database and table.
-                rl_basic_word_break_characters = " \t\n\r\"\\'`@$><=;|&{(.";
-
-                /// Not append whitespace after single suggestion. Because whitespace after function name is meaningless.
-                rl_completion_append_character = '\0';
-
-                rl_completion_entry_function = Suggest::generator;
             }
-            else
-                /// Turn tab completion off.
-                rl_bind_key('\t', rl_insert);
-#endif
+
             /// Load command history if present.
             if (config().has("history_file"))
                 history_file = config().getString("history_file");
@@ -475,87 +497,75 @@ private:
                     history_file = home_path + "/.clickhouse-client-history";
             }
 
-            if (!history_file.empty())
-            {
-                if (Poco::File(history_file).exists())
-                {
-#if USE_READLINE
-                    int res = read_history(history_file.c_str());
-                    if (res)
-                        std::cerr << "Cannot read history from file " + history_file + ": "+ errnoToString(ErrorCodes::CANNOT_READ_HISTORY);
+            if (!history_file.empty() && !Poco::File(history_file).exists())
+                Poco::File(history_file).createFile();
+
+#if USE_REPLXX
+            ReplxxLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+#elif USE_READLINE
+            ReadlineLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
+#else
+            LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);
 #endif
-                }
-                else    /// Create history file.
-                    Poco::File(history_file).createFile();
-            }
 
-#if USE_READLINE
-            /// Install Ctrl+C signal handler that will be used in interactive mode.
-
-            if (rl_initialize())
-                throw Exception("Cannot initialize readline", ErrorCodes::CANNOT_READLINE);
-
-#if RL_VERSION_MAJOR >= 7
             /// Enable bracketed-paste-mode only when multiquery is enabled and multiline is
             ///  disabled, so that we are able to paste and execute multiline queries in a whole
             ///  instead of erroring out, while be less intrusive.
             if (config().has("multiquery") && !config().has("multiline"))
-            {
-                /// When bracketed paste mode is set, pasted text is bracketed with control sequences so
-                ///  that the program can differentiate pasted text from typed-in text. This helps
-                ///  clickhouse-client so that without -m flag, one can still paste multiline queries, and
-                ///  possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
-                ///  more details.
-                rl_variable_bind("enable-bracketed-paste", "on");
+                lr.enableBracketedPaste();
 
-                /// Use our bracketed paste handler to get better user experience. See comments above.
-                rl_bind_keyseq(BRACK_PASTE_PREF, clickhouse_rl_bracketed_paste_begin);
+            do
+            {
+                auto input = lr.readLine(prompt(), ":-] ");
+                if (input.empty())
+                    break;
+
+                has_vertical_output_suffix = false;
+                if (input.ends_with("\\G"))
+                {
+                    input.resize(input.size() - 2);
+                    has_vertical_output_suffix = true;
+                }
+
+                try
+                {
+                    if (!process(input))
+                        break;
+                }
+                catch (const Exception & e)
+                {
+                    actual_client_error = e.code();
+                    if (!actual_client_error || actual_client_error != expected_client_error)
+                    {
+                        std::cerr << std::endl
+                            << "Exception on client:" << std::endl
+                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
+
+                        if (config().getBool("stacktrace", false))
+                            std::cerr << "Stack trace:" << std::endl << e.getStackTraceString() << std::endl;
+
+                        std::cerr << std::endl;
+
+                    }
+
+                    /// Client-side exception during query execution can result in the loss of
+                    /// sync in the connection protocol.
+                    /// So we reconnect and allow to enter the next query.
+                    connect();
+                }
             }
-#endif
+            while (true);
 
-            auto clear_prompt_or_exit = [](int)
-            {
-                /// This is signal safe.
-                ssize_t res = write(STDOUT_FILENO, "\n", 1);
-
-                /// Allow to quit client while query is in progress by pressing Ctrl+C twice.
-                /// (First press to Ctrl+C will try to cancel query by InterruptListener).
-                if (res == 1 && rl_line_buffer[0] && !RL_ISSTATE(RL_STATE_DONE))
-                {
-                    rl_replace_line("", 0);
-                    if (rl_forced_update_display())
-                        _exit(0);
-                }
-                else
-                {
-                    /// A little dirty, but we struggle to find better way to correctly
-                    /// force readline to exit after returning from the signal handler.
-                    _exit(0);
-                }
-            };
-
-            if (signal(SIGINT, clear_prompt_or_exit) == SIG_ERR)
-                throwFromErrno("Cannot set signal handler.", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
-#endif
-
-            loop();
-
-            std::cout << (isNewYearMode() ? "Happy new year." : "Bye.") << std::endl;
+            if (isNewYearMode())
+                std::cout << "Happy new year." << std::endl;
+            else if (isChineseNewYearMode(local_tz))
+                std::cout << "Happy Chinese new year. 春节快乐!" << std::endl;
+            else
+                std::cout << "Bye." << std::endl;
             return 0;
         }
         else
         {
-            /// This is intended for testing purposes.
-            if (config().getBool("always_load_suggestion_data", false))
-            {
-#if USE_READLINE
-                SCOPE_EXIT({ Suggest::instance().finalize(); });
-                Suggest::instance().load(connection_parameters, config().getInt("suggestion_limit"));
-#else
-                throw Exception("Command line suggestions cannot work without readline", ErrorCodes::BAD_ARGUMENTS);
-#endif
-            }
-
             query_id = config().getString("query_id", "");
             nonInteractive();
 
@@ -630,109 +640,9 @@ private:
     }
 
 
-    /// Check if multi-line query is inserted from the paste buffer.
-    /// Allows delaying the start of query execution until the entirety of query is inserted.
-    static bool hasDataInSTDIN()
-    {
-        timeval timeout = { 0, 0 };
-        fd_set fds;
-        FD_ZERO(&fds);
-        FD_SET(STDIN_FILENO, &fds);
-        return select(1, &fds, nullptr, nullptr, &timeout) == 1;
-    }
-
-    inline const String prompt() const
+    inline String prompt() const
     {
         return boost::replace_all_copy(prompt_by_server_display_name, "{database}", config().getString("database", "default"));
-    }
-
-    void loop()
-    {
-        String input;
-        String prev_input;
-
-        while (char * line_ = readline(input.empty() ? prompt().c_str() : ":-] "))
-        {
-            String line = line_;
-            free(line_);
-
-            size_t ws = line.size();
-            while (ws > 0 && isWhitespaceASCII(line[ws - 1]))
-                --ws;
-
-            if (ws == 0 || line.empty())
-                continue;
-
-            bool ends_with_semicolon = line[ws - 1] == ';';
-            bool ends_with_backslash = line[ws - 1] == '\\';
-
-            has_vertical_output_suffix = (ws >= 2) && (line[ws - 2] == '\\') && (line[ws - 1] == 'G');
-
-            if (ends_with_backslash)
-                line = line.substr(0, ws - 1);
-
-            input += line;
-
-            if (!ends_with_backslash && (ends_with_semicolon || has_vertical_output_suffix || (!config().has("multiline") && !hasDataInSTDIN())))
-            {
-                // TODO: should we do sensitive data masking on client too? History file can be source of secret leaks.
-                if (input != prev_input)
-                {
-                    /// Replace line breaks with spaces to prevent the following problem.
-                    /// Every line of multi-line query is saved to history file as a separate line.
-                    /// If the user restarts the client then after pressing the "up" button
-                    /// every line of the query will be displayed separately.
-                    std::string logged_query = input;
-                    if (config().has("multiline"))
-                        std::replace(logged_query.begin(), logged_query.end(), '\n', ' ');
-                    add_history(logged_query.c_str());
-
-#if USE_READLINE && HAVE_READLINE_HISTORY
-                    if (!history_file.empty() && append_history(1, history_file.c_str()))
-                        std::cerr << "Cannot append history to file " + history_file + ": " + errnoToString(ErrorCodes::CANNOT_APPEND_HISTORY);
-#endif
-
-                    prev_input = input;
-                }
-
-                if (has_vertical_output_suffix)
-                    input = input.substr(0, input.length() - 2);
-
-                try
-                {
-                    if (!process(input))
-                        break;
-                }
-                catch (const Exception & e)
-                {
-                    actual_client_error = e.code();
-                    if (!actual_client_error || actual_client_error != expected_client_error)
-                    {
-                        std::cerr << std::endl
-                            << "Exception on client:" << std::endl
-                            << "Code: " << e.code() << ". " << e.displayText() << std::endl;
-
-                        if (config().getBool("stacktrace", false))
-                            std::cerr << "Stack trace:" << std::endl
-                                      << e.getStackTrace().toString() << std::endl;
-
-                        std::cerr << std::endl;
-
-                    }
-
-                    /// Client-side exception during query execution can result in the loss of
-                    /// sync in the connection protocol.
-                    /// So we reconnect and allow to enter the next query.
-                    connect();
-                }
-
-                input = "";
-            }
-            else
-            {
-                input += '\n';
-            }
-        }
     }
 
 
@@ -905,6 +815,8 @@ private:
 
             connection->forceConnected(connection_parameters.timeouts);
 
+            send_logs = context.getSettingsRef().send_logs_level != LogsLevel::none;
+
             ASTPtr input_function;
             if (insert && insert->select)
                 insert->tryFindInputFunction(input_function);
@@ -971,7 +883,7 @@ private:
         if (!select && !external_tables.empty())
             throw Exception("External tables could be sent only with select query", ErrorCodes::BAD_ARGUMENTS);
 
-        std::vector<ExternalTableData> data;
+        std::vector<ExternalTableDataPtr> data;
         for (auto & table : external_tables)
             data.emplace_back(table.getData(context));
 
@@ -992,9 +904,34 @@ private:
             query = serializeAST(*parsed_query);
         }
 
-        connection->sendQuery(connection_parameters.timeouts, query, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
-        sendExternalTables();
-        receiveResult();
+        static constexpr size_t max_retries = 10;
+        for (size_t retry = 0; retry < max_retries; ++retry)
+        {
+            try
+            {
+                connection->sendQuery(
+                    connection_parameters.timeouts,
+                    query,
+                    query_id,
+                    QueryProcessingStage::Complete,
+                    &context.getSettingsRef(),
+                    nullptr,
+                    true);
+
+                sendExternalTables();
+                receiveResult();
+
+                break;
+            }
+            catch (const Exception & e)
+            {
+                /// Retry when the server said "Client should retry" and no rows has been received yet.
+                if (processed_rows == 0 && e.code() == ErrorCodes::DEADLOCK_AVOIDED && retry + 1 < max_retries)
+                    continue;
+
+                throw;
+            }
+        }
     }
 
 
@@ -1007,7 +944,7 @@ private:
             ? query.substr(0, parsed_insert_query.data - query.data())
             : query;
 
-        if (!parsed_insert_query.data && (is_interactive || (stdin_is_not_tty && std_in.eof())))
+        if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
         connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
@@ -1185,7 +1122,7 @@ private:
                 /// to avoid losing sync.
                 if (!cancelled)
                 {
-                    auto cancelQuery = [&] {
+                    auto cancel_query = [&] {
                         connection->sendCancel();
                         cancelled = true;
                         if (is_interactive)
@@ -1197,7 +1134,7 @@ private:
 
                     if (interrupt_listener.check())
                     {
-                        cancelQuery();
+                        cancel_query();
                     }
                     else
                     {
@@ -1208,7 +1145,7 @@ private:
                                       << " Waited for " << static_cast<size_t>(elapsed) << " seconds,"
                                       << " timeout is " << receive_timeout.totalSeconds() << " seconds." << std::endl;
 
-                            cancelQuery();
+                            cancel_query();
                         }
                     }
                 }
@@ -1429,7 +1366,7 @@ private:
                 }
             }
 
-            logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb);
+            logs_out_stream = std::make_shared<InternalTextLogsRowOutputStream>(*wb, stdout_is_a_tty);
             logs_out_stream->writePrefix();
         }
     }
@@ -1498,7 +1435,8 @@ private:
     void clearProgress()
     {
         written_progress_chars = 0;
-        std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+        if (!send_logs)
+            std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
     }
 
 
@@ -1523,10 +1461,13 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        if (written_progress_chars)
-            message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
-        else
-            message << SAVE_CURSOR_POSITION;
+        if (!send_logs)
+        {
+            if (written_progress_chars)
+                message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+            else
+                message << SAVE_CURSOR_POSITION;
+        }
 
         message << DISABLE_LINE_WRAPPING;
 
@@ -1581,6 +1522,9 @@ private:
         }
 
         message << ENABLE_LINE_WRAPPING;
+        if (send_logs)
+            message << '\n';
+
         ++increment;
 
         message.next();
@@ -1648,7 +1592,7 @@ private:
             std::cout << "Ok." << std::endl;
     }
 
-    void showClientVersion()
+    static void showClientVersion()
     {
         std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << std::endl;
     }
@@ -1740,9 +1684,10 @@ public:
             }
         }
 
-        stdin_is_not_tty = !isatty(STDIN_FILENO);
+        stdin_is_a_tty = isatty(STDIN_FILENO);
+        stdout_is_a_tty = isatty(STDOUT_FILENO);
 
-        if (!stdin_is_not_tty)
+        if (stdin_is_a_tty)
             terminal_width = getTerminalWidth();
 
         namespace po = boost::program_options;
@@ -1791,7 +1736,8 @@ public:
             ("server_logs_file", po::value<std::string>(), "put server logs into specified file")
         ;
 
-        context.getSettingsRef().addProgramOptions(main_description);
+        Settings cmd_settings;
+        cmd_settings.addProgramOptions(main_description);
 
         /// Commandline options related to external tables.
         po::options_description external_description = createOptionsDescription("External tables options", terminal_width);
@@ -1859,6 +1805,9 @@ public:
             }
         }
 
+        context.makeGlobalContext();
+        context.setSettings(cmd_settings);
+
         /// Copy settings-related program options to config.
         /// TODO: Is this code necessary?
         for (const auto & setting : context.getSettingsRef())
@@ -1925,13 +1874,6 @@ public:
             server_logs_file = options["server_logs_file"].as<std::string>();
         if (options.count("disable_suggestion"))
             config().setBool("disable_suggestion", true);
-        if (options.count("always_load_suggestion_data"))
-        {
-            if (options.count("disable_suggestion"))
-                throw Exception("Command line parameters disable_suggestion (-A) and always_load_suggestion_data cannot be specified simultaneously",
-                    ErrorCodes::BAD_ARGUMENTS);
-            config().setBool("always_load_suggestion_data", true);
-        }
         if (options.count("suggestion_limit"))
             config().setInt("suggestion_limit", options["suggestion_limit"].as<int>());
 

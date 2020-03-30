@@ -29,21 +29,12 @@
 #include <IO/CompressionMethod.h>
 #include <IO/ReadBuffer.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <IO/VarInt.h>
-#include <IO/ZlibInflatingReadBuffer.h>
 
 #include <DataTypes/DataTypeDateTime.h>
 
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-#endif
-
 #include <double-conversion/double-conversion.h>
-
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
 
 
 /// 1 GiB
@@ -755,14 +746,39 @@ inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf)
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 
+template <typename T>
+inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
+readBinaryBigEndian(T & x, ReadBuffer & buf)    /// Assuming little endian architecture.
+{
+    readPODBinary(x, buf);
+
+    if constexpr (sizeof(x) == 1)
+        return;
+    else if constexpr (sizeof(x) == 2)
+        x = __builtin_bswap16(x);
+    else if constexpr (sizeof(x) == 4)
+        x = __builtin_bswap32(x);
+    else if constexpr (sizeof(x) == 8)
+        x = __builtin_bswap64(x);
+}
+
+
 /// Generic methods to read value in text tab-separated format.
 template <typename T>
 inline std::enable_if_t<is_integral_v<T>, void>
 readText(T & x, ReadBuffer & buf) { readIntText(x, buf); }
 
 template <typename T>
+inline std::enable_if_t<is_integral_v<T>, bool>
+tryReadText(T & x, ReadBuffer & buf) { return tryReadIntText(x, buf); }
+
+template <typename T>
 inline std::enable_if_t<std::is_floating_point_v<T>, void>
 readText(T & x, ReadBuffer & buf) { readFloatText(x, buf); }
+
+template <typename T>
+inline std::enable_if_t<std::is_floating_point_v<T>, bool>
+tryReadText(T & x, ReadBuffer & buf) { return tryReadFloatText(x, buf); }
 
 inline void readText(bool & x, ReadBuffer & buf) { readBoolText(x, buf); }
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
@@ -939,7 +955,7 @@ void skipJSONField(ReadBuffer & buf, const StringRef & name_of_field);
   * (type is cut to base class, 'message' replaced by 'displayText', and stack trace is appended to 'message')
   * Some additional message could be appended to exception (example: you could add information about from where it was received).
   */
-void readException(Exception & e, ReadBuffer & buf, const String & additional_message = "");
+Exception readException(ReadBuffer & buf, const String & additional_message = "");
 void readAndThrowException(ReadBuffer & buf, const String & additional_message = "");
 
 
@@ -964,28 +980,85 @@ inline T parse(const char * data, size_t size)
     return res;
 }
 
-/// Read something from text format, but expect complete parse of given text
-/// For example: 723145 -- ok, 213MB -- not ok
 template <typename T>
-inline T completeParse(const char * data, size_t size)
+inline bool tryParse(T & res, const char * data, size_t size)
+{
+    ReadBufferFromMemory buf(data, size);
+    return tryReadText(res, buf);
+}
+
+template <typename T>
+inline std::enable_if_t<!is_integral_v<T>, void>
+readTextWithSizeSuffix(T & x, ReadBuffer & buf) { readText(x, buf); }
+
+template <typename T>
+inline std::enable_if_t<is_integral_v<T>, void>
+readTextWithSizeSuffix(T & x, ReadBuffer & buf)
+{
+    readIntText(x, buf);
+    if (buf.eof())
+        return;
+
+    /// Updates x depending on the suffix
+    auto finish = [&buf, &x] (UInt64 base, int power_of_two) mutable
+    {
+        ++buf.position();
+        if (buf.eof())
+        {
+            x *= base; /// For decimal suffixes, such as k, M, G etc.
+        }
+        else if (*buf.position() == 'i')
+        {
+            x = (x << power_of_two); // NOLINT /// For binary suffixes, such as ki, Mi, Gi, etc.
+            ++buf.position();
+        }
+        return;
+    };
+
+    switch (*buf.position())
+    {
+        case 'k': [[fallthrough]];
+        case 'K':
+            finish(1000, 10);
+            break;
+        case 'M':
+            finish(1000000, 20);
+            break;
+        case 'G':
+            finish(1000000000, 30);
+            break;
+        case 'T':
+            finish(1000000000000ULL, 40);
+            break;
+        default:
+            return;
+    }
+    return;
+}
+
+/// Read something from text format and trying to parse the suffix.
+/// If the suffix is not valid gives an error
+/// For example: 723145 -- ok, 213MB -- not ok, but 213Mi -- ok
+template <typename T>
+inline T parseWithSizeSuffix(const char * data, size_t size)
 {
     T res;
     ReadBufferFromMemory buf(data, size);
-    readText(res, buf);
+    readTextWithSizeSuffix(res, buf);
     assertEOF(buf);
     return res;
 }
 
 template <typename T>
-inline T completeParse(const String & s)
+inline T parseWithSizeSuffix(const String & s)
 {
-    return completeParse<T>(s.data(), s.size());
+    return parseWithSizeSuffix<T>(s.data(), s.size());
 }
 
 template <typename T>
-inline T completeParse(const char * data)
+inline T parseWithSizeSuffix(const char * data)
 {
-    return completeParse<T>(data, strlen(data));
+    return parseWithSizeSuffix<T>(data, strlen(data));
 }
 
 template <typename T>
@@ -998,6 +1071,18 @@ template <typename T>
 inline T parse(const String & s)
 {
     return parse<T>(s.data(), s.size());
+}
+
+template <typename T>
+inline bool tryParse(T & res, const char * data)
+{
+    return tryParse(res, data, strlen(data));
+}
+
+template <typename T>
+inline bool tryParse(T & res, const String & s)
+{
+    return tryParse(res, s.data(), s.size());
 }
 
 
@@ -1024,21 +1109,11 @@ void skipToNextLineOrEOF(ReadBuffer & buf);
 /// Skip to next character after next unescaped \n. If no \n in stream, skip to end. Does not throw on invalid escape sequences.
 void skipToUnescapedNextLineOrEOF(ReadBuffer & buf);
 
-template <class TReadBuffer, class... Types>
-std::unique_ptr<ReadBuffer> getReadBuffer(const DB::CompressionMethod method, Types&&... args)
-{
-    if (method == DB::CompressionMethod::Gzip)
-    {
-        auto read_buf = std::make_unique<TReadBuffer>(std::forward<Types>(args)...);
-        return std::make_unique<ZlibInflatingReadBuffer>(std::move(read_buf), method);
-    }
-    return std::make_unique<TReadBuffer>(args...);
-}
 
 /** This function just copies the data from buffer's internal position (in.position())
   * to current position (from arguments) into memory.
   */
-void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current);
+void saveUpToPosition(ReadBuffer & in, Memory<> & memory, char * current);
 
 /** This function is negative to eof().
   * In fact it returns whether the data was loaded to internal ReadBuffers's buffer or not.
@@ -1047,6 +1122,6 @@ void saveUpToPosition(ReadBuffer & in, DB::Memory<> & memory, char * current);
   * of our buffer and the current cursor in the end of the buffer. When we call eof() it calls next().
   * And this function can fill the buffer with new data, so we will lose the data from previous buffer state.
   */
-bool loadAtPosition(ReadBuffer & in, DB::Memory<> & memory, char * & current);
+bool loadAtPosition(ReadBuffer & in, Memory<> & memory, char * & current);
 
 }

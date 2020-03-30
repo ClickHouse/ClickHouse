@@ -9,10 +9,8 @@
 #include <Formats/MySQLBlockInputStream.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <Storages/StorageMySQL.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -27,15 +25,15 @@
 #include <Poco/DirectoryIterator.h>
 
 
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_IS_DROPPED;
-    extern const int TABLE_WAS_NOT_DROPPED;
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNEXPECTED_AST_STRUCTURE;
 }
@@ -63,8 +61,12 @@ static String toQueryStringWithQuote(const std::vector<String> & quote_list)
 DatabaseMySQL::DatabaseMySQL(
     const Context & global_context_, const String & database_name_, const String & metadata_path_,
     const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, mysqlxx::Pool && pool)
-    : global_context(global_context_), database_name(database_name_), metadata_path(metadata_path_),
-      database_engine_define(database_engine_define_->clone()), database_name_in_mysql(database_name_in_mysql_), mysql_pool(std::move(pool))
+    : IDatabase(database_name_)
+    , global_context(global_context_)
+    , metadata_path(metadata_path_)
+    , database_engine_define(database_engine_define_->clone())
+    , database_name_in_mysql(database_name_in_mysql_)
+    , mysql_pool(std::move(pool))
 {
 }
 
@@ -130,9 +132,9 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
 
     {
         /// init create query.
-
-        create_table_query->table = storage->getTableName();
-        create_table_query->database = storage->getDatabaseName();
+        auto table_id = storage->getStorageID();
+        create_table_query->table = table_id.table_name;
+        create_table_query->database = table_id.database_name;
 
         for (const auto & column_type_and_name : storage->getColumns().getOrdinary())
         {
@@ -142,7 +144,7 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
             columns_expression_list->children.emplace_back(column_declaration);
         }
 
-        auto mysql_table_name = std::make_shared<ASTLiteral>(storage->getTableName());
+        auto mysql_table_name = std::make_shared<ASTLiteral>(table_id.table_name);
         auto storage_engine_arguments = table_storage_define->as<ASTStorage>()->engine->arguments;
         storage_engine_arguments->children.insert(storage_engine_arguments->children.begin() + 2, mysql_table_name);
     }
@@ -150,19 +152,24 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
     return create_table_query;
 }
 
-ASTPtr DatabaseMySQL::tryGetCreateTableQuery(const Context &, const String & table_name) const
+ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const Context &, const String & table_name, bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
     fetchTablesIntoLocalCache();
 
     if (local_tables_cache.find(table_name) == local_tables_cache.end())
-        throw Exception("MySQL table " + database_name_in_mysql + "." + table_name + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+    {
+        if (throw_on_error)
+            throw Exception("MySQL table " + database_name_in_mysql + "." + table_name + " doesn't exist..",
+                            ErrorCodes::UNKNOWN_TABLE);
+        return nullptr;
+    }
 
     return getCreateQueryFromStorage(local_tables_cache[table_name].second, database_engine_define);
 }
 
-time_t DatabaseMySQL::getObjectMetadataModificationTime(const Context &, const String & table_name)
+time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_name) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -174,7 +181,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const Context &, const S
     return time_t(local_tables_cache[table_name].first);
 }
 
-ASTPtr DatabaseMySQL::getCreateDatabaseQuery(const Context &) const
+ASTPtr DatabaseMySQL::getCreateDatabaseQuery(const Context & /*context*/) const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = database_name;
@@ -232,7 +239,7 @@ void DatabaseMySQL::fetchLatestTablesStructureIntoCache(const std::map<String, U
         }
 
         local_tables_cache[table_name] = std::make_pair(table_modification_time, StorageMySQL::create(
-            database_name, table_name, std::move(mysql_pool), database_name_in_mysql, table_name,
+            StorageID(database_name, table_name), std::move(mysql_pool), database_name_in_mysql, table_name,
             false, "", ColumnsDescription{columns_name_and_type}, ConstraintsDescription{}, global_context));
     }
 }
@@ -253,7 +260,7 @@ std::map<String, UInt64> DatabaseMySQL::fetchTablesWithModificationTime() const
              " WHERE TABLE_SCHEMA = " << quote << database_name_in_mysql;
 
     std::map<String, UInt64> tables_with_modification_time;
-    MySQLBlockInputStream result(mysql_pool.Get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_status_sample_block, DEFAULT_BLOCK_SIZE);
 
     while (Block block = result.read())
     {
@@ -298,7 +305,7 @@ std::map<String, NamesAndTypesList> DatabaseMySQL::fetchTablesColumnsList(const 
           << " AND TABLE_NAME IN " << toQueryStringWithQuote(tables_name) << " ORDER BY ORDINAL_POSITION";
 
     const auto & external_table_functions_use_nulls = global_context.getSettings().external_table_functions_use_nulls;
-    MySQLBlockInputStream result(mysql_pool.Get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
+    MySQLBlockInputStream result(mysql_pool.get(), query.str(), tables_columns_sample_block, DEFAULT_BLOCK_SIZE);
     while (Block block = result.read())
     {
         size_t rows = block.rows();
@@ -351,7 +358,7 @@ void DatabaseMySQL::cleanOutdatedTables()
                 ++iterator;
             else
             {
-                const auto table_lock = (*iterator)->lockAlterIntention(RWLockImpl::NO_QUERY);
+                const auto table_lock = (*iterator)->lockAlterIntention();
 
                 (*iterator)->shutdown();
                 (*iterator)->is_dropped = true;

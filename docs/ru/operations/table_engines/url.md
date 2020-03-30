@@ -3,7 +3,7 @@
 Управляет данными на удаленном HTTP/HTTPS сервере. Данный движок похож
 на движок [File](file.md).
 
-## Использование движка в сервере ClickHouse
+## Использование движка в сервере ClickHouse {#ispolzovanie-dvizhka-v-servere-clickhouse}
 
 `Format` должен быть таким, который ClickHouse может использовать в запросах
 `SELECT` и, если есть необходимость, `INSERT`. Полный список поддерживаемых форматов смотрите в
@@ -17,13 +17,13 @@
 соответственно. Для обработки `POST`-запросов удаленный сервер должен поддерживать
 [Chunked transfer encoding](https://ru.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-Максимальное количество переходов по редиректам при выполнении HTTP-запроса методом GET можно ограничить с помощью настройки [max_http_get_redirects](../settings/settings.md#setting-max_http_get_redirects).
+Максимальное количество переходов по редиректам при выполнении HTTP-запроса методом GET можно ограничить с помощью настройки [max\_http\_get\_redirects](../settings/settings.md#setting-max_http_get_redirects).
 
 **Пример:**
 
 **1.** Создадим на сервере таблицу `url_engine_table`:
 
-```sql
+``` sql
 CREATE TABLE url_engine_table (word String, value UInt64)
 ENGINE=URL('http://127.0.0.1:12345/', CSV)
 ```
@@ -31,7 +31,7 @@ ENGINE=URL('http://127.0.0.1:12345/', CSV)
 **2.** Создадим простейший http-сервер стандартными средствами языка python3 и
 запустим его:
 
-```python3
+``` python3
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 class CSVHTTPServer(BaseHTTPRequestHandler):
@@ -47,30 +47,29 @@ if __name__ == "__main__":
     HTTPServer(server_address, CSVHTTPServer).serve_forever()
 ```
 
-```bash
+``` bash
 $ python3 server.py
 ```
 
 **3.** Запросим данные:
 
-```sql
+``` sql
 SELECT * FROM url_engine_table
 ```
 
-```text
+``` text
 ┌─word──┬─value─┐
 │ Hello │     1 │
 │ World │     2 │
 └───────┴───────┘
 ```
 
-## Особенности использования
+## Особенности использования {#osobennosti-ispolzovaniia}
 
-- Поддерживается многопоточное чтение и запись.
-- Не поддерживается:
-    - использование операций `ALTER` и `SELECT...SAMPLE`;
-    - индексы;
-    - репликация.
+-   Поддерживается многопоточное чтение и запись.
+-   Не поддерживается:
+    -   использование операций `ALTER` и `SELECT...SAMPLE`;
+    -   индексы;
+    -   репликация.
 
-
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/operations/table_engines/url/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/url/) <!--hide-->

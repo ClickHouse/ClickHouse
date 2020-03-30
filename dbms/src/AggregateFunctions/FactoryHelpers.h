@@ -23,13 +23,13 @@ inline void assertNoParameters(const std::string & name, const Array & parameter
 inline void assertUnary(const std::string & name, const DataTypes & argument_types)
 {
     if (argument_types.size() != 1)
-        throw Exception("Aggregate function " + name + " require single argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception("Aggregate function " + name + " requires single argument", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
 inline void assertBinary(const std::string & name, const DataTypes & argument_types)
 {
     if (argument_types.size() != 2)
-        throw Exception("Aggregate function " + name + " require two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+        throw Exception("Aggregate function " + name + " requires two arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 }
 
 template<std::size_t maximal_arity>

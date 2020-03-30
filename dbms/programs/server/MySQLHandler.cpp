@@ -36,8 +36,9 @@ using Poco::Net::SSLManager;
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_READ_ALL_DATA;
+    extern const int NOT_IMPLEMENTED;
     extern const int MYSQL_CLIENT_INSUFFICIENT_CAPABILITIES;
-    extern const int OPENSSL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
 
@@ -79,21 +80,19 @@ void MySQLHandler::run()
         if (!connection_context.mysql.max_packet_size)
             connection_context.mysql.max_packet_size = MAX_PACKET_LENGTH;
 
-/*        LOG_TRACE(log, "Capabilities: " << handshake_response.capability_flags
-                                        << "\nmax_packet_size: "
+        LOG_TRACE(log, "Capabilities: " << handshake_response.capability_flags
+                                        << ", max_packet_size: "
                                         << handshake_response.max_packet_size
-                                        << "\ncharacter_set: "
-                                        << handshake_response.character_set
-                                        << "\nuser: "
+                                        << ", character_set: "
+                                        << static_cast<int>(handshake_response.character_set)
+                                        << ", user: "
                                         << handshake_response.username
-                                        << "\nauth_response length: "
+                                        << ", auth_response length: "
                                         << handshake_response.auth_response.length()
-                                        << "\nauth_response: "
-                                        << handshake_response.auth_response
-                                        << "\ndatabase: "
+                                        << ", database: "
                                         << handshake_response.database
-                                        << "\nauth_plugin_name: "
-                                        << handshake_response.auth_plugin_name);*/
+                                        << ", auth_plugin_name: "
+                                        << handshake_response.auth_plugin_name);
 
         client_capability_flags = handshake_response.capability_flags;
         if (!(client_capability_flags & CLIENT_PROTOCOL_41))
@@ -220,7 +219,7 @@ void MySQLHandler::authenticate(const String & user_name, const String & auth_pl
     try
     {
         // For compatibility with JavaScript MySQL client, Native41 authentication plugin is used when possible (if password is specified using double SHA1). Otherwise SHA256 plugin is used.
-        auto user = connection_context.getUser(user_name);
+        auto user = connection_context.getAccessControlManager().read<User>(user_name);
         const DB::Authentication::Type user_auth_type = user->authentication.getType();
         if (user_auth_type != DB::Authentication::DOUBLE_SHA1_PASSWORD && user_auth_type != DB::Authentication::PLAINTEXT_PASSWORD && user_auth_type != DB::Authentication::NO_PASSWORD)
         {
@@ -253,8 +252,8 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     ComFieldList packet;
     packet.readPayload(payload);
     String database = connection_context.getCurrentDatabase();
-    StoragePtr tablePtr = connection_context.getTable(database, packet.table);
-    for (const NameAndTypePair & column: tablePtr->getColumns().getAll())
+    StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table});
+    for (const NameAndTypePair & column: table_ptr->getColumns().getAll())
     {
         ColumnDefinition column_definition(
             database, packet.table, packet.table, column.name, column.name, CharacterSet::binary, 100, ColumnType::MYSQL_TYPE_STRING, 0, 0
@@ -283,13 +282,9 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
     }
     else
     {
-        bool with_output = false;
-        std::function<void(const String &)> set_content_type = [&with_output](const String &) -> void {
-            with_output = true;
-        };
-
         String replacement_query = "select ''";
         bool should_replace = false;
+        bool with_output = false;
 
         // Translate query from MySQL to ClickHouse.
         // This is a temporary workaround until ClickHouse supports the syntax "@@var_name".
@@ -307,7 +302,13 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
         ReadBufferFromString replacement(replacement_query);
 
         Context query_context = connection_context;
-        executeQuery(should_replace ? replacement : payload, *out, true, query_context, set_content_type, nullptr);
+
+        executeQuery(should_replace ? replacement : payload, *out, true, query_context,
+            [&with_output](const String &, const String &, const String &, const String &)
+            {
+                with_output = true;
+            }
+        );
 
         if (!with_output)
             packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);

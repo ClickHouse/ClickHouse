@@ -8,6 +8,7 @@
 #include <Dictionaries/DictionaryStructure.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Access/ContextAccess.h>
 #include <Storages/System/StorageSystemDictionaries.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Columns/ColumnString.h>
@@ -24,7 +25,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
     return {
         {"database", std::make_shared<DataTypeString>()},
         {"name", std::make_shared<DataTypeString>()},
-        {"status", std::make_shared<DataTypeEnum8>(ExternalLoader::getStatusEnumAllPossibleValues())},
+        {"status", std::make_shared<DataTypeEnum8>(getStatusEnumAllPossibleValues())},
         {"origin", std::make_shared<DataTypeString>()},
         {"type", std::make_shared<DataTypeString>()},
         {"key", std::make_shared<DataTypeString>()},
@@ -39,6 +40,7 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
         {"lifetime_min", std::make_shared<DataTypeUInt64>()},
         {"lifetime_max", std::make_shared<DataTypeUInt64>()},
         {"loading_start_time", std::make_shared<DataTypeDateTime>()},
+        {"last_successful_update_time", std::make_shared<DataTypeDateTime>()},
         {"loading_duration", std::make_shared<DataTypeFloat32>()},
         //{ "creation_time", std::make_shared<DataTypeDateTime>() },
         {"last_exception", std::make_shared<DataTypeString>()}
@@ -47,22 +49,35 @@ NamesAndTypesList StorageSystemDictionaries::getNamesAndTypes()
 
 void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo & /*query_info*/) const
 {
+    const auto access = context.getAccess();
+    const bool check_access_for_dictionaries = !access->isGranted(AccessType::SHOW_DICTIONARIES);
+
     const auto & external_dictionaries = context.getExternalDictionariesLoader();
     for (const auto & load_result : external_dictionaries.getCurrentLoadResults())
     {
-        if (startsWith(load_result.repository_name, IExternalLoaderConfigRepository::INTERNAL_REPOSITORY_NAME_PREFIX))
+        const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
+
+        String database, short_name;
+        if (dict_ptr)
+        {
+            database = dict_ptr->getDatabase();
+            short_name = dict_ptr->getName();
+        }
+        else
+        {
+            short_name = load_result.name;
+            if (!load_result.repository_name.empty() && startsWith(short_name, load_result.repository_name + "."))
+            {
+                database = load_result.repository_name;
+                short_name = short_name.substr(database.length() + 1);
+            }
+        }
+
+        if (check_access_for_dictionaries
+            && !access->isGranted(AccessType::SHOW_DICTIONARIES, database.empty() ? IDictionary::NO_DATABASE_TAG : database, short_name))
             continue;
 
         size_t i = 0;
-        String database;
-        String short_name = load_result.name;
-
-        if (!load_result.repository_name.empty() && startsWith(load_result.name, load_result.repository_name + "."))
-        {
-            database = load_result.repository_name;
-            short_name = load_result.name.substr(load_result.repository_name.length() + 1);
-        }
-
         res_columns[i++]->insert(database);
         res_columns[i++]->insert(short_name);
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
@@ -70,7 +85,6 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
 
         std::exception_ptr last_exception = load_result.exception;
 
-        const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
         if (dict_ptr)
         {
             res_columns[i++]->insert(dict_ptr->getTypeName());
@@ -99,6 +113,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         }
 
         res_columns[i++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(load_result.loading_start_time)));
+        res_columns[i++]->insert(static_cast<UInt64>(std::chrono::system_clock::to_time_t(load_result.last_successful_update_time)));
         res_columns[i++]->insert(std::chrono::duration_cast<std::chrono::duration<float>>(load_result.loading_duration).count());
 
         if (last_exception)

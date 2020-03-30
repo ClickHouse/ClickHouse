@@ -182,10 +182,24 @@ void ASTAlterCommand::formatImpl(
             case PartDestinationType::VOLUME:
                 settings.ostr << "VOLUME ";
                 break;
+            case PartDestinationType::TABLE:
+                settings.ostr << "TABLE ";
+                if (!to_database.empty())
+                {
+                    settings.ostr << (settings.hilite ? hilite_identifier : "") << backQuoteIfNeed(to_database)
+                                  << (settings.hilite ? hilite_none : "") << ".";
+                }
+                settings.ostr << (settings.hilite ? hilite_identifier : "")
+                              << backQuoteIfNeed(to_table)
+                              << (settings.hilite ? hilite_none : "");
+                return;
             default:
                 break;
         }
-        settings.ostr << quoteString(move_destination_name);
+        if (move_destination_type != PartDestinationType::TABLE)
+        {
+            settings.ostr << quoteString(move_destination_name);
+        }
     }
     else if (type == ASTAlterCommand::REPLACE_PARTITION)
     {
@@ -247,10 +261,25 @@ void ASTAlterCommand::formatImpl(
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY TTL " << (settings.hilite ? hilite_none : "");
         ttl->formatImpl(settings, state, frame);
     }
+    else if (type == ASTAlterCommand::MATERIALIZE_TTL)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MATERIALIZE TTL"
+                      << (settings.hilite ? hilite_none : "");
+        if (partition)
+        {
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str<< " IN PARTITION " << (settings.hilite ? hilite_none : "");
+            partition->formatImpl(settings, state, frame);
+        }
+    }
     else if (type == ASTAlterCommand::MODIFY_SETTING)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY SETTING " << (settings.hilite ? hilite_none : "");
         settings_changes->formatImpl(settings, state, frame);
+    }
+    else if (type == ASTAlterCommand::MODIFY_QUERY)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << indent_str << "MODIFY QUERY " << settings.nl_or_ws << (settings.hilite ? hilite_none : "");
+        select->formatImpl(settings, state, frame);
     }
     else if (type == ASTAlterCommand::LIVE_VIEW_REFRESH)
     {

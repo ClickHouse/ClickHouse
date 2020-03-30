@@ -2,10 +2,14 @@
 #include <Columns/ColumnsNumber.h>
 #include "FunctionArrayMapped.h"
 #include <Functions/FunctionFactory.h>
-#include "registerFunctionsArray.h"
+
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 /** arrayExists(x1,...,xn -> expression, array1,...,arrayn) - is the expression true for at least one array element.
   * An overload of the form f(array) is available, which works in the same way as f(x -> x, array).

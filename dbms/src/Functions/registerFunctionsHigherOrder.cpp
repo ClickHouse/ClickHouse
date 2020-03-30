@@ -1,8 +1,24 @@
-#include "registerFunctions.h"
-#include "array/registerFunctionsArray.h"
-
 namespace DB
 {
+
+class FunctionFactory;
+
+void registerFunctionArrayMap(FunctionFactory & factory);
+void registerFunctionArrayFilter(FunctionFactory & factory);
+void registerFunctionArrayCount(FunctionFactory & factory);
+void registerFunctionArrayExists(FunctionFactory & factory);
+void registerFunctionArrayAll(FunctionFactory & factory);
+void registerFunctionArrayCompact(FunctionFactory & factory);
+void registerFunctionArraySum(FunctionFactory & factory);
+void registerFunctionArrayFirst(FunctionFactory & factory);
+void registerFunctionArrayFirstIndex(FunctionFactory & factory);
+void registerFunctionsArrayFill(FunctionFactory & factory);
+void registerFunctionsArraySplit(FunctionFactory & factory);
+void registerFunctionsArraySort(FunctionFactory & factory);
+void registerFunctionArrayCumSum(FunctionFactory & factory);
+void registerFunctionArrayCumSumNonNegative(FunctionFactory & factory);
+void registerFunctionArrayDifference(FunctionFactory & factory);
+
 void registerFunctionsHigherOrder(FunctionFactory & factory)
 {
     registerFunctionArrayMap(factory);

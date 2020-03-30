@@ -60,8 +60,6 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_)
     : MergingSortedBlockInputStream(inputs_, description_, max_block_size_)
 {
-    ColumnNumbers positions;
-
     /// Fill in the column numbers that need to be aggregated.
     for (size_t i = 0; i < num_columns; ++i)
     {
@@ -96,7 +94,7 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
             columns_to_simple_aggregate.emplace_back(std::move(desc));
 
             if (recursiveRemoveLowCardinality(column.type).get() != column.type.get())
-                positions.emplace_back(i);
+                converted_lc_columns.emplace_back(i);
         }
         else
         {
@@ -105,10 +103,12 @@ AggregatingSortedBlockInputStream::AggregatingSortedBlockInputStream(
         }
     }
 
-    if (!positions.empty())
+    result_header = header;
+
+    if (!converted_lc_columns.empty())
     {
         for (auto & input : children)
-            input = std::make_shared<RemovingLowCardinalityBlockInputStream>(input, positions);
+            input = std::make_shared<RemovingLowCardinalityBlockInputStream>(input, converted_lc_columns);
 
         header = children.at(0)->getHeader();
     }
@@ -134,18 +134,26 @@ Block AggregatingSortedBlockInputStream::readImpl()
         columns_to_aggregate[i] = typeid_cast<ColumnAggregateFunction *>(merged_columns[column_numbers_to_aggregate[i]].get());
 
     merge(merged_columns, queue_without_collation);
-    return header.cloneWithColumns(std::move(merged_columns));
+
+    for (auto & pos : converted_lc_columns)
+    {
+        auto & from_type = header.getByPosition(pos).type;
+        auto & to_type = result_header.getByPosition(pos).type;
+        merged_columns[pos] = (*recursiveTypeConversion(std::move(merged_columns[pos]), from_type, to_type)).mutate();
+    }
+
+    return result_header.cloneWithColumns(std::move(merged_columns));
 }
 
 
-void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
+void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue)
 {
     size_t merged_rows = 0;
 
     /// We take the rows in the correct order and put them in `merged_block`, while the rows are no more than `max_block_size`
-    while (!queue.empty())
+    while (queue.isValid())
     {
-        SortCursor current = queue.top();
+        SortCursor current = queue.current();
 
         setPrimaryKeyRef(next_key, current);
 
@@ -167,18 +175,13 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
             return;
         }
 
-        queue.pop();
-
         if (key_differs)
         {
             current_key.swap(next_key);
 
             /// We will write the data for the group. We copy the values of ordinary columns.
-            for (size_t i = 0, size = column_numbers_not_to_aggregate.size(); i < size; ++i)
-            {
-                size_t j = column_numbers_not_to_aggregate[i];
+            for (size_t j : column_numbers_not_to_aggregate)
                 merged_columns[j]->insertFrom(*current->all_columns[j], current->pos);
-            }
 
             /// Add the empty aggregation state to the aggregate columns. The state will be updated in the `addRow` function.
             for (auto & column_to_aggregate : columns_to_aggregate)
@@ -202,8 +205,7 @@ void AggregatingSortedBlockInputStream::merge(MutableColumns & merged_columns, s
 
         if (!current->isLast())
         {
-            current->next();
-            queue.push(current);
+            queue.next();
         }
         else
         {

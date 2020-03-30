@@ -1,5 +1,12 @@
+set(USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT ${NOT_UNBUNDLED})
+
+if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libcxx/CMakeLists.txt")
+    message(WARNING "submodule contrib/libcxx is missing. to fix try run: \n git submodule update --init --recursive")
+    set(USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT 0)
+endif()
+
 option (USE_LIBCXX "Use libc++ and libc++abi instead of libstdc++" ${NOT_UNBUNDLED})
-option (USE_INTERNAL_LIBCXX_LIBRARY "Set to FALSE to use system libcxx and libcxxabi libraries instead of bundled" ${NOT_UNBUNDLED})
+option (USE_INTERNAL_LIBCXX_LIBRARY "Set to FALSE to use system libcxx and libcxxabi libraries instead of bundled" ${USE_INTERNAL_LIBCXX_LIBRARY_DEFAULT})
 
 if (USE_LIBCXX)
     set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -D_LIBCPP_DEBUG=0") # More checks in debug build.

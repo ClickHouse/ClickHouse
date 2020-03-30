@@ -7,7 +7,6 @@
         <table_exists>hits_100m_single</table_exists>
     </preconditions>
 
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>
@@ -40,7 +39,4 @@
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE Title < URL]]></query>
     <query><![CDATA[SELECT count() FROM hits_100m_single WHERE Title < PageCharset]]></query>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 </test>

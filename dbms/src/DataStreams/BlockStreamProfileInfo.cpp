@@ -122,6 +122,7 @@ void BlockStreamProfileInfo::calculateRowsBeforeLimit() const
         /// Then the data about `rows_before_limit` can be in `RemoteBlockInputStream` (come from a remote server).
         BlockStreamProfileInfos remotes;
         collectInfosForStreamsWithName("Remote", remotes);
+        collectInfosForStreamsWithName("TreeExecutor", remotes);
 
         if (remotes.empty())
             return;

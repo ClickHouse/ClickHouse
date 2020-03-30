@@ -1,11 +1,10 @@
-
-# MySQL
+# MySQL {#mysql}
 
 The MySQL engine allows you to perform `SELECT` queries on data that is stored on a remote MySQL server.
 
-## Creating a Table
+## Creating a Table {#creating-a-table}
 
-```sql
+``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 (
     name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1] [TTL expr1],
@@ -18,32 +17,38 @@ See a detailed description of the [CREATE TABLE](../../query_language/create.md#
 
 The table structure can differ from the original MySQL table structure:
 
-- Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
-- Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+-   Column names should be the same as in the original MySQL table, but you can use just some of these columns and in any order.
+-   Column types may differ from those in the original MySQL table. ClickHouse tries to [cast](../../query_language/functions/type_conversion_functions.md#type_conversion_function-cast) values to the ClickHouse data types.
 
 **Engine Parameters**
 
-- `host:port` — MySQL server address.
-- `database` — Remote database name.
-- `table` — Remote table name.
-- `user` — MySQL user.
-- `password` — User password.
-- `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is substituted.
-- `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
+-   `host:port` — MySQL server address.
+
+-   `database` — Remote database name.
+
+-   `table` — Remote table name.
+
+-   `user` — MySQL user.
+
+-   `password` — User password.
+
+-   `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is substituted.
+
+-   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
 
     Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the [MySQL documentation](https://dev.mysql.com/doc/refman/8.0/en/insert-on-duplicate.html) to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
 
     To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
-Simple `WHERE` clauses such as ` =, !=, >, >=, <, <=` are executed on the MySQL server.
+Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are executed on the MySQL server.
 
 The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
 
-## Usage Example
+## Usage Example {#usage-example}
 
 Table in MySQL:
 
-```text
+``` text
 mysql> CREATE TABLE `test`.`test` (
     ->   `int_id` INT NOT NULL AUTO_INCREMENT,
     ->   `int_nullable` INT NULL DEFAULT NULL,
@@ -66,7 +71,7 @@ mysql> select * from test;
 
 Table in ClickHouse, retrieving data from the MySQL table created above:
 
-```sql
+``` sql
 CREATE TABLE mysql_table
 (
     `float_nullable` Nullable(Float32),
@@ -74,18 +79,20 @@ CREATE TABLE mysql_table
 )
 ENGINE = MySQL('localhost:3306', 'test', 'test', 'bayonet', '123')
 ```
-```sql
+
+``` sql
 SELECT * FROM mysql_table
 ```
-```text
+
+``` text
 ┌─float_nullable─┬─int_id─┐
 │           ᴺᵁᴸᴸ │      1 │
 └────────────────┴────────┘
 ```
 
-## See Also
+## See Also {#see-also}
 
-- [The 'mysql' table function](../../query_language/table_functions/mysql.md)
-- [Using MySQL as a source of external dictionary](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
+-   [The ‘mysql’ table function](../../query_language/table_functions/mysql.md)
+-   [Using MySQL as a source of external dictionary](../../query_language/dicts/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Original article](https://clickhouse.yandex/docs/en/operations/table_engines/mysql/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/operations/table_engines/mysql/) <!--hide-->

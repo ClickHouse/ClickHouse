@@ -11,6 +11,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Processors/Sources/SourceFromInputStream.h>
+#include <Processors/Pipe.h>
 
 
 namespace DB
@@ -24,16 +26,14 @@ namespace ErrorCodes
 
 
 StorageDictionary::StorageDictionary(
-    const String & database_name_,
-    const String & table_name_,
+    const StorageID & table_id_,
     const ColumnsDescription & columns_,
     const Context & context,
     bool attach,
     const String & dictionary_name_)
-    : table_name(table_name_),
-    database_name(database_name_),
-    dictionary_name(dictionary_name_),
-    logger(&Poco::Logger::get("StorageDictionary"))
+    : IStorage(table_id_)
+    , dictionary_name(dictionary_name_)
+    , logger(&Poco::Logger::get("StorageDictionary"))
 {
     setColumns(columns_);
 
@@ -45,7 +45,7 @@ StorageDictionary::StorageDictionary(
     }
 }
 
-BlockInputStreams StorageDictionary::read(
+Pipes StorageDictionary::read(
     const Names & column_names,
     const SelectQueryInfo & /*query_info*/,
     const Context & context,
@@ -54,7 +54,12 @@ BlockInputStreams StorageDictionary::read(
     const unsigned /*threads*/)
 {
     auto dictionary = context.getExternalDictionariesLoader().getDictionary(dictionary_name);
-    return BlockInputStreams{dictionary->getBlockInputStream(column_names, max_block_size)};
+    auto stream = dictionary->getBlockInputStream(column_names, max_block_size);
+    auto source = std::make_shared<SourceFromInputStream>(stream);
+    /// TODO: update dictionary interface for processors.
+    Pipes pipes;
+    pipes.emplace_back(std::move(source));
+    return pipes;
 }
 
 NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure & dictionary_structure)
@@ -108,7 +113,7 @@ void registerStorageDictionary(StorageFactory & factory)
         String dictionary_name = args.engine_args[0]->as<ASTLiteral &>().value.safeGet<String>();
 
         return StorageDictionary::create(
-            args.database_name, args.table_name, args.columns, args.context, args.attach, dictionary_name);
+            args.table_id, args.columns, args.context, args.attach, dictionary_name);
     });
 }
 

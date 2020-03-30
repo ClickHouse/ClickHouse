@@ -1,7 +1,6 @@
 #pragma once
 #include <cmath>
 
-#include <common/likely.h>
 #include <Columns/ColumnDecimal.h>
 #include <Core/DecimalFunctions.h>
 #include <DataTypes/IDataType.h>
@@ -17,8 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
-    extern const int CANNOT_CONVERT_TYPE;
-    extern const int DECIMAL_OVERFLOW;
 }
 
 class Context;

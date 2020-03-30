@@ -10,7 +10,8 @@
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/Context.h>
 #include <Common/typeid_cast.h>
-
+#include <Disks/DiskLocal.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 
 int main(int, char **)
 try
@@ -29,7 +30,9 @@ try
     context.makeGlobalContext();
     context.setPath("./");
 
-    StoragePtr table = StorageLog::create("./", "test", "test", ColumnsDescription{names_and_types}, ConstraintsDescription{}, 1048576, context);
+    DiskPtr disk = std::make_unique<DiskLocal>("default", "./", 0);
+    StoragePtr table = StorageLog::create(disk, "table/", StorageID("test", "test"), ColumnsDescription{names_and_types}, ConstraintsDescription{}, 1048576);
+
     table->startup();
 
     /// write into it
@@ -78,7 +81,7 @@ try
 
         QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 
-        BlockInputStreamPtr in = table->read(column_names, {}, context, stage, 8192, 1)[0];
+        BlockInputStreamPtr in = std::make_shared<TreeExecutorBlockInputStream>(std::move(table->read(column_names, {}, context, stage, 8192, 1)[0]));
 
         Block sample;
         {

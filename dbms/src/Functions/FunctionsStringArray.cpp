@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsStringArray.h>
-#include "registerFunctions.h"
+
 
 namespace DB
 {

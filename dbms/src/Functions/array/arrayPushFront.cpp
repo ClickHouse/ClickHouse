@@ -1,6 +1,5 @@
 #include "arrayPush.h"
 #include <Functions/FunctionFactory.h>
-#include "registerFunctionsArray.h"
 
 
 namespace DB
@@ -12,7 +11,7 @@ class FunctionArrayPushFront : public FunctionArrayPush
 public:
     static constexpr auto name = "arrayPushFront";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayPushFront>(context); }
-    FunctionArrayPushFront(const Context & context_) : FunctionArrayPush(context_, true, name) {}
+    explicit FunctionArrayPushFront(const Context & context_) : FunctionArrayPush(context_, true, name) {}
 };
 
 

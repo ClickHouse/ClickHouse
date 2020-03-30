@@ -19,13 +19,8 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_INPUT_ASSERTION_FAILED;
-    extern const int CANNOT_PARSE_QUOTED_STRING;
-    extern const int CANNOT_PARSE_NUMBER;
-    extern const int CANNOT_PARSE_DATE;
-    extern const int CANNOT_PARSE_DATETIME;
-    extern const int CANNOT_READ_ARRAY_FROM_TEXT;
-    extern const int CANNOT_PARSE_DATE;
     extern const int SYNTAX_ERROR;
     extern const int TYPE_MISMATCH;
     extern const int SUPPORT_IS_DISABLED;
@@ -129,7 +124,8 @@ void ValuesBlockInputFormat::readRow(MutableColumns & columns, size_t row_num)
 bool ValuesBlockInputFormat::tryParseExpressionUsingTemplate(MutableColumnPtr & column, size_t column_idx)
 {
     /// Try to parse expression using template if one was successfully deduced while parsing the first row
-    if (templates[column_idx]->parseExpression(buf, format_settings))
+    auto settings = context->getSettingsRef();
+    if (templates[column_idx]->parseExpression(buf, format_settings, settings))
     {
         ++rows_parsed_using_template[column_idx];
         return true;
@@ -187,6 +183,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 {
     const Block & header = getPort().getHeader();
     const IDataType & type = *header.getByPosition(column_idx).type;
+    auto settings = context->getSettingsRef();
 
     /// We need continuous memory containing the expression to use Lexer
     skipToNextRow(0, 1);
@@ -195,7 +192,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     Expected expected;
     Tokens tokens(buf.position(), buf.buffer().end());
-    IParser::Pos token_iterator(tokens);
+    IParser::Pos token_iterator(tokens, settings.max_parser_depth);
     ASTPtr ast;
 
     bool parsed = parser.parse(token_iterator, ast, expected);
@@ -265,7 +262,7 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
                 ++attempts_to_deduce_template[column_idx];
 
             buf.rollbackToCheckpoint();
-            if (templates[column_idx]->parseExpression(buf, format_settings))
+            if (templates[column_idx]->parseExpression(buf, format_settings, settings))
             {
                 ++rows_parsed_using_template[column_idx];
                 parser_type_for_column[column_idx] = ParserType::BatchTemplate;

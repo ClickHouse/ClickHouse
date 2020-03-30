@@ -12,6 +12,7 @@
 #include "IFunctionImpl.h"
 #include <Common/intExp.h>
 #include <Common/assert_cast.h>
+#include <Core/Defines.h>
 #include <cmath>
 #include <type_traits>
 #include <array>
@@ -31,7 +32,6 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
-    extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -393,8 +393,8 @@ public:
             case 1000000000000000000ULL: return applyImpl<1000000000000000000ULL>(in, out);
             case 10000000000000000000ULL: return applyImpl<10000000000000000000ULL>(in, out);
             default:
-                throw Exception("Logical error: unexpected 'scale' parameter passed to function IntegerRoundingComputation::compute",
-                    ErrorCodes::LOGICAL_ERROR);
+                throw Exception("Unexpected 'scale' parameter passed to function",
+                    ErrorCodes::BAD_ARGUMENTS);
         }
     }
 };
@@ -702,7 +702,7 @@ private:
     }
 
     template <typename Container>
-    void executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries)
+    void NO_INLINE executeImplNumToNum(const Container & src, Container & dst, const Array & boundaries)
     {
         using ValueType = typename Container::value_type;
         std::vector<ValueType> boundary_values(boundaries.size());
@@ -714,20 +714,53 @@ private:
 
         size_t size = src.size();
         dst.resize(size);
-        for (size_t i = 0; i < size; ++i)
+
+        if (boundary_values.size() < 32)    /// Just a guess
         {
-            auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
-            if (it == boundary_values.end())
+            /// Linear search with value on previous iteration as a hint.
+            /// Not optimal if the size of list is large and distribution of values is uniform random.
+
+            auto begin = boundary_values.begin();
+            auto end = boundary_values.end();
+            auto it = begin + (end - begin) / 2;
+
+            for (size_t i = 0; i < size; ++i)
             {
-                dst[i] = boundary_values.back();
+                auto value = src[i];
+
+                if (*it < value)
+                {
+                    while (it != end && *it <= value)
+                        ++it;
+                    if (it != begin)
+                        --it;
+                }
+                else
+                {
+                    while (*it > value && it != begin)
+                        --it;
+                }
+
+                dst[i] = *it;
             }
-            else if (it == boundary_values.begin())
+        }
+        else
+        {
+            for (size_t i = 0; i < size; ++i)
             {
-                dst[i] = boundary_values.front();
-            }
-            else
-            {
-                dst[i] = *(it - 1);
+                auto it = std::upper_bound(boundary_values.begin(), boundary_values.end(), src[i]);
+                if (it == boundary_values.end())
+                {
+                    dst[i] = boundary_values.back();
+                }
+                else if (it == boundary_values.begin())
+                {
+                    dst[i] = boundary_values.front();
+                }
+                else
+                {
+                    dst[i] = *(it - 1);
+                }
             }
         }
     }

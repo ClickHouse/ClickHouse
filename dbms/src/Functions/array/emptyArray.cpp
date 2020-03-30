@@ -9,7 +9,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include "registerFunctionsArray.h"
 
 
 namespace DB

@@ -20,21 +20,17 @@ struct PartitionCommand
     {
         ATTACH_PARTITION,
         MOVE_PARTITION,
-        CLEAR_COLUMN,
-        CLEAR_INDEX,
         DROP_PARTITION,
         DROP_DETACHED_PARTITION,
         FETCH_PARTITION,
         FREEZE_ALL_PARTITIONS,
         FREEZE_PARTITION,
-        REPLACE_PARTITION
+        REPLACE_PARTITION,
     };
 
     Type type;
 
     ASTPtr partition;
-    Field column_name;
-    Field index_name;
 
     /// true for DETACH PARTITION.
     bool detach = false;
@@ -47,6 +43,10 @@ struct PartitionCommand
     String from_table;
     bool replace = true;
 
+    /// For MOVE PARTITION
+    String to_database;
+    String to_table;
+
     /// For FETCH PARTITION - path in ZK to the shard, from which to download the partition.
     String from_zookeeper_path;
 
@@ -57,20 +57,18 @@ struct PartitionCommand
     {
         DISK,
         VOLUME,
+        TABLE,
     };
 
-    MoveDestinationType move_destination_type;
+    std::optional<MoveDestinationType> move_destination_type;
+
 
     String move_destination_name;
 
     static std::optional<PartitionCommand> parse(const ASTAlterCommand * command);
 };
 
-class PartitionCommands : public std::vector<PartitionCommand>
-{
-public:
-    void validate(const IStorage & table);
-};
+using PartitionCommands = std::vector<PartitionCommand>;
 
 
 }

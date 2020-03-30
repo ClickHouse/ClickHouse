@@ -29,6 +29,7 @@
 #include <Storages/System/StorageSystemQuotaUsage.h>
 #include <Storages/System/StorageSystemReplicas.h>
 #include <Storages/System/StorageSystemReplicationQueue.h>
+#include <Storages/System/StorageSystemRowPolicies.h>
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
 #include <Storages/System/StorageSystemTableEngines.h>
@@ -38,6 +39,7 @@
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemDisks.h>
 #include <Storages/System/StorageSystemStoragePolicies.h>
+#include <Storages/System/StorageSystemZeros.h>
 
 #ifdef OS_LINUX
 #include <Storages/System/StorageSystemStackTrace.h>
@@ -50,8 +52,10 @@ namespace DB
 void attachSystemTablesLocal(IDatabase & system_database)
 {
     system_database.attachTable("one", StorageSystemOne::create("one"));
-    system_database.attachTable("numbers", StorageSystemNumbers::create("numbers", false));
-    system_database.attachTable("numbers_mt", StorageSystemNumbers::create("numbers_mt", true));
+    system_database.attachTable("numbers", StorageSystemNumbers::create(StorageID("system", "numbers"), false));
+    system_database.attachTable("numbers_mt", StorageSystemNumbers::create(StorageID("system", "numbers_mt"), true));
+    system_database.attachTable("zeros", StorageSystemZeros::create(StorageID("system", "zeros"), false));
+    system_database.attachTable("zeros_mt", StorageSystemZeros::create(StorageID("system", "zeros_mt"), true));
     system_database.attachTable("databases", StorageSystemDatabases::create("databases"));
     system_database.attachTable("tables", StorageSystemTables::create("tables"));
     system_database.attachTable("columns", StorageSystemColumns::create("columns"));
@@ -60,6 +64,7 @@ void attachSystemTablesLocal(IDatabase & system_database)
     system_database.attachTable("settings", StorageSystemSettings::create("settings"));
     system_database.attachTable("quotas", StorageSystemQuotas::create("quotas"));
     system_database.attachTable("quota_usage", StorageSystemQuotaUsage::create("quota_usage"));
+    system_database.attachTable("row_policies", StorageSystemRowPolicies::create("row_policies"));
     system_database.attachTable("merge_tree_settings", SystemMergeTreeSettings::create("merge_tree_settings"));
     system_database.attachTable("build_options", StorageSystemBuildOptions::create("build_options"));
     system_database.attachTable("formats", StorageSystemFormats::create("formats"));

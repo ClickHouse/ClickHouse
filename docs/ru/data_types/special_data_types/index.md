@@ -1,5 +1,5 @@
-# Служебные типы данных
+# Служебные типы данных {#sluzhebnye-tipy-dannykh}
 
 Значения служебных типов данных не могут сохраняться в таблицу и выводиться в качестве результата, а возникают как промежуточный результат выполнения запроса.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/special_data_types/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/special_data_types/) <!--hide-->

@@ -27,20 +27,35 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TYPE_MISMATCH;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int DICTIONARY_IS_EMPTY;
     extern const int NOT_IMPLEMENTED;
 }
 
+static void validateKeyTypes(const DataTypes & key_types)
+{
+    if (key_types.size() != 1)
+        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
+
+    const auto & actual_type = key_types[0]->getName();
+
+    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
+        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
+}
+
+
 TrieDictionary::TrieDictionary(
+    const std::string & database_,
     const std::string & name_,
     const DictionaryStructure & dict_struct_,
     DictionarySourcePtr source_ptr_,
     const DictionaryLifetime dict_lifetime_,
     bool require_nonempty_)
-    : name{name_}
+    : database(database_)
+    , name(name_)
+    , full_name{database_.empty() ? name_ : (database_ + "." + name_)}
     , dict_struct(dict_struct_)
     , source_ptr{std::move(source_ptr_)}
     , dict_lifetime(dict_lifetime_)
@@ -75,7 +90,7 @@ TrieDictionary::~TrieDictionary()
         validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         const auto null_value = std::get<TYPE>(attribute.null_values); \
 \
@@ -107,7 +122,7 @@ void TrieDictionary::getString(
     validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     const auto & null_value = StringRef{std::get<String>(attribute.null_values)};
 
@@ -129,7 +144,7 @@ void TrieDictionary::getString(
         validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, \
@@ -163,7 +178,7 @@ void TrieDictionary::getString(
     validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -183,7 +198,7 @@ void TrieDictionary::getString(
         validateKeyTypes(key_types); \
 \
         const auto & attribute = getAttribute(attribute_name); \
-        checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
+        checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::ut##TYPE); \
 \
         getItemsImpl<TYPE, TYPE>( \
             attribute, key_columns, [&](const size_t row, const auto value) { out[row] = value; }, [&](const size_t) { return def; }); \
@@ -214,7 +229,7 @@ void TrieDictionary::getString(
     validateKeyTypes(key_types);
 
     const auto & attribute = getAttribute(attribute_name);
-    checkAttributeType(name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
+    checkAttributeType(full_name, attribute_name, attribute.type, AttributeUnderlyingType::utString);
 
     getItemsImpl<StringRef, StringRef>(
         attribute,
@@ -291,7 +306,7 @@ void TrieDictionary::createAttributes()
         attributes.push_back(createAttributeWithType(attribute.underlying_type, attribute.null_value));
 
         if (attribute.hierarchical)
-            throw Exception{name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
+            throw Exception{full_name + ": hierarchical attributes not supported for dictionary of type " + getTypeName(),
                             ErrorCodes::TYPE_MISMATCH};
     }
 }
@@ -337,7 +352,7 @@ void TrieDictionary::loadData()
     stream->readSuffix();
 
     if (require_nonempty && 0 == element_count)
-        throw Exception{name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
+        throw Exception{full_name + ": dictionary source is empty and 'require_nonempty' property is set.", ErrorCodes::DICTIONARY_IS_EMPTY};
 }
 
 template <typename T>
@@ -411,17 +426,6 @@ void TrieDictionary::calculateBytesAllocated()
     }
 
     bytes_allocated += btrie_allocated(trie);
-}
-
-void TrieDictionary::validateKeyTypes(const DataTypes & key_types) const
-{
-    if (key_types.size() != 1)
-        throw Exception{"Expected a single IP address", ErrorCodes::TYPE_MISMATCH};
-
-    const auto & actual_type = key_types[0]->getName();
-
-    if (actual_type != "UInt32" && actual_type != "FixedString(16)")
-        throw Exception{"Key does not match, expected either UInt32 or FixedString(16)", ErrorCodes::TYPE_MISMATCH};
 }
 
 
@@ -523,7 +527,7 @@ void TrieDictionary::getItemsImpl(
             if (addr.size != 16)
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
-            uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const UInt8 *>(addr.data));
+            uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const uint8_t *>(addr.data));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic warning "-Wold-style-cast"
             set_value(i, slot != BTRIE_NULL ? static_cast<OutputType>(vec[slot]) : get_default(i));
@@ -627,7 +631,7 @@ const TrieDictionary::Attribute & TrieDictionary::getAttribute(const std::string
 {
     const auto it = attribute_index_by_name.find(attribute_name);
     if (it == std::end(attribute_index_by_name))
-        throw Exception{name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
+        throw Exception{full_name + ": no such attribute '" + attribute_name + "'", ErrorCodes::BAD_ARGUMENTS};
 
     return attributes[it->second];
 }
@@ -657,7 +661,7 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
             if (unlikely(addr.size != 16))
                 throw Exception("Expected key to be FixedString(16)", ErrorCodes::LOGICAL_ERROR);
 
-            uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const UInt8 *>(addr.data));
+            uintptr_t slot = btrie_find_a6(trie, reinterpret_cast<const uint8_t *>(addr.data));
 #pragma GCC diagnostic push
 #pragma GCC diagnostic warning "-Wold-style-cast"
             out[i] = (slot != BTRIE_NULL);
@@ -669,13 +673,13 @@ void TrieDictionary::has(const Attribute &, const Columns & key_columns, PaddedP
 }
 
 template <typename Getter, typename KeyType>
-void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
+static void trieTraverse(const btrie_t * trie, Getter && getter)
 {
     KeyType key = 0;
     const KeyType high_bit = ~((~key) >> 1);
 
     btrie_node_t * node;
-    node = tree->root;
+    node = trie->root;
 
     std::stack<btrie_node_t *> stack;
     while (node)
@@ -684,7 +688,7 @@ void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
         node = node->left;
     }
 
-    auto getBit = [&high_bit](size_t size) { return size ? (high_bit >> (size - 1)) : 0; };
+    auto get_bit = [&high_bit](size_t size) { return size ? (high_bit >> (size - 1)) : 0; };
 
     while (!stack.empty())
     {
@@ -699,13 +703,13 @@ void TrieDictionary::trieTraverse(const btrie_t * tree, Getter && getter) const
         if (node && node->right)
         {
             stack.push(nullptr);
-            key |= getBit(stack.size());
+            key |= get_bit(stack.size());
             stack.push(node->right);
             while (stack.top()->left)
                 stack.push(stack.top()->left);
         }
         else
-            key &= ~getBit(stack.size());
+            key &= ~get_bit(stack.size());
     }
 }
 
@@ -736,13 +740,13 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
 {
     using BlockInputStreamType = DictionaryBlockInputStream<TrieDictionary, UInt64>;
 
-    auto getKeys = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    auto get_keys = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         const auto & attr = dict_attributes.front();
         return ColumnsWithTypeAndName(
             {ColumnWithTypeAndName(columns.front(), std::make_shared<DataTypeFixedString>(IPV6_BINARY_LENGTH), attr.name)});
     };
-    auto getView = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
+    auto get_view = [](const Columns & columns, const std::vector<DictionaryAttribute> & dict_attributes)
     {
         auto column = ColumnString::create();
         const auto & ip_column = assert_cast<const ColumnFixedString &>(*columns.front());
@@ -761,13 +765,13 @@ BlockInputStreamPtr TrieDictionary::getBlockInputStream(const Names & column_nam
             ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), dict_attributes.front().name)};
     };
     return std::make_shared<BlockInputStreamType>(
-        shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(getKeys), std::move(getView));
+        shared_from_this(), max_block_size, getKeyColumns(), column_names, std::move(get_keys), std::move(get_view));
 }
 
 
 void registerDictionaryTrie(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string & name,
+    auto create_layout = [=](const std::string &,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
@@ -776,10 +780,12 @@ void registerDictionaryTrie(DictionaryFactory & factory)
         if (!dict_struct.key)
             throw Exception{"'key' is required for dictionary of layout 'ip_trie'", ErrorCodes::BAD_ARGUMENTS};
 
+        const String database = config.getString(config_prefix + ".database", "");
+        const String name = config.getString(config_prefix + ".name");
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         const bool require_nonempty = config.getBool(config_prefix + ".require_nonempty", false);
         // This is specialised trie for storing IPv4 and IPv6 prefixes.
-        return std::make_unique<TrieDictionary>(name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
+        return std::make_unique<TrieDictionary>(database, name, dict_struct, std::move(source_ptr), dict_lifetime, require_nonempty);
     };
     factory.registerLayout("ip_trie", create_layout, true);
 }

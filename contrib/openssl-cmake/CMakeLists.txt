@@ -1,16 +1,6 @@
 set(OPENSSL_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/openssl)
 set(OPENSSL_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/openssl)
 
-#file(READ ${CMAKE_CURRENT_SOURCE_DIR}/${OPENSSL_SOURCE_DIR}/ssl/VERSION SSL_VERSION)
-#string(STRIP ${SSL_VERSION} SSL_VERSION)
-#string(REPLACE ":" "." SSL_VERSION ${SSL_VERSION})
-#string(REGEX REPLACE "\\..*" "" SSL_MAJOR_VERSION ${SSL_VERSION})
-
-#file(READ ${CMAKE_CURRENT_SOURCE_DIR}/${OPENSSL_SOURCE_DIR}/crypto/VERSION CRYPTO_VERSION)
-#string(STRIP ${CRYPTO_VERSION} CRYPTO_VERSION)
-#string(REPLACE ":" "." CRYPTO_VERSION ${CRYPTO_VERSION})
-#string(REGEX REPLACE "\\..*" "" CRYPTO_MAJOR_VERSION ${CRYPTO_VERSION})
-
 set(OPENSSLDIR "/etc/ssl" CACHE PATH "Set the default openssl directory")
 set(OPENSSL_ENGINESDIR "/usr/lib/engines-3" CACHE PATH "Set the default openssl directory for engines")
 set(OPENSSL_MODULESDIR "/usr/local/lib/ossl-modules" CACHE PATH "Set the default openssl directory for modules")
@@ -27,19 +17,27 @@ elseif(ARCH_AARCH64)
 endif()
 
 enable_language(ASM)
+
 if (COMPILER_CLANG)
     add_definitions(-Wno-unused-command-line-argument)
 endif ()
 
 if (ARCH_AMD64)
+    if (OS_DARWIN)
+        set (OPENSSL_SYSTEM "macosx")
+    endif ()
+
     macro(perl_generate_asm FILE_IN FILE_OUT)
+        get_filename_component(DIRNAME ${FILE_OUT} DIRECTORY)
+        file(MAKE_DIRECTORY ${DIRNAME})
         add_custom_command(OUTPUT ${FILE_OUT}
-            COMMAND /usr/bin/env perl ${FILE_IN} ${FILE_OUT}
+            COMMAND /usr/bin/env perl ${FILE_IN} ${OPENSSL_SYSTEM} ${FILE_OUT}
             # ASM code has broken unwind tables (CFI), strip them.
             # Otherwise asynchronous unwind (that we use for query profiler)
             #  will lead to segfault while trying to interpret wrong "CFA expression".
             COMMAND sed -i -e '/^\.cfi_/d' ${FILE_OUT})
     endmacro()
+
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aes-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aes-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-mb-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesni-mb-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesni-sha1-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesni-sha1-x86_64.s)
@@ -70,12 +68,17 @@ if (ARCH_AMD64)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-x86_64.s)   # This is not a mistake
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-x86_64.s)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/whrlpool/asm/wp-x86_64.pl ${OPENSSL_BINARY_DIR}/crypto/whrlpool/wp-x86_64.s)
+
 elseif (ARCH_AARCH64)
+
     macro(perl_generate_asm FILE_IN FILE_OUT)
+        get_filename_component(DIRNAME ${FILE_OUT} DIRECTORY)
+        file(MAKE_DIRECTORY ${DIRNAME})
         add_custom_command(OUTPUT ${FILE_OUT}
             COMMAND /usr/bin/env perl ${FILE_IN} "linux64" ${FILE_OUT})
             # Hope that the ASM code for AArch64 doesn't have broken CFI. Otherwise, add the same sed as for x86_64.
     endmacro()
+
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/aesv8-armx.pl ${OPENSSL_BINARY_DIR}/crypto/aes/aesv8-armx.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/aes/asm/vpaes-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/aes/vpaes-armv8.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/bn/asm/armv8-mont.pl ${OPENSSL_BINARY_DIR}/crypto/bn/armv8-mont.S)
@@ -88,6 +91,8 @@ elseif (ARCH_AARCH64)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha1-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha1-armv8.S)
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-armv8.S)   # This is not a mistake
     perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/sha/asm/sha512-armv8.pl ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S)
+    perl_generate_asm(${OPENSSL_SOURCE_DIR}/crypto/modes/asm/aes-gcm-armv8_64.pl ${OPENSSL_BINARY_DIR}/crypto/modes/asm/aes-gcm-armv8_64.S)
+
 endif ()
 
 set(CRYPTO_SRCS
@@ -184,6 +189,7 @@ ${OPENSSL_SOURCE_DIR}/crypto/bio/bf_buff.c
 ${OPENSSL_SOURCE_DIR}/crypto/bio/bf_lbuf.c
 ${OPENSSL_SOURCE_DIR}/crypto/bio/bf_nbio.c
 ${OPENSSL_SOURCE_DIR}/crypto/bio/bf_null.c
+${OPENSSL_SOURCE_DIR}/crypto/bio/bf_prefix.c
 ${OPENSSL_SOURCE_DIR}/crypto/bio/bio_cb.c
 ${OPENSSL_SOURCE_DIR}/crypto/bio/bio_err.c
 ${OPENSSL_SOURCE_DIR}/crypto/bio/bio_lib.c
@@ -316,6 +322,7 @@ ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_check.c
 ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_depr.c
 ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_err.c
 ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_gen.c
+${OPENSSL_SOURCE_DIR}/crypto/dh/dh_group_params.c
 ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_kdf.c
 ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_key.c
 ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_lib.c
@@ -323,7 +330,7 @@ ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_meth.c
 ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_pmeth.c
 ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_prn.c
 ${OPENSSL_SOURCE_DIR}/crypto/dh/dh_rfc5114.c
-${OPENSSL_SOURCE_DIR}/crypto/dh/dh_rfc7919.c
+${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_aid.c
 ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_ameth.c
 ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_asn1.c
 ${OPENSSL_SOURCE_DIR}/crypto/dsa/dsa_depr.c
@@ -460,10 +467,10 @@ ${OPENSSL_SOURCE_DIR}/crypto/evp/legacy_md5.c
 ${OPENSSL_SOURCE_DIR}/crypto/evp/legacy_md5_sha1.c
 ${OPENSSL_SOURCE_DIR}/crypto/evp/legacy_mdc2.c
 ${OPENSSL_SOURCE_DIR}/crypto/evp/legacy_sha.c
+${OPENSSL_SOURCE_DIR}/crypto/evp/legacy_ripemd.c
+${OPENSSL_SOURCE_DIR}/crypto/evp/legacy_wp.c
 ${OPENSSL_SOURCE_DIR}/crypto/evp/m_null.c
-${OPENSSL_SOURCE_DIR}/crypto/evp/m_ripemd.c
 ${OPENSSL_SOURCE_DIR}/crypto/evp/m_sigver.c
-${OPENSSL_SOURCE_DIR}/crypto/evp/m_wp.c
 ${OPENSSL_SOURCE_DIR}/crypto/evp/mac_lib.c
 ${OPENSSL_SOURCE_DIR}/crypto/evp/mac_meth.c
 ${OPENSSL_SOURCE_DIR}/crypto/evp/names.c
@@ -482,6 +489,8 @@ ${OPENSSL_SOURCE_DIR}/crypto/evp/pkey_mac.c
 ${OPENSSL_SOURCE_DIR}/crypto/evp/pmeth_fn.c
 ${OPENSSL_SOURCE_DIR}/crypto/evp/pmeth_gn.c
 ${OPENSSL_SOURCE_DIR}/crypto/evp/pmeth_lib.c
+${OPENSSL_SOURCE_DIR}/crypto/evp/signature.c
+${OPENSSL_SOURCE_DIR}/crypto/ffc/ffc_params.c
 ${OPENSSL_SOURCE_DIR}/crypto/hmac/hm_ameth.c
 ${OPENSSL_SOURCE_DIR}/crypto/hmac/hmac.c
 ${OPENSSL_SOURCE_DIR}/crypto/idea/i_cbc.c
@@ -525,6 +534,7 @@ ${OPENSSL_SOURCE_DIR}/crypto/provider_conf.c
 ${OPENSSL_SOURCE_DIR}/crypto/provider_core.c
 ${OPENSSL_SOURCE_DIR}/crypto/provider_predefined.c
 ${OPENSSL_SOURCE_DIR}/crypto/sparse_array.c
+${OPENSSL_SOURCE_DIR}/crypto/self_test_core.c
 ${OPENSSL_SOURCE_DIR}/crypto/threads_none.c
 ${OPENSSL_SOURCE_DIR}/crypto/threads_pthread.c
 ${OPENSSL_SOURCE_DIR}/crypto/threads_win.c
@@ -669,8 +679,8 @@ ${OPENSSL_SOURCE_DIR}/crypto/sm2/sm2_crypt.c
 ${OPENSSL_SOURCE_DIR}/crypto/sm2/sm2_err.c
 ${OPENSSL_SOURCE_DIR}/crypto/sm2/sm2_pmeth.c
 ${OPENSSL_SOURCE_DIR}/crypto/sm2/sm2_sign.c
-${OPENSSL_SOURCE_DIR}/crypto/sm3/m_sm3.c
 ${OPENSSL_SOURCE_DIR}/crypto/sm3/sm3.c
+${OPENSSL_SOURCE_DIR}/crypto/sm3/legacy_sm3.c
 ${OPENSSL_SOURCE_DIR}/crypto/sm4/sm4.c
 ${OPENSSL_SOURCE_DIR}/crypto/srp/srp_lib.c
 ${OPENSSL_SOURCE_DIR}/crypto/srp/srp_vfy.c
@@ -775,7 +785,11 @@ ${OPENSSL_SOURCE_DIR}/crypto/x509/x_x509.c
 ${OPENSSL_SOURCE_DIR}/crypto/x509/x_x509a.c
 ${OPENSSL_SOURCE_DIR}/providers/implementations/asymciphers/rsa_enc.c
 ${OPENSSL_SOURCE_DIR}/providers/defltprov.c
+${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_null.c
 ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes.c
+${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_cbc_hmac_sha.c
+${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_cbc_hmac_sha1_hw.c
+${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_cbc_hmac_sha256_hw.c
 ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_ccm.c
 ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_ccm_hw.c
 ${OPENSSL_SOURCE_DIR}/providers/implementations/ciphers/cipher_aes_gcm.c
@@ -940,7 +954,8 @@ elseif (ARCH_AARCH64)
         ${OPENSSL_BINARY_DIR}/crypto/sha/keccak1600-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha1-armv8.S
         ${OPENSSL_BINARY_DIR}/crypto/sha/sha256-armv8.S
-        ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S)
+        ${OPENSSL_BINARY_DIR}/crypto/sha/sha512-armv8.S
+        ${OPENSSL_BINARY_DIR}/crypto/modes/asm/aes-gcm-armv8_64.S)
 endif ()
 
 set(SSL_SRCS

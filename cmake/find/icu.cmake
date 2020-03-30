@@ -1,4 +1,8 @@
-option(ENABLE_ICU "Enable ICU" ${ENABLE_LIBRARIES})
+if (OS_LINUX)
+    option(ENABLE_ICU "Enable ICU" ${ENABLE_LIBRARIES})
+else ()
+    option(ENABLE_ICU "Enable ICU" 0)
+endif ()
 
 if (ENABLE_ICU)
 

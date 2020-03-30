@@ -54,7 +54,7 @@ try
 catch (const Exception & e)
 {
     std::cerr << e.what() << ", " << e.displayText() << ": " << std::endl
-              << e.getStackTrace().toString() << std::endl;
+              << e.getStackTraceString() << std::endl;
     throw;
 }
 catch (Poco::Exception & e)

@@ -32,8 +32,7 @@ Block TextLogElement::createBlock()
         {std::make_shared<DataTypeUInt32>(),                                                  "microseconds"},
 
         {std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),        "thread_name"},
-        {std::make_shared<DataTypeUInt32>(),                                                  "thread_number"},
-        {std::make_shared<DataTypeUInt32>(),                                                  "os_thread_id"},
+        {std::make_shared<DataTypeUInt64>(),                                                  "thread_id"},
 
         {std::move(priority_datatype),                                                        "level"},
         {std::make_shared<DataTypeString>(),                                                  "query_id"},
@@ -58,8 +57,7 @@ void TextLogElement::appendToBlock(Block & block) const
     columns[i++]->insert(microseconds);
 
     columns[i++]->insertData(thread_name.data(), thread_name.size());
-    columns[i++]->insert(thread_number);
-    columns[i++]->insert(os_thread_id);
+    columns[i++]->insert(thread_id);
 
     columns[i++]->insert(level);
     columns[i++]->insert(query_id);
@@ -70,6 +68,17 @@ void TextLogElement::appendToBlock(Block & block) const
 
     columns[i++]->insert(source_file);
     columns[i++]->insert(source_line);
+}
+
+TextLog::TextLog(Context & context_, const String & database_name_,
+        const String & table_name_, const String & storage_def_,
+        size_t flush_interval_milliseconds_)
+  : SystemLog<TextLogElement>(context_, database_name_, table_name_,
+        storage_def_, flush_interval_milliseconds_)
+{
+    // SystemLog methods may write text logs, so we disable logging for the text
+    // log table to avoid recursion.
+    log->setLevel(0);
 }
 
 }

@@ -7,7 +7,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int LOGICAL_ERROR;
 }
 
@@ -161,7 +160,7 @@ Block GraphiteRollupSortedBlockInputStream::readImpl()
 }
 
 
-void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns, std::priority_queue<SortCursor> & queue)
+void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue)
 {
     const DateLUTImpl & date_lut = DateLUT::instance();
 
@@ -173,9 +172,9 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
     /// contribute towards current output row.
     /// Variables starting with next_* refer to the row at the top of the queue.
 
-    while (!queue.empty())
+    while (queue.isValid())
     {
-        SortCursor next_cursor = queue.top();
+        SortCursor next_cursor = queue.current();
 
         StringRef next_path = next_cursor->all_columns[path_column_num]->getDataAt(next_cursor->pos);
         bool new_path = is_first || next_path != current_group_path;
@@ -253,12 +252,9 @@ void GraphiteRollupSortedBlockInputStream::merge(MutableColumns & merged_columns
             current_group_path = next_path;
         }
 
-        queue.pop();
-
         if (!next_cursor->isLast())
         {
-            next_cursor->next();
-            queue.push(next_cursor);
+            queue.next();
         }
         else
         {
@@ -285,11 +281,8 @@ void GraphiteRollupSortedBlockInputStream::startNextGroup(MutableColumns & merge
     const Graphite::AggregationPattern * aggregation_pattern = std::get<1>(next_rule);
 
     /// Copy unmodified column values (including path column).
-    for (size_t i = 0, size = unmodified_column_numbers.size(); i < size; ++i)
-    {
-        size_t j = unmodified_column_numbers[i];
+    for (size_t j : unmodified_column_numbers)
         merged_columns[j]->insertFrom(*cursor->all_columns[j], cursor->pos);
-    }
 
     if (aggregation_pattern)
     {

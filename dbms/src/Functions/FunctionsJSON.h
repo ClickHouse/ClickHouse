@@ -993,7 +993,7 @@ public:
         auto & chars = col_str.getChars();
         WriteBufferFromVector<ColumnString::Chars> buf(chars, WriteBufferFromVector<ColumnString::Chars>::AppendModeTag());
         traverse(it, buf);
-        buf.finish();
+        buf.finalize();
         chars.push_back(0);
         col_str.getOffsets().push_back(chars.size());
         return true;

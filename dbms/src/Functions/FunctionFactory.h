@@ -2,8 +2,6 @@
 
 #include <Functions/IFunctionAdaptors.h>
 #include <Common/IFactoryWithAliases.h>
-#include "URL/registerFunctionsURL.h"
-#include "registerFunctions.h"
 
 #include <functional>
 #include <memory>
@@ -24,7 +22,6 @@ class Context;
 class FunctionFactory : private boost::noncopyable, public IFactoryWithAliases<std::function<FunctionOverloadResolverImplPtr(const Context &)>>
 {
 public:
-
     static FunctionFactory & instance();
 
     template <typename Function>

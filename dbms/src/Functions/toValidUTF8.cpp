@@ -121,10 +121,10 @@ struct ToValidUTF8Impl
             res_offsets[i] = write_buffer.count();
             prev_offset = offsets[i];
         }
-        write_buffer.finish();
+        write_buffer.finalize();
     }
 
-    [[noreturn]] static void vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception("Column of type FixedString is not supported by toValidUTF8 function", ErrorCodes::ILLEGAL_COLUMN);
     }

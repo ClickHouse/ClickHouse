@@ -19,7 +19,6 @@ namespace ErrorCodes
     extern const int CANNOT_OPEN_FILE;
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int OPENSSL_ERROR;
-    extern const int SYSTEM_ERROR;
 }
 
 MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
@@ -34,7 +33,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
     }
     catch (...)
     {
-        LOG_INFO(log, "Failed to create SSL context. SSL will be disabled. Error: " << getCurrentExceptionMessage(false));
+        LOG_TRACE(log, "Failed to create SSL context. SSL will be disabled. Error: " << getCurrentExceptionMessage(false));
         ssl_enabled = false;
     }
 #endif
@@ -47,7 +46,7 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
     }
     catch (...)
     {
-        LOG_WARNING(log, "Failed to read RSA keys. Error: " << getCurrentExceptionMessage(false));
+        LOG_TRACE(log, "Failed to read RSA key pair from server certificate. Error: " << getCurrentExceptionMessage(false));
         generateRSAKeys();
     }
 #endif
@@ -57,26 +56,26 @@ MySQLHandlerFactory::MySQLHandlerFactory(IServer & server_)
 void MySQLHandlerFactory::readRSAKeys()
 {
     const Poco::Util::LayeredConfiguration & config = Poco::Util::Application::instance().config();
-    String certificateFileProperty = "openSSL.server.certificateFile";
-    String privateKeyFileProperty = "openSSL.server.privateKeyFile";
+    String certificate_file_property = "openSSL.server.certificateFile";
+    String private_key_file_property = "openSSL.server.privateKeyFile";
 
-    if (!config.has(certificateFileProperty))
+    if (!config.has(certificate_file_property))
         throw Exception("Certificate file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    if (!config.has(privateKeyFileProperty))
+    if (!config.has(private_key_file_property))
         throw Exception("Private key file is not set.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
     {
-        String certificateFile = config.getString(certificateFileProperty);
-        FILE * fp = fopen(certificateFile.data(), "r");
+        String certificate_file = config.getString(certificate_file_property);
+        FILE * fp = fopen(certificate_file.data(), "r");
         if (fp == nullptr)
-            throw Exception("Cannot open certificate file: " + certificateFile + ".", ErrorCodes::CANNOT_OPEN_FILE);
+            throw Exception("Cannot open certificate file: " + certificate_file + ".", ErrorCodes::CANNOT_OPEN_FILE);
         SCOPE_EXIT(fclose(fp));
 
         X509 * x509 = PEM_read_X509(fp, nullptr, nullptr, nullptr);
         SCOPE_EXIT(X509_free(x509));
         if (x509 == nullptr)
-            throw Exception("Failed to read PEM certificate from " + certificateFile + ". Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
+            throw Exception("Failed to read PEM certificate from " + certificate_file + ". Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
 
         EVP_PKEY * p = X509_get_pubkey(x509);
         if (p == nullptr)
@@ -89,22 +88,22 @@ void MySQLHandlerFactory::readRSAKeys()
     }
 
     {
-        String privateKeyFile = config.getString(privateKeyFileProperty);
+        String private_key_file = config.getString(private_key_file_property);
 
-        FILE * fp = fopen(privateKeyFile.data(), "r");
+        FILE * fp = fopen(private_key_file.data(), "r");
         if (fp == nullptr)
-            throw Exception ("Cannot open private key file " + privateKeyFile + ".", ErrorCodes::CANNOT_OPEN_FILE);
+            throw Exception ("Cannot open private key file " + private_key_file + ".", ErrorCodes::CANNOT_OPEN_FILE);
         SCOPE_EXIT(fclose(fp));
 
         private_key.reset(PEM_read_RSAPrivateKey(fp, nullptr, nullptr, nullptr));
         if (!private_key)
-            throw Exception("Failed to read RSA private key from " + privateKeyFile + ". Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
+            throw Exception("Failed to read RSA private key from " + private_key_file + ". Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);
     }
 }
 
 void MySQLHandlerFactory::generateRSAKeys()
 {
-    LOG_INFO(log, "Generating new RSA key.");
+    LOG_TRACE(log, "Generating new RSA key pair.");
     public_key.reset(RSA_new());
     if (!public_key)
         throw Exception("Failed to allocate RSA key. Error: " + getOpenSSLErrors(), ErrorCodes::OPENSSL_ERROR);

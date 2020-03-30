@@ -1,5 +1,4 @@
 <test>
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>
@@ -11,9 +10,6 @@
         </any_of>
     </stop_conditions>
 
-    <main_metric>
-        <min_time/>
-    </main_metric>
 
     <preconditions>
         <table_exists>default.hits_100m_single</table_exists>

@@ -26,9 +26,11 @@
 #include <IO/VarInt.h>
 #include <IO/DoubleConverter.h>
 #include <IO/WriteBufferFromString.h>
-#include <IO/ZlibDeflatingWriteBuffer.h>
+
+#include <ryu/ryu.h>
 
 #include <Formats/FormatSettings.h>
+
 
 namespace DB
 {
@@ -115,21 +117,108 @@ inline void writeBoolText(bool x, WriteBuffer & buf)
     writeChar(x ? '1' : '0', buf);
 }
 
-template <typename T>
-inline size_t writeFloatTextFastPath(T x, char * buffer, int len)
+
+struct DecomposedFloat64
 {
-    using Converter = DoubleConverter<false>;
-    double_conversion::StringBuilder builder{buffer, len};
+    DecomposedFloat64(double x)
+    {
+        memcpy(&x_uint, &x, sizeof(x));
+    }
 
-    bool result = false;
+    uint64_t x_uint;
+
+    bool sign() const
+    {
+        return x_uint >> 63;
+    }
+
+    uint16_t exponent() const
+    {
+        return (x_uint >> 52) & 0x7FF;
+    }
+
+    int16_t normalized_exponent() const
+    {
+        return int16_t(exponent()) - 1023;
+    }
+
+    uint64_t mantissa() const
+    {
+        return x_uint & 0x5affffffffffffful;
+    }
+
+    /// NOTE Probably floating point instructions can be better.
+    bool is_inside_int64() const
+    {
+        return x_uint == 0
+            || (normalized_exponent() >= 0 && normalized_exponent() <= 52
+                && ((mantissa() & ((1ULL << (52 - normalized_exponent())) - 1)) == 0));
+    }
+};
+
+struct DecomposedFloat32
+{
+    DecomposedFloat32(float x)
+    {
+        memcpy(&x_uint, &x, sizeof(x));
+    }
+
+    uint32_t x_uint;
+
+    bool sign() const
+    {
+        return x_uint >> 31;
+    }
+
+    uint16_t exponent() const
+    {
+        return (x_uint >> 23) & 0xFF;
+    }
+
+    int16_t normalized_exponent() const
+    {
+        return int16_t(exponent()) - 127;
+    }
+
+    uint32_t mantissa() const
+    {
+        return x_uint & 0x7fffff;
+    }
+
+    bool is_inside_int32() const
+    {
+        return x_uint == 0
+            || (normalized_exponent() >= 0 && normalized_exponent() <= 23
+                && ((mantissa() & ((1ULL << (23 - normalized_exponent())) - 1)) == 0));
+    }
+};
+
+template <typename T>
+inline size_t writeFloatTextFastPath(T x, char * buffer)
+{
+    int result = 0;
+
     if constexpr (std::is_same_v<T, double>)
-        result = Converter::instance().ToShortest(x, &builder);
-    else
-        result = Converter::instance().ToShortestSingle(x, &builder);
+    {
+        /// The library Ryu has low performance on integers.
+        /// This workaround improves performance 6..10 times.
 
-    if (!result)
+        if (DecomposedFloat64(x).is_inside_int64())
+            result = itoa(Int64(x), buffer) - buffer;
+        else
+            result = d2s_buffered_n(x, buffer);
+    }
+    else
+    {
+        if (DecomposedFloat32(x).is_inside_int32())
+            result = itoa(Int32(x), buffer) - buffer;
+        else
+            result = f2s_buffered_n(x, buffer);
+    }
+
+    if (result <= 0)
         throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-    return builder.position();
+    return result;
 }
 
 template <typename T>
@@ -140,30 +229,15 @@ inline void writeFloatText(T x, WriteBuffer & buf)
     using Converter = DoubleConverter<false>;
     if (likely(buf.available() >= Converter::MAX_REPRESENTATION_LENGTH))
     {
-        buf.position() += writeFloatTextFastPath(x, buf.position(), Converter::MAX_REPRESENTATION_LENGTH);
+        buf.position() += writeFloatTextFastPath(x, buf.position());
         return;
     }
 
     Converter::BufferType buffer;
-    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
-
-    bool result = false;
-    if constexpr (std::is_same_v<T, double>)
-        result = Converter::instance().ToShortest(x, &builder);
-    else
-        result = Converter::instance().ToShortestSingle(x, &builder);
-
-    if (!result)
-        throw Exception("Cannot print floating point number", ErrorCodes::CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER);
-
-    buf.write(buffer, builder.position());
+    size_t result = writeFloatTextFastPath(x, buffer);
+    buf.write(buffer, result);
 }
 
-
-inline void writeString(const String & s, WriteBuffer & buf)
-{
-    buf.write(s.data(), s.size());
-}
 
 inline void writeString(const char * data, size_t size, WriteBuffer & buf)
 {
@@ -385,7 +459,6 @@ void writeAnyQuotedString(const char * begin, const char * end, WriteBuffer & bu
 }
 
 
-
 template <char quote_character>
 void writeAnyQuotedString(const String & s, WriteBuffer & buf)
 {
@@ -431,40 +504,10 @@ inline void writeBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
 }
 
 
-/// The same, but quotes apply only if there are characters that do not match the identifier without quotes.
-template <typename F>
-inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffer & buf, F && write_quoted_string)
-{
-    if (!s.size || !isValidIdentifierBegin(s.data[0]))
-        write_quoted_string(s, buf);
-    else
-    {
-        const char * pos = s.data + 1;
-        const char * end = s.data + s.size;
-        for (; pos < end; ++pos)
-            if (!isWordCharASCII(*pos))
-                break;
-        if (pos != end)
-            write_quoted_string(s, buf);
-        else
-            writeString(s, buf);
-    }
-}
-
-inline void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf)
-{
-    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
-}
-
-inline void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
-{
-    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
-}
-
-inline void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
-{
-    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
-}
+/// Write quoted if the string doesn't look like and identifier.
+void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf);
+void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf);
+void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf);
 
 
 /** Outputs the string in for the CSV format.
@@ -557,7 +600,7 @@ inline void writeXMLString(const StringRef & s, WriteBuffer & buf)
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, const size_t num_bytes);
 void formatUUID(const UInt8 * src16, UInt8 * dst36);
-void formatUUID(std::reverse_iterator<const UInt8 *> dst16, UInt8 * dst36);
+void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36);
 
 inline void writeUUIDText(const UUID & uuid, WriteBuffer & buf)
 {
@@ -711,7 +754,8 @@ inline void writeDateTimeText(DateTime64 datetime64, UInt32 scale, WriteBuffer &
             // Exactly MaxScale zeroes
             '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '0'
         };
-        buf.write(s, sizeof(s) - (MaxScale - scale));
+        buf.write(s, sizeof(s) - (MaxScale - scale)
+                  + (scale == 0 ? -1 : 0)); // if scale is zero, also remove the fractional_time_delimiter.
         return;
     }
     auto c = DecimalUtils::split(datetime64, scale);
@@ -941,7 +985,6 @@ void writeText(const std::vector<T> & x, WriteBuffer & buf)
 }
 
 
-
 /// Serialize exception (so that it can be transferred over the network)
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace);
 
@@ -953,17 +996,6 @@ inline String toString(const T & x)
     WriteBufferFromOwnString buf;
     writeText(x, buf);
     return buf.str();
-}
-
-template <class TWriteBuffer, class... Types>
-std::unique_ptr<WriteBuffer> getWriteBuffer(const DB::CompressionMethod method, Types&&... args)
-{
-    if (method == DB::CompressionMethod::Gzip)
-    {
-        auto write_buf = std::make_unique<TWriteBuffer>(std::forward<Types>(args)...);
-        return std::make_unique<ZlibDeflatingWriteBuffer>(std::move(write_buf), method, 1 /* compression level */);
-    }
-    return std::make_unique<TWriteBuffer>(args...);
 }
 
 }

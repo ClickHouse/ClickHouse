@@ -7,6 +7,8 @@
 #include <Interpreters/IExternalLoadable.h>
 #include <Interpreters/IExternalLoaderConfigRepository.h>
 #include <common/logger_useful.h>
+#include <ext/scope_guard.h>
+#include <Common/ExternalLoaderStatus.h>
 
 
 namespace DB
@@ -24,8 +26,8 @@ struct ExternalLoaderConfigSettings
 {
     std::string external_config;
     std::string external_name;
+    std::string external_database;
 };
-
 
 /** Interface for manage user-defined objects.
   * Monitors configuration file and automatically reloads objects in separate threads.
@@ -46,19 +48,7 @@ class ExternalLoader
 public:
     using LoadablePtr = std::shared_ptr<const IExternalLoadable>;
     using Loadables = std::vector<LoadablePtr>;
-
-    enum class Status
-    {
-        NOT_LOADED, /// Object hasn't been tried to load. This is an initial state.
-        LOADED, /// Object has been loaded successfully.
-        FAILED, /// Object has been failed to load.
-        LOADING, /// Object is being loaded right now for the first time.
-        FAILED_AND_RELOADING, /// Object was failed to load before and it's being reloaded right now.
-        LOADED_AND_RELOADING, /// Object was loaded successfully before and it's being reloaded right now.
-        NOT_EXIST, /// Object with this name wasn't found in the configuration.
-    };
-
-    static std::vector<std::pair<String, Int8>> getStatusEnumAllPossibleValues();
+    using Status = ExternalLoaderStatus;
 
     using Duration = std::chrono::milliseconds;
     using TimePoint = std::chrono::system_clock::time_point;
@@ -70,6 +60,7 @@ public:
         LoadablePtr object;
         String origin;
         TimePoint loading_start_time;
+        TimePoint last_successful_update_time;
         Duration loading_duration;
         std::exception_ptr exception;
         std::string repository_name;
@@ -87,13 +78,9 @@ public:
     virtual ~ExternalLoader();
 
     /// Adds a repository which will be used to read configurations from.
-    void addConfigRepository(
-        const std::string & repository_name,
-        std::unique_ptr<IExternalLoaderConfigRepository> config_repository,
-        const ExternalLoaderConfigSettings & config_settings);
+    ext::scope_guard addConfigRepository(std::unique_ptr<IExternalLoaderConfigRepository> config_repository);
 
-    /// Removes a repository which were used to read configurations.
-    std::unique_ptr<IExternalLoaderConfigRepository> removeConfigRepository(const std::string & repository_name);
+    void setConfigSettings(const ExternalLoaderConfigSettings & settings_);
 
     /// Sets whether all the objects from the configuration should be always loaded (even those which are never used).
     void enableAlwaysLoadEverything(bool enable);
@@ -228,8 +215,5 @@ private:
     const String type_name;
     Poco::Logger * log;
 };
-
-String toString(ExternalLoader::Status status);
-std::ostream & operator<<(std::ostream & out, ExternalLoader::Status status);
 
 }

@@ -18,15 +18,13 @@ namespace DB
 class StorageFileBlockInputStream;
 class StorageFileBlockOutputStream;
 
-class StorageFile : public ext::shared_ptr_helper<StorageFile>, public IStorage
+class StorageFile final : public ext::shared_ptr_helper<StorageFile>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageFile>;
 public:
     std::string getName() const override { return "File"; }
-    std::string getTableName() const override { return table_name; }
-    std::string getDatabaseName() const override { return database_name; }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -38,14 +36,15 @@ public:
         const ASTPtr & query,
         const Context & context) override;
 
+    void truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &) override;
+
     void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
 
     Strings getDataPaths() const override;
 
     struct CommonArguments
     {
-        const std::string & database_name;
-        const std::string & table_name;
+        const StorageID & table_id;
         const std::string & format_name;
         const std::string & compression_method;
         const ColumnsDescription & columns;
@@ -54,14 +53,14 @@ public:
     };
 
 protected:
-    friend class StorageFileBlockInputStream;
+    friend class StorageFileSource;
     friend class StorageFileBlockOutputStream;
 
     /// From file descriptor
     StorageFile(int table_fd_, CommonArguments args);
 
     /// From user's file
-    StorageFile(const std::string & table_path_, const std::string & user_files_absolute_path, CommonArguments args);
+    StorageFile(const std::string & table_path_, const std::string & user_files_path, CommonArguments args);
 
     /// From table in database
     StorageFile(const std::string & relative_table_dir_path, CommonArguments args);
@@ -69,8 +68,6 @@ protected:
 private:
     explicit StorageFile(CommonArguments args);
 
-    std::string table_name;
-    std::string database_name;
     std::string format_name;
 
     int table_fd = -1;

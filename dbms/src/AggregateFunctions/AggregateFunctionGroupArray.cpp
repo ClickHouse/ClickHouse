@@ -29,21 +29,27 @@ static IAggregateFunction * createWithNumericOrTimeType(const IDataType & argume
 }
 
 
-template <typename has_limit, typename ... TArgs>
+template <typename Trait, typename ... TArgs>
 inline AggregateFunctionPtr createAggregateFunctionGroupArrayImpl(const DataTypePtr & argument_type, TArgs ... args)
 {
-    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, has_limit>(*argument_type, argument_type, std::forward<TArgs>(args)...))
+    if (auto res = createWithNumericOrTimeType<GroupArrayNumericImpl, Trait>(*argument_type, argument_type, std::forward<TArgs>(args)...))
         return AggregateFunctionPtr(res);
 
     WhichDataType which(argument_type);
     if (which.idx == TypeIndex::String)
-        return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeString, has_limit::value>>(argument_type, std::forward<TArgs>(args)...);
+        return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeString, Trait>>(argument_type, std::forward<TArgs>(args)...);
 
-    return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeGeneral, has_limit::value>>(argument_type, std::forward<TArgs>(args)...);
+    return std::make_shared<GroupArrayGeneralImpl<GroupArrayNodeGeneral, Trait>>(argument_type, std::forward<TArgs>(args)...);
+
+    // Link list implementation doesn't show noticeable performance improvement
+    // if (which.idx == TypeIndex::String)
+    //     return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeString, Trait>>(argument_type, std::forward<TArgs>(args)...);
+
+    // return std::make_shared<GroupArrayGeneralListImpl<GroupArrayListNodeGeneral, Trait>>(argument_type, std::forward<TArgs>(args)...);
 }
 
 
-static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string & name, const DataTypes & argument_types, const Array & parameters)
 {
     assertUnary(name, argument_types);
 
@@ -72,9 +78,41 @@ static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string 
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (!limit_size)
-        return createAggregateFunctionGroupArrayImpl<std::false_type>(argument_types[0]);
+        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<false, Sampler::NONE>>(argument_types[0]);
     else
-        return createAggregateFunctionGroupArrayImpl<std::true_type>(argument_types[0], max_elems);
+        return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::NONE>>(argument_types[0], max_elems);
+}
+
+AggregateFunctionPtr createAggregateFunctionGroupArraySample(const std::string & name, const DataTypes & argument_types, const Array & parameters)
+{
+    assertUnary(name, argument_types);
+
+    if (parameters.size() != 1 && parameters.size() != 2)
+        throw Exception("Incorrect number of parameters for aggregate function " + name + ", should be 1 or 2",
+            ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    auto get_parameter = [&](size_t i)
+    {
+        auto type = parameters[i].getType();
+        if (type != Field::Types::Int64 && type != Field::Types::UInt64)
+            throw Exception("Parameter for aggregate function " + name + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
+
+        if ((type == Field::Types::Int64 && parameters[i].get<Int64>() < 0) ||
+                (type == Field::Types::UInt64 && parameters[i].get<UInt64>() == 0))
+            throw Exception("Parameter for aggregate function " + name + " should be positive number", ErrorCodes::BAD_ARGUMENTS);
+
+        return parameters[i].get<UInt64>();
+    };
+
+    UInt64 max_elems = get_parameter(0);
+
+    UInt64 seed;
+    if (parameters.size() >= 2)
+        seed = get_parameter(1);
+    else
+        seed = thread_local_rng();
+
+    return createAggregateFunctionGroupArrayImpl<GroupArrayTrait<true, Sampler::RNG>>(argument_types[0], max_elems, seed);
 }
 
 }
@@ -83,6 +121,7 @@ static AggregateFunctionPtr createAggregateFunctionGroupArray(const std::string 
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
     factory.registerFunction("groupArray", createAggregateFunctionGroupArray);
+    factory.registerFunction("groupArraySample", createAggregateFunctionGroupArraySample);
 }
 
 }

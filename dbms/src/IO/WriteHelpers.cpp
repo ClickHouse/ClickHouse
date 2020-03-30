@@ -48,7 +48,6 @@ void formatUUID(std::reverse_iterator<const UInt8 *> src16, UInt8 * dst36)
 }
 
 
-
 void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trace)
 {
     writeBinary(e.code(), buf);
@@ -56,14 +55,50 @@ void writeException(const Exception & e, WriteBuffer & buf, bool with_stack_trac
     writeBinary(e.displayText(), buf);
 
     if (with_stack_trace)
-        writeBinary(e.getStackTrace().toString(), buf);
+        writeBinary(e.getStackTraceString(), buf);
     else
         writeBinary(String(), buf);
 
-    bool has_nested = e.nested() != nullptr;
+    bool has_nested = false;
     writeBinary(has_nested, buf);
-
-    if (has_nested)
-        writeException(Exception(Exception::CreateFromPoco, *e.nested()), buf, with_stack_trace);
 }
+
+
+/// The same, but quotes apply only if there are characters that do not match the identifier without quotes
+template <typename F>
+static inline void writeProbablyQuotedStringImpl(const StringRef & s, WriteBuffer & buf, F && write_quoted_string)
+{
+    if (!s.size || !isValidIdentifierBegin(s.data[0]))
+    {
+        write_quoted_string(s, buf);
+    }
+    else
+    {
+        const char * pos = s.data + 1;
+        const char * end = s.data + s.size;
+        for (; pos < end; ++pos)
+            if (!isWordCharASCII(*pos))
+                break;
+        if (pos != end)
+            write_quoted_string(s, buf);
+        else
+            writeString(s, buf);
+    }
+}
+
+void writeProbablyBackQuotedString(const StringRef & s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedString(s_, buf_); });
+}
+
+void writeProbablyDoubleQuotedString(const StringRef & s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeDoubleQuotedString(s_, buf_); });
+}
+
+void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
+{
+    writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
+}
+
 }

@@ -4,6 +4,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class IInputFormat;
 using InputFormatPtr = std::shared_ptr<IInputFormat>;

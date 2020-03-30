@@ -1,8 +1,9 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Storages/MutationCommands.h>
+#include <Disks/IDisk.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
+#include <Storages/MutationCommands.h>
 
 
 namespace DB
@@ -15,6 +16,7 @@ struct MergeTreeMutationEntry
     time_t create_time = 0;
     MutationCommands commands;
 
+    DiskPtr disk;
     String path_prefix;
     String file_name;
     bool is_temp = false;
@@ -27,7 +29,7 @@ struct MergeTreeMutationEntry
     String latest_fail_reason;
 
     /// Create a new entry and write it to a temporary file.
-    MergeTreeMutationEntry(MutationCommands commands_, const String & path_prefix_, Int64 tmp_number);
+    MergeTreeMutationEntry(MutationCommands commands_, DiskPtr disk, const String & path_prefix_, Int64 tmp_number);
     MergeTreeMutationEntry(const MergeTreeMutationEntry &) = delete;
     MergeTreeMutationEntry(MergeTreeMutationEntry &&) = default;
 
@@ -37,7 +39,7 @@ struct MergeTreeMutationEntry
     void removeFile();
 
     /// Load an existing entry.
-    MergeTreeMutationEntry(const String & path_prefix_, const String & file_name_);
+    MergeTreeMutationEntry(DiskPtr disk_, const String & path_prefix_, const String & file_name_);
 
     ~MergeTreeMutationEntry();
 };

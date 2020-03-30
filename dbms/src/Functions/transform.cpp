@@ -22,6 +22,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
@@ -187,7 +188,7 @@ public:
     }
 
 private:
-    void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
+    static void executeConst(Block & block, const ColumnNumbers & arguments, const size_t result, size_t input_rows_count)
     {
         /// Materialize the input column and compute the function as usual.
 

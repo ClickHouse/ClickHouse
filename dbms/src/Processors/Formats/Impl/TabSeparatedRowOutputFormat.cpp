@@ -57,6 +57,8 @@ void TabSeparatedRowOutputFormat::writeFieldDelimiter()
 
 void TabSeparatedRowOutputFormat::writeRowEndDelimiter()
 {
+    if (format_settings.tsv.crlf_end_of_line)
+        writeChar('\r', out);
     writeChar('\n', out);
 }
 

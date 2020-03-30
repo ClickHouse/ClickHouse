@@ -3,6 +3,7 @@
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 
@@ -17,6 +18,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int COLUMN_QUERIED_MORE_THAN_ONCE;
     extern const int DUPLICATE_COLUMN;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
@@ -24,12 +26,11 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int TYPE_MISMATCH;
-    extern const int SETTINGS_ARE_NOT_SUPPORTED;
-    extern const int UNKNOWN_SETTING;
     extern const int TABLE_IS_DROPPED;
+    extern const int NOT_IMPLEMENTED;
 }
 
-IStorage::IStorage(ColumnsDescription virtuals_) : virtuals(std::move(virtuals_))
+IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), virtuals(std::move(virtuals_))
 {
 }
 
@@ -176,7 +177,7 @@ void IStorage::check(const Names & column_names, bool include_virtuals) const
     {
         if (columns_map.end() == columns_map.find(name))
             throw Exception(
-                "There is no column with name " + backQuote(name) + " in table " + getTableName() + ". There are columns: " + list_of_columns,
+                "There is no column with name " + backQuote(name) + " in table " + getStorageID().getNameForLogs() + ". There are columns: " + list_of_columns,
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
 
         if (unique_names.end() != unique_names.find(name))
@@ -277,10 +278,10 @@ void IStorage::check(const Block & block, bool need_all) const
 
     if (need_all && names_in_block.size() < columns_map.size())
     {
-        for (auto it = available_columns.begin(); it != available_columns.end(); ++it)
+        for (const auto & available_column : available_columns)
         {
-            if (!names_in_block.count(it->name))
-                throw Exception("Expected column " + it->name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
+            if (!names_in_block.count(available_column.name))
+                throw Exception("Expected column " + available_column.name, ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
 }
@@ -313,17 +314,9 @@ bool IStorage::isVirtualColumn(const String & column_name) const
     return getColumns().get(column_name).is_virtual;
 }
 
-void IStorage::checkSettingCanBeChanged(const String & /* setting_name */) const
-{
-    if (!supportsSettings())
-        throw Exception("Storage '" + getName() + "' doesn't support settings.", ErrorCodes::SETTINGS_ARE_NOT_SUPPORTED);
-}
-
-TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
+TableStructureReadLockHolder IStorage::lockStructureForShare(const String & query_id)
 {
     TableStructureReadLockHolder result;
-    if (will_add_new_data)
-        result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Read, query_id);
     result.structure_lock = structure_lock->getLock(RWLockImpl::Read, query_id);
 
     if (is_dropped)
@@ -331,103 +324,68 @@ TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_d
     return result;
 }
 
-TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_id)
+TableStructureWriteLockHolder IStorage::lockAlterIntention()
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_lock = std::unique_lock(alter_lock);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
     return result;
 }
 
-void IStorage::lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
-{
-    if (!lock_holder.alter_intention_lock)
-        throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
-
-    lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-}
-
 void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id)
 {
-    if (!lock_holder.alter_intention_lock)
-        throw Exception("Alter intention lock for table " + getTableName() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
+    if (!lock_holder.alter_lock)
+        throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
-    if (!lock_holder.new_data_structure_lock)
-        lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
     lock_holder.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
 }
 
 TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_lock = std::unique_lock(alter_lock);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
-    result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
     result.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
 
     return result;
 }
 
-
-IDatabase::ASTModifier IStorage::getSettingsModifier(const SettingsChanges & new_changes) const
+StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
 {
-    return [&] (IAST & ast)
-    {
-        if (!new_changes.empty())
-        {
-            auto & storage_changes = ast.as<ASTStorage &>().settings->changes;
-            /// Make storage settings unique
-            for (const auto & change : new_changes)
-            {
-                checkSettingCanBeChanged(change.name);
-
-                auto finder = [&change] (const SettingChange & c) { return c.name == change.name; };
-                if (auto it = std::find_if(storage_changes.begin(), storage_changes.end(), finder); it != storage_changes.end())
-                    it->value = change.value;
-                else
-                    storage_changes.push_back(change);
-            }
-        }
-    };
+    return StorageInMemoryMetadata(getColumns(), getIndices(), getConstraints());
 }
-
 
 void IStorage::alter(
     const AlterCommands & params,
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
-    if (params.isModifyingData())
-        throw Exception("Method alter supports only change comment of column for storage " + getName(), ErrorCodes::NOT_IMPLEMENTED);
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    auto table_id = getStorageID();
+    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    params.apply(metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    setColumns(std::move(metadata.columns));
+}
 
-    const String database_name = getDatabaseName();
-    const String table_name = getTableName();
 
-    if (params.isSettingsAlter())
+void IStorage::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
+{
+    for (const auto & command : commands)
     {
-        SettingsChanges new_changes;
-        params.applyForSettingsOnly(new_changes);
-        IDatabase::ASTModifier settings_modifier = getSettingsModifier(new_changes);
-        context.getDatabase(database_name)->alterTable(context, table_name, getColumns(), getIndices(), getConstraints(), settings_modifier);
-    }
-    else
-    {
-        lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
-        auto new_columns = getColumns();
-        auto new_indices = getIndices();
-        auto new_constraints = getConstraints();
-        params.applyForColumnsOnly(new_columns);
-        context.getDatabase(database_name)->alterTable(context, table_name, new_columns, new_indices, new_constraints, {});
-        setColumns(std::move(new_columns));
+        if (!command.isCommentAlter())
+            throw Exception(
+                "Alter of type '" + alterTypeToString(command.type) + "' is not supported by storage " + getName(),
+                ErrorCodes::NOT_IMPLEMENTED);
     }
 }
 
-BlockInputStreams IStorage::read(
+BlockInputStreams IStorage::readStreams(
     const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
@@ -435,7 +393,8 @@ BlockInputStreams IStorage::read(
     size_t max_block_size,
     unsigned num_streams)
 {
-    auto pipes = readWithProcessors(column_names, query_info, context, processed_stage, max_block_size, num_streams);
+    ForceTreeShapedPipeline enable_tree_shape(query_info);
+    auto pipes = read(column_names, query_info, context, processed_stage, max_block_size, num_streams);
 
     BlockInputStreams res;
     res.reserve(pipes.size());
@@ -446,21 +405,17 @@ BlockInputStreams IStorage::read(
     return res;
 }
 
-DB::CompressionMethod IStorage::chooseCompressionMethod(const String & uri, const String & compression_method)
+StorageID IStorage::getStorageID() const
 {
-    if (compression_method == "auto" || compression_method == "")
-    {
-        if (endsWith(uri, ".gz"))
-            return DB::CompressionMethod::Gzip;
-        else
-            return DB::CompressionMethod::None;
-    }
-    else if (compression_method == "gzip")
-        return DB::CompressionMethod::Gzip;
-    else if (compression_method == "none")
-        return DB::CompressionMethod::None;
-    else
-        throw Exception("Only auto, none, gzip supported as compression method", ErrorCodes::NOT_IMPLEMENTED);
+    std::lock_guard<std::mutex> lock(id_mutex);
+    return storage_id;
+}
+
+void IStorage::renameInMemory(const String & new_database_name, const String & new_table_name)
+{
+    std::lock_guard<std::mutex> lock(id_mutex);
+    storage_id.database_name = new_database_name;
+    storage_id.table_name = new_table_name;
 }
 
 }

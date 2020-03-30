@@ -19,8 +19,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_SLOW;
-    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
-    extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
@@ -309,7 +307,7 @@ protected:
     /// Uses a DFA based approach in order to better handle patterns without
     /// time assertions.
     ///
-    /// NOTE: This implementation relies on the assumption that the pattern are *small*.
+    /// NOTE: This implementation relies on the assumption that the pattern is *small*.
     ///
     /// This algorithm performs in O(mn) (with m the number of DFA states and N the number
     /// of events) with a memory consumption and memory allocations in O(m). It means that
