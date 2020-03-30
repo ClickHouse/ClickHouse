@@ -46,6 +46,13 @@ select 'GROUP BY ORDER BY distributed_aggregation_memory_efficient';
 select * from dist_01223 group by key order by key settings
 distributed_aggregation_memory_efficient=1;
 
+-- distributed_aggregation_memory_efficient/group_by_two_level_threshold
+select 'GROUP BY ORDER BY distributed_aggregation_memory_efficient/group_by_two_level_threshold';
+select * from dist_01223 group by key order by key settings
+group_by_two_level_threshold=1,
+group_by_two_level_threshold_bytes=1,
+distributed_aggregation_memory_efficient=1;
+
 drop table dist_01223;
 drop table dist_layer_01223;
 drop table data_01223;
