@@ -213,14 +213,11 @@ void StorageMergeTree::alter(
 
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     auto maybe_mutation_commands = commands.getMutationCommands(metadata);
-    LOG_DEBUG(log, "Applying commands");
     commands.apply(metadata);
-    LOG_DEBUG(log, "Commands applied");
 
     /// This alter can be performed at metadata level only
     if (commands.isSettingsAlter())
     {
-        LOG_DEBUG(log, "Settings alter");
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
         changeSettings(metadata.settings_ast, table_lock_holder);
@@ -229,18 +226,15 @@ void StorageMergeTree::alter(
     }
     else
     {
-        LOG_DEBUG(log, "Not settings alter");
         lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
 
         changeSettings(metadata.settings_ast, table_lock_holder);
         /// Reinitialize primary key because primary key column types might have changed.
         setProperties(metadata);
-        LOG_DEBUG(log, "Metadata setup");
 
         setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
-        LOG_DEBUG(log, "Data on disk changed");
 
         /// We release all locks except alter_lock which allows
         /// to execute alter queries sequentially
