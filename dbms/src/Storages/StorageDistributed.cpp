@@ -530,6 +530,13 @@ namespace
 }
 
 
+StoragePolicyPtr StorageDistributed::getStoragePolicy() const
+{
+    if (storage_policy.empty())
+        return {};
+    return global_context.getStoragePolicySelector()->get(storage_policy);
+}
+
 NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
 {
     if (getColumns().hasPhysical(column_name))

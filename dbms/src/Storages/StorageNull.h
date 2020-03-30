@@ -44,6 +44,15 @@ public:
 
     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
 
+    std::optional<UInt64> totalRows() const override
+    {
+        return {0};
+    }
+    std::optional<UInt64> totalBytes() const override
+    {
+        return {0};
+    }
+
 private:
 
 protected:
