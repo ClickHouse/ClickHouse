@@ -48,7 +48,6 @@ MergeTreeReaderWide::MergeTreeReaderWide(
         {
             if (columns_from_part.count(column.name))
             {
-                LOG_DEBUG(&Poco::Logger::get("ReaderWide"), "ADDING STREAM:" << column.name);
                 addStreams(column.name, *columns_from_part[column.name], profile_callback_, clock_type_);
             }
             else
@@ -56,15 +55,9 @@ MergeTreeReaderWide::MergeTreeReaderWide(
                 auto renamed_it = alter_conversions.rename_map.find(column.name);
                 if (renamed_it != alter_conversions.rename_map.end()
                     && columns_from_part.count(renamed_it->second))
-                {
-                    LOG_DEBUG(&Poco::Logger::get("ReaderWide"), "ADDING RENAMED STREAM:" << renamed_it->second);
                     addStreams(renamed_it->second, *columns_from_part[renamed_it->second], profile_callback_, clock_type_);
-                }
                 else
-                {
-                    LOG_DEBUG(&Poco::Logger::get("ReaderWide"), "ADDING STREAM:" << column.name);
                     addStreams(column.name, *column.type, profile_callback_, clock_type_);
-                }
             }
         }
     }
