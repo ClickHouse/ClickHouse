@@ -4,11 +4,14 @@ from __future__ import unicode_literals
 
 import argparse
 import datetime
+import http.server
 import logging
 import os
 import shutil
+import socketserver
 import subprocess
 import sys
+import threading
 import time
 
 import jinja2
@@ -21,11 +24,10 @@ from mkdocs.commands import build as mkdocs_build
 
 from concatenate import concatenate
 
-from website import build_website, minify_website
-
 import mdx_clickhouse
 import test
 import util
+import website
 
 
 class ClickHouseMarkdown(markdown.extensions.Extension):
@@ -229,10 +231,7 @@ def build_single_page_version(lang, args, cfg):
                             ]
                         })
                         mkdocs_build.build(cfg)
-                        import http.server
-                        import socketserver
-                        import threading
-                        import website
+
                         css_in = ' '.join(website.get_css_in(args))
                         js_in = ' '.join(website.get_js_in(args))
                         subprocess.check_call(f'cat {css_in} > {test_dir}/css/base.css', shell=True)
@@ -248,6 +247,7 @@ def build_single_page_version(lang, args, cfg):
                                 create_pdf_command = [
                                     'wkhtmltopdf',
                                     '--print-media-type',
+                                    '--no-stop-slow-scripts',
                                     '--log-level', 'warn',
                                     f'http://localhost:{port_for_pdf}/single/', single_page_pdf
                                 ]
@@ -318,7 +318,7 @@ def build(args):
         shutil.rmtree(args.output_dir)
 
     if not args.skip_website:
-        build_website(args)
+        website.build_website(args)
 
     build_docs(args)
 
@@ -326,7 +326,7 @@ def build(args):
     build_releases(args, build_docs)
 
     if not args.skip_website:
-        minify_website(args)
+        website.minify_website(args)
 
     for static_redirect in [
         ('tutorial.html', '/docs/en/getting_started/tutorial/',),
