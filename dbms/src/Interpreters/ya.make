@@ -61,6 +61,7 @@ SRCS(
     InterpreterCreateQuotaQuery.cpp
     InterpreterCreateRoleQuery.cpp
     InterpreterCreateRowPolicyQuery.cpp
+    InterpreterCreateSettingsProfileQuery.cpp
     InterpreterCreateUserQuery.cpp
     InterpreterDescribeQuery.cpp
     InterpreterDropAccessEntityQuery.cpp

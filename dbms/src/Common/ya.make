@@ -44,6 +44,7 @@ SRCS(
     ErrorCodes.cpp
     escapeForFileName.cpp
     Exception.cpp
+    ExternalLoaderStatus.cpp
     FieldVisitors.cpp
     FileChecker.cpp
     filesystemHelpers.cpp
@@ -80,14 +81,15 @@ SRCS(
     ShellCommand.cpp
     StackTrace.cpp
     StatusFile.cpp
+    StatusInfo.cpp
     Stopwatch.cpp
     StringUtils/StringUtils.cpp
     StudentTTest.cpp
     SymbolIndex.cpp
     TaskStatsInfoGetter.cpp
     TerminalSize.cpp
-    ThreadFuzzer.cpp
     thread_local_rng.cpp
+    ThreadFuzzer.cpp
     ThreadPool.cpp
     ThreadStatus.cpp
     TraceCollector.cpp

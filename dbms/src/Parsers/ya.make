@@ -14,12 +14,14 @@ SRCS(
     ASTCreateQuotaQuery.cpp
     ASTCreateRoleQuery.cpp
     ASTCreateRowPolicyQuery.cpp
+    ASTCreateSettingsProfileQuery.cpp
     ASTCreateUserQuery.cpp
     ASTDictionaryAttributeDeclaration.cpp
     ASTDictionary.cpp
     ASTDropAccessEntityQuery.cpp
     ASTDropQuery.cpp
     ASTExpressionList.cpp
+    ASTExtendedRoleSet.cpp
     ASTFunction.cpp
     ASTFunctionWithKeyValueArguments.cpp
     ASTGrantQuery.cpp
@@ -39,6 +41,7 @@ SRCS(
     ASTSelectQuery.cpp
     ASTSelectWithUnionQuery.cpp
     ASTSetRoleQuery.cpp
+    ASTSettingsProfileElement.cpp
     ASTShowCreateAccessEntityQuery.cpp
     ASTShowGrantsQuery.cpp
     ASTShowQuotasQuery.cpp
@@ -68,12 +71,14 @@ SRCS(
     ParserCreateQuotaQuery.cpp
     ParserCreateRoleQuery.cpp
     ParserCreateRowPolicyQuery.cpp
+    ParserCreateSettingsProfileQuery.cpp
     ParserCreateUserQuery.cpp
     ParserDescribeTableQuery.cpp
     ParserDictionaryAttributeDeclaration.cpp
     ParserDictionary.cpp
     ParserDropAccessEntityQuery.cpp
     ParserDropQuery.cpp
+    ParserExtendedRoleSet.cpp
     ParserGrantQuery.cpp
     ParserInsertQuery.cpp
     ParserKillQueryQuery.cpp
@@ -87,6 +92,7 @@ SRCS(
     ParserSelectWithUnionQuery.cpp
     ParserSetQuery.cpp
     ParserSetRoleQuery.cpp
+    ParserSettingsProfileElement.cpp
     ParserShowCreateAccessEntityQuery.cpp
     ParserShowGrantsQuery.cpp
     ParserShowQuotasQuery.cpp

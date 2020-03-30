@@ -32,6 +32,7 @@ SRCS(
     appendTrailingCharIfAbsent.cpp
     array/array.cpp
     array/arrayAll.cpp
+    array/arrayAUC.cpp
     array/arrayCompact.cpp
     array/arrayConcat.cpp
     array/arrayCount.cpp
@@ -60,6 +61,7 @@ SRCS(
     array/arrayPushBack.cpp
     array/arrayPushFront.cpp
     array/arrayReduce.cpp
+    array/arrayReduceInRanges.cpp
     array/arrayResize.cpp
     array/arrayReverse.cpp
     array/arraySlice.cpp
@@ -168,6 +170,7 @@ SRCS(
     GatherUtils/sliceFromRightConstantOffsetUnbounded.cpp
     gcd.cpp
     generateUUIDv4.cpp
+    GeoHash.cpp
     geohashDecode.cpp
     geohashEncode.cpp
     geohashesInBox.cpp

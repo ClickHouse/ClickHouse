@@ -15,6 +15,7 @@ SRCS(
     BlockIO.cpp
     BlockStreamProfileInfo.cpp
     CheckConstraintsBlockOutputStream.cpp
+    CheckSortedBlockInputStream.cpp
     CollapsingFinalBlockInputStream.cpp
     CollapsingSortedBlockInputStream.cpp
     ColumnGathererStream.cpp
