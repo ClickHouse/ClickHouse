@@ -47,8 +47,6 @@ private:
 
     /// Settings
     SortDescription description;
-    bool has_collation = false;
-
     const size_t sign_column_number;
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
