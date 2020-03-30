@@ -139,13 +139,6 @@ void DatabaseCatalog::shutdown()
     for (auto & database : current_databases)
         database.second->shutdown();
 
-    {
-        std::lock_guard lock(tables_marked_droped_mutex);
-        for (auto & elem : tables_marked_droped)
-            if (elem.need_shutdown)
-                elem.table->shutdown();
-    }
-
     std::lock_guard lock(databases_mutex);
     assert(std::find_if_not(uuid_map.begin(), uuid_map.end(), [](const auto & elem) { return elem.map.empty(); }) == uuid_map.end());
     databases.clear();
@@ -482,7 +475,7 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
         String full_path = path + it.name();
 
         Strings name_parts;
-        boost::split(name_parts, it.name(), boost::is_any_of("."));
+        boost::split(name_parts, it.name(), boost::is_any_of(".")); // NOLINT: LLVM Bug 41141
         if (name_parts.size() != 4)     /// Unexpected file
             continue;
 
@@ -520,7 +513,6 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
 
     time_t drop_time;
-    bool need_shutdown = true;
     if (table)
         drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     else
@@ -557,14 +549,13 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         }
 
         drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();
-        need_shutdown = false;
     }
 
     std::lock_guard lock(tables_marked_droped_mutex);
     if (ignore_delay)
-        tables_marked_droped.push_front({table_id, table, dropped_metadata_path, 0, need_shutdown});
+        tables_marked_droped.push_front({table_id, table, dropped_metadata_path, 0});
     else
-        tables_marked_droped.push_back({table_id, table, dropped_metadata_path, drop_time, need_shutdown});
+        tables_marked_droped.push_back({table_id, table, dropped_metadata_path, drop_time});
 }
 
 void DatabaseCatalog::dropTableDataTask()
@@ -583,18 +574,13 @@ void DatabaseCatalog::dropTableDataTask()
             //              "time elapsed = " + std::to_string(current_time - elem.drop_time));
             bool not_in_use = !elem.table || elem.table.unique();
             bool old_enough = elem.drop_time + drop_delay_s < current_time;
-            return (not_in_use && old_enough) || elem.need_shutdown;
+            return not_in_use && old_enough;
         });
-        if (it != tables_marked_droped.end() && !it->need_shutdown)
+        if (it != tables_marked_droped.end())
         {
             table = std::move(*it);
             LOG_INFO(log, "Will try drop " + table.table_id.getNameForLogs());
             tables_marked_droped.erase(it);
-        }
-        else if (it->need_shutdown)
-        {
-            table = *it;
-            it->need_shutdown = false;
         }
     }
     catch (...)
@@ -604,12 +590,6 @@ void DatabaseCatalog::dropTableDataTask()
 
     if (table.table_id)
     {
-        if (table.need_shutdown)
-        {
-            table.table->shutdown();
-            (*drop_task)->scheduleAfter(0);
-            return;
-        }
 
         try
         {
