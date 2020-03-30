@@ -199,12 +199,15 @@ static String getUniqueName(const Block & block, const String & prefix)
 {
     auto result = prefix;
 
-    if (block.has(prefix))
+    if (block.has(result))
     {
         int i = 1;
-        while (block.has(prefix + toString(i)))
+        do
+        {
+            result = prefix + "_" + toString(i);
             ++i;
-        result = prefix + "_" + toString(i);
+        }
+        while (block.has(result));
     }
 
     return result;
