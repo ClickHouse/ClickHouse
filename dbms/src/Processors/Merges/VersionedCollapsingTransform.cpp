@@ -16,9 +16,9 @@ VersionedCollapsingTransform::VersionedCollapsingTransform(
     : IMergingTransform(num_inputs, header, header, max_block_size, use_average_block_sizes, true)
     , description(std::move(description_))
     , out_row_sources_buf(out_row_sources_buf_)
-    , max_rows_in_queue(MAX_ROWS_IN_MULTIVERSION_QUEUE - 2)
-    , current_keys(max_rows_in_queue + 1)
-    , chunk_allocator(num_inputs + max_rows_in_queue + 1)
+    , max_rows_in_queue(MAX_ROWS_IN_MULTIVERSION_QUEUE - 1)  /// -1 for +1 in FixedSizeDequeWithGaps's internal buffer
+    , current_keys(max_rows_in_queue)
+    , chunk_allocator(num_inputs + max_rows_in_queue + 1) /// +1 just in case (for current_row)
 {
     sign_column_number = header.getPositionByName(sign_column_);
 }
