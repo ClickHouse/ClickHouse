@@ -79,6 +79,7 @@ def build_for_lang(lang, args):
         site_names = {
             'en': 'ClickHouse %s Documentation',
             'es': 'Documentación de ClickHouse %s',
+            'fr': 'Documentation ClickHouse %s',
             'ru': 'Документация ClickHouse %s',
             'zh': 'ClickHouse文档 %s',
             'ja': 'ClickHouseドキュメント %s',
@@ -89,6 +90,7 @@ def build_for_lang(lang, args):
             'en': 'English',
             'zh': '中文',
             'es': 'Español',
+            'fr': 'Français',
             'ru': 'Русский',
             'ja': '日本語',
             'fa': 'فارسی'
@@ -255,6 +257,7 @@ def build_single_page_version(lang, args, cfg):
                                 logging.info(' '.join(create_pdf_command))
                                 subprocess.check_call(' '.join(create_pdf_command), shell=True)
                                 httpd.shutdown()
+                                thread.join(timeout=5.0)
 
                         if not args.version_prefix:  # maybe enable in future
                             test.test_single_page(
@@ -343,7 +346,7 @@ if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
     website_dir = os.path.join('..', 'website')
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,es,ru,zh,ja,fa')
+    arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,fa')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default=website_dir)
     arg_parser.add_argument('--website-dir', default=website_dir)
