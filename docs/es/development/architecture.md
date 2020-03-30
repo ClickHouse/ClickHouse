@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Descripción general de la arquitectura ClickHouse {#overview-of-clickhouse-architecture}
 
 ClickHouse es un verdadero DBMS orientado a columnas. Los datos se almacenan por columnas y durante la ejecución de matrices (vectores o fragmentos de columnas). Siempre que sea posible, las operaciones se envían en matrices, en lugar de en valores individuales. Esto se llama “vectorized query execution,” y ayuda a reducir el costo del procesamiento de datos real.

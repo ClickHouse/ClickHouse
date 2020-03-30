@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Restricciones en la configuración {#constraints-on-settings}
 
 Las restricciones en los ajustes se pueden definir en el `profiles` sección de la `user.xml` el archivo de configuración y prohíba a los usuarios cambiar algunos de los ajustes `SET` consulta.

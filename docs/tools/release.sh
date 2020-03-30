@@ -7,8 +7,8 @@ PUBLISH_DIR="${BASE_DIR}/../publish"
 BASE_DOMAIN="${BASE_DOMAIN:-clickhouse.tech}"
 GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse.github.io.git}"
 GIT_PROD_URI="git@github.com:ClickHouse/clickhouse.github.io.git"
-EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---enable-stable-releases}"
-HISTORY_SIZE="${HISTORY_SIZE:-25}"
+EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---enable-stable-releases --minify}"
+HISTORY_SIZE="${HISTORY_SIZE:-5}"
 
 if [[ -z "$1" ]]
 then

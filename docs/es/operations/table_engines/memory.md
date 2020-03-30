@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Memoria {#memory}
 
 El motor de memoria almacena datos en RAM, en forma sin comprimir. Los datos se almacenan exactamente en la misma forma en que se reciben cuando se leen. En otras palabras, la lectura de esta tabla es completamente gratuita.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## Corregido en la versión de ClickHouse 19.14.3.3, 2019-09-10 {#fixed-in-clickhouse-release-19-14-3-3-2019-09-10}
 
 ### ¿Qué puedes encontrar en Neodigit {#cve-2019-15024}

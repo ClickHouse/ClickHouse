@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Diccionario {#dictionaries}
 
 Un diccionario es un mapeo (`key -> attributes`) que es conveniente para varios tipos de listas de referencia.

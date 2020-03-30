@@ -26,7 +26,7 @@ def test_single_page(input_path, lang):
                         anchor_points.add(anchor_point)
         for tag in soup.find_all():
             href = tag.attrs.get('href')
-            if href and href.startswith('#'):
+            if href and href.startswith('#') and href != '#':
                 if href[1:] not in anchor_points:
                     links_to_nowhere += 1
                     logging.info("Tag %s", tag)

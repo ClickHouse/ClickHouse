@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para dividir y fusionar cadenas y matrices {#functions-for-splitting-and-merging-strings-and-arrays}
 
 ## Por ejemplo:) {#splitbycharseparator-s}

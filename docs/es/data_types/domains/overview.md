@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Dominio {#domains}
 
 Los dominios son tipos de propósito especial, que agregan algunas características adicionales encima del tipo base existente, dejando intacto el formato en cable y en disco de la tabla subyacente. Por el momento, ClickHouse no admite dominios definidos por el usuario.

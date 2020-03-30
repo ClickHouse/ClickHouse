@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## IPv4 {#ipv4}
 
 `IPv4` es un dominio basado en `UInt32` tipo y sirve como reemplazo tipo para almacenar valores IPv4. Proporciona un almacenamiento compacto con un formato de entrada-salida amigable para los humanos e información de tipo de columna sobre la inspección.

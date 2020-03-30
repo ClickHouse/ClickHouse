@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Remoto, remoteSecure {#remote-remotesecure}
 
 Le permite acceder a servidores remotos sin crear un `Distributed` tabla.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Operación {#operations}
 
 El manual de operaciones de ClickHouse consta de las siguientes secciones principales:

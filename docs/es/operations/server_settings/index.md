@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Parámetros de configuración del servidor {#server-settings}
 
 Esta sección contiene descripciones de la configuración del servidor que no se puede cambiar en el nivel de sesión o consulta.
