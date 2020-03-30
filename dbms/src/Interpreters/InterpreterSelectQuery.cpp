@@ -716,7 +716,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     const Settings & settings = context->getSettingsRef();
     auto & expressions = analysis_result;
     auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
-    bool first_stage_order_by_only = false;
+    bool intermediate_stage = false;
 
     if (options.only_analyze)
     {
@@ -776,7 +776,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
 
         if (from_stage == QueryProcessingStage::WithMergeableState &&
             options.to_stage == QueryProcessingStage::WithMergeableState)
-            first_stage_order_by_only = true;
+            intermediate_stage = true;
 
         if (storage && expressions.filter_info && expressions.prewhere_info)
             throw Exception("PREWHERE is not supported if the table is filtered by row-level security expression", ErrorCodes::ILLEGAL_PREWHERE);
@@ -802,6 +802,47 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
             expressions.need_aggregate &&
             options.to_stage > QueryProcessingStage::WithMergeableState &&
             !query.group_by_with_totals && !query.group_by_with_rollup && !query.group_by_with_cube;
+
+        auto preliminary_sort = [&]()
+        {
+            /** For distributed query processing,
+              *  if no GROUP, HAVING set,
+              *  but there is an ORDER or LIMIT,
+              *  then we will perform the preliminary sorting and LIMIT on the remote server.
+              */
+            if (!expressions.second_stage && !expressions.need_aggregate && !expressions.hasHaving())
+            {
+                if (expressions.has_order_by)
+                    executeOrder(pipeline, query_info.input_sorting_info);
+
+                if (expressions.has_order_by && query.limitLength())
+                    executeDistinct(pipeline, false, expressions.selected_columns);
+
+                if (expressions.hasLimitBy())
+                {
+                    executeExpression(pipeline, expressions.before_limit_by);
+                    executeLimitBy(pipeline);
+                }
+
+                if (query.limitLength())
+                {
+                    if constexpr (pipeline_with_processors)
+                        executePreLimit(pipeline, true);
+                    else
+                        executePreLimit(pipeline);
+                }
+            }
+        };
+
+        if (intermediate_stage)
+        {
+            if (expressions.first_stage || expressions.second_stage)
+                throw Exception("Query with intermediate stage cannot have any other stages", ErrorCodes::LOGICAL_ERROR);
+
+            preliminary_sort();
+            if (expressions.need_aggregate)
+                executeMergeAggregated(pipeline, aggregate_overflow_row, aggregate_final);
+        }
 
         if (expressions.first_stage)
         {
@@ -900,41 +941,9 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                 executeExpression(pipeline, expressions.before_order_and_select);
                 executeDistinct(pipeline, true, expressions.selected_columns);
             }
-        }
 
-        if (expressions.first_stage || first_stage_order_by_only)
-        {
-            /** For distributed query processing,
-              *  if no GROUP, HAVING set,
-              *  but there is an ORDER or LIMIT,
-              *  then we will perform the preliminary sorting and LIMIT on the remote server.
-              */
-            if (!expressions.second_stage && !expressions.need_aggregate && !expressions.hasHaving())
-            {
-                if (expressions.has_order_by)
-                    executeOrder(pipeline, query_info.input_sorting_info);
+            preliminary_sort();
 
-                if (expressions.has_order_by && query.limitLength())
-                    executeDistinct(pipeline, false, expressions.selected_columns);
-
-                if (expressions.hasLimitBy())
-                {
-                    executeExpression(pipeline, expressions.before_limit_by);
-                    executeLimitBy(pipeline);
-                }
-
-                if (query.limitLength())
-                {
-                    if constexpr (pipeline_with_processors)
-                        executePreLimit(pipeline, true);
-                    else
-                        executePreLimit(pipeline);
-                }
-            }
-        }
-
-        if (expressions.first_stage)
-        {
             // If there is no global subqueries, we can run subqueries only when receive them on server.
             if (!query_analyzer->hasGlobalSubqueries() && !subqueries_for_sets.empty())
                 executeSubqueriesInSetsAndJoins(pipeline, subqueries_for_sets);
