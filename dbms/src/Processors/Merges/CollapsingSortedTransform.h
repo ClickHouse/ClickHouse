@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/Merges/SharedChunk.h>
+#include <Processors/Merges/RowRef.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 #include <DataStreams/ColumnGathererStream.h>
@@ -63,9 +63,12 @@ private:
     bool is_queue_initialized = false;
 
     using RowRef = detail::RowRef;
+    static constexpr size_t max_row_refs = 4; /// first_negative, last_positive, last, current.
     RowRef first_negative_row;
     RowRef last_positive_row;
     RowRef last_row;
+
+    detail::SharedChunkAllocator chunk_allocator;
 
     size_t count_positive = 0;    /// The number of positive rows for the current primary key.
     size_t count_negative = 0;    /// The number of negative rows for the current primary key.
