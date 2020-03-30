@@ -239,7 +239,7 @@ def build_single_page_version(lang, args, cfg):
                         with socketserver.TCPServer(
                                 ('', port_for_pdf), http.server.SimpleHTTPRequestHandler
                         ) as httpd:
-                            logging.info(f"serving for pdf at port {port_for_pdf}")
+                            logging.info(f"Serving for {lang} pdf at port {port_for_pdf}")
                             thread = threading.Thread(target=httpd.serve_forever)
                             with util.cd(test_dir):
                                 thread.start()
