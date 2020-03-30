@@ -906,6 +906,15 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
     }
 }
 
+
+template <>
+void writeText(Decimal<bInt256> value, UInt32 scale, WriteBuffer & ostr)
+{
+    // FIXME: operators do not work
+    writeText(value.value.str(), ostr);
+}
+
+
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
 template <typename T>
 inline std::enable_if_t<is_arithmetic_v<T>, void>

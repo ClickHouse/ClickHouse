@@ -41,6 +41,17 @@ DataTypePtr FieldToDataType::operator() (const UInt128 &) const
     throw Exception("There are no UInt128 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
 }
 
+DataTypePtr FieldToDataType::operator() (const bUInt256 &) const
+{
+    throw Exception("There are no UInt256 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+DataTypePtr FieldToDataType::operator() (const bInt256 &) const
+{
+    throw Exception("There are no Int256 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+
 DataTypePtr FieldToDataType::operator() (const Int64 & x) const
 {
     if (x <= std::numeric_limits<Int8>::max() && x >= std::numeric_limits<Int8>::min()) return std::make_shared<DataTypeInt8>();
@@ -76,6 +87,13 @@ DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal128> & x) con
     using Type = DataTypeDecimal<Decimal128>;
     return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
 }
+
+DataTypePtr FieldToDataType::operator() (const DecimalField<Decimal256> & x) const
+{
+    using Type = DataTypeDecimal<Decimal256>;
+    return std::make_shared<Type>(Type::maxPrecision(), x.getScale());
+}
+
 
 
 DataTypePtr FieldToDataType::operator() (const Array & x) const

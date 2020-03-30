@@ -197,9 +197,30 @@ void FieldVisitorHash::operator() (const UInt128 & x) const
     hash.update(x);
 }
 
+void FieldVisitorHash::operator() (const bUInt256 & x) const
+{
+    UInt8 type = Field::Types::UInt256;
+    hash.update(type);
+    hash.update(x);
+}
+
 void FieldVisitorHash::operator() (const Int64 & x) const
 {
     UInt8 type = Field::Types::Int64;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const bInt128 & x) const
+{
+    UInt8 type = Field::Types::Int128;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const bInt256 & x) const
+{
+    UInt8 type = Field::Types::Int256;
     hash.update(type);
     hash.update(x);
 }
@@ -256,6 +277,13 @@ void FieldVisitorHash::operator() (const DecimalField<Decimal64> & x) const
 void FieldVisitorHash::operator() (const DecimalField<Decimal128> & x) const
 {
     UInt8 type = Field::Types::Decimal128;
+    hash.update(type);
+    hash.update(x);
+}
+
+void FieldVisitorHash::operator() (const DecimalField<Decimal256> & x) const
+{
+    UInt8 type = Field::Types::Decimal256;
     hash.update(type);
     hash.update(x);
 }

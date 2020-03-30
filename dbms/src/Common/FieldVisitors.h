@@ -137,6 +137,12 @@ public:
     T operator() (const Int64 & x) const { return x; }
     T operator() (const Float64 & x) const { return x; }
 
+    // FIXME: will this work?
+    T operator() (const bUInt128 & x) const { return static_cast<T>(x); }
+    T operator() (const bInt128 & x) const { return static_cast<T>(x); }
+    T operator() (const bUInt256 & x) const { return static_cast<T>(x); }
+    T operator() (const bInt256 & x) const { return static_cast<T>(x); }
+
     T operator() (const UInt128 &) const
     {
         throw Exception("Cannot convert UInt128 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
@@ -149,6 +155,12 @@ public:
             return static_cast<T>(x.getValue()) / x.getScaleMultiplier();
         else
             return x.getValue() / x.getScaleMultiplier();
+    }
+
+    // FIXME: :((
+    T operator() (const DecimalField<Decimal256> & x) const {
+        const auto& a = static_cast<T>(x.getValue().value);
+        return a;
     }
 
     T operator() (const AggregateFunctionStateData &) const
@@ -260,6 +272,26 @@ public:
     }
 
     template <typename T>
+    bool operator() (const bUInt256 & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, bUInt256>)
+            return l == r;
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
+
+    template <typename T>
+    bool operator() (const bInt256 & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, bInt256>)
+            return l == r;
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
+
+    template <typename T>
     bool operator() (const Array & l, const T & r) const
     {
         if constexpr (std::is_same_v<T, Array>)
@@ -291,8 +323,8 @@ public:
         return cantCompare(l, r);
     }
 
-    template <typename T> bool operator() (const UInt64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) == r; }
-    template <typename T> bool operator() (const Int64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) == r; }
+    template <typename T> bool operator() (const UInt64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) == r; } // DO NOT
+    template <typename T> bool operator() (const Int64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) == r; }  // FORGET
     template <typename T> bool operator() (const Float64 & l, const DecimalField<T> & r) const { return cantCompare(l, r); }
 
     template <typename T>
@@ -378,6 +410,26 @@ public:
     }
 
     template <typename T>
+    bool operator() (const bUInt256 & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, bUInt256>)
+            return l < r;
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
+
+    template <typename T>
+    bool operator() (const bInt256 & l, const T & r) const
+    {
+        if constexpr (std::is_same_v<T, bInt256>)
+            return l < r;
+        if constexpr (std::is_same_v<T, Null>)
+            return false;
+        return cantCompare(l, r);
+    }
+
+    template <typename T>
     bool operator() (const Array & l, const T & r) const
     {
         if constexpr (std::is_same_v<T, Array>)
@@ -410,8 +462,8 @@ public:
     }
 
     // FIX?
-    template <typename T> bool operator() (const UInt64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) < r; }
-    template <typename T> bool operator() (const Int64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) < r; }
+    template <typename T> bool operator() (const UInt64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) < r; } // DO NOT
+    template <typename T> bool operator() (const Int64 & l, const DecimalField<T> & r) const { return DecimalField<Decimal128>(l, 0) < r; } // FORGET
     template <typename T> bool operator() (const Float64 &, const DecimalField<T> &) const { return false; }
 
     template <typename T>
@@ -456,6 +508,10 @@ public:
     bool operator() (Tuple &) const { throw Exception("Cannot sum Tuples", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (UInt128 &) const { throw Exception("Cannot sum UUIDs", ErrorCodes::LOGICAL_ERROR); }
     bool operator() (AggregateFunctionStateData &) const { throw Exception("Cannot sum AggregateFunctionStates", ErrorCodes::LOGICAL_ERROR); }
+
+    bool operator() (bUInt256 &) const { throw Exception("Cannot sum big ints", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (bInt256 &) const { throw Exception("Cannot sum big ints", ErrorCodes::LOGICAL_ERROR); }
+    bool operator() (DecimalField<Decimal256> &) const { throw Exception("Cannot sum big ints", ErrorCodes::LOGICAL_ERROR); }
 
     template <typename T>
     bool operator() (DecimalField<T> & x) const
