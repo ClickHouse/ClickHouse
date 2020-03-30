@@ -229,16 +229,33 @@ def build_single_page_version(lang, args, cfg):
                             ]
                         })
                         mkdocs_build.build(cfg)
-                        create_pdf_command = [
-                            'wkhtmltopdf',
-                            '--print-media-type',
-                            '--log-level', 'warn',
-                            single_page_index_html, single_page_pdf
-                        ]
-                        if args.save_raw_single_page:
-                            shutil.copytree(test_dir, args.save_raw_single_page)
-                        logging.info(' '.join(create_pdf_command))
-                        subprocess.check_call(' '.join(create_pdf_command), shell=True)
+                        import http.server
+                        import socketserver
+                        import threading
+                        import website
+                        css_in = ' '.join(website.get_css_in(args))
+                        js_in = ' '.join(website.get_js_in(args))
+                        subprocess.check_call(f'cat {css_in} > {test_dir}/css/base.css', shell=True)
+                        subprocess.check_call(f'cat {js_in} > {test_dir}/js/base.js', shell=True)
+                        port_for_pdf = 9876
+                        with socketserver.TCPServer(
+                                ('', port_for_pdf), http.server.SimpleHTTPRequestHandler
+                        ) as httpd:
+                            logging.info(f"serving for pdf at port {port_for_pdf}")
+                            thread = threading.Thread(target=httpd.serve_forever)
+                            with util.cd(test_dir):
+                                thread.start()
+                                create_pdf_command = [
+                                    'wkhtmltopdf',
+                                    '--print-media-type',
+                                    '--log-level', 'warn',
+                                    f'http://localhost:{port_for_pdf}/single/', single_page_pdf
+                                ]
+                                if args.save_raw_single_page:
+                                    shutil.copytree(test_dir, args.save_raw_single_page)
+                                logging.info(' '.join(create_pdf_command))
+                                subprocess.check_call(' '.join(create_pdf_command), shell=True)
+                                httpd.shutdown()
 
                         if not args.version_prefix:  # maybe enable in future
                             test.test_single_page(

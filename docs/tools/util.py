@@ -25,6 +25,16 @@ def autoremoved_file(path):
         os.unlink(path)
 
 
+@contextlib.contextmanager
+def cd(new_cwd):
+    old_cwd = os.getcwd()
+    os.chdir(new_cwd)
+    try:
+        yield
+    finally:
+        os.chdir(old_cwd)
+
+
 def run_function_in_parallel(func, args_list, threads=False):
     processes = []
     exit_code = 0
