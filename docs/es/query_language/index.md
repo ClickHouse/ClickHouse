@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Referencia SQL {#sql-reference}
 
 -   [SELECCIONAR](select.md)

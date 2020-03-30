@@ -255,7 +255,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
+        table_lock = storage->lockStructureForShare(context->getInitialQueryId());
         table_id = storage->getStorageID();
     }
 
@@ -300,6 +300,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
         if (interpreter_subquery)
             source_header = interpreter_subquery->getSampleBlock();
     }
+
+    joined_tables.rewriteDistributedInAndJoins(query_ptr);
 
     max_streams = settings.max_threads;
     ASTSelectQuery & query = getSelectQuery();
@@ -508,7 +510,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
     }
 
     if (storage && !options.only_analyze)
-        from_stage = storage->getQueryProcessingStage(*context);
+        from_stage = storage->getQueryProcessingStage(*context, query_ptr);
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
@@ -1062,7 +1064,7 @@ void InterpreterSelectQuery::executeFetchColumns(
     auto check_trivial_count_query = [&]() -> std::optional<AggregateDescription>
     {
         if (!settings.optimize_trivial_count_query || !syntax_analyzer_result->maybe_optimize_trivial_count || !storage
-            || query.sampleSize() || query.sampleOffset() || query.final() || query.prewhere() || query.where()
+            || query.sampleSize() || query.sampleOffset() || query.final() || query.prewhere() || query.where() || query.groupBy()
             || !query_analyzer->hasAggregation() || processing_stage != QueryProcessingStage::FetchColumns)
             return {};
 

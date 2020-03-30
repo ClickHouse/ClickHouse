@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## ALTERAR {#query_language_queries_alter}
 
 El `ALTER` consulta sólo se admite para `*MergeTree` mesas, así como `Merge`y`Distributed`. La consulta tiene varias variaciones.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones de redondeo {#rounding-functions}
 
 ## Piso(x\[, N\]) {#floorx-n}

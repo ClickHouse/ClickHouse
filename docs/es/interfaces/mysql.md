@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Interfaz de MySQL {#mysql-interface}
 
 ClickHouse soporta el protocolo de cable MySQL. Puede ser habilitado por [mysql\_port](../operations/server_settings/settings.md#server_settings-mysql_port) configuración en el archivo de configuración:

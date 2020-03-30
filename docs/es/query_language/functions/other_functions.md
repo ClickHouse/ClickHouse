@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Otras funciones {#other-functions}
 
 ## nombre de host() {#hostname}

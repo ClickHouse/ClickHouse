@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Field.h>
 #include <Parsers/IParserBase.h>
 
 
@@ -223,17 +224,50 @@ protected:
 };
 
 
-/** An array of literals.
-  * Arrays can also be parsed as an application of [] operator.
-  * But parsing the whole array as a whole constant seriously speeds up the analysis of expressions in the case of very large arrays.
-  * We try to parse the array as an array of literals first (fast path),
-  *  and if it did not work out (when the array consists of complex expressions) - parse as an application of [] operator (slow path).
+/** An array or tuple of literals.
+  * Arrays can also be parsed as an application of [] operator and tuples as an application of 'tuple' function.
+  * But parsing the whole array/tuple as a whole constant seriously speeds up the analysis of expressions in the case of very large collection.
+  * We try to parse the array or tuple as a collection of literals first (fast path),
+  *  and if it did not work out (when the collection consists of complex expressions) -
+  *  parse as an application of [] operator or 'tuple' function (slow path).
   */
+template <typename Collection>
+class ParserCollectionOfLiterals : public IParserBase
+{
+public:
+    ParserCollectionOfLiterals(TokenType opening_bracket_, TokenType closing_bracket_)
+        : opening_bracket(opening_bracket_), closing_bracket(closing_bracket_) {}
+protected:
+    const char * getName() const override { return "collection of literals"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+private:
+    TokenType opening_bracket;
+    TokenType closing_bracket;
+};
+
+/// A tuple of literals with same type.
+class ParserTupleOfLiterals : public IParserBase
+{
+public:
+    ParserCollectionOfLiterals<Tuple> tuple_parser{TokenType::OpeningRoundBracket, TokenType::ClosingRoundBracket};
+protected:
+    const char * getName() const override { return "tuple"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return tuple_parser.parse(pos, node, expected);
+    }
+};
+
 class ParserArrayOfLiterals : public IParserBase
 {
+public:
+    ParserCollectionOfLiterals<Array> array_parser{TokenType::OpeningSquareBracket, TokenType::ClosingSquareBracket};
 protected:
     const char * getName() const override { return "array"; }
-    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override
+    {
+        return array_parser.parse(pos, node, expected);
+    }
 };
 
 

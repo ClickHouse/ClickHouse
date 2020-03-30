@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # UUID {#uuid-data-type}
 
 Un identificador único universal (UUID) es un número de 16 bytes utilizado para identificar registros. Para obtener información detallada sobre el UUID, consulte [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).

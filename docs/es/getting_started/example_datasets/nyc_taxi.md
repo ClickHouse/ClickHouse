@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Datos de taxis de Nueva York {#new-york-taxi-data}
 
 Este conjunto de datos se puede obtener de dos maneras:

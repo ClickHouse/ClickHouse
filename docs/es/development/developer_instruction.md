@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 La construcción de ClickHouse es compatible con Linux, FreeBSD y Mac OS X.
 
 # Si utiliza Windows {#if-you-use-windows}

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fusionar {#merge}
 
 El `Merge` motor (no debe confundirse con `MergeTree`) no almacena datos en sí, pero permite leer de cualquier número de otras tablas simultáneamente.

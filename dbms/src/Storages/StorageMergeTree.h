@@ -46,6 +46,7 @@ public:
         unsigned num_streams) override;
 
     std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalBytes() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 

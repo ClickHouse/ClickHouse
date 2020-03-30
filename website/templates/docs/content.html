@@ -1,0 +1,34 @@
+<div id="content-wrapper" class="{% if single_page %}col-md-10{% else %}col-md-8{% endif %} p-2 p-md-5">
+    <div id="content">
+        {% if not single_page %}
+            {% if page.meta.machine_translated %}
+                <div class="alert alert-primary" role="alert">
+                  <p class="display-5 mb-2">{{ _('Help wanted!') }}</p>
+                  <p class="lead">{{ _('The following content of this documentation page has been machine-translated. But unlike other websites, it is not done on the fly. This translated text lives on GitHub repository alongside main ClickHouse codebase and waits for fellow native speakers to make it more human-readable.') }}</p>
+                  <p class="lead">
+                      <a class="btn btn-lg btn-primary text-white" href="{{ page.edit_url }}" target="_blank" rel="external nofollow noreferrer">
+                          {{ _('Help ClickHouse documentation by editing this page') }}
+                      </a>
+                  </p>
+                </div>
+            {% endif %}
+
+            {{ page.content }}
+        {% endif %}
+
+        {% if single_page and page.content %}
+        <script async type="text/javascript">
+            {% for chunk in page.content|chunks %}
+            document.write({{ chunk|tojson|safe }});
+            {% endfor %}
+        </script>
+        {% endif %}
+    </div>
+
+    {% if not single_page %}
+    <div id="content-footer" class="text-muted pt-5">
+        <div class="float-right">{{ config.copyright }}</div>
+        <div>{{ _('Built from') }} <a href="{{ config.extra.rev_url }}" rel="external nofollow noreferrer" target="_blank" class="text-reset">{{ config.extra.rev_short }}</a></div>
+    </div>
+    {% endif %}
+</div>

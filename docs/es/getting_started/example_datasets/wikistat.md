@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Nombre de la red inalámbrica (SSID): {#wikistat}
 
 Ver: http://dumps.wikimedia.org/other/pagecounts-raw/

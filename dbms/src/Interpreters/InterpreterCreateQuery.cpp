@@ -411,7 +411,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table});
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
-        as_storage_lock = as_storage->lockStructureForShare(false, context.getCurrentQueryId());
+        as_storage_lock = as_storage->lockStructureForShare(context.getCurrentQueryId());
         properties.columns = as_storage->getColumns();
 
         /// Secondary indices make sense only for MergeTree family of storage engines.

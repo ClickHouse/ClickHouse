@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # GraphiteMergeTree {#graphitemergetree}
 
 Este motor está diseñado para el adelgazamiento y la agregación / promedio (rollup) [Grafito](http://graphite.readthedocs.io/en/latest/index.html) datos. Puede ser útil para los desarrolladores que desean usar ClickHouse como almacén de datos para Graphite.
