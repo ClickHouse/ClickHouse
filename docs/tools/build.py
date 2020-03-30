@@ -217,7 +217,6 @@ def build_single_page_version(lang, args, cfg):
 
                 if not args.skip_pdf:
                     with util.temp_dir() as test_dir:
-                        single_page_index_html = os.path.join(test_dir, 'single', 'index.html')
                         single_page_pdf = os.path.abspath(
                             os.path.join(single_page_output_path, f'clickhouse_{lang}.pdf')
                         )
@@ -236,7 +235,7 @@ def build_single_page_version(lang, args, cfg):
                         js_in = ' '.join(website.get_js_in(args))
                         subprocess.check_call(f'cat {css_in} > {test_dir}/css/base.css', shell=True)
                         subprocess.check_call(f'cat {js_in} > {test_dir}/js/base.js', shell=True)
-                        port_for_pdf = 9876
+                        port_for_pdf = util.get_free_port()
                         with socketserver.TCPServer(
                                 ('', port_for_pdf), http.server.SimpleHTTPRequestHandler
                         ) as httpd:
