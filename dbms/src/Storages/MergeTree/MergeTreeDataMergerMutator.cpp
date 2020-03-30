@@ -1114,9 +1114,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         for (const auto & [rename_from, rename_to] : files_to_rename)
         {
             if (rename_to.empty() && new_data_part->checksums.files.count(rename_from))
-            {
                 new_data_part->checksums.files.erase(rename_from);
-            }
             else if (new_data_part->checksums.files.count(rename_from))
             {
                 new_data_part->checksums.files[rename_to] = new_data_part->checksums.files[rename_from];
