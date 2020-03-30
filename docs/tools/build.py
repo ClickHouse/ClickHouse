@@ -76,16 +76,8 @@ def build_for_lang(lang, args):
             }
         }
 
-        site_names = {
-            'en': 'ClickHouse %s Documentation',
-            'es': 'Documentación de ClickHouse %s',
-            'fr': 'Documentation ClickHouse %s',
-            'ru': 'Документация ClickHouse %s',
-            'zh': 'ClickHouse文档 %s',
-            'ja': 'ClickHouseドキュメント %s',
-            'fa': 'مستندات %sClickHouse'
-        }
-
+        # the following list of languages is sorted according to
+        # https://en.wikipedia.org/wiki/List_of_languages_by_total_number_of_speakers
         languages = {
             'en': 'English',
             'zh': '中文',
@@ -94,6 +86,16 @@ def build_for_lang(lang, args):
             'ru': 'Русский',
             'ja': '日本語',
             'fa': 'فارسی'
+        }
+
+        site_names = {
+            'en': 'ClickHouse %s Documentation',
+            'es': 'Documentación de ClickHouse %s',
+            'fr': 'Documentation ClickHouse %s',
+            'ru': 'Документация ClickHouse %s',
+            'zh': 'ClickHouse文档 %s',
+            'ja': 'ClickHouseドキュメント %s',
+            'fa': 'مستندات %sClickHouse'
         }
 
         assert len(site_names) == len(languages)
