@@ -1,6 +1,4 @@
 #include "FunctionsStringSearch.h"
-
-#include "FunctionsStringSearch.h"
 #include <Functions/FunctionFactory.h>
 #include "HasTokenImpl.h"
 #include <Common/Volnitsky.h>
