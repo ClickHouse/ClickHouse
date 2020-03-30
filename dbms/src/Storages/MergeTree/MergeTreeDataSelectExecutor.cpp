@@ -183,7 +183,6 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     for (const String & name : column_names_to_return)
     {
-        LOG_DEBUG(log, "Column name to return:" << name);
         if (name == "_part")
         {
             part_column_queried = true;
@@ -210,7 +209,6 @@ Pipes MergeTreeDataSelectExecutor::readFromParts(
 
     NamesAndTypesList available_real_columns = data.getColumns().getAllPhysical();
 
-    LOG_DEBUG(log, "Available columns:" << available_real_columns.toString());
     /// If there are only virtual columns in the query, you must request at least one non-virtual one.
     if (real_column_names.empty())
         real_column_names.push_back(ExpressionActions::getSmallestColumn(available_real_columns));
