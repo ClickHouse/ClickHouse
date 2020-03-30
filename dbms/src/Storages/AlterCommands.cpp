@@ -702,6 +702,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
+    NameToNameMap renames_map;
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
@@ -774,6 +775,29 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         {
             if (metadata.settings_ast == nullptr)
                 throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
+        }
+        else if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            if (!metadata.columns.has(command.column_name))
+            {
+                if (!command.if_exists)
+                    throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to rename",
+                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+            }
+
+            if (metadata.columns.has(command.rename_to))
+                throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": column with this name already exists",
+                                ErrorCodes::DUPLICATE_COLUMN};
+
+
+            if (renames_map.count(command.column_name))
+                throw Exception{"Cannot rename column '" + backQuote(command.column_name) + "' to two different names in a single ALTER query", ErrorCodes::BAD_ARGUMENTS};
+
+            if (renames_map.count(command.rename_to))
+                throw Exception{"Rename loop detected in ALTER query",
+                                ErrorCodes::BAD_ARGUMENTS};
+
+            renames_map[command.column_name] = command.rename_to;
         }
 
         /// Collect default expressions for MODIFY and ADD comands
