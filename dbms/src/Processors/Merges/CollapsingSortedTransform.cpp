@@ -28,6 +28,7 @@ CollapsingSortedTransform::CollapsingSortedTransform(
     , description(std::move(description_))
     , sign_column_number(header.getPositionByName(sign_column))
     , out_row_sources_buf(out_row_sources_buf_)
+    , chunk_allocator(num_inputs + max_row_refs)
 {
 }
 
@@ -58,7 +59,7 @@ void CollapsingSortedTransform::updateCursor(Chunk chunk, size_t source_num)
 
     if (source_chunk)
     {
-        source_chunk = new detail::SharedChunk(std::move(chunk));
+        source_chunk = chunk_allocator.alloc(std::move(chunk));
         cursors[source_num].reset(source_chunk->getColumns(), {});
     }
     else
@@ -66,7 +67,7 @@ void CollapsingSortedTransform::updateCursor(Chunk chunk, size_t source_num)
         if (cursors[source_num].has_collation)
             throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
 
-        source_chunk = new detail::SharedChunk(std::move(chunk));
+        source_chunk = chunk_allocator.alloc(std::move(chunk));
         cursors[source_num] = SortCursorImpl(source_chunk->getColumns(), description, source_num);
     }
 
