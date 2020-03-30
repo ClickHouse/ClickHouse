@@ -25,13 +25,15 @@ enum class TypeIndex
     UInt32,
     UInt64,
     UInt128,
-    UInt256,
+    bUInt128,
+    bUInt256,
     Int8,
     Int16,
     Int32,
     Int64,
     Int128,
-    Int256,
+    bInt128,
+    bInt256,
     Float32,
     Float64,
     Date,
@@ -60,13 +62,15 @@ using UInt8 = uint8_t;
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
-using UInt256 = boost::multiprecision::uint256_t;
+using bUInt128 = boost::multiprecision::uint128_t;
+using bUInt256 = boost::multiprecision::uint256_t;
 
 using Int8 = int8_t;
 using Int16 = int16_t;
 using Int32 = int32_t;
 using Int64 = int64_t;
-using Int256 = boost::multiprecision::int256_t;
+using bInt128 = boost::multiprecision::int128_t;
+using bInt256 = boost::multiprecision::int256_t;
 
 using Float32 = float;
 using Float64 = double;
@@ -82,12 +86,14 @@ template <> inline constexpr bool IsNumber<UInt8> = true;
 template <> inline constexpr bool IsNumber<UInt16> = true;
 template <> inline constexpr bool IsNumber<UInt32> = true;
 template <> inline constexpr bool IsNumber<UInt64> = true;
-template <> inline constexpr bool IsNumber<UInt256> = true;
+template <> inline constexpr bool IsNumber<bUInt128> = true;
+template <> inline constexpr bool IsNumber<bUInt256> = true;
 template <> inline constexpr bool IsNumber<Int8> = true;
 template <> inline constexpr bool IsNumber<Int16> = true;
 template <> inline constexpr bool IsNumber<Int32> = true;
 template <> inline constexpr bool IsNumber<Int64> = true;
-template <> inline constexpr bool IsNumber<Int256> = true;
+template <> inline constexpr bool IsNumber<bInt128> = true;
+template <> inline constexpr bool IsNumber<bInt256> = true;
 template <> inline constexpr bool IsNumber<Float32> = true;
 template <> inline constexpr bool IsNumber<Float64> = true;
 
@@ -97,12 +103,14 @@ template <> struct TypeName<UInt8>   { static const char * get() { return "UInt8
 template <> struct TypeName<UInt16>  { static const char * get() { return "UInt16";  } };
 template <> struct TypeName<UInt32>  { static const char * get() { return "UInt32";  } };
 template <> struct TypeName<UInt64>  { static const char * get() { return "UInt64";  } };
-template <> struct TypeName<UInt256>  { static const char * get() { return "UInt256";  } };
+template <> struct TypeName<bUInt128>  { static const char * get() { return "UInt128";  } };
+template <> struct TypeName<bUInt256>  { static const char * get() { return "UInt256";  } };
 template <> struct TypeName<Int8>    { static const char * get() { return "Int8";    } };
 template <> struct TypeName<Int16>   { static const char * get() { return "Int16";   } };
 template <> struct TypeName<Int32>   { static const char * get() { return "Int32";   } };
 template <> struct TypeName<Int64>   { static const char * get() { return "Int64";   } };
-template <> struct TypeName<Int256>   { static const char * get() { return "Int256";   } };
+template <> struct TypeName<bInt128>   { static const char * get() { return "Int128";   } };
+template <> struct TypeName<bInt256>   { static const char * get() { return "Int256";   } };
 template <> struct TypeName<Float32> { static const char * get() { return "Float32"; } };
 template <> struct TypeName<Float64> { static const char * get() { return "Float64"; } };
 template <> struct TypeName<String>  { static const char * get() { return "String";  } };
@@ -112,12 +120,14 @@ template <> struct TypeId<UInt8>    { static constexpr const TypeIndex value = T
 template <> struct TypeId<UInt16>   { static constexpr const TypeIndex value = TypeIndex::UInt16;  };
 template <> struct TypeId<UInt32>   { static constexpr const TypeIndex value = TypeIndex::UInt32;  };
 template <> struct TypeId<UInt64>   { static constexpr const TypeIndex value = TypeIndex::UInt64;  };
-template <> struct TypeId<UInt256>   { static constexpr const TypeIndex value = TypeIndex::UInt256;  };
+template <> struct TypeId<bUInt128>   { static constexpr const TypeIndex value = TypeIndex::bUInt128;  };
+template <> struct TypeId<bUInt256>   { static constexpr const TypeIndex value = TypeIndex::bUInt256;  };
 template <> struct TypeId<Int8>     { static constexpr const TypeIndex value = TypeIndex::Int8;  };
 template <> struct TypeId<Int16>    { static constexpr const TypeIndex value = TypeIndex::Int16; };
 template <> struct TypeId<Int32>    { static constexpr const TypeIndex value = TypeIndex::Int32; };
 template <> struct TypeId<Int64>    { static constexpr const TypeIndex value = TypeIndex::Int64; };
-template <> struct TypeId<Int256>    { static constexpr const TypeIndex value = TypeIndex::Int256; };
+template <> struct TypeId<bInt128>    { static constexpr const TypeIndex value = TypeIndex::bInt128; };
+template <> struct TypeId<bInt256>    { static constexpr const TypeIndex value = TypeIndex::bInt256; };
 template <> struct TypeId<Float32>  { static constexpr const TypeIndex value = TypeIndex::Float32;  };
 template <> struct TypeId<Float64>  { static constexpr const TypeIndex value = TypeIndex::Float64;  };
 
@@ -170,7 +180,7 @@ struct Decimal
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;
 using Decimal128 = Decimal<Int128>;
-using Decimal256 = Decimal<Int256>;
+using Decimal256 = Decimal<bInt256>;
 
 using DateTime64 = Decimal64;
 
@@ -194,12 +204,12 @@ template <typename T> struct NativeType { using Type = T; };
 template <> struct NativeType<Decimal32> { using Type = Int32; };
 template <> struct NativeType<Decimal64> { using Type = Int64; };
 template <> struct NativeType<Decimal128> { using Type = Int128; };
-template <> struct NativeType<Decimal256> { using Type = Int256; };
+template <> struct NativeType<Decimal256> { using Type = bInt256; };
 
 template <> inline Int32 Decimal32::getScaleMultiplier(UInt32 scale) { return common::exp10_i32(scale); }
 template <> inline Int64 Decimal64::getScaleMultiplier(UInt32 scale) { return common::exp10_i64(scale); }
 template <> inline Int128 Decimal128::getScaleMultiplier(UInt32 scale) { return common::exp10_i128(scale); }
-template <> inline Int256 Decimal256::getScaleMultiplier(UInt32 scale) { return common::exp10_i256(scale); }
+template <> inline bInt256 Decimal256::getScaleMultiplier(UInt32 scale) { return common::exp10_i256(scale); }
 
 inline const char * getTypeName(TypeIndex idx)
 {
@@ -211,13 +221,13 @@ inline const char * getTypeName(TypeIndex idx)
         case TypeIndex::UInt32:     return TypeName<UInt32>::get();
         case TypeIndex::UInt64:     return TypeName<UInt64>::get();
         case TypeIndex::UInt128:    return "UInt128";
-        case TypeIndex::UInt256:    return TypeName<UInt256>::get();
+        case TypeIndex::bUInt256:    return TypeName<bUInt256>::get();
         case TypeIndex::Int8:       return TypeName<Int8>::get();
         case TypeIndex::Int16:      return TypeName<Int16>::get();
         case TypeIndex::Int32:      return TypeName<Int32>::get();
         case TypeIndex::Int64:      return TypeName<Int64>::get();
         case TypeIndex::Int128:     return TypeName<Int128>::get();
-        case TypeIndex::Int256:     return TypeName<Int256>::get();
+        case TypeIndex::bInt256:     return TypeName<bInt256>::get();
         case TypeIndex::Float32:    return TypeName<Float32>::get();
         case TypeIndex::Float64:    return TypeName<Float64>::get();
         case TypeIndex::Date:       return "Date";

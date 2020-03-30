@@ -881,6 +881,8 @@ inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x,
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
+inline void writeText(const bUInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+inline void writeText(const bInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
 
 template <typename T>
 void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
@@ -926,6 +928,20 @@ inline void writeQuoted(const LocalDateTime & x, WriteBuffer & buf)
 }
 
 inline void writeQuoted(const UUID & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
+
+inline void writeQuoted(const bUInt256 & x, WriteBuffer & buf)
+{
+    writeChar('\'', buf);
+    writeText(x, buf);
+    writeChar('\'', buf);
+}
+
+inline void writeQuoted(const bInt256 & x, WriteBuffer & buf)
 {
     writeChar('\'', buf);
     writeText(x, buf);

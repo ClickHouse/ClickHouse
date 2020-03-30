@@ -48,8 +48,10 @@ String FieldVisitorDump::operator() (const DecimalField<Decimal64> & x) const { 
 String FieldVisitorDump::operator() (const DecimalField<Decimal128> & x) const { return formatQuotedWithPrefix(x, "Decimal128_"); }
 String FieldVisitorDump::operator() (const DecimalField<Decimal256> & x) const { return formatQuotedWithPrefix(x, "Decimal256_"); }
 String FieldVisitorDump::operator() (const UInt128 & x) const { return formatQuotedWithPrefix(UUID(x), "UUID_"); }
-String FieldVisitorDump::operator() (const UInt256 & x) const { return formatQuotedWithPrefix(x, "UInt256_"); }
-String FieldVisitorDump::operator() (const Int256 & x) const { return formatQuotedWithPrefix(x, "Int256_"); }
+String FieldVisitorDump::operator() (const bUInt128 & x) const { return formatQuotedWithPrefix(x.str(), "UInt128_"); }
+String FieldVisitorDump::operator() (const bUInt256 & x) const { return formatQuotedWithPrefix(x.str(), "UInt256_"); }
+String FieldVisitorDump::operator() (const bInt128 & x) const { return formatQuotedWithPrefix(x.str(), "Int128_"); }
+String FieldVisitorDump::operator() (const bInt256 & x) const { return formatQuotedWithPrefix(x.str(), "Int256_"); }
 
 
 String FieldVisitorDump::operator() (const String & x) const
@@ -131,8 +133,10 @@ String FieldVisitorToString::operator() (const DecimalField<Decimal64> & x) cons
 String FieldVisitorToString::operator() (const DecimalField<Decimal128> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const DecimalField<Decimal256> & x) const { return formatQuoted(x); }
 String FieldVisitorToString::operator() (const UInt128 & x) const { return formatQuoted(UUID(x)); }
-String FieldVisitorToString::operator() (const UInt256 & x) const { return formatQuoted(x); }
-String FieldVisitorToString::operator() (const Int256 & x) const { return formatQuoted(x); }
+String FieldVisitorToString::operator() (const bUInt128 & x) const { return formatQuoted(x.str()); }
+String FieldVisitorToString::operator() (const bUInt256 & x) const { return formatQuoted(x.str()); }
+String FieldVisitorToString::operator() (const bInt128 & x) const { return formatQuoted(x.str()); }
+String FieldVisitorToString::operator() (const bInt256 & x) const { return formatQuoted(x.str()); }
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const
 {
     return formatQuoted(x.data);
