@@ -1,8 +1,6 @@
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (item_id UInt64, price_sold Float32, date Date) ENGINE MergeTree ORDER BY item_id;
 
--- SET experimental_use_processors = 0;
-
 SELECT item_id
 FROM (SELECT item_id FROM t GROUP BY item_id WITH TOTALS) l
 FULL JOIN (SELECT item_id FROM t GROUP BY item_id WITH TOTALS) r
@@ -13,15 +11,15 @@ FROM (SELECT item_id AS id FROM t GROUP BY id WITH TOTALS) l
 FULL JOIN (SELECT item_id AS id FROM t GROUP BY id WITH TOTALS) r
 USING (id);
 
--- SELECT item_id
--- FROM (SELECT item_id FROM t GROUP BY item_id WITH TOTALS) l
--- INNER JOIN (SELECT item_id FROM t GROUP BY item_id WITH TOTALS) r
--- USING (item_id);
--- 
--- SELECT id
--- FROM (SELECT item_id AS id FROM t GROUP BY id WITH TOTALS) l
--- INNER JOIN (SELECT item_id AS id FROM t GROUP BY id WITH TOTALS) r
--- USING (id);
+SELECT item_id
+FROM (SELECT item_id FROM t GROUP BY item_id WITH TOTALS) l
+INNER JOIN (SELECT item_id FROM t GROUP BY item_id WITH TOTALS) r
+USING (item_id);
+
+SELECT id
+FROM (SELECT item_id AS id FROM t GROUP BY id WITH TOTALS) l
+INNER JOIN (SELECT item_id AS id FROM t GROUP BY id WITH TOTALS) r
+USING (id);
 
 SELECT id, yago, recent
 FROM (
