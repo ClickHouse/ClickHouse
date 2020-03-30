@@ -11,7 +11,7 @@
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionNull.h>
 
 namespace DB
 {
@@ -230,6 +230,11 @@ public:
     DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeUInt8>();
+    }
+
+    AggregateFunctionPtr getOwnNullAdapter(const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params) const override
+    {
+        return std::make_shared<AggregateFunctionNullVariadic<false, false>>(nested_function, arguments, params);
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
