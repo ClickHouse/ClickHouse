@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # URL (URL, Format) {#table_engines-url}
 
 Gère les données sur un serveur HTTP / HTTPS distant. Ce moteur est similaire

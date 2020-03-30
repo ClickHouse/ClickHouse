@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## IPv4 {#ipv4}
 
 `IPv4` est un domaine basé sur `UInt32` tapez et sert de remplacement typé pour stocker des valeurs IPv4. Il fournit un stockage compact avec le format d'entrée-sortie convivial et les informations de type de colonne sur l'inspection.

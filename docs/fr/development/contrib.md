@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Bibliothèques Tierces Utilisées {#third-party-libraries-used}
 
 | Bibliothèque         | Licence                                                                                                                                        |

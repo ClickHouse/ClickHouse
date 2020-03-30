@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # SummingMergeTree {#summingmergetree}
 
 Le moteur hérite de [MergeTree](mergetree.md#table_engines-mergetree). La différence est que lors de la fusion de parties de données pour `SummingMergeTree` tables ClickHouse remplace toutes les lignes avec la même clé primaire (ou, plus précisément, avec la même [clé de tri](mergetree.md)) avec une ligne qui contient des valeurs résumées pour les colonnes avec le type de données numériques. Si la clé de tri est composée de telle sorte qu'une seule valeur de clé correspond à un grand nombre de lignes, cela réduit considérablement le volume de stockage et accélère la sélection des données.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Float32, Float64 {#float32-float64}
 
 [Les nombres à virgule flottante](https://en.wikipedia.org/wiki/IEEE_754).

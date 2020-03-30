@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # UUID {#uuid-data-type}
 
 Un identifiant unique universel (UUID) est un numéro de 16 octets utilisé pour identifier les enregistrements. Pour plus d'informations sur L'UUID, voir [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).

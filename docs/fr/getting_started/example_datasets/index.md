@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Exemple De Jeux De Données {#example-datasets}
 
 Cette section décrit comment obtenir des exemples de jeux de données et les importer dans ClickHouse.

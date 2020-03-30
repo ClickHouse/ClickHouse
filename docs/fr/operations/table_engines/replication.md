@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Réplication Des Données {#table_engines-replication}
 
 La réplication n'est prise en charge que pour les tables de la famille MergeTree:

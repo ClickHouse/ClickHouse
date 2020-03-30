@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Les Paramètres De L'Utilisateur {#user-settings}
 
 Le `users` la section de la `user.xml` le fichier de configuration contient les paramètres utilisateur.

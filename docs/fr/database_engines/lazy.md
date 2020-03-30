@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Paresseux {#lazy}
 
 Conserve les tables en RAM uniquement `expiration_time_in_seconds` secondes après le dernier accès. Peut être utilisé uniquement avec les tables \* Log.

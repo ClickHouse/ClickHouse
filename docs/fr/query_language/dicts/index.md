@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Dictionnaire {#dictionaries}
 
 Un dictionnaire est une cartographie (`key -> attributes`) qui est pratique pour différents types de listes de référence.

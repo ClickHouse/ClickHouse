@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # DateTime {#data_type-datetime}
 
 Permet de stocker un instant dans le temps, qui peut être exprimé comme une date de calendrier et une heure d'une journée.

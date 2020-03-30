@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Tampon {#buffer}
 
 Met en mémoire tampon les données à écrire dans la RAM, les vidant périodiquement dans une autre table. Pendant l'opération de lecture, les données sont lues à partir de la mémoire tampon, et l'autre simultanément.

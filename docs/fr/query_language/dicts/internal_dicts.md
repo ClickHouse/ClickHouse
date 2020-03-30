@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Dictionnaires internes {#internal_dicts}
 
 ClickHouse contient une fonction intégrée pour travailler avec une géobase.

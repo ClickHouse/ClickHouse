@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Échantillonnage Du Profileur De Requête {#sampling-query-profiler}
 
 ClickHouse exécute un profileur d'échantillonnage qui permet d'analyser l'exécution des requêtes. En utilisant profiler, vous pouvez trouver des routines de code source qui ont utilisé le plus fréquemment lors de l'exécution de la requête. Vous pouvez suivre le temps CPU et le temps d'horloge murale passé, y compris le temps d'inactivité.

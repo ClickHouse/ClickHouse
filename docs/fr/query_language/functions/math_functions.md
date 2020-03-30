@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions mathématiques {#mathematical-functions}
 
 Toutes les fonctions renvoient un nombre Float64. La précision du résultat est proche de la précision maximale possible, mais le résultat peut ne pas coïncider avec le nombre représentable de la machine le plus proche du nombre réel correspondant.

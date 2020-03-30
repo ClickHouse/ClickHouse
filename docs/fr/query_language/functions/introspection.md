@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions D'Introspection {#introspection-functions}
 
 Vous pouvez utiliser les fonctions décrites dans ce chapitre pour introspecter [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) et [DWARF](https://en.wikipedia.org/wiki/DWARF) pour le profilage de requête.

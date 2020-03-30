@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions pour travailler avec UUID {#functions-for-working-with-uuid}
 
 Les fonctions pour travailler avec UUID sont listées ci-dessous.

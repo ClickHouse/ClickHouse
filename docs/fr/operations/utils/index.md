@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Clickhouse Utilitaire {#clickhouse-utility}
 
 -   [clickhouse-local](clickhouse-local.md) — Allows running SQL queries on data without stopping the ClickHouse server, similar to how `awk` ne ce.

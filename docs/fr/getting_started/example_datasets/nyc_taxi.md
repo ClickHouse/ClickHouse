@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # New York Taxi Données {#new-york-taxi-data}
 
 Ce jeu de données peut être obtenu de deux façons:

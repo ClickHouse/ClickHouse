@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Restrictions sur la complexité des requêtes {#restrictions-on-query-complexity}
 
 Les Restrictions sur la complexité des requêtes font partie des paramètres.

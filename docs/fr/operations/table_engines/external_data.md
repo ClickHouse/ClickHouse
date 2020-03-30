@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Données externes pour le traitement des requêtes {#external-data-for-query-processing}
 
 ClickHouse permet d'Envoyer à un serveur les données nécessaires au traitement d'une requête, ainsi qu'une requête SELECT. Ces données sont placées dans une table temporaire (voir la section “Temporary tables”) et peut être utilisé dans la requête (par exemple, dans les DANS les opérateurs).

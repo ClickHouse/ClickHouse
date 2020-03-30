@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Client de ligne de commande {#command-line-client}
 
 ClickHouse fournit un client de ligne de commande natif: `clickhouse-client`. Le client prend en charge les options de ligne de commande et les fichiers de configuration. Pour plus d'informations, voir [Configuration](#interfaces_cli_configuration).

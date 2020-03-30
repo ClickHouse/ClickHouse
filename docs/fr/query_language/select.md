@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Sélectionnez la syntaxe des requêtes {#select-queries-syntax}
 
 `SELECT` effectue la récupération des données.

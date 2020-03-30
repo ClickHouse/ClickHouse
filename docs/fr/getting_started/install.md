@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Installation {#installation}
 
 ## Configuration Système Requise {#system-requirements}

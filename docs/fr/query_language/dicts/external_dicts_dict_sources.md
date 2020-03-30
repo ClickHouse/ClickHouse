@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Sources de dictionnaires externes {#dicts-external-dicts-dict-sources}
 
 Externe dictionnaire peut être connecté à partir de nombreuses sources différentes.

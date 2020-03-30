@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Moteurs de Table {#table_engines}
 
 Le moteur de table (type de table) détermine:

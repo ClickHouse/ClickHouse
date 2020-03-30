@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # GraphiteMergeTree {#graphitemergetree}
 
 Ce moteur est conçu pour l'amincissement et l'agrégation / moyenne (cumul) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) données. Il peut être utile aux développeurs qui veulent utiliser ClickHouse comme un magasin de données pour Graphite.

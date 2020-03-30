@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions pour diviser et fusionner des chaînes et des tableaux {#functions-for-splitting-and-merging-strings-and-arrays}
 
 ## splitByChar (séparateur, s) {#splitbycharseparator-s}

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Histoire De ClickHouse {#clickhouse-history}
 
 ClickHouse a été développé initialement au pouvoir [Yandex.Metrica](https://metrica.yandex.com/), [la deuxième plus grande plateforme d'analyse dans le monde](http://w3techs.com/technologies/overview/traffic_analysis/all) et continue à être le composant de base de ce système. Avec plus de 13 Billions d'enregistrements dans la base de données et plus de 20 milliards d'événements par jour, ClickHouse permet de générer des rapports personnalisés à la volée directement à partir de données non agrégées. Cet article couvre brièvement les objectifs de ClickHouse dans les premiers stades de son développement.

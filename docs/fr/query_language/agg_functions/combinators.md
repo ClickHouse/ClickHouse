@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Combinateurs de fonction d'agrégat {#aggregate_functions_combinators}
 
 Le nom d'une fonction d'agrégat peut avoir un suffixe ajouté. Cela change la façon dont la fonction d'agrégation fonctionne.

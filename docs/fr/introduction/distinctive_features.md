@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Caractéristiques distinctives de ClickHouse {#distinctive-features-of-clickhouse}
 
 ## Vrai SGBD orienté colonne {#true-column-oriented-dbms}

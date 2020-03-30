@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Les Fonctions De Table {#table-functions}
 
 Les fonctions de Table sont des méthodes pour construire des tables.

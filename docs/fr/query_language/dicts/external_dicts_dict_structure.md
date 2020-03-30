@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Clé et champs du dictionnaire {#dictionary-key-and-fields}
 
 Le `<structure>` la clause décrit la clé du dictionnaire et les champs disponibles pour les requêtes.

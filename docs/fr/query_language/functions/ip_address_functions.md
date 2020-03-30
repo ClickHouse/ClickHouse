@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions pour travailler avec des adresses IP {#functions-for-working-with-ip-addresses}
 
 ## IPv4NumToString (num) {#ipv4numtostringnum}

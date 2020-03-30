@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # MergeTree {#table_engines-mergetree}
 
 Le `MergeTree` moteur et autres moteurs de cette famille (`*MergeTree`) sont les moteurs de table ClickHouse les plus robustes.

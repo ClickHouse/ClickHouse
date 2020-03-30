@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Performance {#performance}
 
 Selon les résultats des tests internes chez Yandex, ClickHouse affiche les meilleures performances (à la fois le débit le plus élevé pour les requêtes longues et la latence la plus faible pour les requêtes courtes) pour des scénarios d'exploitation comparables parmi les systèmes de sa classe disponibles pour les tests. Vous pouvez afficher les résultats du test sur un [page séparée](https://clickhouse.tech/benchmark.html).

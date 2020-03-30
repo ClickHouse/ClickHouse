@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # JDBC {#jdbc-driver}
 
 -   **[Pilote officiel](https://github.com/ClickHouse/clickhouse-jdbc)**

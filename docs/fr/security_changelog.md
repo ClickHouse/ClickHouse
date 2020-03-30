@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## Correction dans la version 19.14.3.3 de ClickHouse, 2019-09-10 {#fixed-in-clickhouse-release-19-14-3-3-2019-09-10}
 
 ### CVE-2019-15024 {#cve-2019-15024}

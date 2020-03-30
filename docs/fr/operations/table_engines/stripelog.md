@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # StripeLog {#stripelog}
 
 Ce moteur appartient à la famille des moteurs en rondins. Voir les propriétés communes des moteurs de journal et leurs différences dans le [Famille De Moteurs En Rondins](log_family.md) article.

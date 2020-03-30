@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Array(T) {#data-type-array}
 
 Un tableau de `T`les éléments de type. `T` peut être n'importe quel type de données, y compris un tableau.

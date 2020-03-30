@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Comment Tester Votre Matériel Avec ClickHouse {#how-to-test-your-hardware-with-clickhouse}
 
 Avec cette instruction, vous pouvez exécuter le test de performance clickhouse de base sur n'importe quel serveur sans installation de paquets ClickHouse.

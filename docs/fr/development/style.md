@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Comment écrire du Code C++  {#how-to-write-c-code}
 
 ## Recommandations Générales {#general-recommendations}

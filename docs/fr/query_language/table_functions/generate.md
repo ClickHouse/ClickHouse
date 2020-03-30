@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # generateRandom {#generaterandom}
 
 Génère des données aléatoires avec un schéma donné.

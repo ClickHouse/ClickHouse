@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Application D'un modèle Catboost dans ClickHouse {#applying-catboost-model-in-clickhouse}
 
 [CatBoost](https://catboost.ai) est une bibliothèque de dynamisation de gradient libre et open-source développée à [Yandex](https://yandex.com/company/) pour l'apprentissage automatique.

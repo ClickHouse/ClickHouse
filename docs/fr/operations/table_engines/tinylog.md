@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # TinyLog {#tinylog}
 
 Le moteur appartient à la famille de moteurs en rondins. Voir [Famille De Moteurs En Rondins](log_family.md) pour les propriétés communes des moteurs en rondins et leurs différences.

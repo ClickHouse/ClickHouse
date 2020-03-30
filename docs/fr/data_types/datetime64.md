@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # DateTime64 {#data_type-datetime64}
 
 Permet de stocker un instant dans le temps, qui peut être exprimé comme une date de calendrier et une heure d'un jour, avec une précision de sous-seconde définie

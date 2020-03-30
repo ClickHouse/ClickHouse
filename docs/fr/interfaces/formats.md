@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Formats pour les données D'entrée et de sortie {#formats}
 
 ClickHouse peut accepter et renvoyer des données dans différents formats. Un format pris en charge pour l'entrée peut être utilisée pour analyser les données fournies à `INSERT`s, pour effectuer `SELECT`s à partir d'une table sauvegardée par fichier, telle Qu'un fichier, une URL ou un HDFS, ou pour lire un dictionnaire externe. Un format pris en charge pour la sortie peut être utilisé pour organiser

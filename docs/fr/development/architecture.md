@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Vue d'ensemble de L'Architecture ClickHouse {#overview-of-clickhouse-architecture}
 
 ClickHouse est un véritable SGBD orienté colonne. Les données sont stockées par colonnes et lors de l'exécution de tableaux (vecteurs ou morceaux de colonnes). Dans la mesure du possible, les opérations sont distribuées sur des tableaux, plutôt que sur des valeurs individuelles. Il est appelé “vectorized query execution,” et cela aide à réduire le coût du traitement des données réel.

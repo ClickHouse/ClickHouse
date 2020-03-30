@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Les fonctions logiques {#logical-functions}
 
 Les fonctions logiques acceptent tous les types numériques, mais renvoient un nombre UInt8 égal à 0 ou 1.

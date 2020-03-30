@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Clé De Partitionnement Personnalisée {#custom-partitioning-key}
 
 Le partitionnement est disponible pour [MergeTree](mergetree.md) table de famille (y compris les [répliqué](replication.md) table). [Les vues matérialisées](materializedview.md) basé sur les tables MergeTree prennent également en charge le partitionnement.

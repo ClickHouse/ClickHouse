@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Clickhouse Aire De Jeux {#clickhouse-playground}
 
 [Clickhouse Aire De Jeux](https://play.clickhouse.tech?file=welcome) permet aux utilisateurs d'expérimenter avec ClickHouse en exécutant des requêtes instantanément, sans configurer leur serveur ou leur cluster.

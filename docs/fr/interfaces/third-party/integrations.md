@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Bibliothèques d'intégration de développeurs tiers {#integration-libraries-from-third-party-developers}
 
 !!! warning "Avertissement"

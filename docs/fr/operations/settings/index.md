@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Paramètre {#settings}
 
 Il existe plusieurs façons de faire tous les paramètres décrits ci-dessous.

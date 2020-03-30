@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions pour travailler avec des chaînes {#functions-for-working-with-strings}
 
 ## vide {#empty}

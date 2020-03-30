@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Les Paramètres Des Profils {#settings-profiles}
 
 Un profil de paramètres est une collection de paramètres regroupés sous le même nom. Chaque utilisateur de ClickHouse a un profil.

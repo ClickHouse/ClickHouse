@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions pour travailler avec Yandex.Dictionnaires Metrica {#functions-for-working-with-yandex-metrica-dictionaries}
 
 Pour que les fonctions ci-dessous fonctionnent, la configuration du serveur doit spécifier les chemins et les adresses pour obtenir tous les Yandex.Dictionnaires Metrica. Les dictionnaires sont chargés au premier appel de l'une de ces fonctions. Si les listes de référence ne peuvent pas être chargées, une exception est levée.

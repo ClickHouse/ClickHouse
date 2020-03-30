@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # AggregatingMergeTree {#aggregatingmergetree}
 
 Le moteur hérite de [MergeTree](mergetree.md#table_engines-mergetree), modifier la logique pour les parties de données Fusion. ClickHouse remplace toutes les lignes avec la même clé primaire (ou, plus précisément, avec la même [clé de tri](mergetree.md)) avec une seule ligne (dans un rayon d'une partie des données) qui stocke une combinaison d'états de fonctions d'agrégation.

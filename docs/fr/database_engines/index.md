@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Moteurs De Base De Données {#database-engines}
 
 Moteurs de base de données vous permettent de travailler avec des tables.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # La Fonction De Référence {#function-reference}
 
 ## compter {#agg_function-count}

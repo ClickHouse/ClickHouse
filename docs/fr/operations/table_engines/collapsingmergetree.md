@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # CollapsingMergeTree {#table_engine-collapsingmergetree}
 
 Le moteur hérite de [MergeTree](mergetree.md) et ajoute la logique de l'effondrement des lignes de données de pièces algorithme de fusion.

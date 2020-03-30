@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Dictionnaire {#dictionary}
 
 Le `Dictionary` le moteur affiche le [dictionnaire](../../query_language/dicts/external_dicts.md) données comme une table ClickHouse.

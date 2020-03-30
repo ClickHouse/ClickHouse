@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # clickhouse-local {#clickhouse-local}
 
 Le `clickhouse-local` programme vous permet d'effectuer un traitement rapide sur les fichiers locaux, sans avoir à déployer et configurer le serveur ClickHouse.

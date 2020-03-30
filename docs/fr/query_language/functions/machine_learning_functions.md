@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions d'apprentissage automatique {#machine-learning-functions}
 
 ## evalMLMethod (prédiction) {#machine_learning_methods-evalmlmethod}

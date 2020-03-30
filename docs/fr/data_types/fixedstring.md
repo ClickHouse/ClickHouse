@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # FixedString {#fixedstring}
 
 Une chaîne de longueur fixe de `N` octets (ni caractères ni points de code).

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Quota {#quotas}
 
 Les Quotas permettent de limiter l'utilisation des ressources au cours d'une période de temps, ou tout simplement suivre l'utilisation des ressources.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Les fonctions de hachage {#hash-functions}
 
 Les fonctions de hachage peuvent être utilisées pour le brassage pseudo-aléatoire déterministe des éléments.

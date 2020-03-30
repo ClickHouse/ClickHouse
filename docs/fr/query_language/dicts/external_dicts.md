@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Dictionnaires Externes {#dicts-external-dicts}
 
 Vous pouvez ajouter vos propres dictionnaires à partir de diverses sources de données. La source de données d'un dictionnaire peut être un texte local ou un fichier exécutable, une ressource HTTP(S) ou un autre SGBD. Pour plus d'informations, voir “[Sources pour les dictionnaires externes](external_dicts_dict_sources.md)”.

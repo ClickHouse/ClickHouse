@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Définir {#set}
 
 Un ensemble de données qui est toujours en RAM. Il est conçu pour être utilisé sur le côté droit de l'opérateur (voir la section “IN operators”).

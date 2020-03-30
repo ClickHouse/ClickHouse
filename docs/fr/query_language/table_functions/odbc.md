@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # ODBC {#table-functions-odbc}
 
 Renvoie la table connectée via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions pour la mise en œuvre de l'opérateur {#functions-for-implementing-the-in-operator}
 
 ## in, notin, globalIn, globalNotIn {#in-functions}

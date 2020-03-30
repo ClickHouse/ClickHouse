@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Serveurs Proxy de développeurs tiers {#proxy-servers-from-third-party-developers}
 
 ## chproxy {#chproxy}

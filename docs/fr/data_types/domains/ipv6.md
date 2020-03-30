@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## IPv6 {#ipv6}
 
 `IPv6` est un domaine basé sur `FixedString(16)` tapez et sert de remplacement typé pour stocker des valeurs IPv6. Il fournit un stockage compact avec le format d'entrée-sortie convivial et les informations de type de colonne sur l'inspection.

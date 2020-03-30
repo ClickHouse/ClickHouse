@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Expression {#expression}
 
 Les Expressions sont utilisées pour représenter des lambdas dans des fonctions d'ordre Élevé.

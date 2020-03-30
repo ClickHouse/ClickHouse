@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Bibliothèques clientes de développeurs tiers {#client-libraries-from-third-party-developers}
 
 !!! warning "Avertissement"

@@ -345,7 +345,7 @@ if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
     website_dir = os.path.join('..', 'website')
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,es,ru,zh,ja,fa')
+    arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,fa')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default=website_dir)
     arg_parser.add_argument('--website-dir', default=website_dir)

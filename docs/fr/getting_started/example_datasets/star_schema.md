@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Référence Du Schéma En Étoile {#star-schema-benchmark}
 
 Compilation de dbgen:

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Les tables système {#system-tables}
 
 Les tables système sont utilisées pour implémenter une partie des fonctionnalités du système et pour fournir un accès à des informations sur le fonctionnement du système.

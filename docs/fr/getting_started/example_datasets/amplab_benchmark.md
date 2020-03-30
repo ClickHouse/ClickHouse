@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # AMPLab Big Data Benchmark {#amplab-big-data-benchmark}
 
 Tu vois https://amplab.cs.berkeley.edu/benchmark/

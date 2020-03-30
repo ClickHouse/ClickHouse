@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # clickhouse-benchmark {#clickhouse-benchmark}
 
 Se connecte à un serveur ClickHouse et envoie à plusieurs reprises des requêtes spécifiées.

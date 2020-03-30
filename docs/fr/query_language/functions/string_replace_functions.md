@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Les fonctions de recherche et de remplacement dans les chaînes {#functions-for-searching-and-replacing-in-strings}
 
 ## replaceOne(botte de foin, modèle, remplacement) {#replaceonehaystack-pattern-replacement}

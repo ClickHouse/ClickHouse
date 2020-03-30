@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # WikiStat {#wikistat}
 
 Voir: http://dumps.wikimedia.org/other/pagecounts-raw/

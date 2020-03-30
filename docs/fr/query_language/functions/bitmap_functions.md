@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions de Bitmap {#bitmap-functions}
 
 Les fonctions Bitmap fonctionnent pour le calcul de la valeur de L'objet de deux bitmaps, il s'agit de renvoyer un nouveau bitmap ou une cardinalité tout en utilisant le calcul de la formule, tel que and, or, xor, and not, etc.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonction {#functions}
 
 Il y a au moins\* deux types de fonctions - des fonctions régulières (elles sont simplement appelées “functions”) and aggregate functions. These are completely different concepts. Regular functions work as if they are applied to each row separately (for each row, the result of the function doesn't depend on the other rows). Aggregate functions accumulate a set of values from various rows (i.e. they depend on the entire set of rows).

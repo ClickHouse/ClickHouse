@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # SYSTÈME de Requêtes {#query-language-system}
 
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)

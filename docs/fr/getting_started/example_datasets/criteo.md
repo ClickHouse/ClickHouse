@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Téraoctet de journaux de clics de Criteo {#terabyte-of-click-logs-from-criteo}
 
 Télécharger les données à partir de http://labs.criteo.com/downloads/download-terabyte-click-logs/

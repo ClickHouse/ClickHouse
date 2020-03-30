@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # L'encodage des fonctions {#encoding-functions}
 
 ## char {#char}

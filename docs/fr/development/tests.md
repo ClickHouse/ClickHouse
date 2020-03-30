@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # ClickHouse Test {#clickhouse-testing}
 
 ## Les Tests Fonctionnels {#functional-tests}

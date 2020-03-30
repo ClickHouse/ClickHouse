@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Interface HTTP {#http-interface}
 
 L'interface HTTP vous permet D'utiliser ClickHouse sur n'importe quelle plate-forme à partir de n'importe quel langage de programmation. Nous l'utilisons pour travailler à partir de Java et Perl, ainsi que des scripts shell. Dans d'autres départements, L'interface HTTP est utilisée à partir de Perl, Python et Go. L'interface HTTP est plus limitée que l'interface native, mais elle a une meilleure compatibilité.

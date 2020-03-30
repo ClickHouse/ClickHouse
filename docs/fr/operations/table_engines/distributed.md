@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Distribué {#distributed}
 
 **Les Tables avec moteur distribué ne stockent aucune donnée par elles mêmes**, mais autoriser le traitement des requêtes distribuées sur plusieurs serveurs.

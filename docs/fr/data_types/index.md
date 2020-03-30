@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Types De Données {#data_types}
 
 ClickHouse peut stocker différents types de données dans des cellules de table.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Référence SQL {#sql-reference}
 
 -   [SELECT](select.md)

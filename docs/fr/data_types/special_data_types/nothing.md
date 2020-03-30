@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Rien {#nothing}
 
 Le seul but de ce type de données est de représenter les cas où une valeur n'est pas prévu. Donc vous ne pouvez pas créer un `Nothing` type de valeur.

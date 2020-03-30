@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # clickhouse-copieur {#clickhouse-copier}
 
 Copie les données des tables d'un cluster vers des tables d'un autre cluster (ou du même cluster).

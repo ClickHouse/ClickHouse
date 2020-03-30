@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Clickhouse Adopteurs {#clickhouse-adopters}
 
 !!! warning "Avertissement"

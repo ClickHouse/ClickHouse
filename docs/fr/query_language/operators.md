@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Opérateur {#operators}
 
 Tous les opérateurs sont transformés en leurs fonctions correspondantes à l'étape d'analyse des requêtes en fonction de leur priorité et de leur associativité.

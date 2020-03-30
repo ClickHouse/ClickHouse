@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Caractéristiques de ClickHouse qui peuvent être considérées comme des inconvénients {#clickhouse-features-that-can-be-considered-disadvantages}
 
 1.  Pas de transactions à part entière.

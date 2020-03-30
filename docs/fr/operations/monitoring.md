@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Surveiller {#monitoring}
 
 Vous pouvez surveiller:

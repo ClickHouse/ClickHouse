@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # à distance, remoteSecure {#remote-remotesecure}
 
 Vous permet d'accéder à des serveurs distants sans `Distributed` table.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Mise À Jour De ClickHouse {#clickhouse-update}
 
 Si ClickHouse a été installé à partir de paquets deb, exécutez les commandes suivantes sur le serveur:

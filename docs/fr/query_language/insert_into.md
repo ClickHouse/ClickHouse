@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## INSERT {#insert}
 
 L'ajout de données.

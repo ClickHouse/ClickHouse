@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Intervalle {#data-type-interval}
 
 Famille de types de données représentant des intervalles d'heure et de date. Les types de la [INTERVAL](../../query_language/operators.md#operator-interval) opérateur.

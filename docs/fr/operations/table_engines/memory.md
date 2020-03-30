@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Mémoire {#memory}
 
 Le moteur de mémoire stocke les données en RAM, sous forme non compressée. Les données sont stockées exactement sous la même forme qu'elles sont reçues lors de la lecture. En d'autres termes, la lecture de ce tableau est entièrement gratuit.

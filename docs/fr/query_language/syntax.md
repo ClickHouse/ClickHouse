@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Syntaxe {#syntax}
 
 Il existe deux types d'analyseurs dans le système: L'analyseur SQL complet (un analyseur de descente récursif) et l'analyseur de format de données (un analyseur de flux rapide).

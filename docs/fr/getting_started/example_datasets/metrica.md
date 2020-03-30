@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Yandex Anonymisé.Metrica De Données {#anonymized-yandex-metrica-data}
 
 Dataset se compose de deux tables contenant des données anonymisées sur les hits (`hits_v1`) et les visites (`visits_v1`) de Yandex.Metrica. Vous pouvez en savoir plus sur Yandex.Metrica dans [Histoire de ClickHouse](../../introduction/history.md) section.

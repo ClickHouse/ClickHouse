@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # fichier {#file}
 
 Crée un tableau à partir d'un fichier. Cette fonction de table est similaire à [URL](url.md) et [hdfs](hdfs.md) ceux.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fichier {#table_engines-file}
 
 Le moteur de table de fichiers conserve les données dans un fichier dans l'un des [fichier

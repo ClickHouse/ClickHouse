@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Tutoriel ClickHouse {#clickhouse-tutorial}
 
 ## À quoi S'attendre de ce tutoriel? {#what-to-expect-from-this-tutorial}

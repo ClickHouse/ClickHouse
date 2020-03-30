@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Les fonctions d'agrégation {#aggregate-functions}
 
 Les fonctions d'agrégation fonctionnent dans le [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) comme prévu par les experts de la base de données.

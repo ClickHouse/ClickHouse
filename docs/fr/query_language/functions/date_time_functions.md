@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions pour travailler avec des dates et des heures {#functions-for-working-with-dates-and-times}
 
 Support des fuseaux horaires

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Interface MySQL {#mysql-interface}
 
 ClickHouse prend en charge le protocole de fil MySQL. Il peut être activé par [mysql\_port](../operations/server_settings/settings.md#server_settings-mysql_port) paramètre dans le fichier de configuration:

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Nested(Name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
 
 A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../query_language/create.md) requête. Chaque ligne de table peut correspondre à n'importe quel nombre de lignes dans une structure de données imbriquée.

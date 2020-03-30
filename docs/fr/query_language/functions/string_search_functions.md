@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions de recherche de chaînes {#functions-for-searching-strings}
 
 La recherche est sensible à la casse par défaut dans toutes ces fonctions. Il existe des variantes pour la recherche insensible à la casse.

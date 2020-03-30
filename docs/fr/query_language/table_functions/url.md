@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # URL {#url}
 
 `url(URL, format, structure)` - retourne une table créée à partir du `URL` avec le

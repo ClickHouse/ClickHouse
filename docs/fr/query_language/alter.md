@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## ALTER {#query_language_queries_alter}
 
 Le `ALTER` la requête est prise en charge uniquement pour `*MergeTree` des tables, ainsi que `Merge`et`Distributed`. La requête a plusieurs variantes.

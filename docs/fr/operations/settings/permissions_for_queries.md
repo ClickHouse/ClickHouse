@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Autorisations pour les requêtes {#permissions_for_queries}
 
 Les requêtes dans ClickHouse peuvent être divisées en plusieurs types:

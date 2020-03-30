@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions d'arrondi {#rounding-functions}
 
 ## floor(x\[, N\]) {#floorx-n}

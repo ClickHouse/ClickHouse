@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Recommandations D'Utilisation {#usage-recommendations}
 
 ## Gouverneur de mise à L'échelle du processeur {#cpu-scaling-governor}

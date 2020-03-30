@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Stockage des dictionnaires en mémoire {#dicts-external-dicts-dict-layout}
 
 Il existe une variété de façons de stocker les dictionnaires en mémoire.

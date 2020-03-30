@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Journal {#log}
 
 Moteur appartient à la famille de journal des moteurs. Voir les propriétés communes des moteurs de journal et leurs différences dans le [Famille De Moteurs En Rondins](log_family.md) article.

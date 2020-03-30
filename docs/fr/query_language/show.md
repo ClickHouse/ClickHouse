@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Afficher les requêtes {#show-queries}
 
 ## SHOW CREATE TABLE {#show-create-table}

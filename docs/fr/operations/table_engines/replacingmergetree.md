@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # ReplacingMergeTree {#replacingmergetree}
 
 Le moteur diffère de [MergeTree](mergetree.md#table_engines-mergetree) en ce qu'il supprime les doublons avec la même valeur de clé primaire (ou, plus précisément, avec la même [clé de tri](mergetree.md) valeur).

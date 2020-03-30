@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Contraintes sur les paramètres {#constraints-on-settings}
 
 Les contraintes sur les paramètres peuvent être définis dans le `profiles` la section de la `user.xml` fichier de configuration et interdire aux utilisateurs de modifier certains `SET` requête.

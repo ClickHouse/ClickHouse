@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Domaine {#domains}
 
 Les domaines sont des types spéciaux qui ajoutent des fonctionnalités supplémentaires au sommet du type de base existant, mais en laissant le format on-wire et on-disc du type de données sous-jacent intact. À l'heure actuelle, ClickHouse ne prend pas en charge les domaines définis par l'utilisateur.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions conditionnelles {#conditional-functions}
 
 ## si {#if}

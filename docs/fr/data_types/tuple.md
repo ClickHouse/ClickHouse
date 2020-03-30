@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Tuple(T1, T2, …) {#tuplet1-t2}
 
 Un n-uplet d'éléments, chacun ayant une personne [type](index.md#data_types).

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # nombre {#numbers}
 
 `numbers(N)` – Returns a table with the single ‘number’ colonne (UInt64) qui contient des entiers de 0 à n-1.

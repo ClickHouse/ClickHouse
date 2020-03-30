@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions de comparaison {#comparison-functions}
 
 Les fonctions de comparaison renvoient toujours 0 ou 1 (Uint8).

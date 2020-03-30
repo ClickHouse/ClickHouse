@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Diverses Requêtes {#miscellaneous-queries}
 
 ## ATTACH {#attach}

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Dictionnaires Hiérarchiques {#hierarchical-dictionaries}
 
 Clickhouse prend en charge les dictionnaires hiérarchiques avec un [touche numérique](external_dicts_dict_structure.md#ext_dict-numeric-key).

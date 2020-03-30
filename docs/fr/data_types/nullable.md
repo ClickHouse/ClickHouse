@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Nullable(TypeName) {#data_type-nullable}
 
 Permet de stocker marqueur spécial ([NULL](../query_language/syntax.md)) qui dénote “missing value” aux valeurs normales autorisées par `TypeName`. Par exemple, un `Nullable(Int8)` type colonne peut stocker `Int8` type de valeurs, et les lignes qui n'ont pas de valeur magasin `NULL`.

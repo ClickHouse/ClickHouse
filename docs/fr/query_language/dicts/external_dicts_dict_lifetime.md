@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Mises À Jour Du Dictionnaire {#dictionary-updates}
 
 ClickHouse met périodiquement à jour les dictionnaires. L'intervalle de mise à jour pour les dictionnaires entièrement téléchargés et l'intervalle d'invalidation pour les dictionnaires `<lifetime>` tag en quelques secondes.

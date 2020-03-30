@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Dépannage {#troubleshooting}
 
 -   [Installation](#troubleshooting-installation-errors)

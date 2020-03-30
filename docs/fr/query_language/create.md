@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Créer des requêtes {#create-queries}
 
 ## CREATE DATABASE {#query-language-create-database}

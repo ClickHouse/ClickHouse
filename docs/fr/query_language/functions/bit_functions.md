@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Peu de fonctions {#bit-functions}
 
 Les fonctions Bit fonctionnent pour n'importe quelle paire de types de UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64, Float32 ou Float64.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Chaîne {#string}
 
 Les chaînes d'une longueur arbitraire. La longueur n'est pas limitée. La valeur peut contenir un ensemble arbitraire d'octets, y compris des octets nuls.

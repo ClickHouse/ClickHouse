@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # HDFS {#table_engines-hdfs}
 
 Ce moteur fournit l'intégration avec [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) l'écosystème en permettant de gérer les données sur [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)via ClickHouse. Ce moteur est similaire

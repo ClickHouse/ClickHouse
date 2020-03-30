@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## Clickhouse version v20. 3 {#clickhouse-release-v20-3}
 
 ### Clickhouse version v20. 3. 4. 10, 2020-03-20 {#clickhouse-release-v20-3-4-10-2020-03-20}

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fonctions pour travailler avec des tableaux {#functions-for-working-with-arrays}
 
 ## vide {#function-empty}

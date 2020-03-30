@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # MySQL {#mysql}
 
 Le moteur MySQL vous permet d'effectuer `SELECT` requêtes sur les données stockées sur un serveur MySQL distant.

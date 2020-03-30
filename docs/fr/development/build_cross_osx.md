@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Comment Construire ClickHouse sur Linux pour Mac OS X {#how-to-build-clickhouse-on-linux-for-mac-os-x}
 
 C'est pour le cas où vous avez machine Linux et que vous voulez utiliser pour construire `clickhouse` binaire qui s'exécutera sur OS X. Ceci est destiné aux contrôles d'intégration continus qui s'exécutent sur des serveurs Linux. Si vous voulez construire ClickHouse directement sur Mac OS X, puis procéder à [une autre instruction](build_osx.md).

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Rejoindre {#join}
 
 Structure de données préparée pour l'utilisation dans [JOIN](../../query_language/select.md#select-join) opérations.

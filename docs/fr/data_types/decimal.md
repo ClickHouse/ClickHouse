@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Décimal (P, S), Décimal32 (S), Décimal64 (S), Décimal128 (S) {#decimalp-s-decimal32s-decimal64s-decimal128s}
 
 Nombres à points fixes signés qui conservent la précision pendant les opérations d'addition, de soustraction et de multiplication. Pour la division, les chiffres les moins significatifs sont ignorés (non arrondis).

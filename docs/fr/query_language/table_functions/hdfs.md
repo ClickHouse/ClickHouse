@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # hdfs {#hdfs}
 
 Crée une table à partir de fichiers dans HDFS. Cette fonction de table est similaire à [URL](url.md) et [fichier](file.md) ceux.

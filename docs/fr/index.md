@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Qu'est-ce que ClickHouse? {#what-is-clickhouse}
 
 ClickHouse est un système de gestion de base de données orienté colonne (SGBD) pour le traitement analytique en ligne des requêtes (OLAP).

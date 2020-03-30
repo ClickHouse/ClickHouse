@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Kafka {#kafka}
 
 Ce moteur fonctionne avec [Apache Kafka](http://kafka.apache.org/).

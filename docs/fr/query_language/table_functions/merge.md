@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # fusionner {#merge}
 
 `merge(db_name, 'tables_regexp')` – Creates a temporary Merge table. For more information, see the section “Table engines, Merge”.
