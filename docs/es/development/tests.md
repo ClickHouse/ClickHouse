@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Pruebas de ClickHouse {#clickhouse-testing}
 
 ## Pruebas funcionales {#functional-tests}

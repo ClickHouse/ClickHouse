@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Proveedores de servicios en la nube de ClickHouse {#clickhouse-cloud-service-providers}
 
 !!! info "INFO"

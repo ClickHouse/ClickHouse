@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Instalación {#installation}
 
 ## Requisitos del sistema {#system-requirements}

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones de comparación {#comparison-functions}
 
 Las funciones de comparación siempre devuelven 0 o 1 (Uint8).

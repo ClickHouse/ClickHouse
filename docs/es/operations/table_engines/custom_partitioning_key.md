@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Clave de partición personalizada {#custom-partitioning-key}
 
 La partición está disponible para el [Método de codificación de datos:](mergetree.md) mesas familiares (incluyendo [repetición](replication.md) tabla). [Vistas materializadas](materializedview.md) basado en tablas MergeTree soporte de particionamiento, también.

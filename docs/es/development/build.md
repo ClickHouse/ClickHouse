@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Cómo construir ClickHouse para el desarrollo {#how-to-build-clickhouse-for-development}
 
 El siguiente tutorial se basa en el sistema Ubuntu Linux.

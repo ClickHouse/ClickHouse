@@ -2,6 +2,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -49,6 +50,8 @@ StorageSystemTables::StorageSystemTables(const std::string & name_)
         {"primary_key", std::make_shared<DataTypeString>()},
         {"sampling_key", std::make_shared<DataTypeString>()},
         {"storage_policy", std::make_shared<DataTypeString>()},
+        {"total_rows", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
+        {"total_bytes", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>())},
     }));
 }
 
@@ -141,51 +144,75 @@ protected:
                         size_t src_index = 0;
                         size_t res_index = 0;
 
+                        // database
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // name
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.first);
 
+                        // engine
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
+                        // is_temporary
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(1u);
 
+                        // data_paths
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // metadata_path
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // metadata_modification_time
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // dependencies_database
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // dependencies_table
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // create_table_query
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // engine_full
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insert(table.second->getName());
 
+                        // partition_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // sorting_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // primary_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // sampling_key
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
 
+                        // storage_policy
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // total_rows
+                        if (columns_mask[src_index++])
+                            res_columns[res_index++]->insertDefault();
+
+                        // total_bytes
                         if (columns_mask[src_index++])
                             res_columns[res_index++]->insertDefault();
                     }
@@ -217,7 +244,7 @@ protected:
                     if (need_lock_structure)
                     {
                         table = tables_it->table();
-                        lock = table->lockStructureForShare(false, context.getCurrentQueryId());
+                        lock = table->lockStructureForShare(context.getCurrentQueryId());
                     }
                 }
                 catch (const Exception & e)
@@ -360,6 +387,26 @@ protected:
                     auto policy = table->getStoragePolicy();
                     if (policy)
                         res_columns[res_index++]->insert(policy->getName());
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    assert(table != nullptr);
+                    auto total_rows = table->totalRows();
+                    if (total_rows)
+                        res_columns[res_index++]->insert(*total_rows);
+                    else
+                        res_columns[res_index++]->insertDefault();
+                }
+
+                if (columns_mask[src_index++])
+                {
+                    assert(table != nullptr);
+                    auto total_bytes = table->totalBytes();
+                    if (total_bytes)
+                        res_columns[res_index++]->insert(*total_bytes);
                     else
                         res_columns[res_index++]->insertDefault();
                 }

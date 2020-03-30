@@ -151,6 +151,11 @@ std::optional<UInt64> StorageMergeTree::totalRows() const
     return getTotalActiveSizeInRows();
 }
 
+std::optional<UInt64> StorageMergeTree::totalBytes() const
+{
+    return getTotalActiveSizeInBytes();
+}
+
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & context)
 {
     return std::make_shared<MergeTreeBlockOutputStream>(*this, context.getSettingsRef().max_partitions_per_insert_block);
@@ -236,9 +241,9 @@ void StorageMergeTree::alter(
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
 
-        /// We release all locks except alter_intention_lock which allows
+        /// We release all locks except alter_lock which allows
         /// to execute alter queries sequentially
-        table_lock_holder.releaseAllExpectAlterIntention();
+        table_lock_holder.releaseAllExceptAlterIntention();
 
         /// Always execute required mutations synchronously, because alters
         /// should be executed in sequential order.
@@ -532,7 +537,7 @@ bool StorageMergeTree::merge(
     bool deduplicate,
     String * out_disable_reason)
 {
-    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+    auto table_lock_holder = lockStructureForShare(RWLockImpl::NO_QUERY);
 
     FutureMergedMutatedPart future_part;
 
@@ -650,7 +655,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::movePartsTask()
 
 bool StorageMergeTree::tryMutatePart()
 {
-    auto table_lock_holder = lockStructureForShare(true, RWLockImpl::NO_QUERY);
+    auto table_lock_holder = lockStructureForShare(RWLockImpl::NO_QUERY);
     size_t max_ast_elements = global_context.getSettingsRef().max_expanded_ast_elements;
 
     FutureMergedMutatedPart future_part;
@@ -775,7 +780,7 @@ BackgroundProcessingPoolTaskResult StorageMergeTree::mergeMutateTask()
         {
             {
                 /// TODO: Implement tryLockStructureForShare.
-                auto lock_structure = lockStructureForShare(false, "");
+                auto lock_structure = lockStructureForShare("");
                 clearOldPartsFromFilesystem();
                 clearOldTemporaryDirectories();
             }
@@ -968,14 +973,14 @@ void StorageMergeTree::alterPartition(const ASTPtr & query, const PartitionComma
 
             case PartitionCommand::FREEZE_PARTITION:
             {
-                auto lock = lockStructureForShare(false, context.getCurrentQueryId());
+                auto lock = lockStructureForShare(context.getCurrentQueryId());
                 freezePartition(command.partition, command.with_name, context, lock);
             }
             break;
 
             case PartitionCommand::FREEZE_ALL_PARTITIONS:
             {
-                auto lock = lockStructureForShare(false, context.getCurrentQueryId());
+                auto lock = lockStructureForShare(context.getCurrentQueryId());
                 freezeAll(command.with_name, context, lock);
             }
             break;
@@ -1040,8 +1045,8 @@ void StorageMergeTree::attachPartition(const ASTPtr & partition, bool attach_par
 
 void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context)
 {
-    auto lock1 = lockStructureForShare(false, context.getCurrentQueryId());
-    auto lock2 = source_table->lockStructureForShare(false, context.getCurrentQueryId());
+    auto lock1 = lockStructureForShare(context.getCurrentQueryId());
+    auto lock2 = source_table->lockStructureForShare(context.getCurrentQueryId());
 
     Stopwatch watch;
     MergeTreeData & src_data = checkStructureAndGetMergeTreeData(source_table);
@@ -1111,8 +1116,8 @@ void StorageMergeTree::replacePartitionFrom(const StoragePtr & source_table, con
 
 void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context)
 {
-    auto lock1 = lockStructureForShare(false, context.getCurrentQueryId());
-    auto lock2 = dest_table->lockStructureForShare(false, context.getCurrentQueryId());
+    auto lock1 = lockStructureForShare(context.getCurrentQueryId());
+    auto lock2 = dest_table->lockStructureForShare(context.getCurrentQueryId());
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageMergeTree>(dest_table);
     if (!dest_table_storage)

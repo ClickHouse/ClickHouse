@@ -60,13 +60,14 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsFinal() const override { return true; }
     bool supportsPrewhere() const override { return true; }
+    StoragePolicyPtr getStoragePolicy() const override;
 
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
     bool isRemote() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ASTPtr &) const override;
 
     Pipes read(
         const Names & column_names,
@@ -111,6 +112,12 @@ public:
     void flushClusterNodesAllData();
 
     ClusterPtr getCluster() const;
+
+    /// Apply the following settings:
+    /// - optimize_skip_unused_shards
+    /// - force_optimize_skip_unused_shards
+    ClusterPtr getOptimizedCluster(const Context &, const ASTPtr & query_ptr) const;
+    ClusterPtr skipUnusedShards(ClusterPtr cluster, const ASTPtr & query_ptr, const Context & context) const;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
@@ -161,8 +168,6 @@ protected:
         const String & storage_policy_,
         const String & relative_data_path_,
         bool attach);
-
-    ClusterPtr skipUnusedShards(ClusterPtr cluster, const SelectQueryInfo & query_info, const Context & context);
 
     void createStorage();
 

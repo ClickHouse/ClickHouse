@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # TinyLog {#tinylog}
 
 El motor pertenece a la familia de motores de registro. Ver [Familia del motor de registro](log_family.md) para las propiedades comunes de los motores de registro y sus diferencias.

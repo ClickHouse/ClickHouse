@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Perezoso {#lazy}
 
 Mantiene las tablas en RAM solamente `expiration_time_in_seconds` segundos después del último acceso. Solo se puede usar con tablas \*Log.

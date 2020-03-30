@@ -1026,27 +1026,31 @@ bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
     return true;
 }
 
-
-bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+template <typename Collection>
+bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    if (pos->type != TokenType::OpeningSquareBracket)
+    if (pos->type != opening_bracket)
         return false;
 
     Pos literal_begin = pos;
 
-    Array arr;
-
+    Collection arr;
     ParserLiteral literal_p;
 
     ++pos;
-
     while (pos.isValid())
     {
         if (!arr.empty())
         {
-            if (pos->type == TokenType::ClosingSquareBracket)
+            if (pos->type == closing_bracket)
             {
-                auto literal = std::make_shared<ASTLiteral>(arr);
+                std::shared_ptr<ASTLiteral> literal;
+
+                /// Parse one-element tuples (e.g. (1)) later as single values for backward compatibility.
+                if (std::is_same_v<Collection, Tuple> && arr.size() == 1)
+                    return false;
+
+                literal = std::make_shared<ASTLiteral>(arr);
                 literal->begin = literal_begin;
                 literal->end = ++pos;
                 node = literal;
@@ -1058,7 +1062,8 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             }
             else
             {
-                expected.add(pos, "comma or closing square bracket");
+                String message = String("comma or ") + getTokenName(closing_bracket);
+                expected.add(pos, message.c_str());
                 return false;
             }
         }
@@ -1070,7 +1075,7 @@ bool ParserArrayOfLiterals::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         arr.push_back(literal_node->as<ASTLiteral &>().value);
     }
 
-    expected.add(pos, "closing square bracket");
+    expected.add(pos, getTokenName(closing_bracket));
     return false;
 }
 
@@ -1271,6 +1276,7 @@ bool ParserSubstitution::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
 bool ParserExpressionElement::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     return ParserSubquery().parse(pos, node, expected)
+        || ParserTupleOfLiterals().parse(pos, node, expected)
         || ParserParenthesisExpression().parse(pos, node, expected)
         || ParserArrayOfLiterals().parse(pos, node, expected)
         || ParserArray().parse(pos, node, expected)

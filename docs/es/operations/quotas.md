@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Cuota {#quotas}
 
 Las cuotas le permiten limitar el uso de recursos durante un período de tiempo, o simplemente realizar un seguimiento del uso de recursos.

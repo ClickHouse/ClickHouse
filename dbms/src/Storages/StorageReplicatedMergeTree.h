@@ -96,6 +96,7 @@ public:
         unsigned num_streams) override;
 
     std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalBytes() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
@@ -284,11 +285,11 @@ private:
     /// A thread that processes reconnection to ZooKeeper when the session expires.
     ReplicatedMergeTreeRestartingThread restarting_thread;
 
-    /// An event that awakens `alter` method from waiting for the completion of the ALTER query.
-    zkutil::EventPtr alter_query_event = std::make_shared<Poco::Event>();
-
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
+
+    template <class Func>
+    void foreachCommittedParts(const Func & func) const;
 
     /** Creates the minimum set of nodes in ZooKeeper.
       */

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Tablas del sistema {#system-tables}
 
 Las tablas del sistema se utilizan para implementar parte de la funcionalidad del sistema y para proporcionar acceso a información sobre cómo funciona el sistema.

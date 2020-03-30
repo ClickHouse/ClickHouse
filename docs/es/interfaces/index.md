@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Interfaz {#interfaces}
 
 ClickHouse proporciona dos interfaces de red (ambas se pueden ajustar opcionalmente en TLS para mayor seguridad):
