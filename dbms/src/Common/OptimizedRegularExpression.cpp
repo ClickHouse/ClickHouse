@@ -281,7 +281,16 @@ OptimizedRegularExpressionImpl<thread_safe>::OptimizedRegularExpressionImpl(cons
 
         re2 = std::make_unique<RegexType>(regexp_, regexp_options);
         if (!re2->ok())
-            throw DB::Exception("OptimizedRegularExpression: cannot compile re2: " + regexp_ + ", error: " + re2->error() + ". Look at https://github.com/google/re2/wiki/Syntax for reference.", DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+        {
+            throw DB::Exception("OptimizedRegularExpression: cannot compile re2: "
+                + regexp_ + ", error: " + re2->error()
+                + ". Look at https://github.com/google/re2/wiki/Syntax "
+                "for reference. Please note that if you specify regex as an SQL "
+                "string literal, the slashes have to be additionally escaped. "
+                "For example, to match an opening brace, write '\\(' -- "
+                "the first slash is for SQL and the second one is for regex",
+                DB::ErrorCodes::CANNOT_COMPILE_REGEXP);
+        }
 
         if (!is_no_capture)
         {
@@ -309,6 +318,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
 
     if (is_trivial)
     {
+        if (required_substring.empty())
+            return true;
+
         if (is_case_insensitive)
             return haystack_end != case_insensitive_substring_searcher->search(haystack, subject_size);
         else
@@ -343,6 +355,9 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
 
     if (is_trivial)
     {
+        if (required_substring.empty())
+            return true;
+
         const UInt8 * pos;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);
@@ -355,7 +370,7 @@ bool OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject, si
         {
             match.offset = pos - haystack;
             match.length = required_substring.size();
-            return 1;
+            return true;
         }
     }
     else
@@ -402,6 +417,12 @@ unsigned OptimizedRegularExpressionImpl<thread_safe>::match(const char * subject
 
     if (is_trivial)
     {
+        if (required_substring.empty())
+        {
+            matches.emplace_back(Match{0, 0});
+            return 1;
+        }
+
         const UInt8 * pos;
         if (is_case_insensitive)
             pos = case_insensitive_substring_searcher->search(haystack, subject_size);

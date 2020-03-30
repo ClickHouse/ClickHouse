@@ -2,6 +2,8 @@
 #include <Common/Arena.h>
 #include <Common/memcmpSmall.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
+#include <Common/HashTable/Hash.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsCommon.h>
@@ -17,6 +19,7 @@ namespace ErrorCodes
 {
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
+    extern const int LOGICAL_ERROR;
 }
 
 
@@ -63,6 +66,30 @@ MutableColumnPtr ColumnString::cloneResized(size_t to_size) const
     return res;
 }
 
+void ColumnString::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = offsets.size();
+
+    if (hash.getData().size() != s)
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    const UInt8 * pos = chars.data();
+    UInt32 * hash_data = hash.getData().data();
+    Offset prev_offset = 0;
+
+    for (auto & offset : offsets)
+    {
+        auto str_size = offset - prev_offset;
+        /// Skip last zero byte.
+        *hash_data = ::updateWeakHash32(pos, str_size - 1, *hash_data);
+
+        pos += str_size;
+        prev_offset = offset;
+        ++hash_data;
+    }
+}
+
 
 void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t length)
 {
@@ -100,7 +127,7 @@ void ColumnString::insertRangeFrom(const IColumn & src, size_t start, size_t len
 
 ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) const
 {
-    if (offsets.size() == 0)
+    if (offsets.empty())
         return ColumnString::create();
 
     auto res = ColumnString::create();

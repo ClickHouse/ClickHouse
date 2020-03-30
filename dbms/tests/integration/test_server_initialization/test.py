@@ -30,9 +30,9 @@ def test_sophisticated_default(started_cluster):
 
 def test_partially_dropped_tables(started_cluster):
     instance = started_cluster.instances['dummy']
-    assert instance.exec_in_container(['bash', '-c', 'cd / && find -name *.sql* | sort'], privileged=True, user='root') \
-          == "./var/lib/clickhouse/metadata/default/should_be_restored.sql\n" \
-             "./var/lib/clickhouse/metadata/default/sophisticated_default.sql\n"
+    assert instance.exec_in_container(['bash', '-c', 'find /var/lib/clickhouse -name *.sql* | sort'], privileged=True, user='root') \
+          == "/var/lib/clickhouse/metadata/default/should_be_restored.sql\n" \
+             "/var/lib/clickhouse/metadata/default/sophisticated_default.sql\n"
     assert instance.query("SELECT n FROM should_be_restored") == "1\n2\n3\n"
     assert instance.query("SELECT count() FROM system.tables WHERE name='should_be_dropped'") == "0\n"
 
@@ -44,5 +44,3 @@ def test_live_view_dependency(started_cluster):
     instance.query("CREATE TABLE b_load_second.mt (a Int32) Engine=MergeTree order by tuple()")
     instance.query("CREATE LIVE VIEW a_load_first.lv AS SELECT sum(a) FROM b_load_second.mt", settings={'allow_experimental_live_view': 1})
     instance.restart_clickhouse()
-    time.sleep(5)
-    instance.query("SELECT 1")

@@ -1,11 +1,10 @@
-
-# Dictionary
+# Dictionary {#dictionary}
 
 Движок `Dictionary` отображает данные [словаря](../../query_language/dicts/external_dicts.md) как таблицу ClickHouse.
 
 Рассмотрим для примера словарь `products` со следующей конфигурацией:
 
-```xml
+``` xml
 <dictionaries>
 <dictionary>
         <name>products</name>
@@ -38,7 +37,7 @@
 
 Запрос данных словаря:
 
-```sql
+``` sql
 SELECT
     name,
     type,
@@ -51,36 +50,36 @@ SELECT
 FROM system.dictionaries
 WHERE name = 'products'
 ```
-```text
+
+``` text
 ┌─name─────┬─type─┬─key────┬─attribute.names─┬─attribute.types─┬─bytes_allocated─┬─element_count─┬─source──────────┐
 │ products │ Flat │ UInt64 │ ['title']       │ ['String']      │        23065376 │        175032 │ ODBC: .products │
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-В таком виде данные из словаря можно получить при помощи функций [dictGet*](../../query_language/functions/ext_dict_functions.md#ext_dict_functions).
+В таком виде данные из словаря можно получить при помощи функций [dictGet\*](../../query_language/functions/ext_dict_functions.md#ext_dict_functions).
 
 Такое представление неудобно, когда нам необходимо получить данные в чистом виде, а также при выполнении операции `JOIN`. Для этих случаев можно использовать движок `Dictionary`, который отобразит данные словаря в таблицу.
 
 Синтаксис:
 
-```sql
+``` sql
 CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
 ```
 
-
 Пример использования:
 
-```sql
+``` sql
 create table products (product_id UInt64, title String) Engine = Dictionary(products);
 ```
 
 Проверим что у нас в таблице?
 
-```sql
+``` sql
 select * from products limit 1;
 ```
 
-```text
+``` text
 ┌────product_id─┬─title───────────┐
 │        152689 │ Some item       │
 └───────────────┴─────────────────┘

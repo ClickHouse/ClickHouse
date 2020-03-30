@@ -39,7 +39,7 @@ try
     context.makeGlobalContext();
 
     NamesAndTypesList source_columns = {{"number", std::make_shared<DataTypeUInt64>()}};
-    auto syntax_result = SyntaxAnalyzer(context, {}).analyze(ast, source_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyze(ast, source_columns);
     SelectQueryExpressionAnalyzer analyzer(ast, syntax_result, context);
     ExpressionActionsChain chain(context);
     analyzer.appendSelect(chain, false);
@@ -47,7 +47,7 @@ try
     chain.finalize();
     ExpressionActionsPtr expression = chain.getLastActions();
 
-    StoragePtr table = StorageSystemNumbers::create("numbers", false);
+    StoragePtr table = StorageSystemNumbers::create(StorageID("test", "numbers"), false);
 
     Names column_names;
     column_names.push_back("number");

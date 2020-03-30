@@ -15,6 +15,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     const ASTPtr & table_expression, const Context & context, size_t subquery_depth, const Names & required_source_columns)
@@ -59,7 +63,7 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
     subquery_settings.max_result_rows = 0;
     subquery_settings.max_result_bytes = 0;
     /// The calculation of `extremes` does not make sense and is not necessary (if you do it, then the `extremes` of the subquery can be taken instead of the whole query).
-    subquery_settings.extremes = 0;
+    subquery_settings.extremes = false;
     subquery_context.setSettings(subquery_settings);
 
     auto subquery_options = options.subquery();
@@ -80,7 +84,6 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         const auto select_expression_list = select_query->select();
 
         NamesAndTypesList columns;
-
         /// get columns list for target table
         if (function)
         {
@@ -91,10 +94,10 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         }
         else
         {
-            DatabaseAndTableWithAlias database_table(*table);
-            const auto & storage = context.getTable(database_table.database, database_table.table);
+            auto table_id = context.resolveStorageID(table_expression);
+            const auto & storage = DatabaseCatalog::instance().getTable(table_id);
             columns = storage->getColumns().getOrdinary();
-            select_query->replaceDatabaseAndTable(database_table.database, database_table.table);
+            select_query->replaceDatabaseAndTable(table_id);
         }
 
         select_expression_list->children.reserve(columns.size());

@@ -11,7 +11,7 @@ class Context;
 
 /** Implements `events` system table, which allows you to obtain information for profiling.
   */
-class StorageSystemEvents : public ext::shared_ptr_helper<StorageSystemEvents>, public IStorageSystemOneBlock<StorageSystemEvents>
+class StorageSystemEvents final : public ext::shared_ptr_helper<StorageSystemEvents>, public IStorageSystemOneBlock<StorageSystemEvents>
 {
     friend struct ext::shared_ptr_helper<StorageSystemEvents>;
 public:

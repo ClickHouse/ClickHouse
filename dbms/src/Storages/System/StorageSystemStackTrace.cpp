@@ -35,11 +35,11 @@ namespace
     const pid_t expected_pid = getpid();
     const int sig = SIGRTMIN;
 
-    int sequence_num = 0;    /// For messages sent via pipe.
+    std::atomic<int> sequence_num = 0;    /// For messages sent via pipe.
 
     std::optional<StackTrace> stack_trace;
 
-    static constexpr size_t max_query_id_size = 128;
+    constexpr size_t max_query_id_size = 128;
     char query_id_data[max_query_id_size];
     size_t query_id_size = 0;
 
@@ -47,13 +47,15 @@ namespace
 
     void signalHandler(int, siginfo_t * info, void * context)
     {
+        auto saved_errno = errno;   /// We must restore previous value of errno in signal handler.
+
         /// In case malicious user is sending signals manually (for unknown reason).
         /// If we don't check - it may break our synchronization.
         if (info->si_pid != expected_pid)
             return;
 
         /// Signal received too late.
-        if (info->si_value.sival_int != sequence_num)
+        if (info->si_value.sival_int != sequence_num.load(std::memory_order_relaxed))
             return;
 
         /// All these methods are signal-safe.
@@ -62,13 +64,16 @@ namespace
 
         StringRef query_id = CurrentThread::getQueryId();
         query_id_size = std::min(query_id.size, max_query_id_size);
-        memcpy(query_id_data, query_id.data, query_id_size);
+        if (query_id.data && query_id.size)
+            memcpy(query_id_data, query_id.data, query_id_size);
 
         int notification_num = info->si_value.sival_int;
         ssize_t res = ::write(notification_pipe.fds_rw[1], &notification_num, sizeof(notification_num));
 
         /// We cannot do anything if write failed.
         (void)res;
+
+        errno = saved_errno;
     }
 
     /// Wait for data in pipe and read it.
@@ -108,7 +113,7 @@ namespace
 
             if (read_res == sizeof(notification_num))
             {
-                if (notification_num == sequence_num)
+                if (notification_num == sequence_num.load(std::memory_order_relaxed))
                     return true;
                 else
                     continue;   /// Drain delayed notifications.
@@ -173,7 +178,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
         pid_t tid = parse<pid_t>(it->path().filename());
 
         sigval sig_value{};
-        sig_value.sival_int = sequence_num;
+        sig_value.sival_int = sequence_num.load(std::memory_order_relaxed);
         if (0 != ::sigqueue(tid, sig, sig_value))
         {
             /// The thread may has been already finished.
@@ -208,7 +213,7 @@ void StorageSystemStackTrace::fillData(MutableColumns & res_columns, const Conte
             res_columns[2]->insertDefault();
         }
 
-        sequence_num = static_cast<int>(static_cast<unsigned>(sequence_num) + 1);
+        ++sequence_num; /// FYI: For signed Integral types, arithmetic is defined to use two’s complement representation. There are no undefined results.
     }
 }
 

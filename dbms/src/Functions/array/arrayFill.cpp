@@ -6,6 +6,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 template <bool reverse>
 struct ArrayFillImpl
@@ -39,9 +43,9 @@ struct ArrayFillImpl
 
             out_data.reserve(in_data.size());
 
-            for (size_t i = 0; i < in_offsets.size(); ++i)
+            for (auto in_offset : in_offsets)
             {
-                array_end = in_offsets[i] - 1;
+                array_end = in_offset - 1;
 
                 for (; end <= array_end; ++end)
                 {
@@ -92,9 +96,9 @@ struct ArrayFillImpl
 
             out_data.reserve(in_data.size());
 
-            for (size_t i = 0; i < in_offsets.size(); ++i)
+            for (auto in_offset : in_offsets)
             {
-                array_end = in_offsets[i] - 1;
+                array_end = in_offset - 1;
 
                 if constexpr (reverse)
                     out_data.insertManyFrom(in_data, array_end, array_end + 1 - array_begin);

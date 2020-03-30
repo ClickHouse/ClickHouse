@@ -20,15 +20,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NO_REMOTE_SHARD_FOUND;
     extern const int NO_REMOTE_SHARD_AVAILABLE;
 }
 
 
 ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
-    const std::string & database,
-    const std::string & table,
+    const StorageID & table_id,
     const Context & context,
     const ASTPtr & table_func_ptr)
 {
@@ -38,18 +36,18 @@ ColumnsDescription getStructureOfRemoteTable(
 
     for (auto & shard_info : shards_info)
     {
-        try {
+        try
+        {
             const auto & res = getStructureOfRemoteTableInShard(shard_info, database, table, context, table_func_ptr);
+
             /// Expect at least some columns.
             /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.
             if (res.size() == 0)
-            {
                 continue;
-            }
 
             return res;
         }
-        catch (const DB::NetException &)
+        catch (const NetException &)
         {
             if (context.getSettingsRef().skip_unavailable_shards)
             {
@@ -62,9 +60,9 @@ ColumnsDescription getStructureOfRemoteTable(
         }
     }
 
-    throw DB::NetException(
+    throw NetException(
         "All attempts to get table structure failed. Log: \n\n" + fail_messages + "\n",
-        DB::ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
+        ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
 }
 
 ColumnsDescription getStructureOfRemoteTableInShard(
@@ -91,10 +89,10 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     else
     {
         if (shard_info.isLocal())
-            return context.getTable(database, table)->getColumns();
+            return DatabaseCatalog::instance().getTable(table_id)->getColumns();
 
         /// Request for a table description
-        query = "DESC TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
+        query = "DESC TABLE " + table_id.getFullTableName();
     }
 
     ColumnsDescription res;
@@ -114,7 +112,7 @@ ColumnsDescription getStructureOfRemoteTableInShard(
     auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, new_context);
     input->setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
-        input->setMainTable(QualifiedTableName{database, table});
+        input->setMainTable(table_id);
     input->readPrefix();
 
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();

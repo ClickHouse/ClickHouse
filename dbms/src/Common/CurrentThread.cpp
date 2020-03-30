@@ -2,7 +2,6 @@
 
 #include "CurrentThread.h"
 #include <common/logger_useful.h>
-#include <common/likely.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <Interpreters/ProcessList.h>

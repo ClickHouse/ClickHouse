@@ -16,7 +16,7 @@ namespace DB
 /** When writing, does nothing.
   * When reading, returns nothing.
   */
-class StorageNull : public ext::shared_ptr_helper<StorageNull>, public IStorage
+class StorageNull final : public ext::shared_ptr_helper<StorageNull>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageNull>;
 public:
@@ -43,6 +43,15 @@ public:
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
 
     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+
+    std::optional<UInt64> totalRows() const override
+    {
+        return {0};
+    }
+    std::optional<UInt64> totalBytes() const override
+    {
+        return {0};
+    }
 
 private:
 

@@ -70,7 +70,6 @@ void CSVRowOutputFormat::writeBeforeExtremes()
 }
 
 
-
 void registerOutputFormatProcessorCSV(FormatFactory & factory)
 {
     for (bool with_names : {false, true})

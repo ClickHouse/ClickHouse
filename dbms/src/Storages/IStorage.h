@@ -6,7 +6,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/CancellationCode.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/StorageID.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/TableStructureLockHolder.h>
 #include <Storages/CheckResults.h>
@@ -14,6 +14,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/ColumnDependency.h>
 #include <Common/ActionLock.h>
 #include <Common/Exception.h>
 #include <Common/RWLock.h>
@@ -43,7 +44,8 @@ using SettingsChanges = std::vector<SettingChange>;
 
 class AlterCommands;
 class MutationCommands;
-class PartitionCommands;
+struct PartitionCommand;
+using PartitionCommands = std::vector<PartitionCommand>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -128,6 +130,12 @@ public:
     /// Example is StorageSystemNumbers.
     virtual bool hasEvenlyDistributedRead() const { return false; }
 
+    /// Returns true if there is set table TTL, any column TTL or any move TTL.
+    virtual bool hasAnyTTL() const { return false; }
+
+    /// Returns true if there is set TTL for rows.
+    virtual bool hasRowsTTL() const { return false; }
+
     /// Optional size information of each physical column.
     /// Currently it's only used by the MergeTree family for query optimizations.
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
@@ -191,16 +199,11 @@ public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of
     /// the query. If will_add_new_data is true, this means that the query will add new data to the table
     /// (INSERT or a parts merge).
-    TableStructureReadLockHolder lockStructureForShare(bool will_add_new_data, const String & query_id);
+    TableStructureReadLockHolder lockStructureForShare(const String & query_id);
 
     /// Acquire this lock at the start of ALTER to lock out other ALTERs and make sure that only you
     /// can modify the table structure. It can later be upgraded to the exclusive lock.
-    TableStructureWriteLockHolder lockAlterIntention(const String & query_id);
-
-    /// Upgrade alter intention lock and make sure that no new data is inserted into the table.
-    /// This is used by the ALTER MODIFY of the MergeTree storage to consistently determine
-    /// the set of parts that needs to be altered.
-    void lockNewDataStructureExclusively(TableStructureWriteLockHolder & lock_holder, const String & query_id);
+    TableStructureWriteLockHolder lockAlterIntention();
 
     /// Upgrade alter intention lock to the full exclusive structure lock. This is done by ALTER queries
     /// to ensure that no other query uses the table structure and it can be safely changed.
@@ -212,8 +215,12 @@ public:
     /** Returns stage to which query is going to be processed in read() function.
       * (Normally, the function only reads the columns from the list, but in other cases,
       *  for example, the request can be partially processed on a remote server.)
+      *
+      * SelectQueryInfo is required since the stage can depends on the query
+      * (see Distributed() engine and optimize_skip_unused_shards).
       */
-    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const { return QueryProcessingStage::FetchColumns; }
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const { return getQueryProcessingStage(context, {}); }
+    virtual QueryProcessingStage::Enum getQueryProcessingStage(const Context &, const ASTPtr &) const { return QueryProcessingStage::FetchColumns; }
 
     /** Watch live changes to the table.
      * Accepts a list of columns to read, as well as a description of the query,
@@ -412,9 +419,6 @@ public:
     /// We do not use mutex because it is not very important that the size could change during the operation.
     virtual void checkPartitionCanBeDropped(const ASTPtr & /*partition*/) {}
 
-    /** Notify engine about updated dependencies for this storage. */
-    virtual void updateDependencies() {}
-
     /// Returns data paths if storage supports it, empty vector otherwise.
     virtual Strings getDataPaths() const { return {}; }
 
@@ -448,12 +452,34 @@ public:
     /// Returns names of primary key + secondary sorting columns
     virtual Names getSortingKeyColumns() const { return {}; }
 
+    /// Returns columns, which will be needed to calculate dependencies
+    /// (skip indices, TTL expressions) if we update @updated_columns set of columns.
+    virtual ColumnDependencies getColumnDependencies(const NameSet & /* updated_columns */) const { return {}; }
+
     /// Returns storage policy if storage supports it
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
-    /** If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
-     */
+    /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
+    /// Used for:
+    /// - Simple count() opimization
+    /// - For total_rows column in system.tables
+    ///
+    /// Does takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> totalRows() const
+    {
+        return {};
+    }
+
+    /// If it is possible to quickly determine exact number of bytes for the table on storage:
+    /// - memory (approximated)
+    /// - disk (compressed)
+    ///
+    /// Used for:
+    /// - For total_bytes column in system.tables
+    //
+    /// Does not takes underlying Storage (if any) into account
+    /// (since for Buffer we still need to know how much bytes it uses).
+    virtual std::optional<UInt64> totalBytes() const
     {
         return {};
     }
@@ -464,12 +490,7 @@ private:
     /// If you hold this lock exclusively, you can be sure that no other structure modifying queries
     /// (e.g. ALTER, DROP) are concurrently executing. But queries that only read table structure
     /// (e.g. SELECT, INSERT) can continue to execute.
-    mutable RWLock alter_intention_lock = RWLockImpl::create();
-
-    /// It is taken for share for the entire INSERT query and the entire merge of the parts (for MergeTree).
-    /// ALTER COLUMN queries acquire an exclusive lock to ensure that no new parts with the old structure
-    /// are added to the table and thus the set of parts to modify doesn't change.
-    mutable RWLock new_data_structure_lock = RWLockImpl::create();
+    mutable std::mutex alter_lock;
 
     /// Lock for the table column structure (names, types, etc.) and data path.
     /// It is taken in exclusive mode by queries that modify them (e.g. RENAME, ALTER and DROP)

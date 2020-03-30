@@ -35,20 +35,18 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int ABORTED;
+    extern const int CANNOT_READ_ALL_DATA;
     extern const int UNKNOWN_CODEC;
     extern const int CANNOT_DECOMPRESS;
-    extern const int INCORRECT_FILE_NAME;
     extern const int CHECKSUM_DOESNT_MATCH;
     extern const int TOO_LARGE_SIZE_COMPRESSED;
     extern const int ATTEMPT_TO_READ_AFTER_EOF;
-    extern const int CORRUPTED_DATA;
 }
 
 
 namespace
 {
-    static constexpr const std::chrono::minutes decrease_error_count_period{5};
+    constexpr const std::chrono::minutes decrease_error_count_period{5};
 
     template <typename PoolFactory>
     ConnectionPoolPtrs createPoolsForAddresses(const std::string & name, PoolFactory && factory)
@@ -240,7 +238,7 @@ bool StorageDistributedDirectoryMonitor::processFiles()
         const auto & file_path_str = it->path();
         Poco::Path file_path{file_path_str};
 
-        if (!it->isDirectory() && startsWith(file_path.getExtension().data(), "bin"))
+        if (!it->isDirectory() && startsWith(file_path.getExtension(), "bin"))
             files[parse<UInt64>(file_path.getBaseName())] = file_path_str;
     }
 
@@ -281,9 +279,10 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 
         Settings insert_settings;
         std::string insert_query;
-        readHeader(in, insert_settings, insert_query, log);
+        ClientInfo client_info;
+        readHeader(in, insert_settings, insert_query, client_info, log);
 
-        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, &insert_settings};
+        RemoteBlockOutputStream remote{*connection, timeouts, insert_query, &insert_settings, &client_info};
 
         remote.writePrefix();
         remote.writePrepared(in);
@@ -301,7 +300,7 @@ void StorageDistributedDirectoryMonitor::processFile(const std::string & file_pa
 }
 
 void StorageDistributedDirectoryMonitor::readHeader(
-    ReadBuffer & in, Settings & insert_settings, std::string & insert_query, Logger * log)
+    ReadBuffer & in, Settings & insert_settings, std::string & insert_query, ClientInfo & client_info, Logger * log)
 {
     UInt64 query_size;
     readVarUInt(query_size, in);
@@ -333,8 +332,11 @@ void StorageDistributedDirectoryMonitor::readHeader(
         readStringBinary(insert_query, header_buf);
         insert_settings.deserialize(header_buf);
 
+        if (header_buf.hasPendingData())
+            client_info.read(header_buf, initiator_revision);
+
         /// Add handling new data here, for example:
-        /// if (initiator_revision >= DBMS_MIN_REVISION_WITH_MY_NEW_DATA)
+        /// if (header_buf.hasPendingData())
         ///    readVarUInt(my_new_data, header_buf);
 
         return;
@@ -355,19 +357,21 @@ struct StorageDistributedDirectoryMonitor::BatchHeader
 {
     Settings settings;
     String query;
+    ClientInfo client_info;
     Block sample_block;
 
-    BatchHeader(Settings settings_, String query_, Block sample_block_)
+    BatchHeader(Settings settings_, String query_, ClientInfo client_info_, Block sample_block_)
         : settings(std::move(settings_))
         , query(std::move(query_))
+        , client_info(std::move(client_info_))
         , sample_block(std::move(sample_block_))
     {
     }
 
     bool operator==(const BatchHeader & other) const
     {
-        return settings == other.settings && query == other.query &&
-               blocksHaveEqualStructure(sample_block, other.sample_block);
+        return settings == other.settings && query == other.query && client_info.query_kind == other.client_info.query_kind
+            && blocksHaveEqualStructure(sample_block, other.sample_block);
     }
 
     struct Hash
@@ -447,6 +451,7 @@ struct StorageDistributedDirectoryMonitor::Batch
         {
             Settings insert_settings;
             String insert_query;
+            ClientInfo client_info;
             std::unique_ptr<RemoteBlockOutputStream> remote;
             bool first = true;
 
@@ -461,12 +466,12 @@ struct StorageDistributedDirectoryMonitor::Batch
                 }
 
                 ReadBufferFromFile in(file_path->second);
-                parent.readHeader(in, insert_settings, insert_query, parent.log);
+                parent.readHeader(in, insert_settings, insert_query, client_info, parent.log);
 
                 if (first)
                 {
                     first = false;
-                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, &insert_settings);
+                    remote = std::make_unique<RemoteBlockOutputStream>(*connection, timeouts, insert_query, &insert_settings, &client_info);
                     remote->writePrefix();
                 }
 
@@ -543,7 +548,8 @@ public:
     {
         Settings insert_settings;
         String insert_query;
-        StorageDistributedDirectoryMonitor::readHeader(in, insert_settings, insert_query, log);
+        ClientInfo client_info;
+        StorageDistributedDirectoryMonitor::readHeader(in, insert_settings, insert_query, client_info, log);
 
         block_in.readPrefix();
         first_block = block_in.read();
@@ -612,11 +618,12 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
         Block sample_block;
         Settings insert_settings;
         String insert_query;
+        ClientInfo client_info;
         try
         {
             /// Determine metadata of the current file and check if it is not broken.
             ReadBufferFromFile in{file_path};
-            readHeader(in, insert_settings, insert_query, log);
+            readHeader(in, insert_settings, insert_query, client_info, log);
 
             CompressedReadBuffer decompressing_in(in);
             NativeBlockInputStream block_in(decompressing_in, ClickHouseRevision::get());
@@ -643,7 +650,7 @@ void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map
                 throw;
         }
 
-        BatchHeader batch_header(std::move(insert_settings), std::move(insert_query), std::move(sample_block));
+        BatchHeader batch_header(std::move(insert_settings), std::move(insert_query), std::move(client_info), std::move(sample_block));
         Batch & batch = header_to_batch.try_emplace(batch_header, *this, files).first->second;
 
         batch.file_indices.push_back(file_idx);

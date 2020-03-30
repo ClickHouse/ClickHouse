@@ -1,10 +1,10 @@
-# Nested(Name1 Type1, Name2 Type2, ...)
+# Nested(Name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
 
-A nested data structure is like a nested table. The parameters of a nested data structure – the column names and types – are specified the same way as in a CREATE query. Each table row can correspond to any number of rows in a nested data structure.
+A nested data structure is like a table inside a cell. The parameters of a nested data structure – the column names and types – are specified the same way as in a [CREATE TABLE](../../query_language/create.md) query. Each table row can correspond to any number of rows in a nested data structure.
 
 Example:
 
-```sql
+``` sql
 CREATE TABLE test.visits
 (
     CounterID UInt32,
@@ -27,15 +27,15 @@ CREATE TABLE test.visits
 ) ENGINE = CollapsingMergeTree(StartDate, intHash32(UserID), (CounterID, StartDate, intHash32(UserID), VisitID), 8192, Sign)
 ```
 
-This example declares the `Goals` nested data structure, which contains data about conversions (goals reached). Each row in the 'visits' table can correspond to zero or any number of conversions.
+This example declares the `Goals` nested data structure, which contains data about conversions (goals reached). Each row in the ‘visits’ table can correspond to zero or any number of conversions.
 
 Only a single nesting level is supported. Columns of nested structures containing arrays are equivalent to multidimensional arrays, so they have limited support (there is no support for storing these columns in tables with the MergeTree engine).
 
-In most cases, when working with a nested data structure, its individual columns are specified. To do this, the column names are separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
+In most cases, when working with a nested data structure, its columns are specified with column names separated by a dot. These columns make up an array of matching types. All the column arrays of a single nested data structure have the same length.
 
 Example:
 
-```sql
+``` sql
 SELECT
     Goals.ID,
     Goals.EventTime
@@ -44,7 +44,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+``` text
 ┌─Goals.ID───────────────────────┬─Goals.EventTime───────────────────────────────────────────────────────────────────────────┐
 │ [1073752,591325,591325]        │ ['2014-03-17 16:38:10','2014-03-17 16:38:48','2014-03-17 16:42:27']                       │
 │ [1073752]                      │ ['2014-03-17 00:28:25']                                                                   │
@@ -61,9 +61,9 @@ LIMIT 10
 
 It is easiest to think of a nested data structure as a set of multiple column arrays of the same length.
 
-The only place where a SELECT query can specify the name of an entire nested data structure instead of individual columns is the ARRAY JOIN clause. For more information, see "ARRAY JOIN clause". Example:
+The only place where a SELECT query can specify the name of an entire nested data structure instead of individual columns is the ARRAY JOIN clause. For more information, see “ARRAY JOIN clause”. Example:
 
-```sql
+``` sql
 SELECT
     Goal.ID,
     Goal.EventTime
@@ -73,7 +73,7 @@ WHERE CounterID = 101500 AND length(Goals.ID) < 5
 LIMIT 10
 ```
 
-```text
+``` text
 ┌─Goal.ID─┬──────Goal.EventTime─┐
 │ 1073752 │ 2014-03-17 16:38:10 │
 │  591325 │ 2014-03-17 16:38:48 │
@@ -88,13 +88,12 @@ LIMIT 10
 └─────────┴─────────────────────┘
 ```
 
-You can't perform SELECT for an entire nested data structure. You can only explicitly list individual columns that are part of it.
+You can’t perform SELECT for an entire nested data structure. You can only explicitly list individual columns that are part of it.
 
 For an INSERT query, you should pass all the component column arrays of a nested data structure separately (as if they were individual column arrays). During insertion, the system checks that they have the same length.
 
 For a DESCRIBE query, the columns in a nested data structure are listed separately in the same way.
 
-The ALTER query is very limited for elements in a nested data structure.
-
+The ALTER query for elements in a nested data structure has limitations.
 
 [Original article](https://clickhouse.tech/docs/en/data_types/nested_data_structures/nested/) <!--hide-->

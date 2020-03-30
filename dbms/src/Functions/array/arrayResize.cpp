@@ -18,7 +18,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 }
 
@@ -27,7 +26,7 @@ class FunctionArrayResize : public IFunction
 public:
     static constexpr auto name = "arrayResize";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayResize>(context); }
-    FunctionArrayResize(const Context & context_) : context(context_) {}
+    explicit FunctionArrayResize(const Context & context_) : context(context_) {}
 
     String getName() const override { return name; }
 

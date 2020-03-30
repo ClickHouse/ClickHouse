@@ -23,7 +23,7 @@ class MutationsInterpreter
 public:
     /// Storage to mutate, array of mutations commands and context. If you really want to execute mutation
     /// use can_execute = true, in other cases (validation, amount of commands) it can be false
-    MutationsInterpreter(StoragePtr storage_, std::vector<MutationCommand> commands_, const Context & context_, bool can_execute_);
+    MutationsInterpreter(StoragePtr storage_, MutationCommands commands_, const Context & context_, bool can_execute_);
 
     void validate(TableStructureReadLockHolder & table_lock_holder);
 
@@ -43,9 +43,11 @@ private:
     ASTPtr prepareInterpreterSelectQuery(std::vector<Stage> &prepared_stages, bool dry_run);
     BlockInputStreamPtr addStreamsForLaterStages(const std::vector<Stage> & prepared_stages, BlockInputStreamPtr in) const;
 
+    std::optional<SortDescription> getStorageSortDescriptionIfPossible(const Block & header) const;
+
     StoragePtr storage;
-    std::vector<MutationCommand> commands;
-    const Context & context;
+    MutationCommands commands;
+    Context context;
     bool can_execute;
 
     ASTPtr mutation_ast;

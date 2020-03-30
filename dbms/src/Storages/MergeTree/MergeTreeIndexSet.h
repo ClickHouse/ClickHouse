@@ -78,9 +78,9 @@ public:
 private:
     void traverseAST(ASTPtr & node) const;
     bool atomFromAST(ASTPtr & node) const;
-    bool operatorFromAST(ASTPtr & node) const;
+    static bool operatorFromAST(ASTPtr & node);
 
-    bool checkASTUseless(const ASTPtr &node, bool atomic = false) const;
+    bool checkASTUseless(const ASTPtr & node, bool atomic = false) const;
 
     const MergeTreeIndexSet & index;
 

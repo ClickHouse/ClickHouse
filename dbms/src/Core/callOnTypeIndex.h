@@ -15,7 +15,6 @@ struct TypePair
 };
 
 
-
 template <typename T, bool _int, bool _float, bool _decimal, bool _datetime, typename F>
 bool callOnBasicType(TypeIndex number, F && f)
 {

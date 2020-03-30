@@ -84,7 +84,7 @@ void ExecuteScalarSubqueriesMatcher::visit(const ASTSubquery & subquery, ASTPtr 
         Context subquery_context = data.context;
         Settings subquery_settings = data.context.getSettings();
         subquery_settings.max_result_rows = 1;
-        subquery_settings.extremes = 0;
+        subquery_settings.extremes = false;
         subquery_context.setSettings(subquery_settings);
 
         ASTPtr subquery_select = subquery.children.at(0);

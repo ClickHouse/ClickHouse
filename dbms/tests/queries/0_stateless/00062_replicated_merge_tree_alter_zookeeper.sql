@@ -1,5 +1,8 @@
 DROP TABLE IF EXISTS test.replicated_alter1;
 DROP TABLE IF EXISTS test.replicated_alter2;
+
+SET replication_alter_partitions_sync = 2;
+
 CREATE TABLE test.replicated_alter1 (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test/alter', 'r1', d, k, 8192);
 CREATE TABLE test.replicated_alter2 (d Date, k UInt64, i32 Int32) ENGINE=ReplicatedMergeTree('/clickhouse/tables/test/alter', 'r2', d, k, 8192);
 

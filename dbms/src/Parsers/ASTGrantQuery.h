@@ -6,11 +6,14 @@
 
 namespace DB
 {
-class ASTRoleList;
+class ASTExtendedRoleSet;
 
 
-/** GRANT access_type[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO user_name
-  * REVOKE access_type[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO user_name
+/** GRANT access_type[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user_name | CURRENT_USER} [,...] [WITH GRANT OPTION]
+  * REVOKE access_type[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} FROM {user_name | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | CURRENT_USER} [,...]
+  *
+  * GRANT role [,...] TO {user_name | role_name | CURRENT_USER} [,...] [WITH ADMIN OPTION]
+  * REVOKE [ADMIN OPTION FOR] role [,...] FROM {user_name | role_name | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
   */
 class ASTGrantQuery : public IAST
 {
@@ -21,9 +24,12 @@ public:
         REVOKE,
     };
     Kind kind = Kind::GRANT;
+    bool attach = false;
     AccessRightsElements access_rights_elements;
-    std::shared_ptr<ASTRoleList> to_roles;
+    std::shared_ptr<ASTExtendedRoleSet> roles;
+    std::shared_ptr<ASTExtendedRoleSet> to_roles;
     bool grant_option = false;
+    bool admin_option = false;
 
     String getID(char) const override;
     ASTPtr clone() const override;

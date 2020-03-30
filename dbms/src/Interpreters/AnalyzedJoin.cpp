@@ -13,8 +13,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
-    extern const int PARAMETER_OUT_OF_BOUND;
 }
 
 AnalyzedJoin::AnalyzedJoin(const Settings & settings, VolumePtr tmp_volume_)

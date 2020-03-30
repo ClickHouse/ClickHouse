@@ -54,29 +54,41 @@ public:
 
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
+    void createFile(const String & path) override;
+
     void moveFile(const String & from_path, const String & to_path) override;
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
     void copyFile(const String & from_path, const String & to_path) override;
 
+    void listFiles(const String & path, std::vector<String> & file_names) override;
+
     std::unique_ptr<ReadBufferFromFileBase> readFile(
         const String & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        size_t estimated_size = 0,
-        size_t aio_threshold = 0,
-        size_t mmap_threshold = 0) const override;
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold) const override;
 
     std::unique_ptr<WriteBufferFromFileBase> writeFile(
         const String & path,
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode mode = WriteMode::Rewrite,
-        size_t estimated_size = 0,
-        size_t aio_threshold = 0) override;
+        size_t buf_size,
+        WriteMode mode,
+        size_t estimated_size,
+        size_t aio_threshold) override;
 
     void remove(const String & path) override;
 
     void removeRecursive(const String & path) override;
+
+    void setLastModified(const String &, const Poco::Timestamp &) override {}
+
+    Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp(); }
+
+    void setReadOnly(const String & path) override;
+
+    void createHardLink(const String & src_path, const String & dst_path) override;
 
 private:
     void createDirectoriesImpl(const String & path);

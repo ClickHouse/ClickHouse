@@ -10,7 +10,7 @@
 namespace DB
 {
 
-class MergeTreeReader;
+class IMergeTreeReader;
 class UncompressedCache;
 class MarkCache;
 
@@ -26,11 +26,8 @@ public:
         UInt64 max_block_size_rows_,
         UInt64 preferred_block_size_bytes_,
         UInt64 preferred_max_column_in_block_size_bytes_,
-        UInt64 min_bytes_to_use_direct_io_,
-        UInt64 min_bytes_to_use_mmap_io_,
-        UInt64 max_read_buffer_size_,
+        const MergeTreeReaderSettings & reader_settings_,
         bool use_uncompressed_cache_,
-        bool save_marks_in_cache_ = true,
         const Names & virt_column_names_ = {});
 
     ~MergeTreeBaseSelectProcessor() override;
@@ -64,12 +61,9 @@ protected:
     UInt64 preferred_block_size_bytes;
     UInt64 preferred_max_column_in_block_size_bytes;
 
-    UInt64 min_bytes_to_use_direct_io;
-    UInt64 min_bytes_to_use_mmap_io;
-    UInt64 max_read_buffer_size;
+    MergeTreeReaderSettings reader_settings;
 
     bool use_uncompressed_cache;
-    bool save_marks_in_cache;
 
     Names virt_column_names;
     /// This header is used for chunks from readFromPart().
@@ -80,7 +74,7 @@ protected:
     std::shared_ptr<UncompressedCache> owned_uncompressed_cache;
     std::shared_ptr<MarkCache> owned_mark_cache;
 
-    using MergeTreeReaderPtr = std::unique_ptr<MergeTreeReader>;
+    using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
     MergeTreeReaderPtr reader;
     MergeTreeReaderPtr pre_reader;
 };

@@ -18,12 +18,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int OUTPUT_IS_NOT_SORTED;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 class ProcessListElement;
-class QuotaContext;
+class EnabledQuota;
 class QueryStatus;
 struct SortColumnDescription;
 using SortDescription = std::vector<SortColumnDescription>;
@@ -220,7 +218,7 @@ public:
     /** Set the quota. If you set a quota on the amount of raw data,
       * then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
       */
-    virtual void setQuota(const std::shared_ptr<QuotaContext> & quota_)
+    virtual void setQuota(const std::shared_ptr<const EnabledQuota> & quota_)
     {
         quota = quota_;
     }
@@ -278,7 +276,7 @@ private:
 
     LocalLimits limits;
 
-    std::shared_ptr<QuotaContext> quota;    /// If nullptr - the quota is not used.
+    std::shared_ptr<const EnabledQuota> quota;    /// If nullptr - the quota is not used.
     UInt64 prev_elapsed = 0;
 
     /// The approximate total number of rows to read. For progress bar.

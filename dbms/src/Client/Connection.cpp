@@ -44,7 +44,6 @@ namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
-    extern const int SERVER_REVISION_IS_TOO_OLD;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;

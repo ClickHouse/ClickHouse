@@ -1,4 +1,5 @@
 #include "DiskLocal.h"
+#include <Common/createHardLink.h>
 #include "DiskFactory.h"
 
 #include <Interpreters/Context.h>
@@ -66,6 +67,8 @@ public:
             return dir_path + iter.name();
     }
 
+    String name() const override { return iter.name(); }
+
 private:
     String dir_path;
     Poco::DirectoryIterator iter;
@@ -106,7 +109,11 @@ bool DiskLocal::tryReserve(UInt64 bytes)
 
 UInt64 DiskLocal::getTotalSpace() const
 {
-    auto fs = getStatVFS(disk_path);
+    struct statvfs fs;
+    if (name == "default") /// for default disk we get space from path/data/
+        fs = getStatVFS(disk_path + "data/");
+    else
+        fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_blocks * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -117,7 +124,11 @@ UInt64 DiskLocal::getAvailableSpace() const
 {
     /// we use f_bavail, because part of b_free space is
     /// available for superuser only and for system purposes
-    auto fs = getStatVFS(disk_path);
+    struct statvfs fs;
+    if (name == "default") /// for default disk we get space from path/data/
+        fs = getStatVFS(disk_path + "data/");
+    else
+        fs = getStatVFS(disk_path);
     UInt64 total_size = fs.f_bavail * fs.f_bsize;
     if (total_size < keep_free_space_bytes)
         return 0;
@@ -228,6 +239,48 @@ void DiskLocal::removeRecursive(const String & path)
     Poco::File(disk_path + path).remove(true);
 }
 
+void DiskLocal::listFiles(const String & path, std::vector<String> & file_names)
+{
+    Poco::File(disk_path + path).list(file_names);
+}
+
+void DiskLocal::setLastModified(const String & path, const Poco::Timestamp & timestamp)
+{
+    Poco::File(disk_path + path).setLastModified(timestamp);
+}
+
+Poco::Timestamp DiskLocal::getLastModified(const String & path)
+{
+    return Poco::File(disk_path + path).getLastModified();
+}
+
+void DiskLocal::createHardLink(const String & src_path, const String & dst_path)
+{
+    DB::createHardLink(disk_path + src_path, disk_path + dst_path);
+}
+
+void DiskLocal::createFile(const String & path)
+{
+    Poco::File(disk_path + path).createFile();
+}
+
+void DiskLocal::setReadOnly(const String & path)
+{
+    Poco::File(disk_path + path).setReadOnly(true);
+}
+
+bool inline isSameDiskType(const IDisk & one, const IDisk & another)
+{
+    return typeid(one) == typeid(another);
+}
+
+void DiskLocal::copy(const String & from_path, const std::shared_ptr<IDisk> & to_disk, const String & to_path)
+{
+    if (isSameDiskType(*this, *to_disk))
+        Poco::File(disk_path + from_path).copyTo(to_disk->getPath() + to_path); /// Use more optimal way.
+    else
+        IDisk::copy(from_path, to_disk, to_path); /// Copy files through buffers.
+}
 
 void DiskLocalReservation::update(UInt64 new_size)
 {

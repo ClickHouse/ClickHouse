@@ -26,7 +26,8 @@ namespace ErrorCodes
 namespace
 {
 
-class ReplacingConstantExpressionsMatcher
+/// Everything except numbers is put as string literal.
+class ReplacingConstantExpressionsMatcherNumOrStr
 {
 public:
     using Data = Block;
@@ -75,7 +76,7 @@ void replaceConstantExpressions(ASTPtr & node, const Context & context, const Na
     auto syntax_result = SyntaxAnalyzer(context).analyze(node, all_columns);
     Block block_with_constants = KeyCondition::getBlockWithConstants(node, syntax_result, context);
 
-    InDepthNodeVisitor<ReplacingConstantExpressionsMatcher, true> visitor(block_with_constants);
+    InDepthNodeVisitor<ReplacingConstantExpressionsMatcherNumOrStr, true> visitor(block_with_constants);
     visitor.visit(node);
 }
 
@@ -114,7 +115,7 @@ bool isCompatible(const IAST & node)
             return false;
 
         for (const auto & expr : function->arguments->children)
-            if (!isCompatible(*expr.get()))
+            if (!isCompatible(*expr))
                 return false;
 
         return true;
@@ -123,16 +124,10 @@ bool isCompatible(const IAST & node)
     if (const auto * literal = node.as<ASTLiteral>())
     {
         /// Foreign databases often have no support for Array. But Tuple literals are passed to support IN clause.
-        if (literal->value.getType() == Field::Types::Array)
-            return false;
-
-        return true;
+        return literal->value.getType() != Field::Types::Array;
     }
 
-    if (node.as<ASTIdentifier>())
-        return true;
-
-    return false;
+    return node.as<ASTIdentifier>();
 }
 
 }
@@ -147,7 +142,7 @@ String transformQueryForExternalDatabase(
     const Context & context)
 {
     auto clone_query = query.clone();
-    auto syntax_result = SyntaxAnalyzer(context).analyze(clone_query, available_columns);
+    auto syntax_result = SyntaxAnalyzer(context).analyzeSelect(clone_query, available_columns);
     const Names used_columns = syntax_result->requiredSourceColumns();
 
     auto select = std::make_shared<ASTSelectQuery>();
