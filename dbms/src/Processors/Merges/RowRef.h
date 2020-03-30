@@ -6,6 +6,10 @@
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace DB::detail
 {
