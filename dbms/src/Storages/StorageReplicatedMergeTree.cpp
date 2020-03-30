@@ -2995,9 +2995,9 @@ Pipes StorageReplicatedMergeTree::read(
 }
 
 
-std::optional<UInt64> StorageReplicatedMergeTree::totalRows() const
+template <class Func>
+void StorageReplicatedMergeTree::foreachCommittedParts(const Func & func) const
 {
-    size_t res = 0;
     auto max_added_blocks = getMaxAddedBlocks();
     auto lock = lockParts();
     for (auto & part : getDataPartsStateRange(DataPartState::Committed))
@@ -3009,8 +3009,21 @@ std::optional<UInt64> StorageReplicatedMergeTree::totalRows() const
         if (blocks_iterator == max_added_blocks.end() || part->info.max_block > blocks_iterator->second)
             continue;
 
-        res += part->rows_count;
+        func(part);
     }
+}
+
+std::optional<UInt64> StorageReplicatedMergeTree::totalRows() const
+{
+    UInt64 res = 0;
+    foreachCommittedParts([&res](auto & part) { res += part->rows_count; });
+    return res;
+}
+
+std::optional<UInt64> StorageReplicatedMergeTree::totalBytes() const
+{
+    UInt64 res = 0;
+    foreachCommittedParts([&res](auto & part) { res += part->getBytesOnDisk(); });
     return res;
 }
 

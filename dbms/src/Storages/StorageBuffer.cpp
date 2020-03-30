@@ -725,6 +725,35 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const S
     }
 }
 
+std::optional<UInt64> StorageBuffer::totalRows() const
+{
+    std::optional<UInt64> underlying_rows;
+    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id);
+
+    if (underlying)
+        underlying_rows = underlying->totalRows();
+    if (!underlying_rows)
+        return underlying_rows;
+
+    UInt64 rows = 0;
+    for (auto & buffer : buffers)
+    {
+        std::lock_guard lock(buffer.mutex);
+        rows += buffer.data.rows();
+    }
+    return rows + *underlying_rows;
+}
+
+std::optional<UInt64> StorageBuffer::totalBytes() const
+{
+    UInt64 bytes = 0;
+    for (auto & buffer : buffers)
+    {
+        std::lock_guard lock(buffer.mutex);
+        bytes += buffer.data.bytes();
+    }
+    return bytes;
+}
 
 void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
