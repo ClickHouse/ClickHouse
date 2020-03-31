@@ -31,6 +31,8 @@ using DataTypes = std::vector<DataTypePtr>;
 using AggregateDataPtr = char *;
 using ConstAggregateDataPtr = const char *;
 
+class IAggregateFunction;
+using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 /** Aggregate functions interface.
   * Instances of classes with this interface do not contain the data itself for aggregation,
@@ -149,6 +151,17 @@ public:
     virtual void addBatchArray(
         size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena) const = 0;
 
+    /** By default all NULLs are skipped during aggregation.
+     *  If it returns nullptr, the default one will be used.
+     *  If an aggregate function wants to use something instead of the default one, it overrides this function and returns its own null adapter.
+     *  nested_function is a smart pointer to this aggregate function itself.
+     *  arguments and params are for nested_function.
+     */
+    virtual AggregateFunctionPtr getOwnNullAdapter(const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/, const Array & /*params*/) const
+    {
+        return nullptr;
+    }
+
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
 
@@ -243,7 +256,5 @@ public:
     }
 };
 
-
-using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
 
 }
