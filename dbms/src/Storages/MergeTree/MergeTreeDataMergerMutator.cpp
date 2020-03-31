@@ -26,6 +26,7 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
+#include <Common/escapeForFileName.h>
 #include <cmath>
 #include <numeric>
 #include <iomanip>
@@ -1061,7 +1062,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         NameSet files_to_skip = collectFilesToSkip(updated_header, indices_to_recalc, mrk_extension);
         NameToNameMap files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
 
-
         if (need_remove_expired_values)
             files_to_skip.insert("ttl.txt");
 
@@ -1108,7 +1108,9 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         for (const auto & [rename_from, rename_to] : files_to_rename)
         {
             if (rename_to.empty() && new_data_part->checksums.files.count(rename_from))
+            {
                 new_data_part->checksums.files.erase(rename_from);
+            }
             else if (new_data_part->checksums.files.count(rename_from))
             {
                 new_data_part->checksums.files[rename_to] = new_data_part->checksums.files[rename_from];
@@ -1329,13 +1331,20 @@ NameToNameMap MergeTreeDataMergerMutator::collectFilesForRenames(
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
+            String escaped_name_from = escapeForFileName(command.column_name);
+            String escaped_name_to = escapeForFileName(command.rename_to);
+
             IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
             {
                 String stream_from = IDataType::getFileNameForStream(command.column_name, substream_path);
 
-                String stream_to = boost::replace_first_copy(stream_from, command.column_name, command.rename_to);
-                rename_map.emplace(stream_from + ".bin", stream_to + ".bin");
-                rename_map.emplace(stream_from + mrk_extension, stream_to + mrk_extension);
+                String stream_to = boost::replace_first_copy(stream_from, escaped_name_from, escaped_name_to);
+
+                if (stream_from != stream_to)
+                {
+                    rename_map.emplace(stream_from + ".bin", stream_to + ".bin");
+                    rename_map.emplace(stream_from + mrk_extension, stream_to + mrk_extension);
+                }
             };
             IDataType::SubstreamPath stream_path;
             auto column = source_part->getColumns().tryGetByName(command.column_name);
