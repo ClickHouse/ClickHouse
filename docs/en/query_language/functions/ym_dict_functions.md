@@ -100,6 +100,30 @@ Example: `regionToCountry(toUInt32(213)) = 225` converts Moscow (213) to Russia 
 Converts a region to a continent. In every other way, this function is the same as ‘regionToCity’.
 Example: `regionToContinent(toUInt32(213)) = 10001` converts Moscow (213) to Eurasia (10001).
 
+### regionToTopContinent (#regiontotopcontinent)
+
+Finds the highest continent in the hierarchy for the region.
+
+**Syntax**
+
+```sql
+regionToTopContinent(id[, geobase]);
+```
+
+**Parameters**
+
+- `id` —  Region ID from the Yandex geobase. [UInt32](../../data_types/int_uint.md).
+- `geobase` —  Dictionary key. See [Multiple Geobases](#multiple-geobases). [String](../../data_types/string.md). Optional.
+
+
+**Returned value**
+
+- Identifier of the top level continent (the latter when you climb the hierarchy of regions).
+- 0, if there is none.
+
+Type: `UInt32`.
+
+
 ### regionToPopulation(id\[, geobase\]) {#regiontopopulationid-geobase}
 
 Gets the population for a region.
