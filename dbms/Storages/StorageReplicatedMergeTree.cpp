@@ -3336,7 +3336,7 @@ void StorageReplicatedMergeTree::alter(
         }
         else if (rc == Coordination::ZBADVERSION)
         {
-            if (dynamic_cast<const Coordination::SetResponse &>(*results[0]).error)
+            if (results[0]->error)
                 throw Exception("Metadata on replica is not up to date with common metadata in Zookeeper. Cannot alter", ErrorCodes::CANNOT_ASSIGN_ALTER);
 
             continue;
