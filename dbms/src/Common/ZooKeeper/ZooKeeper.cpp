@@ -108,9 +108,9 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
 }
 
 ZooKeeper::ZooKeeper(const std::string & hosts_, const std::string & identity_, int32_t session_timeout_ms_,
-                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation)
+                     int32_t operation_timeout_ms_, const std::string & chroot_, const std::string & implementation_)
 {
-    init(implementation, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
+    init(implementation_, hosts_, identity_, session_timeout_ms_, operation_timeout_ms_, chroot_);
 }
 
 struct ZooKeeperArgs
