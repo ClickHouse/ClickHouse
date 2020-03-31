@@ -13,11 +13,8 @@ IMergingTransform::IMergingTransform(
     size_t num_inputs,
     const Block & input_header,
     const Block & output_header,
-    size_t max_block_size,
-    bool use_average_block_size,
     bool have_all_inputs_)
     : IProcessor(InputPorts(num_inputs, input_header), {output_header})
-    , merged_data(output_header, use_average_block_size, max_block_size)
     , have_all_inputs(have_all_inputs_)
 {
 }
@@ -53,6 +50,13 @@ void IMergingTransform::requestDataForInput(size_t input_number)
 
     need_data = true;
     next_input_to_read = input_number;
+}
+
+void IMergingTransform::prepareOutputChunk(MergedData & merged_data)
+{
+    has_output_chunk = (is_finished && merged_data.mergedRows()) || merged_data.hasEnoughRows();
+    if (has_output_chunk)
+        output_chunk = merged_data.pull();
 }
 
 IProcessor::Status IMergingTransform::prepareSingleInput()
@@ -171,9 +175,8 @@ IProcessor::Status IMergingTransform::prepare()
     bool is_port_full = !output.canPush();
 
     /// Push if has data.
-    bool has_data_to_push = (is_finished && merged_data.mergedRows()) || merged_data.hasEnoughRows();
-    if (has_data_to_push && !is_port_full)
-        output.push(merged_data.pull());
+    if (has_output_chunk && !is_port_full)
+        output.push(std::move(output_chunk));
 
     if (!is_initialized)
         return prepareInitializeInputs();

@@ -13,7 +13,8 @@ VersionedCollapsingTransform::VersionedCollapsingTransform(
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : IMergingTransform(num_inputs, header, header, max_block_size, use_average_block_sizes, true)
+    : IMergingTransform(num_inputs, header, header, true)
+    , merged_data(header, use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , out_row_sources_buf(out_row_sources_buf_)
     , max_rows_in_queue(MAX_ROWS_IN_MULTIVERSION_QUEUE - 1)  /// -1 for +1 in FixedSizeDequeWithGaps's internal buffer
@@ -69,6 +70,7 @@ void VersionedCollapsingTransform::updateCursor(Chunk chunk, size_t source_num)
 void VersionedCollapsingTransform::work()
 {
     merge();
+    prepareOutputChunk(merged_data);
 }
 
 inline ALWAYS_INLINE static void writeRowSourcePart(WriteBuffer & buffer, RowSourcePart row_source)
@@ -193,7 +195,7 @@ void VersionedCollapsingTransform::merge()
 
     /// Write information about last collapsed rows.
     insertGap(current_keys.frontGap());
-    finish();
+    is_finished = true;
 }
 
 

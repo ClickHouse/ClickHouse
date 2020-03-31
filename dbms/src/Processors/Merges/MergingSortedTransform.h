@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/Merges/MergedData.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 
@@ -26,12 +27,14 @@ public:
     String getName() const override { return "MergingSortedTransform"; }
     void work() override;
 
-private:
-
+protected:
     void onNewInput() override;
     void initializeInputs() override;
     void consume(Chunk chunk, size_t input_number) override;
     void onFinish() override;
+
+private:
+    MergedData merged_data;
 
     /// Settings
     SortDescription description;

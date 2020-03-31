@@ -2,6 +2,7 @@
 
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/RowRef.h>
+#include <Processors/Merges/MergedData.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 #include <DataStreams/ColumnGathererStream.h>
@@ -31,6 +32,8 @@ protected:
 
 private:
     Logger * log = &Logger::get("ReplacingSortedTransform");
+
+    MergedData merged_data;
 
     SortDescription description;
     ssize_t version_column_number = -1;
