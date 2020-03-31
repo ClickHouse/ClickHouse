@@ -258,8 +258,15 @@ def build_single_page_version(lang, args, cfg):
                                 logging.info(' '.join(create_pdf_command))
                                 subprocess.check_call(' '.join(create_pdf_command), shell=True)
                             finally:
-                                logging.info(f"Stop serving for {lang} pdf at port {port_for_pdf}")
-                                process.terminate()
+                                logging.info(f"Stop serving for {lang} pdf at port {port_for_pdf}"))
+                                process.kill()
+                                while True:
+                                    time.sleep(0.25)
+                                    try:
+                                        process.close()
+                                        break
+                                    except ValueError:
+                                        logging.info(f"Waiting for {lang} httpd at port {port_for_pdf} to stop")
 
 
                     if not args.version_prefix:  # maybe enable in future
