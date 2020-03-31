@@ -71,7 +71,7 @@ Pipes StorageMySQL::read(
 {
     check(column_names_);
     String query = transformQueryForExternalDatabase(
-        *query_info_.query, getColumns().getOrdinary(), IdentifierQuotingStyle::BackticksMySQL, remote_database_name, remote_table_name, context_);
+        query_info_, getColumns().getOrdinary(), IdentifierQuotingStyle::BackticksMySQL, remote_database_name, remote_table_name, context_);
 
     Block sample_block;
     for (const String & column_name : column_names_)
