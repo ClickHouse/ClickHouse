@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para trabajar con fechas y horas {#functions-for-working-with-dates-and-times}
 
 Soporte para zonas horarias

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Monitoreo {#monitoring}
 
 Usted puede monitorear:

@@ -33,7 +33,8 @@ RUN apt-get update -y \
             lsof \
             llvm-9 \
             unixodbc \
-            wget
+            wget \
+            qemu-user-static
 
 RUN mkdir -p /tmp/clickhouse-odbc-tmp \
    && wget --quiet -O - ${odbc_driver_url} | tar --strip-components=1 -xz -C /tmp/clickhouse-odbc-tmp \

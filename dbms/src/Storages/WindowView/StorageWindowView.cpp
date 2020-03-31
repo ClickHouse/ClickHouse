@@ -398,7 +398,7 @@ inline void StorageWindowView::fire(UInt32 watermark)
         try
         {
             StoragePtr target_table = getTargetStorage();
-            auto lock = target_table->lockStructureForShare(true, global_context.getCurrentQueryId());
+            auto lock = target_table->lockStructureForShare(global_context.getCurrentQueryId());
             auto out_stream = target_table->write(getInnerQuery(), global_context);
             in_stream->readPrefix();
             out_stream->writePrefix();
@@ -1021,7 +1021,7 @@ void StorageWindowView::writeIntoWindowView(StorageWindowView & window_view, con
     }
 
     auto & inner_storage = window_view.getInnerStorage();
-    auto lock = inner_storage->lockStructureForShare(true, context.getCurrentQueryId());
+    auto lock = inner_storage->lockStructureForShare(context.getCurrentQueryId());
     auto stream = inner_storage->write(window_view.getInnerQuery(), context);
     copyData(*source_stream, *stream);
 }

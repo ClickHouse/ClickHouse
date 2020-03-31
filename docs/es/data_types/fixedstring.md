@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Cadena fija {#fixedstring}
 
 Una cadena de longitud fija de `N` bytes (ni caracteres ni puntos de código).

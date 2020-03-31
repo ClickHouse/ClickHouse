@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Configuración de un diccionario externo {#dicts-external-dicts-dict}
 
 Si el diccionario se configura usando un archivo xml, la configuración del diccionario tiene la siguiente estructura:

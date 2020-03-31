@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # jdbc {#table-function-jdbc}
 
 `jdbc(jdbc_connection_uri, schema, table)` - devuelve la tabla que está conectado a través del controlador JDBC.

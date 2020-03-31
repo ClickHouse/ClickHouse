@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Perfiles de configuración {#settings-profiles}
 
 Un perfil de configuración es una colección de configuraciones agrupadas con el mismo nombre. Cada usuario de ClickHouse tiene un perfil.

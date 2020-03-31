@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # MOSTRAR consultas {#show-queries}
 
 ## MOSTRAR CREAR TABLA {#show-create-table}

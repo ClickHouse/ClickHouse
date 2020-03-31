@@ -33,6 +33,7 @@ void registerFunctionArrayFlatten(FunctionFactory &);
 void registerFunctionArrayWithConstant(FunctionFactory &);
 void registerFunctionArrayZip(FunctionFactory &);
 void registerFunctionArrayAUC(FunctionFactory &);
+void registerFunctionArrayReduceInRanges(FunctionFactory &);
 
 void registerFunctionsArray(FunctionFactory & factory)
 {
@@ -53,6 +54,7 @@ void registerFunctionsArray(FunctionFactory & factory)
     registerFunctionArraySlice(factory);
     registerFunctionArrayReverse(factory);
     registerFunctionArrayReduce(factory);
+    registerFunctionArrayReduceInRanges(factory);
     registerFunctionRange(factory);
     registerFunctionsEmptyArray(factory);
     registerFunctionEmptyArrayToSingle(factory);

@@ -178,6 +178,7 @@ void registerOutputFormatProcessorTemplate(FormatFactory &factory);
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
 void registerFileSegmentationEngineCSV(FormatFactory & factory);
 void registerFileSegmentationEngineJSONEachRow(FormatFactory & factory);
+void registerFileSegmentationEngineRegexp(FormatFactory & factory);
 
 /// Output only (presentational) formats.
 
@@ -198,5 +199,6 @@ void registerOutputFormatProcessorMySQLWrite(FormatFactory & factory);
 
 /// Input only formats.
 void registerInputFormatProcessorCapnProto(FormatFactory & factory);
+void registerInputFormatProcessorRegexp(FormatFactory & factory);
 
 }

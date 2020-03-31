@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para trabajar con coordenadas geográficas {#functions-for-working-with-geographical-coordinates}
 
 ## GranCircleDistance {#greatcircledistance}

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Bibliotecas de integración de desarrolladores externos {#integration-libraries-from-third-party-developers}
 
 !!! warning "Descargo"

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S) {#decimalp-s-decimal32s-decimal64s-decimal128s}
 
 Números de punto fijo firmados que mantienen la precisión durante las operaciones de suma, resta y multiplicación. Para la división se descartan los dígitos menos significativos (no redondeados).

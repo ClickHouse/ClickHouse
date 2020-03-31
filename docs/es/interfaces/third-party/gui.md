@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Interfaces visuales de desarrolladores de terceros {#visual-interfaces-from-third-party-developers}
 
 ## De código abierto {#open-source}

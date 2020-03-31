@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Yandex anonimizado.Metrica Datos {#anonymized-yandex-metrica-data}
 
 El conjunto de datos consta de dos tablas que contienen datos anónimos sobre los hits (`hits_v1`) y visitas (`visits_v1`) el Yandex.Métrica. Puedes leer más sobre Yandex.Metrica en [Historial de ClickHouse](../../introduction/history.md) apartado.

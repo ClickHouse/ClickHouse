@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Guías de ClickHouse {#clickhouse-guides}
 
 Instrucciones detalladas paso a paso que lo ayudarán a resolver varias tareas usando ClickHouse.

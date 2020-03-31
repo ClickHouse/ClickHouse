@@ -30,13 +30,27 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
+
 struct SpecialParserType
 {
-    bool is_array = false;
-    bool is_nullable = false;
-    Field::Types::Which nested_type = Field::Types::Which::String;
+    SpecialParserType() = default;
+    explicit SpecialParserType(Field::Types::Which main_type_) : main_type(main_type_) {}
 
-    bool useDefaultParser() const { return nested_type == Field::Types::Which::String; }
+    Field::Types::Which main_type = Field::Types::String;
+    bool is_nullable = false;
+    bool is_array = false;
+    bool is_tuple = false;
+    /// Type and nullability
+    std::vector<std::pair<Field::Types::Which, bool>> nested_types;
+
+    bool useDefaultParser() const
+    {
+        return main_type == Field::Types::String || (!nested_types.empty()
+            && std::all_of(
+                nested_types.begin(),
+                nested_types.end(),
+                [](const auto & type) { return type.first == Field::Types::String; }));
+    }
 };
 
 struct LiteralInfo
@@ -53,6 +67,54 @@ struct LiteralInfo
     DataTypePtr type;
     SpecialParserType special_parser;
 };
+
+static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
+{
+    size_t elements_num = nested_types.size();
+    info.special_parser.nested_types.reserve(elements_num);
+
+    for (auto nested_type : nested_types)
+    {
+        /// It can be Array(Nullable(nested_type)) or Tuple(..., Nullable(nested_type), ...)
+        bool is_nullable = false;
+        if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
+        {
+            nested_type = nullable->getNestedType();
+            is_nullable = true;
+        }
+
+        WhichDataType type_info{nested_type};
+        Field::Types::Which field_type;
+
+        /// Promote integers to 64 bit types
+        if (type_info.isNativeUInt())
+        {
+            nested_type = std::make_shared<DataTypeUInt64>();
+            field_type = Field::Types::UInt64;
+        }
+        else if (type_info.isNativeInt())
+        {
+            nested_type = std::make_shared<DataTypeInt64>();
+            field_type = Field::Types::Int64;
+        }
+        else if (type_info.isFloat64())
+        {
+            field_type = Field::Types::Float64;
+        }
+        else if (type_info.isString())
+        {
+            field_type = Field::Types::String;
+        }
+        else
+            throw Exception("Unexpected literal type inside Array: " + nested_type->getName() + ". It's a bug",
+                            ErrorCodes::LOGICAL_ERROR);
+
+        if (is_nullable)
+            nested_type = std::make_shared<DataTypeNullable>(nested_type);
+
+        info.special_parser.nested_types.emplace_back(field_type, is_nullable);
+    }
+}
 
 /// Extracts ASTLiterals from expression, replaces them with ASTIdentifiers where needed
 /// and deduces data types for dummy columns by field type of literal
@@ -137,7 +199,7 @@ private:
 
         /// We have to use ParserNumber instead of type->deserializeAsTextQuoted() for arithmetic types
         /// to check actual type of literal and avoid possible overflow and precision issues.
-        info.special_parser = SpecialParserType{false, false, field_type};
+        info.special_parser = SpecialParserType(field_type);
 
         /// Do not use 8, 16 and 32 bit types, so template will match all integers
         if (field_type == Field::Types::UInt64)
@@ -152,47 +214,17 @@ private:
         {
             info.special_parser.is_array = true;
             info.type = applyVisitor(FieldToDataType(), info.literal->value);
-            auto nested_type = assert_cast<const DataTypeArray &>(*info.type).getNestedType();
-
-            /// It can be Array(Nullable(nested_type))
-            bool array_of_nullable = false;
-            if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
-            {
-                nested_type = nullable->getNestedType();
-                array_of_nullable = true;
-            }
-
-            WhichDataType type_info{nested_type};
-            /// Promote integers to 64 bit types
-            if (type_info.isNativeUInt())
-            {
-                nested_type = std::make_shared<DataTypeUInt64>();
-                info.special_parser.nested_type = Field::Types::UInt64;
-            }
-            else if (type_info.isNativeInt())
-            {
-                nested_type = std::make_shared<DataTypeInt64>();
-                info.special_parser.nested_type = Field::Types::Int64;
-            }
-            else if (type_info.isFloat64())
-            {
-                info.special_parser.nested_type = Field::Types::Float64;
-            }
-            else if (type_info.isString())
-            {
-                info.special_parser.nested_type = Field::Types::String;
-            }
-            else
-                throw Exception("Unexpected literal type inside Array: " + nested_type->getName() + ". It's a bug",
-                                ErrorCodes::LOGICAL_ERROR);
-
-            if (array_of_nullable)
-            {
-                nested_type = std::make_shared<DataTypeNullable>(nested_type);
-                info.special_parser.is_nullable = true;
-            }
-
-            info.type = std::make_shared<DataTypeArray>(nested_type);
+            DataTypes nested_types = { assert_cast<const DataTypeArray &>(*info.type).getNestedType() };
+            fillLiteralInfo(nested_types, info);
+            info.type = std::make_shared<DataTypeArray>(nested_types[0]);
+        }
+        else if (field_type == Field::Types::Tuple)
+        {
+            info.special_parser.is_tuple = true;
+            info.type = applyVisitor(FieldToDataType(), info.literal->value);
+            auto nested_types = assert_cast<const DataTypeTuple &>(*info.type).getElements();
+            fillLiteralInfo(nested_types, info);
+            info.type = std::make_shared<DataTypeTuple>(nested_types);
         }
         else
             throw Exception(String("Unexpected literal type ") + info.literal->value.getTypeName() + ". It's a bug",
@@ -404,36 +436,50 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
     /// If literal does not fit entirely in the buffer, parsing error will happen.
     /// However, it's possible to deduce new template (or use template from cache) after error like it was template mismatch.
 
-    if (type_info.is_array)
+    if (type_info.is_array || type_info.is_tuple)
     {
         /// TODO faster way to check types without using Parsers
         ParserArrayOfLiterals parser_array;
+        ParserTupleOfLiterals parser_tuple;
+
         Tokens tokens_number(istr.position(), istr.buffer().end());
         IParser::Pos iterator(tokens_number, settings.max_parser_depth);
         Expected expected;
         ASTPtr ast;
-
-        if (!parser_array.parse(iterator, ast, expected))
+        if (!parser_array.parse(iterator, ast, expected) && !parser_tuple.parse(iterator, ast, expected))
             return false;
+
         istr.position() = const_cast<char *>(iterator->begin);
 
-        const Field & array = ast->as<ASTLiteral &>().value;
-        auto array_type = applyVisitor(FieldToDataType(), array);
-        auto nested_type = assert_cast<const DataTypeArray &>(*array_type).getNestedType();
-        if (type_info.is_nullable)
-            if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
-                nested_type = nullable->getNestedType();
+        const Field & collection = ast->as<ASTLiteral &>().value;
+        auto collection_type = applyVisitor(FieldToDataType(), collection);
 
-        WhichDataType nested_type_info(nested_type);
-        if ((nested_type_info.isNativeUInt() && type_info.nested_type == Type::UInt64) ||
-            (nested_type_info.isNativeInt()  && type_info.nested_type == Type::Int64)  ||
-            (nested_type_info.isFloat64()    && type_info.nested_type == Type::Float64))
+        DataTypes nested_types;
+        if (type_info.is_array)
+            nested_types = { assert_cast<const DataTypeArray &>(*collection_type).getNestedType() };
+        else
+            nested_types = assert_cast<const DataTypeTuple &>(*collection_type).getElements();
+
+        for (size_t i = 0; i < nested_types.size(); ++i)
         {
-            Field array_same_types = convertFieldToType(array, *complex_type, nullptr);
-            columns[column_idx]->insert(array_same_types);
-            return true;
+            const auto & [nested_field_type, is_nullable] = type_info.nested_types[i];
+            if (is_nullable)
+                if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_types[i].get()))
+                    nested_types[i] = nullable->getNestedType();
+
+            WhichDataType nested_type_info(nested_types[i]);
+            bool are_types_compatible =
+                (nested_type_info.isNativeUInt() && nested_field_type == Type::UInt64) ||
+                (nested_type_info.isNativeInt()  && nested_field_type == Type::Int64)  ||
+                (nested_type_info.isFloat64()    && nested_field_type == Type::Float64);
+
+            if (!are_types_compatible)
+                return false;
         }
-        return false;
+
+        Field array_same_types = convertFieldToType(collection, *complex_type, nullptr);
+        columns[column_idx]->insert(array_same_types);
+        return true;
     }
     else
     {
@@ -470,14 +516,14 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(ReadBuffer & istr, co
             if (pos_integer == pos_double && errno != ERANGE && (!negative || uint_value <= (1ULL << 63)))
             {
                 istr.position() += pos_integer - buf;
-                if (negative && type_info.nested_type == Type::Int64)
+                if (negative && type_info.main_type == Type::Int64)
                     number = static_cast<Int64>(-uint_value);
-                else if (!negative && type_info.nested_type == Type::UInt64)
+                else if (!negative && type_info.main_type == Type::UInt64)
                     number = uint_value;
                 else
                     return false;
             }
-            else if (type_info.nested_type == Type::Float64)
+            else if (type_info.main_type == Type::Float64)
             {
                 istr.position() += pos_double - buf;
                 number = float_value;

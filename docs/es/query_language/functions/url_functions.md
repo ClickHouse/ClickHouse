@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para trabajar con URL {#functions-for-working-with-urls}
 
 Todas estas funciones no siguen el RFC. Se simplifican al máximo para mejorar el rendimiento.

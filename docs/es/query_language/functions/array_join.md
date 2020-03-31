@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # arrayJoin función {#functions_arrayjoin}
 
 Esta es una función muy inusual.

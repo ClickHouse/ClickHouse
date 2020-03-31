@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Diccionario {#dictionary}
 
 El `Dictionary` el motor muestra el [Diccionario](../../query_language/dicts/external_dicts.md) datos como una tabla ClickHouse.
