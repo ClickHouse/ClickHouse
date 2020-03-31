@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
+#include <Common/NetException.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 
@@ -49,14 +50,9 @@ ColumnsDescription getStructureOfRemoteTable(
         }
         catch (const NetException &)
         {
-            if (context.getSettingsRef().skip_unavailable_shards)
-            {
-                std::string fail_message = getCurrentExceptionMessage(false);
-                fail_messages += fail_message + '\n';
-
-                continue;
-            }
-            throw;
+            std::string fail_message = getCurrentExceptionMessage(false);
+            fail_messages += fail_message + '\n';
+            continue;
         }
     }
 
