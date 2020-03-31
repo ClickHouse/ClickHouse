@@ -645,6 +645,7 @@ Pipe QueryPipeline::getPipe() &&
 {
     resize(1);
     Pipe pipe(std::move(processors), streams.at(0), totals_having_port);
+    pipe.max_parallel_streams = streams.maxParallelStreams();
 
     for (auto & lock : table_locks)
         pipe.addTableLock(lock);
