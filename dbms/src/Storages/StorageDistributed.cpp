@@ -40,6 +40,7 @@
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
+#include <Interpreters/getTableExpressions.h>
 
 #include <Core/Field.h>
 
@@ -88,15 +89,23 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 {
     auto modified_query_ast = query->clone();
 
-    /// Restore long column names (cause our short names are ambiguous)
-    RestoreQualifiedNamesVisitor::Data data;
-    RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
-
     ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
     if (table_function_ptr)
         select_query.addTableFunction(table_function_ptr);
     else
         select_query.replaceDatabaseAndTable(database, table);
+
+    /// Restore long column names (cause our short names are ambiguous)
+    RestoreQualifiedNamesVisitor::Data data;
+    if (!table_function_ptr)
+    {
+        data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
+        data.remote_table.database = database;
+        data.remote_table.table = table;
+        data.rename = true;
+    }
+    RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
+
     return modified_query_ast;
 }
 
