@@ -38,7 +38,7 @@ ColumnsDescription getStructureOfRemoteTable(
     {
         try
         {
-            const auto & res = getStructureOfRemoteTableInShard(shard_info, database, table, context, table_func_ptr);
+            const auto & res = getStructureOfRemoteTableInShard(shard_info, table_id, context, table_func_ptr);
 
             /// Expect at least some columns.
             /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.
@@ -67,8 +67,7 @@ ColumnsDescription getStructureOfRemoteTable(
 
 ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster::ShardInfo & shard_info,
-    const std::string & database,
-    const std::string & table,
+    const StorageID & table_id,
     const Context & context,
     const ASTPtr & table_func_ptr)
 {

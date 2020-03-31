@@ -21,8 +21,7 @@ ColumnsDescription getStructureOfRemoteTable(
 
 ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster::ShardInfo & shard_info,
-    const std::string & database,
-    const std::string & table,
+    const StorageID & table_id,
     const Context & context,
     const ASTPtr & table_func_ptr = nullptr);
 
