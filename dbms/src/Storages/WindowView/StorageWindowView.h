@@ -56,7 +56,8 @@ private:
     ASTPtr inner_query;
     ASTPtr final_query;
 
-    Context & global_context;
+    Context global_context;
+    Context wv_context;
     bool is_proctime{true};
     bool is_time_column_func_now;
     bool is_tumble; // false if is hop

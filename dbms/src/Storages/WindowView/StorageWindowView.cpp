@@ -295,7 +295,7 @@ void StorageWindowView::checkTableCanBeDropped() const
     }
 }
 
-static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, const StorageID & target_table_id)
+static void executeDropQuery(ASTDropQuery::Kind kind, Context & context, const StorageID & target_table_id)
 {
     if (DatabaseCatalog::instance().tryGetTable(target_table_id))
     {
@@ -304,7 +304,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
         drop_query->table = target_table_id.table_name;
         drop_query->kind = kind;
         ASTPtr ast_drop_query = drop_query;
-        InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
+        InterpreterDropQuery drop_interpreter(ast_drop_query, context);
         drop_interpreter.execute();
     }
 }
@@ -362,7 +362,7 @@ inline void StorageWindowView::cleanCache()
     }
 
     auto sql = generateCleanCacheQuery(w_bound);
-    InterpreterAlterQuery alt_query(sql, global_context);
+    InterpreterAlterQuery alt_query(sql, wv_context);
     alt_query.execute();
 
     std::lock_guard lock(fire_signal_mutex);
@@ -398,8 +398,8 @@ inline void StorageWindowView::fire(UInt32 watermark)
         try
         {
             StoragePtr target_table = getTargetStorage();
-            auto lock = target_table->lockStructureForShare(global_context.getCurrentQueryId());
-            auto out_stream = target_table->write(getInnerQuery(), global_context);
+            auto lock = target_table->lockStructureForShare(wv_context.getCurrentQueryId());
+            auto out_stream = target_table->write(getInnerQuery(), wv_context);
             in_stream->readPrefix();
             out_stream->writePrefix();
             while (auto block = in_stream->read())
@@ -436,7 +436,7 @@ std::shared_ptr<ASTCreateQuery> StorageWindowView::generateInnerTableCreateQuery
     QueryAliasesVisitor(query_aliases_data).visit(inner_select_query);
 
     auto t_sample_block
-        = InterpreterSelectQuery(inner_select_query, global_context, getParentStorage(), SelectQueryOptions(QueryProcessingStage::WithMergeableState))
+        = InterpreterSelectQuery(inner_select_query, wv_context, getParentStorage(), SelectQueryOptions(QueryProcessingStage::WithMergeableState))
               .getSampleBlock();
 
     auto columns_list = std::make_shared<ASTExpressionList>();
@@ -759,8 +759,11 @@ StorageWindowView::StorageWindowView(
     bool attach_)
     : IStorage(table_id_)
     , global_context(local_context.getGlobalContext())
+    , wv_context(Context(global_context))
     , time_zone(DateLUT::instance())
 {
+    wv_context.makeQueryContext();
+
     setColumns(columns_);
 
     if (!query.select)
@@ -770,7 +773,7 @@ StorageWindowView::StorageWindowView(
         throw Exception("UNION is not supported for Window View", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_WINDOW_VIEW);
 
     ASTSelectQuery & select_query = typeid_cast<ASTSelectQuery &>(*query.select->list_of_selects->children.at(0));
-    String select_database_name = local_context.getCurrentDatabase();
+    String select_database_name = global_context.getCurrentDatabase();
     String select_table_name;
     extractDependentTable(select_query, select_database_name, select_table_name);
     select_table_id = StorageID(select_database_name, select_table_name);
@@ -798,7 +801,7 @@ StorageWindowView::StorageWindowView(
     if (!query.to_table.empty())
         target_table_id = StorageID(query.to_database, query.to_table);
 
-    clean_interval = local_context.getSettingsRef().window_view_clean_interval.totalSeconds();
+    clean_interval = global_context.getSettingsRef().window_view_clean_interval.totalSeconds();
     next_fire_signal = getWindowUpperBound(std::time(nullptr));
 
     if (query.is_watermark_strictly_ascending || query.is_watermark_ascending || query.is_watermark_bounded)
@@ -867,18 +870,18 @@ StorageWindowView::StorageWindowView(
         auto inner_create_query
             = generateInnerTableCreateQuery(query.storage, table_id_.database_name, generateInnerTableName(table_id_.table_name));
 
-        InterpreterCreateQuery create_interpreter(inner_create_query, local_context);
+        InterpreterCreateQuery create_interpreter(inner_create_query, wv_context);
         create_interpreter.setInternal(true);
         create_interpreter.execute();
         inner_storage = DatabaseCatalog::instance().getTable(StorageID(inner_create_query->database, inner_create_query->table));
         inner_table_id = inner_storage->getStorageID();
     }
 
-    clean_cache_task = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanCache(); });
+    clean_cache_task = wv_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncCleanCache(); });
     if (is_proctime)
-        fire_task = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFireProc(); });
+        fire_task = wv_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFireProc(); });
     else
-        fire_task = global_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFireEvent(); });
+        fire_task = wv_context.getSchedulePool().createTask(getStorageID().getFullTableName(), [this] { threadFuncFireEvent(); });
     clean_cache_task->deactivate();
     fire_task->deactivate();
 }
@@ -1053,7 +1056,7 @@ Block & StorageWindowView::getHeader() const
     if (!sample_block)
     {
         sample_block = InterpreterSelectQuery(
-                           getInnerQuery(), global_context, getParentStorage(), SelectQueryOptions(QueryProcessingStage::Complete))
+                           getInnerQuery(), wv_context, getParentStorage(), SelectQueryOptions(QueryProcessingStage::Complete))
                            .getSampleBlock();
         for (size_t i = 0; i < sample_block.columns(); ++i)
             sample_block.safeGetByPosition(i).column = sample_block.safeGetByPosition(i).column->convertToFullColumnIfConst();
@@ -1110,16 +1113,16 @@ BlockInputStreamPtr StorageWindowView::getNewBlocksInputStreamPtr(UInt32 waterma
     Pipes pipes;
 
     auto & storage = getInnerStorage();
-    InterpreterSelectQuery fetch(getFetchColumnQuery(watermark), global_context, storage, SelectQueryOptions(QueryProcessingStage::FetchColumns));
+    InterpreterSelectQuery fetch(getFetchColumnQuery(watermark), wv_context, storage, SelectQueryOptions(QueryProcessingStage::FetchColumns));
     QueryPipeline pipeline;
     BlockInputStreams streams = fetch.executeWithMultipleStreams(pipeline);
     for (auto & stream : streams)
         pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::move(stream)));
 
     auto proxy_storage = std::make_shared<WindowViewProxyStorage>(
-        StorageID(global_context.getCurrentDatabase(), "WindowViewProxyStorage"), getParentStorage()->getColumns(), std::move(pipes), QueryProcessingStage::WithMergeableState);
+        StorageID(wv_context.getCurrentDatabase(), "WindowViewProxyStorage"), getParentStorage()->getColumns(), std::move(pipes), QueryProcessingStage::WithMergeableState);
 
-    InterpreterSelectQuery select(getFinalQuery(), global_context, proxy_storage, QueryProcessingStage::Complete);
+    InterpreterSelectQuery select(getFinalQuery(), wv_context, proxy_storage, QueryProcessingStage::Complete);
     BlockInputStreamPtr data = std::make_shared<MaterializingBlockInputStream>(select.execute().in);
 
     /// Squashing is needed here because the view query can generate a lot of blocks
