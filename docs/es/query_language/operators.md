@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Operador {#operators}
 
 Todos los operadores se transforman a sus funciones correspondientes en la etapa de análisis de consulta de acuerdo con su precedencia y asociatividad.

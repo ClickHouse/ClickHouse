@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones de conversión de tipos {#type-conversion-functions}
 
 ## Problemas comunes de conversiones numéricas {#numeric-conversion-issues}

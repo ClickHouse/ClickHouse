@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # ¿Qué es ClickHouse? {#what-is-clickhouse}
 
 ClickHouse es un sistema de gestión de bases de datos orientado a columnas (DBMS) para el procesamiento analítico en línea de consultas (OLAP).

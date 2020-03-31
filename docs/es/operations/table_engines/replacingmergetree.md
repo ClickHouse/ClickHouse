@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # ReplacingMergeTree {#replacingmergetree}
 
 El motor difiere de [Método de codificación de datos:](mergetree.md#table_engines-mergetree) en que elimina las entradas duplicadas con el mismo valor de clave principal (o más exactamente, con el mismo [clave de clasificación](mergetree.md) de valor).

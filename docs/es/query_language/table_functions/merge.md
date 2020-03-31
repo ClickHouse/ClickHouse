@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Fusionar {#merge}
 
 `merge(db_name, 'tables_regexp')` – Crea una tabla de combinación temporal. Para obtener más información, consulte la sección “Table engines, Merge”.

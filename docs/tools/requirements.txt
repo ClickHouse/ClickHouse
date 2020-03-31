@@ -1,9 +1,11 @@
+Babel==2.8.0
 backports-abc==0.5
 backports.functools-lru-cache==1.6.1
 beautifulsoup4==4.8.2
 certifi==2019.11.28
 chardet==3.0.4
 click==7.1.1
+closure==20191111
 cssmin==0.2.0
 future==0.18.2
 htmlmin==0.1.12

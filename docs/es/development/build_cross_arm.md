@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Cómo construir ClickHouse en Linux para la arquitectura AARCH64 (ARM64 {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
 
 Esto es para el caso cuando tiene una máquina Linux y desea usarla para compilar `clickhouse` binario que se ejecutará en otra máquina Linux con arquitectura de CPU AARCH64. Esto está destinado a las comprobaciones de integración continua que se ejecutan en servidores Linux.

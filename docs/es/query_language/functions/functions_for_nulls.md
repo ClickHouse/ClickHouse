@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para trabajar con agregados anulables {#functions-for-working-with-nullable-aggregates}
 
 ## IsNull {#isnull}

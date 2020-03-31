@@ -136,7 +136,7 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
 }
 
 
-QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context) const
+QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, const ASTPtr & query_ptr) const
 {
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
@@ -150,7 +150,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
         if (table.get() != this)
         {
             ++selected_table_size;
-            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context));
+            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context, query_ptr));
         }
 
         iterator->next();
@@ -287,7 +287,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
         return pipes;
     }
 
-    if (processed_stage <= storage->getQueryProcessingStage(*modified_context))
+    if (processed_stage <= storage->getQueryProcessingStage(*modified_context, query_info.query))
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
@@ -295,7 +295,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 
         pipes = storage->read(real_column_names, modified_query_info, *modified_context, processed_stage, max_block_size, UInt32(streams_num));
     }
-    else if (processed_stage > storage->getQueryProcessingStage(*modified_context))
+    else if (processed_stage > storage->getQueryProcessingStage(*modified_context, query_info.query))
     {
         modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, table_name);
 
@@ -364,7 +364,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
     {
         auto & table = iterator->table();
         if (table.get() != this)
-            selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id), iterator->name());
+            selected_tables.emplace_back(table, table->lockStructureForShare(query_id), iterator->name());
 
         iterator->next();
     }
@@ -389,7 +389,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
         if (storage.get() != this)
         {
-            selected_tables.emplace_back(storage, storage->lockStructureForShare(false, query_id), iterator->name());
+            selected_tables.emplace_back(storage, storage->lockStructureForShare(query_id), iterator->name());
             virtual_column->insert(iterator->name());
         }
 

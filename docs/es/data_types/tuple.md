@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Tuple (T1, T2, …) {#tuplet1-t2}
 
 Una tupla de elementos, cada uno con un individuo [Tipo](index.md#data_types).

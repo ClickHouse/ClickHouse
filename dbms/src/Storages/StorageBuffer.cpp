@@ -135,7 +135,7 @@ private:
 };
 
 
-QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context) const
+QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context & context, const ASTPtr & query_ptr) const
 {
     if (destination_id)
     {
@@ -144,7 +144,7 @@ QueryProcessingStage::Enum StorageBuffer::getQueryProcessingStage(const Context 
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        return destination->getQueryProcessingStage(context);
+        return destination->getQueryProcessingStage(context, query_ptr);
     }
 
     return QueryProcessingStage::FetchColumns;
@@ -168,7 +168,7 @@ Pipes StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        auto destination_lock = destination->lockStructureForShare(false, context.getCurrentQueryId());
+        auto destination_lock = destination->lockStructureForShare(context.getCurrentQueryId());
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
@@ -725,6 +725,35 @@ void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const S
     }
 }
 
+std::optional<UInt64> StorageBuffer::totalRows() const
+{
+    std::optional<UInt64> underlying_rows;
+    auto underlying = DatabaseCatalog::instance().tryGetTable(destination_id);
+
+    if (underlying)
+        underlying_rows = underlying->totalRows();
+    if (!underlying_rows)
+        return underlying_rows;
+
+    UInt64 rows = 0;
+    for (auto & buffer : buffers)
+    {
+        std::lock_guard lock(buffer.mutex);
+        rows += buffer.data.rows();
+    }
+    return rows + *underlying_rows;
+}
+
+std::optional<UInt64> StorageBuffer::totalBytes() const
+{
+    UInt64 bytes = 0;
+    for (auto & buffer : buffers)
+    {
+        std::lock_guard lock(buffer.mutex);
+        bytes += buffer.data.bytes();
+    }
+    return bytes;
+}
 
 void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {

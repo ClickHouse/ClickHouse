@@ -1,12 +1,18 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/getTableExpressions.h>
+#include <Interpreters/InJoinSubqueriesPreprocessor.h>
+#include <Interpreters/IdentifierSemantic.h>
+#include <Interpreters/InDepthNodeVisitor.h>
 #include <Storages/IStorage.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageValues.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 
 namespace DB
 {
@@ -14,6 +20,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ALIAS_REQUIRED;
+    extern const int AMBIGUOUS_COLUMN_NAME;
 }
 
 namespace
@@ -31,6 +38,71 @@ void checkTablesWithColumns(const std::vector<T> & tables_with_columns, const Co
                                 ErrorCodes::ALIAS_REQUIRED);
     }
 }
+
+class RenameQualifiedIdentifiersMatcher
+{
+public:
+    using Data = const std::vector<DatabaseAndTableWithAlias>;
+
+    static void visit(ASTPtr & ast, Data & data)
+    {
+        if (auto * t = ast->as<ASTIdentifier>())
+            visit(*t, ast, data);
+        if (auto * node = ast->as<ASTQualifiedAsterisk>())
+            visit(*node, ast, data);
+    }
+
+    static bool needChildVisit(ASTPtr & node, const ASTPtr & child)
+    {
+        if (node->as<ASTTableExpression>() ||
+            node->as<ASTQualifiedAsterisk>() ||
+            child->as<ASTSubquery>())
+            return false; // NOLINT
+        return true;
+    }
+
+private:
+    static void visit(ASTIdentifier & identifier, ASTPtr &, Data & data)
+    {
+        if (identifier.isShort())
+            return;
+
+        bool rewritten = false;
+        for (auto & table : data)
+        {
+            /// Table has an alias. We do not need to rewrite qualified names with table alias (match == ColumnMatch::TableName).
+            auto match = IdentifierSemantic::canReferColumnToTable(identifier, table);
+            if (match == IdentifierSemantic::ColumnMatch::AliasedTableName ||
+                match == IdentifierSemantic::ColumnMatch::DbAndTable)
+            {
+                if (rewritten)
+                    throw Exception("Failed to rewrite distributed table names. Ambiguous column '" + identifier.name + "'",
+                                    ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+                /// Table has an alias. So we set a new name qualified by table alias.
+                IdentifierSemantic::setColumnLongName(identifier, table);
+                rewritten = true;
+            }
+        }
+    }
+
+    static void visit(const ASTQualifiedAsterisk & node, const ASTPtr &, Data & data)
+    {
+        ASTIdentifier & identifier = *node.children[0]->as<ASTIdentifier>();
+        bool rewritten = false;
+        for (auto & table : data)
+        {
+            if (identifier.name == table.table)
+            {
+                if (rewritten)
+                    throw Exception("Failed to rewrite distributed table. Ambiguous column '" + identifier.name + "'",
+                                    ErrorCodes::AMBIGUOUS_COLUMN_NAME);
+                identifier.setShortName(table.alias);
+                rewritten = true;
+            }
+        }
+    }
+};
+using RenameQualifiedIdentifiersVisitor = InDepthNodeVisitor<RenameQualifiedIdentifiersMatcher, true>;
 
 }
 
@@ -112,6 +184,29 @@ void JoinedTables::makeFakeTable(StoragePtr storage, const Block & source_header
     }
     else
         tables_with_columns.emplace_back(DatabaseAndTableWithAlias{}, source_header.getNamesAndTypesList());
+}
+
+void JoinedTables::rewriteDistributedInAndJoins(ASTPtr & query)
+{
+    /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
+    InJoinSubqueriesPreprocessor::SubqueryTables renamed_tables;
+    InJoinSubqueriesPreprocessor(context, renamed_tables).visit(query);
+
+    String database;
+    if (!renamed_tables.empty())
+        database = context.getCurrentDatabase();
+
+    for (auto & [subquery, ast_tables] : renamed_tables)
+    {
+        std::vector<DatabaseAndTableWithAlias> renamed;
+        renamed.reserve(ast_tables.size());
+        for (auto & ast : ast_tables)
+            renamed.emplace_back(DatabaseAndTableWithAlias(*ast->as<ASTIdentifier>(), database));
+
+        /// Change qualified column names in distributed subqueries using table aliases.
+        RenameQualifiedIdentifiersVisitor::Data data(renamed);
+        RenameQualifiedIdentifiersVisitor(data).visit(subquery);
+    }
 }
 
 }

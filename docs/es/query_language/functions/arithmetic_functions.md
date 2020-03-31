@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones aritméticas {#arithmetic-functions}
 
 Para todas las funciones aritméticas, el tipo de resultado se calcula como el tipo de número más pequeño en el que encaja el resultado, si existe dicho tipo. El mínimo se toma simultáneamente en función del número de bits, si está firmado y si flota. Si no hay suficientes bits, se toma el tipo de bit más alto.

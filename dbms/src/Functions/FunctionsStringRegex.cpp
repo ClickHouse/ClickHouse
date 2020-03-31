@@ -1,5 +1,7 @@
 #include "FunctionsStringRegex.h"
 #include "FunctionsStringSearch.h"
+#include "FunctionsMultiStringSearch.h"
+#include "FunctionsStringSearchToString.h"
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
