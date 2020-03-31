@@ -44,11 +44,11 @@ Notes:
 
 You can run tests via `./runner` script and pass pytest arguments as last arg:
 ```
-$ ./runner --binary $HOME/ClickHouse/dbms/programs/clickhouse  --bridge-binary $HOME/ClickHouse/dbms/programs/clickhouse-odbc-bridge --configs-dir $HOME/ClickHouse/dbms/programs/server/ 'test_odbc_interaction -ss'
+$ ./runner --binary $HOME/ClickHouse/programs/clickhouse  --bridge-binary $HOME/ClickHouse/programs/clickhouse-odbc-bridge --configs-dir $HOME/ClickHouse/programs/server/ 'test_odbc_interaction -ss'
 Start tests
 ============================= test session starts ==============================
 platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
-rootdir: /ClickHouse/dbms/tests/integration, inifile: pytest.ini
+rootdir: /ClickHouse/tests/integration, inifile: pytest.ini
 collected 6 items
 
 test_odbc_interaction/test.py Removing network clickhouse_default
@@ -68,15 +68,15 @@ Removing network roottestodbcinteraction_default
 
 Path to binary and configs maybe specified via env variables:
 ```
-$ export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=$HOME/ClickHouse/dbms/programs/server/
-$ export CLICKHOUSE_TESTS_SERVER_BIN_PATH=$HOME/ClickHouse/dbms/programs/clickhouse
-$ export CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH=$HOME/ClickHouse/dbms/programs/clickhouse-odbc-bridge
+$ export CLICKHOUSE_TESTS_BASE_CONFIG_DIR=$HOME/ClickHouse/programs/server/
+$ export CLICKHOUSE_TESTS_SERVER_BIN_PATH=$HOME/ClickHouse/programs/clickhouse
+$ export CLICKHOUSE_TESTS_ODBC_BRIDGE_BIN_PATH=$HOME/ClickHouse/programs/clickhouse-odbc-bridge
 $ ./runner 'test_odbc_interaction'
 $ # or ./runner '-v -ss'
 Start tests
 ============================= test session starts ==============================
 platform linux2 -- Python 2.7.15rc1, pytest-4.0.0, py-1.7.0, pluggy-0.8.0
-rootdir: /ClickHouse/dbms/tests/integration, inifile: pytest.ini
+rootdir: /ClickHouse/tests/integration, inifile: pytest.ini
 collected 6 items
 
 test_odbc_interaction/test.py ......                                     [100%]
@@ -94,7 +94,7 @@ cd docker/test/integration
 docker build -t yandex/clickhouse-integration-test .
 ```
 
-The helper container used by the `runner` script is in `dbms/tests/integration/image/Dockerfile`.
+The helper container used by the `runner` script is in `tests/integration/image/Dockerfile`.
 
 ### Adding new tests
 

@@ -16,7 +16,7 @@ ninja
 ## Copy binary to your server
 
 ```
-scp ./dbms/programs/clickhouse yourserver:~/clickhouse-asan
+scp ./programs/clickhouse yourserver:~/clickhouse-asan
 ```
 
 ## Start ClickHouse and run tests
