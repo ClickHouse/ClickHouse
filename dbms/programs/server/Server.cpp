@@ -556,20 +556,25 @@ int Server::main(const std::vector<std::string> & /*args*/)
     try
     {
         loadMetadataSystem(*global_context);
-        /// After attaching system databases we can initialize system log.
-        global_context->initializeSystemLogs();
 
-        try
+        if (!config().getBool("system_tables_lazy_load", true))
         {
-            if (!config().getBool("system_tables_lazy_load", true))
+            try
             {
+                /// If the flag system_tables_lazy_load is false, after attaching system databases
+                ///  we can try to initialize system logs non-lazily.
                 global_context->createSystemLogs();
             }
+            catch (...)
+            {
+                LOG_ERROR(log, "Caught exception while loading system tables.");
+                throw;
+            }
         }
-        catch (...)
+        else
         {
-            LOG_ERROR(log, "Caught exception while loading system tables.");
-            throw;
+            /// After attaching system databases we can initialize system log.
+            global_context->initializeSystemLogs();
         }
 
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)

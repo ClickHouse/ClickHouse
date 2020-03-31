@@ -100,4 +100,20 @@ void SystemLogs::shutdown()
     }
 }
 
+void SystemLogs::initializeSystemLogs(int which)
+{
+    if (which & SystemLogType::QUERY_LOG)
+        query_log->prepareTable();
+    if (which & SystemLogType::QUERY_THREAD_LOG)
+        query_thread_log->prepareTable();
+    if (which & SystemLogType::PART_LOG)
+        part_log->prepareTable();
+    if (which & SystemLogType::TRACE_LOG)
+        trace_log->prepareTable();
+    if (which & SystemLogType::TEXT_LOG)
+        text_log->prepareTable();
+    if (which & SystemLogType::METRIC_LOG)
+        metric_log->prepareTable();
+}
+
 }

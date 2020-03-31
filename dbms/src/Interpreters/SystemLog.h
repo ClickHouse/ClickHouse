@@ -67,6 +67,17 @@ class TextLog;
 class TraceLog;
 class MetricLog;
 
+enum SystemLogType
+{
+    UNDEFINED = 0,
+    QUERY_LOG = 0b1,
+    QUERY_THREAD_LOG = 0b10,
+    PART_LOG = 0b100,
+    TRACE_LOG = 0b1000,
+    TEXT_LOG = 0b10000,
+    METRIC_LOG = 0b100000
+};
+
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
 struct SystemLogs
@@ -75,6 +86,8 @@ struct SystemLogs
     ~SystemLogs();
 
     void shutdown();
+
+    void initializeSystemLogs(int which);
 
     std::shared_ptr<QueryLog> query_log;                /// Used to log queries.
     std::shared_ptr<QueryThreadLog> query_thread_log;   /// Used to log query threads.

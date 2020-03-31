@@ -16,9 +16,9 @@ def start_cluster():
         cluster.shutdown()
 
 def test_system_tables_non_lazy_load(start_cluster):
-    assert node1.query_and_get_error("SELECT * FROM system.part_log") != ""
-    assert node1.query_and_get_error("SELECT * FROM system.query_log") != ""
-    assert node1.query_and_get_error("SELECT * FROM system.query_thread_log") != ""
-    assert node1.query_and_get_error("SELECT * FROM system.text_log") != ""
-    assert node1.query_and_get_error("SELECT * FROM system.trace_log") != ""
-    assert node1.query_and_get_error("SELECT * FROM system.metric_log") != ""
+    assert node1.query_and_get_error("SELECT * FROM system.part_log") == ""
+    assert node1.query_and_get_error("SELECT * FROM system.query_log") == ""
+    assert node1.query_and_get_error("SELECT * FROM system.query_thread_log") == ""
+    assert node1.query_and_get_error("SELECT * FROM system.text_log") == ""
+    assert node1.query_and_get_error("SELECT * FROM system.trace_log") == ""
+    assert node1.query_and_get_error("SELECT * FROM system.metric_log") == ""

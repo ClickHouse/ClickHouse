@@ -1858,12 +1858,30 @@ void Context::initializeSystemLogs()
 void Context::createSystemLogs()
 {
     auto lock = getLock();
+<<<<<<< HEAD
     shared->system_logs->query_log->prepareTable();
     shared->system_logs->query_thread_log->prepareTable();
     shared->system_logs->part_log->prepareTable();
     shared->system_logs->trace_log->prepareTable();
     shared->system_logs->text_log->prepareTable();
     shared->system_logs->metric_log->prepareTable();
+=======
+    shared->system_logs.emplace(*global_context, getConfigRef());
+    int type = SystemLogType::UNDEFINED;
+    if (shared->system_logs->query_log)
+        type |= SystemLogType::QUERY_LOG;
+    if (shared->system_logs->query_thread_log)
+        type |= SystemLogType::QUERY_THREAD_LOG;
+    if (shared->system_logs->part_log)
+        type |= SystemLogType::PART_LOG;
+    if (shared->system_logs->trace_log)
+        type |= SystemLogType::TRACE_LOG;
+    if (shared->system_logs->text_log)
+        type |= SystemLogType::TEXT_LOG;
+    if (shared->system_logs->metric_log)
+        type |= SystemLogType::METRIC_LOG;
+    shared->system_logs->initializeSystemLogs(type);
+>>>>>>> 9ec7795b86... fix PR comments issues
 }
 
 void Context::initializeTraceCollector()
