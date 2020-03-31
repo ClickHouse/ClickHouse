@@ -45,7 +45,7 @@ def get_free_port():
 
 def run_function_in_parallel(func, args_list, threads=False):
     for task in args_list:
-        func(*args_list)
+        func(*task)
 # TODO: back to parallel
 #     processes = []
 #     exit_code = 0
