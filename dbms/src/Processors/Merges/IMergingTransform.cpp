@@ -177,7 +177,10 @@ IProcessor::Status IMergingTransform::prepare()
 
     /// Push if has data.
     if (has_output_chunk && !is_port_full)
+    {
         output.push(std::move(output_chunk));
+        has_output_chunk = false;
+    }
 
     if (!is_initialized)
         return prepareInitializeInputs();
