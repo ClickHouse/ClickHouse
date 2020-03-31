@@ -11,7 +11,7 @@
 #include <Common/ArenaAllocator.h>
 #include <Common/assert_cast.h>
 
-#include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionNull.h>
 
 namespace DB
 {
@@ -186,6 +186,14 @@ private:
             {
                 return event_idx + 1;
             }
+            else if (strict_order && first_event && events_timestamp[event_idx - 1] == -1)
+            {
+                for (size_t event = 0; event < events_timestamp.size(); ++event)
+                {
+                    if (events_timestamp[event] == -1)
+                        return event;
+                }
+            }
             else if (events_timestamp[event_idx - 1] >= 0 && timestamp <= events_timestamp[event_idx - 1] + window)
             {
                 events_timestamp[event_idx] = events_timestamp[event_idx - 1];
@@ -230,6 +238,11 @@ public:
     DataTypePtr getReturnType() const override
     {
         return std::make_shared<DataTypeUInt8>();
+    }
+
+    AggregateFunctionPtr getOwnNullAdapter(const AggregateFunctionPtr & nested_function, const DataTypes & arguments, const Array & params) const override
+    {
+        return std::make_shared<AggregateFunctionNullVariadic<false, false>>(nested_function, arguments, params);
     }
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
