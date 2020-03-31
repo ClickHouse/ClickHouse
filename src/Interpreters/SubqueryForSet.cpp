@@ -52,7 +52,11 @@ bool SubqueryForSet::insertJoinedBlock(Block & block)
 void SubqueryForSet::setTotals()
 {
     if (join && source)
-        join->setTotals(source->getTotals());
+    {
+        Block totals = source->getTotals();
+        renameColumns(totals);
+        join->setTotals(totals);
+    }
 }
 
 }
