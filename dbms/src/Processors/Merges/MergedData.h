@@ -13,12 +13,9 @@ namespace ErrorCodes
 class MergedData
 {
 public:
-    explicit MergedData(const Block & header, bool use_average_block_size_, UInt64 max_block_size_)
-            : max_block_size(max_block_size_), use_average_block_size(use_average_block_size_)
+    explicit MergedData(MutableColumns columns_, bool use_average_block_size_, UInt64 max_block_size_)
+        : columns(std::move(columns_)), max_block_size(max_block_size_), use_average_block_size(use_average_block_size_)
     {
-        columns.reserve(header.columns());
-        for (const auto & column : header)
-            columns.emplace_back(column.type->createColumn());
     }
 
     /// Pull will be called at next prepare call.

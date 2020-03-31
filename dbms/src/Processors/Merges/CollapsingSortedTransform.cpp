@@ -25,7 +25,7 @@ CollapsingSortedTransform::CollapsingSortedTransform(
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
     : IMergingTransform(num_inputs, header, header, true)
-    , merged_data(header, use_average_block_sizes, max_block_size)
+    , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , sign_column_number(header.getPositionByName(sign_column))
     , out_row_sources_buf(out_row_sources_buf_)
