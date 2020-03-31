@@ -38,6 +38,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_PARSE_TEXT;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
+    extern const int LOGICAL_ERROR;
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, bool is_virtual_)

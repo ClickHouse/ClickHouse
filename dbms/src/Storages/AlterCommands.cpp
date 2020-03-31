@@ -39,6 +39,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -778,6 +779,12 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         }
         else if (command.type == AlterCommand::RENAME_COLUMN)
         {
+            /// TODO Implement nested rename
+            if (metadata.columns.hasNested(command.column_name))
+            {
+                throw Exception{"Cannot rename whole Nested struct", ErrorCodes::NOT_IMPLEMENTED};
+            }
+
             if (!metadata.columns.has(command.column_name))
             {
                 if (!command.if_exists)
@@ -797,7 +804,24 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
                 throw Exception{"Rename loop detected in ALTER query",
                                 ErrorCodes::BAD_ARGUMENTS};
 
-            renames_map[command.column_name] = command.rename_to;
+            String from_nested_table_name = Nested::extractTableName(command.column_name);
+            String to_nested_table_name = Nested::extractTableName(command.rename_to);
+            bool from_nested = from_nested_table_name != command.column_name;
+            bool to_nested = to_nested_table_name != command.rename_to;
+
+            if (from_nested && to_nested)
+            {
+                if (from_nested_table_name != to_nested_table_name)
+                    throw Exception{"Cannot rename column from one nested name to another", ErrorCodes::BAD_ARGUMENTS};
+            }
+            else if (!from_nested && !to_nested)
+            {
+                renames_map[command.column_name] = command.rename_to;
+            }
+            else
+            {
+                throw Exception{"Cannot rename column from nested struct to normal column and vice versa", ErrorCodes::BAD_ARGUMENTS};
+            }
         }
 
         /// Collect default expressions for MODIFY and ADD comands
