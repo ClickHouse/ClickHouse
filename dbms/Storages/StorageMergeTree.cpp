@@ -151,6 +151,11 @@ std::optional<UInt64> StorageMergeTree::totalRows() const
     return getTotalActiveSizeInRows();
 }
 
+std::optional<UInt64> StorageMergeTree::totalBytes() const
+{
+    return getTotalActiveSizeInBytes();
+}
+
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & context)
 {
     return std::make_shared<MergeTreeBlockOutputStream>(*this, context.getSettingsRef().max_partitions_per_insert_block);

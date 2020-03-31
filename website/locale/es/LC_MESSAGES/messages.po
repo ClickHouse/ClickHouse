@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-03-28 10:54+0300\n"
+"POT-Creation-Date: 2020-03-30 15:12+0300\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: es\n"
@@ -19,7 +19,7 @@ msgstr ""
 "Generated-By: Babel 2.8.0\n"
 
 #: templates/common_meta.html:5 templates/common_meta.html:9
-#: templates/common_meta.html:17
+#: templates/common_meta.html:16
 msgid "ClickHouse DBMS"
 msgstr "Sistema abierto."
 
@@ -33,7 +33,7 @@ msgstr ""
 "columnas de código abierto que permite generar informes de datos "
 "analíticos en tiempo real utilizando consultas SQL."
 
-#: templates/common_meta.html:20
+#: templates/common_meta.html:19
 msgid ""
 "ClickHouse is an open source distributed column-oriented database "
 "management system that allows generating analytical data reports in real "
@@ -61,11 +61,11 @@ msgstr ""
 msgid "Yandex LLC"
 msgstr "Sistema abierto."
 
-#: templates/docs/content.html:5
+#: templates/docs/content.html:6
 msgid "Help wanted!"
 msgstr "Ayuda quería!"
 
-#: templates/docs/content.html:6
+#: templates/docs/content.html:7
 msgid ""
 "The following content of this documentation page has been machine-"
 "translated. But unlike other websites, it is not done on the fly. This "
@@ -79,7 +79,7 @@ msgstr ""
 "la base de código principal de ClickHouse y espera a que otros hablantes "
 "nativos lo hagan más legible por humanos."
 
-#: templates/docs/content.html:9
+#: templates/docs/content.html:10
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "Ayuda a la documentación de ClickHouse editando esta página"
 

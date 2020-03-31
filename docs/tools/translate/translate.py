@@ -46,15 +46,17 @@ def translate(text, target_language=None):
         return translator.translate(text, target_language).text
 
 
-def translate_toc(root):
+def translate_toc(root, lang):
+    global is_yandex
+    is_yandex = True
     if isinstance(root, dict):
         result = []
         for key, value in root.items():
-            key = translate(key) if key != 'hidden' and not key.isupper() else key
-            result.append((key, translate_toc(value),))
+            key = translate(key, lang) if key != 'hidden' and not key.isupper() else key
+            result.append((key, translate_toc(value, lang),))
         return dict(result)
     elif isinstance(root, list):
-        return [translate_toc(item) for item in root]
+        return [translate_toc(item, lang) for item in root]
     elif isinstance(root, str):
         return root
 
@@ -62,7 +64,7 @@ def translate_toc(root):
 def translate_po():
     import babel.messages.pofile
     base_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'website', 'locale')
-    for lang in ['en', 'zh', 'es', 'ru', 'ja', 'fa']:
+    for lang in ['en', 'zh', 'es', 'fr', 'ru', 'ja', 'fa']:
         po_path = os.path.join(base_dir, lang, 'LC_MESSAGES', 'messages.po')
         with open(po_path, 'r') as f:
             po_file = babel.messages.pofile.read_po(f, locale=lang, domain='messages')
@@ -80,6 +82,5 @@ if __name__ == '__main__':
     if target_language == 'po':
         translate_po()
     else:
-        is_yandex = True
-        result = translate_toc(yaml.full_load(sys.stdin.read())['nav'])
+        result = translate_toc(yaml.full_load(sys.stdin.read())['nav'], sys.argv[1])
         print(yaml.dump({'nav': result}))
