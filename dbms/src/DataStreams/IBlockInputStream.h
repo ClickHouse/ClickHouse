@@ -180,7 +180,7 @@ public:
     bool isCancelledOrThrowIfKilled() const;
 
     /** What limitations and quotas should be checked.
-      * LIMITS_CURRENT - checks amount of data read by current stream only (BlockStreamProfileInfo is used for check).
+      * LIMITS_CURRENT - checks amount of data returned by current stream only (BlockStreamProfileInfo is used for check).
       *  Currently it is used in root streams to check max_result_{rows,bytes} limits.
       * LIMITS_TOTAL - checks total amount of read data from leaf streams (i.e. data read from disk and remote servers).
       *  It is checks max_{rows,bytes}_to_read in progress handler and use info from ProcessListElement::progress_in for this.
@@ -218,9 +218,9 @@ public:
     /** Set the quota. If you set a quota on the amount of raw data,
       * then you should also set mode = LIMITS_TOTAL to LocalLimits with setLimits.
       */
-    virtual void setQuota(const std::shared_ptr<const EnabledQuota> & quota_)
+    virtual void setQuota(const std::shared_ptr<const EnabledQuota> & new_quota)
     {
-        quota = quota_;
+        quota = new_quota;
     }
 
     /// Enable calculation of minimums and maximums by the result columns.
