@@ -95,16 +95,17 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
     else
         select_query.replaceDatabaseAndTable(database, table);
 
-    /// Restore long column names (cause our short names are ambiguous)
-    RestoreQualifiedNamesVisitor::Data data;
+    /// Restore long column names (cause our short names are ambiguous).
+    /// TODO: aliased table functions & CREATE TABLE AS table function cases
     if (!table_function_ptr)
     {
+        RestoreQualifiedNamesVisitor::Data data;
         data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
         data.remote_table.database = database;
         data.remote_table.table = table;
         data.rename = true;
+        RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
     }
-    RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
 
     return modified_query_ast;
 }

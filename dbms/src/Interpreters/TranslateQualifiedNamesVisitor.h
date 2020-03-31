@@ -69,7 +69,7 @@ struct RestoreQualifiedNamesMatcher
         DatabaseAndTableWithAlias remote_table;
         bool rename = false;
 
-        void changeTableIfNeeded(ASTIdentifier & identifier) const;
+        void changeTable(ASTIdentifier & identifier) const;
     };
 
     static bool needChildVisit(ASTPtr & node, const ASTPtr & child);

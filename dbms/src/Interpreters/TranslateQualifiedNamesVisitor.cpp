@@ -301,11 +301,8 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, D
 }
 
 
-void RestoreQualifiedNamesMatcher::Data::changeTableIfNeeded(ASTIdentifier & identifier) const
+void RestoreQualifiedNamesMatcher::Data::changeTable(ASTIdentifier & identifier) const
 {
-    if (!rename)
-        return;
-
     auto match = IdentifierSemantic::canReferColumnToTable(identifier, distributed_table);
     switch (match)
     {
@@ -340,7 +337,8 @@ void RestoreQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, D
         if (IdentifierSemantic::getMembership(identifier))
         {
             identifier.restoreCompoundName();
-            data.changeTableIfNeeded(identifier);
+            if (data.rename)
+                data.changeTable(identifier);
         }
     }
 }
