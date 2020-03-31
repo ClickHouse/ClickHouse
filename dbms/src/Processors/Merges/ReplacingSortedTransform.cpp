@@ -15,7 +15,8 @@ ReplacingSortedTransform::ReplacingSortedTransform(
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : IMergingTransform(num_inputs, header, header, max_block_size, use_average_block_sizes, true)
+    : IMergingTransform(num_inputs, header, header, true)
+    , merged_data(header, use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , out_row_sources_buf(out_row_sources_buf_)
     , chunk_allocator(num_inputs + max_row_refs)
@@ -86,6 +87,7 @@ void ReplacingSortedTransform::insertRow()
 void ReplacingSortedTransform::work()
 {
     merge();
+    prepareOutputChunk(merged_data);
 }
 
 void ReplacingSortedTransform::merge()
@@ -148,7 +150,7 @@ void ReplacingSortedTransform::merge()
     if (!selected_row.empty())
         insertRow();
 
-    finish();
+    is_finished = true;
 }
 
 }

@@ -23,7 +23,8 @@ MergingSortedTransform::MergingSortedTransform(
     bool quiet_,
     bool use_average_block_sizes,
     bool have_all_inputs_)
-    : IMergingTransform(num_inputs, header, header, max_block_size, use_average_block_sizes, have_all_inputs_)
+    : IMergingTransform(num_inputs, header, header, have_all_inputs_)
+    , merged_data(header, use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , limit(limit_)
     , quiet(quiet_)
@@ -103,6 +104,8 @@ void MergingSortedTransform::work()
         merge(queue_with_collation);
     else
         merge(queue_without_collation);
+
+    prepareOutputChunk(merged_data);
 }
 
 template <typename TSortingHeap>
@@ -114,7 +117,7 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
         if (limit && merged_data.totalMergedRows() >= limit)
         {
             //std::cerr << "Limit reached\n";
-            finish();
+            is_finished = true;
             return false;
         }
 
@@ -179,13 +182,13 @@ void MergingSortedTransform::merge(TSortingHeap & queue)
             requestDataForInput(current.impl->order);
 
             if (limit && merged_data.totalMergedRows() >= limit)
-                finish();
+                is_finished = true;
 
             return;
         }
     }
 
-    finish();
+    is_finished = true;
 }
 
 void MergingSortedTransform::insertFromChunk(size_t source_num)
@@ -202,7 +205,7 @@ void MergingSortedTransform::insertFromChunk(size_t source_num)
     {
         num_rows = total_merged_rows_after_insertion - limit;
         merged_data.insertFromChunk(std::move(source_chunks[source_num]), num_rows);
-        finish();
+        is_finished = true;
     }
     else
     {

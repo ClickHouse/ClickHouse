@@ -2,6 +2,7 @@
 
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/RowRef.h>
+#include <Processors/Merges/MergedData.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 #include <DataStreams/ColumnGathererStream.h>
@@ -44,6 +45,8 @@ protected:
 
 private:
     Logger * log = &Logger::get("CollapsingSortedTransform");
+
+    MergedData merged_data;
 
     /// Settings
     SortDescription description;

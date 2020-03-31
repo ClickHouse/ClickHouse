@@ -24,7 +24,8 @@ CollapsingSortedTransform::CollapsingSortedTransform(
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : IMergingTransform(num_inputs, header, header, max_block_size, use_average_block_sizes, true)
+    : IMergingTransform(num_inputs, header, header, true)
+    , merged_data(header, use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , sign_column_number(header.getPositionByName(sign_column))
     , out_row_sources_buf(out_row_sources_buf_)
@@ -150,6 +151,7 @@ void CollapsingSortedTransform::insertRows()
 void CollapsingSortedTransform::work()
 {
     merge();
+    prepareOutputChunk(merged_data);
 }
 
 void CollapsingSortedTransform::merge()
@@ -229,7 +231,7 @@ void CollapsingSortedTransform::merge()
     }
 
     insertRows();
-    finish();
+    is_finished = true;
 }
 
 }
