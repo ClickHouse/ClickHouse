@@ -24,7 +24,7 @@ MergingSortedTransform::MergingSortedTransform(
     bool use_average_block_sizes,
     bool have_all_inputs_)
     : IMergingTransform(num_inputs, header, header, have_all_inputs_)
-    , merged_data(header, use_average_block_sizes, max_block_size)
+    , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , limit(limit_)
     , quiet(quiet_)

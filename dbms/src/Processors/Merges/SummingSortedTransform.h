@@ -8,6 +8,7 @@
 #include <Common/AlignedBuffer.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
+#include <Core/Row.h>
 
 namespace DB
 {
@@ -20,7 +21,7 @@ public:
 
     SummingSortedTransform(
         size_t num_inputs, const Block & header,
-        SortDescription description,
+        SortDescription description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum,
         size_t max_block_size);
@@ -80,7 +81,7 @@ public:
     struct SummingMergedData : public MergedData
     {
     public:
-
+        using MergedData::MergedData;
     };
 
     /// Stores numbers of key-columns and value-columns.
@@ -90,12 +91,51 @@ public:
         std::vector<size_t> val_col_nums;
     };
 
-private:
-    /// Columns with which values should be summed.
-    ColumnNumbers column_numbers_not_to_aggregate;
+    struct ColumnsDefinition
+    {
+        /// Columns with which values should be summed.
+        ColumnNumbers column_numbers_not_to_aggregate;
+        /// Columns which should be aggregated.
+        std::vector<AggregateDescription> columns_to_aggregate;
+        /// Mapping for nested columns.
+        std::vector<MapDescription> maps_to_sum;
 
-    std::vector<AggregateDescription> columns_to_aggregate;
-    std::vector<MapDescription> maps_to_sum;
+        size_t getNumColumns() const { return column_numbers_not_to_aggregate.size() + columns_to_aggregate.size(); }
+    };
+
+private:
+    Row current_row;
+    bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
+
+    ColumnsDefinition columns_definition;
+    SummingMergedData merged_data;
+
+    SortDescription description;
+
+    /// Chunks currently being merged.
+    std::vector<Chunk> source_chunks;
+    SortCursorImpls cursors;
+
+    /// In merging algorithm, we need to compare current sort key with the last one.
+    /// So, sorting columns for last row needed to be stored.
+    /// In order to do it, we extend lifetime of last chunk and it's sort columns (from corresponding sort cursor).
+    Chunk last_chunk;
+    ColumnRawPtrs last_chunk_sort_columns; /// Point to last_chunk if valid.
+
+    struct RowRef
+    {
+        ColumnRawPtrs * sort_columns = nullptr; /// Point to sort_columns from SortCursor or last_chunk_sort_columns.
+        UInt64 row_number = 0;
+    };
+
+    RowRef last_row;
+
+    SortingHeap<SortCursor> queue;
+    bool is_queue_initialized = false;
+
+    void insertRow();
+    void merge();
+    void updateCursor(Chunk chunk, size_t source_num);
 };
 
 }

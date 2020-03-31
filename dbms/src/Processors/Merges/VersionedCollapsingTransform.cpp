@@ -14,7 +14,7 @@ VersionedCollapsingTransform::VersionedCollapsingTransform(
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
     : IMergingTransform(num_inputs, header, header, true)
-    , merged_data(header, use_average_block_sizes, max_block_size)
+    , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , out_row_sources_buf(out_row_sources_buf_)
     , max_rows_in_queue(MAX_ROWS_IN_MULTIVERSION_QUEUE - 1)  /// -1 for +1 in FixedSizeDequeWithGaps's internal buffer
