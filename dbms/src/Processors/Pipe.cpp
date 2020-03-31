@@ -63,6 +63,7 @@ Pipe::Pipe(ProcessorPtr source)
         totals = &source->getOutputs().back();
 
     processors.emplace_back(std::move(source));
+    max_parallel_streams = 1;
 }
 
 Pipe::Pipe(Processors processors_, OutputPort * output_port_, OutputPort * totals_)
@@ -82,6 +83,7 @@ Pipe::Pipe(Pipes && pipes, ProcessorPtr transform)
         connect(*pipe.output_port, *it);
         ++it;
 
+        max_parallel_streams += pipe.max_parallel_streams;
         processors.insert(processors.end(), pipe.processors.begin(), pipe.processors.end());
     }
 
