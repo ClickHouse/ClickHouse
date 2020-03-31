@@ -421,6 +421,18 @@ void DDLWorker::processTasks()
             {
                 processTask(task, zookeeper);
             }
+            catch (const Coordination::Exception & e)
+            {
+                if (server_startup && e.code == Coordination::ZNONODE)
+                {
+                    LOG_WARNING(log, "ZooKeeper NONODE error during startup. Ignoring entry " <<
+                                task.entry_name << " (" << task.entry.query << ") : " << getCurrentExceptionMessage(true));
+                }
+                else
+                {
+                     throw;
+                }
+            }
             catch (...)
             {
                 LOG_WARNING(log, "An error occurred while processing task " << task.entry_name << " (" << task.entry.query << ") : "

@@ -25,7 +25,7 @@ void InflatingExpressionTransform::transform(Chunk & chunk)
     {
         initialized = true;
 
-        if (expression->resultIsAlwaysEmpty())
+        if (expression->resultIsAlwaysEmpty() && !on_totals)
         {
             stopReading();
             chunk.clear();
