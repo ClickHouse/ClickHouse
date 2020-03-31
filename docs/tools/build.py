@@ -6,12 +6,12 @@ import argparse
 import datetime
 import http.server
 import logging
+import multiprocessing
 import os
 import shutil
 import socketserver
 import subprocess
 import sys
-import threading
 import time
 
 import jinja2
@@ -245,7 +245,7 @@ def build_single_page_version(lang, args, cfg):
                             ('', port_for_pdf), http.server.SimpleHTTPRequestHandler
                         )
                         logging.info(f"Serving for {lang} pdf at port {port_for_pdf}")
-                        thread = threading.Thread(target=httpd.serve_forever)
+                        process = multiprocessing.Process(target=httpd.serve_forever)
                         with util.cd(test_dir):
                             thread.start()
                             create_pdf_command = [
@@ -260,9 +260,9 @@ def build_single_page_version(lang, args, cfg):
                                 logging.info(' '.join(create_pdf_command))
                                 subprocess.check_call(' '.join(create_pdf_command), shell=True)
                             finally:
-                                httpd.shutdown()
-                                thread.join(timeout=5.0)
                                 logging.info(f"Stop serving for {lang} pdf at port {port_for_pdf}")
+                                process.terminate()
+
 
                     if not args.version_prefix:  # maybe enable in future
                         logging.info(f'Running tests for {lang}')
