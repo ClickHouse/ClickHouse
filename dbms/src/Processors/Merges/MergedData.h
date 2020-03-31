@@ -104,7 +104,7 @@ public:
     UInt64 totalChunks() const { return total_chunks; }
     UInt64 totalAllocatedBytes() const { return total_allocated_bytes; }
 
-private:
+protected:
     MutableColumns columns;
 
     UInt64 sum_blocks_granularity = 0;
