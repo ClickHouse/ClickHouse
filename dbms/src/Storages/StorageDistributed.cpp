@@ -88,15 +88,11 @@ ASTPtr rewriteSelectQuery(const ASTPtr & query, const std::string & database, co
 {
     auto modified_query_ast = query->clone();
 
+    /// Restore long column names (cause our short names are ambiguous)
+    RestoreQualifiedNamesVisitor::Data data;
+    RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
+
     ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
-
-    /// restore long column names in JOIN ON expressions
-    if (auto tables = select_query.tables())
-    {
-        RestoreQualifiedNamesVisitor::Data data;
-        RestoreQualifiedNamesVisitor(data).visit(tables);
-    }
-
     if (table_function_ptr)
         select_query.addTableFunction(table_function_ptr);
     else
