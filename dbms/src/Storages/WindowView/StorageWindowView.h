@@ -55,7 +55,6 @@ public:
 private:
     ASTPtr inner_query;
     ASTPtr final_query;
-    ASTPtr fetch_column_query;
 
     Context & global_context;
     bool is_proctime{true};
@@ -127,6 +126,7 @@ private:
 
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getFinalQuery() const { return final_query->clone(); }
+    ASTPtr getFetchColumnQuery(UInt32 watermark) const;
 
     StoragePtr getParentStorage() const;
 
