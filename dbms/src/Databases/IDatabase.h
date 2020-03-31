@@ -216,7 +216,8 @@ public:
         const Context & /*context*/,
         const String & /*name*/,
         IDatabase & /*to_database*/,
-        const String & /*to_name*/)
+        const String & /*to_name*/,
+        bool /*exchange*/)
     {
         throw Exception(getEngineName() + ": renameTable() is not supported", ErrorCodes::NOT_IMPLEMENTED);
     }
