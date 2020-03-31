@@ -125,8 +125,7 @@ def minify_website(args):
             '--compilation_level', 'SIMPLE',
             '--dependency_mode', 'NONE',
             '--third_party', '--use_types_for_optimization',
-            '--isolation_mode', 'IIFE',
-            '--create_source_map', '%outname%.map'
+            '--isolation_mode', 'IIFE'
         ]
         logging.info(closure_args)
         if closure.run(*closure_args):
