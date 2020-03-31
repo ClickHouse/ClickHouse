@@ -247,7 +247,7 @@ def build_single_page_version(lang, args, cfg):
                         logging.info(f"Serving for {lang} pdf at port {port_for_pdf}")
                         process = multiprocessing.Process(target=httpd.serve_forever)
                         with util.cd(test_dir):
-                            thread.start()
+                            process.start()
                             create_pdf_command = [
                                 'wkhtmltopdf',
                                 '--print-media-type',
