@@ -249,7 +249,8 @@ def build_single_page_version(lang, args, cfg):
                             create_pdf_command = [
                                 'wkhtmltopdf',
                                 '--print-media-type',
-                                # TODO: restore '--log-level', 'w',
+                                '--use-xserver', '--javascript-delay', '3000',
+                                # TODO: restore '--log-level', 'warn',
                                 f'http://localhost:{port_for_pdf}/single/', single_page_pdf
                             ]
                             try:
