@@ -63,6 +63,7 @@ StoragePtr DatabaseAtomic::detachTable(const String & name)
     auto table = DatabaseWithDictionaries::detachTableUnlocked(name);
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
+    cleenupDetachedTables();
     return table;
 }
 
@@ -83,54 +84,90 @@ void DatabaseAtomic::dropTable(const Context &, const String & table_name, bool 
 }
 
 void DatabaseAtomic::renameTable(const Context & context, const String & table_name, IDatabase & to_database,
-                                 const String & to_table_name)
+                                 const String & to_table_name, bool exchange)
 {
     if (typeid(*this) != typeid(to_database))
     {
         if (!typeid_cast<DatabaseOrdinary *>(&to_database))
             throw Exception("Moving tables between databases of different engines is not supported", ErrorCodes::NOT_IMPLEMENTED);
-        /// Allow moving tables from Atomic to Ordinary (with table lock)
-        DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name);
+        /// Allow moving tables between Atomic and Ordinary (with table lock)
+        DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, exchange);
         return;
     }
+    auto & other_db = dynamic_cast<DatabaseAtomic &>(to_database);
 
     StoragePtr table = tryGetTable(context, table_name);
+    StoragePtr other_table;
+    if (exchange)
+        other_table = other_db.tryGetTable(context, to_table_name);
 
     if (!table)
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
+    if (exchange && !other_table)
+        throw Exception("Table " + backQuote(other_db.getDatabaseName()) + "." + backQuote(to_table_name) + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
 
-    if (this == &to_database)
+    auto detach = [](DatabaseAtomic & db, const String & table_name_)
     {
-        std::lock_guard lock(mutex);
-        renameNoReplace(old_metadata_path, new_metadata_path);
-        auto table_data_path = table_name_to_path.find(table_name)->second;
-        tables.erase(table_name);
-        table_name_to_path.erase(table_name);
-        table->renameInMemory(to_database.getDatabaseName(), to_table_name);
-        tables.emplace(to_table_name, table);
-        table_name_to_path.emplace(to_table_name, table_data_path);
+        auto table_data_path_ = db.table_name_to_path.find(table_name_)->second;
+        db.tables.erase(table_name_);
+        db.table_name_to_path.erase(table_name_);
+        return table_data_path_;
+    };
+
+    auto attach = [](DatabaseAtomic & db, const String & table_name_, const String & table_data_path_, const StoragePtr & table_)
+    {
+        db.tables.emplace(table_name_, table_);
+        db.table_name_to_path.emplace(table_name_, table_data_path_);
+    };
+
+    String table_data_path;
+    String other_table_data_path;
+
+    bool inside_database = this == &other_db;
+    if (inside_database && table_name == to_table_name)
+        return;
+
+    std::unique_lock<std::mutex> db_lock;
+    std::unique_lock<std::mutex> other_db_lock;
+    if (inside_database)
+        db_lock = std::unique_lock{mutex};
+    else  if (this < &other_db)
+    {
+        db_lock = std::unique_lock{mutex};
+        other_db_lock = std::unique_lock{other_db.mutex};
     }
     else
     {
-        String table_data_path;
-        {
-            std::lock_guard lock(mutex);
-            renameNoReplace(old_metadata_path, new_metadata_path);
-            table_data_path = table_name_to_path.find(table_name)->second;
-            tables.erase(table_name);
-            table_name_to_path.erase(table_name);
-            DatabaseCatalog::instance().updateUUIDMapping(table->getStorageID().uuid, to_database.shared_from_this(), table);
-        }
-        table->renameInMemory(to_database.getDatabaseName(), to_table_name);
-        auto & to_atomic_db = dynamic_cast<DatabaseAtomic &>(to_database);
-
-        std::lock_guard lock(to_atomic_db.mutex);
-        to_atomic_db.tables.emplace(to_table_name, table);
-        to_atomic_db.table_name_to_path.emplace(to_table_name, table_data_path);
+        other_db_lock = std::unique_lock{other_db.mutex};
+        db_lock = std::unique_lock{mutex};
     }
+
+    if (exchange)
+        renameExchange(old_metadata_path, new_metadata_path);
+    else
+        renameNoReplace(old_metadata_path, new_metadata_path);
+
+    table_data_path = detach(*this, table_name);
+    if (exchange)
+        other_table_data_path = detach(other_db, to_table_name);
+
+    table->renameInMemory(other_db.getDatabaseName(), to_table_name);
+    if (exchange)
+        other_table->renameInMemory(getDatabaseName(), table_name);
+
+    if (!inside_database)
+    {
+        DatabaseCatalog::instance().updateUUIDMapping(table->getStorageID().uuid, other_db.shared_from_this(), table);
+        if (exchange)
+            DatabaseCatalog::instance().updateUUIDMapping(other_table->getStorageID().uuid, shared_from_this(), other_table);
+    }
+
+    attach(other_db, to_table_name, table_data_path, table);
+    if (exchange)
+        attach(*this, table_name, other_table_data_path, other_table);
 }
 
 void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
@@ -140,7 +177,6 @@ void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore
 
 void DatabaseAtomic::shutdown()
 {
-
     DatabaseWithDictionaries::shutdown();
 }
 

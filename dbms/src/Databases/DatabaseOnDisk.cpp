@@ -242,8 +242,12 @@ void DatabaseOnDisk::renameTable(
         const Context & context,
         const String & table_name,
         IDatabase & to_database,
-        const String & to_table_name)
+        const String & to_table_name,
+        bool exchange)
 {
+    if (exchange)
+        throw Exception("Tables can be exchanged only in Atomic databases", ErrorCodes::NOT_IMPLEMENTED);
+
     bool from_ordinary_to_atomic = false;
     bool from_atomic_to_ordinary = false;
     if (typeid(*this) != typeid(to_database))

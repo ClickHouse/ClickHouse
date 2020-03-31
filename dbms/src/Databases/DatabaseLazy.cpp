@@ -79,10 +79,11 @@ void DatabaseLazy::renameTable(
     const Context & context,
     const String & table_name,
     IDatabase & to_database,
-    const String & to_table_name)
+    const String & to_table_name,
+    bool exchange)
 {
     SCOPE_EXIT({ clearExpiredTables(); });
-    DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name);
+    DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, exchange);
 }
 
 

@@ -92,13 +92,15 @@ BlockIO InterpreterRenameQuery::execute()
 
     for (auto & elem : descriptions)
     {
-        database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name));
+        if (!rename.exchange)
+            database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name));
 
         database_catalog.getDatabase(elem.from_database_name)->renameTable(
             context,
             elem.from_table_name,
             *database_catalog.getDatabase(elem.to_database_name),
-            elem.to_table_name);
+            elem.to_table_name,
+            rename.exchange);
     }
 
     return {};
