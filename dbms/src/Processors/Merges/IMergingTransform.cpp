@@ -1,4 +1,5 @@
 #include <Processors/Merges/IMergingTransform.h>
+#include <Processors/Merges/MergedData.h>
 
 namespace DB
 {
