@@ -45,7 +45,7 @@ static void check(int32_t code, const std::string & path)
 }
 
 
-void ZooKeeper::init(const std::string & implementation, const std::string & hosts_, const std::string & identity_,
+void ZooKeeper::init(const std::string & implementation_, const std::string & hosts_, const std::string & identity_,
                      int32_t session_timeout_ms_, int32_t operation_timeout_ms_, const std::string & chroot_)
 {
     log = &Logger::get("ZooKeeper");
@@ -54,6 +54,7 @@ void ZooKeeper::init(const std::string & implementation, const std::string & hos
     session_timeout_ms = session_timeout_ms_;
     operation_timeout_ms = operation_timeout_ms_;
     chroot = chroot_;
+    implementation = implementation_;
 
     if (implementation == "zookeeper")
     {
@@ -671,7 +672,7 @@ void ZooKeeper::waitForDisappear(const std::string & path)
 
 ZooKeeperPtr ZooKeeper::startNewSession() const
 {
-    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot);
+    return std::make_shared<ZooKeeper>(hosts, identity, session_timeout_ms, operation_timeout_ms, chroot, implementation);
 }
 
 
