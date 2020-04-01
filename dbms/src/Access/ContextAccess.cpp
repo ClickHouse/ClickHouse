@@ -542,14 +542,14 @@ std::shared_ptr<const ContextAccess> ContextAccess::getFullAccess()
 std::shared_ptr<const Settings> ContextAccess::getDefaultSettings() const
 {
     std::lock_guard lock{mutex};
-    return enabled_settings->getSettings();
+    return enabled_settings ? enabled_settings->getSettings() : nullptr;
 }
 
 
 std::shared_ptr<const SettingsConstraints> ContextAccess::getSettingsConstraints() const
 {
     std::lock_guard lock{mutex};
-    return enabled_settings->getConstraints();
+    return enabled_settings ? enabled_settings->getConstraints() : nullptr;
 }
 
 }
