@@ -364,7 +364,7 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
 void DictionaryStructure::getSettings(
             const Poco::Util::AbstractConfiguration & config,
             const std::string & config_prefix,
-            Settings & settings)
+            Settings & dict_settings)
 {
     Poco::Util::AbstractConfiguration::Keys config_elems;
     config.keys(config_prefix, config_elems);
@@ -379,7 +379,7 @@ void DictionaryStructure::getSettings(
             const auto prefix = config_prefix + '.' + config_elem;
             Poco::Util::AbstractConfiguration::Keys setting_keys;
             config.keys(prefix, setting_keys);
-            settings.loadSettingsFromConfig(prefix, config);
+            dict_settings.loadSettingsFromConfig(prefix, config);
             
         }
     }

@@ -124,7 +124,7 @@ private:
     void getSettings(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
-        Settings & settings);
+        Settings & dict_settings);
 };
 
 }
