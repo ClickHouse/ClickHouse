@@ -61,9 +61,8 @@ timeout $TIMEOUT bash -c restart_thread_1 2> /dev/null &
 timeout $TIMEOUT bash -c restart_thread_2 2> /dev/null &
 
 wait
+sleep 3
 
-$CLICKHOUSE_CLIENT -q "SYSTEM RESTART REPLICAS"
-sleep 2
 $CLICKHOUSE_CLIENT -q "SELECT sum(n), count(n) FROM merge(currentDatabase(), '^replica_01108_') GROUP BY position(_table, 'tmp')"
 
 
