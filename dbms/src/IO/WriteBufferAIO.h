@@ -24,7 +24,7 @@ namespace DB
 
 /** Class for asynchronous data writing.
   */
-class WriteBufferAIO : public WriteBufferFromFileBase
+class WriteBufferAIO final : public WriteBufferFromFileBase
 {
 public:
     WriteBufferAIO(const std::string & filename_, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, int flags_ = -1, mode_t mode_ = 0666,
@@ -34,15 +34,15 @@ public:
     WriteBufferAIO(const WriteBufferAIO &) = delete;
     WriteBufferAIO & operator=(const WriteBufferAIO &) = delete;
 
-    off_t getPositionInFile() override;
+    off_t getPositionInFile();
+    off_t seek(off_t off, int whence);
+    void truncate(off_t length);
     void sync() override;
     std::string getFileName() const override { return filename; }
-    int getFD() const override { return fd; }
+    int getFD() const { return fd; }
 
 private:
     void nextImpl() override;
-    off_t doSeek(off_t off, int whence) override;
-    void doTruncate(off_t length) override;
 
     /// If there's still data in the buffer, we'll write them.
     void flush();

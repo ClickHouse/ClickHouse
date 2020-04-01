@@ -18,7 +18,7 @@ from
                         select *, toUInt32(rowNumberInBlock() % 2) random_label -- randomly relabel measurements
                         from (
                               select query, time, number virtual_run 
-                              from table, numbers(1, 10000) -- duplicate input measurements into many virtual runs
+                              from table, numbers(1, 10000) nn -- duplicate input measurements into many virtual runs
                               order by query, virtual_run, rand() -- for each virtual run, randomly reorder measurements
                            ) virtual_runs
                      ) relabeled 

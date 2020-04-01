@@ -37,7 +37,7 @@ class Context;
   * When you destroy a Buffer table, all remaining data is flushed to the subordinate table.
   * The data in the buffer is not replicated, not logged to disk, not indexed. With a rough restart of the server, the data is lost.
   */
-class StorageBuffer : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
+class StorageBuffer final : public ext::shared_ptr_helper<StorageBuffer>, public IStorage
 {
 friend struct ext::shared_ptr_helper<StorageBuffer>;
 friend class BufferSource;
@@ -54,17 +54,15 @@ public:
 
     std::string getName() const override { return "Buffer"; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ASTPtr &) const override;
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         unsigned num_streams) override;
-
-    bool supportProcessorsPipeline() const override { return true; }
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
@@ -76,9 +74,9 @@ public:
     bool supportsSampling() const override { return true; }
     bool supportsPrewhere() const override
     {
-        if (no_destination)
+        if (!destination_id)
             return false;
-        auto dest = global_context.tryGetTable(destination_database, destination_table);
+        auto dest = DatabaseCatalog::instance().tryGetTable(destination_id);
         if (dest && dest.get() != this)
             return dest->supportsPrewhere();
         return false;
@@ -90,8 +88,11 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;
 
-     /// The structure of the subordinate table is not checked and does not change.
-     void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+    /// The structure of the subordinate table is not checked and does not change.
+    void alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder) override;
+
+    std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalBytes() const override;
 
     ~StorageBuffer() override;
 
@@ -102,7 +103,7 @@ private:
     {
         time_t first_write_time = 0;
         Block data;
-        std::mutex mutex;
+        mutable std::mutex mutex;
     };
 
     /// There are `num_shards` of independent buffers.
@@ -112,9 +113,7 @@ private:
     const Thresholds min_thresholds;
     const Thresholds max_thresholds;
 
-    const String destination_database;
-    const String destination_table;
-    bool no_destination;    /// If set, do not write data from the buffer, but simply empty the buffer.
+    StorageID destination_id;
     bool allow_materialized;
 
     Poco::Logger * log;
@@ -146,8 +145,7 @@ protected:
         size_t num_shards_,
         const Thresholds & min_thresholds_,
         const Thresholds & max_thresholds_,
-        const String & destination_database_,
-        const String & destination_table_,
+        const StorageID & destination_id,
         bool allow_materialized_);
 };
 

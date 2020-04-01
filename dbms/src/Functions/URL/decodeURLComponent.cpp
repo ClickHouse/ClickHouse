@@ -6,6 +6,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+}
 
 /// We assume that size of the dst buf isn't less than src_size.
 static size_t decodeURL(const char * src, size_t src_size, char * dst)
@@ -89,7 +93,7 @@ struct DecodeURLComponentImpl
         res_data.resize(res_offset);
     }
 
-    [[noreturn]] static void vector_fixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
+    [[noreturn]] static void vectorFixed(const ColumnString::Chars &, size_t, ColumnString::Chars &)
     {
         throw Exception("Column of type FixedString is not supported by URL functions", ErrorCodes::ILLEGAL_COLUMN);
     }

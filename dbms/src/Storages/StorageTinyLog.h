@@ -15,16 +15,16 @@ namespace DB
 /** Implements a table engine that is suitable for small chunks of the log.
   * It differs from StorageLog in the absence of mark files.
   */
-class StorageTinyLog : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
+class StorageTinyLog final : public ext::shared_ptr_helper<StorageTinyLog>, public IStorage
 {
-    friend class TinyLogBlockInputStream;
+    friend class TinyLogSource;
     friend class TinyLogBlockOutputStream;
     friend struct ext::shared_ptr_helper<StorageTinyLog>;
 
 public:
     String getName() const override { return "TinyLog"; }
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

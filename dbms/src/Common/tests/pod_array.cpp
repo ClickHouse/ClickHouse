@@ -12,7 +12,7 @@ do                                    \
         if ((res)) { (res) = false; }                \
     }                                \
 } \
-while (0)
+while (false)
 
 static void test1()
 {
@@ -168,11 +168,11 @@ static void test2()
         ASSERT_CHECK((arr[1] == 2), res);
         ASSERT_CHECK((arr[2] == 3), res);
 
-        ASSERT_CHECK((arr2.size() == 0), res);
+        ASSERT_CHECK((arr2.empty()), res);
 
         arr.swap(arr2);
 
-        ASSERT_CHECK((arr.size() == 0), res);
+        ASSERT_CHECK((arr.empty()), res);
 
         ASSERT_CHECK((arr2.size() == 3), res);
         ASSERT_CHECK((arr2[0] == 1), res);
@@ -200,11 +200,11 @@ static void test2()
         ASSERT_CHECK((arr[3] == 4), res);
         ASSERT_CHECK((arr[4] == 5), res);
 
-        ASSERT_CHECK((arr2.size() == 0), res);
+        ASSERT_CHECK((arr2.empty()), res);
 
         arr.swap(arr2);
 
-        ASSERT_CHECK((arr.size() == 0), res);
+        ASSERT_CHECK((arr.empty()), res);
 
         ASSERT_CHECK((arr2.size() == 5), res);
         ASSERT_CHECK((arr2[0] == 1), res);
@@ -409,7 +409,7 @@ static void test3()
 
         Array arr2{std::move(arr)};
 
-        ASSERT_CHECK((arr.size() == 0), res);
+        ASSERT_CHECK((arr.empty()), res); // NOLINT
 
         ASSERT_CHECK((arr2.size() == 3), res);
         ASSERT_CHECK((arr2[0] == 1), res);
@@ -428,7 +428,7 @@ static void test3()
 
         Array arr2{std::move(arr)};
 
-        ASSERT_CHECK((arr.size() == 0), res);
+        ASSERT_CHECK((arr.empty()), res); // NOLINT
 
         ASSERT_CHECK((arr2.size() == 5), res);
         ASSERT_CHECK((arr2[0] == 1), res);

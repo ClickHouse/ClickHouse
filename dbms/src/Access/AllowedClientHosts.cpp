@@ -15,14 +15,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int DNS_ERROR;
-    extern const int IP_ADDRESS_NOT_ALLOWED;
 }
 
 namespace
 {
     using IPAddress = Poco::Net::IPAddress;
     using IPSubnet = AllowedClientHosts::IPSubnet;
-    const IPSubnet ALL_ADDRESSES{IPAddress{IPAddress::IPv6}, IPAddress{IPAddress::IPv6}};
 
     /// Converts an address to IPv6.
     /// The loopback address "127.0.0.1" (or any "127.x.y.z") is converted to "::1".
@@ -366,18 +364,6 @@ bool AllowedClientHosts::contains(const IPAddress & client_address) const
             return true;
 
     return false;
-}
-
-
-void AllowedClientHosts::checkContains(const IPAddress & address, const String & user_name) const
-{
-    if (!contains(address))
-    {
-        if (user_name.empty())
-            throw Exception("It's not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
-        else
-            throw Exception("User " + user_name + " is not allowed to connect from address " + address.toString(), ErrorCodes::IP_ADDRESS_NOT_ALLOWED);
-    }
 }
 
 }

@@ -10,9 +10,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -31,7 +29,7 @@ public:
     static constexpr auto name = "neighbor";
     static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbor>(context); }
 
-    FunctionNeighbor(const Context & context_) : context(context_) {}
+    explicit FunctionNeighbor(const Context & context_) : context(context_) {}
 
     /// Get the name of the function.
     String getName() const override { return name; }

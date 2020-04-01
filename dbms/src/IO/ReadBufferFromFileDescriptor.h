@@ -1,8 +1,8 @@
 #pragma once
 
-#include <port/unistd.h>
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadBuffer.h>
+
+#include <unistd.h>
 
 
 namespace DB
@@ -27,12 +27,12 @@ public:
 
     ReadBufferFromFileDescriptor(ReadBufferFromFileDescriptor &&) = default;
 
-    int getFD() const override
+    int getFD() const
     {
         return fd;
     }
 
-    off_t getPositionInFile() override
+    off_t getPosition() override
     {
         return pos_in_file - (working_buffer.end() - pos);
     }

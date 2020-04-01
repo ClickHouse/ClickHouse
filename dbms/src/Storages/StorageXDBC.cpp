@@ -15,6 +15,8 @@
 #include <Common/ShellCommand.h>
 #include <ext/range.h>
 
+#include <Processors/Pipe.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -72,7 +74,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(const N
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
-    String query = transformQueryForExternalDatabase(*query_info.query,
+    String query = transformQueryForExternalDatabase(query_info,
         getColumns().getOrdinary(),
         bridge_helper->getIdentifierQuotingStyle(),
         remote_database_name,
@@ -82,7 +84,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(const N
     return [query](std::ostream & os) { os << "query=" << query; };
 }
 
-BlockInputStreams StorageXDBC::read(const Names & column_names,
+Pipes StorageXDBC::read(const Names & column_names,
     const SelectQueryInfo & query_info,
     const Context & context,
     QueryProcessingStage::Enum processed_stage,

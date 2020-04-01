@@ -1,4 +1,4 @@
-# MySQL
+# MySQL {#mysql}
 
 Позволяет подключаться к базам данных на удалённом MySQL сервере и выполнять запросы `INSERT` и `SELECT` для обмена данными между ClickHouse и MySQL.
 
@@ -6,52 +6,53 @@
 
 Не поддерживаемые виды запросов:
 
-- `ATTACH`/`DETACH`
-- `DROP`
-- `RENAME`
-- `CREATE TABLE`
-- `ALTER`
+-   `ATTACH`/`DETACH`
+-   `DROP`
+-   `RENAME`
+-   `CREATE TABLE`
+-   `ALTER`
 
-## Создание базы данных
+## Создание базы данных {#sozdanie-bazy-dannykh}
 
-```sql
+``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
 ENGINE = MySQL('host:port', 'database', 'user', 'password')
 ```
 
 **Параметры движка**
 
-- `host:port` — адрес сервера MySQL.
-- `database` — имя базы данных на удалённом сервере.
-- `user` — пользователь MySQL.
-- `password` — пароль пользователя.
+-   `host:port` — адрес сервера MySQL.
+-   `database` — имя базы данных на удалённом сервере.
+-   `user` — пользователь MySQL.
+-   `password` — пароль пользователя.
 
-## Поддержка типов данных
+## Поддержка типов данных {#podderzhka-tipov-dannykh}
 
-| MySQL | ClickHouse |
-| ------ | ------------ |
-| UNSIGNED TINYINT | [UInt8](../data_types/int_uint.md) |
-| TINYINT | [Int8](../data_types/int_uint.md) |
-| UNSIGNED SMALLINT | [UInt16](../data_types/int_uint.md) |
-| SMALLINT | [Int16](../data_types/int_uint.md) |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../data_types/int_uint.md) |
-| INT, MEDIUMINT | [Int32](../data_types/int_uint.md) |
-| UNSIGNED BIGINT | [UInt64](../data_types/int_uint.md) |
-| BIGINT | [Int64](../data_types/int_uint.md) |
-| FLOAT | [Float32](../data_types/float.md) |
-| DOUBLE | [Float64](../data_types/float.md) |
-| DATE | [Date](../data_types/date.md) |
-| DATETIME, TIMESTAMP | [DateTime](../data_types/datetime.md) |
-| BINARY | [FixedString](../data_types/fixedstring.md) |
+| MySQL                            | ClickHouse                                  |
+|----------------------------------|---------------------------------------------|
+| UNSIGNED TINYINT                 | [UInt8](../data_types/int_uint.md)          |
+| TINYINT                          | [Int8](../data_types/int_uint.md)           |
+| UNSIGNED SMALLINT                | [UInt16](../data_types/int_uint.md)         |
+| SMALLINT                         | [Int16](../data_types/int_uint.md)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../data_types/int_uint.md)         |
+| INT, MEDIUMINT                   | [Int32](../data_types/int_uint.md)          |
+| UNSIGNED BIGINT                  | [UInt64](../data_types/int_uint.md)         |
+| BIGINT                           | [Int64](../data_types/int_uint.md)          |
+| FLOAT                            | [Float32](../data_types/float.md)           |
+| DOUBLE                           | [Float64](../data_types/float.md)           |
+| DATE                             | [Date](../data_types/date.md)               |
+| DATETIME, TIMESTAMP              | [DateTime](../data_types/datetime.md)       |
+| BINARY                           | [FixedString](../data_types/fixedstring.md) |
 
 Все прочие типы данных преобразуются в [String](../data_types/string.md).
 
 [Nullable](../data_types/nullable.md) поддержан.
 
-## Примеры использования
+## Примеры использования {#primery-ispolzovaniia}
 
 Таблица в MySQL:
-```text
+
+``` text
 mysql> USE test;
 Database changed
 
@@ -72,17 +73,18 @@ mysql> select * from mysql_table;
 +--------+-------+
 1 row in set (0,00 sec)
 ```
+
 База данных в ClickHouse, позволяющая обмениваться данными с сервером MySQL:
 
-```sql
+``` sql
 CREATE DATABASE mysql_db ENGINE = MySQL('localhost:3306', 'test', 'my_user', 'user_password')
 ```
 
-```sql
+``` sql
 SHOW DATABASES
 ```
 
-```text
+``` text
 ┌─name─────┐
 │ default  │
 │ mysql_db │
@@ -90,38 +92,37 @@ SHOW DATABASES
 └──────────┘
 ```
 
-```sql
+``` sql
 SHOW TABLES FROM mysql_db
 ```
 
-```text
+``` text
 ┌─name─────────┐
 │  mysql_table │
 └──────────────┘
 ```
 
-```sql
+``` sql
 SELECT * FROM mysql_db.mysql_table
 ```
 
-```text
+``` text
 ┌─int_id─┬─value─┐
 │      1 │     2 │
 └────────┴───────┘
 ```
 
-```sql
+``` sql
 INSERT INTO mysql_db.mysql_table VALUES (3,4)
 ```
 
-```sql
+``` sql
 SELECT * FROM mysql_db.mysql_table
 ```
 
-```text
+``` text
 ┌─int_id─┬─value─┐
 │      1 │     2 │
 │      3 │     4 │
 └────────┴───────┘
 ```
-

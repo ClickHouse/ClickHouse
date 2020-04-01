@@ -6,12 +6,12 @@ DROP TABLE IF EXISTS default_codec_synthetic;
 
 CREATE TABLE delta_codec_synthetic
 (
-    id UInt64 Codec(Delta, ZSTD)
+    id UInt64 Codec(Delta, ZSTD(3))
 ) ENGINE MergeTree() ORDER BY tuple();
 
 CREATE TABLE default_codec_synthetic
 (
-    id UInt64 Codec(ZSTD)
+    id UInt64 Codec(ZSTD(3))
 ) ENGINE MergeTree() ORDER BY tuple();
 
 INSERT INTO delta_codec_synthetic SELECT number FROM system.numbers LIMIT 5000000;

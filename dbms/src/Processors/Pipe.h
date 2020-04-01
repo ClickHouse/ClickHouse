@@ -40,7 +40,7 @@ public:
 
     /// Specify quotas and limits for every ISourceWithProgress.
     void setLimits(const SourceWithProgress::LocalLimits & limits);
-    void setQuota(const std::shared_ptr<QuotaContext> & quota);
+    void setQuota(const std::shared_ptr<const EnabledQuota> & quota);
 
     /// Set information about preferred executor number for sources.
     void pinSources(size_t executor_number);
@@ -49,6 +49,8 @@ public:
 
     void setTotalsPort(OutputPort * totals_) { totals = totals_; }
     OutputPort * getTotalsPort() const { return totals; }
+
+    size_t maxParallelStreams() const { return max_parallel_streams; }
 
     /// Do not allow to change the table while the processors of pipe are alive.
     /// TODO: move it to pipeline.
@@ -65,6 +67,9 @@ private:
     Processors processors;
     OutputPort * output_port = nullptr;
     OutputPort * totals = nullptr;
+
+    /// It is the max number of processors which can be executed in parallel for each step. See QueryPipeline::Streams.
+    size_t max_parallel_streams = 0;
 
     std::vector<TableStructureReadLockHolder> table_locks;
 

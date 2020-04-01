@@ -35,7 +35,6 @@ void registerFunctionsMath(FunctionFactory &);
 void registerFunctionsGeo(FunctionFactory &);
 void registerFunctionsIntrospection(FunctionFactory &);
 void registerFunctionsNull(FunctionFactory &);
-void registerFunctionsFindCluster(FunctionFactory &);
 void registerFunctionsJSON(FunctionFactory &);
 void registerFunctionsConsistentHashing(FunctionFactory & factory);
 
@@ -74,7 +73,6 @@ void registerFunctions()
     registerFunctionsMath(factory);
     registerFunctionsGeo(factory);
     registerFunctionsNull(factory);
-    registerFunctionsFindCluster(factory);
     registerFunctionsJSON(factory);
     registerFunctionsIntrospection(factory);
     registerFunctionsConsistentHashing(factory);

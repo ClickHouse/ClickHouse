@@ -35,19 +35,15 @@ public:
 
     ~WriteBufferFromFileDescriptor() override;
 
-    int getFD() const override
+    int getFD() const
     {
         return fd;
     }
 
-    off_t getPositionInFile() override;
-
     void sync() override;
 
-private:
-    off_t doSeek(off_t offset, int whence) override;
-
-    void doTruncate(off_t length) override;
+    off_t seek(off_t offset, int whence);
+    void truncate(off_t length);
 };
 
 }

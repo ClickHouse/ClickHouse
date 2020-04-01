@@ -11,7 +11,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/ZooKeeper/IKeeper.h>
-#include <port/unistd.h>
+#include <unistd.h>
 
 
 namespace ProfileEvents
@@ -258,6 +258,7 @@ private:
     int32_t session_timeout_ms;
     int32_t operation_timeout_ms;
     std::string chroot;
+    std::string implementation;
 
     std::mutex mutex;
 

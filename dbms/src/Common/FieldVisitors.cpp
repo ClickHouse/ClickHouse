@@ -12,6 +12,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
+}
 
 template <typename T>
 static inline String formatQuoted(T x)

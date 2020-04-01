@@ -16,7 +16,6 @@ class WriteBuffer;
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMPILE_REGEXP;
 }
 
 struct AsteriskSemantic;

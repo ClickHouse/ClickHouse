@@ -4,13 +4,25 @@
 #include <DataTypes/NumberTraits.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/assert_cast.h>
+#include <Common/WeakHash.h>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_COLUMN;
+    extern const int LOGICAL_ERROR;
+}
 
 namespace
 {
+    void checkColumn(const IColumn & column)
+    {
+        if (!dynamic_cast<const IColumnUnique *>(&column))
+            throw Exception("ColumnUnique expected as an argument of ColumnLowCardinality.", ErrorCodes::ILLEGAL_COLUMN);
+    }
+
     template <typename T>
     PaddedPODArray<T> * getIndexesData(IColumn & indexes)
     {
@@ -230,6 +242,21 @@ const char * ColumnLowCardinality::deserializeAndInsertFromArena(const char * po
     return new_pos;
 }
 
+void ColumnLowCardinality::updateWeakHash32(WeakHash32 & hash) const
+{
+    auto s = size();
+
+    if (hash.getData().size() != s)
+        throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
+                        ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
+
+    auto & dict = getDictionary().getNestedColumn();
+    WeakHash32 dict_hash(dict->size());
+    dict->updateWeakHash32(dict_hash);
+
+    idx.updateWeakHash(hash, dict_hash);
+}
+
 void ColumnLowCardinality::gather(ColumnGathererStream & gatherer)
 {
     gatherer.gather(*this);
@@ -390,25 +417,25 @@ void ColumnLowCardinality::Index::callForType(Callback && callback, size_t size_
 
 size_t ColumnLowCardinality::Index::getSizeOfIndexType(const IColumn & column, size_t hint)
 {
-    auto checkFor = [&](auto type) { return typeid_cast<const ColumnVector<decltype(type)> *>(&column) != nullptr; };
-    auto tryGetSizeFor = [&](auto type) -> size_t { return checkFor(type) ? sizeof(decltype(type)) : 0; };
+    auto check_for = [&](auto type) { return typeid_cast<const ColumnVector<decltype(type)> *>(&column) != nullptr; };
+    auto try_get_size_for = [&](auto type) -> size_t { return check_for(type) ? sizeof(decltype(type)) : 0; };
 
     if (hint)
     {
         size_t size = 0;
-        callForType([&](auto type) { size = tryGetSizeFor(type); }, hint);
+        callForType([&](auto type) { size = try_get_size_for(type); }, hint);
 
         if (size)
             return size;
     }
 
-    if (auto size = tryGetSizeFor(UInt8()))
+    if (auto size = try_get_size_for(UInt8()))
         return size;
-    if (auto size = tryGetSizeFor(UInt16()))
+    if (auto size = try_get_size_for(UInt16()))
         return size;
-    if (auto size = tryGetSizeFor(UInt32()))
+    if (auto size = try_get_size_for(UInt32()))
         return size;
-    if (auto size = tryGetSizeFor(UInt64()))
+    if (auto size = try_get_size_for(UInt64()))
         return size;
 
     throw Exception("Unexpected indexes type for ColumnLowCardinality. Expected UInt, got " + column.getName(),
@@ -504,13 +531,13 @@ UInt64 ColumnLowCardinality::Index::getMaxPositionForCurrentType() const
 size_t ColumnLowCardinality::Index::getPositionAt(size_t row) const
 {
     size_t pos;
-    auto getPosition = [&](auto type)
+    auto get_position = [&](auto type)
     {
         using CurIndexType = decltype(type);
         pos = getPositionsData<CurIndexType>()[row];
     };
 
-    callForType(std::move(getPosition), size_of_type);
+    callForType(std::move(get_position), size_of_type);
     return pos;
 }
 
@@ -525,7 +552,7 @@ void ColumnLowCardinality::Index::insertPosition(UInt64 position)
 
 void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, UInt64 offset, UInt64 limit)
 {
-    auto insertForType = [&](auto type)
+    auto insert_for_type = [&](auto type)
     {
         using ColumnType = decltype(type);
         const auto * column_ptr = typeid_cast<const ColumnVector<ColumnType> *>(&column);
@@ -559,10 +586,10 @@ void ColumnLowCardinality::Index::insertPositionsRange(const IColumn & column, U
         return true;
     };
 
-    if (!insertForType(UInt8()) &&
-        !insertForType(UInt16()) &&
-        !insertForType(UInt32()) &&
-        !insertForType(UInt64()))
+    if (!insert_for_type(UInt8()) &&
+        !insert_for_type(UInt16()) &&
+        !insert_for_type(UInt32()) &&
+        !insert_for_type(UInt64()))
         throw Exception("Invalid column for ColumnLowCardinality index. Expected UInt, got " + column.getName(),
                         ErrorCodes::ILLEGAL_COLUMN);
 
@@ -634,6 +661,24 @@ bool ColumnLowCardinality::Index::containsDefault() const
     return contains;
 }
 
+void ColumnLowCardinality::Index::updateWeakHash(WeakHash32 & hash, WeakHash32 & dict_hash) const
+{
+    auto & hash_data = hash.getData();
+    auto & dict_hash_data = dict_hash.getData();
+
+    auto update_weak_hash = [&](auto x)
+    {
+        using CurIndexType = decltype(x);
+        auto & data = getPositionsData<CurIndexType>();
+        auto size = data.size();
+
+        for (size_t i = 0; i < size; ++i)
+            hash_data[i] = intHashCRC32(dict_hash_data[data[i]], hash_data[i]);
+    };
+
+    callForType(std::move(update_weak_hash), size_of_type);
+}
+
 
 ColumnLowCardinality::Dictionary::Dictionary(MutableColumnPtr && column_unique_, bool is_shared)
     : column_unique(std::move(column_unique_)), shared(is_shared)
@@ -644,13 +689,6 @@ ColumnLowCardinality::Dictionary::Dictionary(ColumnPtr column_unique_, bool is_s
     : column_unique(std::move(column_unique_)), shared(is_shared)
 {
     checkColumn(*column_unique);
-}
-
-void ColumnLowCardinality::Dictionary::checkColumn(const IColumn & column)
-{
-
-    if (!dynamic_cast<const IColumnUnique *>(&column))
-        throw Exception("ColumnUnique expected as an argument of ColumnLowCardinality.", ErrorCodes::ILLEGAL_COLUMN);
 }
 
 void ColumnLowCardinality::Dictionary::setShared(const ColumnPtr & column_unique_)

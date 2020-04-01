@@ -3,6 +3,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+}
 
 class ExtractURLParameterNamesImpl
 {
@@ -25,7 +29,7 @@ public:
     }
 
     /// Returns the position of the argument that is the column of rows
-    size_t getStringsArgumentPosition()
+    static size_t getStringsArgumentPosition()
     {
         return 0;
     }

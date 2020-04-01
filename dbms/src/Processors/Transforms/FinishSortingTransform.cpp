@@ -98,10 +98,10 @@ void FinishSortingTransform::consume(Chunk chunk)
             auto source_columns = chunk.detachColumns();
             Columns tail_columns;
 
-            for (size_t i = 0; i < source_columns.size(); ++i)
+            for (auto & source_column : source_columns)
             {
-                tail_columns.push_back(source_columns[i]->cut(tail_pos, size - tail_pos));
-                source_columns[i] = source_columns[i]->cut(0, tail_pos);
+                tail_columns.emplace_back(source_column->cut(tail_pos, size - tail_pos));
+                source_column = source_column->cut(0, tail_pos);
             }
 
             chunks.emplace_back(std::move(source_columns), tail_pos);

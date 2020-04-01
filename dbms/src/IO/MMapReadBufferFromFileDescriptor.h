@@ -32,9 +32,9 @@ public:
     /// unmap memory before call to destructor
     void finish();
 
-    off_t getPositionInFile() override;
+    off_t getPosition() override;
     std::string getFileName() const override;
-    int getFD() const override;
+    int getFD() const;
 
 private:
     size_t length = 0;

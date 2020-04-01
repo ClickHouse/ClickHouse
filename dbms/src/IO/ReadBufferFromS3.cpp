@@ -58,6 +58,12 @@ off_t ReadBufferFromS3::seek(off_t offset_, int whence)
     return offset;
 }
 
+
+off_t ReadBufferFromS3::getPosition()
+{
+    return offset + count();
+}
+
 std::unique_ptr<ReadBuffer> ReadBufferFromS3::initialize()
 {
     LOG_TRACE(log, "Read S3 object. Bucket: " + bucket + ", Key: " + key + ", Offset: " + std::to_string(offset));

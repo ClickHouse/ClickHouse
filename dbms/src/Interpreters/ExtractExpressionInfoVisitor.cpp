@@ -50,9 +50,8 @@ void ExpressionInfoMatcher::visit(const ASTIdentifier & identifier, const ASTPtr
     }
     else
     {
-        size_t best_table_pos = 0;
-        if (IdentifierSemantic::chooseTable(identifier, data.tables, best_table_pos))
-            data.unique_reference_tables_pos.emplace(best_table_pos);
+        if (auto best_table_pos = IdentifierSemantic::chooseTable(identifier, data.tables))
+            data.unique_reference_tables_pos.emplace(*best_table_pos);
     }
 }
 

@@ -206,6 +206,8 @@ private:
             }
 
             loop(thread_num);
+
+            handler.onFinishThread(thread_num);
         }
         catch (...)
         {
@@ -216,8 +218,6 @@ private:
         {
             handler.onException(exception, thread_num);
         }
-
-        handler.onFinishThread(thread_num);
 
         /// The last thread on the output indicates that there is no more data.
         if (0 == --active_threads)
@@ -242,7 +242,19 @@ private:
                 }
             }
 
-            handler.onFinish();       /// TODO If in `onFinish` or `onFinishThread` there is an exception, then std::terminate is called.
+            try
+            {
+                handler.onFinish();
+            }
+            catch (...)
+            {
+                exception = std::current_exception();
+            }
+
+            if (exception)
+            {
+                handler.onException(exception, thread_num);
+            }
         }
     }
 

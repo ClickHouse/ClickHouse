@@ -19,7 +19,6 @@
 #include <Poco/DirectoryIterator.h>
 
 
-
 namespace DB
 {
 
@@ -27,6 +26,9 @@ static constexpr size_t METADATA_FILE_BUFFER_SIZE = 32768;
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
     extern const int FILE_DOESNT_EXIST;
     extern const int INCORRECT_FILE_NAME;
     extern const int SYNTAX_ERROR;
@@ -51,6 +53,7 @@ std::pair<String, StoragePtr> createTableFromAST(
     {
         const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
+        //FIXME storage will have wrong database name
         StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
         return {ast_create_query.table, storage};
     }
@@ -288,14 +291,14 @@ void DatabaseOnDisk::drop(const Context & context)
     Poco::File(getMetadataPath()).remove(false);
 }
 
-String DatabaseOnDisk::getObjectMetadataPath(const String & table_name) const
+String DatabaseOnDisk::getObjectMetadataPath(const String & object_name) const
 {
-    return getMetadataPath() + escapeForFileName(table_name) + ".sql";
+    return getMetadataPath() + escapeForFileName(object_name) + ".sql";
 }
 
-time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & table_name) const
+time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_name) const
 {
-    String table_metadata_path = getObjectMetadataPath(table_name);
+    String table_metadata_path = getObjectMetadataPath(object_name);
     Poco::File meta_file(table_metadata_path);
 
     if (meta_file.exists())

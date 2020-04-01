@@ -25,7 +25,7 @@ namespace DB
 
 /** Class for asynchronous data reading.
   */
-class ReadBufferAIO : public ReadBufferFromFileBase
+class ReadBufferAIO final : public ReadBufferFromFileBase
 {
 public:
     ReadBufferAIO(const std::string & filename_, size_t buffer_size_ = DBMS_DEFAULT_BUFFER_SIZE, int flags_ = -1,
@@ -36,9 +36,9 @@ public:
     ReadBufferAIO & operator=(const ReadBufferAIO &) = delete;
 
     void setMaxBytes(size_t max_bytes_read_);
-    off_t getPositionInFile() override { return first_unread_pos_in_file - (working_buffer.end() - pos); }
+    off_t getPosition() override { return first_unread_pos_in_file - (working_buffer.end() - pos); }
     std::string getFileName() const override { return filename; }
-    int getFD() const override { return fd; }
+    int getFD() const { return fd; }
 
     off_t seek(off_t off, int whence) override;
 

@@ -1,13 +1,13 @@
-# AMPLab Big Data Benchmark
+# AMPLab Big Data Benchmark {#amplab-big-data-benchmark}
 
-См. <https://amplab.cs.berkeley.edu/benchmark/>
+См. https://amplab.cs.berkeley.edu/benchmark/
 
-Зарегистрируйте бесплатную учетную запись на <https://aws.amazon.com> - понадобится кредитная карта, email и номер телефона
-Получите новый ключ доступа на <https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential>
+Зарегистрируйте бесплатную учетную запись на https://aws.amazon.com - понадобится кредитная карта, email и номер телефона
+Получите новый ключ доступа на https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
 
 Выполните следующее в консоли:
 
-```bash
+``` bash
 $ sudo apt-get install s3cmd
 $ mkdir tiny; cd tiny;
 $ s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/tiny/ .
@@ -86,7 +86,7 @@ CREATE TABLE uservisits_5nodes_on_single
 
 Возвращаемся в консоль:
 
-```bash
+``` bash
 $ for i in tiny/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_tiny FORMAT CSV"; done
 $ for i in tiny/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_tiny FORMAT CSV"; done
 $ for i in 1node/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_1node FORMAT CSV"; done

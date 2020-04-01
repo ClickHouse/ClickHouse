@@ -28,8 +28,11 @@ ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_)
 }
 
 template <typename Thread>
-ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_)
-    : max_threads(max_threads_), max_free_threads(max_free_threads_), queue_size(queue_size_)
+ThreadPoolImpl<Thread>::ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_)
+    : max_threads(max_threads_)
+    , max_free_threads(max_free_threads_)
+    , queue_size(queue_size_)
+    , shutdown_on_exception(shutdown_on_exception_)
 {
 }
 
@@ -225,10 +228,20 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
                 {
                     std::unique_lock lock(mutex);
                     if (!first_exception)
-                        first_exception = std::current_exception();
-                    shutdown = true;
+                        first_exception = std::current_exception(); // NOLINT
+                    if (shutdown_on_exception)
+                        shutdown = true;
                     --scheduled_jobs;
                 }
+
+                DB::tryLogCurrentException("ThreadPool",
+                    std::string("Exception in ThreadPool(") +
+                    "max_threads: " + std::to_string(max_threads)
+                    + ", max_free_threads: " + std::to_string(max_free_threads)
+                    + ", queue_size: " + std::to_string(queue_size)
+                    + ", shutdown_on_exception: " + std::to_string(shutdown_on_exception)
+                    + ").");
+
                 job_finished.notify_all();
                 new_job_or_shutdown.notify_all();
                 return;
@@ -256,36 +269,6 @@ void ThreadPoolImpl<Thread>::worker(typename std::list<Thread>::iterator thread_
 template class ThreadPoolImpl<std::thread>;
 template class ThreadPoolImpl<ThreadFromGlobalPool>;
 
-
-void ExceptionHandler::setException(std::exception_ptr && exception)
-{
-    std::unique_lock lock(mutex);
-    if (!first_exception)
-        first_exception = std::move(exception);
-}
-
-void ExceptionHandler::throwIfException()
-{
-    std::unique_lock lock(mutex);
-    if (first_exception)
-        std::rethrow_exception(first_exception);
-}
-
-
-ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler & handler)
-{
-    return [job{std::move(job)}, &handler] ()
-    {
-        try
-        {
-            job();
-        }
-        catch (...)
-        {
-            handler.setException(std::current_exception());
-        }
-    };
-}
 
 GlobalThreadPool & GlobalThreadPool::instance()
 {
