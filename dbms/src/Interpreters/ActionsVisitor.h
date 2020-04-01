@@ -42,6 +42,7 @@ struct ScopeStack
 
     const Context & context;
 
+public:
     ScopeStack(const ExpressionActionsPtr & actions, const Context & context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
@@ -80,6 +81,13 @@ public:
         size_t visit_depth;
         ScopeStack actions_stack;
 
+        /*
+         * Remember the last unique column suffix to avoid quadratic behavior
+         * when we add lots of column with same prefix. One counter for all
+         * prefixes is good enough.
+         */
+        int next_unique_suffix;
+
         Data(const Context & context_, SizeLimits set_size_limit_, size_t subquery_depth_,
                 const NamesAndTypesList & source_columns_, const ExpressionActionsPtr & actions,
                 PreparedSets & prepared_sets_, SubqueriesForSets & subqueries_for_sets_,
@@ -95,7 +103,8 @@ public:
             only_consts(only_consts_),
             no_storage_or_local(no_storage_or_local_),
             visit_depth(0),
-            actions_stack(actions, context)
+            actions_stack(actions, context),
+            next_unique_suffix(actions_stack.getSampleBlock().columns() + 1)
         {}
 
         void updateActions(ExpressionActionsPtr & actions)

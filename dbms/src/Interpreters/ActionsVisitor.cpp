@@ -195,17 +195,17 @@ SetPtr makeExplicitSet(
     return set;
 }
 
-static String getUniqueName(const Block & block, const String & prefix)
+static String getUniqueName(ActionsVisitor::Data & data, const String & prefix)
 {
+    auto & block = data.getSampleBlock();
     auto result = prefix;
 
     if (block.has(result))
     {
-        int i = 1;
         do
         {
-            result = prefix + "_" + toString(i);
-            ++i;
+            result = prefix + "_" + toString(data.next_unique_suffix);
+            ++data.next_unique_suffix;
         }
         while (block.has(result));
     }
@@ -468,7 +468,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
             ///  so that sets with the same literal representation do not fuse together (they can have different types).
             if (!prepared_set->empty())
-                column.name = getUniqueName(data.getSampleBlock(), "__set");
+                column.name = getUniqueName(data, "__set");
             else
                 column.name = child->getColumnName();
 
@@ -496,7 +496,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             ColumnWithTypeAndName column(
                 ColumnConst::create(std::move(column_string), 1),
                 std::make_shared<DataTypeString>(),
-                getUniqueName(data.getSampleBlock(), "__joinGet"));
+                getUniqueName(data, "__joinGet"));
             data.addAction(ExpressionAction::addColumn(column));
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
@@ -577,7 +577,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                 /// We can not name `getColumnName()`,
                 ///  because it does not uniquely define the expression (the types of arguments can be different).
-                String lambda_name = getUniqueName(data.getSampleBlock(), "__lambda");
+                String lambda_name = getUniqueName(data, "__lambda");
 
                 auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
                         lambda_actions, captured, lambda_arguments, result_type, result_name);
@@ -612,15 +612,49 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     Data & data)
 {
     DataTypePtr type = applyVisitor(FieldToDataType(), literal.value);
+    const auto value = convertFieldToType(literal.value, *type);
+
+    // FIXME why do we have a second pass with a clean sample block over the same
+    // AST here? Anyway, do not modify the column name if it is set already.
+    if (literal.unique_column_name.empty())
+    {
+        const auto default_name = literal.getColumnName();
+        auto & block = data.getSampleBlock();
+        auto * existing_column = block.findByName(default_name);
+
+        /*
+         * To approximate CSE, build all identical literals to a single temporary
+         * columns. We try to find the column by its default name, but after that
+         * we have to check that it contains the correct data. This might not be
+         * the case if it is a user-supplied column, or it is from under a join,
+         * etc.
+         * Overall, this is a hack around a generally poor name-based notion of
+         * column identity we currently use.
+         */
+        if (existing_column
+            && existing_column->column
+            && isColumnConst(*existing_column->column)
+            && existing_column->column->size() == 1
+            && existing_column->column->get(0) == value)
+        {
+            const_cast<ASTLiteral &>(literal).unique_column_name = default_name;
+        }
+        else
+        {
+            const_cast<ASTLiteral &>(literal).unique_column_name
+                = getUniqueName(data, default_name);
+        }
+    }
+
+    if (data.hasColumn(literal.unique_column_name))
+    {
+        return;
+    }
 
     ColumnWithTypeAndName column;
-    column.column = type->createColumnConst(1, convertFieldToType(literal.value, *type));
+    column.name = literal.unique_column_name;
+    column.column = type->createColumnConst(1, value);
     column.type = type;
-
-    // Always create columns for literals with a unique name. Otherwise, there
-    // may be some weird clashes, see 01101_literal_column_clash.
-    column.name = getUniqueName(data.getSampleBlock(), literal.getColumnName());
-    const_cast<ASTLiteral &>(literal).unique_column_name = column.name;
 
     data.addAction(ExpressionAction::addColumn(column));
 }

@@ -9,6 +9,11 @@
 namespace DB
 {
 
+Field IColumn::get(size_t n) const
+{
+    return (*this)[n];
+}
+
 String IColumn::dumpStructure() const
 {
     WriteBufferFromOwnString res;

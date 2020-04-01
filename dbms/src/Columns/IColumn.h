@@ -70,6 +70,7 @@ public:
     /// Returns value of n-th element in universal Field representation.
     /// Is used in rare cases, since creation of Field instance is expensive usually.
     virtual Field operator[](size_t n) const = 0;
+    Field get(size_t n) const;
 
     /// Like the previous one, but avoids extra copying if Field is in a container, for example.
     virtual void get(size_t n, Field & res) const = 0;
