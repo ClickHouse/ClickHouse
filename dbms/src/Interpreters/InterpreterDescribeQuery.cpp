@@ -89,7 +89,7 @@ BlockInputStreamPtr InterpreterDescribeQuery::executeImpl()
             table = DatabaseCatalog::instance().getTable(table_id);
         }
 
-        auto table_lock = table->lockStructureForShare(context.getInitialQueryId());
+        auto table_lock = table->lockStructureForShare(false, context.getInitialQueryId());
         columns = table->getColumns();
     }
 

@@ -187,7 +187,7 @@ Pipes StorageMaterializedView::read(
     const unsigned num_streams)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockStructureForShare(context.getCurrentQueryId());
+    auto lock = storage->lockStructureForShare(false, context.getCurrentQueryId());
     if (query_info.order_by_optimizer)
         query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
 
@@ -202,7 +202,7 @@ Pipes StorageMaterializedView::read(
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Context & context)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockStructureForShare(context.getCurrentQueryId());
+    auto lock = storage->lockStructureForShare(true, context.getCurrentQueryId());
     auto stream = storage->write(query, context);
     stream->addTableLock(lock);
     return stream;

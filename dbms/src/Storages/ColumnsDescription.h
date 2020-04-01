@@ -103,6 +103,11 @@ public:
     String toString() const;
     static ColumnsDescription parse(const String & str);
 
+    size_t size() const
+    {
+        return columns.size();
+    }
+
     /// Keep the sequence of columns and allow to lookup by name.
     using Container = boost::multi_index_container<
         ColumnDescription,
