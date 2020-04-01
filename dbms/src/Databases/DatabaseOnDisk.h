@@ -91,6 +91,7 @@ protected:
 
     const String metadata_path;
     /*const*/ String data_path;
+    const Context & global_context;
 };
 
 }

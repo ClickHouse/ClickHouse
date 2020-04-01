@@ -173,17 +173,17 @@ StoragePtr DatabaseWithDictionaries::tryGetTable(const Context & context, const 
     if (isDictionaryExist(context, table_name))
         /// We don't need lock database here, because database doesn't store dictionary itself
         /// just metadata
-        return getDictionaryStorage(context, table_name);
+        return getDictionaryStorage(table_name);
 
     return {};
 }
 
 DatabaseTablesIteratorPtr DatabaseWithDictionaries::getTablesWithDictionaryTablesIterator(
-    const Context & context, const FilterByNameFunction & filter_by_dictionary_name)
+    const FilterByNameFunction & filter_by_dictionary_name)
 {
     /// NOTE: it's not atomic
-    auto tables_it = getTablesIterator(context, filter_by_dictionary_name);
-    auto dictionaries_it = getDictionariesIterator(context, filter_by_dictionary_name);
+    auto tables_it = getTablesIterator(filter_by_dictionary_name);
+    auto dictionaries_it = getDictionariesIterator(filter_by_dictionary_name);
 
     Tables result;
     while (tables_it && tables_it->isValid())
@@ -195,7 +195,7 @@ DatabaseTablesIteratorPtr DatabaseWithDictionaries::getTablesWithDictionaryTable
     while (dictionaries_it && dictionaries_it->isValid())
     {
         auto table_name = dictionaries_it->name();
-        auto table_ptr = getDictionaryStorage(context, table_name);
+        auto table_ptr = getDictionaryStorage(table_name);
         if (table_ptr)
             result.emplace(table_name, table_ptr);
         dictionaries_it->next();
@@ -204,7 +204,7 @@ DatabaseTablesIteratorPtr DatabaseWithDictionaries::getTablesWithDictionaryTable
     return std::make_unique<DatabaseTablesSnapshotIterator>(result);
 }
 
-DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_dictionary_name)
+DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name)
 {
     std::lock_guard lock(mutex);
     if (!filter_by_dictionary_name)
@@ -223,16 +223,16 @@ bool DatabaseWithDictionaries::isDictionaryExist(const Context & /*context*/, co
     return dictionaries.find(dictionary_name) != dictionaries.end();
 }
 
-StoragePtr DatabaseWithDictionaries::getDictionaryStorage(const Context & context, const String & table_name) const
+StoragePtr DatabaseWithDictionaries::getDictionaryStorage(const String & table_name) const
 {
     auto dict_name = database_name + "." + table_name;
-    const auto & external_loader = context.getExternalDictionariesLoader();
+    const auto & external_loader = global_context.getExternalDictionariesLoader();
     auto dict_ptr = external_loader.tryGetDictionary(dict_name);
     if (dict_ptr)
     {
         const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
         auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-        return StorageDictionary::create(StorageID(database_name, table_name), ColumnsDescription{columns}, context, true, dict_name);
+        return StorageDictionary::create(StorageID(database_name, table_name), ColumnsDescription{columns}, global_context, true, dict_name);
     }
     return nullptr;
 }

@@ -42,6 +42,9 @@ public:
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag) override;
     void shutdown() override;
 
+    DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const FilterByNameFunction & filter_by_dictionary_name) override;
+
 private:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,

@@ -415,7 +415,7 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator() const
     checkStackSize();
     auto database = DatabaseCatalog::instance().getDatabase(source_database);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
-    return database->getTablesIterator(global_context, table_name_match);
+    return database->getTablesIterator(table_name_match);
 }
 
 

@@ -52,7 +52,7 @@ std::set<std::string> ExternalLoaderDatabaseConfigRepository::getAllLoadablesDef
 {
     std::set<std::string> result;
     const auto & dbname = database.getDatabaseName();
-    auto itr = database.getDictionariesIterator(context);
+    auto itr = database.getDictionariesIterator();
     while (itr && itr->isValid())
     {
         result.insert(dbname + "." + itr->name());

@@ -140,7 +140,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
         auto access = context.getAccess();
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
         {
-            for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = elem.second->getTablesIterator(); iterator->isValid(); iterator->next())
             {
                 if (!access->isGranted(log, getRequiredAccessType(action_type), elem.first, iterator->name()))
                     continue;
@@ -362,7 +362,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
     for (auto & elem : DatabaseCatalog::instance().getDatabases())
     {
         DatabasePtr & database = elem.second;
-        for (auto iterator = database->getTablesIterator(system_context); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replica_names.emplace_back(iterator->table()->getStorageID());

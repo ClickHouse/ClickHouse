@@ -225,13 +225,13 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
             ASTDropQuery query;
             query.kind = kind;
             query.database = database_name;
-            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
             {
                 query.table = iterator->name();
                 executeToTable({query.database, query.table}, query);
             }
 
-            for (auto iterator = database->getDictionariesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = database->getDictionariesIterator(); iterator->isValid(); iterator->next())
             {
                 String current_dictionary = iterator->name();
                 executeToDictionary(database_name, current_dictionary, kind, false, false, false);

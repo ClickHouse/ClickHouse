@@ -70,7 +70,7 @@ DatabasePtr DatabaseFactory::getImpl(
     else if (engine_name == "Memory")
         return std::make_shared<DatabaseMemory>(database_name);
     else if (engine_name == "Dictionary")
-        return std::make_shared<DatabaseDictionary>(database_name);
+        return std::make_shared<DatabaseDictionary>(database_name, context);
 
 #if USE_MYSQL
 

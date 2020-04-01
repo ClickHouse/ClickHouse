@@ -42,14 +42,26 @@ public:
     virtual const StoragePtr & table() const = 0;
 
     virtual ~IDatabaseTablesIterator() = default;
+
+    virtual UUID uuid() const { return UUIDHelpers::Nil; }
 };
 
 /// Copies list of tables and iterates through such snapshot.
-class DatabaseTablesSnapshotIterator final : public IDatabaseTablesIterator
+class DatabaseTablesSnapshotIterator : public IDatabaseTablesIterator
 {
 private:
     Tables tables;
     Tables::iterator it;
+
+protected:
+    DatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && other)
+    {
+        size_t idx = std::distance(other.tables.begin(), other.it);
+        std::swap(tables, other.tables);
+        other.it = other.tables.end();
+        it = tables.begin();
+        std::advance(it, idx);
+    }
 
 public:
     DatabaseTablesSnapshotIterator(Tables & tables_) : tables(tables_), it(tables.begin()) {}
@@ -133,18 +145,18 @@ public:
 
     /// Get an iterator that allows you to pass through all the tables.
     /// It is possible to have "hidden" tables that are not visible when passing through, but are visible if you get them by name using the functions above.
-    virtual DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) = 0;
+    virtual DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name = {}) = 0;
 
     /// Get an iterator to pass through all the dictionaries.
-    virtual DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & /*context*/, [[maybe_unused]] const FilterByNameFunction & filter_by_dictionary_name = {})
+    virtual DatabaseDictionariesIteratorPtr getDictionariesIterator([[maybe_unused]] const FilterByNameFunction & filter_by_dictionary_name = {})
     {
         return std::make_unique<DatabaseDictionariesSnapshotIterator>();
     }
 
     /// Get an iterator to pass through all the tables and dictionary tables.
-    virtual DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_name = {})
+    virtual DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const FilterByNameFunction & filter_by_name = {})
     {
-        return getTablesIterator(context, filter_by_name);
+        return getTablesIterator(filter_by_name);
     }
 
     /// Is the database empty.

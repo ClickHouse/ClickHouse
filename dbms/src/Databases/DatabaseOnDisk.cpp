@@ -123,10 +123,11 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     return statement_stream.str();
 }
 
-DatabaseOnDisk::DatabaseOnDisk(const String & name, const String & metadata_path_, const String & logger, const Context &)
+DatabaseOnDisk::DatabaseOnDisk(const String & name, const String & metadata_path_, const String & logger, const Context & context)
     : DatabaseWithOwnTablesBase(name, logger)
     , metadata_path(metadata_path_)
     , data_path("data/" + escapeForFileName(database_name) + "/")
+    , global_context(context.getGlobalContext())
 {
 }
 

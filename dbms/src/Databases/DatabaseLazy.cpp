@@ -115,7 +115,7 @@ bool DatabaseLazy::isTableExist(
 }
 
 StoragePtr DatabaseLazy::tryGetTable(
-    const Context & context,
+    const Context & /*context*/,
     const String & table_name) const
 {
     SCOPE_EXIT({ clearExpiredTables(); });
@@ -135,10 +135,10 @@ StoragePtr DatabaseLazy::tryGetTable(
         }
     }
 
-    return loadTable(context, table_name);
+    return loadTable(table_name);
 }
 
-DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
     Strings filtered_tables;
@@ -148,7 +148,7 @@ DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(const Context & contex
             filtered_tables.push_back(table_name);
     }
     std::sort(filtered_tables.begin(), filtered_tables.end());
-    return std::make_unique<DatabaseLazyIterator>(*this, context, std::move(filtered_tables));
+    return std::make_unique<DatabaseLazyIterator>(*this, std::move(filtered_tables));
 }
 
 bool DatabaseLazy::empty(const Context & /* context */) const
@@ -218,7 +218,7 @@ DatabaseLazy::~DatabaseLazy()
     }
 }
 
-StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table_name) const
+StoragePtr DatabaseLazy::loadTable(const String & table_name) const
 {
     SCOPE_EXIT({ clearExpiredTables(); });
 
@@ -229,9 +229,9 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
     try
     {
         StoragePtr table;
-        Context context_copy(context); /// some tables can change context, but not LogTables
+        Context context_copy(global_context); /// some tables can change context, but not LogTables
 
-        auto ast = parseQueryFromMetadata(log, context, table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
+        auto ast = parseQueryFromMetadata(log, global_context, table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
         if (ast)
         {
             auto & ast_create = ast->as<const ASTCreateQuery &>();
@@ -299,10 +299,9 @@ void DatabaseLazy::clearExpiredTables() const
 }
 
 
-DatabaseLazyIterator::DatabaseLazyIterator(DatabaseLazy & database_, const Context & context_, Strings && table_names_)
+DatabaseLazyIterator::DatabaseLazyIterator(DatabaseLazy & database_, Strings && table_names_)
     : database(database_)
     , table_names(std::move(table_names_))
-    , context(context_)
     , iterator(table_names.begin())
     , current_storage(nullptr)
 {
@@ -312,7 +311,7 @@ void DatabaseLazyIterator::next()
 {
     current_storage.reset();
     ++iterator;
-    while (isValid() && !database.isTableExist(context, *iterator))
+    while (isValid() && !database.isTableExist(database.global_context, *iterator))
         ++iterator;
 }
 
@@ -329,7 +328,7 @@ const String & DatabaseLazyIterator::name() const
 const StoragePtr & DatabaseLazyIterator::table() const
 {
     if (!current_storage)
-        current_storage = database.tryGetTable(context, *iterator);
+        current_storage = database.tryGetTable(database.global_context, *iterator);
     return current_storage;
 }
 
