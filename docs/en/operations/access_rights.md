@@ -1,69 +1,35 @@
-# Access Rights {#access-rights}
+# Access Control and Account Management {#access-control}
 
-Users and access rights are set up in the user config. This is usually `users.xml`.
+ClickHouse support access control management based on [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) approach.
 
-Users are recorded in the `users` section. Here is a fragment of the `users.xml` file:
+Elements of ClickHouse access control model:
+- User account
+- Role
+- Row Policy
 
-``` xml
-<!-- Users and ACL. -->
-<users>
-    <!-- If the user name is not specified, the 'default' user is used. -->
-    <default>
-        <!-- Password could be specified in plaintext or in SHA256 (in hex format).
+!!! info "Note"
+    Some of the access control functionality is available through the [users.xml](settings/settings_users.md) server configuration files, but we don't recommend using this way of user permissions management.
 
-             If you want to specify password in plaintext (not recommended), place it in 'password' element.
-             Example: <password>qwerty</password>.
-             Password could be empty.
 
-             If you want to specify SHA256, place it in 'password_sha256_hex' element.
-             Example: <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+## User account {#user-account-management}
 
-             How to generate decent password:
-             Execute: PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
-             In first line will be password and in second - corresponding SHA256.
-        -->
-        <password></password>
+A user account is a configuration that allows to authorize someone in ClickHouse. A user account contains:
 
-        <!-- A list of networks that access is allowed from.
-            Each list item has one of the following forms:
-            <ip> The IP address or subnet mask. For example: 198.51.100.0/24 or 2001:DB8::/32.
-            <host> Host name. For example: example01. A DNS query is made for verification, and all addresses obtained are compared with the address of the customer.
-            <host_regexp> Regular expression for host names. For example, ^example\d\d-\d\d-\d\.host\.ru$
-                To check it, a DNS PTR request is made for the client's address and a regular expression is applied to the result.
-                Then another DNS query is made for the result of the PTR query, and all received address are compared to the client address.
-                We strongly recommend that the regex ends with \.host\.ru$.
+- Identification information.
+- [Privileges](../query_language/grant.md#grant-privileges) that define a scope of queries the user can perform.
+- [Row policies](#row-policy-management) that define filters for rows available for a user.
+- Session settings that apply by default at the user's login.
 
-            If you are installing ClickHouse yourself, specify here:
-                <networks>
-                        <ip>::/0</ip>
-                </networks>
-        -->
-        <networks incl="networks" />
+User management queries:
 
-        <!-- Settings profile for the user. -->
-        <profile>default</profile>
+- [CREATE USER](../query_language/create.md#create-user-statement)
+- [ALTER USER](../query_language/alter.md#alter-user-statement)
+- [DROP USER](../query_language/misc.md#drop-user-statement)
+- [SHOW GRANTS](../query_language/show.md#show-grants-statement)
+- [SHOW CREATE](../query_language/show.md#show-create-statement)
 
-        <!-- Quota for the user. -->
-        <quota>default</quota>
-    </default>
+Privileges to a user account can be granted by the [GRANT](../query_language/grant.md) query or by assigning [roles](#role-management). To revoke privileges from a user ClickHouse provides the [REVOKE](../query_language/revoke.md) query. To assign a row policy to a role, use the [CREATE ROW POLICY](../query_language/create.md#create-row-policy-statement) or the [ALTER ROW POLICY](../query_language/alter.md#alter-row-policy-statement) query.
 
-    <!-- For requests from the Yandex.Metrica user interface via the API for data on specific counters. -->
-    <web>
-        <password></password>
-        <networks incl="networks" />
-        <profile>web</profile>
-        <quota>default</quota>
-        <allow_databases>
-           <database>test</database>
-        </allow_databases>
-        <allow_dictionaries>
-           <dictionary>test</dictionary>
-        </allow_dictionaries>
-    </web>
-</users>
-```
-
-You can see a declaration from two users: `default`and`web`. We added the `web` user separately.
 
 The `default` user is chosen in cases when the username is not passed. The `default` user is also used for distributed query processing, if the configuration of the server or cluster doesn’t specify the `user` and `password` (see the section on the [Distributed](../operations/table_engines/distributed.md) engine).
 
@@ -71,36 +37,36 @@ The user that is used for exchanging information between servers combined in a c
 
 The password is specified in clear text (not recommended) or in SHA-256. The hash isn’t salted. In this regard, you should not consider these passwords as providing security against potential malicious attacks. Rather, they are necessary for protection from employees.
 
-A list of networks is specified that access is allowed from. In this example, the list of networks for both users is loaded from a separate file (`/etc/metrika.xml`) containing the `networks` substitution. Here is a fragment of it:
-
-``` xml
-<yandex>
-    ...
-    <networks>
-        <ip>::/64</ip>
-        <ip>203.0.113.0/24</ip>
-        <ip>2001:DB8::/32</ip>
-        ...
-    </networks>
-</yandex>
-```
-
-You could define this list of networks directly in `users.xml`, or in a file in the `users.d` directory (for more information, see the section “[Configuration files](configuration_files.md#configuration_files)”).
-
-The config includes comments explaining how to open access from everywhere.
-
-For use in production, only specify `ip` elements (IP addresses and their masks), since using `host` and `hoost_regexp` might cause extra latency.
-
 Next the user settings profile is specified (see the section “[Settings profiles](settings/settings_profiles.md)”. You can specify the default profile, `default'`. The profile can have any name. You can specify the same profile for different users. The most important thing you can write in the settings profile is `readonly=1`, which ensures read-only access. Then specify the quota to be used (see the section “[Quotas](quotas.md#quotas)”). You can specify the default quota: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
-
-In the optional `<allow_databases>` section, you can also specify a list of databases that the user can access. By default, all databases are available to the user. You can specify the `default` database. In this case, the user will receive access to the database by default.
-
-In the optional `<allow_dictionaries>` section, you can also specify a list of dictionaries that the user can access. By default, all dictionaries are available to the user.
 
 Access to the `system` database is always allowed (since this database is used for processing queries).
 
-The user can get a list of all databases and tables in them by using `SHOW` queries or system tables, even if access to individual databases isn’t allowed.
+## Role {#role-management}
 
-Database access is not related to the [readonly](settings/permissions_for_queries.md#settings_readonly) setting. You can’t grant full access to one database and `readonly` access to another one.
+Role is a set of [privileges](../query_language/grant.md#grant-privileges) and [row policies](#row-policy-management). A user assigned with a role gets all the privileges of this role and constraints of row policies.
+
+Role management queries:
+
+- [CREATE ROLE](../query_language/create.md#create-role-statement)
+- [ALTER ROLE](../query_language/alter.md#alter-role-statement)
+- [DROP ROLE](../query_language/misc.md#drop-role-statement)
+- [SET ROLE](../query_language/misc.md#set-role-statement)
+- [SET DEFAULT ROLE](../query_language/misc.md#set-default-role-statement)
+- [SHOW CREATE ROLE](../query_language/show.md#show-create-role-statement)
+
+Privileges to a role can be granted by the [GRANT](../query_language/grant.md) query. To revoke privileges from a role ClickHouse provides the [REVOKE](../query_language/revoke.md) query. To assign a row policy to a role, use the [CREATE ROW POLICY](../query_language/create.md#create-row-policy-statement) or the [ALTER ROW POLICY](../query_language/alter.md#alter-row-policy-statement) query.
+
+
+## Row Policy {#row-policy-management}
+
+Row policy is a filter that defines which or rows is available for a user or for a role.
+
+Row management queries:
+
+- [CREATE ROW POLICY](../query_language/create.md#create-row-policy-statement)
+- [ALTER ROW POLICY](../query_language/alter.md#alter-row-policy-statement)
+- [DROP ROW POLICY](../query_language/misc.md#drop-row-policy-statement)
+- [SHOW CREATE ROW POLICY](../query_language/show.md#show-create-row-policy-statement)
+
 
 [Original article](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->
