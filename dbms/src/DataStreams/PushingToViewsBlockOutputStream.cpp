@@ -25,7 +25,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
       * Although now any insertion into the table is done via PushingToViewsBlockOutputStream,
       *  but it's clear that here is not the best place for this functionality.
       */
-    addTableLock(storage->lockStructureForShare(true, context.getInitialQueryId()));
+    addTableLock(storage->lockStructureForShare(context.getInitialQueryId()));
 
     /// If the "root" table deduplactes blocks, there are no need to make deduplication for children
     /// Moreover, deduplication for AggregatingMergeTree children could produce false positives due to low size of inserting blocks
@@ -34,7 +34,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         disable_deduplication_for_children = !no_destination && storage->supportsDeduplication();
 
     auto table_id = storage->getStorageID();
-    Dependencies dependencies = context.getDependencies(table_id);
+    Dependencies dependencies = DatabaseCatalog::instance().getDependencies(table_id);
 
     /// We need special context for materialized views insertions
     if (!dependencies.empty())
@@ -42,27 +42,26 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
         views_context = std::make_unique<Context>(context);
         // Do not deduplicate insertions into MV if the main insertion is Ok
         if (disable_deduplication_for_children)
-            views_context->getSettingsRef().insert_deduplicate = false;
+            views_context->setSetting("insert_deduplicate", false);
     }
 
     for (const auto & database_table : dependencies)
     {
-        auto dependent_table = context.getTable(database_table);
+        auto dependent_table = DatabaseCatalog::instance().getTable(database_table);
 
         ASTPtr query;
         BlockOutputStreamPtr out;
 
         if (auto * materialized_view = dynamic_cast<StorageMaterializedView *>(dependent_table.get()))
         {
-            addTableLock(materialized_view->lockStructureForShare(true, context.getInitialQueryId()));
+            addTableLock(materialized_view->lockStructureForShare(context.getInitialQueryId()));
 
             StoragePtr inner_table = materialized_view->getTargetTable();
             auto inner_table_id = inner_table->getStorageID();
             query = materialized_view->getInnerQuery();
 
             std::unique_ptr<ASTInsertQuery> insert = std::make_unique<ASTInsertQuery>();
-            insert->database = inner_table_id.database_name;
-            insert->table = inner_table_id.table_name;
+            insert->table_id = inner_table_id;
 
             /// Get list of columns we get from select query.
             auto header = InterpreterSelectQuery(query, *views_context, SelectQueryOptions().analyze())

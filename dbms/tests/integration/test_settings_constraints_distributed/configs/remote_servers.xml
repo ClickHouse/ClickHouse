@@ -5,14 +5,14 @@
                 <replica>
                     <host>node1</host>
                     <port>9000</port>
-                    <user>normal</user>
+                    <user>shard</user>
                 </replica>
             </shard>
             <shard>
                 <replica>
                     <host>node2</host>
                     <port>9000</port>
-                    <user>readonly</user>
+                    <user>shard</user>
                 </replica>
             </shard>
         </test_cluster>

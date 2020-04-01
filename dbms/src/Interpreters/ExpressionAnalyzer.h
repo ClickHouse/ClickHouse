@@ -9,6 +9,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/SelectQueryInfo.h>
+#include <Interpreters/DatabaseCatalog.h>
 
 
 namespace DB
@@ -51,7 +52,7 @@ struct ExpressionAnalyzerData
     bool has_global_subqueries = false;
 
     /// All new temporary tables obtained by performing the GLOBAL IN/JOIN subqueries.
-    Tables external_tables;
+    TemporaryTablesMapping external_tables;
 };
 
 
@@ -121,7 +122,7 @@ protected:
 
     SyntaxAnalyzerResultPtr syntax;
 
-    const StoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
+    const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
     const AnalyzedJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
@@ -247,7 +248,7 @@ public:
     const PreparedSets & getPreparedSets() const { return prepared_sets; }
 
     /// Tables that will need to be sent to remote servers for distributed query processing.
-    const Tables & getExternalTables() const { return external_tables; }
+    const TemporaryTablesMapping & getExternalTables() const { return external_tables; }
 
     ExpressionActionsPtr simpleSelectActions();
 

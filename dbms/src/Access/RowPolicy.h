@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Access/IAccessEntity.h>
-#include <Access/GenericRoleSet.h>
+#include <Access/ExtendedRoleSet.h>
 
 
 namespace DB
@@ -37,7 +37,7 @@ struct RowPolicy : public IAccessEntity
     /// Check is a SQL condition expression used to check whether a row can be written into
     /// the table. If the expression returns NULL or false an exception is thrown.
     /// If a conditional expression here is empty it means no filtering is applied.
-    enum ConditionIndex
+    enum ConditionType
     {
         SELECT_FILTER,
         INSERT_CHECK,
@@ -45,11 +45,11 @@ struct RowPolicy : public IAccessEntity
         UPDATE_CHECK,
         DELETE_FILTER,
     };
-    static constexpr size_t MAX_CONDITION_INDEX = 5;
-    static const char * conditionIndexToString(ConditionIndex index);
-    static const char * conditionIndexToColumnName(ConditionIndex index);
+    static constexpr size_t MAX_CONDITION_TYPE = 5;
+    static const char * conditionTypeToString(ConditionType index);
+    static const char * conditionTypeToColumnName(ConditionType index);
 
-    String conditions[MAX_CONDITION_INDEX];
+    String conditions[MAX_CONDITION_TYPE];
 
     /// Sets that the policy is permissive.
     /// A row is only accessible if at least one of the permissive policies passes,
@@ -67,7 +67,7 @@ struct RowPolicy : public IAccessEntity
     std::shared_ptr<IAccessEntity> clone() const override { return cloneImpl<RowPolicy>(); }
 
     /// Which roles or users should use this row policy.
-    GenericRoleSet roles;
+    ExtendedRoleSet to_roles;
 
 private:
     String database;

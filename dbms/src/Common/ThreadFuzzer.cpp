@@ -18,7 +18,6 @@
 
 #include <Common/ThreadFuzzer.h>
 
-
 /// We will also wrap some thread synchronization functions to inject sleep/migration before or after.
 #if defined(OS_LINUX)
 #    define FOR_EACH_WRAPPED_FUNCTION(M) \
@@ -27,7 +26,6 @@
 #else
 #    define FOR_EACH_WRAPPED_FUNCTION(M)
 #endif
-
 
 namespace DB
 {
@@ -70,6 +68,7 @@ static void initFromEnv(std::atomic<T> & what, const char * name)
 
 static std::atomic<int> num_cpus = 0;
 
+#if defined(OS_LINUX)
 #define DEFINE_WRAPPER_PARAMS(RET, NAME, ...) \
     static std::atomic<double> NAME ## _before_yield_probability = 0; \
     static std::atomic<double> NAME ## _before_migrate_probability = 0; \
@@ -84,7 +83,7 @@ static std::atomic<int> num_cpus = 0;
 FOR_EACH_WRAPPED_FUNCTION(DEFINE_WRAPPER_PARAMS)
 
 #undef DEFINE_WRAPPER_PARAMS
-
+#endif
 
 void ThreadFuzzer::initConfiguration()
 {
@@ -100,6 +99,7 @@ void ThreadFuzzer::initConfiguration()
     initFromEnv(sleep_probability, "THREAD_FUZZER_SLEEP_PROBABILITY");
     initFromEnv(sleep_time_us, "THREAD_FUZZER_SLEEP_TIME_US");
 
+#if defined(OS_LINUX)
 #define INIT_WRAPPER_PARAMS(RET, NAME, ...) \
     initFromEnv(NAME ## _before_yield_probability, "THREAD_FUZZER_" #NAME "_BEFORE_YIELD_PROBABILITY"); \
     initFromEnv(NAME ## _before_migrate_probability, "THREAD_FUZZER_" #NAME "_BEFORE_MIGRATE_PROBABILITY"); \
@@ -114,11 +114,13 @@ void ThreadFuzzer::initConfiguration()
     FOR_EACH_WRAPPED_FUNCTION(INIT_WRAPPER_PARAMS)
 
 #undef INIT_WRAPPER_PARAMS
+#endif
 }
 
 
 bool ThreadFuzzer::isEffective() const
 {
+#if defined(OS_LINUX)
 #define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
     if (NAME ## _before_yield_probability.load(std::memory_order_relaxed)) return true; \
     if (NAME ## _before_migrate_probability.load(std::memory_order_relaxed)) return true; \
@@ -133,6 +135,7 @@ bool ThreadFuzzer::isEffective() const
     FOR_EACH_WRAPPED_FUNCTION(CHECK_WRAPPER_PARAMS)
 
 #undef INIT_WRAPPER_PARAMS
+#endif
 
     return cpu_time_period_us != 0
         && (yield_probability > 0
@@ -161,12 +164,14 @@ static void injection(
     {
         int migrate_to = std::uniform_int_distribution<>(0, num_cpus_loaded - 1)(thread_local_rng);
 
-        cpu_set_t set;
+        cpu_set_t set{};
         CPU_ZERO(&set);
         CPU_SET(migrate_to, &set);
 
         (void)sched_setaffinity(0, sizeof(set), &set);
     }
+#else
+    UNUSED(migrate_probability);
 #endif
 
     if (sleep_probability > 0
@@ -194,20 +199,26 @@ void ThreadFuzzer::setup()
     sa.sa_handler = signalHandler;
     sa.sa_flags = SA_RESTART;
 
+#if defined(OS_LINUX)
     if (sigemptyset(&sa.sa_mask))
         throwFromErrno("Failed to clean signal mask for thread fuzzer", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
 
     if (sigaddset(&sa.sa_mask, SIGPROF))
         throwFromErrno("Failed to add signal to mask for thread fuzzer", ErrorCodes::CANNOT_MANIPULATE_SIGSET);
+#else
+    // the two following functions always return 0 under mac
+    sigemptyset(&sa.sa_mask);
+    sigaddset(&sa.sa_mask, SIGPROF);
+#endif
 
     if (sigaction(SIGPROF, &sa, nullptr))
         throwFromErrno("Failed to setup signal handler for thread fuzzer", ErrorCodes::CANNOT_SET_SIGNAL_HANDLER);
 
-    static constexpr UInt32 TIMER_PRECISION = 1000000;
+    static constexpr UInt32 timer_precision = 1000000;
 
     struct timeval interval;
-    interval.tv_sec = cpu_time_period_us / TIMER_PRECISION;
-    interval.tv_usec = cpu_time_period_us % TIMER_PRECISION;
+    interval.tv_sec = cpu_time_period_us / timer_precision;
+    interval.tv_usec = cpu_time_period_us % timer_precision;
 
     struct itimerval timer = {.it_interval = interval, .it_value = interval};
 
@@ -219,6 +230,7 @@ void ThreadFuzzer::setup()
 /// We expect that for every function like pthread_mutex_lock there is the same function with two underscores prefix.
 /// NOTE We cannot use dlsym(... RTLD_NEXT), because it will call pthread_mutex_lock and it will lead to infinite recursion.
 
+#if defined(OS_LINUX)
 #define MAKE_WRAPPER(RET, NAME, ...) \
     extern "C" RET __ ## NAME(__VA_ARGS__); /* NOLINT */ \
     extern "C" RET NAME(__VA_ARGS__) /* NOLINT */ \
@@ -240,8 +252,9 @@ void ThreadFuzzer::setup()
         return ret; \
     } \
 
-FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER)
+    FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER)
 
 #undef MAKE_WRAPPER
+#endif
 
 }

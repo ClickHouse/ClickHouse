@@ -14,6 +14,7 @@ nav:
   - 'Установка': 'getting_started/install.md'
   - 'Руководство для начинающих': 'getting_started/tutorial.md'
   - 'Тестовые наборы данных':
+    - 'Введение': 'getting_started/example_datasets/index.md'
     - 'OnTime': 'getting_started/example_datasets/ontime.md'
     - 'Данные о такси в Нью-Йорке': 'getting_started/example_datasets/nyc_taxi.md'
     - 'AMPLab Big Data Benchmark': 'getting_started/example_datasets/amplab_benchmark.md'
@@ -21,6 +22,7 @@ nav:
     - 'Терабайт логов кликов от Criteo': 'getting_started/example_datasets/criteo.md'
     - 'Схема «Звезда»': 'getting_started/example_datasets/star_schema.md'
     - 'Данные Яндекс.Метрики': 'getting_started/example_datasets/metrica.md'
+  - 'Playground': 'getting_started/playground.md'
 
 - 'Интерфейсы':
   - 'Введение': 'interfaces/index.md'
@@ -238,7 +240,11 @@ nav:
   - 'Сторонние библиотеки': 'development/contrib.md'
 
 - 'Что нового':
-  - 'Changelog': 'changelog.md'
+  - 'Changelog':
+    - '2020': 'changelog/index.md'
+    - '2019': 'changelog/2019.md'
+    - '2018': 'changelog/2018.md'
+    - '2017': 'changelog/2017.md'
   - 'Security changelog': 'security_changelog.md'
   - 'Roadmap': 'roadmap.md'
   - 'Подробный roadmap 2020': 'extended_roadmap.md'

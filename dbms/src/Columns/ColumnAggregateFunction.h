@@ -160,6 +160,8 @@ public:
 
     void updateHashWithValue(size_t n, SipHash & hash) const override;
 
+    void updateWeakHash32(WeakHash32 & hash) const override;
+
     size_t byteSize() const override;
 
     size_t allocatedBytes() const override;

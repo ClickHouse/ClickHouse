@@ -58,8 +58,8 @@ DictionaryPtr DictionaryFactory::create(
 
 DictionaryPtr DictionaryFactory::create(const std::string & name, const ASTCreateQuery & ast, const Context & context) const
 {
-    auto configurationFromAST = getDictionaryConfigurationFromAST(ast);
-    return DictionaryFactory::create(name, *configurationFromAST, "dictionary", context, true);
+    auto configuration = getDictionaryConfigurationFromAST(ast);
+    return DictionaryFactory::create(name, *configuration, "dictionary", context, true);
 }
 
 bool DictionaryFactory::isComplex(const std::string & layout_type) const

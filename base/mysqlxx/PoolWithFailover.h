@@ -105,6 +105,6 @@ namespace mysqlxx
         PoolWithFailover(const PoolWithFailover & other);
 
         /** Allocates a connection to use. */
-        Entry Get();
+        Entry get();
     };
 }
