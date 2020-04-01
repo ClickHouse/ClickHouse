@@ -256,7 +256,7 @@ add_library (clickhouse_malloc OBJECT src/Common/malloc.cpp)
 set_source_files_properties(src/Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
 add_library (clickhouse_new_delete STATIC src/Common/new_delete.cpp)
-target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
+target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
@@ -303,10 +303,12 @@ add_object_library(clickhouse_processors_sources src/Processors/Sources)
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
+    target_link_libraries (dbms PRIVATE jemalloc)
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PUBLIC ${all_modules})
+    target_link_libraries (clickhouse_interpreters PRIVATE jemalloc)
     list (APPEND all_modules dbms)
     # force all split libs to be linked
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
@@ -554,18 +556,6 @@ if (USE_BROTLI)
     target_link_libraries (clickhouse_common_io PRIVATE ${BROTLI_LIBRARY})
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
 endif()
-
-if (USE_JEMALLOC)
-    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
-    target_include_directories (clickhouse_new_delete SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR})
-
-    if(NOT MAKE_STATIC_LIBRARIES AND ${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
-        # mallctl in dbms/src/Interpreters/AsynchronousMetrics.cpp
-        # Actually we link JEMALLOC to almost all libraries.
-        # This is just hotfix for some uninvestigated problem.
-        target_link_libraries(clickhouse_interpreters PRIVATE ${JEMALLOC_LIBRARIES})
-    endif()
-endif ()
 
 dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
