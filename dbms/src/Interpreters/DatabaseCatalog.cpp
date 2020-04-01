@@ -423,7 +423,11 @@ bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id) const
 {
-    return tryGetDatabaseAndTable(table_id).second;
+    std::optional<Exception> exc;
+    auto res = getTableImpl(table_id, *global_context, &exc);
+    if (!res.second)
+        throw Exception(*exc);
+    return res.second;
 }
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id) const
@@ -433,11 +437,7 @@ StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id) const
 
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id) const
 {
-    std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, *global_context, &exc);
-    if (!res.second)
-        throw Exception(*exc);
-    return res;
+    return getTableImpl(table_id, *global_context, nullptr);
 }
 
 
