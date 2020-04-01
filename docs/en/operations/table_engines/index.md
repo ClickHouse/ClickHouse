@@ -35,7 +35,7 @@ Engines in the family:
 -   [StripeLog](stripelog.md)
 -   [Log](log.md)
 
-### Intergation engines {#intergation-engines}
+### Integration engines {#integration-engines}
 
 Engines for communicating with other data storage and processing systems.
 

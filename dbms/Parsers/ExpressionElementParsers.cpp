@@ -1026,8 +1026,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
             }
             else
             {
-                String message = String("comma or ") + getTokenName(closing_bracket);
-                expected.add(pos, message.c_str());
+                expected.add(pos, "comma or closing bracket");
                 return false;
             }
         }
