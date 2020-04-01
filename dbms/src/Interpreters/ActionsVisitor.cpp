@@ -623,7 +623,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
         auto * existing_column = block.findByName(default_name);
 
         /*
-         * To approximate CSE, build all identical literals to a single temporary
+         * To approximate CSE, bind all identical literals to a single temporary
          * columns. We try to find the column by its default name, but after that
          * we have to check that it contains the correct data. This might not be
          * the case if it is a user-supplied column, or it is from under a join,
