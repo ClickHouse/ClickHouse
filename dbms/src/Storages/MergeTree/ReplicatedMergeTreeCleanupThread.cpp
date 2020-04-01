@@ -57,7 +57,7 @@ void ReplicatedMergeTreeCleanupThread::iterate()
 
     {
         /// TODO: Implement tryLockStructureForShare.
-        auto lock = storage.lockStructureForShare("");
+        auto lock = storage.lockStructureForShare(false, "");
         storage.clearOldTemporaryDirectories();
     }
 

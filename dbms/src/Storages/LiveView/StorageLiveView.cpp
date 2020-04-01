@@ -517,11 +517,14 @@ void StorageLiveView::drop(TableStructureWriteLockHolder &)
     condition.notify_all();
 }
 
-void StorageLiveView::refresh()
+void StorageLiveView::refresh(const Context & context)
 {
-    std::lock_guard lock(mutex);
-    if (getNewBlocks())
-        condition.notify_all();
+    auto alter_lock = lockAlterIntention(context.getCurrentQueryId());
+    {
+        std::lock_guard lock(mutex);
+        if (getNewBlocks())
+            condition.notify_all();
+    }
 }
 
 Pipes StorageLiveView::read(

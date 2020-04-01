@@ -255,7 +255,7 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        table_lock = storage->lockStructureForShare(context->getInitialQueryId());
+        table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
         table_id = storage->getStorageID();
     }
 
