@@ -1,8 +1,9 @@
 #include <gtest/gtest.h>
+#include <Common/config.h>
 
 #if USE_AWS_S3
 
-#include <IO/S3Common.h>
+#    include <IO/S3Common.h>
 
 namespace
 {
