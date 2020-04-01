@@ -9,7 +9,7 @@ CREATE TABLE table_for_rename_replicated
   value2 String,
   value3 String
 )
-ENGINE = ReplicatedMergeTree('/clickhouse/tables/table_for_rename_replicaed', '1')
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/table_for_rename_replicated', '1')
 PARTITION BY date
 ORDER BY key;
 

@@ -526,9 +526,6 @@ private:
     void waitMutationToFinishOnReplicas(
         const Strings & replicas, const String & mutation_id) const;
 
-    StorageInMemoryMetadata getMetadataFromSharedZookeeper(const String & metadata_str, const String & columns_str) const;
-
-
     MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const override;
 
 protected:
