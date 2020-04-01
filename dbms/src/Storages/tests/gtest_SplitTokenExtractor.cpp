@@ -10,10 +10,6 @@
 #include <string>
 #include <memory>
 
-#include <immintrin.h>
-#include <nmmintrin.h>
-#include <emmintrin.h>
-
 namespace
 {
 using namespace DB;
