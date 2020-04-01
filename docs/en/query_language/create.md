@@ -301,9 +301,10 @@ For more information, see [External Dictionaries](dicts/external_dicts.md) secti
 
 ## CREATE USER {#create-user-statement}
 
-Creates a user account.
+Creates a [user account](../operations/access_rights.md#user-account-management).
 
-ClickHouse allows to configure user accounts in the [user.xml](../operations/settings/settings_users.md) file. The `CREATE USER` statement is an alternative way of creating user accounts.
+!!! info "Note"
+    Some of the access control functionality is available through the [users.xml](settings/settings_users.md) server configuration files, but we don't recommend using this way of user permissions management.
 
 ### Syntax {#create-user-syntax}
 
@@ -315,32 +316,27 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
-
 #### Identification
 
-There are some ways of user identification:
+There are multiple ways of user identification:
 
 - `IDENTIFIED WITH no_password`
 - `IDENTIFIED WITH plaintext_password BY 'qwerty'`
-- `IDENTIFIED WITH sha256_password BY 'qwerty'`
+- `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password`
 - `IDENTIFIED WITH sha256_hash BY 'hash'`
 - `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 - `IDENTIFIED WITH double_sha1_hash BY 'hash'`
 
-To create a user account without a password, use the syntax `IDENTIFIED WITH ... BY`.
-
-The syntax `IDENTIFIED BY ...` creates an identification that uses `sha256_password` or `sha256_hash` based on the value specified after `BY`.
-
 #### User Host
 
-Host can be specified in the `HOST` section of query by the following ways:
+User host is a host from which a connection to ClickHouse server could be established. Host can be specified in the `HOST` section of query by the following ways:
 
-- `HOST IP 'IP_ADDRESS_OR_NETWORK'` — User can connect to ClickHouse server only from the specified IP address. For example, `HOST IP '192.168.0.0/16'`.
+- `HOST IP 'IP_ADDRESS_OR_SUBNETWORK'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). For example, `HOST IP '192.168.0.0/16'`.
 - `HOST ANY` — No limits.
 - `HOST LOCAL` — User can connect only locally.
 - `HOST NAME 'FQDN'` —  The user host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
-- `HOST NAME REGEXP 'regexp'` — You can use regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.
-- `HOST LIKE 'te.mp.la.te'` — Allows use the operator [LIKE](functions/string_search_functions.md#function-like) to specify the user host. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '192.168.%.%'` is equivalent to `HOST IP '192.168.0.0/16'`.
+- `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.
+- `HOST LIKE 'te.mp.la.te'` — Allows you use the [LIKE](functions/string_search_functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, or `HOST LIKE '192.168.%.%'` is equivalent to `HOST IP '192.168.0.0/16'`.
 
 Another way of specifying host is to use `@` syntax with the user name. Examples:
 
@@ -349,7 +345,7 @@ Another way of specifying host is to use `@` syntax with the user name. Examples
 - `CREATE USER mira@'192.168.%.%'` — Equivalent to the `HOST LIKE` syntax.
 
 !!! info "Warning"
-    ClickHouse treats `user_name@'address'` as a user name as a whole. Thus, technically you can create multiple users with `user_name` and different constructions after `@`. We don't recommend do so.
+    ClickHouse treats `user_name@'address'` as a user name as a whole. Thus, technically you can create multiple users with `user_name` and different constructions after `@`. We don't recommend to do so.
 
 
 ### Example
@@ -374,9 +370,9 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
 
 ### Description
 
-Role is a set of [privileges](grant.md#grant-privileges). The user assigned with a role gets all the privileges of this role. 
+Role is a set of [privileges](grant.md#grant-privileges). A user assigned with a role gets all the privileges of this role. 
 
-A user can be assigned with multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement). The final scope of privileges is a joined set of all the privileges of all the applied roles. Along with the roles privileges a user can have another granted privileges which are active independently of applied roles.
+A user can be assigned with multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. Along with the roles privileges a user can have another granted privileges which are active independently of applied roles.
 
 User can have a default role which applies at user login. To set the default role, use the [SET DEFAULT ROLE](misc.md#set-default-role-statement) statement or the [ALTER USER](alter.md#alter-user-statement) statement.
 

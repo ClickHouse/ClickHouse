@@ -32,32 +32,32 @@ The `WITH ADMIN OPTION` clause sets `ADMIN OPTION` privilege for `user` or `role
 
 To use `GRANT`, your account must have the `GRANT OPTION` privilege. You can grant privileges only inside the scope of your account privileges.
 
-For example, administrator has granted privileges to the `vasia` account by the query:
+For example, administrator has granted privileges to the `john` account by the query:
 
 ```sql
-GRANT SELECT(x,y) ON db.table TO vasya WITH GRANT OPTION
+GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
 ```
 
-It means that `vasya` has the permission to perform:
+It means that `john` has the permission to perform:
 
 - `SELECT x,y FROM db.table`.
 - `SELECT x FROM db.table`.
 - `SELECT y FROM db.table`.
 
-`vasya` can't perform `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. ClickHouse doesn't return any data, even `x` and `y`.
+`john` can't perform `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. ClickHouse doesn't return any data, even `x` and `y`.
 
-Also `vasya` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or the smaller scope.
+Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or the smaller scope.
 
-Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO vasya` query allows `vasia` to perform the `SELECT` query over all the tables in `db` database. Also, you can omit database name. In this case privileges are granted for current database.
+Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO john` query allows `john` to perform the `SELECT` query over all the tables in `db` database. Also, you can omit database name. In this case privileges are granted for current database.
 
-You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO vasya, petya` allows accounts `vasia` and `petya` to perform the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
+You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO john, petya` allows accounts `john` and `petya` to perform the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
 
 
 ## Privileges {#grant-privileges}
 
-Privilege is a permission to perform queries.
+Privilege is a permission to perform specific kind of queries.
 
-Privileges have hierarchic structure. A set of permitted queries depends on the privilege scope.
+Privileges have an hiehierarchic structure. A set of permitted queries depends on the privilege scope.
 
 Top scope privileges:
 
@@ -96,10 +96,10 @@ User granted with this privilege can perform `SELECT` queries over a specified l
 Consider the following privilege:
 
 ```sql
-GRANT SELECT(x,y) ON db.table TO vasya
+GRANT SELECT(x,y) ON db.table TO john
 ```
 
-This privilege allows `vasya` to perform any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`. For example, `SELECT x FROM db.table`. `vasya` can't perform `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. ClickHouse doesn't return any data, even `x` and `y`.
+This privilege allows `john` to perform any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`. For example, `SELECT x FROM db.table`. `john` can't perform `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. ClickHouse doesn't return any data, even `x` and `y`.
 
 ### INSERT {#grant-insert}
 
@@ -112,10 +112,10 @@ User granted with this privilege can perform `INSERT` queries over a specified l
 Consider the following privilege:
 
 ```sql
-GRANT INSERT(x,y) ON db.table TO vasya
+GRANT INSERT(x,y) ON db.table TO john
 ```
 
-This privilege allows `vasya` to perform any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`. For example, `SELECT x FROM db.table`. `vasya` can't perform `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. ClickHouse doesn't return any data, even `x` and `y`.
+This privilege allows `john` to perform any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`. For example, `SELECT x FROM db.table`. `john` can't perform `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. ClickHouse doesn't return any data, even `x` and `y`.
 
 ### ALTER {#grant-alter}
 
@@ -148,7 +148,7 @@ Allows to perform [ALTER](alter.md) queries corresponding to the following hiera
       - `REFRESH VIEW`
       - `MODIFY VIEW QUERY`
 
-Examples of hierarchy treating.
+Examples of how this hierarchy is treated:
 
 - The `ALTER` privilege includes all other privileges. 
 - `ALTER CONSTRAINT` includes `ADD CONSTRAINT` and `DROP CONSTRAINT` privileges.
@@ -285,9 +285,9 @@ Some kinds of ClickHouse [dictionaries](dicts/index.md) are not stored in a data
 
 **Examples**
 
-- `GRANT dictGet() ON mydb.mydictionary TO vasya`
-- `GRANT dictGet() ON mydictionary TO vasya`
-- `GRANT dictGet() ON 'no_database'.mydictionary TO vasya`
+- `GRANT dictGet() ON mydb.mydictionary TO john`
+- `GRANT dictGet() ON mydictionary TO john`
+- `GRANT dictGet() ON 'no_database'.mydictionary TO john`
 
 ### Table Functions {#grant-table-functions}
 

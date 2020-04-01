@@ -538,9 +538,8 @@ Changes row policy.
 ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
     [RENAME TO new_name]
     [AS {PERMISSIVE | RESTRICTIVE}]
-    [FOR {SELECT | INSERT | UPDATE | DELETE | ALL}]
-    [USING {condition | NONE}]
-    [WITH CHECK {condition | NONE}] [,...]
+    [FOR {SELECT | ALL}]
+    [USING {condition | NONE}][,...]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 

@@ -23,8 +23,6 @@ To revoke some privilege you can use a privilege of wider scope then you plan to
 
 ### Partial Revokes {partial-revokes-dscr}
 
-By default you can't revoke a part of a privilege. For example, if a user has the `SELECT *.*` privilege you can't revoke from it a privilege to read date from some table or database.
+You can revoke a part of a privilege. For example, if a user has the `SELECT *.*` privilege you can revoke from it a privilege to read data from some table or a database.
 
-You can enable to revoke a privilege for subobject of the initial object by the [partial_revokes](../operations/settings/settings.md#partial-revokes-setting) setting. If `partial_revokes = 1` you can, for example? revoke a privilege to read from some individual database or a table.
-
-
+[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
