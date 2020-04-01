@@ -320,7 +320,7 @@ bool RestoreQualifiedNamesMatcher::needChildVisit(ASTPtr &, const ASTPtr & child
 {
     /// Do not go into subqueries
     if (child->as<ASTSelectWithUnionQuery>())
-        return false;
+        return false; // NOLINT
     return true;
 }
 
