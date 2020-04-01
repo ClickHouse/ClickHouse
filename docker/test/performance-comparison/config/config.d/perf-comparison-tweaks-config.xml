@@ -1,4 +1,6 @@
 <yandex>
+    <listen_host>::</listen_host>
+
     <logger>
         <console>true</console>
     </logger>
