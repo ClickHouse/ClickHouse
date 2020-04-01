@@ -103,6 +103,13 @@ public:
         size_t getNumColumns() const { return column_numbers_not_to_aggregate.size() + columns_to_aggregate.size(); }
     };
 
+    String getName() const override { return "SummingSortedTransform"; }
+    void work() override;
+
+protected:
+    void initializeInputs() override;
+    void consume(Chunk chunk, size_t input_number) override;
+
 private:
     Row current_row;
     bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
@@ -125,10 +132,34 @@ private:
     struct RowRef
     {
         ColumnRawPtrs * sort_columns = nullptr; /// Point to sort_columns from SortCursor or last_chunk_sort_columns.
-        UInt64 row_number = 0;
+        UInt64 row_num = 0;
+
+        bool empty() const { return sort_columns == nullptr; }
+        void reset() { sort_columns = nullptr; }
+
+        void set(SortCursor & cursor)
+        {
+            sort_columns = &cursor.impl->sort_columns;
+            row_num = cursor.impl->pos;
+        }
+
+        bool hasEqualSortColumnsWith(const RowRef & other)
+        {
+            auto size = sort_columns->size();
+            for (size_t col_number = 0; col_number < size; ++col_number)
+            {
+                auto & cur_column = (*sort_columns)[col_number];
+                auto & other_column = (*other.sort_columns)[col_number];
+
+                if (0 != cur_column->compareAt(row_num, other.row_num, *other_column, 1))
+                    return false;
+            }
+
+            return true;
+        }
     };
 
-    RowRef last_row;
+    RowRef last_key;
 
     SortingHeap<SortCursor> queue;
     bool is_queue_initialized = false;
