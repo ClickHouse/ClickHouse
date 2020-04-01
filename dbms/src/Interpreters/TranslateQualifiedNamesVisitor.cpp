@@ -300,14 +300,45 @@ void TranslateQualifiedNamesMatcher::extractJoinUsingColumns(const ASTPtr ast, D
     }
 }
 
-void RestoreQualifiedNamesData::visit(ASTIdentifier & identifier, ASTPtr & ast)
+
+void RestoreQualifiedNamesMatcher::Data::changeTable(ASTIdentifier & identifier) const
+{
+    auto match = IdentifierSemantic::canReferColumnToTable(identifier, distributed_table);
+    switch (match)
+    {
+        case IdentifierSemantic::ColumnMatch::AliasedTableName:
+        case IdentifierSemantic::ColumnMatch::TableName:
+        case IdentifierSemantic::ColumnMatch::DbAndTable:
+            IdentifierSemantic::setColumnLongName(identifier, remote_table);
+            break;
+        default:
+            break;
+    }
+}
+
+bool RestoreQualifiedNamesMatcher::needChildVisit(ASTPtr &, const ASTPtr & child)
+{
+    /// Do not go into subqueries
+    if (child->as<ASTSelectWithUnionQuery>())
+        return false; // NOLINT
+    return true;
+}
+
+void RestoreQualifiedNamesMatcher::visit(ASTPtr & ast, Data & data)
+{
+    if (auto * t = ast->as<ASTIdentifier>())
+        visit(*t, ast, data);
+}
+
+void RestoreQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &, Data & data)
 {
     if (IdentifierSemantic::getColumnName(identifier))
     {
         if (IdentifierSemantic::getMembership(identifier))
         {
-            ast = identifier.clone();
-            ast->as<ASTIdentifier>()->restoreCompoundName();
+            identifier.restoreCompoundName();
+            if (data.rename)
+                data.changeTable(identifier);
         }
     }
 }
