@@ -38,7 +38,7 @@ void WebTerminalSession::verifyingAuthenticatedToken(const HTMLForm & params)
         throw Exception("Currently querying with wrong token.", ErrorCodes::UNKNOWN_USER);
 }
 
-static inline auto makeResponseWriteBuffer(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, Settings & settings)
+static inline auto makeResponseWriteBuffer(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response, const Settings & settings)
 {
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
     String http_response_compression_methods = request.get("Accept-Encoding", "");

@@ -1,5 +1,5 @@
 #include <IO/RingMemoryReadWriteBuffer.h>
-#include <Common/defines.h>
+#include <common/defines.h>
 #include <Common/Stopwatch.h>
 
 

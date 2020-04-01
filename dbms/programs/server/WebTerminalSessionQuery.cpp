@@ -124,7 +124,6 @@ void WebTerminalSessionQuery::executeQueryWithProcessors(QueryPipeline & query_p
         num_threads = std::min(num_threads, query_pipeline.getNumThreads());
 
         executor->execute(num_threads);
-        query_pipeline.finalize();
     });
 }
 
