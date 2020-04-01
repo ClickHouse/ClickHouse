@@ -13,7 +13,7 @@
 namespace DB
 {
 
-class ReplacingSortedTransform : public IMergingTransform
+class ReplacingSortedTransform final : public IMergingTransform
 {
 public:
     ReplacingSortedTransform(
@@ -50,7 +50,7 @@ private:
     SortingHeap<SortCursor> queue;
     bool is_queue_initialized = false;
 
-    using RowRef = detail::RowRef;
+    using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 3; /// last, current, selected.
     RowRef last_row;
     /// RowRef next_key; /// Primary key of next row.
