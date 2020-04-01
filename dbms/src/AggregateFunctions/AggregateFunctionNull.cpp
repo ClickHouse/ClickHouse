@@ -51,6 +51,10 @@ public:
         if (!has_nullable_types)
             throw Exception("Aggregate function combinator 'Null' requires at least one argument to be Nullable", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
+        if (nested_function)
+            if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params))
+                return adapter;
+
         /// Special case for 'count' function. It could be called with Nullable arguments
         /// - that means - count number of calls, when all arguments are not NULL.
         if (nested_function && nested_function->getName() == "count")
@@ -71,9 +75,9 @@ public:
         else
         {
             if (return_type_is_nullable)
-                return std::make_shared<AggregateFunctionNullVariadic<true>>(nested_function, arguments, params);
+                return std::make_shared<AggregateFunctionNullVariadic<true, true>>(nested_function, arguments, params);
             else
-                return std::make_shared<AggregateFunctionNullVariadic<false>>(nested_function, arguments, params);
+                return std::make_shared<AggregateFunctionNullVariadic<false, true>>(nested_function, arguments, params);
         }
     }
 };

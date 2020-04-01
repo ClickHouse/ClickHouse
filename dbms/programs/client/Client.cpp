@@ -4,7 +4,7 @@
 
 #if USE_REPLXX
 #   include <common/ReplxxLineReader.h>
-#elif USE_READLINE
+#elif defined(USE_READLINE) && USE_READLINE
 #   include <common/ReadlineLineReader.h>
 #else
 #   include <common/LineReader.h>
@@ -502,7 +502,7 @@ private:
 
 #if USE_REPLXX
             ReplxxLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
-#elif USE_READLINE
+#elif defined(USE_READLINE) && USE_READLINE
             ReadlineLineReader lr(Suggest::instance(), history_file, '\\', config().has("multiline") ? ';' : 0);
 #else
             LineReader lr(history_file, '\\', config().has("multiline") ? ';' : 0);

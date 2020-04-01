@@ -96,6 +96,7 @@ public:
         unsigned num_streams) override;
 
     std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalBytes() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
@@ -286,6 +287,9 @@ private:
 
     /// True if replica was created for existing table with fixed granularity
     bool other_replicas_fixed_granularity = false;
+
+    template <class Func>
+    void foreachCommittedParts(const Func & func) const;
 
     /** Creates the minimum set of nodes in ZooKeeper.
       */

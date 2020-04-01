@@ -136,6 +136,24 @@ void StorageMemory::truncate(const ASTPtr &, const Context &, TableStructureWrit
     data.clear();
 }
 
+std::optional<UInt64> StorageMemory::totalRows() const
+{
+    UInt64 rows = 0;
+    std::lock_guard lock(mutex);
+    for (auto & buffer : data)
+        rows += buffer.rows();
+    return rows;
+}
+
+std::optional<UInt64> StorageMemory::totalBytes() const
+{
+    UInt64 bytes = 0;
+    std::lock_guard lock(mutex);
+    for (auto & buffer : data)
+        bytes += buffer.bytes();
+    return bytes;
+}
+
 
 void registerStorageMemory(StorageFactory & factory)
 {

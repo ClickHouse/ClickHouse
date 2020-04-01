@@ -459,9 +459,27 @@ public:
     /// Returns storage policy if storage supports it
     virtual StoragePolicyPtr getStoragePolicy() const { return {}; }
 
-    /** If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
-     */
+    /// If it is possible to quickly determine exact number of rows in the table at this moment of time, then return it.
+    /// Used for:
+    /// - Simple count() opimization
+    /// - For total_rows column in system.tables
+    ///
+    /// Does takes underlying Storage (if any) into account.
     virtual std::optional<UInt64> totalRows() const
+    {
+        return {};
+    }
+
+    /// If it is possible to quickly determine exact number of bytes for the table on storage:
+    /// - memory (approximated)
+    /// - disk (compressed)
+    ///
+    /// Used for:
+    /// - For total_bytes column in system.tables
+    //
+    /// Does not takes underlying Storage (if any) into account
+    /// (since for Buffer we still need to know how much bytes it uses).
+    virtual std::optional<UInt64> totalBytes() const
     {
         return {};
     }

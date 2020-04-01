@@ -42,6 +42,7 @@ struct SubqueryForSet
 private:
     NamesWithAliases joined_block_aliases; /// Rename column from joined block from this list.
 
+    /// Rename source right table column names into qualified column names if they conflicts with left table ones.
     void renameColumns(Block & block);
 };
 
