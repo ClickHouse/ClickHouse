@@ -136,7 +136,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
         return {};
 
     if (isLeftTableFunction())
-        return context.executeTableFunction(left_table_expression);
+        return context.getQueryContext().executeTableFunction(left_table_expression);
 
     if (left_db_and_table)
     {

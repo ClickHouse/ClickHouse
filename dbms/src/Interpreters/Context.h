@@ -151,6 +151,7 @@ private:
     bool use_default_roles = false;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
+    std::shared_ptr<const Settings> active_default_settings;
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -344,6 +345,9 @@ public:
     void setSetting(const StringRef & name, const Field & value);
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
+
+    /// Reset settings to the default values for the current user.
+    void resetSettingsToDefault();
 
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change) const;
