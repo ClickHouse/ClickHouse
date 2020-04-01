@@ -19,7 +19,7 @@ namespace DB
 /* Database to store StorageDictionary tables
  * automatically creates tables for all dictionaries
  */
-class DatabaseDictionary : public IDatabase
+class DatabaseDictionary final : public IDatabase
 {
 public:
     DatabaseDictionary(const String & name_);
@@ -37,7 +37,7 @@ public:
         const Context & context,
         const String & table_name) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name = {}) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
 
     bool empty(const Context & context) const override;
 

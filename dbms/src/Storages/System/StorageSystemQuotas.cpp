@@ -34,8 +34,6 @@ NamesAndTypesList StorageSystemQuotas::getNamesAndTypes()
         {"source", std::make_shared<DataTypeString>()},
         {"key_type", std::make_shared<DataTypeEnum8>(getKeyTypeEnumValues())},
         {"roles", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
-        {"all_roles", std::make_shared<DataTypeUInt8>()},
-        {"except_roles", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())},
         {"intervals.duration", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt64>())},
         {"intervals.randomize_interval", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>())}};
 
@@ -63,9 +61,6 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, const Context &
     auto & key_type_column = *res_columns[i++];
     auto & roles_data = assert_cast<ColumnArray &>(*res_columns[i]).getData();
     auto & roles_offsets = assert_cast<ColumnArray &>(*res_columns[i++]).getOffsets();
-    auto & all_roles_column = *res_columns[i++];
-    auto & except_roles_data = assert_cast<ColumnArray &>(*res_columns[i]).getData();
-    auto & except_roles_offsets = assert_cast<ColumnArray &>(*res_columns[i++]).getOffsets();
     auto & durations_data = assert_cast<ColumnArray &>(*res_columns[i]).getData();
     auto & durations_offsets = assert_cast<ColumnArray &>(*res_columns[i++]).getOffsets();
     auto & randomize_intervals_data = assert_cast<ColumnArray &>(*res_columns[i]).getData();
@@ -92,15 +87,9 @@ void StorageSystemQuotas::fillData(MutableColumns & res_columns, const Context &
         storage_name_column.insert(storage_name);
         key_type_column.insert(static_cast<UInt8>(quota->key_type));
 
-        for (const auto & role : quota->roles)
+        for (const String & role : quota->to_roles.toStringsWithNames(access_control))
             roles_data.insert(role);
         roles_offsets.push_back(roles_data.size());
-
-        all_roles_column.insert(static_cast<UInt8>(quota->all_roles));
-
-        for (const auto & except_role : quota->except_roles)
-            except_roles_data.insert(except_role);
-        except_roles_offsets.push_back(except_roles_data.size());
 
         for (const auto & limits : quota->all_limits)
         {

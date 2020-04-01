@@ -9,7 +9,7 @@
 #include <DataStreams/OneBlockInputStream.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/VirtualColumnUtils.h>
-#include <Access/AccessRightsContext.h>
+#include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
 #include <Parsers/queryToString.h>
 #include <Parsers/ASTIdentifier.h>
@@ -21,6 +21,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int TABLE_IS_DROPPED;
 }
 
@@ -72,11 +73,11 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
     MutableColumnPtr engine_column_mut = ColumnString::create();
     MutableColumnPtr active_column_mut = ColumnUInt8::create();
 
-    const auto access_rights = context.getAccessRights();
-    const bool check_access_for_tables = !access_rights->isGranted(AccessType::SHOW);
+    const auto access = context.getAccess();
+    const bool check_access_for_tables = !access->isGranted(AccessType::SHOW_TABLES);
 
     {
-        Databases databases = context.getDatabases();
+        Databases databases = DatabaseCatalog::instance().getDatabases();
 
         /// Add column 'database'.
         MutableColumnPtr database_column_mut = ColumnString::create();
@@ -95,7 +96,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
         rows = block_to_filter.rows();
 
         /// Block contains new columns, update database_column.
-        ColumnPtr database_column_ = block_to_filter.getByName("database").column;
+        ColumnPtr database_column_for_filter = block_to_filter.getByName("database").column;
 
         if (rows)
         {
@@ -105,7 +106,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
 
             for (size_t i = 0; i < rows; ++i)
             {
-                String database_name = (*database_column_)[i].get<String>();
+                String database_name = (*database_column_for_filter)[i].get<String>();
                 const DatabasePtr database = databases.at(database_name);
 
                 offsets[i] = i ? offsets[i - 1] : 0;
@@ -118,7 +119,7 @@ StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const
                     if (!dynamic_cast<MergeTreeData *>(storage.get()))
                         continue;
 
-                    if (check_access_for_tables && !access_rights->isGranted(AccessType::SHOW, database_name, table_name))
+                    if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                         continue;
 
                     storages[std::make_pair(database_name, iterator->name())] = storage;
@@ -170,7 +171,7 @@ StoragesInfo StoragesInfoStream::next()
         info.database = (*database_column)[next_row].get<String>();
         info.table = (*table_column)[next_row].get<String>();
 
-        auto isSameTable = [&info, this] (size_t row) -> bool
+        auto is_same_table = [&info, this] (size_t row) -> bool
         {
             return (*database_column)[row].get<String>() == info.database &&
                    (*table_column)[row].get<String>() == info.table;
@@ -179,7 +180,7 @@ StoragesInfo StoragesInfoStream::next()
         /// We may have two rows per table which differ in 'active' value.
         /// If rows with 'active = 0' were not filtered out, this means we
         /// must collect the inactive parts. Remember this fact in StoragesInfo.
-        for (; next_row < rows && isSameTable(next_row); ++next_row)
+        for (; next_row < rows && is_same_table(next_row); ++next_row)
         {
             const auto active = (*active_column)[next_row].get<UInt64>();
             if (active == 0)
@@ -191,7 +192,7 @@ StoragesInfo StoragesInfoStream::next()
         try
         {
             /// For table not to be dropped and set of columns to remain constant.
-            info.table_lock = info.storage->lockStructureForShare(false, query_id);
+            info.table_lock = info.storage->lockStructureForShare(query_id);
         }
         catch (const Exception & e)
         {
@@ -218,7 +219,7 @@ StoragesInfo StoragesInfoStream::next()
     return {};
 }
 
-Pipes StorageSystemPartsBase::readWithProcessors(
+Pipes StorageSystemPartsBase::read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

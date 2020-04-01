@@ -22,6 +22,9 @@
 #include <Common/config_version.h>
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
+#include <Processors/Pipe.h>
+#include <Processors/ISink.h>
+#include <Processors/Executors/PipelineExecutor.h>
 
 #include <Common/config.h>
 #if USE_POCO_NETSSL
@@ -41,7 +44,6 @@ namespace ErrorCodes
 {
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
-    extern const int SERVER_REVISION_IS_TOO_OLD;
     extern const int UNEXPECTED_PACKET_FROM_SERVER;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int SUPPORT_IS_DISABLED;
@@ -534,6 +536,45 @@ void Connection::sendScalarsData(Scalars & data)
     LOG_DEBUG(log_wrapper.get(), msg.rdbuf());
 }
 
+namespace
+{
+/// Sink which sends data for external table.
+class ExternalTableDataSink : public ISink
+{
+public:
+    using OnCancell = std::function<void()>;
+
+    ExternalTableDataSink(Block header, Connection & connection_, ExternalTableData & table_data_, OnCancell callback)
+            : ISink(std::move(header)), connection(connection_), table_data(table_data_),
+              on_cancell(std::move(callback))
+    {}
+
+    String getName() const override { return "ExternalTableSink"; }
+
+    size_t getNumReadRows() const { return num_rows; }
+
+protected:
+    void consume(Chunk chunk) override
+    {
+        if (table_data.is_cancelled)
+        {
+            on_cancell();
+            return;
+        }
+
+        num_rows += chunk.getNumRows();
+
+        auto block = getPort().getHeader().cloneWithColumns(chunk.detachColumns());
+        connection.sendData(block, table_data.table_name);
+    }
+
+private:
+    Connection & connection;
+    ExternalTableData & table_data;
+    OnCancell on_cancell;
+    size_t num_rows = 0;
+};
+}
 
 void Connection::sendExternalTablesData(ExternalTablesData & data)
 {
@@ -553,13 +594,24 @@ void Connection::sendExternalTablesData(ExternalTablesData & data)
 
     for (auto & elem : data)
     {
-        elem.first->readPrefix();
-        while (Block block = elem.first->read())
-        {
-            rows += block.rows();
-            sendData(block, elem.second);
-        }
-        elem.first->readSuffix();
+        PipelineExecutorPtr executor;
+        auto on_cancel = [& executor]() { executor->cancel(); };
+
+        auto sink = std::make_shared<ExternalTableDataSink>(elem->pipe->getHeader(), *this, *elem, std::move(on_cancel));
+        DB::connect(elem->pipe->getPort(), sink->getPort());
+
+        auto processors = std::move(*elem->pipe).detachProcessors();
+        processors.push_back(sink);
+
+        executor = std::make_shared<PipelineExecutor>(processors);
+        executor->execute(/*num_threads = */ 1);
+
+        auto read_rows = sink->getNumReadRows();
+        rows += read_rows;
+
+        /// If table is empty, send empty block with name.
+        if (read_rows == 0)
+            sendData(sink->getPort().getHeader(), elem->table_name);
     }
 
     /// Send empty block, which means end of data transfer.

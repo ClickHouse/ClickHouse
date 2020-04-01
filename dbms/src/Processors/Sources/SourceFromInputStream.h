@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/Sources/SourceWithProgress.h>
+#include <Processors/RowsBeforeLimitCounter.h>
 
 namespace DB
 {
@@ -19,13 +20,15 @@ public:
 
     Chunk generate() override;
 
-    IBlockInputStream & getStream() { return *stream; }
+    BlockInputStreamPtr & getStream() { return stream; }
 
     void addTotalsPort();
 
+    void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
+
     /// Implementation for methods from ISourceWithProgress.
     void setLimits(const LocalLimits & limits_) final { stream->setLimits(limits_); }
-    void setQuota(const std::shared_ptr<QuotaContext> & quota_) final { stream->setQuota(quota_); }
+    void setQuota(const std::shared_ptr<const EnabledQuota> & quota_) final { stream->setQuota(quota_); }
     void setProcessListElement(QueryStatus * elem) final { stream->setProcessListElement(elem); }
     void setProgressCallback(const ProgressCallback & callback) final { stream->setProgressCallback(callback); }
     void addTotalRowsApprox(size_t value) final { stream->addTotalRowsApprox(value); }
@@ -35,8 +38,10 @@ protected:
 
 private:
     bool has_aggregate_functions = false;
-    bool force_add_aggregating_info;
+    bool force_add_aggregating_info = false;
     BlockInputStreamPtr stream;
+
+    RowsBeforeLimitCounterPtr rows_before_limit;
 
     Chunk totals;
     bool has_totals_port = false;
@@ -45,6 +50,8 @@ private:
     bool is_generating_finished = false;
     bool is_stream_finished = false;
     bool is_stream_started = false;
+
+    void init();
 };
 
 }

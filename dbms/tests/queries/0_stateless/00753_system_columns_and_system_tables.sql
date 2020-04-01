@@ -11,7 +11,7 @@ CREATE TABLE check_system_tables
     PARTITION BY name2
     SAMPLE BY name1;
 
-SELECT name, partition_key, sorting_key, primary_key, sampling_key
+SELECT name, partition_key, sorting_key, primary_key, sampling_key, storage_policy, total_rows
 FROM system.tables
 WHERE name = 'check_system_tables'
 FORMAT PrettyCompactNoEscapes;
@@ -20,6 +20,9 @@ SELECT name, is_in_partition_key, is_in_sorting_key, is_in_primary_key, is_in_sa
 FROM system.columns
 WHERE table = 'check_system_tables'
 FORMAT PrettyCompactNoEscapes;
+
+INSERT INTO check_system_tables VALUES (1, 1, 1);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
 
 DROP TABLE IF EXISTS check_system_tables;
 
@@ -65,3 +68,33 @@ WHERE table = 'check_system_tables'
 FORMAT PrettyCompactNoEscapes;
 
 DROP TABLE IF EXISTS check_system_tables;
+
+SELECT 'Check total_bytes/total_rows for TinyLog';
+CREATE TABLE check_system_tables (key UInt8) ENGINE = TinyLog();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables VALUES (1);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+DROP TABLE check_system_tables;
+
+SELECT 'Check total_bytes/total_rows for Memory';
+CREATE TABLE check_system_tables (key UInt16) ENGINE = Memory();
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables VALUES (1);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+DROP TABLE check_system_tables;
+
+SELECT 'Check total_bytes/total_rows for Buffer';
+CREATE TABLE check_system_tables_null (key UInt16) ENGINE = Null();
+CREATE TABLE check_system_tables (key UInt16) ENGINE = Buffer(
+    currentDatabase(),
+    check_system_tables_null,
+    2,
+    0,   100, /* min_time /max_time */
+    100, 100, /* min_rows /max_rows */
+    0,   1e6  /* min_bytes/max_bytes */
+);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+INSERT INTO check_system_tables SELECT * FROM numbers_mt(50);
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'check_system_tables';
+DROP TABLE check_system_tables;
+DROP TABLE check_system_tables_null;

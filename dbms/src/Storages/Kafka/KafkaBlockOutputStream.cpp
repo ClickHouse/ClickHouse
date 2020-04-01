@@ -8,16 +8,10 @@ namespace DB
 
 namespace ErrorCodes
 {
-
-extern int CANNOT_CREATE_IO_BUFFER;
-
+    extern const int CANNOT_CREATE_IO_BUFFER;
 }
 
 KafkaBlockOutputStream::KafkaBlockOutputStream(StorageKafka & storage_, const Context & context_) : storage(storage_), context(context_)
-{
-}
-
-KafkaBlockOutputStream::~KafkaBlockOutputStream()
 {
 }
 
@@ -32,7 +26,7 @@ void KafkaBlockOutputStream::writePrefix()
     if (!buffer)
         throw Exception("Failed to create Kafka producer!", ErrorCodes::CANNOT_CREATE_IO_BUFFER);
 
-    child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & columns, size_t row){ buffer->count_row(columns, row); });
+    child = FormatFactory::instance().getOutput(storage.getFormatName(), *buffer, getHeader(), context, [this](const Columns & columns, size_t row){ buffer->countRow(columns, row); });
 }
 
 void KafkaBlockOutputStream::write(const Block & block)

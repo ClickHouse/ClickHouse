@@ -5,29 +5,13 @@
 #include <unordered_map>
 #include <utility>
 #include <Disks/IDisk.h>
-#include <IO/WriteBufferFromString.h>
 
 namespace DB
 {
 class DiskMemory;
-class ReadBuffer;
-class WriteBuffer;
+class ReadBufferFromFileBase;
+class WriteBufferFromFileBase;
 
-// This class is responsible to update files metadata after buffer is finalized.
-class WriteIndirectBuffer : public WriteBufferFromOwnString
-{
-public:
-    WriteIndirectBuffer(DiskMemory * disk_, String path_, WriteMode mode_) : disk(disk_), path(std::move(path_)), mode(mode_) {}
-
-    ~WriteIndirectBuffer() override;
-
-    void finalize() override;
-
-private:
-    DiskMemory * disk;
-    String path;
-    WriteMode mode;
-};
 
 /** Implementation of Disk intended only for testing purposes.
   * All filesystem objects are stored in memory and lost on server restart.
@@ -70,20 +54,41 @@ public:
 
     DiskDirectoryIteratorPtr iterateDirectory(const String & path) override;
 
+    void createFile(const String & path) override;
+
     void moveFile(const String & from_path, const String & to_path) override;
 
     void replaceFile(const String & from_path, const String & to_path) override;
 
     void copyFile(const String & from_path, const String & to_path) override;
 
-    std::unique_ptr<SeekableReadBuffer> readFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE) const override;
+    void listFiles(const String & path, std::vector<String> & file_names) override;
 
-    std::unique_ptr<WriteBuffer>
-    writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) override;
+    std::unique_ptr<ReadBufferFromFileBase> readFile(
+        const String & path,
+        size_t buf_size,
+        size_t estimated_size,
+        size_t aio_threshold,
+        size_t mmap_threshold) const override;
+
+    std::unique_ptr<WriteBufferFromFileBase> writeFile(
+        const String & path,
+        size_t buf_size,
+        WriteMode mode,
+        size_t estimated_size,
+        size_t aio_threshold) override;
 
     void remove(const String & path) override;
 
     void removeRecursive(const String & path) override;
+
+    void setLastModified(const String &, const Poco::Timestamp &) override {}
+
+    Poco::Timestamp getLastModified(const String &) override { return Poco::Timestamp(); }
+
+    void setReadOnly(const String & path) override;
+
+    void createHardLink(const String & src_path, const String & dst_path) override;
 
 private:
     void createDirectoriesImpl(const String & path);

@@ -6,7 +6,7 @@ if (USE_INCLUDE_WHAT_YOU_USE)
 endif ()
 
 if (USE_CLANG_TIDY)
-    set (CMAKE_CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
+    set (CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_PATH}")
 endif ()
 
 if(COMPILER_PIPE)
@@ -21,8 +21,6 @@ else()
 endif()
 include(../cmake/limit_jobs.cmake)
 
-include(cmake/find_vectorclass.cmake)
-
 set (CONFIG_VERSION ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config_version.h)
 set (CONFIG_COMMON ${CMAKE_CURRENT_BINARY_DIR}/src/Common/config.h)
 
@@ -36,9 +34,9 @@ if (NOT MSVC)
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
 endif ()
 
-if (NOT NO_WERROR)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Werror")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Werror")
+if (USE_DEBUG_HELPERS)
+    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/base -include ${ClickHouse_SOURCE_DIR}/dbms/src/Core/iostream_debug_helpers.h")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
 # Add some warnings that are not available even with -Wall -Wextra -Wpedantic.
@@ -176,8 +174,12 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wsizeof-array-argument)
     # Warn for suspicious length parameters to certain string and memory built-in functions if the argument uses sizeof
     add_cxx_compile_options(-Wsizeof-pointer-memaccess)
-    # Warn about overriding virtual functions that are not marked with the override keyword
-    add_cxx_compile_options(-Wsuggest-override)
+
+    if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 9)
+        # Warn about overriding virtual functions that are not marked with the override keyword
+        add_cxx_compile_options(-Wsuggest-override)
+    endif ()
+
     # Warn whenever a switch statement has an index of boolean type and the case values are outside the range of a boolean type
     add_cxx_compile_options(-Wswitch-bool)
     # Warn if a self-comparison always evaluates to true or false
@@ -188,11 +190,6 @@ elseif (COMPILER_GCC)
     add_cxx_compile_options(-Wunused)
     # Warn if vector operation is not implemented via SIMD capabilities of the architecture
     add_cxx_compile_options(-Wvector-operation-performance)
-endif ()
-
-if (USE_DEBUG_HELPERS)
-    set (INCLUDE_DEBUG_HELPERS "-I${ClickHouse_SOURCE_DIR}/libs/libcommon/include -include ${ClickHouse_SOURCE_DIR}/dbms/src/Core/iostream_debug_helpers.h")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${INCLUDE_DEBUG_HELPERS}")
 endif ()
 
 if (COMPILER_GCC)
@@ -259,7 +256,7 @@ add_library (clickhouse_malloc OBJECT src/Common/malloc.cpp)
 set_source_files_properties(src/Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-builtin")
 
 add_library (clickhouse_new_delete STATIC src/Common/new_delete.cpp)
-target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io)
+target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
 
 if (OS_FREEBSD)
     target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
@@ -306,10 +303,12 @@ add_object_library(clickhouse_processors_sources src/Processors/Sources)
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
+    target_link_libraries (dbms PRIVATE jemalloc)
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})
     target_link_libraries (dbms PUBLIC ${all_modules})
+    target_link_libraries (clickhouse_interpreters PRIVATE jemalloc)
     list (APPEND all_modules dbms)
     # force all split libs to be linked
     set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,--no-as-needed")
@@ -394,8 +393,6 @@ target_link_libraries(clickhouse_common_io
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
-        PRIVATE
-    apple_rt
         PUBLIC
     roaring
 )
@@ -560,25 +557,10 @@ if (USE_BROTLI)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PRIVATE ${BROTLI_INCLUDE_DIR})
 endif()
 
-if (USE_JEMALLOC)
-    dbms_target_include_directories (SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR}) # used in Interpreters/AsynchronousMetrics.cpp
-    target_include_directories (clickhouse_new_delete SYSTEM BEFORE PRIVATE ${JEMALLOC_INCLUDE_DIR})
-
-    if(NOT MAKE_STATIC_LIBRARIES AND ${JEMALLOC_LIBRARIES} MATCHES "${CMAKE_STATIC_LIBRARY_SUFFIX}$")
-        # mallctl in dbms/src/Interpreters/AsynchronousMetrics.cpp
-        # Actually we link JEMALLOC to almost all libraries.
-        # This is just hotfix for some uninvestigated problem.
-        target_link_libraries(clickhouse_interpreters PRIVATE ${JEMALLOC_LIBRARIES})
-    endif()
-endif ()
-
 dbms_target_include_directories (PUBLIC ${DBMS_INCLUDE_DIR})
 target_include_directories (clickhouse_common_io PUBLIC ${DBMS_INCLUDE_DIR})
 
 target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${DOUBLE_CONVERSION_INCLUDE_DIR})
-
-# also for copy_headers.sh:
-target_include_directories (clickhouse_common_io BEFORE PRIVATE ${COMMON_INCLUDE_DIR})
 
 add_subdirectory (programs)
 add_subdirectory (tests)

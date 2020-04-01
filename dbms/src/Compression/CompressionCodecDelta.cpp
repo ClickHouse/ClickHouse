@@ -24,9 +24,9 @@ CompressionCodecDelta::CompressionCodecDelta(UInt8 delta_bytes_size_)
 {
 }
 
-UInt8 CompressionCodecDelta::getMethodByte() const
+uint8_t CompressionCodecDelta::getMethodByte() const
 {
-    return static_cast<UInt8>(CompressionMethodByte::Delta);
+    return static_cast<uint8_t>(CompressionMethodByte::Delta);
 }
 
 String CompressionCodecDelta::getCodecDesc() const

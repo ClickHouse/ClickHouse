@@ -1,5 +1,4 @@
 <test>
-    <type>once</type>
     <tags>
         <tag>long</tag>
     </tags>
@@ -9,7 +8,6 @@
             <total_time_ms>10000</total_time_ms>
         </all_of>
         <any_of>
-            <average_speed_not_changing_for_ms>5000</average_speed_not_changing_for_ms>
             <total_time_ms>20000</total_time_ms>
         </any_of>
     </stop_conditions>
@@ -19,8 +17,8 @@
        <substitution>
            <name>table</name>
            <values>
-               <value>system.numbers</value>
-               <value>system.numbers_mt</value>
+               <value>zeros(10000000)</value>
+               <value>zeros_mt(100000000)</value>
            </values>
        </substitution>
        <substitution>

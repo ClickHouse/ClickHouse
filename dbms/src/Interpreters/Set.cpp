@@ -103,14 +103,14 @@ void NO_INLINE Set::insertFromBlockImplCase(
 }
 
 
-void Set::setHeader(const Block & block)
+void Set::setHeader(const Block & header)
 {
     std::unique_lock lock(rwlock);
 
     if (!empty())
         return;
 
-    keys_size = block.columns();
+    keys_size = header.columns();
     ColumnRawPtrs key_columns;
     key_columns.reserve(keys_size);
     data_types.reserve(keys_size);
@@ -122,10 +122,10 @@ void Set::setHeader(const Block & block)
     /// Remember the columns we will work with
     for (size_t i = 0; i < keys_size; ++i)
     {
-        materialized_columns.emplace_back(block.safeGetByPosition(i).column->convertToFullColumnIfConst());
+        materialized_columns.emplace_back(header.safeGetByPosition(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back(materialized_columns.back().get());
-        data_types.emplace_back(block.safeGetByPosition(i).type);
-        set_elements_types.emplace_back(block.safeGetByPosition(i).type);
+        data_types.emplace_back(header.safeGetByPosition(i).type);
+        set_elements_types.emplace_back(header.safeGetByPosition(i).type);
 
         /// Convert low cardinality column to full.
         if (auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(data_types.back().get()))
@@ -458,8 +458,18 @@ MergeTreeSetIndex::MergeTreeSetIndex(const Columns & set_elements, std::vector<K
 
     size_t tuple_size = indexes_mapping.size();
     ordered_set.resize(tuple_size);
+
+    /// Create columns for points here to avoid extra allocations at 'checkInRange'.
+    left_point.reserve(tuple_size);
+    right_point.reserve(tuple_size);
+
     for (size_t i = 0; i < tuple_size; ++i)
+    {
         ordered_set[i] = set_elements[indexes_mapping[i].tuple_index];
+
+        left_point.emplace_back(ordered_set[i]->cloneEmpty());
+        right_point.emplace_back(ordered_set[i]->cloneEmpty());
+    }
 
     Block block_to_sort;
     SortDescription sort_description;
@@ -484,13 +494,6 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
 {
     size_t tuple_size = indexes_mapping.size();
 
-    using FieldWithInfinityTuple = std::vector<FieldWithInfinity>;
-
-    FieldWithInfinityTuple left_point;
-    FieldWithInfinityTuple right_point;
-    left_point.reserve(tuple_size);
-    right_point.reserve(tuple_size);
-
     bool invert_left_infinities = false;
     bool invert_right_infinities = false;
 
@@ -512,14 +515,14 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             if (!new_range->left_included)
                 invert_left_infinities = true;
 
-            left_point.push_back(FieldWithInfinity(new_range->left));
+            left_point[i].update(new_range->left);
         }
         else
         {
             if (invert_left_infinities)
-                left_point.push_back(FieldWithInfinity::getPlusinfinity());
+                left_point[i].update(ValueWithInfinity::PLUS_INFINITY);
             else
-                left_point.push_back(FieldWithInfinity::getMinusInfinity());
+                left_point[i].update(ValueWithInfinity::MINUS_INFINITY);
         }
 
         if (new_range->right_bounded)
@@ -527,51 +530,78 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
             if (!new_range->right_included)
                 invert_right_infinities = true;
 
-            right_point.push_back(FieldWithInfinity(new_range->right));
+            right_point[i].update(new_range->right);
         }
         else
         {
             if (invert_right_infinities)
-                right_point.push_back(FieldWithInfinity::getMinusInfinity());
+                right_point[i].update(ValueWithInfinity::MINUS_INFINITY);
             else
-                right_point.push_back(FieldWithInfinity::getPlusinfinity());
+                right_point[i].update(ValueWithInfinity::PLUS_INFINITY);
         }
     }
 
-    /// This allows to construct tuple in 'ordered_set' at specified index for comparison with range.
-
-    auto indices = ext::range(0, ordered_set.at(0)->size());
-
-    auto extract_tuple = [tuple_size, this](size_t i)
+    auto compare = [](const IColumn & lhs, const ValueWithInfinity & rhs, size_t row)
     {
-        /// Inefficient.
-        FieldWithInfinityTuple res;
-        res.reserve(tuple_size);
-        for (size_t j = 0; j < tuple_size; ++j)
-            res.emplace_back((*ordered_set[j])[i]);
-        return res;
+        auto type = rhs.getType();
+        /// Return inverted infinity sign, because in 'lhs' all values are finite.
+        if (type != ValueWithInfinity::NORMAL)
+            return -static_cast<int>(type);
+
+        return lhs.compareAt(row, 0, rhs.getColumnIfFinite(), 1);
     };
 
-    auto compare = [&extract_tuple](size_t i, const FieldWithInfinityTuple & rhs)
+    auto less = [this, &compare, tuple_size](size_t row, const auto & point)
     {
-        return extract_tuple(i) < rhs;
+        for (size_t i = 0; i < tuple_size; ++i)
+        {
+            int res = compare(*ordered_set[i], point[i], row);
+            if (res)
+                return res < 0;
+        }
+        return false;
     };
 
-    /** Because each parallelogram maps to a contiguous sequence of elements
-      * layed out in the lexicographically increasing order, the set intersects the range
-      * if and only if either bound coincides with an element or at least one element
-      * is between the lower bounds
-      */
-    auto left_lower = std::lower_bound(indices.begin(), indices.end(), left_point, compare);
-    auto right_lower = std::lower_bound(indices.begin(), indices.end(), right_point, compare);
+    auto equals = [this, &compare, tuple_size](size_t row, const auto & point)
+    {
+        for (size_t i = 0; i < tuple_size; ++i)
+            if (compare(*ordered_set[i], point[i], row) != 0)
+                return false;
+        return true;
+    };
+
+    /** Because each hyperrectangle maps to a contiguous sequence of elements
+     * layed out in the lexicographically increasing order, the set intersects the range
+     * if and only if either bound coincides with an element or at least one element
+     * is between the lower bounds
+     */
+    auto indices = ext::range(0, size());
+    auto left_lower = std::lower_bound(indices.begin(), indices.end(), left_point, less);
+    auto right_lower = std::lower_bound(indices.begin(), indices.end(), right_point, less);
 
     return
     {
         left_lower != right_lower
-            || (left_lower != indices.end() && extract_tuple(*left_lower) == left_point)
-            || (right_lower != indices.end() && extract_tuple(*right_lower) == right_point),
+            || (left_lower != indices.end() && equals(*left_lower, left_point))
+            || (right_lower != indices.end() && equals(*right_lower, right_point)),
         true
     };
+}
+
+void ValueWithInfinity::update(const Field & x)
+{
+    /// Keep at most one element in column.
+    if (!column->empty())
+        column->popBack(1);
+    column->insert(x);
+    type = NORMAL;
+}
+
+const IColumn & ValueWithInfinity::getColumnIfFinite() const
+{
+    if (type != NORMAL)
+        throw Exception("Trying to get column of infinite type", ErrorCodes::LOGICAL_ERROR);
+    return *column;
 }
 
 }

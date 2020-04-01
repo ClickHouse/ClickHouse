@@ -28,6 +28,9 @@ public:
     /// We dropping dictionary, so print correct word
     bool is_dictionary{false};
 
+    /// Same as above
+    bool is_view{false};
+
     /** Get the text that identifies this element. */
     String getID(char) const override;
     ASTPtr clone() const override;

@@ -1,5 +1,5 @@
 #include <Functions/FunctionFactory.h>
-#include <Functions/GeoUtils.h>
+#include <Functions/GeoHash.h>
 #include <Functions/FunctionHelpers.h>
 
 #include <Columns/ColumnString.h>
@@ -64,7 +64,7 @@ public:
         for (size_t i = 0; i < count; ++i)
         {
             StringRef encoded_string = encoded->getDataAt(i);
-            GeoUtils::geohashDecode(encoded_string.data, encoded_string.size, &lon_data[i], &lat_data[i]);
+            geohashDecode(encoded_string.data, encoded_string.size, &lon_data[i], &lat_data[i]);
         }
 
         MutableColumns result;

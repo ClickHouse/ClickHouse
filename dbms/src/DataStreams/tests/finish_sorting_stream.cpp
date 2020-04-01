@@ -1,5 +1,6 @@
 #include <iostream>
 #include <iomanip>
+#include <pcg_random.hpp>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnsNumber.h>
@@ -10,6 +11,7 @@
 #include <DataStreams/FinishSortingBlockInputStream.h>
 
 #include <Interpreters/sortBlock.h>
+
 
 using namespace DB;
 
@@ -24,12 +26,12 @@ namespace DB
 
 int main(int argc, char ** argv)
 {
-    srand(123456);
+    pcg64 rng;
 
     try
     {
-        size_t m = argc >= 2 ? atoi(argv[1]) : 2;
-        size_t n = argc >= 3 ? atoi(argv[2]) : 10;
+        size_t m = argc >= 2 ? std::stol(argv[1]) : 2;
+        size_t n = argc >= 3 ? std::stol(argv[2]) : 10;
 
         Blocks blocks;
         for (size_t t = 0; t < m; ++t)
@@ -46,7 +48,7 @@ int main(int argc, char ** argv)
                 vec.resize(n);
 
                 for (size_t j = 0; j < n; ++j)
-                    vec[j] = rand() % 10;
+                    vec[j] = rng() % 10;
 
                 column.column = std::move(col);
                 block.insert(column);

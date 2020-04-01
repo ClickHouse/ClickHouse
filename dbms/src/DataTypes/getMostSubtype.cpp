@@ -18,7 +18,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
 extern const int NO_COMMON_TYPE;
 }
 
@@ -47,8 +46,7 @@ String getExceptionMessagePrefix(const DataTypes & types)
 
 DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_nothing, bool force_support_conversion)
 {
-
-    auto getNothingOrThrow = [throw_if_result_is_nothing, & types](const std::string & reason)
+    auto get_nothing_or_throw = [throw_if_result_is_nothing, & types](const std::string & reason)
     {
         if (throw_if_result_is_nothing)
             throw Exception(getExceptionMessagePrefix(types) + reason, ErrorCodes::NO_COMMON_TYPE);
@@ -93,7 +91,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
     {
         for (const auto & type : types)
             if (typeid_cast<const DataTypeNothing *>(type.get()))
-                return getNothingOrThrow(" because some of them are Nothing");
+                return get_nothing_or_throw(" because some of them are Nothing");
     }
 
     /// For Arrays
@@ -118,7 +116,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         if (have_array)
         {
             if (!all_arrays)
-                return getNothingOrThrow(" because some of them are Array and some of them are not");
+                return get_nothing_or_throw(" because some of them are Array and some of them are not");
 
             return std::make_shared<DataTypeArray>(getMostSubtype(nested_types, false, force_support_conversion));
         }
@@ -144,7 +142,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                         nested_types[elem_idx].reserve(types.size());
                 }
                 else if (tuple_size != type_tuple->getElements().size())
-                    return getNothingOrThrow(" because Tuples have different sizes");
+                    return get_nothing_or_throw(" because Tuples have different sizes");
 
                 have_tuple = true;
 
@@ -158,7 +156,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         if (have_tuple)
         {
             if (!all_tuples)
-                return getNothingOrThrow(" because some of them are Tuple and some of them are not");
+                return get_nothing_or_throw(" because some of them are Tuple and some of them are not");
 
             DataTypes common_tuple_types(tuple_size);
             for (size_t elem_idx = 0; elem_idx < tuple_size; ++elem_idx)
@@ -219,7 +217,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
                 if (!fixed_string_type)
                     fixed_string_type = type;
                 else if (!type->equals(*fixed_string_type))
-                    return getNothingOrThrow(" because some of them are FixedStrings with different length");
+                    return get_nothing_or_throw(" because some of them are FixedStrings with different length");
             }
             else if (isString(type))
                 have_string = true;
@@ -230,7 +228,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         if (have_string)
         {
             if (!all_strings)
-                return getNothingOrThrow(" because some of them are String/FixedString and some of them are not");
+                return get_nothing_or_throw(" because some of them are String/FixedString and some of them are not");
 
             return fixed_string_type ? fixed_string_type : std::make_shared<DataTypeString>();
         }
@@ -252,7 +250,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         if (have_date_or_datetime)
         {
             if (!all_date_or_datetime)
-                return getNothingOrThrow(" because some of them are Date/DateTime and some of them are not");
+                return get_nothing_or_throw(" because some of them are Date/DateTime and some of them are not");
 
             return std::make_shared<DataTypeDate>();
         }
@@ -301,7 +299,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
         if (min_bits_of_signed_integer || min_bits_of_unsigned_integer || min_mantissa_bits_of_floating)
         {
             if (!all_numbers)
-                return getNothingOrThrow(" because some of them are numbers and some of them are not");
+                return get_nothing_or_throw(" because some of them are numbers and some of them are not");
 
             /// If the result must be floating.
             if (!min_bits_of_signed_integer && !min_bits_of_unsigned_integer)
@@ -350,7 +348,7 @@ DataTypePtr getMostSubtype(const DataTypes & types, bool throw_if_result_is_noth
     }
 
     /// All other data types (UUID, AggregateFunction, Enum...) are compatible only if they are the same (checked in trivial cases).
-    return getNothingOrThrow("");
+    return get_nothing_or_throw("");
 }
 
 }

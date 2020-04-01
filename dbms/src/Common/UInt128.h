@@ -109,7 +109,6 @@ struct UInt128TrivialHash
 };
 
 
-
 /** Used for aggregation, for putting a large number of constant-length keys in a hash table.
   */
 struct UInt256

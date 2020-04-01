@@ -10,7 +10,7 @@ SET enable_optimize_predicate_expression = 1;
 
 SELECT '-------ENABLE OPTIMIZE PREDICATE-------';
 SELECT * FROM (SELECT * FROM test_00808 FINAL) WHERE id = 1;
-SELECT * FROM (SELECT * FROM test_00808 LIMIT 1) WHERE id = 1;
+SELECT * FROM (SELECT * FROM test_00808 ORDER BY id LIMIT 1) WHERE id = 1;
 SELECT * FROM (SELECT id FROM test_00808 GROUP BY id LIMIT 1 BY id) WHERE id = 1;
 
 SET force_primary_key = 1;

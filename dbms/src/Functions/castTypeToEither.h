@@ -5,10 +5,8 @@
 namespace DB
 {
 
-class IDataType;
-
-template <typename... Ts, typename F>
-static bool castTypeToEither(const IDataType * type, F && f)
+template <typename... Ts, typename T, typename F>
+static bool castTypeToEither(const T * type, F && f)
 {
     /// XXX can't use && here because gcc-7 complains about parentheses around && within ||
     return ((typeid_cast<const Ts *>(type) ? f(*typeid_cast<const Ts *>(type)) : false) || ...);

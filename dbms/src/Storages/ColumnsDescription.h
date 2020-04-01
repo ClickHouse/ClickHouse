@@ -103,6 +103,11 @@ public:
     String toString() const;
     static ColumnsDescription parse(const String & str);
 
+    size_t size() const
+    {
+        return columns.size();
+    }
+
     /// Keep the sequence of columns and allow to lookup by name.
     using Container = boost::multi_index_container<
         ColumnDescription,
@@ -114,4 +119,9 @@ private:
     Container columns;
 };
 
+/// Validate default expressions and corresponding types compatibility, i.e.
+/// default expression result can be casted to column_type. Also checks, that we
+/// don't have strange constructions in default expression like SELECT query or
+/// arrayJoin function.
+Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const NamesAndTypesList & all_columns, const Context & context);
 }

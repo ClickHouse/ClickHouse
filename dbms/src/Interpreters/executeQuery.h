@@ -19,8 +19,7 @@ void executeQuery(
     WriteBuffer & ostr,                 /// Where to write query output to.
     bool allow_into_outfile,            /// If true and the query contains INTO OUTFILE section, redirect output to that file.
     Context & context,                  /// DB, tables, data types, storage engines, functions, aggregate functions...
-    std::function<void(const String &, const String &)> set_content_type_and_format, /// If non-empty callback is passed, it will be called with the Content-Type and the Format of the result.
-    std::function<void(const String &)> set_query_id /// If non-empty callback is passed, it will be called with the query id.
+    std::function<void(const String &, const String &, const String &, const String &)> set_result_details /// If a non-empty callback is passed, it will be called with the query id, the content-type, the format, and the timezone.
 );
 
 
@@ -39,7 +38,7 @@ void executeQuery(
 /// Correctly formatting the results (according to INTO OUTFILE and FORMAT sections)
 /// must be done separately.
 BlockIO executeQuery(
-    const String & query,    /// Query text without INSERT data. The latter must be written to BlockIO::out.
+    const String & query,     /// Query text without INSERT data. The latter must be written to BlockIO::out.
     Context & context,        /// DB, tables, data types, storage engines, functions, aggregate functions...
     bool internal = false,    /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,    /// To which stage the query must be executed.
@@ -49,7 +48,7 @@ BlockIO executeQuery(
 
 
 QueryPipeline executeQueryWithProcessors(
-    const String & query,    /// Query text without INSERT data. The latter must be written to BlockIO::out.
+    const String & query,     /// Query text without INSERT data. The latter must be written to BlockIO::out.
     Context & context,        /// DB, tables, data types, storage engines, functions, aggregate functions...
     bool internal = false,    /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
     QueryProcessingStage::Enum stage = QueryProcessingStage::Complete,    /// To which stage the query must be executed.

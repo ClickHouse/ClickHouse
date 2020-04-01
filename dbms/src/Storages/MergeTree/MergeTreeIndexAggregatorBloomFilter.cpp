@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_COLUMN;
 }
 
 MergeTreeIndexAggregatorBloomFilter::MergeTreeIndexAggregatorBloomFilter(
@@ -47,9 +46,9 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
     Block granule_index_block;
     size_t max_read_rows = std::min(block.rows() - *pos, limit);
 
-    for (size_t index = 0; index < index_columns_name.size(); ++index)
+    for (const auto & index_column_name : index_columns_name)
     {
-        const auto & column_and_type = block.getByName(index_columns_name[index]);
+        const auto & column_and_type = block.getByName(index_column_name);
         auto index_column = BloomFilterHash::hashWithColumn(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
         granule_index_block.insert({index_column, std::make_shared<DataTypeUInt64>(), column_and_type.name});

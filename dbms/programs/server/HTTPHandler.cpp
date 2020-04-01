@@ -12,7 +12,7 @@
 #include <Core/ExternalTable.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/escapeForFileName.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 #include <Common/config.h>
@@ -41,9 +41,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int READONLY;
-    extern const int UNKNOWN_COMPRESSION_METHOD;
 
+    extern const int LOGICAL_ERROR;
     extern const int CANNOT_PARSE_TEXT;
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
     extern const int CANNOT_PARSE_QUOTED_STRING;
@@ -274,7 +273,7 @@ void HTTPHandler::processQuery(
     /// The user could specify session identifier and session timeout.
     /// It allows to modify settings, create temporary tables and reuse them in subsequent requests.
 
-    std::shared_ptr<Context> session;
+    std::shared_ptr<NamedSession> session;
     String session_id;
     std::chrono::steady_clock::duration session_timeout;
     bool session_is_set = params.has("session_id");
@@ -286,15 +285,15 @@ void HTTPHandler::processQuery(
         session_timeout = parseSessionTimeout(config, params);
         std::string session_check = params.get("session_check", "");
 
-        session = context.acquireSession(session_id, session_timeout, session_check == "1");
+        session = context.acquireNamedSession(session_id, session_timeout, session_check == "1");
 
-        context = *session;
-        context.setSessionContext(*session);
+        context = session->context;
+        context.setSessionContext(session->context);
     }
 
     SCOPE_EXIT({
-        if (session_is_set)
-            session->releaseSession(session_id, session_timeout);
+        if (session)
+            session->release();
     });
 
     /// The client can pass a HTTP header indicating supported compression method (gzip or deflate).
@@ -440,16 +439,16 @@ void HTTPHandler::processQuery(
 
     /// In theory if initially readonly = 0, the client can change any setting and then set readonly
     /// to some other value.
-    auto & settings = context.getSettingsRef();
+    const auto & settings = context.getSettingsRef();
 
     /// Only readonly queries are allowed for HTTP GET requests.
     if (request.getMethod() == Poco::Net::HTTPServerRequest::HTTP_GET)
     {
         if (settings.readonly == 0)
-            settings.readonly = 2;
+            context.setSetting("readonly", 2);
     }
 
-    bool has_external_data = startsWith(request.getContentType().data(), "multipart/form-data");
+    bool has_external_data = startsWith(request.getContentType(), "multipart/form-data");
 
     if (has_external_data)
     {
@@ -547,7 +546,7 @@ void HTTPHandler::processQuery(
     client_info.http_method = http_method;
     client_info.http_user_agent = request.get("User-Agent", "");
 
-    auto appendCallback = [&context] (ProgressCallback callback)
+    auto append_callback = [&context] (ProgressCallback callback)
     {
         auto prev = context.getProgressCallback();
 
@@ -562,13 +561,13 @@ void HTTPHandler::processQuery(
 
     /// While still no data has been sent, we will report about query execution progress by sending HTTP headers.
     if (settings.send_progress_in_http_headers)
-        appendCallback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
+        append_callback([&used_output] (const Progress & progress) { used_output.out->onProgress(progress); });
 
     if (settings.readonly > 0 && settings.cancel_http_readonly_queries_on_client_close)
     {
         Poco::Net::StreamSocket & socket = dynamic_cast<Poco::Net::HTTPServerRequestImpl &>(request).socket();
 
-        appendCallback([&context, &socket](const Progress &)
+        append_callback([&context, &socket](const Progress &)
         {
             /// Assume that at the point this method is called no one is reading data from the socket any more.
             /// True for read-only queries.
@@ -593,12 +592,14 @@ void HTTPHandler::processQuery(
     customizeContext(context);
 
     executeQuery(*in, *used_output.out_maybe_delayed_and_compressed, /* allow_into_outfile = */ false, context,
-        [&response] (const String & content_type, const String & format)
+        [&response] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
         {
             response.setContentType(content_type);
+            response.add("X-ClickHouse-Query-Id", current_query_id);
             response.add("X-ClickHouse-Format", format);
-        },
-        [&response] (const String & current_query_id) { response.add("X-ClickHouse-Query-Id", current_query_id); });
+            response.add("X-ClickHouse-Timezone", timezone);
+        }
+    );
 
     if (used_output.hasDelayed())
     {
@@ -706,7 +707,7 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() &&
             !request.hasContentLength())
         {
-            throw Exception("There is neither Transfer-Encoding header nor Content-Length header", ErrorCodes::HTTP_LENGTH_REQUIRED);
+            throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
         }
 
         processQuery(request, params, response, used_output);

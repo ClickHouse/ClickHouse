@@ -45,18 +45,14 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int BAD_TYPE_OF_FIELD;
+    extern const int ILLEGAL_COLUMN;
     extern const int BAD_ARGUMENTS;
-    extern const int THERE_IS_NO_COLUMN;
-    extern const int LOGICAL_ERROR;
-    extern const int INCORRECT_DATA;
-    extern const int CANNOT_READ_ALL_DATA;
 }
 
 class OutputStreamWriteBufferAdapter : public avro::OutputStream
 {
 public:
-    OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
+    explicit OutputStreamWriteBufferAdapter(WriteBuffer & out_) : out(out_) {}
 
     virtual bool next(uint8_t ** data, size_t * len) override
     {
@@ -319,7 +315,7 @@ void AvroSerializer::serializeRow(const Columns & columns, size_t row_num, avro:
 
 static avro::Codec getCodec(const std::string & codec_name)
 {
-    if (codec_name == "")
+    if (codec_name.empty())
     {
 #ifdef SNAPPY_CODEC_AVAILABLE
         return avro::Codec::SNAPPY_CODEC;

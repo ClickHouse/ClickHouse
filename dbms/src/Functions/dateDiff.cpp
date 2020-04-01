@@ -145,13 +145,13 @@ private:
         ColumnInt64::Container & result)
     {
         if (auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
-            vector_vector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
+            vectorVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
         else if (auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
-            vector_vector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+            vectorVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
         else if (auto * y_const_16 = checkAndGetColumnConst<ColumnUInt16>(&y))
-            vector_constant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, result);
+            vectorConstant<Transform>(x, y_const_16->getValue<UInt16>(), timezone_x, timezone_y, result);
         else if (auto * y_const_32 = checkAndGetColumnConst<ColumnUInt32>(&y))
-            vector_constant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, result);
+            vectorConstant<Transform>(x, y_const_32->getValue<UInt32>(), timezone_x, timezone_y, result);
         else
             throw Exception("Illegal column for second argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
     }
@@ -163,15 +163,15 @@ private:
         ColumnInt64::Container & result)
     {
         if (auto * y_vec_16 = checkAndGetColumn<ColumnUInt16>(&y))
-            constant_vector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
+            constantVector<Transform>(x, *y_vec_16, timezone_x, timezone_y, result);
         else if (auto * y_vec_32 = checkAndGetColumn<ColumnUInt32>(&y))
-            constant_vector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
+            constantVector<Transform>(x, *y_vec_32, timezone_x, timezone_y, result);
         else
             throw Exception("Illegal column for second argument of function " + getName() + ", must be Date or DateTime", ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <typename Transform, typename T1, typename T2>
-    void vector_vector(
+    void vectorVector(
         const ColumnVector<T1> & x, const ColumnVector<T2> & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)
@@ -183,7 +183,7 @@ private:
     }
 
     template <typename Transform, typename T1, typename T2>
-    void vector_constant(
+    void vectorConstant(
         const ColumnVector<T1> & x, T2 y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)
@@ -194,7 +194,7 @@ private:
     }
 
     template <typename Transform, typename T1, typename T2>
-    void constant_vector(
+    void constantVector(
         T1 x, const ColumnVector<T2> & y,
         const DateLUTImpl & timezone_x, const DateLUTImpl & timezone_y,
         ColumnInt64::Container & result)

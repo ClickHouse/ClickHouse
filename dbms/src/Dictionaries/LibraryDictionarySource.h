@@ -20,6 +20,10 @@ namespace Util
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 class CStringsHolder;
 
 /// Allows loading dictionaries from dynamic libraries (.so)

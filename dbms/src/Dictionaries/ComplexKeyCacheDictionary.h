@@ -626,7 +626,7 @@ private:
             on_key_not_found(key, cell_idx);
         }
 
-        ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, found_num);
+        ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedFound, found_num);
         ProfileEvents::increment(ProfileEvents::DictCacheKeysRequestedMiss, not_found_num);
     }
 

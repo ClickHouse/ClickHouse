@@ -1,0 +1,30 @@
+{% if events %}
+<div id="events" class="bg-light my-0">
+     <div class="container py-5">
+         {% if events|length == 1 %}
+             {% set event = events[0] %}
+             <h2>Upcoming Event</h2>
+             <p class="lead">
+                 <a class="text-reset" rel="external nofollow noreferrer" target="_blank"
+                    href="{{ event.signup_link  }}">
+                    <span class="text-orange">{{ event.event_date }}</span>&nbsp;
+                    {{ event.event_name }}
+                 </a>
+             </p>
+         {% else %}
+            <h2>Upcoming Events</h2>
+            <ul class="lead list-unstyled">
+            {% for event in events %}
+                <li>
+                    <a class="text-reset" rel="external nofollow noreferrer" target="_blank"
+                    href="{{ event.signup_link  }}">
+                    <span class="text-orange">{{ event.event_date }}</span>&nbsp;
+                    {{ event.event_name }}
+                 </a>
+                </li>
+            {% endfor %}
+            </ul>
+         {% endif %}
+     </div>
+</div>
+{% endif %}

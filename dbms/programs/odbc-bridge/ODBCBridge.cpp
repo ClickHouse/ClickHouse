@@ -5,6 +5,13 @@
 #include <errno.h>
 #include <IO/ReadHelpers.h>
 #include <boost/program_options.hpp>
+
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+// It doesn't make much sense to build this bridge without ODBC, but we
+// still do this.
+#include <Poco/Data/ODBC/Connector.h>
+#endif
+
 #include <Poco/Net/HTTPServer.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/String.h>
@@ -72,11 +79,11 @@ namespace
 
 void ODBCBridge::handleHelp(const std::string &, const std::string &)
 {
-    Poco::Util::HelpFormatter helpFormatter(options());
-    helpFormatter.setCommand(commandName());
-    helpFormatter.setHeader("HTTP-proxy for odbc requests");
-    helpFormatter.setUsage("--http-port <port>");
-    helpFormatter.format(std::cerr);
+    Poco::Util::HelpFormatter help_formatter(options());
+    help_formatter.setCommand(commandName());
+    help_formatter.setHeader("HTTP-proxy for odbc requests");
+    help_formatter.setUsage("--http-port <port>");
+    help_formatter.format(std::cerr);
 
     stopOptionsProcessing();
 }
@@ -111,7 +118,7 @@ void ODBCBridge::defineOptions(Poco::Util::OptionSet & options)
                           .binding("help")
                           .callback(Poco::Util::OptionCallback<Me>(this, &Me::handleHelp)));
 
-    ServerApplication::defineOptions(options); /// Don't need complex BaseDaemon's .xml config
+    ServerApplication::defineOptions(options); // NOLINT Don't need complex BaseDaemon's .xml config
 }
 
 void ODBCBridge::initialize(Application & self)
@@ -126,6 +133,8 @@ void ODBCBridge::initialize(Application & self)
 
     buildLoggers(config(), logger(), self.commandName());
 
+    BaseDaemon::logRevision();
+
     log = &logger();
     hostname = config().getString("listen-host", "localhost");
     port = config().getUInt("http-port");
@@ -138,7 +147,13 @@ void ODBCBridge::initialize(Application & self)
 
     initializeTerminationAndSignalProcessing();
 
-    ServerApplication::initialize(self);
+#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+    // It doesn't make much sense to build this bridge without ODBC, but we
+    // still do this.
+    Poco::Data::ODBC::Connector::registerConnector();
+#endif
+
+    ServerApplication::initialize(self); // NOLINT
 }
 
 void ODBCBridge::uninitialize()

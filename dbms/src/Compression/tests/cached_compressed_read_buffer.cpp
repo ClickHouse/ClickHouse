@@ -5,6 +5,7 @@
 #include <Compression/CompressionFactory.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <IO/WriteBufferFromFile.h>
+#include <IO/createReadBufferFromFileBase.h>
 #include <IO/copyData.h>
 
 #include <Common/Stopwatch.h>
@@ -32,7 +33,14 @@ int main(int argc, char ** argv)
 
         {
             Stopwatch watch;
-            CachedCompressedReadBuffer in(path, &cache, 0, 0, 0);
+            CachedCompressedReadBuffer in(
+                path,
+                [&]()
+                {
+                    return createReadBufferFromFileBase(path, 0, 0, 0);
+                },
+                &cache
+            );
             WriteBufferFromFile out("/dev/null");
             copyData(in, out);
 
@@ -44,7 +52,14 @@ int main(int argc, char ** argv)
 
         {
             Stopwatch watch;
-            CachedCompressedReadBuffer in(path, &cache, 0, 0, 0);
+            CachedCompressedReadBuffer in(
+                path,
+                [&]()
+                {
+                    return createReadBufferFromFileBase(path, 0, 0, 0);
+                },
+                &cache
+            );
             WriteBufferFromFile out("/dev/null");
             copyData(in, out);
 

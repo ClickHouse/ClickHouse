@@ -12,6 +12,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/Config/ConfigProcessor.h>
@@ -20,6 +21,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/config_version.h>
 #include <Common/quoteString.h>
+#include <Common/SettingsChanges.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/UseSSL.h>
@@ -91,7 +93,7 @@ void LocalServer::initialize(Poco::Util::Application & self)
 
 void LocalServer::applyCmdSettings()
 {
-    context->getSettingsRef().copyChangesFrom(cmd_settings);
+    context->applySettingsChanges(cmd_settings.changes());
 }
 
 /// If path is specified and not empty, will try to setup server environment and load existing metadata
@@ -117,6 +119,20 @@ void LocalServer::tryInitPath()
 }
 
 
+static void attachSystemTables()
+{
+    DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
+    if (!system_database)
+    {
+        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
+        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE);
+        DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
+    }
+
+    attachSystemTablesLocal(*system_database);
+}
+
+
 int LocalServer::main(const std::vector<std::string> & /*args*/)
 try
 {
@@ -131,7 +147,6 @@ try
 
         return Application::EXIT_OK;
     }
-
 
     context = std::make_unique<Context>(Context::createGlobal());
     context->makeGlobalContext();
@@ -164,7 +179,7 @@ try
     setupUsers();
 
     /// Limit on total number of concurrently executing queries.
-    /// There is no need for concurrent threads, override max_concurrent_queries.
+    /// There is no need for concurrent queries, override max_concurrent_queries.
     context->getProcessList().setMaxSize(0);
 
     /// Size of cache for uncompressed blocks. Zero means disabled.
@@ -187,7 +202,7 @@ try
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    context->addDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
     applyCmdOptions();
 
@@ -200,6 +215,7 @@ try
         loadMetadataSystem(*context);
         attachSystemTables();
         loadMetadata(*context);
+        DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else
@@ -246,20 +262,6 @@ std::string LocalServer::getInitialCreateTableQuery()
 }
 
 
-void LocalServer::attachSystemTables()
-{
-    DatabasePtr system_database = context->tryGetDatabase("system");
-    if (!system_database)
-    {
-        /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>("system");
-        context->addDatabase("system", system_database);
-    }
-
-    attachSystemTablesLocal(*system_database);
-}
-
-
 void LocalServer::processQueries()
 {
     String initial_create_query = getInitialCreateTableQuery();
@@ -298,7 +300,7 @@ void LocalServer::processQueries()
 
         try
         {
-            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {}, {});
+            executeQuery(read_buf, write_buf, /* allow_into_outfile = */ true, *context, {});
         }
         catch (...)
         {
@@ -373,7 +375,7 @@ static void showClientVersion()
     std::cout << DBMS_NAME << " client version " << VERSION_STRING << VERSION_OFFICIAL << "." << '\n';
 }
 
-std::string LocalServer::getHelpHeader() const
+static std::string getHelpHeader()
 {
     return
         "usage: clickhouse-local [initial table definition] [--query <query>]\n"
@@ -388,7 +390,7 @@ std::string LocalServer::getHelpHeader() const
         "Either through corresponding command line parameters --table --structure --input-format and --file.";
 }
 
-std::string LocalServer::getHelpFooter() const
+static std::string getHelpFooter()
 {
     return
         "Example printing memory used by each Unix user:\n"

@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
+#include <Common/NetException.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 
@@ -20,20 +21,52 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NO_REMOTE_SHARD_FOUND;
+    extern const int NO_REMOTE_SHARD_AVAILABLE;
 }
 
 
 ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
-    const std::string & database,
-    const std::string & table,
+    const StorageID & table_id,
     const Context & context,
     const ASTPtr & table_func_ptr)
 {
-    /// Send to the first any remote shard.
-    const auto & shard_info = cluster.getAnyShardInfo();
+    const auto & shards_info = cluster.getShardsInfo();
 
+    std::string fail_messages;
+
+    for (auto & shard_info : shards_info)
+    {
+        try
+        {
+            const auto & res = getStructureOfRemoteTableInShard(shard_info, table_id, context, table_func_ptr);
+
+            /// Expect at least some columns.
+            /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.
+            if (res.size() == 0)
+                continue;
+
+            return res;
+        }
+        catch (const NetException &)
+        {
+            std::string fail_message = getCurrentExceptionMessage(false);
+            fail_messages += fail_message + '\n';
+            continue;
+        }
+    }
+
+    throw NetException(
+        "All attempts to get table structure failed. Log: \n\n" + fail_messages + "\n",
+        ErrorCodes::NO_REMOTE_SHARD_AVAILABLE);
+}
+
+ColumnsDescription getStructureOfRemoteTableInShard(
+    const Cluster::ShardInfo & shard_info,
+    const StorageID & table_id,
+    const Context & context,
+    const ASTPtr & table_func_ptr)
+{
     String query;
 
     if (table_func_ptr)
@@ -51,10 +84,10 @@ ColumnsDescription getStructureOfRemoteTable(
     else
     {
         if (shard_info.isLocal())
-            return context.getTable(database, table)->getColumns();
+            return DatabaseCatalog::instance().getTable(table_id)->getColumns();
 
         /// Request for a table description
-        query = "DESC TABLE " + backQuoteIfNeed(database) + "." + backQuoteIfNeed(table);
+        query = "DESC TABLE " + table_id.getFullTableName();
     }
 
     ColumnsDescription res;
@@ -74,7 +107,7 @@ ColumnsDescription getStructureOfRemoteTable(
     auto input = std::make_shared<RemoteBlockInputStream>(shard_info.pool, query, sample_block, new_context);
     input->setPoolMode(PoolMode::GET_ONE);
     if (!table_func_ptr)
-        input->setMainTable(QualifiedTableName{database, table});
+        input->setMainTable(table_id);
     input->readPrefix();
 
     const DataTypeFactory & data_type_factory = DataTypeFactory::instance();

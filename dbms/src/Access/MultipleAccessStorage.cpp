@@ -7,8 +7,8 @@ namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int ACCESS_ENTITY_NOT_FOUND;
     extern const int ACCESS_ENTITY_FOUND_DUPLICATES;
+    extern const int ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND;
 }
 
 
@@ -30,16 +30,10 @@ namespace
 
 
 MultipleAccessStorage::MultipleAccessStorage(
-    std::vector<std::unique_ptr<Storage>> nested_storages_, size_t index_of_nested_storage_for_insertion_)
+    std::vector<std::unique_ptr<Storage>> nested_storages_)
     : IAccessStorage(joinStorageNames(nested_storages_))
     , nested_storages(std::move(nested_storages_))
-    , nested_storage_for_insertion(nested_storages[index_of_nested_storage_for_insertion_].get())
     , ids_cache(512 /* cache size */)
-{
-}
-
-
-MultipleAccessStorage::~MultipleAccessStorage()
 {
 }
 
@@ -162,13 +156,39 @@ String MultipleAccessStorage::readNameImpl(const UUID & id) const
 }
 
 
+bool MultipleAccessStorage::canInsertImpl(const AccessEntityPtr & entity) const
+{
+    for (const auto & nested_storage : nested_storages)
+    {
+        if (nested_storage->canInsert(entity))
+            return true;
+    }
+    return false;
+}
+
+
 UUID MultipleAccessStorage::insertImpl(const AccessEntityPtr & entity, bool replace_if_exists)
 {
-    auto id = replace_if_exists ? nested_storage_for_insertion->insertOrReplace(entity) : nested_storage_for_insertion->insert(entity);
+    IAccessStorage * nested_storage_for_insertion = nullptr;
+    for (const auto & nested_storage : nested_storages)
+    {
+        if (nested_storage->canInsert(entity))
+        {
+            nested_storage_for_insertion = nested_storage.get();
+            break;
+        }
+    }
 
+    if (!nested_storage_for_insertion)
+    {
+        throw Exception(
+            "Not found a storage to insert " + entity->getTypeName() + backQuote(entity->getName()),
+            ErrorCodes::ACCESS_STORAGE_FOR_INSERTION_NOT_FOUND);
+    }
+
+    auto id = replace_if_exists ? nested_storage_for_insertion->insertOrReplace(entity) : nested_storage_for_insertion->insert(entity);
     std::lock_guard lock{ids_cache_mutex};
     ids_cache.set(id, std::make_shared<Storage *>(nested_storage_for_insertion));
-
     return id;
 }
 

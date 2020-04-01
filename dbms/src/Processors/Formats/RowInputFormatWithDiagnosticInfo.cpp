@@ -12,12 +12,19 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-DB::RowInputFormatWithDiagnosticInfo::RowInputFormatWithDiagnosticInfo(const Block & header_, ReadBuffer & in_, const Params & params_)
+static String alignedName(const String & name, size_t max_length)
+{
+    size_t spaces_count = max_length >= name.size() ? max_length - name.size() : 0;
+    return name + ", " + std::string(spaces_count, ' ');
+}
+
+
+RowInputFormatWithDiagnosticInfo::RowInputFormatWithDiagnosticInfo(const Block & header_, ReadBuffer & in_, const Params & params_)
     : IRowInputFormat(header_, in_, params_)
 {
 }
 
-void DB::RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
+void RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
 {
     ++row_num;
 
@@ -28,7 +35,7 @@ void DB::RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
     offset_of_current_row = in.offset();
 }
 
-String DB::RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
+String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
 {
     if (in.eof())        /// Buffer has gone, cannot extract information about what has been parsed.
         return {};
@@ -156,12 +163,6 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
     }
 
     return true;
-}
-
-String RowInputFormatWithDiagnosticInfo::alignedName(const String & name, size_t max_length) const
-{
-    size_t spaces_count = max_length >= name.size() ? max_length - name.size() : 0;
-    return name + ", " + std::string(spaces_count, ' ');
 }
 
 void RowInputFormatWithDiagnosticInfo::resetParser()

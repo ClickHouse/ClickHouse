@@ -37,6 +37,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ILLEGAL_COLUMN;
 }
@@ -412,19 +413,19 @@ static void convertLowCardinalityColumnsToFull(Block & block, const ColumnNumber
     }
 }
 
-void ExecutableFunctionAdaptor::execute(Block & block, const ColumnNumbers & args, size_t result, size_t input_rows_count, bool dry_run)
+void ExecutableFunctionAdaptor::execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count, bool dry_run)
 {
     if (impl->useDefaultImplementationForLowCardinalityColumns())
     {
         auto & res = block.safeGetByPosition(result);
         Block block_without_low_cardinality = block.cloneWithoutColumns();
 
-        for (auto arg : args)
+        for (auto arg : arguments)
             block_without_low_cardinality.safeGetByPosition(arg).column = block.safeGetByPosition(arg).column;
 
         if (auto * res_low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(res.type.get()))
         {
-            const auto * low_cardinality_column = findLowCardinalityArgument(block, args);
+            const auto * low_cardinality_column = findLowCardinalityArgument(block, arguments);
             bool can_be_executed_on_default_arguments = impl->canBeExecutedOnDefaultArguments();
             bool use_cache = low_cardinality_result_cache && can_be_executed_on_default_arguments
                              && low_cardinality_column && low_cardinality_column->isSharedDictionary();
@@ -446,9 +447,9 @@ void ExecutableFunctionAdaptor::execute(Block & block, const ColumnNumbers & arg
 
             block_without_low_cardinality.safeGetByPosition(result).type = res_low_cardinality_type->getDictionaryType();
             ColumnPtr indexes = replaceLowCardinalityColumnsByNestedAndGetDictionaryIndexes(
-                    block_without_low_cardinality, args, can_be_executed_on_default_arguments, input_rows_count);
+                    block_without_low_cardinality, arguments, can_be_executed_on_default_arguments, input_rows_count);
 
-            executeWithoutLowCardinalityColumns(block_without_low_cardinality, args, result, block_without_low_cardinality.rows(), dry_run);
+            executeWithoutLowCardinalityColumns(block_without_low_cardinality, arguments, result, block_without_low_cardinality.rows(), dry_run);
 
             auto keys = block_without_low_cardinality.safeGetByPosition(result).column->convertToFullColumnIfConst();
 
@@ -479,13 +480,13 @@ void ExecutableFunctionAdaptor::execute(Block & block, const ColumnNumbers & arg
         }
         else
         {
-            convertLowCardinalityColumnsToFull(block_without_low_cardinality, args);
-            executeWithoutLowCardinalityColumns(block_without_low_cardinality, args, result, input_rows_count, dry_run);
+            convertLowCardinalityColumnsToFull(block_without_low_cardinality, arguments);
+            executeWithoutLowCardinalityColumns(block_without_low_cardinality, arguments, result, input_rows_count, dry_run);
             res.column = block_without_low_cardinality.safeGetByPosition(result).column;
         }
     }
     else
-        executeWithoutLowCardinalityColumns(block, args, result, input_rows_count, dry_run);
+        executeWithoutLowCardinalityColumns(block, arguments, result, input_rows_count, dry_run);
 }
 
 void FunctionOverloadResolverAdaptor::checkNumberOfArguments(size_t number_of_arguments) const

@@ -17,7 +17,6 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 
 #include <type_traits>
-#include <common/likely.h>
 
 #define AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ARRAY_SIZE 0xFFFFFF
 
@@ -27,7 +26,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int TOO_LARGE_ARRAY_SIZE;
-    extern const int LOGICAL_ERROR;
 }
 
 enum class Sampler

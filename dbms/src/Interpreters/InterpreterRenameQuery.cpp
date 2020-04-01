@@ -54,23 +54,8 @@ BlockIO InterpreterRenameQuery::execute()
     std::vector<RenameDescription> descriptions;
     descriptions.reserve(rename.elements.size());
 
-    /// To avoid deadlocks, we must acquire locks for tables in same order in any different RENAMES.
-    struct UniqueTableName
-    {
-        String database_name;
-        String table_name;
-
-        UniqueTableName(const String & database_name_, const String & table_name_)
-            : database_name(database_name_), table_name(table_name_) {}
-
-        bool operator< (const UniqueTableName & rhs) const
-        {
-            return std::tie(database_name, table_name) < std::tie(rhs.database_name, rhs.table_name);
-        }
-    };
-
     /// Don't allow to drop tables (that we are renaming); don't allow to create tables in places where tables will be renamed.
-    std::map<UniqueTableName, std::unique_ptr<DDLGuard>> table_guards;
+    TableGuards table_guards;
 
     for (const auto & elem : rename.elements)
     {
@@ -84,20 +69,22 @@ BlockIO InterpreterRenameQuery::execute()
         table_guards[to];
     }
 
+    auto & database_catalog = DatabaseCatalog::instance();
+
     /// Must do it in consistent order.
     for (auto & table_guard : table_guards)
-        table_guard.second = context.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name);
+        table_guard.second = database_catalog.getDDLGuard(table_guard.first.database_name, table_guard.first.table_name);
 
     for (auto & elem : descriptions)
     {
-        context.assertTableDoesntExist(elem.to_database_name, elem.to_table_name);
-        auto from_table = context.getTable(elem.from_database_name, elem.from_table_name);
+        database_catalog.assertTableDoesntExist(StorageID(elem.to_database_name, elem.to_table_name));
+        auto from_table = database_catalog.getTable({elem.from_database_name, elem.from_table_name});
         auto from_table_lock = from_table->lockExclusively(context.getCurrentQueryId());
 
-        context.getDatabase(elem.from_database_name)->renameTable(
+        database_catalog.getDatabase(elem.from_database_name)->renameTable(
             context,
             elem.from_table_name,
-            *context.getDatabase(elem.to_database_name),
+            *database_catalog.getDatabase(elem.to_database_name),
             elem.to_table_name,
             from_table_lock);
     }

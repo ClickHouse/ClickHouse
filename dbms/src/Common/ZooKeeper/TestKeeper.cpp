@@ -66,8 +66,8 @@ static void processWatchesImpl(const String & path, TestKeeper::Watches & watche
 
 struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 {
-    TestKeeperCreateRequest() {}
-    TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
+    TestKeeperCreateRequest() = default;
+    explicit TestKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 
@@ -79,8 +79,8 @@ struct TestKeeperCreateRequest final : CreateRequest, TestKeeperRequest
 
 struct TestKeeperRemoveRequest final : RemoveRequest, TestKeeperRequest
 {
-    TestKeeperRemoveRequest() {}
-    TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
+    TestKeeperRemoveRequest() = default;
+    explicit TestKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
     bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
@@ -99,15 +99,15 @@ struct TestKeeperExistsRequest final : ExistsRequest, TestKeeperRequest
 
 struct TestKeeperGetRequest final : GetRequest, TestKeeperRequest
 {
-    TestKeeperGetRequest() {}
+    TestKeeperGetRequest() = default;
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 struct TestKeeperSetRequest final : SetRequest, TestKeeperRequest
 {
-    TestKeeperSetRequest() {}
-    TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
+    TestKeeperSetRequest() = default;
+    explicit TestKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
     bool isMutable() const override { return true; }
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
@@ -126,15 +126,15 @@ struct TestKeeperListRequest final : ListRequest, TestKeeperRequest
 
 struct TestKeeperCheckRequest final : CheckRequest, TestKeeperRequest
 {
-    TestKeeperCheckRequest() {}
-    TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
+    TestKeeperCheckRequest() = default;
+    explicit TestKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
     ResponsePtr createResponse() const override;
     ResponsePtr process(TestKeeper::Container & container, int64_t zxid) const override;
 };
 
 struct TestKeeperMultiRequest final : MultiRequest, TestKeeperRequest
 {
-    TestKeeperMultiRequest(const Requests & generic_requests)
+    explicit TestKeeperMultiRequest(const Requests & generic_requests)
     {
         requests.reserve(generic_requests.size());
 
@@ -574,11 +574,11 @@ void TestKeeper::finalize()
     }
 }
 
-void TestKeeper::pushRequest(RequestInfo && info)
+void TestKeeper::pushRequest(RequestInfo && request)
 {
     try
     {
-        info.time = clock::now();
+        request.time = clock::now();
 
         /// We must serialize 'pushRequest' and 'finalize' (from processingThread) calls
         ///  to avoid forgotten operations in the queue when session is expired.
@@ -589,7 +589,7 @@ void TestKeeper::pushRequest(RequestInfo && info)
         if (expired)
             throw Exception("Session expired", ZSESSIONEXPIRED);
 
-        if (!requests_queue.tryPush(std::move(info), operation_timeout.totalMilliseconds()))
+        if (!requests_queue.tryPush(std::move(request), operation_timeout.totalMilliseconds()))
             throw Exception("Cannot push request to queue within operation timeout", ZOPERATIONTIMEOUT);
     }
     catch (...)
