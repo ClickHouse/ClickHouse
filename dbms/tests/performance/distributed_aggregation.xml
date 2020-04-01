@@ -1,18 +1,6 @@
 <test>
-    <stop_conditions>
-        <all_of>
-            <iterations>10</iterations>
-            <min_time_not_changing_for_ms>1000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>50</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
-
     <query>select count() from (select sipHash64(zero) from zeros_mt(100000000) union all select sipHash64(zero) from zeros_mt(100000000))</query>
     <query>select count(sipHash64(zero)) from remote('127.0.0.{{1,1}}', zeros_mt(100000000))</query>
     <query>select count(sipHash64(zero)) from remote('127.0.0.{{1,2}}', zeros_mt(100000000))</query>
     <query>select count(sipHash64(zero)) from remote('127.0.0.{{2,3}}', zeros_mt(100000000))</query>
-
 </test>
