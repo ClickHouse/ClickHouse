@@ -22,6 +22,7 @@
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
+#include <Interpreters/ArithmeticOperationsInAgrFuncOptimize.h>
 
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -917,6 +918,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(
 
     if (settings.optimize_if_chain_to_miltiif)
         OptimizeIfChainsVisitor().visit(query);
+
+    ArithmeticOperationsInAgrFuncVisitor().visit(query);
 
     if (select_query)
     {

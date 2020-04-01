@@ -147,6 +147,17 @@ public:
         column.getData().push_back(this->data(place).get());
     }
 
+    bool hasConstArgument() const override
+    {
+        for (auto type: this->getArgumentTypes()) {
+            if (type->getName() == "Int64" || type->getName() == "Int64") {
+                std::cerr << "\n\n\nhello\n\n\n";
+                return true;
+            } // type is const????????
+        }
+        return false;
+    }
+
 private:
     UInt32 scale;
 };
