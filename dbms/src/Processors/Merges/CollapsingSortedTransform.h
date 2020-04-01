@@ -64,7 +64,7 @@ private:
     SortingHeap<SortCursor> queue;
     bool is_queue_initialized = false;
 
-    using RowRef = detail::RowRef;
+    using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 4; /// first_negative, last_positive, last, current.
     RowRef first_negative_row;
     RowRef last_positive_row;

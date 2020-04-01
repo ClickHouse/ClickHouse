@@ -103,10 +103,46 @@ inline void intrusive_ptr_release(SharedChunk * ptr)
 }
 
 /// This class represents a row in a chunk.
-/// RowRef hold shared pointer to this chunk, possibly extending its life time.
+struct RowRef
+{
+    ColumnRawPtrs * sort_columns = nullptr; /// Point to sort_columns from SortCursor or last_chunk_sort_columns.
+    UInt64 row_num = 0;
+
+    bool empty() const { return sort_columns == nullptr; }
+    void reset() { sort_columns = nullptr; }
+
+    void set(SortCursor & cursor)
+    {
+        sort_columns = &cursor.impl->sort_columns;
+        row_num = cursor.impl->pos;
+    }
+
+    static bool checkEquals(const ColumnRawPtrs * left, size_t left_row, const ColumnRawPtrs * right, size_t right_row)
+    {
+        auto size = left->size();
+        for (size_t col_number = 0; col_number < size; ++col_number)
+        {
+            auto & cur_column = (*left)[col_number];
+            auto & other_column = (*right)[col_number];
+
+            if (0 != cur_column->compareAt(left_row, right_row, *other_column, 1))
+                return false;
+        }
+
+        return true;
+    }
+
+    bool hasEqualSortColumnsWith(const RowRef & other)
+    {
+        return checkEquals(sort_columns, row_num, other.sort_columns, other.row_num);
+    }
+};
+
+/// This class also represents a row in a chunk.
+/// RowRefWithOwnedChunk hold shared pointer to this chunk, possibly extending its life time.
 /// It is needed, for example, in CollapsingTransform, where we need to store first negative row for current sort key.
 /// We do not copy data itself, because it may be potentially changed for each row. Performance for `set` is important.
-struct RowRef
+struct RowRefWithOwnedChunk
 {
     detail::SharedChunkPtr owned_chunk = nullptr;
 
@@ -114,7 +150,7 @@ struct RowRef
     ColumnRawPtrs * sort_columns = nullptr;
     UInt64 row_num = 0;
 
-    void swap(RowRef & other)
+    void swap(RowRefWithOwnedChunk & other)
     {
         owned_chunk.swap(other.owned_chunk);
         std::swap(all_columns, other.all_columns);
@@ -140,19 +176,9 @@ struct RowRef
         sort_columns = &owned_chunk->sort_columns;
     }
 
-    bool hasEqualSortColumnsWith(const RowRef & other)
+    bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other)
     {
-        auto size = sort_columns->size();
-        for (size_t col_number = 0; col_number < size; ++col_number)
-        {
-            auto & cur_column = (*sort_columns)[col_number];
-            auto & other_column = (*other.sort_columns)[col_number];
-
-            if (0 != cur_column->compareAt(row_num, other.row_num, *other_column, 1))
-                return false;
-        }
-
-        return true;
+        return RowRef::checkEquals(sort_columns, row_num, other.sort_columns, other.row_num);
     }
 };
 

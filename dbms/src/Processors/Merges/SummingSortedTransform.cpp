@@ -168,7 +168,7 @@ namespace
                        std::find(column_names_to_sum.begin(), column_names_to_sum.end(), column.name))
                 {
                     // Create aggregator to sum this column
-                    detail::AggregateDescription desc;
+                    SummingSortedTransform::AggregateDescription desc;
                     desc.is_agg_func_type = is_agg_func;
                     desc.column_numbers = {i};
 
@@ -211,7 +211,7 @@ namespace
             }
 
             DataTypes argument_types;
-            detail::AggregateDescription desc;
+            SummingSortedTransform::AggregateDescription desc;
             SummingSortedTransform::MapDescription map_desc;
 
             column_num_it = map.second.begin();

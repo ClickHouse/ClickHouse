@@ -15,7 +15,7 @@
 namespace DB
 {
 
-class VersionedCollapsingTransform : public IMergingTransform
+class VersionedCollapsingTransform final : public IMergingTransform
 {
 public:
     /// Don't need version column. It's in primary key.
@@ -53,7 +53,7 @@ private:
     SortingHeap<SortCursor> queue;
     bool is_queue_initialized = false;
 
-    using RowRef = detail::RowRef;
+    using RowRef = detail::RowRefWithOwnedChunk;
     const size_t max_rows_in_queue;
     /// Rows with the same primary key and sign.
     FixedSizeDequeWithGaps<RowRef> current_keys;
