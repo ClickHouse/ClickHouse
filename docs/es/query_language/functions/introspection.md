@@ -39,7 +39,7 @@ addressToLine(address_of_binary_instruction)
 
 -   Nombre de archivo del código fuente y el número de línea en este archivo delimitado por dos puntos.
 
-        For example, `/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199`, where `199` is a line number.
+        For example, `/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199`, where `199` is a line number.
 
 -   Nombre de un binario, si la función no pudo encontrar la información de depuración.
 
@@ -84,7 +84,7 @@ SELECT addressToLine(94784076370703) \G
 ``` text
 Row 1:
 ──────
-addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199
+addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199
 ```
 
 Aplicando la función a todo el seguimiento de la pila:
@@ -104,8 +104,8 @@ Row 1:
 ──────
 trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /usr/lib/debug/usr/bin/clickhouse
-/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199
-/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.h:155
+/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.cpp:199
+/build/obj-x86_64-linux-gnu/../dbms/Common/ThreadPool.h:155
 /usr/include/c++/9/bits/atomic_base.h:551
 /usr/lib/debug/usr/bin/clickhouse
 /lib/x86_64-linux-gnu/libpthread-2.27.so
