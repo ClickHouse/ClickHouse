@@ -1229,3 +1229,42 @@ def test_move_while_merge(start_cluster):
 
     finally:
         node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+
+
+def test_move_across_policies_does_not_work(start_cluster):
+    try:
+        name = "test_move_across_policies_does_not_work"
+
+        node1.query("""
+            CREATE TABLE {name} (
+                n Int64
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy='jbods_with_external'
+        """.format(name=name))
+
+        node1.query("""
+            CREATE TABLE {name}2 (
+                n Int64
+            ) ENGINE = MergeTree
+            ORDER BY tuple()
+            SETTINGS storage_policy='small_jbod_with_external'
+        """.format(name=name))
+
+        node1.query("""INSERT INTO {name} VALUES (1)""".format(name=name))
+        node1.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO DISK 'jbod2'""".format(name=name))
+
+        with pytest.raises(QueryRuntimeException, match='.*because disk does not belong to storage policy.*'):
+            node1.query("""ALTER TABLE {name}2 ATTACH PARTITION tuple() FROM {name}""".format(name=name))
+
+        with pytest.raises(QueryRuntimeException, match='.*because disk does not belong to storage policy.*'):
+            node1.query("""ALTER TABLE {name}2 REPLACE PARTITION tuple() FROM {name}""".format(name=name))
+
+        with pytest.raises(QueryRuntimeException, match='.*should have the same storage policy of source table.*'):
+            node1.query("""ALTER TABLE {name} MOVE PARTITION tuple() TO TABLE {name}2""".format(name=name))
+
+        assert node1.query("""SELECT * FROM {name}""".format(name=name)).splitlines() == ["1"]
+
+    finally:
+        node1.query("DROP TABLE IF EXISTS {name}".format(name=name))
+        node1.query("DROP TABLE IF EXISTS {name}2".format(name=name))

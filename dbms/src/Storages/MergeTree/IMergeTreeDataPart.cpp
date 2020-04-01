@@ -31,6 +31,9 @@ namespace ErrorCodes
 }
 
 
+extern const char * DELETE_ON_DESTROY_MARKER_PATH;
+
+
 static std::unique_ptr<ReadBufferFromFileBase> openForReading(const DiskPtr & disk, const String & path)
 {
     return disk->readFile(path, std::min(size_t(DBMS_DEFAULT_BUFFER_SIZE), disk->getFileSize(path)));
@@ -744,6 +747,7 @@ void IMergeTreeDataPart::remove() const
 
         for (const auto & file : {"checksums.txt", "columns.txt"})
             disk->remove(to + "/" + file);
+        disk->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_PATH);
 
         disk->remove(to);
     }
@@ -795,8 +799,11 @@ void IMergeTreeDataPart::makeCloneInDetached(const String & prefix) const
     assertOnDisk();
     LOG_INFO(storage.log, "Detaching " << relative_path);
 
+    String destination_path = storage.relative_data_path + getRelativePathForDetachedPart(prefix);
+
     /// Backup is not recursive (max_level is 0), so do not copy inner directories
-    localBackup(disk, getFullRelativePath(), storage.relative_data_path + getRelativePathForDetachedPart(prefix), 0);
+    localBackup(disk, getFullRelativePath(), destination_path, 0);
+    disk->removeIfExists(destination_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
 }
 
 void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservation) const
@@ -813,6 +820,7 @@ void IMergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservat
     reserved_disk->createDirectory(path_to_clone);
 
     disk->copy(getFullRelativePath(), reserved_disk, path_to_clone);
+    disk->removeIfExists(path_to_clone + "/" + DELETE_ON_DESTROY_MARKER_PATH);
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const
