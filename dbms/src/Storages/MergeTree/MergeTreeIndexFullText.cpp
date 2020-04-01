@@ -19,6 +19,10 @@
 
 #include <boost/algorithm/string.hpp>
 
+#include <immintrin.h>
+#include <nmmintrin.h>
+#include <emmintrin.h>
+
 
 namespace DB
 {
@@ -609,16 +613,17 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 
     while (*pos < len)
     {
-#if __SSE2__
+#if defined(__SSE2__)
         // NOTE: we assume that `data` string is padded from the right with 15 zero-bytes.
         const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + *pos));
         const size_t haystack_length = 16;
 
-#if __SSE4_2__
+#if defined(__SSE4_2__)
         // With the help of https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
-        static const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'Z', 'A', 'z', 'a', '9', '0');
+        static const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
+                '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
         // Every bit represents if `haystack` character is in the ranges (1) or not(0)
-        const auto result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 6, haystack, haystack_length, _SIDD_CMP_RANGES | _SIDD_UBYTE_OPS));
+        const int result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
 #else
         // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
         static const auto number_begin =      _mm_set1_epi8('0' - 1);
@@ -627,13 +632,16 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
         static const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
         static const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
         static const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
+        static const auto zero  =        _mm_set1_epi8(0);
 
         // every bit represents if `haystack` character `c` statisfies condition:
-        // (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
-        const int result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(
-                        _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end)),
-                        _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
-                        _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_upper_begin), _mm_cmplt_epi8(haystack, alpha_upper_end))));
+        // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
+        // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and hence all chars > 0x80 are negative.
+        const int result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
+                _mm_cmplt_epi8(haystack, zero),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end))),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_upper_begin), _mm_cmplt_epi8(haystack, alpha_upper_end))));
 #endif
         // NOTE: __builtin_ctz family explicitly state that result is UNDEFINED if argument is 0
         if (result_bitmask == 0)
@@ -649,12 +657,15 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
         const auto start = getTrailingZeroBits(result_bitmask);
         if (*token_len == 0)
             *token_start = *pos + start;
+        else if (start != 0)
+            // token is not continued in this haystack
+            return true;
 
         const auto l = getTrailingZeroBits(~(result_bitmask >> start));
         *token_len += l;
 
         *pos += start + l;
-        if (start + l == 16)
+        if (start + l == haystack_length)
             // check if there are leftovers in next `haystack`
             continue;
 
