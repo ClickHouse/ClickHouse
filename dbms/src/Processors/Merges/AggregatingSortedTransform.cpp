@@ -60,6 +60,8 @@ namespace
                 def.columns_to_aggregate.emplace_back(i);
             }
         }
+
+        return def;
     }
 }
 
