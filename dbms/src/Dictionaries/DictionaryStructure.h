@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/IExternalLoadable.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Core/Settings.h>
 
 #include <map>
 #include <optional>
@@ -101,6 +102,7 @@ struct DictionaryStructure final
     std::optional<DictionarySpecialAttribute> id;
     std::optional<std::vector<DictionaryAttribute>> key;
     std::vector<DictionaryAttribute> attributes;
+    Settings settings;
     std::optional<DictionaryTypedSpecialAttribute> range_min;
     std::optional<DictionaryTypedSpecialAttribute> range_max;
     bool has_expressions = false;
@@ -118,6 +120,11 @@ private:
         const std::string & config_prefix,
         const bool hierarchy_allowed = true,
         const bool allow_null_values = true);
+
+    void getSettings(
+        const Poco::Util::AbstractConfiguration & config,
+        const std::string & config_prefix,
+        Settings & settings);
 };
 
 }
