@@ -33,7 +33,7 @@ def process_buffer(buffer, new_value, item=None, is_header=False):
         debug(f'Translate: "{text}" -> "{translated_text}"')
 
         if text and text[0].isupper() and not translated_text[0].isupper():
-            translated_text = translated_text[0].upper() + translated_text[1:]
+            translated_text = translated_text.capitalize()
 
         if text.startswith(' ') and not translated_text.startswith(' '):
             translated_text = ' ' + translated_text
@@ -46,7 +46,7 @@ def process_buffer(buffer, new_value, item=None, is_header=False):
         for token in translated_text.split(' '):
             if title_case and not token.isupper():
                 if token not in title_case_whitelist:
-                    token = token[0].upper() + token[1:]
+                    token = token.capitalize()
 
             new_value.append(pandocfilters.Str(token))
             new_value.append(pandocfilters.Space())
