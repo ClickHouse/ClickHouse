@@ -2,15 +2,15 @@
 
 #if USE_AWS_S3
 
-#include <IO/S3Common.h>
-#include <IO/WriteBufferFromString.h>
+#    include <IO/S3Common.h>
+#    include <IO/WriteBufferFromString.h>
 
-#include <regex>
-#include <aws/s3/S3Client.h>
-#include <aws/core/auth/AWSCredentialsProvider.h>
-#include <aws/core/utils/logging/LogSystemInterface.h>
-#include <aws/core/utils/logging/LogMacros.h>
-#include <common/logger_useful.h>
+#    include <aws/core/auth/AWSCredentialsProvider.h>
+#    include <aws/core/utils/logging/LogMacros.h>
+#    include <aws/core/utils/logging/LogSystemInterface.h>
+#    include <aws/s3/S3Client.h>
+#    include <re2/re2.h>
+#    include <common/logger_useful.h>
 
 
 namespace
@@ -57,7 +57,6 @@ private:
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -106,46 +105,37 @@ namespace S3
 
     URI::URI(const Poco::URI & uri_)
     {
-        static const std::regex bucket_key_pattern("([^/]+)/(.*)"); /// TODO std::regex is discouraged
+        static const RE2 virtual_hosted_style_pattern("(.+\\.)?s3[.-][a-z0-9-.]+");
+        static const RE2 path_style_pattern("([^/]+)/(.*)");
 
         uri = uri_;
 
-        // s3://*
-        if (uri.getScheme() == "s3" || uri.getScheme() == "S3")
-        {
-            bucket = uri.getAuthority();
-            if (bucket.empty())
-                throw Exception ("Invalid S3 URI: no bucket: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
-
-            const auto & path = uri.getPath();
-            // s3://bucket or s3://bucket/
-            if (path.length() <= 1)
-                throw Exception ("Invalid S3 URI: no key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
-
-            key = path.substr(1);
-            return;
-        }
-
         if (uri.getHost().empty())
-            throw Exception("Invalid S3 URI: no host: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Invalid S3 URI host: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
         endpoint = uri.getScheme() + "://" + uri.getAuthority();
 
-        // Parse bucket and key from path.
-        std::smatch match;
-        std::regex_search(uri.getPath(), match, bucket_key_pattern);
-        if (!match.empty())
+        if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket))
         {
-            bucket = match.str(1);
-            if (bucket.empty())
-                throw Exception ("Invalid S3 URI: no bucket: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            if (!bucket.empty())
+                bucket = bucket.substr(0, bucket.length() - 1);
+            if (bucket.length() < 3 || bucket.length() > 63)
+                throw Exception("Invalid S3 URI bucket: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
-            key = match.str(2);
-            if (key.empty())
-                throw Exception ("Invalid S3 URI: no key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            key = uri.getPath().substr(1);
+            if (key.empty() || key == "/")
+                throw Exception("Invalid S3 URI key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+        }
+        else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
+        {
+            if (bucket.length() < 3 || bucket.length() > 63)
+                throw Exception("Invalid S3 URI bucket: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+
+            if (key.empty() || key == "/")
+                throw Exception("Invalid S3 URI key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
         }
         else
-            throw Exception("Invalid S3 URI: no bucket or key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Invalid S3 URI bucket or key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
     }
 }
 
