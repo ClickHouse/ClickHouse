@@ -40,7 +40,7 @@ namespace
             if (overrun_count)
             {
                 /// But pass with some frequency to avoid drop of all traces.
-                if (write_trace_iteration % overrun_count == 0)
+                if (write_trace_iteration % (overrun_count + 1) == 0)
                 {
                     ProfileEvents::increment(ProfileEvents::QueryProfilerSignalOverruns, overrun_count);
                 }

@@ -39,7 +39,7 @@ Moteurs dans la famille:
 -   [StripeLog](stripelog.md)
 -   [Journal](log.md)
 
-### Moteurs d'Intergation {#intergation-engines}
+### Moteurs d'Integration {#integration-engines}
 
 Moteurs de communication avec d'autres systèmes de stockage et de traitement de données.
 

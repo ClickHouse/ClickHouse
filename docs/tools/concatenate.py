@@ -14,9 +14,8 @@ def concatenate(lang, docs_path, single_page_file):
         files_to_concatenate = [(l[l.index(':') + 1:]).strip(" '\n") for l in cfg_file
                         if '.md' in l and 'single_page' not in l]
 
-    logging.info(
-        str(len(files_to_concatenate)) +
-        ' files will be concatenated into single md-file.')
+    files_count = len(files_to_concatenate)
+    logging.info(f'{files_count} files will be concatenated into single md-file for {lang}.')
     logging.debug('Concatenating: ' + ', '.join(files_to_concatenate))
 
     for path in files_to_concatenate:

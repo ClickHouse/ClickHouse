@@ -13,6 +13,7 @@
 #include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/InterpreterDropQuery.h>
 #include <Interpreters/InterpreterCreateQuery.h>
+#include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/PartLog.h>
@@ -30,7 +31,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
 #include <algorithm>
-#include "InterpreterSystemQuery.h"
 
 
 namespace DB
@@ -311,11 +311,11 @@ BlockIO InterpreterSystemQuery::execute()
 }
 
 
-StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, Context & system_context)
+StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, Context & system_context, bool need_ddl_guard)
 {
     context.checkAccess(AccessType::RESTART_REPLICA, replica);
 
-    auto table_ddl_guard = DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName());
+    auto table_ddl_guard = need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName()) : nullptr;
     auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica);
     ASTPtr create_ast;
 
@@ -358,8 +358,9 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 void InterpreterSystemQuery::restartReplicas(Context & system_context)
 {
     std::vector<StorageID> replica_names;
+    auto & catalog = DatabaseCatalog::instance();
 
-    for (auto & elem : DatabaseCatalog::instance().getDatabases())
+    for (auto & elem : catalog.getDatabases())
     {
         DatabasePtr & database = elem.second;
         for (auto iterator = database->getTablesIterator(system_context); iterator->isValid(); iterator->next())
@@ -372,9 +373,15 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
     if (replica_names.empty())
         return;
 
+    TableGuards guards;
+    for (const auto & name : replica_names)
+        guards.emplace(UniqueTableName{name.database_name, name.table_name}, nullptr);
+    for (auto & guard : guards)
+        guard.second = catalog.getDDLGuard(guard.first.database_name, guard.first.table_name);
+
     ThreadPool pool(std::min(size_t(getNumberOfPhysicalCPUCores()), replica_names.size()));
     for (auto & table : replica_names)
-        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(table, system_context); });
+        pool.scheduleOrThrowOnError([&]() { tryRestartReplica(table, system_context, false); });
     pool.wait();
 }
 

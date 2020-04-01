@@ -38,16 +38,16 @@ private:
         void clear() { data.clear(); }
         void reserve(size_t size_) { data.reserve(size_); }
 
-        void addStream(OutputPort * port)
+        void addStream(OutputPort * port, size_t port_max_parallel_streams)
         {
             data.push_back(port);
-            max_parallel_streams = std::max<size_t>(max_parallel_streams, data.size());
+            max_parallel_streams = std::max<size_t>(max_parallel_streams + port_max_parallel_streams, data.size());
         }
 
         void addStreams(Streams & other)
         {
             data.insert(data.end(), other.begin(), other.end());
-            max_parallel_streams = std::max<size_t>(max_parallel_streams, data.size());
+            max_parallel_streams = std::max<size_t>(max_parallel_streams + other.max_parallel_streams, data.size());
         }
 
         void assign(std::initializer_list<OutputPort *> list)
