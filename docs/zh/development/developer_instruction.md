@@ -185,19 +185,19 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 
 在libhdfs2库中生成有关protobuf文件的消息时，可能会显示诸如`libprotobuf WARNING`。它们没有影响，可以忽略不计。
 
-成功构建后，会得到一个可执行文件`ClickHouse/<build_dir>/dbms/programs/clickhouse`:
+成功构建后，会得到一个可执行文件`ClickHouse/<build_dir>/programs/clickhouse`:
 
-    ls -l dbms/programs/clickhouse
+    ls -l programs/clickhouse
 
 # 运行ClickHouse可执行文件 {#yun-xing-clickhouseke-zhi-xing-wen-jian}
 
-要以当前的用户身份运行服务，请进入到`ClickHouse/dbms/programs/server/` 目录（在`build`文件夹外）并运行：
+要以当前的用户身份运行服务，请进入到`ClickHouse/programs/server/` 目录（在`build`文件夹外）并运行：
 
-    ../../../build/dbms/programs/clickhouse server
+    ../../../build/programs/clickhouse server
 
 在这种情况下，ClickHouse将使用位于当前目录中的配置文件。您可以从任何目录运行`Clickhouse server`，并将配置文件`--config-file`的路径指定为命令行参数。
 
-在另外一个终端上连接ClickHouse的clickhouse-client客户端，请进入到`ClickHouse/build/dbms/programs/` 并运行`clickhouse client`。
+在另外一个终端上连接ClickHouse的clickhouse-client客户端，请进入到`ClickHouse/build/programs/` 并运行`clickhouse client`。
 
 如果您在Mac OS X 或者 FreeBSD上收到`Connection refused`的消息，请尝试指定主机地址为127.0.0.1：
 
@@ -206,7 +206,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 您可以使用自定义构建的ClickHouse二进制文件替换系统中安装的ClickHouse二进制文件的生成版本。为此，请参照官方网站上的说明在计算机上安装ClickHouse。 接下来，运行以下命令：
 
     sudo service clickhouse-server stop
-    sudo cp ClickHouse/build/dbms/programs/clickhouse /usr/bin/
+    sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
     sudo service clickhouse-server start
 
 请注意，`clickhouse-client`，`clickhouse-server`和其他服务通常共享`clickhouse`二进制文件的符号链接。
@@ -214,7 +214,7 @@ Yandex官方当前使用GCC构建ClickHouse，因为它生成的机器代码性�
 您还可以使用系统上安装的ClickHouse软件包中的配置文件运行自定义构建的ClickHouse二进制文件：
 
     sudo service clickhouse-server stop
-    sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+    sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
 # IDE (集成开发环境) {#ide-ji-cheng-kai-fa-huan-jing}
 
@@ -234,7 +234,7 @@ ClickHouse的架构描述可以在此处查看：https://clickhouse.tech/docs/en
 
 编写测试用例：https://clickhouse.tech/docs/en/development/tests/
 
-任务列表：https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy\_tasks\_sorted\_en.md
+任务列表：https://github.com/ClickHouse/ClickHouse/blob/master/tests/instructions/easy\_tasks\_sorted\_en.md
 
 # 测试数据 {#ce-shi-shu-ju}
 

@@ -44,7 +44,7 @@ cmake --build .
 cd ..
 
 #  Run server:
-# build/dbms/programs/clickhouse-server --config-file=ClickHouse/dbms/programs/server/config.xml &
+# build/programs/clickhouse-server --config-file=ClickHouse/programs/server/config.xml &
 
 #  Run client:
-# build/dbms/programs/clickhouse-client
+# build/programs/clickhouse-client
