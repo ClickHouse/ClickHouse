@@ -62,6 +62,10 @@ public:
         size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
         WriteMode mode = WriteMode::Rewrite) override;
 
+    void remove(const String & path) override;
+
+    void removeRecursive(const String & path) override;
+
 private:
     void createDirectoriesImpl(const String & path);
     void replaceFileImpl(const String & from_path, const String & to_path);

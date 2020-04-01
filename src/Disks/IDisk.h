@@ -125,6 +125,19 @@ public:
 
     /// Open the file for write and return WriteBuffer object.
     virtual std::unique_ptr<WriteBuffer> writeFile(const String & path, size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE, WriteMode mode = WriteMode::Rewrite) = 0;
+
+    /// Remove file or directory. Throws exception if file doesn't exists or if directory is not empty.
+    virtual void remove(const String & path) = 0;
+
+    /// Remove file or directory with all children. Use with extra caution. Throws exception if file doesn't exists.
+    virtual void removeRecursive(const String & path) = 0;
+
+    /// Remove file or directory if it exists.
+    void removeIfExists(const String & path)
+    {
+        if (exists(path))
+            remove(path);
+    }
 };
 
 using DiskPtr = std::shared_ptr<IDisk>;

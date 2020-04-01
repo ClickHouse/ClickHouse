@@ -37,6 +37,8 @@ namespace ErrorCodes
     extern const int CANNOT_UNLINK;
 }
 
+extern const char * DELETE_ON_DESTROY_MARKER_PATH;
+
 
 static ReadBufferFromFile openForReading(const String & path)
 {
@@ -454,6 +456,7 @@ void MergeTreeDataPart::remove() const
                 throwFromErrnoWithPath("Cannot unlink file " + path_to_remove, path_to_remove,
                                        ErrorCodes::CANNOT_UNLINK);
         }
+        disk->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_PATH);
 
         if (0 != rmdir(to.c_str()))
             throwFromErrnoWithPath("Cannot rmdir file " + to, to, ErrorCodes::CANNOT_UNLINK);
@@ -548,6 +551,7 @@ void MergeTreeDataPart::makeCloneInDetached(const String & prefix) const
     Poco::Path dst(storage.getFullPathOnDisk(disk) + getRelativePathForDetachedPart(prefix));
     /// Backup is not recursive (max_level is 0), so do not copy inner directories
     localBackup(src, dst, 0);
+    disk->removeIfExists(dst.toString() + "/" + DELETE_ON_DESTROY_MARKER_PATH);
 }
 
 void MergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservation) const
@@ -564,6 +568,7 @@ void MergeTreeDataPart::makeCloneOnDiskDetached(const ReservationPtr & reservati
 
     Poco::File cloning_directory(getFullPath());
     cloning_directory.copyTo(path_to_clone);
+    disk->removeIfExists(path_to_clone + "/" + DELETE_ON_DESTROY_MARKER_PATH);
 }
 
 void MergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checksums, bool check_consistency)
