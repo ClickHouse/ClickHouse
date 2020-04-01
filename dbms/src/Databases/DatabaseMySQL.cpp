@@ -62,7 +62,7 @@ DatabaseMySQL::DatabaseMySQL(
     const Context & global_context_, const String & database_name_, const String & metadata_path_,
     const ASTStorage * database_engine_define_, const String & database_name_in_mysql_, mysqlxx::Pool && pool)
     : IDatabase(database_name_)
-    , global_context(global_context_)
+    , global_context(global_context_.getGlobalContext())
     , metadata_path(metadata_path_)
     , database_engine_define(database_engine_define_->clone())
     , database_name_in_mysql(database_name_in_mysql_)
@@ -86,7 +86,7 @@ bool DatabaseMySQL::empty(const Context &) const
     return true;
 }
 
-DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(const Context &, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(const FilterByNameFunction & filter_by_table_name)
 {
     Tables tables;
     std::lock_guard<std::mutex> lock(mutex);

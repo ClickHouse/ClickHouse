@@ -42,7 +42,7 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
     return {};
 }
 
-DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const FilterByNameFunction & filter_by_table_name)
 {
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)

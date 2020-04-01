@@ -30,7 +30,7 @@ public:
 
     bool empty(const Context & context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name) override;
 
     ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const override;
 
@@ -60,7 +60,7 @@ protected:
     ASTPtr getCreateTableQueryImpl(const Context & context, const String & name, bool throw_on_error) const override;
 
 private:
-    Context global_context;
+    const Context & global_context;
     String metadata_path;
     ASTPtr database_engine_define;
     String database_name_in_mysql;

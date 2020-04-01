@@ -61,7 +61,7 @@ public:
 
     bool empty(const Context & context) const override;
 
-    DatabaseTablesIteratorPtr getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name) override;
+    DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name) override;
 
     void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 
@@ -104,7 +104,7 @@ private:
     mutable TablesCache tables_cache;
     mutable CacheExpirationQueue cache_expiration_queue;
 
-    StoragePtr loadTable(const Context & context, const String & table_name) const;
+    StoragePtr loadTable(const String & table_name) const;
 
     void clearExpiredTables() const;
 
@@ -117,7 +117,6 @@ class DatabaseLazyIterator final : public IDatabaseTablesIterator
 public:
     DatabaseLazyIterator(
         DatabaseLazy & database_,
-        const Context & context_,
         Strings && table_names_);
 
     void next() override;
@@ -128,7 +127,6 @@ public:
 private:
     const DatabaseLazy & database;
     const Strings table_names;
-    const Context context;
     Strings::const_iterator iterator;
     mutable StoragePtr current_storage;
 };

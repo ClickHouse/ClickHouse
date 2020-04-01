@@ -50,7 +50,7 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, const Contex
 
         const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, db.first);
 
-        for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+        for (auto iterator = db.second->getTablesIterator(); iterator->isValid(); iterator->next())
         {
             if (!dynamic_cast<const MergeTreeData *>(iterator->table().get()))
                 continue;

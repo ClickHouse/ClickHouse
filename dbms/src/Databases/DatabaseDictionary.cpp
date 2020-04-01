@@ -17,25 +17,26 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
 }
 
-DatabaseDictionary::DatabaseDictionary(const String & name_)
-    : IDatabase(name_),
-      log(&Logger::get("DatabaseDictionary(" + database_name + ")"))
+DatabaseDictionary::DatabaseDictionary(const String & name_, const Context & global_context_)
+    : IDatabase(name_)
+    , log(&Logger::get("DatabaseDictionary(" + database_name + ")"))
+    , global_context(global_context_.getGlobalContext())
 {
 }
 
-Tables DatabaseDictionary::listTables(const Context & context, const FilterByNameFunction & filter_by_name)
+Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_name)
 {
     Tables tables;
     ExternalLoader::LoadResults load_results;
     if (filter_by_name)
     {
         /// If `filter_by_name` is set, we iterate through all dictionaries with such names. That's why we need to load all of them.
-        load_results = context.getExternalDictionariesLoader().tryLoad<ExternalLoader::LoadResults>(filter_by_name);
+        load_results = global_context.getExternalDictionariesLoader().tryLoad<ExternalLoader::LoadResults>(filter_by_name);
     }
     else
     {
         /// If `filter_by_name` isn't set, we iterate through only already loaded dictionaries. We don't try to load all dictionaries in this case.
-        load_results = context.getExternalDictionariesLoader().getCurrentLoadResults();
+        load_results = global_context.getExternalDictionariesLoader().getCurrentLoadResults();
     }
 
     for (const auto & load_result: load_results)
@@ -47,7 +48,7 @@ Tables DatabaseDictionary::listTables(const Context & context, const FilterByNam
             auto dict_name = dict_ptr->getName();
             const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
             auto columns = StorageDictionary::getNamesAndTypes(dictionary_structure);
-            tables[dict_name] = StorageDictionary::create(StorageID(getDatabaseName(), dict_name), ColumnsDescription{columns}, context, true, dict_name);
+            tables[dict_name] = StorageDictionary::create(StorageID(getDatabaseName(), dict_name), ColumnsDescription{columns}, global_context, true, dict_name);
         }
     }
     return tables;
@@ -75,9 +76,9 @@ StoragePtr DatabaseDictionary::tryGetTable(
     return {};
 }
 
-DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(const Context & context, const FilterByNameFunction & filter_by_table_name)
+DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(const FilterByNameFunction & filter_by_table_name)
 {
-    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(context, filter_by_table_name));
+    return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(filter_by_table_name));
 }
 
 bool DatabaseDictionary::empty(const Context & context) const

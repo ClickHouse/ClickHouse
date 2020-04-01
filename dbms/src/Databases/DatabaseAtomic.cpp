@@ -18,6 +18,15 @@ namespace ErrorCodes
     extern const int CANNOT_ASSIGN_ALTER;
 }
 
+class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
+{
+public:
+    AtomicDatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && base)
+        : DatabaseTablesSnapshotIterator(std::move(base)) {}
+    UUID uuid() const override { return table()->getStorageID().uuid; }
+};
+
+
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, Context & context_)
     : DatabaseOrdinary(name_, metadata_path_, context_)
 {
@@ -231,6 +240,18 @@ void DatabaseAtomic::cleenupDetachedTables()
         else
             ++it;
     }
+}
+
+DatabaseTablesIteratorPtr DatabaseAtomic::getTablesIterator(const IDatabase::FilterByNameFunction & filter_by_table_name)
+{
+    auto base_iter = DatabaseWithOwnTablesBase::getTablesIterator(filter_by_table_name);
+    return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
+}
+
+DatabaseTablesIteratorPtr DatabaseAtomic::getTablesWithDictionaryTablesIterator(const IDatabase::FilterByNameFunction & filter_by_dictionary_name)
+{
+    auto base_iter = DatabaseWithDictionaries::getTablesWithDictionaryTablesIterator(filter_by_dictionary_name);
+    return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 
 }

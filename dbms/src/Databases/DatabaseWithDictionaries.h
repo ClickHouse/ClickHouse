@@ -20,9 +20,9 @@ public:
 
     StoragePtr tryGetTable(const Context & context, const String & table_name) const override;
 
-    DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const Context & context, const FilterByNameFunction & filter_by_dictionary_name) override;
+    DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const FilterByNameFunction & filter_by_dictionary_name) override;
 
-    DatabaseDictionariesIteratorPtr getDictionariesIterator(const Context & context, const FilterByNameFunction & filter_by_dictionary_name) override;
+    DatabaseDictionariesIteratorPtr getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name) override;
 
     bool isDictionaryExist(const Context & context, const String & dictionary_name) const override;
 
@@ -37,7 +37,7 @@ protected:
     void attachToExternalDictionariesLoader(Context & context);
     void detachFromExternalDictionariesLoader();
 
-    StoragePtr getDictionaryStorage(const Context & context, const String & table_name) const;
+    StoragePtr getDictionaryStorage(const String & table_name) const;
 
     ASTPtr getCreateDictionaryQueryImpl(const Context & context,
                                         const String & dictionary_name,
