@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Valores booleanos {#boolean-values}
 
 No hay un tipo separado para los valores booleanos. Utilice el tipo UInt8, restringido a los valores 0 o 1.

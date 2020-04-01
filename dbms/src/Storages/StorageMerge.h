@@ -31,7 +31,7 @@ public:
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, const ASTPtr &) const override;
 
     Pipes read(
         const Names & column_names,

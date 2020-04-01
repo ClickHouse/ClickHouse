@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Método de codificación de datos: {#table_engines-mergetree}
 
 El `MergeTree` motor y otros motores de esta familia (`*MergeTree`) son los motores de mesa ClickHouse más robustos.

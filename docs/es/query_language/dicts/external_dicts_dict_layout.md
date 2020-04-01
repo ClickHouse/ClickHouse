@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Almacenamiento de diccionarios en la memoria {#dicts-external-dicts-dict-layout}
 
 Hay una variad de formas de almacenar diccionarios en la memoria.

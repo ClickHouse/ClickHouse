@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Replicación de datos {#table_engines-replication}
 
 La replicación solo se admite para tablas de la familia MergeTree:

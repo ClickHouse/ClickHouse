@@ -34,7 +34,7 @@
 -   \[StripeLog\](stripelog/）
 -   [Log](#log)(log/）
 
-## Intergation engines {#intergation-engines}
+## Integration engines {#integration-engines}
 
 用于与其他的数据存储与处理系统集成的引擎。
 该类型的引擎：

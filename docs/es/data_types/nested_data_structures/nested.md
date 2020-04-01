@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Nested(Name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
 
 A nested data structure is like a nested table. The parameters of a nested data structure – the column names and types – are specified the same way as in a CREATE query. Each table row can correspond to any number of rows in a nested data structure.

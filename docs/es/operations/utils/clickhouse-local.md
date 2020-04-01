@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Sistema abierto. {#clickhouse-local}
 
 El `clickhouse-local` El programa le permite realizar un procesamiento rápido en archivos locales, sin tener que implementar y configurar el servidor ClickHouse.

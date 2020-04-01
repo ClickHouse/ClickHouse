@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Preguntas generales {#general-questions}
 
 ## ¿Por qué no usar algo como MapReduce? {#why-not-use-something-like-mapreduce}

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Motores de base de datos {#database-engines}
 
 Los motores de bases de datos le permiten trabajar con tablas.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## IPv6 {#ipv6}
 
 `IPv6` es un dominio basado en `FixedString(16)` tipo y sirve como reemplazo tipo para almacenar valores IPv6. Proporciona un almacenamiento compacto con un formato de entrada-salida amigable para los humanos e información de tipo de columna sobre la inspección.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Restricciones en la complejidad de consultas {#restrictions-on-query-complexity}
 
 Las restricciones en la complejidad de la consulta forman parte de la configuración.

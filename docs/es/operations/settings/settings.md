@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Configuración {#settings}
 
 ## distributed\_product\_mode {#distributed-product-mode}

@@ -258,6 +258,7 @@ private:
     int32_t session_timeout_ms;
     int32_t operation_timeout_ms;
     std::string chroot;
+    std::string implementation;
 
     std::mutex mutex;
 

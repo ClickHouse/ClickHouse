@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # número {#numbers}
 
 `numbers(N)` – Devuelve una tabla con el único ‘number’ columna (UInt64) que contiene enteros de 0 a N-1.

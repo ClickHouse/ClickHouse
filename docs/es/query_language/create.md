@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # CREAR Consultas {#create-queries}
 
 ## CREAR BASE DE DATOS {#query-language-create-database}

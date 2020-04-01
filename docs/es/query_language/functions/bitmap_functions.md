@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones de mapa de bits {#bitmap-functions}
 
 Las funciones de mapa de bits funcionan para dos mapas de bits Cálculo del valor del objeto, es devolver un nuevo mapa de bits o cardinalidad mientras se usa el cálculo de la fórmula, como y, o, xor, y no, etc.

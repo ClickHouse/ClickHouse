@@ -841,24 +841,41 @@ Columns:
 
 -   `name` (String) — Setting name.
 -   `value` (String) — Setting value.
+-   `description` (String) — Setting description.
+-   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
+-   `min` (Nullable(String)) — Get minimum allowed value (if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `max` (Nullable(String)) — Get maximum allowed value (if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `readonly` (UInt8) — Can user change this setting (for more info, look into [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
 
 Example:
 
 ``` sql
-SELECT *
+SELECT name, value
 FROM system.settings
 WHERE changed
 ```
 
 ``` text
-┌─name───────────────────┬─value───────┬─changed─┐
-│ max_threads            │ 8           │       1 │
-│ use_uncompressed_cache │ 0           │       1 │
-│ load_balancing         │ random      │       1 │
-│ max_memory_usage       │ 10000000000 │       1 │
-└────────────────────────┴─────────────┴─────────┘
+┌─name───────────────────┬─value───────┐
+│ max_threads            │ 8           │
+│ use_uncompressed_cache │ 0           │
+│ load_balancing         │ random      │
+│ max_memory_usage       │ 10000000000 │
+└────────────────────────┴─────────────┘
 ```
+
+## system.merge\_tree\_settings {#system-merge_tree_settings}
+
+Contains information about settings for `MergeTree` tables.
+
+Columns:
+
+-   `name` (String) — Setting name.
+-   `value` (String) — Setting value.
+-   `description` (String) — Setting description.
+-   `type` (String) — Setting type (implementation specific string value).
+-   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
 ## system.table\_engines {#system-table-engines}
 
@@ -917,6 +934,16 @@ This table contains the following columns (the column type is shown in brackets)
 -   `sorting_key` (String) - The sorting key expression specified in the table.
 -   `primary_key` (String) - The primary key expression specified in the table.
 -   `sampling_key` (String) - The sampling key expression specified in the table.
+-   `storage_policy` (String) - The storage policy:
+
+      - [MergeTree](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes)
+      - [Distributed](table_engines/distributed.md#distributed)
+
+-   `total_rows` (Nullable(UInt64)) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `Null` (including underying `Buffer` table).
+-   `total_bytes` (Nullable(UInt64)) - Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `Null` (**does not** includes any underlying storage).
+
+      - If the table stores data on disk, returns used space on disk (i.e. compressed).
+      - If the table stores data in memory, returns approximated number of used bytes in memory.
 
 The `system.tables` table is used in `SHOW TABLES` query implementation.
 
