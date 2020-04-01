@@ -112,13 +112,13 @@ SELECT toUInt64(nan), toUInt32(-32), toUInt16('16'), toUInt8(8.8)
 
 ## toFloat(32|64)OrNull
 
-## toDate
+## toDate {#todate}
 
 ## toDateOrZero
 
 ## toDateOrNull
 
-## toDateTime
+## toDateTime {#todatetime}
 
 ## toDateTimeOrZero
 
@@ -353,7 +353,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 
 Приводит аргумент из числового типа данных к типу данных [IntervalType](../../data_types/special_data_types/interval.md).
 
-**Синтксис**
+**Синтаксис**
 
 ```sql
 toIntervalSecond(number)
@@ -392,5 +392,103 @@ SELECT
 └───────────────────────────┴──────────────────────────────┘
 ```
 
+## parseDateTimeBestEffort {#parsedatetimebesteffort}
+
+Преобразует аргумент типа [String](../../data_types/string.md) к типу данных [DateTime](../../data_types/datetime.md#data_type-datetime).
+Функция парсит ISO 8601, RFC 1123 или некоторые другие форматы даты и времени.
+
+**Синтаксис**
+
+```sql
+parseDateTimeBestEffort(s[, time_zone]);
+```
+
+**Параметры**
+
+- `s` — Строка, содержащая дату и время для преобразования. [String](../../data_types/string.md).  
+- `time_zone` — Временная зона. Функция анализирует `s` в соответствии с часовым поясом. [String](../../data_types/string.md).
+
+**Поддерживаемые нестандартные форматы**
+
+- Строка, содержащая дату и время в формате Unix времени.
+- Строка с компонентом даты и времени: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
+- Строка с датой, но без компонента времени: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY`, `DD` и т.д. .
+- Строка с временеи, но без компонента даты:  `hh:mm`, `hhmm`, `hh` - если в строке `s` указан день месяца.
+- Строка, содержащая дату и время вместе с информацией о смещении часового пояса: `2020-12-12 17:36:00 -5:00` и т.д. .
+
+**Возвращаемое значение**
+
+- Структура данных эквивалентная дате, указанной в `s`.
+
+Тип: `DateTime`.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT parseDateTimeBestEffort('12/12/2020 12:12:57')
+AS parseDateTimeBestEffort;
+```
+
+Результат:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2020-12-12 12:12:57 │
+└─────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Europe/Moscow') 
+AS parseDateTimeBestEffort
+```
+
+Результат:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2018-08-18 10:22:16 │
+└─────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT parseDateTimeBestEffort('1284101485') 
+AS parseDateTimeBestEffort
+```
+
+Результат:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2015-07-07 12:04:41 │
+└─────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT parseDateTimeBestEffort('2018-12-12 10:12:12') 
+AS parseDateTimeBestEffort
+```
+
+Результат:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2018-12-12 10:12:12 │
+└─────────────────────────┘
+```
+
+**См. также**
+
+- [Информация о формате ISO 8601 от @xkcd](https://xkcd.com/1179/)
+- [RFC 1123](https://tools.ietf.org/html/rfc1123)
+- [toDate](#todate)
+- [toDateTime](#todatetime)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->
