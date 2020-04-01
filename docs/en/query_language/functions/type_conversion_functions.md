@@ -404,8 +404,10 @@ SELECT
 
 ## parseDateTimeBestEffort {#parsedatetimebesteffort}
 
-Converts a [String](../../data_types/string.md) to [DateTime](../../data_types/datetime.md#data_type-datetime) data type.
-The function parses ISO 8601, RFC 1123 and some other date and time formats.
+Converts a date and time in the [String](../../data_types/string.md) representation to [DateTime](../../data_types/datetime.md#data_type-datetime) data type.
+
+The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14  RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
+
 
 **Syntax**
 
@@ -419,7 +421,7 @@ parseDateTimeBestEffort(s[, time_zone]);
 - `time_zone` — Time zone. The function parses `s` according to the time zone. [String](../../data_types/string.md).
 
 
-**Supported non-standart formats**
+**Supported non-standard formats**
 
 - A string containing 9..10 digit unixtimestamp.
 - A string with a date and a time component: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
@@ -427,6 +429,7 @@ parseDateTimeBestEffort(s[, time_zone]);
 - A string with a time but no date component:  `hh:mm`, `hhmm`, `hh` - if already have day of month.
 - A string that includes the date and time along with time zone offset information: `2020-12-12 17:36:00 -5:00`, etc.
 
+For all of the formats with separator the function parses months names expressed by their full name of the first three letters. Examples: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
 
 **Returned value**
 
