@@ -15,21 +15,6 @@
   * Then rebuild with -DENABLE_VECTORCLASS=1
   */
 
-#if USE_VECTORCLASS
-    #ifdef __clang__
-        #pragma clang diagnostic push
-        #pragma clang diagnostic ignored "-Wshift-negative-value"
-    #endif
-
-    #include <vectorf128.h>
-    #include <vectormath_exp.h>
-    #include <vectormath_trig.h>
-
-    #ifdef __clang__
-        #pragma clang diagnostic pop
-    #endif
-#endif
-
 
 /** FastOps is a fast vector math library from Mikhail Parakhin (former Yandex CTO),
   * Enabled by default.
@@ -44,6 +29,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int ILLEGAL_COLUMN;
 }
 
@@ -190,27 +176,6 @@ struct UnaryFunctionPlain
     }
 };
 
-#if USE_VECTORCLASS
-
-template <typename Name, Vec2d(Function)(const Vec2d &)>
-struct UnaryFunctionVectorized
-{
-    static constexpr auto name = Name::name;
-    static constexpr auto rows_per_iteration = 2;
-    static constexpr bool always_returns_float64 = true;
-
-    template <typename T>
-    static void execute(const T * src, Float64 * dst)
-    {
-        const auto result = Function(Vec2d(src[0], src[1]));
-        result.store(dst);
-    }
-};
-
-#else
-
 #define UnaryFunctionVectorized UnaryFunctionPlain
-
-#endif
 
 }

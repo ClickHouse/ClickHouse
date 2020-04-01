@@ -30,7 +30,6 @@
 #include <cstddef>
 #include <cstring>
 #include <type_traits>
-#include "likely.h"
 
 using int128_t = __int128;
 using uint128_t = unsigned __int128;
@@ -395,6 +394,12 @@ template <typename I>
 char * itoa(I i, char * p)
 {
     return impl::convert::itoa(i, p);
+}
+
+template <>
+inline char * itoa(char8_t i, char * p)
+{
+    return impl::convert::itoa(uint8_t(i), p);
 }
 
 template <>

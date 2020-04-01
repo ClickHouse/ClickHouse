@@ -101,7 +101,7 @@ def test_mysql_client(mysql_client, server_address):
     '''.format(host=server_address, port=server_port), demux=True)
 
     assert stderr == 'mysql: [Warning] Using a password on the command line interface can be insecure.\n' \
-                     'ERROR 193 (00000): Wrong password for user default\n'
+                     'ERROR 516 (00000): default: Authentication failed: password is incorrect or there is no user with such name\n'
 
     code, (stdout, stderr) = mysql_client.exec_run('''
         mysql --protocol tcp -h {host} -P {port} default -u default --password=123
@@ -179,7 +179,7 @@ def test_python_client(server_address):
     with pytest.raises(pymysql.InternalError) as exc_info:
         pymysql.connections.Connection(host=server_address, user='default', password='abacab', database='default', port=server_port)
 
-    assert exc_info.value.args == (193, 'Wrong password for user default')
+    assert exc_info.value.args == (516, 'default: Authentication failed: password is incorrect or there is no user with such name')
 
     client = pymysql.connections.Connection(host=server_address, user='default', password='123', database='default', port=server_port)
 

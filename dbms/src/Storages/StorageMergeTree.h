@@ -23,7 +23,7 @@ namespace DB
 
 /** See the description of the data structure in MergeTreeData.
   */
-class StorageMergeTree : public ext::shared_ptr_helper<StorageMergeTree>, public MergeTreeData
+class StorageMergeTree final : public ext::shared_ptr_helper<StorageMergeTree>, public MergeTreeData
 {
     friend struct ext::shared_ptr_helper<StorageMergeTree>;
 public:
@@ -37,7 +37,7 @@ public:
 
     bool supportsIndexForIn() const override { return true; }
 
-    Pipes readWithProcessors(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,
@@ -45,9 +45,8 @@ public:
         size_t max_block_size,
         unsigned num_streams) override;
 
-    bool supportProcessorsPipeline() const override { return true; }
-
     std::optional<UInt64> totalRows() const override;
+    std::optional<UInt64> totalBytes() const override;
 
     BlockOutputStreamPtr write(const ASTPtr & query, const Context & context) override;
 
@@ -111,9 +110,6 @@ private:
     BackgroundProcessingPool::TaskHandle merging_mutating_task_handle;
     BackgroundProcessingPool::TaskHandle moving_task_handle;
 
-    std::vector<MergeTreeData::AlterDataPartTransactionPtr> prepareAlterTransactions(
-        const ColumnsDescription & new_columns, const IndicesDescription & new_indices, const Context & context);
-
     void loadMutations();
 
     /** Determines what parts should be merged and merges it.
@@ -123,6 +119,8 @@ private:
     bool merge(bool aggressive, const String & partition_id, bool final, bool deduplicate, String * out_disable_reason = nullptr);
 
     BackgroundProcessingPoolTaskResult movePartsTask();
+
+    void mutateImpl(const MutationCommands & commands, size_t mutations_sync);
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();
@@ -137,7 +135,6 @@ private:
 
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, const Context & context);
-    void clearColumnOrIndexInPartition(const ASTPtr & partition, const AlterCommand & alter_command, const Context & context);
     void attachPartition(const ASTPtr & partition, bool part, const Context & context);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, const Context & context);
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context);

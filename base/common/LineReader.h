@@ -1,6 +1,6 @@
 #pragma once
 
-#include <common/Types.h>
+#include <common/types.h>
 
 #include <atomic>
 #include <vector>
@@ -8,16 +8,15 @@
 class LineReader
 {
 public:
-    class Suggest
+    struct Suggest
     {
-    protected:
         using Words = std::vector<std::string>;
         using WordsRange = std::pair<Words::const_iterator, Words::const_iterator>;
 
         Words words;
+        Words words_no_case;
         std::atomic<bool> ready{false};
 
-    public:
         /// Get iterators for the matched range of words if any.
         WordsRange getCompletions(const String & prefix, size_t prefix_length) const;
     };
@@ -30,6 +29,13 @@ public:
     /// Non-empty line is appended to history - without duplication.
     /// Typical delimiter is ';' (semicolon) and typical extender is '\' (backslash).
     String readLine(const String & first_prompt, const String & second_prompt);
+
+    /// When bracketed paste mode is set, pasted text is bracketed with control sequences so
+    /// that the program can differentiate pasted text from typed-in text. This helps
+    /// clickhouse-client so that without -m flag, one can still paste multiline queries, and
+    /// possibly get better pasting performance. See https://cirw.in/blog/bracketed-paste for
+    /// more details.
+    virtual void enableBracketedPaste() {}
 
 protected:
     enum InputStatus

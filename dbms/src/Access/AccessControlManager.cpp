@@ -2,10 +2,16 @@
 #include <Access/MultipleAccessStorage.h>
 #include <Access/MemoryAccessStorage.h>
 #include <Access/UsersConfigAccessStorage.h>
-#include <Access/User.h>
-#include <Access/QuotaContextFactory.h>
-#include <Access/RowPolicyContextFactory.h>
-#include <Access/AccessRightsContext.h>
+#include <Access/DiskAccessStorage.h>
+#include <Access/ContextAccess.h>
+#include <Access/RoleCache.h>
+#include <Access/RowPolicyCache.h>
+#include <Access/QuotaCache.h>
+#include <Access/QuotaUsageInfo.h>
+#include <Access/SettingsProfilesCache.h>
+#include <Core/Settings.h>
+#include <Poco/ExpireCache.h>
+#include <mutex>
 
 
 namespace DB
@@ -15,102 +21,144 @@ namespace
     std::vector<std::unique_ptr<IAccessStorage>> createStorages()
     {
         std::vector<std::unique_ptr<IAccessStorage>> list;
-        list.emplace_back(std::make_unique<MemoryAccessStorage>());
+        list.emplace_back(std::make_unique<DiskAccessStorage>());
         list.emplace_back(std::make_unique<UsersConfigAccessStorage>());
+        list.emplace_back(std::make_unique<MemoryAccessStorage>());
         return list;
     }
+
+    constexpr size_t DISK_ACCESS_STORAGE_INDEX = 0;
+    constexpr size_t USERS_CONFIG_ACCESS_STORAGE_INDEX = 1;
 }
+
+
+class AccessControlManager::ContextAccessCache
+{
+public:
+    explicit ContextAccessCache(const AccessControlManager & manager_) : manager(manager_) {}
+
+    std::shared_ptr<const ContextAccess> getContextAccess(
+        const UUID & user_id,
+        const std::vector<UUID> & current_roles,
+        bool use_default_roles,
+        const Settings & settings,
+        const String & current_database,
+        const ClientInfo & client_info)
+    {
+        ContextAccess::Params params;
+        params.user_id = user_id;
+        params.current_roles = current_roles;
+        params.use_default_roles = use_default_roles;
+        params.current_database = current_database;
+        params.readonly = settings.readonly;
+        params.allow_ddl = settings.allow_ddl;
+        params.allow_introspection = settings.allow_introspection_functions;
+        params.interface = client_info.interface;
+        params.http_method = client_info.http_method;
+        params.address = client_info.current_address.host();
+        params.quota_key = client_info.quota_key;
+
+        std::lock_guard lock{mutex};
+        auto x = cache.get(params);
+        if (x)
+            return *x;
+        auto res = std::shared_ptr<ContextAccess>(new ContextAccess(manager, params));
+        cache.add(params, res);
+        return res;
+    }
+
+private:
+    const AccessControlManager & manager;
+    Poco::ExpireCache<ContextAccess::Params, std::shared_ptr<const ContextAccess>> cache;
+    std::mutex mutex;
+};
 
 
 AccessControlManager::AccessControlManager()
     : MultipleAccessStorage(createStorages()),
-      quota_context_factory(std::make_unique<QuotaContextFactory>(*this)),
-      row_policy_context_factory(std::make_unique<RowPolicyContextFactory>(*this))
+      context_access_cache(std::make_unique<ContextAccessCache>(*this)),
+      role_cache(std::make_unique<RoleCache>(*this)),
+      row_policy_cache(std::make_unique<RowPolicyCache>(*this)),
+      quota_cache(std::make_unique<QuotaCache>(*this)),
+      settings_profiles_cache(std::make_unique<SettingsProfilesCache>(*this))
 {
 }
 
 
-AccessControlManager::~AccessControlManager()
+AccessControlManager::~AccessControlManager() = default;
+
+
+void AccessControlManager::setLocalDirectory(const String & directory_path)
 {
+    auto & disk_access_storage = dynamic_cast<DiskAccessStorage &>(getStorageByIndex(DISK_ACCESS_STORAGE_INDEX));
+    disk_access_storage.setDirectory(directory_path);
 }
 
 
-UserPtr AccessControlManager::getUser(
-    const String & user_name, std::function<void(const UserPtr &)> on_change, ext::scope_guard * subscription) const
+void AccessControlManager::setUsersConfig(const Poco::Util::AbstractConfiguration & users_config)
 {
-    return getUser(getID<User>(user_name), std::move(on_change), subscription);
+    auto & users_config_access_storage = dynamic_cast<UsersConfigAccessStorage &>(getStorageByIndex(USERS_CONFIG_ACCESS_STORAGE_INDEX));
+    users_config_access_storage.setConfiguration(users_config);
 }
 
 
-UserPtr AccessControlManager::getUser(
-    const UUID & user_id, std::function<void(const UserPtr &)> on_change, ext::scope_guard * subscription) const
+void AccessControlManager::setDefaultProfileName(const String & default_profile_name)
 {
-    if (on_change && subscription)
-    {
-        *subscription = subscribeForChanges(user_id, [on_change](const UUID &, const AccessEntityPtr & user)
-        {
-            if (user)
-                on_change(typeid_cast<UserPtr>(user));
-        });
-    }
-    return read<User>(user_id);
+    settings_profiles_cache->setDefaultProfileName(default_profile_name);
 }
 
 
-UserPtr AccessControlManager::authorizeAndGetUser(
-    const String & user_name,
-    const String & password,
-    const Poco::Net::IPAddress & address,
-    std::function<void(const UserPtr &)> on_change,
-    ext::scope_guard * subscription) const
-{
-    return authorizeAndGetUser(getID<User>(user_name), password, address, std::move(on_change), subscription);
-}
-
-
-UserPtr AccessControlManager::authorizeAndGetUser(
+std::shared_ptr<const ContextAccess> AccessControlManager::getContextAccess(
     const UUID & user_id,
-    const String & password,
-    const Poco::Net::IPAddress & address,
-    std::function<void(const UserPtr &)> on_change,
-    ext::scope_guard * subscription) const
+    const std::vector<UUID> & current_roles,
+    bool use_default_roles,
+    const Settings & settings,
+    const String & current_database,
+    const ClientInfo & client_info) const
 {
-    auto user = getUser(user_id, on_change, subscription);
-    user->allowed_client_hosts.checkContains(address, user->getName());
-    user->authentication.checkPassword(password, user->getName());
-    return user;
+    return context_access_cache->getContextAccess(user_id, current_roles, use_default_roles, settings, current_database, client_info);
 }
 
 
-void AccessControlManager::loadFromConfig(const Poco::Util::AbstractConfiguration & users_config)
+std::shared_ptr<const EnabledRoles> AccessControlManager::getEnabledRoles(
+    const std::vector<UUID> & current_roles,
+    const std::vector<UUID> & current_roles_with_admin_option) const
 {
-    auto & users_config_access_storage = dynamic_cast<UsersConfigAccessStorage &>(getStorageByIndex(1));
-    users_config_access_storage.loadFromConfig(users_config);
+    return role_cache->getEnabledRoles(current_roles, current_roles_with_admin_option);
 }
 
 
-std::shared_ptr<const AccessRightsContext> AccessControlManager::getAccessRightsContext(const UserPtr & user, const ClientInfo & client_info, const Settings & settings, const String & current_database)
+std::shared_ptr<const EnabledRowPolicies> AccessControlManager::getEnabledRowPolicies(const UUID & user_id, const std::vector<UUID> & enabled_roles) const
 {
-    return std::make_shared<AccessRightsContext>(user, client_info, settings, current_database);
+    return row_policy_cache->getEnabledRowPolicies(user_id, enabled_roles);
 }
 
 
-std::shared_ptr<QuotaContext> AccessControlManager::createQuotaContext(
-    const String & user_name, const Poco::Net::IPAddress & address, const String & custom_quota_key)
+std::shared_ptr<const EnabledQuota> AccessControlManager::getEnabledQuota(
+    const UUID & user_id, const String & user_name, const std::vector<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & custom_quota_key) const
 {
-    return quota_context_factory->createContext(user_name, address, custom_quota_key);
+    return quota_cache->getEnabledQuota(user_id, user_name, enabled_roles, address, custom_quota_key);
 }
 
 
 std::vector<QuotaUsageInfo> AccessControlManager::getQuotaUsageInfo() const
 {
-    return quota_context_factory->getUsageInfo();
+    return quota_cache->getUsageInfo();
 }
 
 
-std::shared_ptr<RowPolicyContext> AccessControlManager::getRowPolicyContext(const String & user_name) const
+std::shared_ptr<const EnabledSettings> AccessControlManager::getEnabledSettings(
+    const UUID & user_id,
+    const SettingsProfileElements & settings_from_user,
+    const std::vector<UUID> & enabled_roles,
+    const SettingsProfileElements & settings_from_enabled_roles) const
 {
-    return row_policy_context_factory->createContext(user_name);
+    return settings_profiles_cache->getEnabledSettings(user_id, settings_from_user, enabled_roles, settings_from_enabled_roles);
+}
+
+std::shared_ptr<const SettingsChanges> AccessControlManager::getProfileSettings(const String & profile_name) const
+{
+    return settings_profiles_cache->getProfileSettings(profile_name);
 }
 
 }

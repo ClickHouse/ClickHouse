@@ -74,4 +74,13 @@ const BlockMissingValues::RowsBitMask & BlockMissingValues::getDefaultsBitmask(s
     return none;
 }
 
+bool BlockMissingValues::hasDefaultBits(size_t column_idx) const
+{
+    auto it = rows_mask_by_column_id.find(column_idx);
+    if (it == rows_mask_by_column_id.end())
+        return false;
+
+    const auto & col_mask = it->second;
+    return std::find(col_mask.begin(), col_mask.end(), true) != col_mask.end();
+}
 }

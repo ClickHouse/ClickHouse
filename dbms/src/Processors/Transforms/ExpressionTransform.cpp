@@ -26,10 +26,10 @@ void ExpressionTransform::transform(Chunk & chunk)
     {
         initialized = true;
 
-        if (expression->resultIsAlwaysEmpty())
+        if (expression->resultIsAlwaysEmpty() && !on_totals)
         {
             stopReading();
-            chunk = Chunk(getOutputPort().getHeader().getColumns(), 0);
+            chunk.clear();
             return;
         }
     }

@@ -26,7 +26,7 @@ namespace ErrorCodes
 class CheckASTDepth
 {
 public:
-    CheckASTDepth(QueryNormalizer::Data & data_)
+    explicit CheckASTDepth(QueryNormalizer::Data & data_)
         : data(data_)
     {
         if (data.level > data.settings.max_ast_depth)
@@ -47,7 +47,7 @@ private:
 class RestoreAliasOnExitScope
 {
 public:
-    RestoreAliasOnExitScope(String & alias_)
+    explicit RestoreAliasOnExitScope(String & alias_)
         : alias(alias_)
         , copy(alias_)
     {}
@@ -76,29 +76,23 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
     if (it_alias != data.aliases.end() && current_alias != node.name)
     {
         if (!IdentifierSemantic::canBeAlias(node))
-        {
-            /// This means that column had qualified name, which was translated (so, canBeAlias() returns false).
-            /// But there is an alias with the same name. So, let's use original name for that column.
-            /// If alias wasn't set, use original column name as alias.
-            /// That helps to avoid result set with columns which have same names but different values.
-            if (node.alias.empty())
-            {
-                node.name.swap(node.alias);
-                node.restoreCompoundName();
-                node.name.swap(node.alias);
-            }
-
             return;
-        }
 
+        /// We are alias for other column (node.name), but we are alias by
+        /// ourselves to some other column
         auto & alias_node = it_alias->second;
 
-        /// Let's replace it with the corresponding tree node.
-        if (current_asts.count(alias_node.get()))
+        String our_alias_or_name = alias_node->getAliasOrColumnName();
+        std::optional<String> our_name = IdentifierSemantic::getColumnName(alias_node);
+
+        String node_alias = ast->tryGetAlias();
+
+        if (current_asts.count(alias_node.get()) /// We have loop of multiple aliases
+            || (node.name == our_alias_or_name && our_name && node_alias == *our_name)) /// Our alias points to node.name, direct loop
             throw Exception("Cyclic aliases", ErrorCodes::CYCLIC_ALIASES);
 
-        String my_alias = ast->tryGetAlias();
-        if (!my_alias.empty() && my_alias != alias_node->getAliasOrColumnName())
+        /// Let's replace it with the corresponding tree node.
+        if (!node_alias.empty() && node_alias != our_alias_or_name)
         {
             /// Avoid infinite recursion here
             auto opt_name = IdentifierSemantic::getColumnName(alias_node);
@@ -108,7 +102,7 @@ void QueryNormalizer::visit(ASTIdentifier & node, ASTPtr & ast, Data & data)
             {
                 /// In a construct like "a AS b", where a is an alias, you must set alias b to the result of substituting alias a.
                 ast = alias_node->clone();
-                ast->setAlias(my_alias);
+                ast->setAlias(node_alias);
             }
         }
         else
@@ -129,9 +123,7 @@ void QueryNormalizer::visit(ASTTablesInSelectQueryElement & node, const ASTPtr &
 
 static bool needVisitChild(const ASTPtr & child)
 {
-    if (child->as<ASTSelectQuery>() || child->as<ASTTableExpression>())
-        return false;
-    return true;
+    return !(child->as<ASTSelectQuery>() || child->as<ASTTableExpression>());
 }
 
 /// special visitChildren() for ASTSelectQuery

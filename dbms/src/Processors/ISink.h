@@ -15,6 +15,8 @@ protected:
 
     virtual void consume(Chunk block) = 0;
 
+    virtual void onFinish() {}
+
 public:
     explicit ISink(Block header);
 

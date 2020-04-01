@@ -26,7 +26,7 @@ class PrintSink : public ISink
 public:
     String getName() const override { return "Print"; }
 
-    PrintSink(String prefix_)
+    explicit PrintSink(String prefix_)
             : ISink(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
               prefix(std::move(prefix_))
     {
@@ -64,7 +64,7 @@ class OneNumberSource : public ISource
 public:
     String getName() const override { return "OneNumber"; }
 
-    OneNumberSource(UInt64 number_)
+    explicit OneNumberSource(UInt64 number_)
             : ISource(Block({ColumnWithTypeAndName{ ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "number" }})),
               number(number_)
     {
@@ -232,7 +232,7 @@ private:
 
 
 template<typename TimeT = std::chrono::milliseconds>
-struct measure
+struct Measure
 {
     template<typename F, typename ...Args>
     static typename TimeT::rep execution(F&& func, Args&&... args)
@@ -270,8 +270,8 @@ try
 
     ThreadPool pool(4, 4, 10);
 
-    auto time_single = measure<>::execution(execute, "Single thread", 10, 1);
-    auto time_mt = measure<>::execution(execute, "Multiple threads", 10, 4);
+    auto time_single = Measure<>::execution(execute, "Single thread", 10, 1);
+    auto time_mt = Measure<>::execution(execute, "Multiple threads", 10, 4);
 
     std::cout << "Single Thread time: " << time_single << " ms.\n";
     std::cout << "Multiple Threads time:" << time_mt << " ms.\n";

@@ -8,7 +8,6 @@
         <table_exists>hits_1000m_single</table_exists>
     </preconditions>
 
-    <type>loop</type>
 
     <stop_conditions>
         <all_of>

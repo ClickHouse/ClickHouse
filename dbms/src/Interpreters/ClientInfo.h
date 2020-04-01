@@ -20,20 +20,20 @@ class ReadBuffer;
 class ClientInfo
 {
 public:
-    enum class Interface : UInt8
+    enum class Interface : uint8_t
     {
         TCP = 1,
         HTTP = 2,
     };
 
-    enum class HTTPMethod : UInt8
+    enum class HTTPMethod : uint8_t
     {
         UNKNOWN = 0,
         GET = 1,
         POST = 2,
     };
 
-    enum class QueryKind : UInt8
+    enum class QueryKind : uint8_t
     {
         NO_QUERY = 0,            /// Uninitialized object.
         INITIAL_QUERY = 1,

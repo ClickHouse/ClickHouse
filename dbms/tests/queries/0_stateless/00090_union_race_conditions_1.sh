@@ -13,6 +13,6 @@ echo "
     INSERT INTO two_blocks VALUES ('2000-01-02');
 " | $CLICKHOUSE_CLIENT -n
 
-for i in {1..10}; do seq 1 100 | sed 's/.*/SELECT count() FROM (SELECT * FROM two_blocks);/' | $CLICKHOUSE_CLIENT -n --receive_timeout=1 | grep -vE '^2$' && echo 'Fail!' && break; echo -n '.'; done; echo
+for i in {1..10}; do seq 1 100 | sed 's/.*/SELECT count() FROM (SELECT * FROM two_blocks);/' | $CLICKHOUSE_CLIENT -n | grep -vE '^2$' && echo 'Fail!' && break; echo -n '.'; done; echo
 
 echo "DROP TABLE two_blocks;" | $CLICKHOUSE_CLIENT -n

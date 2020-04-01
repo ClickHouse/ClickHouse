@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 /// Cluster contains connection pools to each node
 /// With the local nodes, the connection is not established, but the request is executed directly.
@@ -70,8 +74,17 @@ public:
         Protocol::Secure secure = Protocol::Secure::Disable;
 
         Address() = default;
-        Address(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, UInt32 shard_index_ = 0, UInt32 replica_index_ = 0);
-        Address(const String & host_port_, const String & user_, const String & password_, UInt16 clickhouse_port, bool secure_ = false);
+        Address(
+            const Poco::Util::AbstractConfiguration & config,
+            const String & config_prefix,
+            UInt32 shard_index_ = 0,
+            UInt32 replica_index_ = 0);
+        Address(
+            const String & host_port_,
+            const String & user_,
+            const String & password_,
+            UInt16 clickhouse_port,
+            bool secure_ = false);
 
         /// Returns 'escaped_host_name:port'
         String toString() const;
@@ -83,8 +96,10 @@ public:
 
         static std::pair<String, UInt16> fromString(const String & host_port_string);
 
-        /// Returns escaped shard{shard_index}_replica{replica_index}
-        String toFullString() const;
+        /// Returns escaped shard{shard_index}_replica{replica_index} or escaped
+        /// user:password@resolved_host_address:resolved_host_port#default_database
+        /// depending on use_compact_format flag
+        String toFullString(bool use_compact_format) const;
 
         /// Returns address with only shard index and replica index or full address without shard index and replica index
         static Address fromFullString(const String & address_full_string);

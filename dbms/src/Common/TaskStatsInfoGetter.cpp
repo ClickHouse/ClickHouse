@@ -30,7 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NETLINK_ERROR;
-    extern const int LOGICAL_ERROR;
 }
 
 // Replace NLMSG_OK with explicit casts since that system macro contains signedness bugs which are not going to be fixed.
@@ -300,27 +299,15 @@ TaskStatsInfoGetter::~TaskStatsInfoGetter()
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int NOT_IMPLEMENTED;
-}
-
 bool TaskStatsInfoGetter::checkPermissions()
 {
     return false;
 }
 
-
-TaskStatsInfoGetter::TaskStatsInfoGetter()
-{
-    // TODO: throw Exception("TaskStats are not implemented for this OS.", ErrorCodes::NOT_IMPLEMENTED);
-}
+TaskStatsInfoGetter::TaskStatsInfoGetter() = default;
+TaskStatsInfoGetter::~TaskStatsInfoGetter() = default;
 
 void TaskStatsInfoGetter::getStat(::taskstats &, pid_t)
-{
-}
-
-TaskStatsInfoGetter::~TaskStatsInfoGetter()
 {
 }
 

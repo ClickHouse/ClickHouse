@@ -56,6 +56,8 @@ private:
 
     Block result_header;
 
+    size_t max_streams = 1;
+
     static Block getCommonHeaderForUnion(const Blocks & headers);
 };
 

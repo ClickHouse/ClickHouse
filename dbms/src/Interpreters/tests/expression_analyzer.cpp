@@ -33,13 +33,12 @@ struct TestEntry
     String query;
     std::unordered_map<String, String> expected_aliases; /// alias -> AST.getID()
     NamesAndTypesList source_columns = {};
-    Names required_result_columns = {};
 
     bool check(const Context & context)
     {
         ASTPtr ast = parse(query);
 
-        auto res = SyntaxAnalyzer(context, {}).analyze(ast, source_columns, required_result_columns);
+        auto res = SyntaxAnalyzer(context).analyze(ast, source_columns);
         return checkAliases(*res);
     }
 
@@ -100,10 +99,10 @@ int main()
     context.makeGlobalContext();
 
     auto system_database = std::make_shared<DatabaseMemory>("system");
-    context.addDatabase("system", system_database);
+    DatabaseCatalog::instance().attachDatabase("system", system_database);
     //context.setCurrentDatabase("system");
     system_database->attachTable("one", StorageSystemOne::create("one"));
-    system_database->attachTable("numbers", StorageSystemNumbers::create("numbers", false));
+    system_database->attachTable("numbers", StorageSystemNumbers::create(StorageID("system", "numbers"), false));
 
     size_t success = 0;
     for (auto & entry : queries)

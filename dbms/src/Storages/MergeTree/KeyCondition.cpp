@@ -26,7 +26,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_TYPE_OF_FIELD;
-    extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
 }
 
 
@@ -282,11 +281,11 @@ static const std::map<std::string, std::string> inverse_relations = {
 
 bool isLogicalOperator(const String & func_name)
 {
-    return (func_name == "and" || func_name == "or" || func_name == "not" || func_name == "indexHint");
+    return (func_name == "and" || func_name == "or" || func_name == "not");
 }
 
 /// The node can be one of:
-///   - Logical operator (AND, OR, NOT and indexHint() - logical NOOP)
+///   - Logical operator (AND, OR, NOT)
 ///   - An "atom" (relational operator, constant, expression)
 ///   - A logical constant expression
 ///   - Any other function
@@ -303,8 +302,7 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
 
         const auto result_node = makeASTFunction(func->name);
 
-        /// indexHint() is a special case - logical NOOP function
-        if (result_node->name != "indexHint" && need_inversion)
+        if (need_inversion)
         {
             result_node->name = (result_node->name == "and") ? "or" : "and";
         }
@@ -353,8 +351,7 @@ FieldWithInfinity::FieldWithInfinity(Field && field_)
 }
 
 FieldWithInfinity::FieldWithInfinity(const Type type_)
-    : field(),
-    type(type_)
+    : type(type_)
 {
 }
 
@@ -363,7 +360,7 @@ FieldWithInfinity FieldWithInfinity::getMinusInfinity()
     return FieldWithInfinity(Type::MINUS_INFINITY);
 }
 
-FieldWithInfinity FieldWithInfinity::getPlusinfinity()
+FieldWithInfinity FieldWithInfinity::getPlusInfinity()
 {
     return FieldWithInfinity(Type::PLUS_INFINITY);
 }
@@ -519,7 +516,7 @@ void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Blo
                   * - in this case `n - 1` elements are added (where `n` is the number of arguments).
                   */
                 if (i != 0 || element.function == RPNElement::FUNCTION_NOT)
-                    rpn.emplace_back(std::move(element));
+                    rpn.emplace_back(element);
             }
 
             return;
@@ -724,10 +721,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
 
         out_functions_chain.push_back(func);
 
-        if (!isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain))
-            return false;
-
-        return true;
+        return isKeyPossiblyWrappedByMonotonicFunctionsImpl(args[0], out_key_column_num, out_key_column_type, out_functions_chain);
     }
 
     return false;
@@ -888,9 +882,6 @@ bool KeyCondition::tryParseAtomFromAST(const ASTPtr & node, const Context & cont
 bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNElement & out)
 {
     /// Functions AND, OR, NOT.
-    /** Also a special function `indexHint` - works as if instead of calling a function there are just parentheses
-      * (or, the same thing - calling the function `and` from one argument).
-      */
     const ASTs & args = func->arguments->children;
 
     if (func->name == "not")
@@ -902,7 +893,7 @@ bool KeyCondition::tryParseLogicalOperatorFromAST(const ASTFunction * func, RPNE
     }
     else
     {
-        if (func->name == "and" || func->name == "indexHint")
+        if (func->name == "and")
             out.function = RPNElement::FUNCTION_AND;
         else if (func->name == "or")
             out.function = RPNElement::FUNCTION_OR;
@@ -943,40 +934,40 @@ String KeyCondition::toString() const
   * The set of all possible tuples can be considered as an n-dimensional space, where n is the size of the tuple.
   * A range of tuples specifies some subset of this space.
   *
-  * Parallelograms (you can also find the term "rail")
+  * Hyperrectangles (you can also find the term "rail")
   *  will be the subrange of an n-dimensional space that is a direct product of one-dimensional ranges.
   * In this case, the one-dimensional range can be: a period, a segment, an interval, a half-interval, unlimited on the left, unlimited on the right ...
   *
-  * The range of tuples can always be represented as a combination of parallelograms.
-  * For example, the range [ x1 y1 .. x2 y2 ] given x1 != x2 is equal to the union of the following three parallelograms:
+  * The range of tuples can always be represented as a combination of hyperrectangles.
+  * For example, the range [ x1 y1 .. x2 y2 ] given x1 != x2 is equal to the union of the following three hyperrectangles:
   * [x1]       x [y1 .. +inf)
   * (x1 .. x2) x (-inf .. +inf)
   * [x2]       x (-inf .. y2]
   *
-  * Or, for example, the range [ x1 y1 .. +inf ] is equal to the union of the following two parallelograms:
+  * Or, for example, the range [ x1 y1 .. +inf ] is equal to the union of the following two hyperrectangles:
   * [x1]         x [y1 .. +inf)
   * (x1 .. +inf) x (-inf .. +inf)
   * It's easy to see that this is a special case of the variant above.
   *
-  * This is important because it is easy for us to check the feasibility of the condition over the parallelogram,
+  * This is important because it is easy for us to check the feasibility of the condition over the hyperrectangle,
   *  and therefore, feasibility of condition on the range of tuples will be checked by feasibility of condition
-  *  over at least one parallelogram from which this range consists.
+  *  over at least one hyperrectangle from which this range consists.
   */
 
 template <typename F>
-static BoolMask forAnyParallelogram(
+static BoolMask forAnyHyperrectangle(
     size_t key_size,
     const Field * key_left,
     const Field * key_right,
     bool left_bounded,
     bool right_bounded,
-    std::vector<Range> & parallelogram,
+    std::vector<Range> & hyperrectangle,
     size_t prefix_size,
     BoolMask initial_mask,
     F && callback)
 {
     if (!left_bounded && !right_bounded)
-        return callback(parallelogram);
+        return callback(hyperrectangle);
 
     if (left_bounded && right_bounded)
     {
@@ -986,7 +977,7 @@ static BoolMask forAnyParallelogram(
             if (key_left[prefix_size] == key_right[prefix_size])
             {
                 /// Point ranges.
-                parallelogram[prefix_size] = Range(key_left[prefix_size]);
+                hyperrectangle[prefix_size] = Range(key_left[prefix_size]);
                 ++prefix_size;
             }
             else
@@ -995,35 +986,35 @@ static BoolMask forAnyParallelogram(
     }
 
     if (prefix_size == key_size)
-        return callback(parallelogram);
+        return callback(hyperrectangle);
 
     if (prefix_size + 1 == key_size)
     {
         if (left_bounded && right_bounded)
-            parallelogram[prefix_size] = Range(key_left[prefix_size], true, key_right[prefix_size], true);
+            hyperrectangle[prefix_size] = Range(key_left[prefix_size], true, key_right[prefix_size], true);
         else if (left_bounded)
-            parallelogram[prefix_size] = Range::createLeftBounded(key_left[prefix_size], true);
+            hyperrectangle[prefix_size] = Range::createLeftBounded(key_left[prefix_size], true);
         else if (right_bounded)
-            parallelogram[prefix_size] = Range::createRightBounded(key_right[prefix_size], true);
+            hyperrectangle[prefix_size] = Range::createRightBounded(key_right[prefix_size], true);
 
-        return callback(parallelogram);
+        return callback(hyperrectangle);
     }
 
     /// (x1 .. x2) x (-inf .. +inf)
 
     if (left_bounded && right_bounded)
-        parallelogram[prefix_size] = Range(key_left[prefix_size], false, key_right[prefix_size], false);
+        hyperrectangle[prefix_size] = Range(key_left[prefix_size], false, key_right[prefix_size], false);
     else if (left_bounded)
-        parallelogram[prefix_size] = Range::createLeftBounded(key_left[prefix_size], false);
+        hyperrectangle[prefix_size] = Range::createLeftBounded(key_left[prefix_size], false);
     else if (right_bounded)
-        parallelogram[prefix_size] = Range::createRightBounded(key_right[prefix_size], false);
+        hyperrectangle[prefix_size] = Range::createRightBounded(key_right[prefix_size], false);
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
-        parallelogram[i] = Range();
+        hyperrectangle[i] = Range();
 
 
     BoolMask result = initial_mask;
-    result = result | callback(parallelogram);
+    result = result | callback(hyperrectangle);
 
     /// There are several early-exit conditions (like the one below) hereinafter.
     /// They are important; in particular, if initial_mask == BoolMask::consider_only_can_be_true
@@ -1036,8 +1027,8 @@ static BoolMask forAnyParallelogram(
 
     if (left_bounded)
     {
-        parallelogram[prefix_size] = Range(key_left[prefix_size]);
-        result = result | forAnyParallelogram(key_size, key_left, key_right, true, false, parallelogram, prefix_size + 1, initial_mask, callback);
+        hyperrectangle[prefix_size] = Range(key_left[prefix_size]);
+        result = result | forAnyHyperrectangle(key_size, key_left, key_right, true, false, hyperrectangle, prefix_size + 1, initial_mask, callback);
         if (result.isComplete())
             return result;
     }
@@ -1046,8 +1037,8 @@ static BoolMask forAnyParallelogram(
 
     if (right_bounded)
     {
-        parallelogram[prefix_size] = Range(key_right[prefix_size]);
-        result = result | forAnyParallelogram(key_size, key_left, key_right, false, true, parallelogram, prefix_size + 1, initial_mask, callback);
+        hyperrectangle[prefix_size] = Range(key_right[prefix_size]);
+        result = result | forAnyHyperrectangle(key_size, key_left, key_right, false, true, hyperrectangle, prefix_size + 1, initial_mask, callback);
         if (result.isComplete())
             return result;
     }
@@ -1080,12 +1071,12 @@ BoolMask KeyCondition::checkInRange(
     else
         std::cerr << "+inf)\n";*/
 
-    return forAnyParallelogram(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0, initial_mask,
-        [&] (const std::vector<Range> & key_ranges_parallelogram)
+    return forAnyHyperrectangle(used_key_size, left_key, right_key, true, right_bounded, key_ranges, 0, initial_mask,
+        [&] (const std::vector<Range> & key_ranges_hyperrectangle)
     {
-        auto res = checkInParallelogram(key_ranges_parallelogram, data_types);
+        auto res = checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
 
-/*      std::cerr << "Parallelogram: ";
+/*      std::cerr << "Hyperrectangle: ";
         for (size_t i = 0, size = key_ranges.size(); i != size; ++i)
             std::cerr << (i != 0 ? " x " : "") << key_ranges[i].toString();
         std::cerr << ": " << res << "\n";*/
@@ -1131,14 +1122,13 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
     return key_range;
 }
 
-BoolMask KeyCondition::checkInParallelogram(
-    const std::vector<Range> & parallelogram,
+BoolMask KeyCondition::checkInHyperrectangle(
+    const std::vector<Range> & hyperrectangle,
     const DataTypes & data_types) const
 {
     std::vector<BoolMask> rpn_stack;
-    for (size_t i = 0; i < rpn.size(); ++i)
+    for (const auto & element : rpn)
     {
-        const auto & element = rpn[i];
         if (element.function == RPNElement::FUNCTION_UNKNOWN)
         {
             rpn_stack.emplace_back(true, true);
@@ -1146,7 +1136,7 @@ BoolMask KeyCondition::checkInParallelogram(
         else if (element.function == RPNElement::FUNCTION_IN_RANGE
             || element.function == RPNElement::FUNCTION_NOT_IN_RANGE)
         {
-            const Range * key_range = &parallelogram[element.key_column];
+            const Range * key_range = &hyperrectangle[element.key_column];
 
             /// The case when the column is wrapped in a chain of possibly monotonic functions.
             Range transformed_range;
@@ -1181,7 +1171,7 @@ BoolMask KeyCondition::checkInParallelogram(
             if (!element.set_index)
                 throw Exception("Set for IN is not created yet", ErrorCodes::LOGICAL_ERROR);
 
-            rpn_stack.emplace_back(element.set_index->checkInRange(parallelogram, data_types));
+            rpn_stack.emplace_back(element.set_index->checkInRange(hyperrectangle, data_types));
             if (element.function == RPNElement::FUNCTION_NOT_IN_SET)
                 rpn_stack.back() = !rpn_stack.back();
         }

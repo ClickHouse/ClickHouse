@@ -38,11 +38,10 @@ InterpreterCheckQuery::InterpreterCheckQuery(const ASTPtr & query_ptr_, const Co
 BlockIO InterpreterCheckQuery::execute()
 {
     const auto & check = query_ptr->as<ASTCheckQuery &>();
-    const String & table_name = check.table;
-    String database_name = check.database.empty() ? context.getCurrentDatabase() : check.database;
+    auto table_id = context.resolveStorageID(check, Context::ResolveOrdinary);
 
-    context.checkAccess(AccessType::SHOW, database_name, table_name);
-    StoragePtr table = context.getTable(database_name, table_name);
+    context.checkAccess(AccessType::SHOW_TABLES, table_id);
+    StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
     auto check_results = table->checkData(query_ptr, context);
 
     Block block;

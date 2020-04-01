@@ -1,5 +1,5 @@
 #include <Parsers/ASTCreateQuotaQuery.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Common/quoteString.h>
 #include <Common/IntervalKind.h>
 #include <ext/range.h>
@@ -94,7 +94,7 @@ namespace
         }
     }
 
-    void formatRoles(const ASTRoleList & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTExtendedRoleSet & roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
         roles.format(settings);
@@ -116,8 +116,15 @@ ASTPtr ASTCreateQuotaQuery::clone() const
 
 void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER QUOTA" : "CREATE QUOTA")
-                  << (settings.hilite ? hilite_none : "");
+    if (attach)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH QUOTA" << (settings.hilite ? hilite_none : "");
+    }
+    else
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER QUOTA" : "CREATE QUOTA")
+                      << (settings.hilite ? hilite_none : "");
+    }
 
     if (if_exists)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF EXISTS" << (settings.hilite ? hilite_none : "");
@@ -136,7 +143,7 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
 
     formatAllLimits(all_limits, settings);
 
-    if (roles)
-        formatRoles(*roles, settings);
+    if (roles && (!roles->empty() || alter))
+        formatToRoles(*roles, settings);
 }
 }

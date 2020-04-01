@@ -9,7 +9,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Interpreters/Context.h>
-#include <Access/RowPolicyContext.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Access/AccessControlManager.h>
 #include <ext/range.h>
 #include <IO/WriteHelpers.h>
@@ -65,17 +65,20 @@ public:
             auto database_column = ColumnString::create();
             auto table_name_column = ColumnString::create();
             auto policy_name_column = ColumnString::create();
-            for (const auto & policy_id : context.getRowPolicy()->getCurrentPolicyIDs())
+            if (auto policies = context.getRowPolicies())
             {
-                const auto policy = context.getAccessControlManager().tryRead<RowPolicy>(policy_id);
-                if (policy)
+                for (const auto & policy_id : policies->getCurrentPolicyIDs())
                 {
-                    const String database = policy->getDatabase();
-                    const String table_name = policy->getTableName();
-                    const String policy_name = policy->getName();
-                    database_column->insertData(database.data(), database.length());
-                    table_name_column->insertData(table_name.data(), table_name.length());
-                    policy_name_column->insertData(policy_name.data(), policy_name.length());
+                    const auto policy = context.getAccessControlManager().tryRead<RowPolicy>(policy_id);
+                    if (policy)
+                    {
+                        const String database = policy->getDatabase();
+                        const String table_name = policy->getTableName();
+                        const String policy_name = policy->getName();
+                        database_column->insertData(database.data(), database.length());
+                        table_name_column->insertData(table_name.data(), table_name.length());
+                        policy_name_column->insertData(policy_name.data(), policy_name.length());
+                    }
                 }
             }
             auto offset_column = ColumnArray::ColumnOffsets::create();
@@ -113,13 +116,16 @@ public:
         {
             String database = database_column ? database_column->getDataAt(i).toString() : context.getCurrentDatabase();
             String table_name = table_name_column->getDataAt(i).toString();
-            for (const auto & policy_id : context.getRowPolicy()->getCurrentPolicyIDs(database, table_name))
+            if (auto policies = context.getRowPolicies())
             {
-                const auto policy = context.getAccessControlManager().tryRead<RowPolicy>(policy_id);
-                if (policy)
+                for (const auto & policy_id : policies->getCurrentPolicyIDs(database, table_name))
                 {
-                    const String policy_name = policy->getName();
-                    policy_name_column->insertData(policy_name.data(), policy_name.length());
+                    const auto policy = context.getAccessControlManager().tryRead<RowPolicy>(policy_id);
+                    if (policy)
+                    {
+                        const String policy_name = policy->getName();
+                        policy_name_column->insertData(policy_name.data(), policy_name.length());
+                    }
                 }
             }
             offset_column->insertValue(policy_name_column->size());
@@ -169,8 +175,11 @@ public:
         if (arguments.empty())
         {
             auto policy_id_column = ColumnVector<UInt128>::create();
-            for (const auto & policy_id : context.getRowPolicy()->getCurrentPolicyIDs())
-                 policy_id_column->insertValue(policy_id);
+            if (auto policies = context.getRowPolicies())
+            {
+                for (const auto & policy_id : policies->getCurrentPolicyIDs())
+                     policy_id_column->insertValue(policy_id);
+            }
             auto offset_column = ColumnArray::ColumnOffsets::create();
             offset_column->insertValue(policy_id_column->size());
             block.getByPosition(result_pos).column
@@ -203,8 +212,11 @@ public:
         {
             String database = database_column ? database_column->getDataAt(i).toString() : context.getCurrentDatabase();
             String table_name = table_name_column->getDataAt(i).toString();
-            for (const auto & policy_id : context.getRowPolicy()->getCurrentPolicyIDs(database, table_name))
-                policy_id_column->insertValue(policy_id);
+            if (auto policies = context.getRowPolicies())
+            {
+                for (const auto & policy_id : policies->getCurrentPolicyIDs(database, table_name))
+                    policy_id_column->insertValue(policy_id);
+            }
             offset_column->insertValue(policy_id_column->size());
         }
 

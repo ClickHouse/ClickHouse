@@ -4,8 +4,8 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
-
-
+#include <Storages/MutationCommands.h>
+#include <Storages/ColumnsDescription.h>
 #include <Common/SettingsChanges.h>
 
 
@@ -18,6 +18,9 @@ class ASTAlterCommand;
 /// Adding Nested columns is not expanded to add individual columns.
 struct AlterCommand
 {
+    /// The AST of the whole command
+    ASTPtr ast;
+
     enum Type
     {
         ADD_COLUMN,
@@ -38,8 +41,8 @@ struct AlterCommand
 
     String column_name;
 
-    /// For DROP COLUMN ... FROM PARTITION
-    String partition_name;
+    /// For DROP/CLEAR COLUMN/INDEX ... IN PARTITION
+    ASTPtr partition;
 
     /// For ADD and MODIFY, a new column type.
     DataTypePtr data_type = nullptr;
@@ -81,6 +84,9 @@ struct AlterCommand
     /// indicates that this command should not be applied, for example in case of if_exists=true and column doesn't exist.
     bool ignore = false;
 
+    /// Clear columns or index (don't drop from metadata)
+    bool clear = false;
+
     /// For ADD and MODIFY
     CompressionCodecPtr codec = nullptr;
 
@@ -100,11 +106,18 @@ struct AlterCommand
     /// in each part on disk (it's not lightweight alter).
     bool isModifyingData() const;
 
+    bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
+
     /// Checks that only settings changed by alter
     bool isSettingsAlter() const;
 
     /// Checks that only comment changed by alter
     bool isCommentAlter() const;
+
+    /// If possible, convert alter command to mutation command. In other case
+    /// return empty optional. Some storages may execute mutations after
+    /// metadata changes.
+    std::optional<MutationCommand> tryConvertToMutationCommand(const StorageInMemoryMetadata & metadata) const;
 };
 
 /// Return string representation of AlterCommand::Type
@@ -117,6 +130,7 @@ class AlterCommands : public std::vector<AlterCommand>
 {
 private:
     bool prepared = false;
+
 public:
     /// Validate that commands can be applied to metadata.
     /// Checks that all columns exist and dependecies between them.
@@ -124,9 +138,9 @@ public:
     /// More accurate check have to be performed with storage->checkAlterIsPossible.
     void validate(const StorageInMemoryMetadata & metadata, const Context & context) const;
 
-    /// Prepare alter commands. Set ignore flag to some of them
-    /// and additional commands for dependent columns.
-    void prepare(const StorageInMemoryMetadata & metadata, const Context & context);
+    /// Prepare alter commands. Set ignore flag to some of them and set some
+    /// parts to commands from storage's metadata (for example, absent default)
+    void prepare(const StorageInMemoryMetadata & metadata);
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.
@@ -140,6 +154,11 @@ public:
 
     /// At least one command modify comments.
     bool isCommentAlter() const;
+
+    /// Return mutation commands which some storages may execute as part of
+    /// alter. If alter can be performed is pure metadata update, than result is
+    /// empty.
+    MutationCommands getMutationCommands(const StorageInMemoryMetadata & metadata) const;
 };
 
 }

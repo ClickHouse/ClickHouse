@@ -23,8 +23,7 @@ bool Quota::equal(const IAccessEntity & other) const
     if (!IAccessEntity::equal(other))
         return false;
     const auto & other_quota = typeid_cast<const Quota &>(other);
-    return (all_limits == other_quota.all_limits) && (key_type == other_quota.key_type) && (roles == other_quota.roles)
-        && (all_roles == other_quota.all_roles) && (except_roles == other_quota.except_roles);
+    return (all_limits == other_quota.all_limits) && (key_type == other_quota.key_type) && (to_roles == other_quota.to_roles);
 }
 
 

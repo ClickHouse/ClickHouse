@@ -12,7 +12,7 @@
 namespace DB
 {
 
-class StorageMaterializedView : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
+class StorageMaterializedView final : public ext::shared_ptr_helper<StorageMaterializedView>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageMaterializedView>;
 public:
@@ -59,14 +59,14 @@ public:
     void checkTableCanBeDropped() const override;
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ASTPtr &) const override;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;
 
     ActionLock getActionLock(StorageActionBlockType type) override;
 
-    BlockInputStreams read(
+    Pipes read(
         const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

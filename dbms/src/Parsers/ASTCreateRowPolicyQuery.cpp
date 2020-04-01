@@ -1,5 +1,5 @@
 #include <Parsers/ASTCreateRowPolicyQuery.h>
-#include <Parsers/ASTRoleList.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Common/quoteString.h>
 #include <boost/range/algorithm/transform.hpp>
@@ -10,7 +10,7 @@ namespace DB
 {
 namespace
 {
-    using ConditionIndex = RowPolicy::ConditionIndex;
+    using ConditionType = RowPolicy::ConditionType;
 
     void formatRenameTo(const String & new_policy_name, const IAST::FormatSettings & settings)
     {
@@ -19,7 +19,7 @@ namespace
     }
 
 
-    void formatIsRestrictive(bool is_restrictive, const IAST::FormatSettings & settings)
+    void formatAsRestrictiveOrPermissive(bool is_restrictive, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " AS " << (is_restrictive ? "RESTRICTIVE" : "PERMISSIVE")
                       << (settings.hilite ? IAST::hilite_none : "");
@@ -37,13 +37,13 @@ namespace
     }
 
 
-    std::vector<std::pair<ConditionIndex, String>>
-    conditionalExpressionsToStrings(const std::vector<std::pair<ConditionIndex, ASTPtr>> & exprs, const IAST::FormatSettings & settings)
+    std::vector<std::pair<ConditionType, String>>
+    conditionalExpressionsToStrings(const std::vector<std::pair<ConditionType, ASTPtr>> & exprs, const IAST::FormatSettings & settings)
     {
-        std::vector<std::pair<ConditionIndex, String>> result;
+        std::vector<std::pair<ConditionType, String>> result;
         std::stringstream ss;
         IAST::FormatSettings temp_settings(ss, settings);
-        boost::range::transform(exprs, std::back_inserter(result), [&](const std::pair<ConditionIndex, ASTPtr> & in)
+        boost::range::transform(exprs, std::back_inserter(result), [&](const std::pair<ConditionType, ASTPtr> & in)
         {
             formatConditionalExpression(in.second, temp_settings);
             auto out = std::pair{in.first, ss.str()};
@@ -70,9 +70,9 @@ namespace
     }
 
 
-    void formatMultipleConditions(const std::vector<std::pair<ConditionIndex, ASTPtr>> & conditions, bool alter, const IAST::FormatSettings & settings)
+    void formatMultipleConditions(const std::vector<std::pair<ConditionType, ASTPtr>> & conditions, bool alter, const IAST::FormatSettings & settings)
     {
-        std::optional<String> scond[RowPolicy::MAX_CONDITION_INDEX];
+        std::optional<String> scond[RowPolicy::MAX_CONDITION_TYPE];
         for (const auto & [index, scondition] : conditionalExpressionsToStrings(conditions, settings))
             scond[index] = scondition;
 
@@ -112,7 +112,7 @@ namespace
         }
     }
 
-    void formatRoles(const ASTRoleList & roles, const IAST::FormatSettings & settings)
+    void formatToRoles(const ASTExtendedRoleSet & roles, const IAST::FormatSettings & settings)
     {
         settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TO " << (settings.hilite ? IAST::hilite_none : "");
         roles.format(settings);
@@ -134,8 +134,15 @@ ASTPtr ASTCreateRowPolicyQuery::clone() const
 
 void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
-    settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER POLICY" : "CREATE POLICY")
-                  << (settings.hilite ? hilite_none : "");
+    if (attach)
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH POLICY";
+    }
+    else
+    {
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER POLICY" : "CREATE POLICY")
+                      << (settings.hilite ? hilite_none : "");
+    }
 
     if (if_exists)
         settings.ostr << (settings.hilite ? hilite_keyword : "") << " IF EXISTS" << (settings.hilite ? hilite_none : "");
@@ -154,11 +161,11 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
         formatRenameTo(new_policy_name, settings);
 
     if (is_restrictive)
-        formatIsRestrictive(*is_restrictive, settings);
+        formatAsRestrictiveOrPermissive(*is_restrictive, settings);
 
     formatMultipleConditions(conditions, alter, settings);
 
-    if (roles)
-        formatRoles(*roles, settings);
+    if (roles && (!roles->empty() || alter))
+        formatToRoles(*roles, settings);
 }
 }

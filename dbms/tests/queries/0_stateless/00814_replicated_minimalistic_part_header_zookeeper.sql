@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS test.part_header_r1;
 DROP TABLE IF EXISTS test.part_header_r2;
 
+SET replication_alter_partitions_sync = 2;
+
 CREATE TABLE test.part_header_r1(x UInt32, y UInt32)
     ENGINE ReplicatedMergeTree('/clickhouse/tables/test/part_header', '1') ORDER BY x
     SETTINGS use_minimalistic_part_header_in_zookeeper = 0,
@@ -32,7 +34,7 @@ SELECT _part, x FROM test.part_header_r1 ORDER BY x;
 SELECT '*** replica 2 ***';
 SELECT _part, x FROM test.part_header_r2 ORDER BY x;
 
-SELECT sleep(2) FORMAT Null;
+SELECT sleep(3) FORMAT Null;
 
 SELECT '*** Test part removal ***';
 SELECT '*** replica 1 ***';

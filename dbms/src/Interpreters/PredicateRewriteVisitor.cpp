@@ -26,7 +26,7 @@ void PredicateRewriteVisitorData::visit(ASTSelectWithUnionQuery & union_select_q
 {
     auto & internal_select_list = union_select_query.list_of_selects->children;
 
-    if (internal_select_list.size() > 0)
+    if (!internal_select_list.empty())
         visitFirstInternalSelect(*internal_select_list[0]->as<ASTSelectQuery>(), internal_select_list[0]);
 
     for (size_t index = 1; index < internal_select_list.size(); ++index)
@@ -96,15 +96,15 @@ bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, con
         ASTPtr optimize_predicate = predicate->clone();
         cleanAliasAndCollectIdentifiers(optimize_predicate, identifiers);
 
-        for (size_t index = 0; index < identifiers.size(); ++index)
+        for (const auto & identifier : identifiers)
         {
-            const auto & column_name = identifiers[index]->shortName();
+            const auto & column_name = identifier->shortName();
             const auto & outer_column_iterator = std::find(outer_columns.begin(), outer_columns.end(), column_name);
 
             /// For lambda functions, we can't always find them in the list of columns
             /// For example: SELECT * FROM system.one WHERE arrayMap(x -> x, [dummy]) = [0]
             if (outer_column_iterator != outer_columns.end())
-                identifiers[index]->setShortName(inner_columns[outer_column_iterator - outer_columns.begin()]);
+                identifier->setShortName(inner_columns[outer_column_iterator - outer_columns.begin()]);
         }
 
         /// We only need to push all the predicates to subquery having

@@ -17,7 +17,10 @@ void FunctionComparison<NotEqualsOp, NameNotEquals>::executeTupleImpl(Block & bl
                                                                       const ColumnsWithTypeAndName & y, size_t tuple_size,
                                                                       size_t input_rows_count)
 {
-    return executeTupleEqualityImpl<FunctionNotEquals, FunctionOr>(block, result, x, y, tuple_size, input_rows_count);
+    return executeTupleEqualityImpl(
+        FunctionFactory::instance().get("notEquals", context),
+        FunctionFactory::instance().get("or", context),
+        block, result, x, y, tuple_size, input_rows_count);
 }
 
 }
