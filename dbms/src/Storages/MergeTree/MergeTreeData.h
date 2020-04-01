@@ -541,10 +541,9 @@ public:
         broken_part_callback(name);
     }
 
-    /** Get the key expression AST as an ASTExpressionList.
-      * It can be specified in the tuple: (CounterID, Date),
-      *  or as one column: CounterID.
-      */
+    /** Get the key expression AST as an ASTExpressionList. It can be specified
+     *  in the tuple: (CounterID, Date), or as one column: CounterID.
+     */
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
     bool hasSortingKey() const { return !sorting_key_columns.empty(); }
@@ -864,7 +863,6 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
-    /// Mutex for settings usage
 
     void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false);
 

@@ -1457,6 +1457,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     for (const auto & column : getColumns().getAllPhysical())
         old_types.emplace(column.name, column.type.get());
 
+
     for (const AlterCommand & command : commands)
     {
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
@@ -1470,6 +1471,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             throw Exception(
                 "ALTER ADD INDEX is not supported for tables with the old syntax",
                 ErrorCodes::BAD_ARGUMENTS);
+        }
+        if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            if (columns_alter_type_forbidden.count(command.column_name) || columns_alter_type_metadata_only.count(command.column_name))
+            {
+                throw Exception(
+                    "Trying to ALTER RENAME key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
+                    ErrorCodes::ILLEGAL_COLUMN);
+            }
         }
         else if (command.isModifyingData())
         {

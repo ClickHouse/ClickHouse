@@ -447,7 +447,6 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     }
 }
 
-
 void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
@@ -5293,37 +5292,9 @@ bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
 }
 
 
-StorageInMemoryMetadata
-StorageReplicatedMergeTree::getMetadataFromSharedZookeeper(const String & metadata_str, const String & columns_str) const
-{
-    auto replicated_metadata = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
-    StorageInMemoryMetadata result = getInMemoryMetadata();
-    result.columns = ColumnsDescription::parse(columns_str);
-    result.constraints = ConstraintsDescription::parse(replicated_metadata.constraints);
-    result.indices = IndicesDescription::parse(replicated_metadata.skip_indices);
-
-    ParserExpression expression_p;
-
-    /// The only thing, that can be changed is ttl expression
-    if (replicated_metadata.primary_key.empty())
-        throw Exception("Primary key cannot be empty" , ErrorCodes::LOGICAL_ERROR);
-
-    if (!replicated_metadata.sorting_key.empty())
-    {
-        result.order_by_ast = parseQuery(expression_p, "(" + replicated_metadata.sorting_key + ")", 0);
-        result.primary_key_ast = parseQuery(expression_p, "(" + replicated_metadata.primary_key + ")", 0);
-    }
-    else
-    {
-        result.order_by_ast = parseQuery(expression_p, "(" + replicated_metadata.primary_key + ")", 0);
-    }
-    return result;
-
-}
 
 MutationCommands StorageReplicatedMergeTree::getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const
 {
     return queue.getFirstAlterMutationCommandsForPart(part);
 }
-
 }
