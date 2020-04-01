@@ -855,7 +855,35 @@ void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain &
         String result_name = ast->getAliasOrColumnName();
         if (required_result_columns.empty() || required_result_columns.count(result_name))
         {
-            result_columns.emplace_back(ast->getColumnName(), result_name);
+            std::string source_name = ast->getColumnName();
+
+            /*
+             * For temporary columns created by ExpressionAnalyzer for literals,
+             * use the correct source column. Using the default display name
+             * returned by getColumnName is not enough, and we have to use the
+             * column id set by EA. In principle, this logic applies to all kinds
+             * of columns, not only literals. Literals are especially problematic
+             * for two reasons:
+             * 1) confusing different literal columns leads to weird side
+             *    effects (see 01101_literal_columns_clash);
+             * 2) the disambiguation mechanism in SyntaxAnalyzer, that, among
+             *    other things, creates unique aliases for columns with same
+             *    names from different tables, is applied before these temporary
+             *    columns are created by ExpressionAnalyzer.
+             * Similar problems should also manifest for function columns, which
+             * are likewise created at a later stage by EA.
+             * In general, we need to have explicit separation between display
+             * names and identifiers for columns. This code is a workaround for
+             * a particular subclass of problems, and not a proper solution.
+             */
+            if (auto as_literal = dynamic_cast<ASTLiteral *>(ast.get());
+                as_literal)
+            {
+                source_name = as_literal->unique_column_name;
+                assert(!source_name.empty());
+            }
+
+            result_columns.emplace_back(source_name, result_name);
             step.required_output.push_back(result_columns.back().second);
         }
     }
