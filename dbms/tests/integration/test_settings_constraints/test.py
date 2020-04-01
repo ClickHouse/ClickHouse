@@ -110,7 +110,7 @@ def assert_query_settings(instance, query, settings, result=None, exception=None
 
     # http level settings
     if exception:
-        assert exception in instance.http_query(query, params=settings, user=user)
+        assert exception in instance.http_query_and_get_error(query, params=settings, user=user)
     else:
         assert instance.http_query(query, params=settings, user=user).strip() == result
 

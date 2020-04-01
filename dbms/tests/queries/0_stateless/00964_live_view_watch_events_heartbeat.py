@@ -32,11 +32,13 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.send('CREATE LIVE VIEW test.lv WITH TIMEOUT AS SELECT sum(a) FROM test.mt')
     client1.expect(prompt)
     client1.send('WATCH test.lv EVENTS')
-    client2.send('INSERT INTO test.mt VALUES (1),(2),(3)')
-    client1.expect('2.*' + end_of_block)
-    client1.expect('Progress: 2.00 rows.*\)')
+    client2.send('INSERT INTO test.mt VALUES (1)')
+    client1.expect('1.*' + end_of_block)
+    client2.send('INSERT INTO test.mt VALUES (2),(3)')
+    client1.expect('[23].*' + end_of_block)
+    client1.expect('Progress: [23]\.00 rows.*\)')
     # wait for heartbeat
-    client1.expect('Progress: 2.00 rows.*\)')
+    client1.expect('Progress: [23]\.00 rows.*\)')
     # send Ctrl-C
     client1.send('\x03', eol='')
     match = client1.expect('(%s)|([#\$] )' % prompt)

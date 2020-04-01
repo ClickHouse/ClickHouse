@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 
-from __future__ import unicode_literals
-
 import argparse
 import datetime
+import http.server
 import logging
+import multiprocessing
 import os
 import shutil
+import socketserver
 import subprocess
 import sys
 import time
@@ -21,11 +22,10 @@ from mkdocs.commands import build as mkdocs_build
 
 from concatenate import concatenate
 
-from website import build_website, minify_website
-
 import mdx_clickhouse
 import test
 import util
+import website
 
 
 class ClickHouseMarkdown(markdown.extensions.Extension):
@@ -74,22 +74,26 @@ def build_for_lang(lang, args):
             }
         }
 
-        site_names = {
-            'en': 'ClickHouse %s Documentation',
-            'es': 'Documentación de ClickHouse %s',
-            'ru': 'Документация ClickHouse %s',
-            'zh': 'ClickHouse文档 %s',
-            'ja': 'ClickHouseドキュメント %s',
-            'fa': 'مستندات %sClickHouse'
-        }
-
+        # the following list of languages is sorted according to
+        # https://en.wikipedia.org/wiki/List_of_languages_by_total_number_of_speakers
         languages = {
             'en': 'English',
             'zh': '中文',
             'es': 'Español',
+            'fr': 'Français',
             'ru': 'Русский',
             'ja': '日本語',
             'fa': 'فارسی'
+        }
+
+        site_names = {
+            'en': 'ClickHouse %s Documentation',
+            'es': 'Documentación de ClickHouse %s',
+            'fr': 'Documentation ClickHouse %s',
+            'ru': 'Документация ClickHouse %s',
+            'zh': 'ClickHouse文档 %s',
+            'ja': 'ClickHouseドキュメント %s',
+            'fa': 'مستندات %sClickHouse'
         }
 
         assert len(site_names) == len(languages)
@@ -212,31 +216,66 @@ def build_single_page_version(lang, args, cfg):
                     os.path.join(site_temp, 'single'),
                     single_page_output_path
                 )
+                
+                logging.info(f'Re-building single page for {lang} pdf/test')
+                with util.temp_dir() as test_dir:
+                    single_page_pdf = os.path.abspath(
+                        os.path.join(single_page_output_path, f'clickhouse_{lang}.pdf')
+                    )
+                    extra['single_page'] = False
+                    cfg.load_dict({
+                        'docs_dir': docs_temp_lang,
+                        'site_dir': test_dir,
+                        'extra': extra,
+                        'nav': [
+                            {cfg.data.get('site_name'): 'single.md'}
+                        ]
+                    })
+                    mkdocs_build.build(cfg)
 
-                if not args.skip_pdf:
-                    single_page_index_html = os.path.abspath(os.path.join(single_page_output_path, 'index.html'))
-                    single_page_pdf = single_page_index_html.replace('index.html', f'clickhouse_{lang}.pdf')
-                    create_pdf_command = ['wkhtmltopdf', '--print-media-type', '--log-level', 'warn', single_page_index_html, single_page_pdf]
-                    logging.info(' '.join(create_pdf_command))
-                    subprocess.check_call(' '.join(create_pdf_command), shell=True)
-
-                if not args.version_prefix:  # maybe enable in future
-                    with util.temp_dir() as test_dir:
-                        extra['single_page'] = False
-                        cfg.load_dict({
-                            'docs_dir': docs_temp_lang,
-                            'site_dir': test_dir,
-                            'extra': extra,
-                            'nav': [
-                                {cfg.data.get('site_name'): 'single.md'}
+                    css_in = ' '.join(website.get_css_in(args))
+                    js_in = ' '.join(website.get_js_in(args))
+                    subprocess.check_call(f'cat {css_in} > {test_dir}/css/base.css', shell=True)
+                    subprocess.check_call(f'cat {js_in} > {test_dir}/js/base.js', shell=True)
+                    if not args.skip_pdf:
+                        port_for_pdf = util.get_free_port()
+                        httpd = socketserver.TCPServer(
+                            ('', port_for_pdf), http.server.SimpleHTTPRequestHandler
+                        )
+                        logging.info(f"Serving for {lang} pdf at port {port_for_pdf}")
+                        process = multiprocessing.Process(target=httpd.serve_forever)
+                        with util.cd(test_dir):
+                            process.start()
+                            create_pdf_command = [
+                                'wkhtmltopdf',
+                                '--print-media-type',
+                                '--disable-javascript',
+                                # TODO: restore '--log-level', 'warn',
+                                f'http://localhost:{port_for_pdf}/single/', single_page_pdf
                             ]
-                        })
-                        mkdocs_build.build(cfg)
-                        if args.save_raw_single_page:
-                            shutil.copytree(test_dir, args.save_raw_single_page)
+                            try:
+                                if args.save_raw_single_page:
+                                    shutil.copytree(test_dir, args.save_raw_single_page)
+                                logging.info(' '.join(create_pdf_command))
+                                subprocess.check_call(' '.join(create_pdf_command), shell=True)
+                            finally:
+                                logging.info(f'Stop serving for {lang} pdf at port {port_for_pdf}')
+                                process.kill()
+                                while True:
+                                    time.sleep(0.25)
+                                    try:
+                                        process.close()
+                                        break
+                                    except ValueError:
+                                        logging.info(f'Waiting for {lang} httpd at port {port_for_pdf} to stop')
 
-                        test.test_single_page(os.path.join(test_dir, 'single', 'index.html'), lang)
-    logging.info(f'Finished building single page version for {lang}')
+
+                    if not args.version_prefix:  # maybe enable in future
+                        logging.info(f'Running tests for {lang}')
+                        test.test_single_page(
+                            os.path.join(test_dir, 'single', 'index.html'), lang)
+
+        logging.info(f'Finished building single page version for {lang}')
 
 
 def write_redirect_html(out_path, to_url):
@@ -293,7 +332,7 @@ def build(args):
         shutil.rmtree(args.output_dir)
 
     if not args.skip_website:
-        build_website(args)
+        website.build_website(args)
 
     build_docs(args)
 
@@ -301,7 +340,7 @@ def build(args):
     build_releases(args, build_docs)
 
     if not args.skip_website:
-        minify_website(args)
+        website.minify_website(args)
 
     for static_redirect in [
         ('tutorial.html', '/docs/en/getting_started/tutorial/',),
@@ -319,7 +358,7 @@ if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
     website_dir = os.path.join('..', 'website')
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,es,ru,zh,ja,fa')
+    arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,fa')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default=website_dir)
     arg_parser.add_argument('--website-dir', default=website_dir)

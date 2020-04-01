@@ -490,6 +490,7 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED = 516;
     extern const int CANNOT_ASSIGN_ALTER = 517;
     extern const int CANNOT_COMMIT_OFFSET = 518;
+    extern const int NO_REMOTE_SHARD_AVAILABLE = 519;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;

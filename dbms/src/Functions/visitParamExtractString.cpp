@@ -1,6 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsVisitParam.h>
-#include <Functions/FunctionsStringSearch.h>
+#include <Functions/FunctionsStringSearchToString.h>
 
 
 namespace DB

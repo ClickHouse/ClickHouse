@@ -141,6 +141,9 @@
 }
 
 @media print {
+    body {
+        min-width: 0!important;
+    }
     #content-wrapper {
         -ms-flex: 0 0 100%;
         flex: 0 0 100%;
