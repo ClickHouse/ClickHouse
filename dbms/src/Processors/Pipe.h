@@ -50,6 +50,8 @@ public:
     void setTotalsPort(OutputPort * totals_) { totals = totals_; }
     OutputPort * getTotalsPort() const { return totals; }
 
+    size_t maxParallelStreams() const { return max_parallel_streams; }
+
     /// Do not allow to change the table while the processors of pipe are alive.
     /// TODO: move it to pipeline.
     void addTableLock(const TableStructureReadLockHolder & lock) { table_locks.push_back(lock); }
@@ -65,6 +67,9 @@ private:
     Processors processors;
     OutputPort * output_port = nullptr;
     OutputPort * totals = nullptr;
+
+    /// It is the max number of processors which can be executed in parallel for each step. See QueryPipeline::Streams.
+    size_t max_parallel_streams = 0;
 
     std::vector<TableStructureReadLockHolder> table_locks;
 
