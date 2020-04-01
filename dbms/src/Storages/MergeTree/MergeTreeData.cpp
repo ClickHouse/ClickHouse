@@ -116,10 +116,7 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-    const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
-}
+const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
 
 
 MergeTreeData::MergeTreeData(
@@ -3185,7 +3182,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
     }
     if (!does_storage_policy_allow_same_disk)
         throw Exception(
-            "Could not clone and load part " + quoteString(src_part->getFullPath()) + " because disk does not belong to storage policy", ErrorCodes::LOGICAL_ERROR);
+            "Could not clone and load part " + quoteString(src_part->getFullPath()) + " because disk does not belong to storage policy", ErrorCodes::BAD_ARGUMENTS);
 
     String dst_part_name = src_part->getNewName(dst_part_info);
     String tmp_dst_part_name = tmp_part_prefix + dst_part_name;
@@ -3200,6 +3197,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::cloneAndLoadDataPartOnSameDisk(
 
     LOG_DEBUG(log, "Cloning part " << fullPath(disk, src_part_path) << " to " << fullPath(disk, dst_part_path));
     localBackup(disk, src_part_path, dst_part_path);
+    disk->removeIfExists(dst_part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
 
     auto dst_data_part = createPart(dst_part_name, dst_part_info, reservation->getDisk(), tmp_dst_part_name);
 
@@ -3285,6 +3283,8 @@ void MergeTreeData::freezePartitionsByMatcher(MatcherFn matcher, const String & 
 
         String backup_part_path = backup_path + relative_data_path + part->relative_path;
         localBackup(part->disk, part->getFullRelativePath(), backup_part_path);
+        part->disk->removeIfExists(backup_part_path + "/" + DELETE_ON_DESTROY_MARKER_PATH);
+
         part->is_frozen.store(true, std::memory_order_relaxed);
         ++parts_processed;
     }
