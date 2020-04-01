@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Core/NamesAndTypes.h>
 #include <Parsers/IdentifierQuotingStyle.h>
+#include <Storages/SelectQueryInfo.h>
 
 
 namespace DB
@@ -23,7 +24,7 @@ class Context;
   * Compatible expressions are comparisons of identifiers, constants, and logical operations on them.
   */
 String transformQueryForExternalDatabase(
-    const IAST & query,
+    const SelectQueryInfo & query_info,
     const NamesAndTypesList & available_columns,
     IdentifierQuotingStyle identifier_quoting_style,
     const String & database,

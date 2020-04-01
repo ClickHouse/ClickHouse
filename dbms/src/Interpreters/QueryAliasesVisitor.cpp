@@ -30,15 +30,21 @@ static String wrongAliasMessage(const ASTPtr & ast, const ASTPtr & prev_ast, con
 }
 
 
-bool QueryAliasesMatcher::needChildVisit(ASTPtr & node, const ASTPtr &)
+bool QueryAliasesWithSubqueries::needChildVisit(const ASTPtr & node, const ASTPtr &)
 {
     /// Don't descent into table functions and subqueries and special case for ArrayJoin.
-    if (node->as<ASTTableExpression>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTArrayJoin>())
-        return false;
-    return true;
+    return !(node->as<ASTTableExpression>() || node->as<ASTSelectWithUnionQuery>() || node->as<ASTArrayJoin>());
 }
 
-void QueryAliasesMatcher::visit(ASTPtr & ast, Data & data)
+bool QueryAliasesNoSubqueries::needChildVisit(const ASTPtr & node, const ASTPtr & child)
+{
+    if (node->as<ASTSubquery>())
+        return false;
+    return QueryAliasesWithSubqueries::needChildVisit(node, child);
+}
+
+template <typename T>
+void QueryAliasesMatcher<T>::visit(const ASTPtr & ast, Data & data)
 {
     if (auto * s = ast->as<ASTSubquery>())
         visit(*s, ast, data);
@@ -50,7 +56,8 @@ void QueryAliasesMatcher::visit(ASTPtr & ast, Data & data)
         visitOther(ast, data);
 }
 
-void QueryAliasesMatcher::visit(const ASTSelectQuery & select, const ASTPtr &, Data &)
+template <typename T>
+void QueryAliasesMatcher<T>::visit(const ASTSelectQuery & select, const ASTPtr &, Data &)
 {
     ASTPtr with = select.with();
     if (!with)
@@ -63,7 +70,8 @@ void QueryAliasesMatcher::visit(const ASTSelectQuery & select, const ASTPtr &, D
 
 /// The top-level aliases in the ARRAY JOIN section have a special meaning, we will not add them
 /// (skip the expression list itself and its children).
-void QueryAliasesMatcher::visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data)
+template <typename T>
+void QueryAliasesMatcher<T>::visit(const ASTArrayJoin &, const ASTPtr & ast, Data & data)
 {
     visitOther(ast, data);
 
@@ -81,9 +89,11 @@ void QueryAliasesMatcher::visit(const ASTArrayJoin &, const ASTPtr & ast, Data &
 /// set unique aliases for all subqueries. this is needed, because:
 /// 1) content of subqueries could change after recursive analysis, and auto-generated column names could become incorrect
 /// 2) result of different scalar subqueries can be cached inside expressions compilation cache and must have different names
-void QueryAliasesMatcher::visit(ASTSubquery & subquery, const ASTPtr & ast, Data & data)
+template <typename T>
+void QueryAliasesMatcher<T>::visit(const ASTSubquery & const_subquery, const ASTPtr & ast, Data & data)
 {
-    Aliases & aliases = data.aliases;
+    auto & aliases = data;
+    ASTSubquery & subquery = const_cast<ASTSubquery &>(const_subquery);
 
     static std::atomic_uint64_t subquery_index = 0;
 
@@ -100,15 +110,15 @@ void QueryAliasesMatcher::visit(ASTSubquery & subquery, const ASTPtr & ast, Data
         aliases[alias] = ast;
     }
     else
-        visitOther(ast, data);
+        visitOther(ast, aliases);
 
     subquery.prefer_alias_to_column_name = true;
 }
 
-void QueryAliasesMatcher::visitOther(const ASTPtr & ast, Data & data)
+template <typename T>
+void QueryAliasesMatcher<T>::visitOther(const ASTPtr & ast, Data & data)
 {
-    Aliases & aliases = data.aliases;
-
+    auto & aliases = data;
     String alias = ast->tryGetAlias();
     if (!alias.empty())
     {
@@ -118,5 +128,9 @@ void QueryAliasesMatcher::visitOther(const ASTPtr & ast, Data & data)
         aliases[alias] = ast;
     }
 }
+
+/// Explicit template instantiations
+template class QueryAliasesMatcher<QueryAliasesWithSubqueries>;
+template class QueryAliasesMatcher<QueryAliasesNoSubqueries>;
 
 }

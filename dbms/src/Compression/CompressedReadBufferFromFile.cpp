@@ -1,14 +1,15 @@
+#include <cassert>
+
 #include "CompressedReadBufferFromFile.h"
 
-#include <IO/createReadBufferFromFileBase.h>
-#include <IO/WriteHelpers.h>
 #include <Compression/CompressionInfo.h>
 #include <Compression/LZ4_decompress_faster.h>
+#include <IO/WriteHelpers.h>
+#include <IO/createReadBufferFromFileBase.h>
 
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int SEEK_POSITION_OUT_OF_BOUND;
@@ -17,13 +18,18 @@ namespace ErrorCodes
 
 bool CompressedReadBufferFromFile::nextImpl()
 {
-    size_t size_decompressed;
+    size_t size_decompressed = 0;
     size_t size_compressed_without_checksum;
     size_compressed = readCompressedData(size_decompressed, size_compressed_without_checksum);
     if (!size_compressed)
         return false;
 
-    memory.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
+    auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
+
+    /// This is for clang static analyzer.
+    assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+
+    memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
     working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
 
     decompress(working_buffer.begin(), size_decompressed, size_compressed_without_checksum);
@@ -31,12 +37,18 @@ bool CompressedReadBufferFromFile::nextImpl()
     return true;
 }
 
+CompressedReadBufferFromFile::CompressedReadBufferFromFile(std::unique_ptr<ReadBufferFromFileBase> buf)
+    : BufferWithOwnMemory<ReadBuffer>(0), p_file_in(std::move(buf)), file_in(*p_file_in)
+{
+    compressed_in = &file_in;
+}
+
 
 CompressedReadBufferFromFile::CompressedReadBufferFromFile(
     const std::string & path, size_t estimated_size, size_t aio_threshold, size_t mmap_threshold, size_t buf_size)
-    : BufferWithOwnMemory<ReadBuffer>(0),
-        p_file_in(createReadBufferFromFileBase(path, estimated_size, aio_threshold, mmap_threshold, buf_size)),
-        file_in(*p_file_in)
+    : BufferWithOwnMemory<ReadBuffer>(0)
+    , p_file_in(createReadBufferFromFileBase(path, estimated_size, aio_threshold, mmap_threshold, buf_size))
+    , file_in(*p_file_in)
 {
     compressed_in = &file_in;
 }
@@ -45,7 +57,7 @@ CompressedReadBufferFromFile::CompressedReadBufferFromFile(
 void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
     if (size_compressed &&
-        offset_in_compressed_file == file_in.getPositionInFile() - size_compressed &&
+        offset_in_compressed_file == file_in.getPosition() - size_compressed &&
         offset_in_decompressed_block <= working_buffer.size())
     {
         bytes += offset();
@@ -55,7 +67,7 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
     }
     else
     {
-        file_in.seek(offset_in_compressed_file);
+        file_in.seek(offset_in_compressed_file, SEEK_SET);
 
         bytes += offset();
         nextImpl();
@@ -90,8 +102,10 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         if (!new_size_compressed)
             return bytes_read;
 
+        auto additional_size_at_the_end_of_buffer = codec->getAdditionalSizeAtTheEndOfBuffer();
+
         /// If the decompressed block fits entirely where it needs to be copied.
-        if (size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer() <= n - bytes_read)
+        if (size_decompressed + additional_size_at_the_end_of_buffer <= n - bytes_read)
         {
             decompress(to + bytes_read, size_decompressed, size_compressed_without_checksum);
             bytes_read += size_decompressed;
@@ -101,7 +115,11 @@ size_t CompressedReadBufferFromFile::readBig(char * to, size_t n)
         {
             size_compressed = new_size_compressed;
             bytes += offset();
-            memory.resize(size_decompressed + codec->getAdditionalSizeAtTheEndOfBuffer());
+
+            /// This is for clang static analyzer.
+            assert(size_decompressed + additional_size_at_the_end_of_buffer > 0);
+
+            memory.resize(size_decompressed + additional_size_at_the_end_of_buffer);
             working_buffer = Buffer(memory.data(), &memory[size_decompressed]);
             pos = working_buffer.begin();
 

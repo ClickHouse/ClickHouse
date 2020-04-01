@@ -18,6 +18,7 @@ namespace DB
     struct BitBoolMaskOrImpl
     {
         using ResultType = UInt8;
+        static const constexpr bool allow_fixed_string = false;
 
         template <typename Result = ResultType>
         static inline Result apply(A left, B right)

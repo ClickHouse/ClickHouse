@@ -7,6 +7,7 @@
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
 #include <Storages/System/StorageSystemPartsBase.h>
+#include <Processors/Sources/SourceFromSingleChunk.h>
 
 namespace DB
 {
@@ -17,7 +18,7 @@ namespace DB
   * We don't use StorageSystemPartsBase, because it introduces virtual _state
   * column and column aliases which we don't need.
   */
-class StorageSystemDetachedParts :
+class StorageSystemDetachedParts final :
     public ext::shared_ptr_helper<StorageSystemDetachedParts>,
     public IStorage
 {
@@ -42,7 +43,7 @@ protected:
         }});
     }
 
-    BlockInputStreams read(
+    Pipes read(
             const Names & /* column_names */,
             const SelectQueryInfo & query_info,
             const Context & context,
@@ -74,8 +75,12 @@ protected:
             }
         }
 
-        return BlockInputStreams(1, std::make_shared<OneBlockInputStream>(
-             block.cloneWithColumns(std::move(new_columns))));
+        UInt64 num_rows = new_columns.at(0)->size();
+        Chunk chunk(std::move(new_columns), num_rows);
+
+        Pipes pipes;
+        pipes.emplace_back(std::make_shared<SourceFromSingleChunk>(std::move(block), std::move(chunk)));
+        return pipes;
     }
 };
 

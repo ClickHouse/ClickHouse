@@ -23,6 +23,11 @@ namespace MongoDB
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
+
 /// Allows loading dictionaries from a MongoDB collection
 class MongoDBDictionarySource final : public IDictionarySource
 {
@@ -87,9 +92,3 @@ private:
 
 }
 #endif
-
-/*namespace DB
-{
-class DictionarySourceFactory;
-void registerDictionarySourceMongoDB(DictionarySourceFactory & factory);
-}*/

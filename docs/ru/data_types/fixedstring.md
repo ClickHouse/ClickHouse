@@ -1,10 +1,10 @@
-# FixedString
+# FixedString {#fixedstring}
 
-Строка фиксированной длины `N`  байт (не символов, не кодовых точек).
+Строка фиксированной длины `N` байт (не символов, не кодовых точек).
 
 Чтобы объявить столбец типа `FixedString`, используйте следующий синтаксис:
 
-```sql
+``` sql
 <column_name> FixedString(N)
 ```
 
@@ -14,23 +14,23 @@
 
 Примеры значений, которые можно эффективно хранить в столбцах типа `FixedString`:
 
-- Двоичное представление IP-адреса (`FixedString(16)` для IPv6).
-- Коды языков (ru_RU, en_US ... ).
-- Коды валют (USD, RUB ... ).
-- Двоичное представление хэшей (`FixedString(16)` для MD5, `FixedString(32)` для SHA256).
+-   Двоичное представление IP-адреса (`FixedString(16)` для IPv6).
+-   Коды языков (ru\_RU, en\_US … ).
+-   Коды валют (USD, RUB … ).
+-   Двоичное представление хэшей (`FixedString(16)` для MD5, `FixedString(32)` для SHA256).
 
 Для хранения значений UUID используйте тип данных [UUID](uuid.md).
 
 При вставке данных, ClickHouse:
 
-- Дополняет строку нулевыми байтами, если строка содержит меньше байтов, чем `N`.
-- Генерирует исключение `Too large value for FixedString(N)`, если строка содержит более `N` байт.
+-   Дополняет строку нулевыми байтами, если строка содержит меньше байтов, чем `N`.
+-   Генерирует исключение `Too large value for FixedString(N)`, если строка содержит более `N` байт.
 
 При выборе данных ClickHouse не обрезает нулевые байты в конце строки. Если вы используете секцию `WHERE`, то необходимо добавлять нулевые байты вручную, чтобы ClickHouse смог сопоставить выражение из фильтра значению `FixedString`. Следующий пример показывает, как использовать секцию `WHERE` с `FixedString`.
 
 Рассмотрим следующую таблицу с единственным столбцом типа `FixedString(2)`:
 
-```text
+``` text
 ┌─name──┐
 │ b     │
 └───────┘
@@ -38,19 +38,19 @@
 
 Запрос `SELECT * FROM FixedStringTable WHERE a = 'b'` не возвращает необходимых данных. Необходимо дополнить шаблон фильтра нулевыми байтами.
 
-```sql
+``` sql
 SELECT * FROM FixedStringTable
 WHERE a = 'b\0'
 ```
-```text
+
+``` text
 ┌─a─┐
 │ b │
 └───┘
-
 ```
 
 Это поведение отличается от поведения MySQL для типа `CHAR`, где строки дополняются пробелами, а пробелы перед выводом вырезаются.
 
-Обратите внимание, что длина значения `FixedString(N)` постоянна. Функция [length](../query_language/functions/array_functions.md#array_functions-length) возвращает `N` даже если значение `FixedString(N)` заполнено только нулевыми байтами, однако функция [empty](../query_language/functions/string_functions.md#string_functions-empty) в этом же случае возвращает `1`.
+Обратите внимание, что длина значения `FixedString(N)` постоянна. Функция [length](../query_language/functions/array_functions.md#array_functions-length) возвращает `N` даже если значение `FixedString(N)` заполнено только нулевыми байтами, однако функция [empty](../query_language/functions/string_functions.md#empty) в этом же случае возвращает `1`.
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/fixedstring/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/fixedstring/) <!--hide-->

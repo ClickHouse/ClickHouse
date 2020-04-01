@@ -29,4 +29,3 @@ using InternalTextLogsQueuePtr = std::shared_ptr<InternalTextLogsQueue>;
 }
 
 
-

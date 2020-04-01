@@ -2,6 +2,7 @@
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/Join.h>
 #include <Interpreters/MergeJoin.h>
+#include <Interpreters/ExpressionActions.h>
 #include <DataStreams/LazyBlockInputStream.h>
 
 namespace DB
@@ -52,7 +53,11 @@ bool SubqueryForSet::insertJoinedBlock(Block & block)
 void SubqueryForSet::setTotals()
 {
     if (join && source)
-        join->setTotals(source->getTotals());
+    {
+        Block totals = source->getTotals();
+        renameColumns(totals);
+        join->setTotals(totals);
+    }
 }
 
 }

@@ -56,9 +56,9 @@ InputStreamFromASTInsertQuery::InputStreamFromASTInsertQuery(
 
     res_stream = context.getInputFormat(format, *input_buffer_contacenated, header, context.getSettings().max_insert_block_size);
 
-    if (context.getSettingsRef().input_format_defaults_for_omitted_fields && !ast_insert_query->table.empty() && !input_function)
+    if (context.getSettingsRef().input_format_defaults_for_omitted_fields && ast_insert_query->table_id && !input_function)
     {
-        StoragePtr storage = context.getTable(ast_insert_query->database, ast_insert_query->table);
+        StoragePtr storage = DatabaseCatalog::instance().getTable(ast_insert_query->table_id);
         auto column_defaults = storage->getColumns().getDefaults();
         if (!column_defaults.empty())
             res_stream = std::make_shared<AddingDefaultsBlockInputStream>(res_stream, column_defaults, context);

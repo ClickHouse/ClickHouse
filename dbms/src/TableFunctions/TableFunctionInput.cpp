@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
+#include <Access/AccessFlags.h>
 #include <boost/algorithm/string.hpp>
 #include "registerTableFunctions.h"
 
@@ -19,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
@@ -35,9 +37,11 @@ StoragePtr TableFunctionInput::executeImpl(const ASTPtr & ast_function, const Co
         throw Exception("Table function '" + getName() + "' requires exactly 1 argument: structure",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
+    context.checkAccess(AccessType::input);
+
     String structure = evaluateConstantExpressionOrIdentifierAsLiteral(args[0], context)->as<ASTLiteral &>().value.safeGet<String>();
     auto columns = parseColumnsListFromString(structure, context);
-    StoragePtr storage = StorageInput::create(table_name, columns);
+    StoragePtr storage = StorageInput::create(StorageID(getDatabaseName(), table_name), columns);
 
     storage->startup();
 

@@ -1,11 +1,12 @@
 #include <re2/re2.h>
-#include <Common/RemoteHostFilter.h>
 #include <Poco/URI.h>
-#include <Formats/FormatFactory.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Formats/FormatFactory.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/Exception.h>
 #include <IO/WriteHelpers.h>
+
 
 namespace DB
 {
@@ -34,7 +35,7 @@ void RemoteHostFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
     {
         std::vector<std::string> keys;
         config.keys("remote_url_allow_hosts", keys);
-        for (auto key : keys)
+        for (const auto & key : keys)
         {
             if (startsWith(key, "host_regexp"))
                 regexp_hosts.push_back(config.getString("remote_url_allow_hosts." + key));
@@ -50,8 +51,8 @@ bool RemoteHostFilter::checkForDirectEntry(const std::string & str) const
     {
         if (primary_hosts.find(str) == primary_hosts.end())
         {
-            for (size_t i = 0; i < regexp_hosts.size(); ++i)
-                if (re2::RE2::FullMatch(str, regexp_hosts[i]))
+            for (const auto & regexp : regexp_hosts)
+                if (re2::RE2::FullMatch(str, regexp))
                     return true;
             return false;
         }

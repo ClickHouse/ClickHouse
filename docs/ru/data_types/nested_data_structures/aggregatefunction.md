@@ -1,4 +1,4 @@
-# AggregateFunction(name, types_of_arguments...) {#data_type-aggregatefunction}
+# AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
 Промежуточное состояние агрегатной функции. Чтобы его получить, используются агрегатные функции с суффиксом `-State`. Чтобы в дальнейшем получить агрегированные данные необходимо использовать те же агрегатные функции с суффиксом `-Merge`.
 
@@ -6,15 +6,15 @@
 
 **Параметры**
 
-- Имя агрегатной функции.
+-   Имя агрегатной функции.
 
-    Для параметрических агрегатных функций указываются также их параметры.
+        Для параметрических агрегатных функций указываются также их параметры.
 
-- Типы аргументов агрегатной функции.
+-   Типы аргументов агрегатной функции.
 
 **Пример**
 
-```sql
+``` sql
 CREATE TABLE t
 (
     column1 AggregateFunction(uniq, UInt64),
@@ -25,15 +25,15 @@ CREATE TABLE t
 
 [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq), anyIf ([any](../../query_language/agg_functions/reference.md#agg_function-any)+[If](../../query_language/agg_functions/combinators.md#agg-functions-combinator-if)) и [quantiles](../../query_language/agg_functions/reference.md) — агрегатные функции, поддержанные в ClickHouse.
 
-## Особенности использования
+## Особенности использования {#osobennosti-ispolzovaniia}
 
-### Вставка данных
+### Вставка данных {#vstavka-dannykh}
 
 Для вставки данных используйте `INSERT SELECT` с агрегатными `-State`-функциями.
 
 **Примеры функций**
 
-```sql
+``` sql
 uniqState(UserID)
 quantilesState(0.5, 0.9)(SendTiming)
 ```
@@ -42,7 +42,7 @@ quantilesState(0.5, 0.9)(SendTiming)
 
 В запросах `SELECT` значения типа `AggregateFunction` выводятся во всех форматах, которые поддерживает ClickHouse, в виде implementation-specific бинарных данных. Если с помощью `SELECT` выполнить дамп данных, например, в формат `TabSeparated`, то потом этот дамп можно загрузить обратно с помощью запроса `INSERT`.
 
-### Выборка данных
+### Выборка данных {#vyborka-dannykh}
 
 При выборке данных из таблицы `AggregatingMergeTree`, используйте `GROUP BY` и те же агрегатные функции, что и при вставке данных, но с суффиксом `-Merge`.
 
@@ -50,14 +50,14 @@ quantilesState(0.5, 0.9)(SendTiming)
 
 Например, следующие два запроса возвращают один и тот же результат:
 
-```sql
+``` sql
 SELECT uniq(UserID) FROM table
 
 SELECT uniqMerge(state) FROM (SELECT uniqState(UserID) AS state FROM table GROUP BY RegionID)
 ```
 
-## Пример использования
+## Пример использования {#primer-ispolzovaniia}
 
 Смотрите в описании движка [AggregatingMergeTree](../../operations/table_engines/aggregatingmergetree.md).
 
-[Оригинальная статья](https://clickhouse.yandex/docs/ru/data_types/nested_data_structures/aggregatefunction/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/nested_data_structures/aggregatefunction/) <!--hide-->

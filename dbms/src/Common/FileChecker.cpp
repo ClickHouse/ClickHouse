@@ -103,7 +103,7 @@ void FileChecker::save() const
 
             /// `escapeForFileName` is not really needed. But it is left for compatibility with the old code.
             writeJSONString(escapeForFileName(it->first), *out, settings);
-            writeString(":{\"size\":\"", *out);
+            writeString(R"(:{"size":")", *out);
             writeIntText(it->second, *out);
             writeString("\"}", *out);
         }
@@ -112,7 +112,7 @@ void FileChecker::save() const
         out->next();
     }
 
-    disk->moveFile(tmp_files_info_path, files_info_path);
+    disk->replaceFile(tmp_files_info_path, files_info_path);
 }
 
 void FileChecker::load(Map & local_map, const String & path) const
@@ -136,8 +136,8 @@ void FileChecker::load(Map & local_map, const String & path) const
     JSON json(out.str());
 
     JSON files = json["yandex"];
-    for (const JSON name_value : files)
-        local_map[unescapeForFileName(name_value.getName())] = name_value.getValue()["size"].toUInt();
+    for (const JSON file : files) // NOLINT
+        local_map[unescapeForFileName(file.getName())] = file.getValue()["size"].toUInt();
 }
 
 }

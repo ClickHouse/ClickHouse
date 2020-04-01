@@ -2,12 +2,11 @@
 
 #include "CurrentThread.h"
 #include <common/logger_useful.h>
-#include <common/likely.h>
 #include <Common/ThreadStatus.h>
 #include <Common/TaskStatsInfoGetter.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
-#include <common/getThreadNumber.h>
+#include <common/getThreadId.h>
 #include <Poco/Logger.h>
 
 
@@ -34,7 +33,7 @@ bool CurrentThread::isInitialized()
 ThreadStatus & CurrentThread::get()
 {
     if (unlikely(!current_thread))
-        throw Exception("Thread #" + std::to_string(getThreadNumber()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Thread #" + std::to_string(getThreadId()) + " status was not initialized", ErrorCodes::LOGICAL_ERROR);
 
     return *current_thread;
 }

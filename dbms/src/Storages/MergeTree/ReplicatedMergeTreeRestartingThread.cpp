@@ -180,6 +180,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         /// pullLogsToQueue() after we mark replica 'is_active' (and after we repair if it was lost);
         /// because cleanup_thread doesn't delete log_pointer of active replicas.
         storage.queue.pullLogsToQueue(zookeeper);
+        storage.queue.removeCurrentPartsFromMutations();
         storage.last_queue_update_finish_time.store(time(nullptr));
 
         updateQuorumIfWeHavePart();
@@ -199,7 +200,6 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         storage.mutations_updating_task->activateAndSchedule();
         storage.mutations_finalizing_task->activateAndSchedule();
         storage.cleanup_thread.start();
-        storage.alter_thread.start();
         storage.part_check_thread.start();
 
         return true;
@@ -240,7 +240,7 @@ void ReplicatedMergeTreeRestartingThread::removeFailedQuorumParts()
     /// Firstly, remove parts from ZooKeeper
     storage.tryRemovePartsFromZooKeeperWithRetries(failed_parts);
 
-    for (auto part_name : failed_parts)
+    for (const auto & part_name : failed_parts)
     {
         auto part = storage.getPartIfExists(
             part_name, {MergeTreeDataPartState::PreCommitted, MergeTreeDataPartState::Committed, MergeTreeDataPartState::Outdated});
@@ -334,7 +334,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
 
     storage.partial_shutdown_called = true;
     storage.partial_shutdown_event.set();
-    storage.alter_query_event->set();
     storage.replica_is_active_node = nullptr;
 
     LOG_TRACE(log, "Waiting for threads to finish");
@@ -346,7 +345,6 @@ void ReplicatedMergeTreeRestartingThread::partialShutdown()
     storage.mutations_finalizing_task->deactivate();
 
     storage.cleanup_thread.stop();
-    storage.alter_thread.stop();
     storage.part_check_thread.stop();
 
     LOG_TRACE(log, "Threads finished");

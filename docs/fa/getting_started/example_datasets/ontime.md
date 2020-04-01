@@ -1,13 +1,12 @@
+<div markdown="1" markdown="1" dir="rtl">
 
-<div dir="rtl" markdown="1">
-
-# OnTime
+# OnTime {#ontime}
 
 دانلود داده ها:
 
 </div>
 
-```bash
+``` bash
 for s in `seq 1987 2018`
 do
 for m in `seq 1 12`
@@ -17,9 +16,9 @@ done
 done
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
-(از <https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh> )
+(از https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
 
 ساخت جدول:
 
@@ -136,20 +135,24 @@ CREATE TABLE `ontime` (
   `Div5LongestGTime` String,
   `Div5WheelsOff` String,
   `Div5TailNum` String
-) ENGINE = MergeTree(FlightDate, (Year, FlightDate), 8192)
+) ENGINE = MergeTree
+PARTITION BY Year
+ORDER BY (Carrier, FlightDate)
+SETTINGS index_granularity = 8192;
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 Load داده ها:
 
 </div>
 
-```bash
+``` bash
 for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
+
 query ها:
 
 Q0.
@@ -160,7 +163,7 @@ Q0.
 select avg(c1) from (select Year, Month, count(*) as c1 from ontime group by Year, Month);
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 Q1. تعداد پروازهای به تفکیک روز از تاریخ 2000 تا 2008
 
@@ -170,7 +173,7 @@ Q1. تعداد پروازهای به تفکیک روز از تاریخ 2000 تا
 SELECT DayOfWeek, count(*) AS c FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC;
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 Q2. تعداد پروازهای بیش از 10 دقیقه تاخیر خورده، گروه بندی براساس روزهای هفته از سال 2000 تا 2008
 
@@ -180,7 +183,7 @@ Q2. تعداد پروازهای بیش از 10 دقیقه تاخیر خورده�
 SELECT DayOfWeek, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 Q3. تعداد تاخیرها براساس airport از سال 2000 تا 2008
 
@@ -190,7 +193,7 @@ Q3. تعداد تاخیرها براساس airport از سال 2000 تا 2008
 SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY Origin ORDER BY c DESC LIMIT 10
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 Q4. تعداد تاخیرها براساس carrier در سال 78
 
@@ -200,7 +203,7 @@ Q4. تعداد تاخیرها براساس carrier در سال 78
 SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 Q5. درصد تاخیر ها براساس carrier در سال 2007
 
@@ -218,7 +221,7 @@ FROM
         AND Year=2007
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -230,17 +233,17 @@ ANY INNER JOIN
 ORDER BY c3 DESC;
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 نسخه ی بهتر query
 
 </div>
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY c3 DESC
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 Q6. مانند query قبلی اما برای طیف وسیعی از سال های 2000 تا 2008
 
@@ -258,7 +261,7 @@ FROM
         AND Year >= 2000 AND Year <= 2008
     GROUP BY Carrier
 )
-ANY INNER JOIN
+JOIN
 (
     SELECT
         Carrier,
@@ -270,17 +273,17 @@ ANY INNER JOIN
 ORDER BY c3 DESC;
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 نسخه ی بهتر query
 
 </div>
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY Carrier
+SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY c3 DESC
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 Q7. درصد تاخیر بیش از 10 دقیقه پروازها به تفکیک سال
 
@@ -297,7 +300,7 @@ FROM
     WHERE DepDelay>10
     GROUP BY Year
 )
-ANY INNER JOIN
+JOIN
 (
     select
         Year,
@@ -308,17 +311,17 @@ ANY INNER JOIN
 ORDER BY Year
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 نسخه ی بهتر query
 
 </div>
 
 ``` sql
-SELECT Year, avg(DepDelay > 10) FROM ontime GROUP BY Year ORDER BY Year
+SELECT Year, avg(DepDelay > 10)*100 FROM ontime GROUP BY Year ORDER BY Year
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 Q8. مقصدهای پرطرفدار براساس تعداد اتصال های مستقیم شهرها برای سال 2000 تا 2010
 
@@ -328,7 +331,7 @@ Q8. مقصدهای پرطرفدار براساس تعداد اتصال های م
 SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime WHERE Year >= 2000 and Year <= 2010 GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 Q9.
 
@@ -338,7 +341,7 @@ Q9.
 select Year, count(*) as c1 from ontime group by Year;
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 Q10.
 
@@ -360,7 +363,7 @@ ORDER by rate DESC
 LIMIT 1000;
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 query های بیشتر:
 
@@ -378,17 +381,17 @@ SELECT OriginCityName, DestCityName, count() AS c FROM ontime GROUP BY OriginCit
 SELECT OriginCityName, count() AS c FROM ontime GROUP BY OriginCityName ORDER BY c DESC LIMIT 10;
 ```
 
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
 این تست های performance توسط Vadim Tkachenko انجام شده است. برای اطلاعات بیشتر به لینک های زیر مراجعه کنید:
 
-- <https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/>
-- <https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/>
-- <https://www.percona.com/blog/2009/11/02/air-traffic-queries-in-infinidb-early-alpha/>
-- <https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/>
-- <https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/>
-- <http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html>
+-   https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/
+-   https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/
+-   https://www.percona.com/blog/2009/11/02/air-traffic-queries-in-infinidb-early-alpha/
+-   https://www.percona.com/blog/2014/04/21/using-apache-hadoop-and-impala-together-with-mysql-for-data-analysis/
+-   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
+-   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/getting_started/example_datasets/ontime/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/getting_started/example_datasets/ontime/) <!--hide-->

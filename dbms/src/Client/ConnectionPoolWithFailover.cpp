@@ -4,7 +4,7 @@
 #include <Poco/Net/DNS.h>
 
 #include <Common/BitHelpers.h>
-#include <Common/getFQDNOrHostName.h>
+#include <common/getFQDNOrHostName.h>
 #include <Common/isLocalAddress.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
@@ -23,6 +23,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
     extern const int NETWORK_ERROR;
     extern const int SOCKET_TIMEOUT;
     extern const int LOGICAL_ERROR;

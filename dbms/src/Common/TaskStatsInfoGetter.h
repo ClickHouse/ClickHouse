@@ -16,10 +16,7 @@ public:
     TaskStatsInfoGetter();
     ~TaskStatsInfoGetter();
 
-    void getStat(::taskstats & stat, pid_t tid);
-
-    /// Make a syscall and returns Linux thread id
-    static pid_t getCurrentTID();
+    void getStat(::taskstats & out_stats, pid_t tid);
 
     /// Whether the current process has permissions (sudo or cap_net_admin capabilties) to get taskstats info
     static bool checkPermissions();

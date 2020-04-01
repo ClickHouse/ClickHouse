@@ -44,7 +44,7 @@ def test():
     send_query('DROP TABLE IF EXISTS test.lv').read()
     send_query('DROP TABLE IF EXISTS test.mt').read()
     send_query('CREATE TABLE test.mt (a Int32) Engine=MergeTree order by tuple()').read()
-    send_query('CREATE TEMPORARY LIVE VIEW test.lv AS SELECT sum(a) FROM test.mt').read()
+    send_query('CREATE LIVE VIEW test.lv WITH TIMEOUT AS SELECT sum(a) FROM test.mt').read()
 
     q = queue.Queue()
     p = send_query_in_process_group('WATCH test.lv')

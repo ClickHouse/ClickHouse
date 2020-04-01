@@ -1,10 +1,10 @@
-<div dir="rtl" markdown="1">
+<div markdown="1" markdown="1" dir="rtl">
 
-# DateTime
+# DateTime {#data_type-datetime}
 
 تاریخ با ساعت 4 بایت به صورت Unix timestamp ذخیره می کند (unsigned). به شما اجازه ی ذخیره سازی در محدوده ی تایپ Date را می دهد. حداقل مقدار در خروجی 0000-00-00 00:00:00 می باشد. زمان با دقت تا یک ثانیه ذخیره می شود.
 
-## Time zones
+## Time zones {#time-zones}
 
 این type از text به باینری تبدیل می شود، و در هنگام برگشت با توجه به time zone سرور، در زمانی که کلاینت یا سرور شروع به کار می کند تبدیل می شود. در فرمت text، اطلاعات DST از دست می رود.
 
@@ -14,4 +14,4 @@
 
 </div>
 
-[مقاله اصلی](https://clickhouse.yandex/docs/fa/data_types/datetime/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/fa/data_types/datetime/) <!--hide-->

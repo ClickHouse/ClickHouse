@@ -33,7 +33,7 @@ public:
     explicit ThreadPoolImpl(size_t max_threads_);
 
     /// queue_size - maximum number of running plus scheduled jobs. It can be greater than max_threads. Zero means unlimited.
-    ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_);
+    ThreadPoolImpl(size_t max_threads_, size_t max_free_threads_, size_t queue_size_, bool shutdown_on_exception_ = true);
 
     /// Add new job. Locks until number of scheduled jobs is less than maximum or exception in one of threads was thrown.
     /// If any thread was throw an exception, first exception will be rethrown from this method,
@@ -79,6 +79,7 @@ private:
 
     size_t scheduled_jobs = 0;
     bool shutdown = false;
+    const bool shutdown_on_exception = true;
 
     struct JobWithPriority
     {
@@ -128,7 +129,7 @@ using FreeThreadPool = ThreadPoolImpl<std::thread>;
 class GlobalThreadPool : public FreeThreadPool, private boost::noncopyable
 {
 public:
-    GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000) {}
+    GlobalThreadPool() : FreeThreadPool(10000, 1000, 10000, false) {}
     static GlobalThreadPool & instance();
 };
 
@@ -151,9 +152,17 @@ public:
             func = std::forward<Function>(func),
             args = std::make_tuple(std::forward<Args>(args)...)]
         {
+            try
             {
+                /// Thread status holds raw pointer on query context, thus it always must be destroyed
+                /// before sending signal that permits to join this thread.
                 DB::ThreadStatus thread_status;
                 std::apply(func, args);
+            }
+            catch (...)
+            {
+                state->set();
+                throw;
             }
             state->set();
         });
@@ -207,18 +216,3 @@ private:
 
 /// Recommended thread pool for the case when multiple thread pools are created and destroyed.
 using ThreadPool = ThreadPoolImpl<ThreadFromGlobalPool>;
-
-
-/// Allows to save first catched exception in jobs and postpone its rethrow.
-class ExceptionHandler
-{
-public:
-    void setException(std::exception_ptr && exception);
-    void throwIfException();
-
-private:
-    std::exception_ptr first_exception;
-    std::mutex mutex;
-};
-
-ThreadPool::Job createExceptionHandledJob(ThreadPool::Job job, ExceptionHandler & handler);

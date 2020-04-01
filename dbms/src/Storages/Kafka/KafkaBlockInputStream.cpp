@@ -8,6 +8,10 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 KafkaBlockInputStream::KafkaBlockInputStream(
     StorageKafka & storage_, const Context & context_, const Names & columns, size_t max_block_size_, bool commit_in_suffix_)
     : storage(storage_)
@@ -52,15 +56,20 @@ void KafkaBlockInputStream::readPrefixImpl()
     if (!buffer)
         return;
 
-    buffer->subscribe(storage.getTopics());
+    buffer->subscribe();
 
     broken = true;
 }
 
 Block KafkaBlockInputStream::readImpl()
 {
-    if (!buffer)
+    if (!buffer || finished)
         return Block();
+
+    finished = true;
+    // now it's one-time usage InputStream
+    // one block of the needed size (or with desired flush timeout) is formed in one internal iteration
+    // otherwise external iteration will reuse that and logic will became even more fuzzy
 
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
@@ -126,22 +135,24 @@ Block KafkaBlockInputStream::readImpl()
 
         auto new_rows = read_kafka_message();
 
-        auto _topic         = buffer->currentTopic();
-        auto _key           = buffer->currentKey();
-        auto _offset        = buffer->currentOffset();
-        auto _partition     = buffer->currentPartition();
-        auto _timestamp_raw = buffer->currentTimestamp();
-        auto _timestamp     = _timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(_timestamp_raw->get_timestamp()).count()
+        buffer->storeLastReadMessageOffset();
+
+        auto topic         = buffer->currentTopic();
+        auto key           = buffer->currentKey();
+        auto offset        = buffer->currentOffset();
+        auto partition     = buffer->currentPartition();
+        auto timestamp_raw = buffer->currentTimestamp();
+        auto timestamp     = timestamp_raw ? std::chrono::duration_cast<std::chrono::seconds>(timestamp_raw->get_timestamp()).count()
                                                 : 0;
         for (size_t i = 0; i < new_rows; ++i)
         {
-            virtual_columns[0]->insert(_topic);
-            virtual_columns[1]->insert(_key);
-            virtual_columns[2]->insert(_offset);
-            virtual_columns[3]->insert(_partition);
-            if (_timestamp_raw)
+            virtual_columns[0]->insert(topic);
+            virtual_columns[1]->insert(key);
+            virtual_columns[2]->insert(offset);
+            virtual_columns[3]->insert(partition);
+            if (timestamp_raw)
             {
-                virtual_columns[4]->insert(_timestamp);
+                virtual_columns[4]->insert(timestamp);
             }
             else
             {
@@ -151,11 +162,18 @@ Block KafkaBlockInputStream::readImpl()
 
         total_rows = total_rows + new_rows;
         buffer->allowNext();
-        if (!new_rows || total_rows >= max_block_size || !checkTimeLimit())
+
+        if (buffer->hasMorePolledMessages())
+        {
+            continue;
+        }
+        if (total_rows >= max_block_size || !checkTimeLimit())
+        {
             break;
+        }
     }
 
-    if (total_rows == 0)
+    if (buffer->rebalanceHappened() || total_rows == 0)
         return Block();
 
     /// MATERIALIZED columns can be added here, but I think
@@ -181,8 +199,6 @@ Block KafkaBlockInputStream::readImpl()
 
 void KafkaBlockInputStream::readSuffixImpl()
 {
-    broken = false;
-
     if (commit_in_suffix)
         commit();
 }
@@ -193,6 +209,8 @@ void KafkaBlockInputStream::commit()
         return;
 
     buffer->commit();
+
+    broken = false;
 }
 
 }

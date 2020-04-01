@@ -1,23 +1,41 @@
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/Quota.h>
 #include <Access/RowPolicy.h>
+#include <Access/User.h>
+#include <Access/SettingsProfile.h>
+#include <Dictionaries/IDictionary.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/MD5Engine.h>
+#include <common/logger_useful.h>
+#include <boost/range/algorithm/copy.hpp>
+#include <boost/range/adaptor/map.hpp>
 #include <cstring>
 
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int UNKNOWN_ADDRESS_PATTERN_TYPE;
+    extern const int NOT_IMPLEMENTED;
+}
+
+
 namespace
 {
     char getTypeChar(std::type_index type)
     {
+        if (type == typeid(User))
+            return 'U';
         if (type == typeid(Quota))
             return 'Q';
         if (type == typeid(RowPolicy))
             return 'P';
+        if (type == typeid(SettingsProfile))
+            return 'S';
         return 0;
     }
 
@@ -37,7 +55,148 @@ namespace
 
     UUID generateID(const IAccessEntity & entity) { return generateID(entity.getType(), entity.getFullName()); }
 
-    QuotaPtr parseQuota(const Poco::Util::AbstractConfiguration & config, const String & quota_name, const Strings & user_names)
+    UserPtr parseUser(const Poco::Util::AbstractConfiguration & config, const String & user_name)
+    {
+        auto user = std::make_shared<User>();
+        user->setName(user_name);
+
+        String user_config = "users." + user_name;
+
+        bool has_password = config.has(user_config + ".password");
+        bool has_password_sha256_hex = config.has(user_config + ".password_sha256_hex");
+        bool has_password_double_sha1_hex = config.has(user_config + ".password_double_sha1_hex");
+
+        if (has_password + has_password_sha256_hex + has_password_double_sha1_hex > 1)
+            throw Exception("More than one field of 'password', 'password_sha256_hex', 'password_double_sha1_hex' is used to specify password for user " + user_name + ". Must be only one of them.",
+                ErrorCodes::BAD_ARGUMENTS);
+
+        if (!has_password && !has_password_sha256_hex && !has_password_double_sha1_hex)
+            throw Exception("Either 'password' or 'password_sha256_hex' or 'password_double_sha1_hex' must be specified for user " + user_name + ".", ErrorCodes::BAD_ARGUMENTS);
+
+        if (has_password)
+        {
+            user->authentication = Authentication{Authentication::PLAINTEXT_PASSWORD};
+            user->authentication.setPassword(config.getString(user_config + ".password"));
+        }
+        else if (has_password_sha256_hex)
+        {
+            user->authentication = Authentication{Authentication::SHA256_PASSWORD};
+            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_sha256_hex"));
+        }
+        else if (has_password_double_sha1_hex)
+        {
+            user->authentication = Authentication{Authentication::DOUBLE_SHA1_PASSWORD};
+            user->authentication.setPasswordHashHex(config.getString(user_config + ".password_double_sha1_hex"));
+        }
+
+        const auto profile_name_config = user_config + ".profile";
+        if (config.has(profile_name_config))
+        {
+            auto profile_name = config.getString(profile_name_config);
+            SettingsProfileElement profile_element;
+            profile_element.parent_profile = generateID(typeid(SettingsProfile), profile_name);
+            user->settings.push_back(std::move(profile_element));
+        }
+
+        /// Fill list of allowed hosts.
+        const auto networks_config = user_config + ".networks";
+        if (config.has(networks_config))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(networks_config, keys);
+            user->allowed_client_hosts.clear();
+            for (const String & key : keys)
+            {
+                String value = config.getString(networks_config + "." + key);
+                if (key.starts_with("ip"))
+                    user->allowed_client_hosts.addSubnet(value);
+                else if (key.starts_with("host_regexp"))
+                    user->allowed_client_hosts.addNameRegexp(value);
+                else if (key.starts_with("host"))
+                    user->allowed_client_hosts.addName(value);
+                else
+                    throw Exception("Unknown address pattern type: " + key, ErrorCodes::UNKNOWN_ADDRESS_PATTERN_TYPE);
+            }
+        }
+
+        /// Fill list of allowed databases.
+        const auto databases_config = user_config + ".allow_databases";
+        std::optional<Strings> databases;
+        if (config.has(databases_config))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(databases_config, keys);
+            databases.emplace();
+            databases->reserve(keys.size());
+            for (const auto & key : keys)
+            {
+                const auto database_name = config.getString(databases_config + "." + key);
+                databases->push_back(database_name);
+            }
+        }
+
+        /// Fill list of allowed dictionaries.
+        const auto dictionaries_config = user_config + ".allow_dictionaries";
+        std::optional<Strings> dictionaries;
+        if (config.has(dictionaries_config))
+        {
+            Poco::Util::AbstractConfiguration::Keys keys;
+            config.keys(dictionaries_config, keys);
+            dictionaries.emplace();
+            dictionaries->reserve(keys.size());
+            for (const auto & key : keys)
+            {
+                const auto dictionary_name = config.getString(dictionaries_config + "." + key);
+                dictionaries->push_back(dictionary_name);
+            }
+        }
+
+        user->access.grant(AccessType::ALL); /// By default all databases are accessible.
+
+        if (databases)
+        {
+            user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
+            user->access.grant(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
+            for (const String & database : *databases)
+                user->access.grant(AccessFlags::allFlags(), database);
+        }
+
+        if (dictionaries)
+        {
+            user->access.revoke(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
+            for (const String & dictionary : *dictionaries)
+                user->access.grant(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG, dictionary);
+        }
+
+        user->access_with_grant_option = user->access;
+
+        return user;
+    }
+
+
+    std::vector<AccessEntityPtr> parseUsers(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+    {
+        Poco::Util::AbstractConfiguration::Keys user_names;
+        config.keys("users", user_names);
+
+        std::vector<AccessEntityPtr> users;
+        users.reserve(user_names.size());
+        for (const auto & user_name : user_names)
+        {
+            try
+            {
+                users.push_back(parseUser(config, user_name));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Could not parse user " + backQuote(user_name));
+            }
+        }
+        return users;
+    }
+
+
+    QuotaPtr parseQuota(const Poco::Util::AbstractConfiguration & config, const String & quota_name, const std::vector<UUID> & user_ids)
     {
         auto quota = std::make_shared<Quota>();
         quota->setName(quota_name);
@@ -79,7 +238,7 @@ namespace
             limits.max[ResourceType::EXECUTION_TIME] = Quota::secondsToExecutionTime(config.getUInt64(interval_config + ".execution_time", Quota::UNLIMITED));
         }
 
-        quota->roles = user_names;
+        quota->to_roles.add(user_ids);
 
         return quota;
     }
@@ -89,11 +248,11 @@ namespace
     {
         Poco::Util::AbstractConfiguration::Keys user_names;
         config.keys("users", user_names);
-        std::unordered_map<String, Strings> quota_to_user_names;
+        std::unordered_map<String, std::vector<UUID>> quota_to_user_ids;
         for (const auto & user_name : user_names)
         {
             if (config.has("users." + user_name + ".quota"))
-                quota_to_user_names[config.getString("users." + user_name + ".quota")].push_back(user_name);
+                quota_to_user_ids[config.getString("users." + user_name + ".quota")].push_back(generateID(typeid(User), user_name));
         }
 
         Poco::Util::AbstractConfiguration::Keys quota_names;
@@ -104,8 +263,8 @@ namespace
         {
             try
             {
-                auto it = quota_to_user_names.find(quota_name);
-                const Strings quota_users = (it != quota_to_user_names.end()) ? std::move(it->second) : Strings{};
+                auto it = quota_to_user_ids.find(quota_name);
+                const std::vector<UUID> & quota_users = (it != quota_to_user_ids.end()) ? std::move(it->second) : std::vector<UUID>{};
                 quotas.push_back(parseQuota(config, quota_name, quota_users));
             }
             catch (...)
@@ -119,64 +278,158 @@ namespace
 
     std::vector<AccessEntityPtr> parseRowPolicies(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
     {
-        std::vector<AccessEntityPtr> policies;
+        std::map<std::pair<String /* database */, String /* table */>, std::unordered_map<String /* user */, String /* filter */>> all_filters_map;
         Poco::Util::AbstractConfiguration::Keys user_names;
-        config.keys("users", user_names);
 
-        for (const String & user_name : user_names)
+        try
         {
-            const String databases_config = "users." + user_name + ".databases";
-            if (config.has(databases_config))
+            config.keys("users", user_names);
+            for (const String & user_name : user_names)
             {
-                Poco::Util::AbstractConfiguration::Keys databases;
-                config.keys(databases_config, databases);
-
-                /// Read tables within databases
-                for (const String & database : databases)
+                const String databases_config = "users." + user_name + ".databases";
+                if (config.has(databases_config))
                 {
-                    const String database_config = databases_config + "." + database;
-                    Poco::Util::AbstractConfiguration::Keys keys_in_database_config;
-                    config.keys(database_config, keys_in_database_config);
+                    Poco::Util::AbstractConfiguration::Keys databases;
+                    config.keys(databases_config, databases);
 
-                    /// Read table properties
-                    for (const String & key_in_database_config : keys_in_database_config)
+                    /// Read tables within databases
+                    for (const String & database : databases)
                     {
-                        String table_name = key_in_database_config;
-                        String filter_config = database_config + "." + table_name + ".filter";
+                        const String database_config = databases_config + "." + database;
+                        Poco::Util::AbstractConfiguration::Keys keys_in_database_config;
+                        config.keys(database_config, keys_in_database_config);
 
-                        if (key_in_database_config.starts_with("table["))
+                        /// Read table properties
+                        for (const String & key_in_database_config : keys_in_database_config)
                         {
-                            const auto table_name_config = database_config + "." + table_name + "[@name]";
-                            if (config.has(table_name_config))
-                            {
-                                table_name = config.getString(table_name_config);
-                                filter_config = database_config + ".table[@name='" + table_name + "']";
-                            }
-                        }
+                            String table_name = key_in_database_config;
+                            String filter_config = database_config + "." + table_name + ".filter";
 
-                        if (config.has(filter_config))
-                        {
-                            try
+                            if (key_in_database_config.starts_with("table["))
                             {
-                                auto policy = std::make_shared<RowPolicy>();
-                                policy->setFullName(database, table_name, user_name);
-                                policy->conditions[RowPolicy::SELECT_FILTER] = config.getString(filter_config);
-                                policy->roles.push_back(user_name);
-                                policies.push_back(policy);
+                                const auto table_name_config = database_config + "." + table_name + "[@name]";
+                                if (config.has(table_name_config))
+                                {
+                                    table_name = config.getString(table_name_config);
+                                    filter_config = database_config + ".table[@name='" + table_name + "']";
+                                }
                             }
-                            catch (...)
-                            {
-                                tryLogCurrentException(
-                                    log,
-                                    "Could not parse row policy " + backQuote(user_name) + " on table " + backQuoteIfNeed(database) + "."
-                                        + backQuoteIfNeed(table_name));
-                            }
+
+                            all_filters_map[{database, table_name}][user_name] = config.getString(filter_config);
                         }
                     }
                 }
             }
         }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Could not parse row policies");
+        }
+
+        std::vector<AccessEntityPtr> policies;
+        for (auto & [database_and_table_name, user_to_filters] : all_filters_map)
+        {
+            const auto & [database, table_name] = database_and_table_name;
+            for (const String & user_name : user_names)
+            {
+                auto it = user_to_filters.find(user_name);
+                String filter = (it != user_to_filters.end()) ? it->second : "1";
+
+                auto policy = std::make_shared<RowPolicy>();
+                policy->setFullName(database, table_name, user_name);
+                policy->conditions[RowPolicy::SELECT_FILTER] = filter;
+                policy->to_roles.add(generateID(typeid(User), user_name));
+                policies.push_back(policy);
+            }
+        }
         return policies;
+    }
+
+
+    SettingsProfileElements parseSettingsConstraints(const Poco::Util::AbstractConfiguration & config,
+                                                     const String & path_to_constraints)
+    {
+        SettingsProfileElements profile_elements;
+        Poco::Util::AbstractConfiguration::Keys names;
+        config.keys(path_to_constraints, names);
+        for (const String & name : names)
+        {
+            SettingsProfileElement profile_element;
+            profile_element.name = name;
+            Poco::Util::AbstractConfiguration::Keys constraint_types;
+            String path_to_name = path_to_constraints + "." + name;
+            config.keys(path_to_name, constraint_types);
+            for (const String & constraint_type : constraint_types)
+            {
+                if (constraint_type == "min")
+                    profile_element.min_value = config.getString(path_to_name + "." + constraint_type);
+                else if (constraint_type == "max")
+                    profile_element.max_value = config.getString(path_to_name + "." + constraint_type);
+                else if (constraint_type == "readonly")
+                    profile_element.readonly = true;
+                else
+                    throw Exception("Setting " + constraint_type + " value for " + name + " isn't supported", ErrorCodes::NOT_IMPLEMENTED);
+            }
+            profile_elements.push_back(std::move(profile_element));
+        }
+        return profile_elements;
+    }
+
+    std::shared_ptr<SettingsProfile> parseSettingsProfile(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & profile_name)
+    {
+        auto profile = std::make_shared<SettingsProfile>();
+        profile->setName(profile_name);
+        String profile_config = "profiles." + profile_name;
+
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(profile_config, keys);
+
+        for (const std::string & key : keys)
+        {
+            if (key == "profile" || key.starts_with("profile["))
+            {
+                String parent_profile_name = config.getString(profile_config + "." + key);
+                SettingsProfileElement profile_element;
+                profile_element.parent_profile = generateID(typeid(SettingsProfile), parent_profile_name);
+                profile->elements.emplace_back(std::move(profile_element));
+                continue;
+            }
+
+            if (key == "constraints" || key.starts_with("constraints["))
+            {
+                profile->elements.merge(parseSettingsConstraints(config, profile_config + "." + key));
+                continue;
+            }
+
+            SettingsProfileElement profile_element;
+            profile_element.name = key;
+            profile_element.value = config.getString(profile_config + "." + key);
+            profile->elements.emplace_back(std::move(profile_element));
+        }
+
+        return profile;
+    }
+
+
+    std::vector<AccessEntityPtr> parseSettingsProfiles(const Poco::Util::AbstractConfiguration & config, Poco::Logger * log)
+    {
+        std::vector<AccessEntityPtr> profiles;
+        Poco::Util::AbstractConfiguration::Keys profile_names;
+        config.keys("profiles", profile_names);
+        for (const auto & profile_name : profile_names)
+        {
+            try
+            {
+                profiles.push_back(parseSettingsProfile(config, profile_name));
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Could not parse profile " + backQuote(profile_name));
+            }
+        }
+        return profiles;
     }
 }
 
@@ -186,15 +439,16 @@ UsersConfigAccessStorage::UsersConfigAccessStorage() : IAccessStorage("users.xml
 }
 
 
-UsersConfigAccessStorage::~UsersConfigAccessStorage() {}
-
-
-void UsersConfigAccessStorage::loadFromConfig(const Poco::Util::AbstractConfiguration & config)
+void UsersConfigAccessStorage::setConfiguration(const Poco::Util::AbstractConfiguration & config)
 {
     std::vector<std::pair<UUID, AccessEntityPtr>> all_entities;
+    for (const auto & entity : parseUsers(config, getLogger()))
+        all_entities.emplace_back(generateID(*entity), entity);
     for (const auto & entity : parseQuotas(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
     for (const auto & entity : parseRowPolicies(config, getLogger()))
+        all_entities.emplace_back(generateID(*entity), entity);
+    for (const auto & entity : parseSettingsProfiles(config, getLogger()))
         all_entities.emplace_back(generateID(*entity), entity);
     memory_storage.setAll(all_entities);
 }
@@ -250,13 +504,13 @@ void UsersConfigAccessStorage::updateImpl(const UUID & id, const UpdateFunc &)
 }
 
 
-IAccessStorage::SubscriptionPtr UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
+ext::scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(id, handler);
 }
 
 
-IAccessStorage::SubscriptionPtr UsersConfigAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
+ext::scope_guard UsersConfigAccessStorage::subscribeForChangesImpl(std::type_index type, const OnChangedHandler & handler) const
 {
     return memory_storage.subscribeForChanges(type, handler);
 }

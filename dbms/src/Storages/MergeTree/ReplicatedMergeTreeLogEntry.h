@@ -4,6 +4,7 @@
 #include <Common/ZooKeeper/Types.h>
 #include <Core/Types.h>
 #include <IO/WriteHelpers.h>
+#include <Storages/MergeTree/MergeTreeDataPartType.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -19,8 +20,6 @@ class ReplicatedMergeTreeQueue;
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int UNKNOWN_FORMAT_VERSION;
-    extern const int CANNOT_PARSE_TEXT;
 }
 
 
@@ -33,10 +32,11 @@ struct ReplicatedMergeTreeLogEntryData
         GET_PART,       /// Get the part from another replica.
         MERGE_PARTS,    /// Merge the parts.
         DROP_RANGE,     /// Delete the parts in the specified partition in the specified number range.
-        CLEAR_COLUMN,   /// Drop specific column from specified partition.
-        CLEAR_INDEX,    /// Drop specific index from specified partition.
+        CLEAR_COLUMN,   /// NOTE: Deprecated. Drop specific column from specified partition.
+        CLEAR_INDEX,    /// NOTE: Deprecated. Drop specific index from specified partition.
         REPLACE_RANGE,  /// Drop certain range of partitions and replace them by new ones
         MUTATE_PART,    /// Apply one or several mutations to the part.
+        ALTER_METADATA, /// Apply alter modification according to global /metadata and /columns paths
     };
 
     static String typeToString(Type type)
@@ -50,6 +50,7 @@ struct ReplicatedMergeTreeLogEntryData
             case ReplicatedMergeTreeLogEntryData::CLEAR_INDEX:      return "CLEAR_INDEX";
             case ReplicatedMergeTreeLogEntryData::REPLACE_RANGE:    return "REPLACE_RANGE";
             case ReplicatedMergeTreeLogEntryData::MUTATE_PART:      return "MUTATE_PART";
+            case ReplicatedMergeTreeLogEntryData::ALTER_METADATA:   return "ALTER_METADATA";
             default:
                 throw Exception("Unknown log entry type: " + DB::toString<int>(type), ErrorCodes::LOGICAL_ERROR);
         }
@@ -72,6 +73,7 @@ struct ReplicatedMergeTreeLogEntryData
     /// The name of resulting part for GET_PART and MERGE_PARTS
     /// Part range for DROP_RANGE and CLEAR_COLUMN
     String new_part_name;
+    MergeTreeDataPartType new_part_type;
     String block_id;                        /// For parts of level zero, the block identifier for deduplication (node name in /blocks/).
     mutable String actual_new_part_name;    /// GET_PART could actually fetch a part covering 'new_part_name'.
 
@@ -81,7 +83,7 @@ struct ReplicatedMergeTreeLogEntryData
     String index_name;
 
     /// Force filter by TTL in 'OPTIMIZE ... FINAL' query to remove expired values from old parts
-    ///  without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
+    /// without TTL infos or with outdated TTL infos, e.g. after 'ALTER ... MODIFY TTL' query.
     bool force_ttl = false;
 
     /// For DROP_RANGE, true means that the parts need not be deleted, but moved to the `detached` directory.
@@ -105,10 +107,27 @@ struct ReplicatedMergeTreeLogEntryData
 
     std::shared_ptr<ReplaceRangeEntry> replace_range_entry;
 
+    /// ALTER METADATA and MUTATE PART command
+
+    /// Version of metadata which will be set after this alter
+    /// Also present in MUTATE_PART command, to track mutations
+    /// required for complete alter execution.
+    int alter_version; /// May be equal to -1, if it's normal mutation, not metadata update.
+
+    /// only ALTER METADATA command
+    bool have_mutation; /// If this alter requires additional mutation step, for data update
+
+    String columns_str; /// New columns data corresponding to alter_version
+    String metadata_str; /// New metadata corresponding to alter_version
+
     /// Returns a set of parts that will appear after executing the entry + parts to block
     /// selection of merges. These parts are added to queue.virtual_parts.
     Strings getVirtualPartNames() const
     {
+        /// Doesn't produce any part
+        if (type == ALTER_METADATA)
+            return {};
+
         /// DROP_RANGE does not add a real part, but we must disable merges in that range
         if (type == DROP_RANGE)
             return {new_part_name};
@@ -156,6 +175,12 @@ struct ReplicatedMergeTreeLogEntryData
 
     /// The quorum value (for GET_PART) is a non-zero value when the quorum write is enabled.
     size_t quorum = 0;
+
+    /// If this MUTATE_PART entry caused by alter(modify/drop) query.
+    bool isAlterMutation() const
+    {
+        return type == MUTATE_PART && alter_version != -1;
+    }
 };
 
 
