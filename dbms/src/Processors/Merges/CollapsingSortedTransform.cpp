@@ -29,6 +29,8 @@ CollapsingSortedTransform::CollapsingSortedTransform(
     , description(std::move(description_))
     , sign_column_number(header.getPositionByName(sign_column))
     , out_row_sources_buf(out_row_sources_buf_)
+    , source_chunks(num_inputs)
+    , cursors(num_inputs)
     , chunk_allocator(num_inputs + max_row_refs)
 {
 }
