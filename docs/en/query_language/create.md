@@ -372,7 +372,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
 
 Role is a set of [privileges](grant.md#grant-privileges). A user assigned with a role gets all the privileges of this role. 
 
-A user can be assigned with multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. Along with the roles privileges a user can have another granted privileges which are active independently of applied roles.
+A user can be assigned with multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges assigned directly to it's user account, they are also combined with the privileges granted by roles.
 
 User can have a default role which applies at user login. To set the default role, use the [SET DEFAULT ROLE](misc.md#set-default-role-statement) statement or the [ALTER USER](alter.md#alter-user-statement) statement.
 
