@@ -8,7 +8,7 @@ Elements of ClickHouse access control model:
 - [Row Policy](#row-policy-management)
 
 !!! info "Note"
-    Some of the access control functionality is available through the [users.xml](settings/settings_users.md) server configuration files, but we don't recommend using this way of user permissions management.
+    Some of the access control functionality is available through the [users.xml](settings/settings_users.md) server configuration files, but we don't recommend using this way of user permissions management. Don't combine these methods of access control management, or it may cause unexpected exceptions.
 
 
 ## User account {#user-account-management}
@@ -20,15 +20,18 @@ A user account is a configuration that allows to authorize someone in ClickHouse
 - [Row policies](#row-policy-management) that define filters for rows available for a user.
 - Session settings that apply by default at the user's login.
 
-Privileges to a user account can be granted by the [GRANT](../query_language/grant.md) query or by assigning [roles](#role-management). To revoke privileges from a user ClickHouse provides the [REVOKE](../query_language/revoke.md) query. To assign a row policy to a role, use the [CREATE ROW POLICY](../query_language/create.md#create-row-policy-statement) or the [ALTER ROW POLICY](../query_language/alter.md#alter-row-policy-statement) query.
+Privileges to a user account can be granted by the [GRANT](../query_language/grant.md) query or by assigning [roles](#role-management). To revoke privileges from a user ClickHouse provides the [REVOKE](../query_language/revoke.md) query. To list privileges for a user, use the - [SHOW GRANTS](../query_language/show.md#show-grants-statement) statement.
+
+To assign a row policy to a role, use the [CREATE ROW POLICY](../query_language/create.md#create-row-policy-statement) or the [ALTER ROW POLICY](../query_language/alter.md#alter-row-policy-statement) query.
+
+
 
 User management queries:
 
 - [CREATE USER](../query_language/create.md#create-user-statement)
 - [ALTER USER](../query_language/alter.md#alter-user-statement)
 - [DROP USER](../query_language/misc.md#drop-user-statement)
-- [SHOW GRANTS](../query_language/show.md#show-grants-statement)
-- [SHOW CREATE](../query_language/show.md#show-create-statement)
+- [SHOW CREATE USER](../query_language/show.md#show-create-user-statement)
 
 
 ## Role {#role-management}
