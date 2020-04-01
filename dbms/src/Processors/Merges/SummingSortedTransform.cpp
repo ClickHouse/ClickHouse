@@ -1,13 +1,22 @@
 #include <Processors/Merges/SummingSortedTransform.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Core/Row.h>
-#include <Common/FieldVisitors.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
+#include <Common/StringUtils/StringUtils.h>
+#include <Common/FieldVisitors.h>
+#include <Core/Row.h>
+#include <IO/WriteHelpers.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+    extern const int CORRUPTED_DATA;
+}
 
 namespace
 {
@@ -159,7 +168,7 @@ namespace
                        std::find(column_names_to_sum.begin(), column_names_to_sum.end(), column.name))
                 {
                     // Create aggregator to sum this column
-                    SummingSortedTransform::AggregateDescription desc;
+                    detail::AggregateDescription desc;
                     desc.is_agg_func_type = is_agg_func;
                     desc.column_numbers = {i};
 
@@ -202,7 +211,7 @@ namespace
             }
 
             DataTypes argument_types;
-            SummingSortedTransform::AggregateDescription desc;
+            detail::AggregateDescription desc;
             SummingSortedTransform::MapDescription map_desc;
 
             column_num_it = map.second.begin();
@@ -323,20 +332,52 @@ namespace
 
         chunk.setColumns(std::move(res_columns), num_rows);
     }
+
+    void setRow(Row & row, SortCursor & cursor, const Block & header)
+    {
+        size_t num_columns = row.size();
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            try
+            {
+                cursor->all_columns[i]->get(cursor->pos, row[i]);
+            }
+            catch (...)
+            {
+                tryLogCurrentException(__PRETTY_FUNCTION__);
+
+                /// Find out the name of the column and throw more informative exception.
+
+                String column_name;
+                if (i < header.columns())
+                {
+                    column_name = header.safeGetByPosition(i).name;
+                    break;
+                }
+
+                throw Exception("MergingSortedBlockInputStream failed to read row " + toString(cursor->pos)
+                                + " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
+                                ErrorCodes::CORRUPTED_DATA);
+            }
+        }
+    }
 }
 
 SummingSortedTransform::SummingSortedTransform(
-        size_t num_inputs, const Block & header,
-        SortDescription description_,
-        /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
-        const Names & column_names_to_sum,
-        size_t max_block_size)
-        : IMergingTransform(num_inputs, header, header, true)
-        , columns_definition(defineColumns(header, description_, column_names_to_sum))
-        , merged_data(getMergedDataColumns(header, columns_definition), false, max_block_size)
+    size_t num_inputs, const Block & header,
+    SortDescription description_,
+    /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
+    const Names & column_names_to_sum,
+    size_t max_block_size)
+    : IMergingTransform(num_inputs, header, header, true)
+    , columns_definition(defineColumns(header, description_, column_names_to_sum))
+    , merged_data(getMergedDataColumns(header, columns_definition), false, max_block_size)
+    , description(std::move(description_))
+    , source_chunks(num_inputs)
+    , cursors(num_inputs)
 {
-    size_t num_columns = header.columns();
-    current_row.resize(num_columns);
+    current_row.resize(header.columns());
+    merged_data.initAggregateDescription(columns_definition.columns_to_aggregate);
 }
 
 void SummingSortedTransform::initializeInputs()
@@ -389,7 +430,103 @@ void SummingSortedTransform::work()
     prepareOutputChunk(merged_data);
 
     if (has_output_chunk)
+    {
         finalizeChunk(output_chunk, getOutputs().back().getHeader().columns(), columns_definition);
+        merged_data.initAggregateDescription(columns_definition.columns_to_aggregate);
+    }
+}
+
+void SummingSortedTransform::insertCurrentRowIfNeeded()
+{
+    /// We have nothing to aggregate. It means that it could be non-zero, because we have columns_not_to_aggregate.
+    if (columns_definition.columns_to_aggregate.empty())
+        current_row_is_zero = false;
+
+    for (auto & desc : columns_definition.columns_to_aggregate)
+    {
+        // Do not insert if the aggregation state hasn't been created
+        if (desc.created)
+        {
+            if (desc.is_agg_func_type)
+            {
+                current_row_is_zero = false;
+            }
+            else
+            {
+                try
+                {
+                    desc.function->insertResultInto(desc.state.data(), *desc.merged_column);
+
+                    /// Update zero status of current row
+                    if (desc.column_numbers.size() == 1)
+                    {
+                        // Flag row as non-empty if at least one column number if non-zero
+                        current_row_is_zero = current_row_is_zero && desc.merged_column->isDefaultAt(desc.merged_column->size() - 1);
+                    }
+                    else
+                    {
+                        /// It is sumMapWithOverflow aggregate function.
+                        /// Assume that the row isn't empty in this case (just because it is compatible with previous version)
+                        current_row_is_zero = false;
+                    }
+                }
+                catch (...)
+                {
+                    desc.destroyState();
+                    throw;
+                }
+            }
+            desc.destroyState();
+        }
+        else
+            desc.merged_column->insertDefault();
+    }
+
+    /// If it is "zero" row, then rollback the insertion
+    /// (at this moment we need rollback only cols from columns_to_aggregate)
+    if (current_row_is_zero)
+    {
+        for (auto & desc : columns_definition.columns_to_aggregate)
+            desc.merged_column->popBack(1);
+
+        return;
+    }
+
+    merged_data.insertRow(current_row, columns_definition.column_numbers_not_to_aggregate);
+}
+
+void SummingSortedTransform::addRow(SortCursor & cursor)
+{
+    for (auto & desc : columns_definition.columns_to_aggregate)
+    {
+        if (!desc.created)
+            throw Exception("Logical error in SummingSortedBlockInputStream, there are no description", ErrorCodes::LOGICAL_ERROR);
+
+        if (desc.is_agg_func_type)
+        {
+            // desc.state is not used for AggregateFunction types
+            auto & col = cursor->all_columns[desc.column_numbers[0]];
+            assert_cast<ColumnAggregateFunction &>(*desc.merged_column).insertMergeFrom(*col, cursor->pos);
+        }
+        else
+        {
+            // Specialized case for unary functions
+            if (desc.column_numbers.size() == 1)
+            {
+                auto & col = cursor->all_columns[desc.column_numbers[0]];
+                desc.add_function(desc.function.get(), desc.state.data(), &col, cursor->pos, nullptr);
+            }
+            else
+            {
+                // Gather all source columns into a vector
+                ColumnRawPtrs columns(desc.column_numbers.size());
+                for (size_t i = 0; i < desc.column_numbers.size(); ++i)
+                    columns[i] = cursor->all_columns[desc.column_numbers[i]];
+
+                desc.add_function(desc.function.get(), desc.state.data(), columns.data(), cursor->pos, nullptr);
+            }
+        }
+    }
 }
 
 void SummingSortedTransform::merge()
@@ -403,7 +540,7 @@ void SummingSortedTransform::merge()
         SortCursor current = queue.current();
 
         {
-            RowRef current_key;
+            detail::RowRef current_key;
             current_key.set(current);
 
             if (!has_previous_group)    /// The first key encountered.
@@ -431,7 +568,7 @@ void SummingSortedTransform::merge()
                 return;
             }
 
-            setRow(current_row, current);
+            setRow(current_row, current, getInputs().front().getHeader());
 
             /// Reset aggregation states for next row
             for (auto & desc : columns_definition.columns_to_aggregate)
