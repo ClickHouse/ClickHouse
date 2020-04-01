@@ -74,7 +74,7 @@ Block IBlockInputStream::read()
     }
     else
     {
-        /** If the thread is over, then we will ask all children to abort the execution.
+        /** If the stream is over, then we will ask all children to abort the execution.
           * This makes sense when running a query with LIMIT
           * - there is a situation when all the necessary data has already been read,
           *   but children sources are still working,

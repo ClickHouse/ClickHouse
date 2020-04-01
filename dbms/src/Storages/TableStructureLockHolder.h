@@ -12,11 +12,12 @@ struct TableStructureWriteLockHolder
 {
     void release()
     {
-        *this = {};
+        *this = TableStructureWriteLockHolder();
     }
 
     void releaseAllExceptAlterIntention()
     {
+        new_data_structure_lock.reset();
         structure_lock.reset();
     }
 
@@ -24,7 +25,8 @@ private:
     friend class IStorage;
 
     /// Order is important.
-    std::unique_lock<std::mutex> alter_lock;
+    RWLockImpl::LockHolder alter_intention_lock;
+    RWLockImpl::LockHolder new_data_structure_lock;
     RWLockImpl::LockHolder structure_lock;
 };
 
@@ -32,13 +34,14 @@ struct TableStructureReadLockHolder
 {
     void release()
     {
-        *this = {};
+        *this = TableStructureReadLockHolder();
     }
 
 private:
     friend class IStorage;
 
     /// Order is important.
+    RWLockImpl::LockHolder new_data_structure_lock;
     RWLockImpl::LockHolder structure_lock;
 };
 

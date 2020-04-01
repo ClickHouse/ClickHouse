@@ -1,5 +1,5 @@
 DROP TABLE IF EXISTS d_numbers;
-CREATE TABLE d_numbers (number UInt32) ENGINE = Distributed(test_cluster_two_shards_localhost, system, numbers, rand());
+CREATE TABLE d_numbers (number UInt32) ENGINE = Distributed(test_cluster_two_shards, system, numbers, rand());
 
 SET experimental_use_processors = 1;
 

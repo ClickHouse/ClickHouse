@@ -13,7 +13,7 @@ In a “normal” row-oriented DBMS, data is stored in this order:
 
 In other words, all the values related to a row are physically stored next to each other.
 
-Examples of a row-oriented DBMS are MySQL, Postgres, and MS SQL Server. {: .grey }
+Examples of a row-oriented DBMS are MySQL, Postgres, and MS SQL Server.
 
 In a column-oriented DBMS, data is stored like this:
 
@@ -27,7 +27,7 @@ In a column-oriented DBMS, data is stored like this:
 
 These examples only show the order that data is arranged in. The values from different columns are stored separately, and data from the same column is stored together.
 
-Examples of a column-oriented DBMS: Vertica, Paraccel (Actian Matrix and Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise and Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, and kdb+. {: .grey }
+Examples of a column-oriented DBMS: Vertica, Paraccel (Actian Matrix and Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise and Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, and kdb+.
 
 Different orders for storing data are better suited to different scenarios. The data access scenario refers to what queries are made, how often, and in what proportion; how much data is read for each type of query – rows, columns, and bytes; the relationship between reading and updating data; the working size of the data and how locally it is used; whether transactions are used, and how isolated they are; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
 

@@ -98,7 +98,7 @@ void QueryPipeline::init(Pipes pipes)
             totals.emplace_back(totals_port);
         }
 
-        streams.addStream(&pipe.getPort());
+        streams.addStream(&pipe.getPort(), pipe.maxParallelStreams());
         auto cur_processors = std::move(pipe).detachProcessors();
         processors.insert(processors.end(), cur_processors.begin(), cur_processors.end());
     }
@@ -226,7 +226,7 @@ void QueryPipeline::addPipe(Processors pipe)
     streams.reserve(last->getOutputs().size());
     for (auto & output : last->getOutputs())
     {
-        streams.addStream(&output);
+        streams.addStream(&output, 0);
         if (header)
             assertBlocksHaveEqualStructure(header, output.getHeader(), "QueryPipeline");
         else
@@ -245,7 +245,7 @@ void QueryPipeline::addDelayedStream(ProcessorPtr source)
     assertBlocksHaveEqualStructure(current_header, source->getOutputs().front().getHeader(), "QueryPipeline");
 
     IProcessor::PortNumbers delayed_streams = { streams.size() };
-    streams.addStream(&source->getOutputs().front());
+    streams.addStream(&source->getOutputs().front(), 0);
     processors.emplace_back(std::move(source));
 
     auto processor = std::make_shared<DelayedPortsProcessor>(current_header, streams.size(), delayed_streams);
@@ -275,7 +275,7 @@ void QueryPipeline::resize(size_t num_streams, bool force, bool strict)
     streams.clear();
     streams.reserve(num_streams);
     for (auto & output : resize->getOutputs())
-        streams.addStream(&output);
+        streams.addStream(&output, 0);
 
     processors.emplace_back(std::move(resize));
 }
@@ -645,6 +645,7 @@ Pipe QueryPipeline::getPipe() &&
 {
     resize(1);
     Pipe pipe(std::move(processors), streams.at(0), totals_having_port);
+    pipe.max_parallel_streams = streams.maxParallelStreams();
 
     for (auto & lock : table_locks)
         pipe.addTableLock(lock);
