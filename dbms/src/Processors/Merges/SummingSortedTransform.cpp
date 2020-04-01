@@ -265,6 +265,8 @@ namespace
                 def.maps_to_sum.emplace_back(std::move(map_desc));
             }
         }
+
+        return def;
     }
 
     MutableColumns getMergedDataColumns(
