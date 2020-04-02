@@ -200,14 +200,10 @@ static String getUniqueName(ActionsVisitor::Data & data, const String & prefix)
     auto & block = data.getSampleBlock();
     auto result = prefix;
 
-    if (block.has(result))
+    while (block.has(result))
     {
-        do
-        {
-            result = prefix + "_" + toString(data.next_unique_suffix);
-            ++data.next_unique_suffix;
-        }
-        while (block.has(result));
+        result = prefix + "_" + toString(data.next_unique_suffix);
+        ++data.next_unique_suffix;
     }
 
     return result;
