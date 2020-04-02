@@ -90,9 +90,9 @@ enum class AccessType
     M(ALTER_ROLE, "", GLOBAL, ALL) \
     M(DROP_ROLE, "", GLOBAL, ALL) \
     M(ROLE_ADMIN, "", GLOBAL, ALL) /* allows to grant and revoke the roles which are not granted to the current user with admin option */\
-    M(CREATE_POLICY, "CREATE ROW POLICY", GLOBAL, ALL) \
-    M(ALTER_POLICY, "ALTER ROW POLICY", GLOBAL, ALL) \
-    M(DROP_POLICY, "DROP ROW POLICY", GLOBAL, ALL) \
+    M(CREATE_ROW_POLICY, "CREATE POLICY", GLOBAL, ALL) \
+    M(ALTER_ROW_POLICY, "ALTER POLICY", GLOBAL, ALL) \
+    M(DROP_ROW_POLICY, "DROP POLICY", GLOBAL, ALL) \
     M(CREATE_QUOTA, "", GLOBAL, ALL) \
     M(ALTER_QUOTA, "", GLOBAL, ALL) \
     M(DROP_QUOTA, "", GLOBAL, ALL) \

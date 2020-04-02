@@ -411,7 +411,7 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
 
     static const AccessFlags all_dcl = AccessType::CREATE_USER | AccessType::ALTER_USER | AccessType::DROP_USER
                                      | AccessType::CREATE_ROLE | AccessType::ALTER_ROLE | AccessType::DROP_ROLE | AccessType::ROLE_ADMIN
-                                     | AccessType::CREATE_POLICY | AccessType::ALTER_POLICY | AccessType::DROP_POLICY
+                                     | AccessType::CREATE_ROW_POLICY | AccessType::ALTER_ROW_POLICY | AccessType::DROP_ROW_POLICY
                                      | AccessType::CREATE_SETTINGS_PROFILE | AccessType::ALTER_SETTINGS_PROFILE | AccessType::DROP_SETTINGS_PROFILE
                                      | AccessType::CREATE_QUOTA | AccessType::ALTER_QUOTA | AccessType::DROP_QUOTA;
 
