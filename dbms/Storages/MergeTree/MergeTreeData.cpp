@@ -192,7 +192,7 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
+    setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
 
     /// format_file always contained on any data path
     PathWithDisk version_file;
@@ -610,14 +610,17 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 }
 
 
-void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
+void MergeTreeData::setTTLExpressions(const ColumnsDescription & columns,
         const ASTPtr & new_ttl_table_ast, bool only_check)
 {
-    auto create_ttl_entry = [this](ASTPtr ttl_ast)
+
+    auto new_column_ttls = columns.getColumnTTLs();
+
+    auto create_ttl_entry = [this, &columns](ASTPtr ttl_ast)
     {
         TTLEntry result;
 
-        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, getColumns().getAllPhysical());
+        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, columns.getAllPhysical());
         result.expression = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
         result.destination_type = PartDestinationType::DELETE;
         result.result_column = ttl_ast->getColumnName();
@@ -1500,7 +1503,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
     setProperties(metadata, /* only_check = */ true);
 
-    setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast, /* only_check = */ true);
+    setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast, /* only_check = */ true);
 
     if (settings_ast)
     {

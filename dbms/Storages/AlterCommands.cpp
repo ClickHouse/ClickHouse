@@ -12,6 +12,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/RenameColumnVisitor.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -451,6 +452,19 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
     else if (type == RENAME_COLUMN)
     {
         metadata.columns.rename(column_name, rename_to);
+        RenameColumnData rename_data{column_name, rename_to};
+        RenameColumnVisitor rename_visitor(rename_data);
+        for (auto & column : metadata.columns)
+        {
+            metadata.columns.modify(column.name, [&](ColumnDescription & column_to_modify) {
+                if (column_to_modify.default_desc.expression)
+                    rename_visitor.visit(column_to_modify.default_desc.expression);
+                if (column_to_modify.ttl)
+                    rename_visitor.visit(column_to_modify.ttl);
+            });
+        }
+        if (metadata.ttl_for_table_ast)
+            rename_visitor.visit(metadata.ttl_for_table_ast);
     }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
