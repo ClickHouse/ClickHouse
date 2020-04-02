@@ -151,7 +151,7 @@ ENGINE = <Engine>
 Si un codec est spécifié, le codec par défaut ne s'applique pas. Les Codecs peuvent être combinés dans un pipeline, par exemple, `CODEC(Delta, ZSTD)`. Pour sélectionner la meilleure combinaison de codecs pour votre projet, passez des benchmarks similaires à ceux décrits dans Altinity [Nouveaux encodages pour améliorer L'efficacité du ClickHouse](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article.
 
 !!! warning "Avertissement"
-    Vous ne pouvez pas décompresser les fichiers de base de données ClickHouse avec des utilitaires externes tels que `lz4`. Au lieu de cela, utilisez le spécial [clickhouse-compresseur](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/programs/compressor) utilitaire.
+    Vous ne pouvez pas décompresser les fichiers de base de données ClickHouse avec des utilitaires externes tels que `lz4`. Au lieu de cela, utilisez le spécial [clickhouse-compresseur](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utilitaire.
 
 La Compression est prise en charge pour les moteurs de tableau suivants:
 
