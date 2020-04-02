@@ -55,7 +55,6 @@ namespace
         }
 #else
         UNUSED(info);
-        UNUSED(write_trace_iteration);
 #endif
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
