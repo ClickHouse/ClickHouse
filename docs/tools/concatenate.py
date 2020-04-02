@@ -5,14 +5,30 @@ import re
 import os
 
 
-def concatenate(lang, docs_path, single_page_file):
-    proj_config = os.path.join(docs_path, 'toc_%s.yml' % lang)
+def recursive_items(dictionary):
+    if isinstance(dictionary, dict):
+        for key, value in dictionary.items():
+            if isinstance(value, dict):
+                yield (key, value)
+                yield from recursive_items(value)
+            else:
+                yield (key, value)
+    elif isinstance(dictionary, list):
+        for value in dictionary:
+            yield from recursive_items(value)
+
+
+def concatenate(lang, docs_path, single_page_file, nav):
     lang_path = os.path.join(docs_path, lang)
     az_re = re.compile(r'[a-z]')
 
-    with open(proj_config) as cfg_file:
-        files_to_concatenate = [(l[l.index(':') + 1:]).strip(" '\n") for l in cfg_file
-                        if '.md' in l and 'single_page' not in l]
+    proj_config = f'{docs_path}/toc_{lang}'
+    if os.path.exists(f'{docs_path}/toc_{lang}'):
+        with open(proj_config) as cfg_file:
+            files_to_concatenate = [(l[l.index(':') + 1:]).strip(" '\n") for l in cfg_file]
+    else:
+        files_to_concatenate = [v for k, v in recursive_items(nav)]
+        files_to_concatenate = [v for v in files_to_concatenate if '.md' in v and 'single_page' not in v]
 
     files_count = len(files_to_concatenate)
     logging.info(f'{files_count} files will be concatenated into single md-file for {lang}.')

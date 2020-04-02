@@ -161,8 +161,6 @@ def build_for_lang(lang, args):
             plugins.append('htmlproofer')
 
         raw_config = dict(
-            # config_file=config_path,
-            nav=build_nav(lang, args),
             site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
             site_url=f'https://clickhouse.tech/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
@@ -189,6 +187,13 @@ def build_for_lang(lang, args):
             }
         )
 
+        if os.path.exists(config_path):
+            nav = None
+            raw_config['config_file'] = config_path
+        else:
+            nav = build_nav(lang, args)
+            raw_config['nav'] = nav
+
         cfg = config.load_config(**raw_config)
 
         try:
@@ -200,7 +205,7 @@ def build_for_lang(lang, args):
             mkdocs_build.build(cfg)
 
         if not args.skip_single_page:
-            build_single_page_version(lang, args, cfg)
+            build_single_page_version(lang, args, nav, cfg)
 
         mdx_clickhouse.PatchedMacrosPlugin.disabled = False
 
@@ -210,14 +215,14 @@ def build_for_lang(lang, args):
         raise SystemExit('\n' + str(e))
 
 
-def build_single_page_version(lang, args, cfg):
+def build_single_page_version(lang, args, nav, cfg):
     logging.info(f'Building single page version for {lang}')
     os.environ['SINGLE_PAGE'] = '1'
     extra = cfg.data['extra']
     extra['single_page'] = True
 
     with util.autoremoved_file(os.path.join(args.docs_dir, lang, 'single.md')) as single_md:
-        concatenate(lang, args.docs_dir, single_md)
+        concatenate(lang, args.docs_dir, single_md, nav)
 
         with util.temp_dir() as site_temp:
             with util.temp_dir() as docs_temp:
