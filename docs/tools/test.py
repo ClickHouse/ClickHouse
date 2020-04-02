@@ -36,11 +36,11 @@ def test_single_page(input_path, lang):
             logging.warning('Found %d duplicate anchor points' % duplicate_anchor_points)
 
         if lang == 'en' and links_to_nowhere:
-            print(f'Found {links_to_nowhere} links to nowhere', file=sys.stderr)
+            logging.warning(f'Found {links_to_nowhere} links to nowhere')
             # TODO: restore sys.exit(1)
 
         if len(anchor_points) <= 10:
-            print('Html parsing is probably broken', file=sys.stderr)
+            logging.error('Html parsing is probably broken')
             sys.exit(1)
 
 
