@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Diccionarios jerárquicos {#hierarchical-dictionaries}
 
 ClickHouse soporta diccionarios jerárquicos con un [llave numérica](external_dicts_dict_structure.md#ext_dict-numeric-key).

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # file {#file}
 
 Crea una tabla a partir de un archivo. Esta función de tabla es similar a [URL](url.md) y [Hdfs](hdfs.md) Aquel.

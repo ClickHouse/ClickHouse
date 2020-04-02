@@ -96,8 +96,6 @@ To view your clusters, use the ‘system.clusters’ table.
 
 The Distributed engine allows working with a cluster like a local server. However, the cluster is inextensible: you must write its configuration in the server config file (even better, for all the cluster’s servers).
 
-There is no support for Distributed tables that look at other Distributed tables (except in cases when a Distributed table only has one shard). As an alternative, make the Distributed table look at the “final” tables.
-
 The Distributed engine requires writing clusters to the config file. Clusters from the config file are updated on the fly, without restarting the server. If you need to send a query to an unknown set of shards and replicas each time, you don’t need to create a Distributed table – use the ‘remote’ table function instead. See the section [Table functions](../../query_language/table_functions/index.md).
 
 There are two methods for writing data to a cluster:

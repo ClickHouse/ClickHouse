@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Tablas del sistema {#system-tables}
 
 Las tablas del sistema se utilizan para implementar parte de la funcionalidad del sistema y para proporcionar acceso a información sobre cómo funciona el sistema.
@@ -252,7 +256,7 @@ Columna:
 -   `value` ([Int64](../data_types/int_uint.md)) — Valor métrico.
 -   `description` ([Cadena](../data_types/string.md)) — Descripción métrica.
 
-La lista de métricas admitidas que puede encontrar en el [dbms/src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Common/CurrentMetrics.cpp) archivo fuente de ClickHouse.
+La lista de métricas admitidas que puede encontrar en el [dbms/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Common/CurrentMetrics.cpp) archivo fuente de ClickHouse.
 
 **Ejemplo**
 

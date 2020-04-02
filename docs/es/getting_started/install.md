@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Instalación {#installation}
 
 ## Requisitos del sistema {#system-requirements}
@@ -104,10 +108,10 @@ Para compilar manualmente ClickHouse, siga las instrucciones para [Linux](../dev
 
 Puede compilar paquetes e instalarlos o usar programas sin instalar paquetes. Además, al construir manualmente, puede deshabilitar el requisito de SSE 4.2 o compilar para CPU AArch64.
 
-      Client: dbms/programs/clickhouse-client
-      Server: dbms/programs/clickhouse-server
+      Client: programs/clickhouse-client
+      Server: programs/clickhouse-server
 
-Tendrá que crear carpetas de datos y metadatos y `chown` para el usuario deseado. Sus rutas se pueden cambiar en la configuración del servidor (src/dbms/programs/server/config .xml), por defecto son:
+Tendrá que crear carpetas de datos y metadatos y `chown` para el usuario deseado. Sus rutas se pueden cambiar en la configuración del servidor (src/programs/server/config .xml), por defecto son:
 
       /opt/clickhouse/data/default/
       /opt/clickhouse/metadata/default/

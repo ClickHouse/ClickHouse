@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # GenerateRandom {#table_engines-generate}
 
 El motor de tabla GenerateRandom produce datos aleatorios para el esquema de tabla determinado.

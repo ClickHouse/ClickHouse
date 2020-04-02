@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Rendimiento {#performance}
 
 De acuerdo con los resultados de las pruebas internas en Yandex, ClickHouse muestra el mejor rendimiento (tanto el mayor rendimiento para consultas largas como la menor latencia en consultas cortas) para escenarios operativos comparables entre los sistemas de su clase que estaban disponibles para pruebas. Puede ver los resultados de la prueba en un [página separada](https://clickhouse.tech/benchmark.html).

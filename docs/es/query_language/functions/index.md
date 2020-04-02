@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Función {#functions}
 
 Hay al menos \* dos tipos de funciones: funciones regulares (simplemente se llaman “functions”) y funciones agregadas. Estos son conceptos completamente diferentes. Las funciones regulares funcionan como si se aplicaran a cada fila por separado (para cada fila, el resultado de la función no depende de las otras filas). Las funciones agregadas acumulan un conjunto de valores de varias filas (es decir,dependen de todo el conjunto de filas).

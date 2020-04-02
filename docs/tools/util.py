@@ -3,6 +3,7 @@ import multiprocessing
 import os
 import shutil
 import sys
+import socket
 import tempfile
 import threading
 
@@ -23,6 +24,23 @@ def autoremoved_file(path):
             yield handle
     finally:
         os.unlink(path)
+
+
+@contextlib.contextmanager
+def cd(new_cwd):
+    old_cwd = os.getcwd()
+    os.chdir(new_cwd)
+    try:
+        yield
+    finally:
+        os.chdir(old_cwd)
+
+
+def get_free_port():
+    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
 
 
 def run_function_in_parallel(func, args_list, threads=False):

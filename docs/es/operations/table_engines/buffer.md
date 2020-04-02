@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Búfer {#buffer}
 
 Almacena los datos para escribir en la memoria RAM, enjuagándolos periódicamente a otra tabla. Durante la operación de lectura, los datos se leen desde el búfer y la otra tabla simultáneamente.

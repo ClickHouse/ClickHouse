@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # MySQL {#mysql}
 
 El motor MySQL le permite realizar `SELECT` Consultas sobre datos almacenados en un servidor MySQL remoto.

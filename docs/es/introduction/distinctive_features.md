@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Características distintivas de ClickHouse {#distinctive-features-of-clickhouse}
 
 ## DBMS orientado a columnas verdaderas {#true-column-oriented-dbms}

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # MySQL {#mysql}
 
 Permite conectarse a bases de datos en un servidor MySQL remoto y realizar `INSERT` y `SELECT` Consultas para intercambiar datos entre ClickHouse y MySQL.

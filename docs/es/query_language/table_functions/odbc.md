@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Nosotros {#table-functions-odbc}
 
 Devuelve la tabla que está conectada a través de [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
