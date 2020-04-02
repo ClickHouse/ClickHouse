@@ -3,7 +3,7 @@
 #include <Poco/Timestamp.h>
 #include "IDictionarySource.h"
 #include <Core/Block.h>
-
+#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -11,14 +11,14 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-class Context;
+// class Context;
 
 /// Allows loading dictionaries from a file with given format, does not support "random access"
 class FileDictionarySource final : public IDictionarySource
 {
 public:
     FileDictionarySource(const std::string & filepath_, const std::string & format_,
-        Block & sample_block_, const Context & context_, bool check_config);
+        Block & sample_block_, Context & context_, bool check_config);
 
     FileDictionarySource(const FileDictionarySource & other);
 
@@ -62,7 +62,7 @@ private:
     const std::string filepath;
     const std::string format;
     Block sample_block;
-    const Context & context;
+    const Context context;
     Poco::Timestamp last_modification;
 };
 

@@ -84,10 +84,11 @@ DictionarySourcePtr DictionarySourceFactory::create(
 {
     Poco::Util::AbstractConfiguration::Keys keys;
     config.keys(config_prefix, keys);
-    if (keys.size() != 1)
-        throw Exception{name + ": element dictionary.source should have exactly one child element",
+    
+    if (keys.empty() || keys.size() > 2)
+        throw Exception{name + ": element dictionary.source should have one or two child elements",
                         ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG};
-
+    
     const auto & source_type = keys.front();
 
     const auto found = registered_sources.find(source_type);

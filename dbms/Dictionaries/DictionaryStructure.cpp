@@ -5,7 +5,6 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Core/Settings.h>
 
 #include <numeric>
 #include <unordered_map>
@@ -196,9 +195,6 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
 
     attributes = getAttributes(config, config_prefix);
 
-    settings = Settings();
-    getSettings(config, config_prefix, settings);
-
     if (attributes.empty())
         throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
 }
@@ -358,32 +354,6 @@ std::vector<DictionaryAttribute> DictionaryStructure::getAttributes(
     }
 
     return res_attributes;
-}
-
-
-void DictionaryStructure::getSettings(
-            const Poco::Util::AbstractConfiguration & config,
-            const std::string & config_prefix,
-            Settings & dict_settings)
-{
-    Poco::Util::AbstractConfiguration::Keys config_elems;
-    config.keys(config_prefix, config_elems);
-
-
-    for (const auto & config_elem : config_elems)
-    {
-        if (startsWith(config_elem, "settings"))
-        {
-            /* i won't do break after this if in case there can be multiple settings sections */
-
-            const auto prefix = config_prefix + '.' + config_elem;
-            Poco::Util::AbstractConfiguration::Keys setting_keys;
-            config.keys(prefix, setting_keys);
-            dict_settings.loadSettingsFromConfig(prefix, config);
-            
-        }
-    }
-
 }
 
 }
