@@ -1201,11 +1201,23 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             * If fits, split it into smaller ones and put them on the stack. If not, discard it.
             * If the segment is already of one mark length, add it to response and discard it.
             */
-        std::vector<MarkRange> ranges_stack{ {0, marks_count} };
+        std::vector<MarkRange> ranges_stack = { {0, marks_count} };
+
+        auto index_block = std::make_shared<Block>();
+        for (size_t i = 0; i < used_key_size; ++i)
+            index_block->insert({index[i], data.primary_key_data_types[i], data.primary_key_columns[i]});
+
+        std::function<FieldRef(size_t, size_t)> create_field_ref;
+        /// If there is no monotonic functions, there is no need to save block reference.
+        /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance while reading the field.
+        if (key_condition.hasMonotonicFunctionsChain())
+            create_field_ref = [&index_block](size_t row, size_t column) -> FieldRef { return {index_block, row, column}; };
+        else
+            create_field_ref = [&index](size_t row, size_t column) -> FieldRef { return (*index[column])[row]; };
 
         /// NOTE Creating temporary Field objects to pass to KeyCondition.
-        Row index_left(used_key_size);
-        Row index_right(used_key_size);
+        std::vector<FieldRef> index_left(used_key_size);
+        std::vector<FieldRef> index_right(used_key_size);
 
         while (!ranges_stack.empty())
         {
@@ -1216,7 +1228,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             if (range.end == marks_count && !has_final_mark)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
-                    index[i]->get(range.begin, index_left[i]);
+                    index_left[i] = create_field_ref(range.begin, i);
 
                 may_be_true = key_condition.mayBeTrueAfter(
                     used_key_size, index_left.data(), data.primary_key_data_types);
@@ -1228,8 +1240,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    index[i]->get(range.begin, index_left[i]);
-                    index[i]->get(range.end, index_right[i]);
+                    index_left[i] = create_field_ref(range.begin, i);
+                    index_right[i] = create_field_ref(range.end, i);
                 }
 
                 may_be_true = key_condition.mayBeTrueInRange(
@@ -1254,9 +1266,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 size_t end;
 
                 for (end = range.end; end > range.begin + step; end -= step)
-                    ranges_stack.push_back(MarkRange(end - step, end));
+                    ranges_stack.emplace_back(end - step, end);
 
-                ranges_stack.push_back(MarkRange(range.begin, end));
+                ranges_stack.emplace_back(range.begin, end);
             }
         }
     }
