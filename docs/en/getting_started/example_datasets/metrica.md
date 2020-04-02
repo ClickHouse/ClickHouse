@@ -1,3 +1,8 @@
+---
+toc_priority: 21
+toc_title: Yandex.Metrica Data
+---
+
 # Anonymized Yandex.Metrica Data {#anonymized-yandex-metrica-data}
 
 Dataset consists of two tables containing anonymized data about hits (`hits_v1`) and visits (`visits_v1`) of Yandex.Metrica. You can read more about Yandex.Metrica in [ClickHouse history](../../introduction/history.md) section.

@@ -50,9 +50,9 @@ def process_md_file(title, idx, original_path, proper_path):
 
     for src, dst in redirects.items():
         content = content.replace('(' + src, '(' + dst)
-        content = content.replace('/' + src, '/' + dst)
+        content = content.replace('../' + src, '../' + dst)
     
-    util.write_md_file(os.path.join(docs_dir, proper_md_path), meta, content)
+    util.write_md_file(proper_md_path, meta, content)
     if original_path != proper_md_path:
         subprocess.check_call(f'git add {proper_md_path}', shell=True)
         if os.path.exists(original_path):

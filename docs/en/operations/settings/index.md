@@ -1,3 +1,9 @@
+---
+toc_folder_title: Settings
+toc_priority: 55
+toc_title: Introduction
+---
+
 # Settings {#settings}
 
 There are multiple ways to make all the settings described below.

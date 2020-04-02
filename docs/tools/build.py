@@ -46,7 +46,7 @@ def build_nav_entry(root):
         return None, None, None
     result_items = []
     index_meta, _ = util.read_md_file(os.path.join(root, 'index.md'))
-    current_title = index_meta.get('toc_folder_title', 'hidden')
+    current_title = index_meta.get('toc_folder_title', index_meta.get('toc_title', 'hidden'))
     for filename in os.listdir(root):
         path = os.path.join(root, filename)
         if os.path.isdir(path):
@@ -56,6 +56,7 @@ def build_nav_entry(root):
         elif filename.endswith('.md'):
             path = os.path.join(root, filename)
             meta, _ = util.read_md_file(path)
+            path = path.split('/', 2)[-1]
             title = meta.get('toc_title', 'hidden')
             prio = meta.get('toc_priority', 9999)
             result_items.append((prio, title, path))
@@ -65,12 +66,15 @@ def build_nav_entry(root):
 
 
 def build_nav(lang, args):
-    # todo: incorrect dic titles, ...
     docs_dir = os.path.join(args.docs_dir, lang)
     _, _, nav = build_nav_entry(docs_dir)
-    import yaml
-    print(yaml.dump(nav))
-    exit(1)
+    # import yaml
+    # print(yaml.dump(nav))
+    # exit(1)
+    result = []
+    for key, value in nav.items():
+        result.append({key: value})
+    return result
 
 
 def build_for_lang(lang, args):

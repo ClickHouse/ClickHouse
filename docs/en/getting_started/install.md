@@ -1,3 +1,8 @@
+---
+toc_priority: 11
+toc_title: Installation
+---
+
 # Installation {#installation}
 
 ## System Requirements {#system-requirements}

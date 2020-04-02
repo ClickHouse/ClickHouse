@@ -1,10 +1,15 @@
+---
+toc_priority: 19
+toc_title: HTTP Interface
+---
+
 # HTTP Interface {#http-interface}
 
 The HTTP interface lets you use ClickHouse on any platform from any programming language. We use it for working from Java and Perl, as well as shell scripts. In other departments, the HTTP interface is used from Perl, Python, and Go. The HTTP interface is more limited than the native interface, but it has better compatibility.
 
 By default, clickhouse-server listens for HTTP on port 8123 (this can be changed in the config).
 
-If you make a GET / request without parameters, it returns 200 response code and the string which defined in [http\_server\_default\_response](../operations/server_settings/settings.md#server_settings-http_server_default_response) default value “Ok.” (with a line feed at the end)
+If you make a GET / request without parameters, it returns 200 response code and the string which defined in [http\_server\_default\_response](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-http_server_default_response) default value “Ok.” (with a line feed at the end)
 
 ``` bash
 $ curl 'http://localhost:8123/'

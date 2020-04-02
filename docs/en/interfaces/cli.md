@@ -1,3 +1,8 @@
+---
+toc_priority: 17
+toc_title: Command-Line Client
+---
+
 # Command-line Client {#command-line-client}
 
 ClickHouse provides a native command-line client: `clickhouse-client`. The client supports command-line options and configuration files. For more information, see [Configuring](#interfaces_cli_configuration).
@@ -82,7 +87,7 @@ Format a query as usual, then place the values that you want to pass from the ap
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Data type](../data_types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../data_types/int_uint.md) types).
+-   `data type` — [Data type](../sql_reference/data_types/index.md) of the app parameter value. For example, a data structure like `(integer, ('string', integer))` can have the `Tuple(UInt8, Tuple(String, UInt8))` data type (you can also use another [integer](../sql_reference/data_types/int_uint.md) types).
 
 #### Example {#example}
 

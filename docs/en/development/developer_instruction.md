@@ -1,3 +1,8 @@
+---
+toc_priority: 61
+toc_title: The Beginner ClickHouse Developer Instruction
+---
+
 Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
 # If you use Windows {#if-you-use-windows}

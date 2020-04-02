@@ -8,9 +8,12 @@ import pandocfilters
 import slugify
 
 import translate
+import util
 
 
 is_debug = os.environ.get('DEBUG') is not None
+
+filename = os.getenv('INPUT')
 
 
 def debug(*args):
@@ -113,7 +116,7 @@ def translate_filter(key, value, _format, _):
                 else:
                     remaining_para_value.append(item)
 
-            break_value = [pandocfilters.LineBreak(),pandocfilters.Str(' ' * 4)]
+            break_value = [pandocfilters.LineBreak(), pandocfilters.Str(' ' * 4)]
             if admonition_value[-1].get('t') == 'Quoted':
                 text = process_sentence(admonition_value[-1]['c'][-1])
                 text[0]['c'] = '"' + text[0]['c']
@@ -139,7 +142,24 @@ def translate_filter(key, value, _format, _):
                 return pandocfilters.Str(value[2][0])
         except IndexError:
             pass
+
         value[1] = process_sentence(value[1])
+        href = value[2][0]
+        if not (href.startswith('http') or href.startswith('#')):
+            anchor = None
+            attempts = 10
+            if '#' in href:
+                href, anchor = href.split('#', 1)
+            
+            if filename:
+                while attempts and not os.path.exists(href):
+                    href = f'../{href}'
+                    attempts -= 1
+            if anchor:
+                href = f'{href}#{anchor}'
+            
+            if attempts:
+                value[2][0] = href
         return cls(*value)
     elif key == 'Header':
         if value[1][0].islower() and '_' not in value[1][0]:  # Preserve some manually specified anchors
@@ -155,4 +175,5 @@ def translate_filter(key, value, _format, _):
 
 
 if __name__ == "__main__":
-    pandocfilters.toJSONFilter(translate_filter)
+    with util.cd(os.path.dirname(filename or '.')):
+        pandocfilters.toJSONFilter(translate_filter)

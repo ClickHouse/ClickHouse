@@ -1,3 +1,8 @@
+---
+toc_priority: 64
+toc_title: How to Build ClickHouse on Linux
+---
+
 # How to Build ClickHouse for Development {#how-to-build-clickhouse-for-development}
 
 The following tutorial is based on the Ubuntu Linux system.

@@ -91,9 +91,9 @@ def write_md_file(path, meta, content):
 
     with open(path, 'w') as f:
         if meta:
-            print('-----', file=f)
+            print('---', file=f)
             yaml.dump(meta, f)
-            print('-----', file=f)
+            print('---', file=f)
             if not content.startswith('\n'):
                 print('', file=f)
         f.write(content)
@@ -108,5 +108,6 @@ def represent_ordereddict(dumper, data):
         value.append((node_key, node_value))
 
     return yaml.nodes.MappingNode(u'tag:yaml.org,2002:map', value)
+
 
 yaml.add_representer(collections.OrderedDict, represent_ordereddict)
