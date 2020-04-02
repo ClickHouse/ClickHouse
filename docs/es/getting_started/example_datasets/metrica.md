@@ -64,4 +64,4 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 [Tutorial de ClickHouse](../../getting_started/tutorial.md) se basa en Yandex.El conjunto de datos de Metrica y la forma recomendada de comenzar con este conjunto de datos es simplemente pasar por el tutorial.
 
-Se pueden encontrar ejemplos adicionales de consultas a estas tablas entre [pruebas estatales](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) de ClickHouse (se nombran `test.hists` y `test.visits` Todos los derechos reservados.
+Se pueden encontrar ejemplos adicionales de consultas a estas tablas entre [pruebas estatales](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) de ClickHouse (se nombran `test.hists` y `test.visits` Todos los derechos reservados.

@@ -101,7 +101,7 @@ def run_vagrant_box_with_env(image_path, output_dir, ch_root):
         logging.info("Running build")
         vagrant.execute_cmd("cd ~/ClickHouse && cmake . && ninja")
         logging.info("Copying binary back")
-        vagrant.copy_from_image("~/ClickHouse/dbms/programs/clickhouse", output_dir)
+        vagrant.copy_from_image("~/ClickHouse/programs/clickhouse", output_dir)
 
 def parse_env_variables(build_type, compiler, sanitizer, package_type, image_type, cache, distcc_hosts, unbundled, split_binary, clang_tidy, version, author, official, alien_pkgs, with_coverage):
     CLANG_PREFIX = "clang"
