@@ -151,7 +151,7 @@ class GraphiteRollupSortedTransform : public IMergingTransform
 {
 public:
     GraphiteRollupSortedTransform(
-        size_t num_inputs, const Block & header,
+        const Block & header, size_t num_inputs,
         SortDescription description_, size_t max_block_size,
         Graphite::Params params_, time_t time_of_merge_);
 

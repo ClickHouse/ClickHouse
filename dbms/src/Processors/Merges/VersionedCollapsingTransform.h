@@ -20,11 +20,11 @@ class VersionedCollapsingTransform final : public IMergingTransform
 public:
     /// Don't need version column. It's in primary key.
     VersionedCollapsingTransform(
-            size_t num_inputs, const Block & header,
-            SortDescription description_, const String & sign_column_,
-            size_t max_block_size,
-            WriteBuffer * out_row_sources_buf_ = nullptr,
-            bool use_average_block_sizes = false);
+        const Block & header, size_t num_inputs,
+        SortDescription description_, const String & sign_column_,
+        size_t max_block_size,
+        WriteBuffer * out_row_sources_buf_ = nullptr,
+        bool use_average_block_sizes = false);
 
     String getName() const override { return "VersionedCollapsingTransform"; }
     void work() override;

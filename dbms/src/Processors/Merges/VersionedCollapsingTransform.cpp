@@ -8,7 +8,7 @@ namespace DB
 static const size_t MAX_ROWS_IN_MULTIVERSION_QUEUE = 8192;
 
 VersionedCollapsingTransform::VersionedCollapsingTransform(
-    size_t num_inputs, const Block & header,
+    const Block & header, size_t num_inputs,
     SortDescription description_, const String & sign_column_,
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
