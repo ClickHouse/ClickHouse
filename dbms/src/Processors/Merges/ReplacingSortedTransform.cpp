@@ -10,7 +10,7 @@ namespace ErrorCodes
 }
 
 ReplacingSortedTransform::ReplacingSortedTransform(
-    size_t num_inputs, const Block & header,
+    const Block & header, size_t num_inputs,
     SortDescription description_, const String & version_column,
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,

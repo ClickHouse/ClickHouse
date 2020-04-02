@@ -19,7 +19,7 @@ class SummingSortedTransform final : public IMergingTransform
 public:
 
     SummingSortedTransform(
-        size_t num_inputs, const Block & header,
+        const Block & header, size_t num_inputs,
         SortDescription description_,
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum,
