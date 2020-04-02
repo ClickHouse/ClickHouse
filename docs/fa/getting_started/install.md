@@ -84,8 +84,8 @@ sudo yum install clickhouse-server clickhouse-client
 
 </div>
 
-    Client: dbms/programs/clickhouse-client
-    Server: dbms/programs/clickhouse-server
+    Client: programs/clickhouse-client
+    Server: programs/clickhouse-server
 
 <div markdown="1" markdown="1" dir="rtl">
 
@@ -100,7 +100,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 (قابل تنظیم در تنظیمات سرور). ‘chown’ را برای کاربر دلخواه اجرا کنید.
 
-به مسیر لاگ ها در تنظیمات سرور توجه کنید (src/dbms/programs/config.xml).
+به مسیر لاگ ها در تنظیمات سرور توجه کنید (src/programs/config.xml).
 
 ### روش های دیگر نصب {#from-docker-image}
 
@@ -165,7 +165,7 @@ clickhouse-client --host=example.com
 </div>
 
 ``` bash
-milovidov@hostname:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
+milovidov@hostname:~/work/metrica/src/dbms/Client$ ./clickhouse-client
 ClickHouse client version 0.0.18749.
 Connecting to localhost:9000.
 Connected to ClickHouse server version 0.0.18749.

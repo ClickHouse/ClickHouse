@@ -79,6 +79,6 @@ cd ..
 ```
 
 若要创建一个执行文件， 执行 `ninja clickhouse`。
-这个命令会使得 `dbms/programs/clickhouse` 文件可执行，您可以使用 `client` or `server` 参数运行。
+这个命令会使得 `programs/clickhouse` 文件可执行，您可以使用 `client` or `server` 参数运行。
 
 [来源文章](https://clickhouse.tech/docs/en/development/build/) <!--hide-->
