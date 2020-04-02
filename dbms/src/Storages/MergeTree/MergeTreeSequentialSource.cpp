@@ -15,7 +15,7 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     bool read_with_direct_io_,
     bool take_column_types_from_storage,
     bool quiet)
-    : SourceWithProgress(storage_.getSampleBlockForColumns(columns_to_read))
+    : SourceWithProgress(storage_.getSampleBlockForColumns(columns_to_read_))
     , storage(storage_)
     , data_part(std::move(data_part_))
     , columns_to_read(std::move(columns_to_read_))
