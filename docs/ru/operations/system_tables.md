@@ -882,11 +882,7 @@ WHERE
 
 Если этот запрос ничего не возвращает - значит всё хорошо.
 
-<<<<<<< HEAD
 ## system.settings  {#system-tables-system-settings}
-=======
-## system.settings {#system-settings}
->>>>>>> 3b716b07bad7cd0457008716980a7f68d229cda0
 
 Содержит информацию о сессионных настройках для текущего пользователя.
 
