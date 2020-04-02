@@ -117,13 +117,19 @@ public:
     {
         if (old_size == new_size)
         {
-            /// nothing to do.
-            /// BTW, it's not possible to change alignment while doing realloc.
+           /// nothing to do.
+           /// BTW, it's not possible to change alignment while doing realloc.
+        }
+        else if (new_size == 0)
+        {
+           /// Equivalent to free(buf).
+            free(buf, old_size);
+            return nullptr;
         }
         else if (old_size < MMAP_THRESHOLD && new_size < MMAP_THRESHOLD
                  && alignment <= MALLOC_MIN_ALIGNMENT)
         {
-            /// Resize malloc'd memory region with no special alignment requirement.
+           /// Resize malloc'd memory region with no special alignment requirement.
             CurrentMemoryTracker::realloc(old_size, new_size);
 
             void * new_buf = ::realloc(buf, new_size);
