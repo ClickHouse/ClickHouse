@@ -614,7 +614,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
     while (*pos < len)
     {
 #if defined(__SSE2__)
-        // NOTE: we assume that `data` string is padded from the right with 15 zero-bytes.
+        // NOTE: we assume that `data` string is padded from the right with 15 bytes.
         const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + *pos));
         const size_t haystack_length = 16;
 
@@ -632,40 +632,40 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
         static const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
         static const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
         static const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
-        static const auto zero  =        _mm_set1_epi8(0);
+        static const auto zero  =             _mm_set1_epi8(0);
 
         // every bit represents if `haystack` character `c` statisfies condition:
         // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
-        // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and hence all chars > 0x80 are negative.
+        // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
         const int result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
                 _mm_cmplt_epi8(haystack, zero),
                 _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end))),
                 _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
                 _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_upper_begin), _mm_cmplt_epi8(haystack, alpha_upper_end))));
 #endif
-        // NOTE: __builtin_ctz family explicitly state that result is UNDEFINED if argument is 0
         if (result_bitmask == 0)
         {
-            // end of token started on previous haystack
             if (*token_len != 0)
+                // end of token started on previous haystack
                 return true;
 
             *pos += haystack_length;
             continue;
         }
 
-        const auto start = getTrailingZeroBits(result_bitmask);
+        const auto token_start_pos_in_current_haystack = getTrailingZeroBitsUnsafe(result_bitmask);
         if (*token_len == 0)
-            *token_start = *pos + start;
-        else if (start != 0)
-            // token is not continued in this haystack
+            // new token
+            *token_start = *pos + token_start_pos_in_current_haystack;
+        else if (token_start_pos_in_current_haystack != 0)
+            // end of token starting in one of previous haystacks
             return true;
 
-        const auto l = getTrailingZeroBits(~(result_bitmask >> start));
-        *token_len += l;
+        const auto token_bytes_in_current_haystack = getTrailingZeroBitsUnsafe(~(result_bitmask >> token_start_pos_in_current_haystack));
+        *token_len += token_bytes_in_current_haystack;
 
-        *pos += start + l;
-        if (start + l == haystack_length)
+        *pos += token_start_pos_in_current_haystack + token_bytes_in_current_haystack;
+        if (token_start_pos_in_current_haystack + token_bytes_in_current_haystack == haystack_length)
             // check if there are leftovers in next `haystack`
             continue;
 
@@ -686,6 +686,14 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
         }
 #endif
     }
+
+#if defined(__SSE2__)
+    // Could happen only if string is not padded with zeroes, and we accidentally hopped over end of data.
+    if (*token_start > len)
+        return false;
+    *token_len = len - *token_start;
+#endif
+
     return *token_len > 0;
 }
 
