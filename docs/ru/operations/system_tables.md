@@ -792,16 +792,16 @@ WHERE
 
 ## system.settings  {#system-tables-system-settings}
 
-Содержит информацию о параметрах конфигурации сервера.
+Содержит информацию о сессионных настройках для текущего пользователя.
 
 Столбцы:
 
-- `name` ([String](../data_types/string.md)) — Имя настройки.
-- `value` ([String](../data_types/string.md)) — Значение настройки.
-- `changed` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Показывает, изменена ли настройка во время сессии.
-- `description` ([String](../data_types/string.md)) — Описание настройки. 
-- `min` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — Минимальное значение параметра. Если не указано минимальное значение, параметр примет [NULL](../query_language/syntax.md#null-literal). 
-- `max` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — Максимальное значение параметра. Если не указано максимальное значение, параметр примет [NULL](../query_language/syntax.md#null-literal). 
+- `name` ([String](../data_types/string.md)) — имя настройки.
+- `value` ([String](../data_types/string.md)) — значение настройки.
+- `changed` ([UInt8](../data_types/int_uint.md#uint-ranges)) — показывает, изменена ли настройка во время сессии.
+- `description` ([String](../data_types/string.md)) — краткое описание настройки. 
+- `min` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — минимальное значение настройки. Если нет, то поле содержит [NULL](../query_language/syntax.md#null-literal). 
+- `max` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — максимальное значение настройки. Если нет, то поле содержит [NULL](../query_language/syntax.md#null-literal). 
 - `readonly` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Показывает, может ли пользователь изменять настройку:
      - `0` — Текущий пользователь может изменять настройку.
      - `1` — Текущий пользователь не может изменять настройку.
@@ -833,7 +833,7 @@ WHERE name LIKE '%min_i%'
 
 - [Настройки](settings/index.md#settings)
 - [Разрешения для запросов](settings/permissions_for_queries.md#settings_readonly)
-- [Ограничения на изменение настроек](settings/settings_users.md)
+- [Ограничения для значений настроек](settings/constraints_on_settings.md)
 
 ## system.table_engines
 
