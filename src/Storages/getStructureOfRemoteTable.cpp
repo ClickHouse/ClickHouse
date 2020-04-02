@@ -12,6 +12,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/quoteString.h>
+#include <Common/NetException.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 
