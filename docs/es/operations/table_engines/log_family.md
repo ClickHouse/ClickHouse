@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Familia del motor de registro {#log-engine-family}
 
 Estos motores fueron desarrollados para escenarios en los que necesita escribir rápidamente muchas tablas pequeñas (hasta aproximadamente 1 millón de filas) y leerlas más tarde en su conjunto.

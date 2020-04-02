@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para trabajar con JSON {#functions-for-working-with-json}
 
 En el Yandex.Metrica, JSON es transmitido por los usuarios como parámetros de sesión. Hay algunas funciones especiales para trabajar con este JSON. (Aunque en la mayoría de los casos, los JSON también se procesan previamente, y los valores resultantes se colocan en columnas separadas en su formato procesado.) Todas estas funciones se basan en sólidas suposiciones sobre lo que puede ser el JSON, pero tratan de hacer lo menos posible para hacer el trabajo.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # File {#table_engines-file}
 
 El motor de tabla de archivos mantiene los datos en un archivo en uno de los [file

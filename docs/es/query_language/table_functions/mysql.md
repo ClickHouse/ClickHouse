@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # mysql {#mysql}
 
 Permitir `SELECT` consultas que se realizarán en los datos que se almacenan en un servidor MySQL remoto.

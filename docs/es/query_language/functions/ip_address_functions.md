@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones para trabajar con direcciones IP {#functions-for-working-with-ip-addresses}
 
 ## Número de código: IPv4NumToString (num) {#ipv4numtostringnum}

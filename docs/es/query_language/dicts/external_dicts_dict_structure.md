@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Clave y campos del diccionario {#dictionary-key-and-fields}
 
 El `<structure>` cláusula describe la clave del diccionario y los campos disponibles para consultas.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # entrada {#input}
 
 `input(structure)` - función de tabla que permite convertir e insertar efectivamente los datos enviados al
