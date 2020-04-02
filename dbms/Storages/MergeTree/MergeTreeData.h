@@ -868,8 +868,9 @@ protected:
 
     void initPartitionKey();
 
-    void setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
-                           const ASTPtr & new_ttl_table_ast, bool only_check = false);
+    void setTTLExpressions(const ColumnsDescription & columns,
+        const ASTPtr & new_ttl_table_ast, bool only_check = false);
+
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy);
 
     void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);

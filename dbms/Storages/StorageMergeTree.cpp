@@ -237,7 +237,7 @@ void StorageMergeTree::alter(
         /// Reinitialize primary key because primary key column types might have changed.
         setProperties(metadata);
 
-        setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
+        setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
 
