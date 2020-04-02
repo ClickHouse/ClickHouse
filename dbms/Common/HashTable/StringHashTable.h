@@ -18,14 +18,17 @@ struct StringKey24
 
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey8 & n)
 {
+    assert(n != 0);
     return {reinterpret_cast<const char *>(&n), 8ul - (__builtin_clzll(n) >> 3)};
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey16 & n)
 {
+    assert(n.high != 0);
     return {reinterpret_cast<const char *>(&n), 16ul - (__builtin_clzll(n.high) >> 3)};
 }
 inline StringRef ALWAYS_INLINE toStringRef(const StringKey24 & n)
 {
+    assert(n.c != 0);
     return {reinterpret_cast<const char *>(&n), 24ul - (__builtin_clzll(n.c) >> 3)};
 }
 
@@ -229,12 +232,20 @@ public:
     template <typename Self, typename KeyHolder, typename Func>
     static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
     {
+        StringHashTableHash hash;
         const StringRef & x = keyHolderGetKey(key_holder);
         const size_t sz = x.size;
         if (sz == 0)
         {
             keyHolderDiscardKey(key_holder);
             return func(self.m0, VoidKey{}, 0);
+        }
+
+        if (x.data[sz - 1] == 0)
+        {
+            // Strings with trailing zeros are not representable as fixed-size
+            // string keys. Put them to the generic table.
+            return func(self.ms, std::forward<KeyHolder>(key_holder), hash(x));
         }
 
         const char * p = x.data;
@@ -247,7 +258,6 @@ public:
             StringKey24 k24;
             UInt64 n[3];
         };
-        StringHashTableHash hash;
         switch ((sz - 1) >> 3)
         {
             case 0: // 1..8 bytes

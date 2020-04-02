@@ -77,12 +77,23 @@ public:
     template <typename Self, typename Func, typename KeyHolder>
     static auto ALWAYS_INLINE dispatch(Self & self, KeyHolder && key_holder, Func && func)
     {
+        StringHashTableHash hash;
         const StringRef & x = keyHolderGetKey(key_holder);
         const size_t sz = x.size;
         if (sz == 0)
         {
             keyHolderDiscardKey(key_holder);
             return func(self.impls[0].m0, VoidKey{}, 0);
+        }
+
+        if (x.data[x.size - 1] == 0)
+        {
+            // Strings with trailing zeros are not representable as fixed-size
+            // string keys. Put them to the generic table.
+            auto res = hash(x);
+            auto buck = getBucketFromHash(res);
+            return func(self.impls[buck].ms, std::forward<KeyHolder>(key_holder),
+                res);
         }
 
         const char * p = x.data;
@@ -95,7 +106,6 @@ public:
             StringKey24 k24;
             UInt64 n[3];
         };
-        StringHashTableHash hash;
         switch ((sz - 1) >> 3)
         {
             case 0:
