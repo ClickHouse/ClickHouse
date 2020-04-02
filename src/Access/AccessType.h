@@ -76,9 +76,7 @@ enum class AccessType
     M(DROP_DICTIONARY, "", DICTIONARY, DROP) /* allows to execute {DROP|DETACH} DICTIONARY */\
     M(DROP, "", GROUP, ALL) /* allows to execute {DROP|DETACH} */\
     \
-    M(TRUNCATE_VIEW, "", VIEW, TRUNCATE) \
-    M(TRUNCATE_TABLE, "", TABLE, TRUNCATE) \
-    M(TRUNCATE, "", GROUP, ALL) \
+    M(TRUNCATE, "TRUNCATE TABLE", TABLE, ALL) \
     M(OPTIMIZE, "OPTIMIZE TABLE", TABLE, ALL) \
     \
     M(KILL_QUERY, "", GLOBAL, ALL) /* allows to kill a query started by another user (anyone can kill his own queries) */\
