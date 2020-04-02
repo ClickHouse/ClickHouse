@@ -1260,4 +1260,15 @@ CheckResults StorageMergeTree::checkData(const ASTPtr & query, const Context & c
     return results;
 }
 
+
+MutationCommands StorageMergeTree::getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const
+{
+    std::lock_guard lock(currently_processing_in_background_mutex);
+
+    auto it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
+    if (it == current_mutations_by_version.end())
+        return {};
+    return it->second.commands;
+}
+
 }

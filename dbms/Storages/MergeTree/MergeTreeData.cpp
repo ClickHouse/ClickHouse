@@ -3608,13 +3608,8 @@ MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const 
 
     AlterConversions result{};
     for (const auto & command : commands)
-    {
         if (command.type == MutationCommand::Type::RENAME_COLUMN)
-        {
             result.rename_map[command.rename_to] = command.column_name;
-            LOG_DEBUG(log, "Add to rename map:" << command.column_name);
-        }
-    }
 
     return result;
 }
