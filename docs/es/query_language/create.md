@@ -151,7 +151,7 @@ ENGINE = <Engine>
 Si se especifica un códec, el códec predeterminado no se aplica. Los códecs se pueden combinar en una tubería, por ejemplo, `CODEC(Delta, ZSTD)`. Para seleccionar la mejor combinación de códecs para su proyecto, pase puntos de referencia similares a los descritos en Altinity [Nuevas codificaciones para mejorar la eficiencia de ClickHouse](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) artículo.
 
 !!! warning "Advertencia"
-    No puede descomprimir archivos de base de datos ClickHouse con utilidades externas como `lz4`. En su lugar, use el especial [Compresor de clickhouse](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/programs/compressor) utilidad.
+    No puede descomprimir archivos de base de datos ClickHouse con utilidades externas como `lz4`. En su lugar, use el especial [Compresor de clickhouse](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utilidad.
 
 La compresión es compatible con los siguientes motores de tablas:
 
