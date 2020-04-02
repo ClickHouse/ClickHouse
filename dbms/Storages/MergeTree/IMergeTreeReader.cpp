@@ -63,11 +63,6 @@ static bool arrayHasNoElementsRead(const IColumn & column)
 }
 
 
-//void IMergeTreeReader::renameColumnsWithAlters(Columns & res_columns)
-//{
-//
-//}
-
 void IMergeTreeReader::fillMissingColumns(Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows)
 {
     try
