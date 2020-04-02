@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
 El estado intermedio de una función agregada. Para obtenerlo, use funciones agregadas con el `-State` sufijo. Para obtener datos agregados en el futuro, debe utilizar las mismas funciones agregadas con el `-Merge`sufijo.

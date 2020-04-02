@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones agregadas {#aggregate-functions}
 
 Las funciones agregadas funcionan en el [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) forma esperada por los expertos en bases de datos.

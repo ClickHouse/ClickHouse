@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Establecer {#set}
 
 Utilizado para la mitad derecha de un [ES](../../query_language/select.md#select-in-operators) expresión.

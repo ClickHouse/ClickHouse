@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Pruebas de ClickHouse {#clickhouse-testing}
 
 ## Pruebas funcionales {#functional-tests}
@@ -6,15 +10,15 @@ Las pruebas funcionales son las más simples y cómodas de usar. La mayoría de 
 
 Cada prueba funcional envía una o varias consultas al servidor ClickHouse en ejecución y compara el resultado con la referencia.
 
-Las pruebas se encuentran en `dbms/tests/queries` Directorio. Hay dos subdirectorios: `stateless` y `stateful`. Las pruebas sin estado ejecutan consultas sin datos de prueba precargados: a menudo crean pequeños conjuntos de datos sintéticos sobre la marcha, dentro de la prueba misma. Las pruebas estatales requieren datos de prueba precargados de Yandex.Métrica y no está disponible para el público en general. Tendemos a usar sólo `stateless` pruebas y evitar la adición de nuevos `stateful` prueba.
+Las pruebas se encuentran en `tests/queries` Directorio. Hay dos subdirectorios: `stateless` y `stateful`. Las pruebas sin estado ejecutan consultas sin datos de prueba precargados: a menudo crean pequeños conjuntos de datos sintéticos sobre la marcha, dentro de la prueba misma. Las pruebas estatales requieren datos de prueba precargados de Yandex.Métrica y no está disponible para el público en general. Tendemos a usar sólo `stateless` pruebas y evitar la adición de nuevos `stateful` prueba.
 
 Cada prueba puede ser de dos tipos: `.sql` y `.sh`. `.sql` prueba es el script SQL simple que se canaliza a `clickhouse-client --multiquery --testmode`. `.sh` test es un script que se ejecuta por sí mismo.
 
-Para ejecutar todas las pruebas, use `dbms/tests/clickhouse-test` herramienta. Mira `--help` para la lista de posibles opciones. Simplemente puede ejecutar todas las pruebas o ejecutar un subconjunto de pruebas filtradas por subcadena en el nombre de la prueba: `./clickhouse-test substring`.
+Para ejecutar todas las pruebas, use `tests/clickhouse-test` herramienta. Mira `--help` para la lista de posibles opciones. Simplemente puede ejecutar todas las pruebas o ejecutar un subconjunto de pruebas filtradas por subcadena en el nombre de la prueba: `./clickhouse-test substring`.
 
 La forma más sencilla de invocar pruebas funcionales es copiar `clickhouse-client` Naciones `/usr/bin/`, ejecutar `clickhouse-server` y luego ejecutar `./clickhouse-test` de su propio directorio.
 
-Atracciones cercanas al hotel `.sql` o `.sh` archivo en `dbms/tests/queries/0_stateless` directorio, compruébelo manualmente y luego genere `.reference` archivo de la siguiente manera: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` o `./00000_test.sh > ./00000_test.reference`.
+Atracciones cercanas al hotel `.sql` o `.sh` archivo en `tests/queries/0_stateless` directorio, compruébelo manualmente y luego genere `.reference` archivo de la siguiente manera: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` o `./00000_test.sh > ./00000_test.reference`.
 
 Las pruebas deben usar (crear, soltar, etc.) solo tablas en `test` base de datos que se supone que se crea de antemano; también las pruebas pueden usar tablas temporales.
 
@@ -29,13 +33,13 @@ Deshabilitar estos grupos de pruebas utilizando `--no-zookeeper`, `--no-shard` y
 
 ## Errores conocidos {#known-bugs}
 
-Si conocemos algunos errores que se pueden reproducir fácilmente mediante pruebas funcionales, colocamos pruebas funcionales preparadas en `dbms/tests/queries/bugs` directorio. Estas pruebas se moverán a `dbms/tests/queries/0_stateless` cuando se corrigen errores.
+Si conocemos algunos errores que se pueden reproducir fácilmente mediante pruebas funcionales, colocamos pruebas funcionales preparadas en `tests/queries/bugs` directorio. Estas pruebas se moverán a `tests/queries/0_stateless` cuando se corrigen errores.
 
 ## Pruebas de integración {#integration-tests}
 
 Las pruebas de integración permiten probar ClickHouse en la configuración agrupada y la interacción de ClickHouse con otros servidores como MySQL, Postgres, MongoDB. Son útiles para emular divisiones de red, caídas de paquetes, etc. Estas pruebas se ejecutan bajo Docker y crean múltiples contenedores con varios software.
 
-Ver `dbms/tests/integration/README.md` sobre cómo ejecutar estas pruebas.
+Ver `tests/integration/README.md` sobre cómo ejecutar estas pruebas.
 
 Tenga en cuenta que la integración de ClickHouse con controladores de terceros no se ha probado. Además, actualmente no tenemos pruebas de integración con nuestros controladores JDBC y ODBC.
 
@@ -47,7 +51,7 @@ No es necesariamente tener pruebas unitarias si el código ya está cubierto por
 
 ## Pruebas de rendimiento {#performance-tests}
 
-Las pruebas de rendimiento permiten medir y comparar el rendimiento de alguna parte aislada de ClickHouse en consultas sintéticas. Las pruebas se encuentran en `dbms/tests/performance`. Cada prueba está representada por `.xml` archivo con la descripción del caso de prueba. Las pruebas se ejecutan con `clickhouse performance-test` herramienta (que está incrustada en `clickhouse` binario). Ver `--help` para la invocación.
+Las pruebas de rendimiento permiten medir y comparar el rendimiento de alguna parte aislada de ClickHouse en consultas sintéticas. Las pruebas se encuentran en `tests/performance`. Cada prueba está representada por `.xml` archivo con la descripción del caso de prueba. Las pruebas se ejecutan con `clickhouse performance-test` herramienta (que está incrustada en `clickhouse` binario). Ver `--help` para la invocación.
 
 Cada prueba ejecuta una o múltiples consultas (posiblemente con combinaciones de parámetros) en un bucle con algunas condiciones para stop (como “maximum execution speed is not changing in three seconds”) y medir algunas métricas sobre el rendimiento de las consultas (como “maximum execution speed”). Algunas pruebas pueden contener condiciones previas en el conjunto de datos de pruebas precargado.
 
@@ -55,13 +59,13 @@ Si desea mejorar el rendimiento de ClickHouse en algún escenario, y si se puede
 
 ## Herramientas de prueba y secuencias de comandos {#test-tools-and-scripts}
 
-Algunos programas en `tests` directorio no son pruebas preparadas, pero son herramientas de prueba. Por ejemplo, párr `Lexer` hay una herramienta `dbms/src/Parsers/tests/lexer` que solo hacen la tokenización de stdin y escriben el resultado coloreado en stdout. Puede usar este tipo de herramientas como ejemplos de código y para exploración y pruebas manuales.
+Algunos programas en `tests` directorio no son pruebas preparadas, pero son herramientas de prueba. Por ejemplo, párr `Lexer` hay una herramienta `dbms/Parsers/tests/lexer` que solo hacen la tokenización de stdin y escriben el resultado coloreado en stdout. Puede usar este tipo de herramientas como ejemplos de código y para exploración y pruebas manuales.
 
 También puede colocar un par de archivos `.sh` y `.reference` junto con la herramienta para ejecutarlo en alguna entrada predefinida, entonces el resultado del script se puede comparar con `.reference` file. Este tipo de pruebas no están automatizadas.
 
 ## Pruebas misceláneas {#miscellanous-tests}
 
-Hay pruebas para diccionarios externos ubicados en `dbms/tests/external_dictionaries` y para modelos aprendidos a máquina en `dbms/tests/external_models`. Estas pruebas no se actualizan y deben transferirse a pruebas de integración.
+Hay pruebas para diccionarios externos ubicados en `tests/external_dictionaries` y para modelos aprendidos a máquina en `tests/external_models`. Estas pruebas no se actualizan y deben transferirse a pruebas de integración.
 
 Hay una prueba separada para inserciones de quórum. Esta prueba ejecuta el clúster ClickHouse en servidores separados y emula varios casos de fallas: división de red, caída de paquetes (entre nodos ClickHouse, entre ClickHouse y ZooKeeper, entre el servidor ClickHouse y el cliente, etc.), `kill -9`, `kill -STOP` y `kill -CONT` , como [Jepsen](https://aphyr.com/tags/Jepsen). A continuación, la prueba comprueba que todas las inserciones reconocidas se escribieron y todas las inserciones rechazadas no.
 
@@ -71,9 +75,9 @@ La prueba de quórum fue escrita por un equipo separado antes de que ClickHouse 
 
 Cuando desarrolla una nueva característica, es razonable probarla también manualmente. Puede hacerlo con los siguientes pasos:
 
-Construir ClickHouse. Ejecute ClickHouse desde el terminal: cambie el directorio a `dbms/src/programs/clickhouse-server` y ejecutarlo con `./clickhouse-server`. Se utilizará la configuración (`config.xml`, `users.xml` y archivos dentro de `config.d` y `users.d` directorios) desde el directorio actual de forma predeterminada. Para conectarse al servidor ClickHouse, ejecute `dbms/src/programs/clickhouse-client/clickhouse-client`.
+Construir ClickHouse. Ejecute ClickHouse desde el terminal: cambie el directorio a `programs/clickhouse-server` y ejecutarlo con `./clickhouse-server`. Se utilizará la configuración (`config.xml`, `users.xml` y archivos dentro de `config.d` y `users.d` directorios) desde el directorio actual de forma predeterminada. Para conectarse al servidor ClickHouse, ejecute `programs/clickhouse-client/clickhouse-client`.
 
-Tenga en cuenta que todas las herramientas de clickhouse (servidor, cliente, etc.) son solo enlaces simbólicos a un único binario llamado `clickhouse`. Puede encontrar este binario en `dbms/src/programs/clickhouse`. Todas las herramientas también se pueden invocar como `clickhouse tool` es lugar de `clickhouse-tool`.
+Tenga en cuenta que todas las herramientas de clickhouse (servidor, cliente, etc.) son solo enlaces simbólicos a un único binario llamado `clickhouse`. Puede encontrar este binario en `programs/clickhouse`. Todas las herramientas también se pueden invocar como `clickhouse tool` es lugar de `clickhouse-tool`.
 
 Alternativamente, puede instalar el paquete ClickHouse: ya sea una versión estable del repositorio de Yandex o puede crear un paquete para usted con `./release` en la raíz de fuentes de ClickHouse. Luego inicie el servidor con `sudo service clickhouse-server start` (o detener para detener el servidor). Busque registros en `/etc/clickhouse-server/clickhouse-server.log`.
 
@@ -202,7 +206,7 @@ La gente del departamento de Yandex Cloud hace una visión general básica de la
 
 ## Analizadores estáticos {#static-analyzers}
 
-Corremos `PVS-Studio` por compromiso. Hemos evaluado `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`. Encontrará instrucciones de uso en `dbms/tests/instructions/` directorio. También puedes leer [el artículo en ruso](https://habr.com/company/yandex/blog/342018/).
+Corremos `PVS-Studio` por compromiso. Hemos evaluado `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`. Encontrará instrucciones de uso en `tests/instructions/` directorio. También puedes leer [el artículo en ruso](https://habr.com/company/yandex/blog/342018/).
 
 Si usted estados unidos `CLion` Como IDE, puede aprovechar algunos `clang-tidy` comprueba fuera de la caja.
 

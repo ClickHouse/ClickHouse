@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Registro {#log}
 
 El motor pertenece a la familia de motores de registro. Consulte las propiedades comunes de los motores de registro y sus diferencias en [Familia del motor de registro](log_family.md) artículo.

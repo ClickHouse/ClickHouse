@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Sintaxis {#syntax}
 
 Hay dos tipos de analizadores en el sistema: el analizador SQL completo (un analizador de descenso recursivo) y el analizador de formato de datos (un analizador de flujo rápido).

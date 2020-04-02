@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Requisito {#requirements}
 
 ## CPU {#cpu}

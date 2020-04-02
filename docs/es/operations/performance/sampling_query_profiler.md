@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Analizador de consultas de muestreo {#sampling-query-profiler}
 
 ClickHouse ejecuta el generador de perfiles de muestreo que permite analizar la ejecución de consultas. Utilizando el generador de perfiles puede encontrar rutinas de código fuente que se utilizan con más frecuencia durante la ejecución de la consulta. Puede rastrear el tiempo de CPU y el tiempo de reloj de pared invertido, incluido el tiempo de inactividad.

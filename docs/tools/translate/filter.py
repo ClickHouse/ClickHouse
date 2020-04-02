@@ -18,7 +18,7 @@ def debug(*args):
         print(*args, file=sys.stderr)
 
 
-def process_buffer(buffer, new_value, item=None):
+def process_buffer(buffer, new_value, item=None, is_header=False):
     if buffer:
         text = ''.join(buffer)
 
@@ -33,15 +33,21 @@ def process_buffer(buffer, new_value, item=None):
         debug(f'Translate: "{text}" -> "{translated_text}"')
 
         if text and text[0].isupper() and not translated_text[0].isupper():
-            translated_text = translated_text[0].upper() + translated_text[1:]
+            translated_text = translated_text.capitalize()
 
         if text.startswith(' ') and not translated_text.startswith(' '):
             translated_text = ' ' + translated_text
-            
+
         if text.endswith(' ') and not translated_text.endswith(' '):
             translated_text = translated_text + ' '
 
+        title_case = is_header and translate.default_target_language == 'en' and text[0].isupper()
+        title_case_whitelist = {'a', 'an', 'the', 'and', 'or'}
         for token in translated_text.split(' '):
+            if title_case and not token.isupper():
+                if token not in title_case_whitelist:
+                    token = token.capitalize()
+
             new_value.append(pandocfilters.Str(token))
             new_value.append(pandocfilters.Space())
 
@@ -53,12 +59,12 @@ def process_buffer(buffer, new_value, item=None):
         new_value.append(item)
 
 
-def process_sentence(value):
+def process_sentence(value, is_header=False):
     new_value = []
     buffer = []
     for item in value:
         if isinstance(item, list):
-            new_value.append([process_sentence(subitem) for subitem in item])
+            new_value.append([process_sentence(subitem, is_header) for subitem in item])
             continue
         elif isinstance(item, dict):
             t = item.get('t')
@@ -70,11 +76,11 @@ def process_sentence(value):
             elif t == 'DoubleQuote':
                 buffer.append('"')
             else:
-                process_buffer(buffer, new_value, item)
+                process_buffer(buffer, new_value, item, is_header)
                 buffer = []
         else:
             new_value.append(item)
-    process_buffer(buffer, new_value)
+    process_buffer(buffer, new_value, is_header=is_header)
     return new_value
 
 
@@ -136,10 +142,11 @@ def translate_filter(key, value, _format, _):
         value[1] = process_sentence(value[1])
         return cls(*value)
     elif key == 'Header':
-        # TODO: title case header in en
-        if '_' not in value[1][0]:  # Preserve some manually specified anchors
+        if value[1][0].islower() and '_' not in value[1][0]:  # Preserve some manually specified anchors
             value[1][0] = slugify.slugify(value[1][0], separator='-', word_boundary=True, save_order=True)
-        value[2] = process_sentence(value[2])
+
+        # TODO: title case header in en
+        value[2] = process_sentence(value[2], is_header=True)
         return cls(*value)
     elif key == 'SoftBreak':
         return pandocfilters.LineBreak()

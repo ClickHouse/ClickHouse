@@ -26,7 +26,7 @@ def test_single_page(input_path, lang):
                         anchor_points.add(anchor_point)
         for tag in soup.find_all():
             href = tag.attrs.get('href')
-            if href and href.startswith('#'):
+            if href and href.startswith('#') and href != '#':
                 if href[1:] not in anchor_points:
                     links_to_nowhere += 1
                     logging.info("Tag %s", tag)
@@ -36,11 +36,11 @@ def test_single_page(input_path, lang):
             logging.warning('Found %d duplicate anchor points' % duplicate_anchor_points)
 
         if lang == 'en' and links_to_nowhere:
-            print(f'Found {links_to_nowhere} links to nowhere', file=sys.stderr)
+            logging.warning(f'Found {links_to_nowhere} links to nowhere')
             # TODO: restore sys.exit(1)
 
         if len(anchor_points) <= 10:
-            print('Html parsing is probably broken', file=sys.stderr)
+            logging.error('Html parsing is probably broken')
             sys.exit(1)
 
 

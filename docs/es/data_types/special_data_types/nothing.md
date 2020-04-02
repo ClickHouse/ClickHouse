@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Nada {#nothing}
 
 El único propósito de este tipo de datos es representar casos en los que no se espera un valor. Entonces no puedes crear un `Nothing` valor de tipo.

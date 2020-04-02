@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Configuración {#settings}
 
 Hay varias formas de realizar todos los ajustes que se describen a continuación.
