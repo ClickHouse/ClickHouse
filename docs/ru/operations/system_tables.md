@@ -790,35 +790,50 @@ WHERE
 
 Если этот запрос ничего не возвращает - значит всё хорошо.
 
-## system.settings
+## system.settings  {#system-tables-system-settings}
 
-Содержит информацию о настройках, используемых в данный момент.
-То есть, используемых для выполнения запроса, с помощью которого вы читаете из таблицы system.settings.
+Содержит информацию о параметрах конфигурации сервера.
 
 Столбцы:
 
-```text
-name String   - имя настройки
-value String  - значение настройки
-changed UInt8 - была ли настройка явно задана в конфиге или изменена явным образом
-```
+- `name` ([String](../data_types/string.md)) — Имя настройки.
+- `value` ([String](../data_types/string.md)) — Значение настройки.
+- `changed` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Показывает, изменена ли настройка во время сессии.
+- `description` ([String](../data_types/string.md)) — Описание настройки. 
+- `min` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — Минимальное значение параметра. Если не указано минимальное значение, параметр примет [NULL](../query_language/syntax.md#null-literal). 
+- `max` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — Максимальное значение параметра. Если не указано максимальное значение, параметр примет [NULL](../query_language/syntax.md#null-literal). 
+- `readonly` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Показывает, может ли пользователь изменять настройку:
+     - `0` — Текущий пользователь может изменять настройку.
+     - `1` — Текущий пользователь не может изменять настройку.
 
-Пример:
+**Пример**
 
 ```sql
-SELECT *
+SELECT
+    name,
+    value,
+    changed,
+    description,
+    min,
+    max,
+    readonly
 FROM system.settings
-WHERE changed
+WHERE name LIKE '%min_i%'
 ```
 
 ```text
-┌─name───────────────────┬─value───────┬─changed─┐
-│ max_threads            │ 8           │       1 │
-│ use_uncompressed_cache │ 0           │       1 │
-│ load_balancing         │ random      │       1 │
-│ max_memory_usage       │ 10000000000 │       1 │
-└────────────────────────┴─────────────┴─────────┘
+┌─name────────────────────────────────────────┬─value─────┬─changed─┬─description───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┐
+│ min_insert_block_size_rows                  │ 1048576   │       0 │ Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.                                                                         │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ min_insert_block_size_bytes                 │ 268435456 │       0 │ Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ read_backoff_min_interval_between_events_ms │ 1000      │       0 │ Settings to reduce the number of threads in case of slow reads. Do not pay attention to the event, if the previous one has passed less than a certain amount of time. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+└─────────────────────────────────────────────┴───────────┴─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┘
 ```
+
+**Cм. также**
+
+- [Настройки](settings/index.md#settings)
+- [Разрешения для запросов](settings/permissions_for_queries.md#settings_readonly)
+- [Ограничения на изменение настроек](settings/settings_users.md)
 
 ## system.table_engines
 

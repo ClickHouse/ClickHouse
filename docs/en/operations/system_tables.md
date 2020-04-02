@@ -742,34 +742,51 @@ WHERE
 
 If this query doesn't return anything, it means that everything is fine.
 
-## system.settings
+## system.settings {#system-tables-system-settings}
 
-Contains information about settings that are currently in use.
-I.e. used for executing the query you are using to read from the system.settings table.
+Contains information about server configuration parameters.  
 
 Columns:
 
-- `name` (String) — Setting name.
-- `value` (String)  — Setting value.
-- `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
+- `name` ([String](../data_types/string.md)) — Setting name.
+- `value` ([String](../data_types/string.md)) — Setting value.
+- `changed` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Shows whether a setting is changed during the session.
+- `description` ([String](../data_types/string.md)) — General information about the setting. 
+- `min` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — Minimum value of the setting. If the setting has no minimum value, contains [NULL](../query_language/syntax.md#null-literal). 
+- `max` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — Maximum value of the setting. If the setting has no maximum value, contains [NULL](../query_language/syntax.md#null-literal). 
+- `readonly` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Shows whether the current user can change the setting:
+     - `0` — Current user can change the setting.
+     - `1` — Current user can't change the setting.
 
 
-Example:
+**Example**
 
 ```sql
-SELECT *
+SELECT
+    name,
+    value,
+    changed,
+    description,
+    min,
+    max,
+    readonly
 FROM system.settings
-WHERE changed
+WHERE name LIKE '%min_i%'
 ```
 
 ```text
-┌─name───────────────────┬─value───────┬─changed─┐
-│ max_threads            │ 8           │       1 │
-│ use_uncompressed_cache │ 0           │       1 │
-│ load_balancing         │ random      │       1 │
-│ max_memory_usage       │ 10000000000 │       1 │
-└────────────────────────┴─────────────┴─────────┘
+┌─name────────────────────────────────────────┬─value─────┬─changed─┬─description───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┐
+│ min_insert_block_size_rows                  │ 1048576   │       0 │ Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.                                                                         │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ min_insert_block_size_bytes                 │ 268435456 │       0 │ Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ read_backoff_min_interval_between_events_ms │ 1000      │       0 │ Settings to reduce the number of threads in case of slow reads. Do not pay attention to the event, if the previous one has passed less than a certain amount of time. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+└─────────────────────────────────────────────┴───────────┴─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┘
 ```
+
+**See also**
+
+- [Settings](settings/index.md#settings)
+- [Permissions for Queries](settings/permissions_for_queries.md#settings_readonly)
+- [Constraints on Settings](settings/settings_users.md)
 
 ## system.table_engines
 
