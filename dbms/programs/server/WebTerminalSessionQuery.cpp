@@ -198,9 +198,9 @@ WebTerminalSessionQuery::~WebTerminalSessionQuery()
             background_pool.wait();
         }
     }
-    catch(...)
+    catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);;
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 

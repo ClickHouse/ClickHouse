@@ -150,7 +150,7 @@ RingMemoryReadWriteBuffer::~RingMemoryReadWriteBuffer()
         for (size_t index = 0; index < buffers.size(); ++index)
             free(buffers[index]->begin(), buffers[index]->size());
     }
-    catch(...)
+    catch (...)
     {
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
