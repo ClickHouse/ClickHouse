@@ -105,37 +105,49 @@ namespace S3
 
     URI::URI(const Poco::URI & uri_)
     {
+        /// Case when bucket name represented in domain name of S3 URL.
+        /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
+        /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
         static const RE2 virtual_hosted_style_pattern("(.+\\.)?s3[.-][a-z0-9-.]+");
+        /// Case when bucket name and key represented in path of S3 URL.
+        /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
+        /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
         static const RE2 path_style_pattern("([^/]+)/(.*)");
 
         uri = uri_;
 
         if (uri.getHost().empty())
-            throw Exception("Invalid S3 URI host: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Host is empty in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
 
         endpoint = uri.getScheme() + "://" + uri.getAuthority();
 
         if (re2::RE2::FullMatch(uri.getAuthority(), virtual_hosted_style_pattern, &bucket))
         {
             if (!bucket.empty())
-                bucket = bucket.substr(0, bucket.length() - 1);
-            if (bucket.length() < 3 || bucket.length() > 63)
-                throw Exception("Invalid S3 URI bucket: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+                bucket.pop_back(); /// Remove '.' character from the end of the bucket name.
 
+            /// S3 specification requires at least 3 and at most 63 characters in bucket name.
+            /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
+            if (bucket.length() < 3 || bucket.length() > 63)
+                throw Exception("Bucket name length our of bounds in S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
+
+            /// Remove leading '/' from path to extract key.
             key = uri.getPath().substr(1);
             if (key.empty() || key == "/")
-                throw Exception("Invalid S3 URI key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Key name is empty in S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
         }
         else if (re2::RE2::PartialMatch(uri.getPath(), path_style_pattern, &bucket, &key))
         {
+            /// S3 specification requires at least 3 and at most 63 characters in bucket name.
+            /// https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-s3-bucket-naming-requirements.html
             if (bucket.length() < 3 || bucket.length() > 63)
-                throw Exception("Invalid S3 URI bucket: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Bucket name length our of bounds in S3 URI: " + bucket + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
 
             if (key.empty() || key == "/")
-                throw Exception("Invalid S3 URI key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+                throw Exception("Key name is empty in S3 URI: " + key + " (" + uri.toString() + ")", ErrorCodes::BAD_ARGUMENTS);
         }
         else
-            throw Exception("Invalid S3 URI bucket or key: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
+            throw Exception("Bucket or key name are invalid in S3 URI: " + uri.toString(), ErrorCodes::BAD_ARGUMENTS);
     }
 }
 

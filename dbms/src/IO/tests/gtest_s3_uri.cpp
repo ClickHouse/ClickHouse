@@ -42,6 +42,7 @@ INSTANTIATE_TEST_SUITE_P(
         "https://jokserfn.s3.yandexcloud.net/",
         "https://.s3.yandexcloud.net/key",
         "https://s3.yandexcloud.net/key",
+        "https://jokserfn.s3yandexcloud.net/key",
         "https://s3.yandexcloud.net/key/",
         "https://s3.yandexcloud.net//",
         "https://yandexcloud.net/",
