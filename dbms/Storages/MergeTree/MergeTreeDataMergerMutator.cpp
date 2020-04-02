@@ -1261,6 +1261,20 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         {
             removed_columns_from_compact_part.emplace(command.column_name);
         }
+        else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+        {
+            if (is_compact_part)
+            {
+                for_interpreter.push_back(
+                {
+                    .type = MutationCommand::Type::READ_COLUMN,
+                    .column_name = command.rename_to,
+                });
+                already_changed_columns.emplace(command.column_name);
+            }
+            else
+                for_file_renames.push_back(command);
+        }
         else
         {
             for_file_renames.push_back(command);
@@ -1273,7 +1287,8 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         /// we just don't read dropped columns
         for (const auto & column : part->getColumns())
         {
-            if (!removed_columns_from_compact_part.count(column.name) && !already_changed_columns.count(column.name))
+            if (!removed_columns_from_compact_part.count(column.name)
+                && !already_changed_columns.count(column.name))
             {
                 for_interpreter.emplace_back(MutationCommand
                 {

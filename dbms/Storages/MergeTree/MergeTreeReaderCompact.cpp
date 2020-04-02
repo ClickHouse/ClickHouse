@@ -81,13 +81,22 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         const auto & [name, type] = *name_and_type;
         auto position = data_part->getColumnPosition(name);
 
-        /// If array of Nested column is missing in part,
-        ///  we have to read it's offsets if they exists.
+        if (!position)
+        {
+            auto renamed_it = alter_conversions.rename_map.find(name);
+
+            if (renamed_it != alter_conversions.rename_map.end())
+                position = data_part->getColumnPosition(renamed_it->second);
+        }
+
         if (!position && typeid_cast<const DataTypeArray *>(type.get()))
         {
+            /// If array of Nested column is missing in part,
+            ///  we have to read it's offsets if they exists.
             position = findColumnForOffsets(name);
             read_only_offsets[i] = (position != std::nullopt);
         }
+
 
         column_positions[i] = std::move(position);
     }
@@ -125,7 +134,15 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
             if (!res_columns[pos])
                 continue;
 
-            const auto & [name, type] = *name_and_type;
+            auto [name, type] = *name_and_type;
+
+            if (alter_conversions.rename_map.count(name))
+            {
+                String original_name = alter_conversions.rename_map[name];
+                if (!data_part->getColumnPosition(name) && data_part->getColumnPosition(original_name))
+                    name = original_name;
+            }
+
             auto & column = mutable_columns[pos];
 
             try
