@@ -52,16 +52,15 @@ def build_nav_entry(root):
         if os.path.isdir(path):
             prio, title, payload = build_nav_entry(path)
             if title and payload:
-                title = f'{title} ({prio})'
                 result_items.append((prio, title, payload))
         elif filename.endswith('.md'):
             path = os.path.join(root, filename)
             meta, _ = util.read_md_file(path)
             title = meta.get('toc_title', 'hidden')
             prio = meta.get('toc_priority', 9999)
-            title = f'{title} ({prio})'
             result_items.append((prio, title, path))
-    result = collections.OrderedDict([(item[1], item[2]) for item in sorted(result_items)])
+    result_items = sorted(result_items, key=lambda x: (x[0], x[1]))
+    result = collections.OrderedDict([(item[1], item[2]) for item in result_items])
     return index_meta.get('toc_priority', 10000), current_title, result
 
 
