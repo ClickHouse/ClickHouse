@@ -34,7 +34,8 @@ CREATE TABLE table_for_rename_with_primary_key
   key2 UInt64,
   key3 UInt64,
   value1 String,
-  value2 String
+  value2 String,
+  INDEX idx (value1) TYPE set(1) GRANULARITY 1
 )
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/table_for_rename_pk', '1')
 PARTITION BY date
@@ -49,5 +50,6 @@ ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN key2 TO renamed_key2
 
 ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN key3 TO renamed_key3; --{serverError 44}
 
+ALTER TABLE table_for_rename_with_primary_key RENAME COLUMN value1 TO renamed_value1; --{serverError 44}
 
 DROP TABLE IF EXISTS table_for_rename_with_primary_key;
