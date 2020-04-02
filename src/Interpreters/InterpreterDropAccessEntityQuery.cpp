@@ -37,7 +37,7 @@ namespace
             case Kind::USER: return AccessType::DROP_USER;
             case Kind::ROLE: return AccessType::DROP_ROLE;
             case Kind::QUOTA: return AccessType::DROP_QUOTA;
-            case Kind::ROW_POLICY: return AccessType::DROP_POLICY;
+            case Kind::ROW_POLICY: return AccessType::DROP_ROW_POLICY;
             case Kind::SETTINGS_PROFILE: return AccessType::DROP_SETTINGS_PROFILE;
         }
         __builtin_unreachable();

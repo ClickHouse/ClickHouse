@@ -122,7 +122,7 @@ namespace
 
 String ASTCreateRowPolicyQuery::getID(char) const
 {
-    return "CREATE POLICY or ALTER POLICY query";
+    return "CREATE ROW POLICY or ALTER ROW POLICY query";
 }
 
 
@@ -136,11 +136,11 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
 {
     if (attach)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH POLICY";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH ROW POLICY";
     }
     else
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER POLICY" : "CREATE POLICY")
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER ROW POLICY" : "CREATE ROW POLICY")
                       << (settings.hilite ? hilite_none : "");
     }
 
