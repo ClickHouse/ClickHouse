@@ -66,7 +66,7 @@ namespace
 }
 
 AggregatingSortedTransform::AggregatingSortedTransform(
-    size_t num_inputs, const Block & header,
+    const Block & header, size_t num_inputs,
     SortDescription description_, size_t max_block_size)
     : IMergingTransform(num_inputs, header, header, true)
     , columns_definition(defineColumns(header, description_))
