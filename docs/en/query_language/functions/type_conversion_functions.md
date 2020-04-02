@@ -412,32 +412,30 @@ The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 112
 **Syntax**
 
 ```sql
-parseDateTimeBestEffort(s[, time_zone]);
+parseDateTimeBestEffort(time_string [, time_zone]);
 ```
 
 **Parameters**
 
-- `s` — String containing a date and time to convert. [String](../../data_types/string.md).  
-- `time_zone` — Time zone. The function parses `s` according to the time zone. [String](../../data_types/string.md).
+- `time_string` — String containing a date and time to convert. [String](../../data_types/string.md).  
+- `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../data_types/string.md).
 
 
 **Supported non-standard formats**
 
-- A string containing 9..10 digit unixtimestamp.
+- A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
 - A string with a date and a time component: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
-- A string with a date but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY`, `DD`, etc.
-- A string with a time but no date component:  `hh:mm`, `hhmm`, `hh` - if already have day of month.
-- A string that includes the date and time along with time zone offset information: `2020-12-12 17:36:00 -5:00`, etc.
+- A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` etc.
+- A string with a day and time:  `DD hh:mm`,  `DD hh`. In this case `YYYY-MM` are substituted as `2000-01`.
+- A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
 
-For all of the formats with separator the function parses months names expressed by their full name of the first three letters. Examples: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
+For all of the formats with separator the function parses months names expressed by their full name or by the first three letters of a month name. Examples: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
 
 **Returned value**
 
-- Data structure equivalent to the date specified in `s`.
+- `time_string` converted to the `DateTime` data type.
 
-Type: `DateTime`.
-
-**Example**
+**Examples**
 
 Query:
 
@@ -497,6 +495,20 @@ Result:
 ┌─parseDateTimeBestEffort─┐
 │     2018-12-12 10:12:12 │
 └─────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT parseDateTimeBestEffort('10 20:19')
+```
+
+Result:
+
+```text
+┌─parseDateTimeBestEffort('10 20:19')─┐
+│                 2000-01-10 20:19:00 │
+└─────────────────────────────────────┘
 ```
 
 **See Also**
