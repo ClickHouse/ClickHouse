@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Funciones de orden superior {#higher-order-functions}
 
 ## `->` operador, función lambda (params, expr) {#operator-lambdaparams-expr-function}

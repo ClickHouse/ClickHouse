@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## ALTERAR {#query_language_queries_alter}
 
 El `ALTER` consulta sólo se admite para `*MergeTree` mesas, así como `Merge`y`Distributed`. La consulta tiene varias variaciones.
@@ -442,7 +446,7 @@ Todas las reglas anteriores también son ciertas para el [OPTIMIZAR](misc.md#mis
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
-Los ejemplos de `ALTER ... PARTITION` las consultas se demuestran en las pruebas [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) y [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
+Los ejemplos de `ALTER ... PARTITION` las consultas se demuestran en las pruebas [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_local.sql) y [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
 
 ### Manipulaciones con Tabla TTL {#manipulations-with-table-ttl}
 

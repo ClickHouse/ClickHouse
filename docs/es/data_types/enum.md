@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Enum {#enum}
 
 Tipo enumerado que consta de valores con nombre.

@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Consultas Misceláneas {#miscellaneous-queries}
 
 ## CONECTAR {#attach}

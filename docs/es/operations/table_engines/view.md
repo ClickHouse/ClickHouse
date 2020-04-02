@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Vista {#table_engines-view}
 
 Se utiliza para implementar vistas (para obtener más información, consulte `CREATE VIEW query`). No almacena datos, pero solo almacena los datos especificados `SELECT` consulta. Al leer desde una tabla, ejecuta esta consulta (y elimina todas las columnas innecesarias de la consulta).

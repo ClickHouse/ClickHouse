@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Actualizaciones del diccionario {#dictionary-updates}
 
 ClickHouse actualiza periódicamente los diccionarios. El intervalo de actualización para los diccionarios completamente descargados y el intervalo de invalidación para los diccionarios almacenados en caché se `<lifetime>` etiqueta en segundos.

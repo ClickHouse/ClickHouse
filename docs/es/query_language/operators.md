@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Operador {#operators}
 
 Todos los operadores se transforman a sus funciones correspondientes en la etapa de análisis de consulta de acuerdo con su precedencia y asociatividad.
@@ -129,7 +133,7 @@ FROM test.Orders;
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
 ```
 
-Puedes ver más ejemplos en [prueba](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
+Puedes ver más ejemplos en [prueba](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql).
 
 ### INTERVALO {#operator-interval}
 

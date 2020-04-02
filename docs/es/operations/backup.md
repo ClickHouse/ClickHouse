@@ -1,6 +1,10 @@
+---
+machine_translated: true
+---
+
 # Copia de seguridad de datos {#data-backup}
 
-Mientras [replicación](table_engines/replication.md) proporciona protección contra fallas de hardware, no protege contra errores humanos: eliminación accidental de datos, eliminación de la tabla incorrecta o una tabla en el clúster incorrecto y errores de software que resultan en un procesamiento incorrecto de datos o daños en los datos. En muchos casos, errores como estos afectarán a todas las réplicas. ClickHouse tiene protecciones integradas para evitar algunos tipos de errores, por ejemplo, de forma predeterminada [no puede simplemente colocar tablas con un motor similar a MergeTree que contenga más de 50 Gb de datos](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/dbms/programs/server/config.xml#L322-L330). Sin embargo, estas garantías no cubren todos los casos posibles y pueden eludirse.
+Mientras [replicación](table_engines/replication.md) proporciona protección contra fallas de hardware, no protege contra errores humanos: eliminación accidental de datos, eliminación de la tabla incorrecta o una tabla en el clúster incorrecto y errores de software que resultan en un procesamiento incorrecto de datos o daños en los datos. En muchos casos, errores como estos afectarán a todas las réplicas. ClickHouse tiene protecciones integradas para evitar algunos tipos de errores, por ejemplo, de forma predeterminada [no puede simplemente colocar tablas con un motor similar a MergeTree que contenga más de 50 Gb de datos](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). Sin embargo, estas garantías no cubren todos los casos posibles y pueden eludirse.
 
 Para mitigar eficazmente los posibles errores humanos, debe preparar cuidadosamente una estrategia para realizar copias de seguridad y restaurar sus datos **previamente**.
 

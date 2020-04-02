@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Permisos para consultas {#permissions_for_queries}
 
 Las consultas en ClickHouse se pueden dividir en varios tipos:

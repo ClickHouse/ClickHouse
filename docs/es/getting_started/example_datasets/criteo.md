@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Terabyte de registros de clics de Criteo {#terabyte-of-click-logs-from-criteo}
 
 Descargue los datos de http://labs.criteo.com/downloads/download-terabyte-click-logs/

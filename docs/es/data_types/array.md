@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Matriz (T) {#data-type-array}
 
 Matriz de `T`-tipo de artículos.

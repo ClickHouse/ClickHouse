@@ -1,6 +1,6 @@
 # AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
-The intermediate state of an aggregate function. To get it, use aggregate functions with the `-State` suffix. To get aggregated data in the future, you must use the same aggregate functions with the `-Merge`suffix.
+Aggregate functions can have an implementation-defined intermediate state that can be serialized to an AggregateFunction(...) data type and stored in a table, usually, by means of [a materialized view](../../query_language/select.md#create-view). The common way to produce an aggregate function state is by calling the aggregate function with the `-State` suffix. To get the final result of aggregation in the future, you must use the same aggregate function with the `-Merge`suffix.
 
 `AggregateFunction` — parametric data type.
 
@@ -8,7 +8,7 @@ The intermediate state of an aggregate function. To get it, use aggregate functi
 
 -   Name of the aggregate function.
 
-        If the function is parametric specify its parameters too.
+        If the function is parametric, specify its parameters too.
 
 -   Types of the aggregate function arguments.
 
@@ -40,7 +40,7 @@ quantilesState(0.5, 0.9)(SendTiming)
 
 In contrast to the corresponding functions `uniq` and `quantiles`, `-State`- functions return the state, instead of the final value. In other words, they return a value of `AggregateFunction` type.
 
-In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query then this dump can be loaded back using `INSERT` query.
+In the results of `SELECT` query, the values of `AggregateFunction` type have implementation-specific binary representation for all of the ClickHouse output formats. If dump data into, for example, `TabSeparated` format with `SELECT` query, then this dump can be loaded back using `INSERT` query.
 
 ### Data Selection {#data-selection}
 

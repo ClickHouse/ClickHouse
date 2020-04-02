@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # ColapsarMergeTree {#table_engine-collapsingmergetree}
 
 El motor hereda de [Método de codificación de datos:](mergetree.md) y agrega la lógica de las filas que colapsan al algoritmo de fusión de partes de datos.

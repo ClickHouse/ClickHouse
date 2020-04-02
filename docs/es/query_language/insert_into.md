@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 ## INSERTAR {#insert}
 
 Adición de datos.

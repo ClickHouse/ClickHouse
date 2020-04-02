@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Sistema abierto. {#clickhouse-benchmark}
 
 Se conecta a un servidor ClickHouse y envía repetidamente las consultas especificadas.

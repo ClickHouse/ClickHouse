@@ -1,3 +1,7 @@
+---
+machine_translated: true
+---
+
 # Yandex anonimizado.Metrica Datos {#anonymized-yandex-metrica-data}
 
 El conjunto de datos consta de dos tablas que contienen datos anónimos sobre los hits (`hits_v1`) y visitas (`visits_v1`) el Yandex.Métrica. Puedes leer más sobre Yandex.Metrica en [Historial de ClickHouse](../../introduction/history.md) apartado.
@@ -60,4 +64,4 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 [Tutorial de ClickHouse](../../getting_started/tutorial.md) se basa en Yandex.El conjunto de datos de Metrica y la forma recomendada de comenzar con este conjunto de datos es simplemente pasar por el tutorial.
 
-Se pueden encontrar ejemplos adicionales de consultas a estas tablas entre [pruebas estatales](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) de ClickHouse (se nombran `test.hists` y `test.visits` Todos los derechos reservados.
+Se pueden encontrar ejemplos adicionales de consultas a estas tablas entre [pruebas estatales](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) de ClickHouse (se nombran `test.hists` y `test.visits` Todos los derechos reservados.
