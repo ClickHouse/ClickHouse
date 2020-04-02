@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import collections
 import datetime
 import logging
 import os
@@ -38,6 +39,39 @@ class ClickHouseMarkdown(markdown.extensions.Extension):
 
 
 markdown.extensions.ClickHouseMarkdown = ClickHouseMarkdown
+
+
+def build_nav_entry(root):
+    if root.endswith('images'):
+        return None, None, None
+    result_items = []
+    index_meta, _ = util.read_md_file(os.path.join(root, 'index.md'))
+    current_title = index_meta.get('toc_folder_title', 'hidden')
+    for filename in os.listdir(root):
+        path = os.path.join(root, filename)
+        if os.path.isdir(path):
+            prio, title, payload = build_nav_entry(path)
+            if title and payload:
+                title = f'{title} ({prio})'
+                result_items.append((prio, title, payload))
+        elif filename.endswith('.md'):
+            path = os.path.join(root, filename)
+            meta, _ = util.read_md_file(path)
+            title = meta.get('toc_title', 'hidden')
+            prio = meta.get('toc_priority', 9999)
+            title = f'{title} ({prio})'
+            result_items.append((prio, title, path))
+    result = collections.OrderedDict([(item[1], item[2]) for item in sorted(result_items)])
+    return index_meta.get('toc_priority', 10000), current_title, result
+
+
+def build_nav(lang, args):
+    # todo: incorrect dic titles, ...
+    docs_dir = os.path.join(args.docs_dir, lang)
+    _, _, nav = build_nav_entry(docs_dir)
+    import yaml
+    print(yaml.dump(nav))
+    exit(1)
 
 
 def build_for_lang(lang, args):
@@ -124,7 +158,8 @@ def build_for_lang(lang, args):
             plugins.append('htmlproofer')
 
         raw_config = dict(
-            config_file=config_path,
+            # config_file=config_path,
+            nav=build_nav(lang, args),
             site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
             site_url=f'https://clickhouse.tech/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
