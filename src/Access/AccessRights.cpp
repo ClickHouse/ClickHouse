@@ -49,8 +49,7 @@ namespace
         const AccessFlags create_temporary_table_flag = AccessType::CREATE_TEMPORARY_TABLE;
         const AccessFlags alter_table_flag = AccessType::ALTER_TABLE;
         const AccessFlags alter_view_flag = AccessType::ALTER_VIEW;
-        const AccessFlags truncate_table_flag = AccessType::TRUNCATE_TABLE;
-        const AccessFlags truncate_view_flag = AccessType::TRUNCATE_VIEW;
+        const AccessFlags truncate_flag = AccessType::TRUNCATE;
         const AccessFlags drop_table_flag = AccessType::DROP_TABLE;
         const AccessFlags drop_view_flag = AccessType::DROP_VIEW;
     };
@@ -426,9 +425,6 @@ private:
 
             if (access & helper.alter_table_flag)
                 implicit_access |= helper.alter_view_flag;
-
-            if (access & helper.truncate_table_flag)
-                implicit_access |= helper.truncate_view_flag;
         }
 
         final_access = access | implicit_access;
