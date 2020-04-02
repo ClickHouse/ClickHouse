@@ -6,15 +6,15 @@
 
 每个功能测试会向正在运行的 ClickHouse服 务器发送一个或多个查询，并将结果与预期结果进行比较。
 
-测试用例在 `dbms/src/tests/queries` 目录中。这里有两个子目录：`stateless` 和 `stateful`目录。 无状态的测试无需预加载测试数据集 - 通常是在测试运行期间动态创建小量的数据集。有状态测试需要来自 Yandex.Metrica 的预加载测试数据，而不向一般公众提供。 我们倾向于仅使用«无状态»测试并避免添加新的«有状态»测试。
+测试用例在 `tests/queries` 目录中。这里有两个子目录：`stateless` 和 `stateful`目录。 无状态的测试无需预加载测试数据集 - 通常是在测试运行期间动态创建小量的数据集。有状态测试需要来自 Yandex.Metrica 的预加载测试数据，而不向一般公众提供。 我们倾向于仅使用«无状态»测试并避免添加新的«有状态»测试。
 
 每个测试用例可以是两种类型之一：`.sql` 和 `.sh`。`.sql` 测试文件是用于管理`clickhouse-client --multiquery --testmode`的简单SQL脚本。`.sh` 测试文件是一个可以自己运行的脚本。
 
-要运行所有测试，请使用 `dbms/tests/clickhouse-test` 工具，用 `--help` 可以获取所有的选项列表。您可以简单地运行所有测试或运行测试名称中的子字符串过滤的测试子集：`./clickhouse-test substring`。
+要运行所有测试，请使用 `tests/clickhouse-test` 工具，用 `--help` 可以获取所有的选项列表。您可以简单地运行所有测试或运行测试名称中的子字符串过滤的测试子集：`./clickhouse-test substring`。
 
 调用功能测试最简单的方法是将 `clickhouse-client` 复制到`/usr/bin/`，运行`clickhouse-server`，然后从自己的目录运行`./ clickhouse-test`。
 
-要添加新测试，请在 `dbms/src/tests/queries/0_stateless` 目录内添加新的 `.sql` 或 `.sh` 文件，手动检查，然后按以下方式生成 `.reference` 文件： `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`。
+要添加新测试，请在 `tests/queries/0_stateless` 目录内添加新的 `.sql` 或 `.sh` 文件，手动检查，然后按以下方式生成 `.reference` 文件： `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`。
 
 测试应该只使用（创建，删除等）`test` 数据库中的表，这些表假定是事先创建的; 测试也可以使用临时表。
 
@@ -24,13 +24,13 @@
 
 ## 已知的bug {#yi-zhi-de-bug}
 
-如果我们知道一些可以通过功能测试轻松复制的错误，我们将准备好的功能测试放在 `dbms/src/tests/queries/bugs` 目录中。当修复错误时，这些测试将被移动到 `dbms/src/tests/queries/0_stateless` 目录中。
+如果我们知道一些可以通过功能测试轻松复制的错误，我们将准备好的功能测试放在 `tests/queries/bugs` 目录中。当修复错误时，这些测试将被移动到 `tests/queries/0_stateless` 目录中。
 
 ## 集成测试 {#ji-cheng-ce-shi}
 
 集成测试允许在集群配置中测试 ClickHouse，并与其他服务器（如MySQL，Postgres，MongoDB）进行 ClickHouse 交互。它们可用于模拟网络拆分，数据包丢弃等。这些测试在Docker 下运行，并使用各种软件创建多个容器。
 
-参考 `dbms/tests/integration/README.md` 文档关于如何使用集成测试。
+参考 `tests/integration/README.md` 文档关于如何使用集成测试。
 
 请注意，ClickHouse 与第三方驱动程序的集成未经过测试。此外，我们目前还没有与 JDBC 和ODBC 驱动程序进行集成测试。
 
@@ -42,7 +42,7 @@
 
 ## 性能测试 {#xing-neng-ce-shi}
 
-性能测试允许测量和比较综合查询中 ClickHouse 的某些独立部分的性能。测试位于`dbms/tests/performance` 目录中。每个测试都由 `.xml` 文件表示，并附有测试用例的描述。使用 `clickhouse performance-test` 工具（嵌入在 `clickhouse` 二进制文件中）运行测试。请参阅 `--help` 以进行调用。
+性能测试允许测量和比较综合查询中 ClickHouse 的某些独立部分的性能。测试位于`tests/performance` 目录中。每个测试都由 `.xml` 文件表示，并附有测试用例的描述。使用 `clickhouse performance-test` 工具（嵌入在 `clickhouse` 二进制文件中）运行测试。请参阅 `--help` 以进行调用。
 
 每个测试在循环中运行一个或多个查询（可能带有参数组合），并具有一些停止条件（如«最大执行速度不会在三秒内更改»）并测量一些有关查询性能的指标（如«最大执行速度»））。某些测试可以包含预加载的测试数据集的前提条件。
 
@@ -52,13 +52,13 @@
 
 ## 测试工具和脚本 {#ce-shi-gong-ju-he-jiao-ben}
 
-`tests`目录中的一些程序不是准备测试，而是测试工具。例如，对于`Lexer`，有一个工具`dbms/src/Parsers/tests/lexer` 标准输出。您可以使用这些工具作为代码示例以及探索和手动测试。
+`tests`目录中的一些程序不是准备测试，而是测试工具。例如，对于`Lexer`，有一个工具`dbms/Parsers/tests/lexer` 标准输出。您可以使用这些工具作为代码示例以及探索和手动测试。
 
 您还可以将一对文件 `.sh` 和 `.reference` 与工具放在一些预定义的输入上运行它 - 然后可以将脚本结果与 `.reference` 文件进行比较。这些测试不是自动化的。
 
 ## 杂项测试 {#za-xiang-ce-shi}
 
-有一些外部字典的测试位于 `dbms/tests/external_dictionaries`，机器学习模型在`dbms/tests/external_models`目录。这些测试未更新，必须转移到集成测试。
+有一些外部字典的测试位于 `tests/external_dictionaries`，机器学习模型在`tests/external_models`目录。这些测试未更新，必须转移到集成测试。
 
 对于分布式数据的插入，有单独的测试。此测试在单独的服务器上运行 ClickHouse 集群并模拟各种故障情况：网络拆分，数据包丢弃（ClickHouse 节点之间，ClickHouse 和 ZooKeeper之间，ClickHouse 服务器和客户端之间等），进行 `kill -9`，`kill -STOP` 和`kill -CONT` 等操作，类似[Jepsen](https://aphyr.com/tags/Jepsen)。然后，测试检查是否已写入所有已确认的插入，并且所有已拒绝的插入都未写入。
 
@@ -68,7 +68,7 @@
 
 当您开发了新的功能，做手动测试也是合理的。可以按照以下步骤来进行：
 
-编译 ClickHouse。在命令行中运行 ClickHouse：进入 `dbms/src/programs/clickhouse-server` 目录并运行 `./clickhouse-server`。它会默认使用当前目录的配置文件 (`config.xml`， `users.xml` 以及在 `config.d` 和 `users.d` 目录的文件)。可以使用 `dbms/src/programs/clickhouse-client/clickhouse-client` 来连接数据库。
+编译 ClickHouse。在命令行中运行 ClickHouse：进入 `programs/clickhouse-server` 目录并运行 `./clickhouse-server`。它会默认使用当前目录的配置文件 (`config.xml`， `users.xml` 以及在 `config.d` 和 `users.d` 目录的文件)。可以使用 `programs/clickhouse-client/clickhouse-client` 来连接数据库。
 
 或者，您可以安装 ClickHouse 软件包：从 Yandex 存储库中获得稳定版本，或者您可以在ClickHouse源根目录中使用 `./release` 构建自己的软件包。然后使用 `sudo service clickhouse-server start` 启动服务器（或停止服务器）。在 `/etc/clickhouse-server/clickhouse-server.log` 中查找日志。
 
@@ -172,7 +172,7 @@ Clang 有更多有用的警告 - 您可以使用 `-Weverything` 查找它们并�
 **Debug allocator.**
 您可以使用 `DEBUG_TCMALLOC` CMake 选项启用 `tcmalloc` 的调试版本。我们在每次提交的基础上使用调试分配器运行测试。
 
-更多请参阅 `dbms/tests/instructions/sanitizers.txt`。
+更多请参阅 `tests/instructions/sanitizers.txt`。
 
 ## 模糊测试 {#mo-hu-ce-shi}
 
@@ -186,7 +186,7 @@ Yandex Cloud 部门的人员从安全角度对 ClickHouse 功能进行了一些�
 
 ## 静态分析 {#jing-tai-fen-xi}
 
-我们偶尔使用静态分析。我们已经评估过 `clang-tidy`， `Coverity`， `cppcheck`， `PVS-Studio`， `tscancode`。您将在 `dbms/tests/instructions/` 目录中找到使用说明。你也可以阅读[俄文文章](https://habr.com/company/yandex/blog/342018/).
+我们偶尔使用静态分析。我们已经评估过 `clang-tidy`， `Coverity`， `cppcheck`， `PVS-Studio`， `tscancode`。您将在 `tests/instructions/` 目录中找到使用说明。你也可以阅读[俄文文章](https://habr.com/company/yandex/blog/342018/).
 
 如果您使用 `CLion` 作为 IDE，您可以开箱即用一些 `clang-tidy` 检查。
 
