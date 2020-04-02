@@ -7,6 +7,8 @@
 #include <Columns/ColumnFixedString.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/FunctionsMultiStringPosition.h>
+#include <Functions/FunctionsMultiStringSearch.h>
 #include <Functions/Regexps.h>
 #include <IO/WriteHelpers.h>
 #include <Poco/UTF8String.h>
