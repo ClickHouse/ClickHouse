@@ -456,7 +456,8 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         RenameColumnVisitor rename_visitor(rename_data);
         for (auto & column : metadata.columns)
         {
-            metadata.columns.modify(column.name, [&](ColumnDescription & column_to_modify) {
+            metadata.columns.modify(column.name, [&](ColumnDescription & column_to_modify)
+            {
                 if (column_to_modify.default_desc.expression)
                     rename_visitor.visit(column_to_modify.default_desc.expression);
                 if (column_to_modify.ttl)
