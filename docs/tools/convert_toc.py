@@ -8,8 +8,9 @@ import yaml
 
 import util
 
-lang = 'en'
+lang = 'ru'
 base_dir = os.path.join(os.path.dirname(__file__), '..')
+en_dir = os.path.join(base_dir, 'en')
 docs_dir = os.path.join(base_dir, lang)
 redirects_file = os.path.join(base_dir, 'redirects.txt')
 redirects = {}
@@ -110,8 +111,32 @@ def update_redirects():
             print(f'{src} {dst}', file=f)
 
 
+def sync_translation():
+    init_redirects()
+    for src, dst in redirects.items():
+        en_src = os.path.join(en_dir, src)
+        lang_src = os.path.join(docs_dir, src)
+        lang_dst = os.path.join(docs_dir, dst)
+        if os.path.exists(lang_src):
+            if os.path.islink(lang_src):
+                pass
+            else:
+                en_meta, en_content = util.read_md_file(en_src)
+                lang_meta, lang_content = util.read_md_file(lang_src)
+                en_meta.update(lang_meta)
+
+                for src, dst in redirects.items():
+                    lang_content = lang_content.replace('(' + src, '(' + dst)
+                    lang_content = lang_content.replace('../' + src, '../' + dst)
+                    
+                util.write_md_file(lang_dst, en_meta, lang_content)
+                subprocess.check_call(f'git add {lang_dst}', shell=True)
+                subprocess.check_call(f'git rm {lang_src}', shell=True)
+
+
 if __name__ == '__main__':
-    if len(sys.argv) == 1:
-        process_toc_yaml(os.path.join(base_dir, 'toc_en.yml'))
-    else:
-        process_toc_yaml(sys.argv[1])
+    sync_translation()
+    # if len(sys.argv) == 1:
+    #     process_toc_yaml(os.path.join(base_dir, f'toc_{lang}.yml'))
+    # else:
+    #     process_toc_yaml(sys.argv[1])

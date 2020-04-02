@@ -68,9 +68,6 @@ def build_nav_entry(root):
 def build_nav(lang, args):
     docs_dir = os.path.join(args.docs_dir, lang)
     _, _, nav = build_nav_entry(docs_dir)
-    # import yaml
-    # print(yaml.dump(nav))
-    # exit(1)
     result = []
     for key, value in nav.items():
         result.append({key: value})

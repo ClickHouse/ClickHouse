@@ -44,7 +44,7 @@ def process_buffer(buffer, new_value, item=None, is_header=False):
         if text.endswith(' ') and not translated_text.endswith(' '):
             translated_text = translated_text + ' '
 
-        title_case = is_header and translate.default_target_language == 'en' and text[0].isupper()
+        title_case = False # is_header and translate.default_target_language == 'en' and text[0].isupper()
         title_case_whitelist = {'a', 'an', 'the', 'and', 'or'}
         for token in translated_text.split(' '):
             if title_case and not token.isupper():
@@ -150,14 +150,14 @@ def translate_filter(key, value, _format, _):
             attempts = 10
             if '#' in href:
                 href, anchor = href.split('#', 1)
-            
+
             if filename:
                 while attempts and not os.path.exists(href):
                     href = f'../{href}'
                     attempts -= 1
             if anchor:
                 href = f'{href}#{anchor}'
-            
+
             if attempts:
                 value[2][0] = href
         return cls(*value)
@@ -175,5 +175,9 @@ def translate_filter(key, value, _format, _):
 
 
 if __name__ == "__main__":
-    with util.cd(os.path.dirname(filename or '.')):
+    pwd = os.path.dirname(filename or '.')
+    if pwd:
+        with util.cd(pwd):
+            pandocfilters.toJSONFilter(translate_filter)
+    else:
         pandocfilters.toJSONFilter(translate_filter)
