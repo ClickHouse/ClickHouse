@@ -531,6 +531,30 @@ The path to the directory containing data.
 <path>/var/lib/clickhouse/</path>
 ```
 
+## prometheus {#server_settings-prometheus}
+
+Expose metrics data for scraping from [Prometheus](https://prometheus.io).
+
+Settings:
+
+-   endpoint – HTTP endpoint for scraping metrics by prometheus server. Begin from '/'. 
+-   port – The listen port for prometheus HTTP endpoint.
+-   metrics – Expose current metrics values from the [system.metrics](../system_tables.md#system_tables-metrics) table.
+-   events – Expose current metrics values from the [system.events](../system_tables.md#system_tables-events) table.
+-   asynchronous\_metrics – Expose current metrics values from the [system.asynchronous\_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
+
+**Example**
+
+``` xml
+ <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>8001</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+```
+
 ## query\_log {#server_settings-query-log}
 
 Setting for logging queries received with the [log\_queries=1](../settings/settings.md) setting.
