@@ -43,40 +43,45 @@ enum class TargetArch : int {
 #   error "Only CLANG and GCC compilers are supported"
 #endif
 
-#define DECLARE_DEFAULT_CODE (...) \
+#define DECLARE_DEFAULT_CODE(...) \
 namespace TargetSpecific::Default { \
+    using namespace DB::DynamicTarget::TargetSpecific::Default; \
     __VA_ARGS__ \
 }
 
-#define DECLARE_SSE4_SPECIFIC_CODE (...) \
+#define DECLARE_SSE4_SPECIFIC_CODE(...) \
 BEGIN_SSE4_SPECIFIC_CODE \
 namespace TargetSpecific::SSE4 { \
+    using namespace DB::DynamicTarget::TargetSpecific::SSE4; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
 
-#define DECLARE_AVX_SPECIFIC_CODE (...) \
+#define DECLARE_AVX_SPECIFIC_CODE(...) \
 BEGIN_AVX_SPECIFIC_CODE \
 namespace TargetSpecific::AVX { \
+    using namespace DB::DynamicTarget::TargetSpecific::AVX; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
 
-#define DECLARE_AVX2_SPECIFIC_CODE (...) \
+#define DECLARE_AVX2_SPECIFIC_CODE(...) \
 BEGIN_AVX2_SPECIFIC_CODE \
 namespace TargetSpecific::AVX2 { \
+    using namespace DB::DynamicTarget::TargetSpecific::AVX2; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
 
-#define DECLARE_AVX512_SPECIFIC_CODE (...) \
+#define DECLARE_AVX512_SPECIFIC_CODE(...) \
 BEGIN_AVX512_SPECIFIC_CODE \
 namespace TargetSpecific::AVX512 { \
+    using namespace DB::DynamicTarget::TargetSpecific::AVX512; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
 
-#define DYNAMIC_CODE (...) \
+#define DECLARE_MULTITARGET_CODE(...) \
 DECLARE_DEFAULT_CODE        (__VA_ARGS__) \
 DECLARE_SSE4_SPECIFIC_CODE  (__VA_ARGS__) \
 DECLARE_AVX_SPECIFIC_CODE   (__VA_ARGS__) \
@@ -102,5 +107,7 @@ DECLARE_AVX2_SPECIFIC_CODE(
 DECLARE_AVX512_SPECIFIC_CODE(
     constexpr auto BuildArch = TargetArch::AVX512;
 ) // DECLARE_AVX512_SPECIFIC_CODE
+
+bool IsArchSupported(TargetArch arch);
 
 } // namespace DB::DynamicTarget

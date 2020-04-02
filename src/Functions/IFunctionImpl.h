@@ -194,7 +194,7 @@ using FunctionOverloadResolverImplPtr = std::unique_ptr<IFunctionOverloadResolve
 
 
 /// Previous function interface.
-class IFunction : public std::enable_shared_from_this<IFunction>
+class IFunction
 {
 public:
     virtual ~IFunction() = default;

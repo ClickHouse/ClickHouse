@@ -120,7 +120,7 @@ void CompressionCodecFactory::registerCompressionCodecWithType(
 
     if (byte_code)
         if (!family_code_with_codec.emplace(*byte_code, creator).second)
-            throw Exception("CompressionCodecFactory: the codec family name '" + family_name + "' is not unique", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("CompressionCodecFactory: the codec family code '" + std::to_string(*byte_code) + "' is not unique", ErrorCodes::LOGICAL_ERROR);
 }
 
 void CompressionCodecFactory::registerCompressionCodec(const String & family_name, std::optional<uint8_t> byte_code, Creator creator)
