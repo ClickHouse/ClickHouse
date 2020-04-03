@@ -538,7 +538,7 @@ Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 Settings:
 
 -   `endpoint` – HTTP endpoint for scraping metrics by prometheus server. Start from '/'. 
--   port – The listen port for prometheus HTTP endpoint.
+-   `port` – Port for `endpoint`.
 -   metrics – Expose current metrics values from the [system.metrics](../system_tables.md#system_tables-metrics) table.
 -   events – Expose current metrics values from the [system.events](../system_tables.md#system_tables-events) table.
 -   asynchronous\_metrics – Expose current metrics values from the [system.asynchronous\_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
