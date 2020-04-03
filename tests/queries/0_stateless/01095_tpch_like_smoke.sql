@@ -1,6 +1,3 @@
-CREATE DATABASE IF NOT EXISTS tpch;
-USE tpch;
-
 DROP TABLE IF EXISTS part;
 DROP TABLE IF EXISTS supplier;
 DROP TABLE IF EXISTS partsupp;
@@ -265,7 +262,7 @@ from
 where
     l_shipdate >= date '1994-01-01'
     and l_shipdate < date '1994-01-01' + interval '1' year
-    and l_discount between toDecimal32(0.06, 2) - toDecimal32(0.01, 2) 
+    and l_discount between toDecimal32(0.06, 2) - toDecimal32(0.01, 2)
         and toDecimal32(0.06, 2) + toDecimal32(0.01, 2)
     and l_quantity < 24;
 
@@ -672,7 +669,7 @@ where
         and l_shipmode in ('AIR', 'AIR REG')
         and l_shipinstruct = 'DELIVER IN PERSON'
     );
-    
+
 select 20, 'fail: correlated subquery'; -- TODO: Missing columns: 'ps_suppkey' 'ps_partkey'
 select
     s_name,
