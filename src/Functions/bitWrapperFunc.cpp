@@ -9,7 +9,7 @@ namespace DB
         extern const int BAD_CAST;
     }
 
-    /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/Storages/MergeTree/BoolMask.h).
+    /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
     /// This function wraps bool atomic functions
     /// and transforms their boolean return value to the BoolMask ("can be false" and "can be true" bits).
     template <typename A>

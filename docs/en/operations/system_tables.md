@@ -252,7 +252,7 @@ Columns:
 -   `value` ([Int64](../data_types/int_uint.md)) — Metric value.
 -   `description` ([String](../data_types/string.md)) — Metric description.
 
-The list of supported metrics you can find in the [dbms/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Common/CurrentMetrics.cpp) source file of ClickHouse.
+The list of supported metrics you can find in the [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp) source file of ClickHouse.
 
 **Example**
 
