@@ -30,6 +30,7 @@ def concatenate(lang, docs_path, single_page_file, nav):
     files_count = len(files_to_concatenate)
     logging.info(f'{files_count} files will be concatenated into single md-file for {lang}.')
     logging.debug('Concatenating: ' + ', '.join(files_to_concatenate))
+    assert files_count > 0, f'Empty single-page for {lang}'
 
     for path in files_to_concatenate:
         if path.endswith('introduction/info.md'):
