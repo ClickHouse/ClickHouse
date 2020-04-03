@@ -541,7 +541,7 @@ Settings:
 -   `port` – Port for `endpoint`.
 -   `metrics` – Flag that sets to expose metrics from the [system.metrics](../system_tables.md#system_tables-metrics) table.
 -   `events` – Flag that sets to expose metrics from the [system.events](../system_tables.md#system_tables-events) table.
--   asynchronous\_metrics – Expose current metrics values from the [system.asynchronous\_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
+-   `asynchronous_metrics` – Flag that sets to expose current metrics values from the [system.asynchronous\_metrics](../system_tables.md#system_tables-asynchronous_metrics) table.
 
 **Example**
 
