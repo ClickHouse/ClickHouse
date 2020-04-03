@@ -4,18 +4,18 @@ import logging
 import re
 import os
 
+import yaml
 
-def recursive_items(dictionary):
-    if isinstance(dictionary, dict):
-        for key, value in dictionary.items():
-            if isinstance(value, dict):
-                yield (key, value)
-                yield from recursive_items(value)
-            else:
-                yield (key, value)
-    elif isinstance(dictionary, list):
-        for value in dictionary:
-            yield from recursive_items(value)
+
+def recursive_values(item):
+    if isinstance(item, dict):
+        for _, value in item.items():
+            yield from recursive_values(value)
+    elif isinstance(item, list):
+        for value in item:
+            yield from recursive_values(value)
+    elif isinstance(item, str):
+        yield item
 
 
 def concatenate(lang, docs_path, single_page_file, nav):
@@ -25,11 +25,8 @@ def concatenate(lang, docs_path, single_page_file, nav):
     proj_config = f'{docs_path}/toc_{lang}.yml'
     if os.path.exists(proj_config):
         with open(proj_config) as cfg_file:
-            files_to_concatenate = [(l[l.index(':') + 1:]).strip(" '\n") for l in cfg_file]
-    else:
-        files_to_concatenate = [v for k, v in recursive_items(nav)]
-        files_to_concatenate = [v for v in files_to_concatenate if '.md' in v and 'single_page' not in v]
-
+            nav = yaml.full_load(cfg_file.read())['nav']
+    files_to_concatenate = list(recursive_values(nav))
     files_count = len(files_to_concatenate)
     logging.info(f'{files_count} files will be concatenated into single md-file for {lang}.')
     logging.debug('Concatenating: ' + ', '.join(files_to_concatenate))

@@ -409,7 +409,7 @@ SELECT
 
 ## parseDateTimeBestEffort {#parsedatetimebesteffort}
 
-Converts a date and time in the [String](../../data_types/string.md) representation to [DateTime](../../data_types/datetime.md#data_type-datetime) data type.
+Converts a date and time in the [String](../../sql_reference/data_types/string.md) representation to [DateTime](../../sql_reference/data_types/datetime.md#data_type-datetime) data type.
 
 The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14  RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
 
@@ -422,8 +422,8 @@ parseDateTimeBestEffort(time_string [, time_zone]);
 
 **Parameters**
 
-- `time_string` — String containing a date and time to convert. [String](../../data_types/string.md).  
-- `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../data_types/string.md).
+- `time_string` — String containing a date and time to convert. [String](../../sql_reference/data_types/string.md).  
+- `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../sql_reference/data_types/string.md).
 
 
 **Supported non-standard formats**
