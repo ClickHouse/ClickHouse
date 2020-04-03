@@ -55,7 +55,7 @@ void ReplaceQueryParameterVisitor::visitQueryParameter(ASTPtr & ast)
     IColumn & temp_column = *temp_column_ptr;
     ReadBufferFromString read_buffer{value};
     FormatSettings format_settings;
-    data_type->deserializeAsWholeText(temp_column, read_buffer, format_settings);
+    data_type->deserializeAsTextEscaped(temp_column, read_buffer, format_settings);
 
     if (!read_buffer.eof())
         throw Exception("Value " + value + " cannot be parsed as " + type_name + " for query parameter '"  + ast_param.name + "'"

@@ -21,9 +21,9 @@ struct HTTPInputStreams
 
     HTTPInputStreams(Context & context, HTTPServerRequest & request, HTMLForm & from);
 
-    ReadBufferUniquePtr createRawInBuffer(HTTPServerRequest & request) const;
-    ReadBufferUniquePtr createCompressedBuffer(HTTPServerRequest & request, ReadBufferUniquePtr & raw_buffer) const;
-    ReadBufferUniquePtr createInternalCompressedBuffer(HTMLForm & params, ReadBufferUniquePtr & http_maybe_encoding_buffer) const;
+    ReadBufferUniquePtr plainBuffer(HTTPServerRequest & request) const;
+    ReadBufferUniquePtr compressedBuffer(HTTPServerRequest & request, ReadBufferUniquePtr & plain_buffer) const;
+    ReadBufferUniquePtr internalCompressedBuffer(HTMLForm & params, ReadBufferUniquePtr & http_maybe_encoding_buffer) const;
 };
 
 }

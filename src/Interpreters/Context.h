@@ -106,6 +106,7 @@ class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
 struct NamedSession;
 
+
 #if USE_EMBEDDED_COMPILER
 class CompiledExpressionCache;
 #endif
