@@ -2,6 +2,7 @@
 
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Formats/FormatFactory.h>
+#include <IO/PeekableReadBuffer.h>
 #include <msgpack.hpp>
 
 namespace DB
@@ -20,8 +21,8 @@ private:
     bool readObject();
     void insertObject(IColumn & column, DataTypePtr type, const msgpack::object & object);
 
+    PeekableReadBuffer buf;
     DataTypes data_types;
-    msgpack::unpacker unpacker;
     msgpack::object_handle object_handle;
 };
 

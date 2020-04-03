@@ -24,21 +24,34 @@ namespace ErrorCodes
 }
 
 MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
-    : IRowInputFormat(header_, in_, std::move(params_)), data_types(header_.getDataTypes()) {}
+    : IRowInputFormat(header_, in_, std::move(params_)), buf(in_), data_types(header_.getDataTypes()) {}
 
 bool MsgPackRowInputFormat::readObject()
 {
-    if (in.eof() && unpacker.nonparsed_size() == 0)
+    if (buf.eof())
         return false;
-    while (!unpacker.next(object_handle))
+    PeekableReadBufferCheckpoint checkpoint{buf};
+    size_t offset;
+    bool need_more_data = true;
+    while (need_more_data)
     {
-        if (in.eof())
-            throw Exception("Unexpected end of file while parsing MsgPack object.", ErrorCodes::INCORRECT_DATA);
-        unpacker.reserve_buffer(in.available());
-        memcpy(unpacker.buffer(), in.position(), in.available());
-        unpacker.buffer_consumed(in.available());
-        in.position() += in.available();
+        offset = 0;
+        try
+        {
+            object_handle = msgpack::unpack(buf.position(), buf.buffer().end() - buf.position(), offset);
+            need_more_data = false;
+        }
+        catch (msgpack::insufficient_bytes &)
+        {
+            buf.position() = buf.buffer().end();
+            if (buf.eof())
+                throw Exception("Unexpected end of file while parsing msgpack object.", ErrorCodes::INCORRECT_DATA);
+            buf.position() = buf.buffer().end();
+            buf.makeContinuousMemoryFromCheckpointToPos();
+            buf.rollbackToCheckpoint();
+        }
     }
+    buf.position() += offset;
     return true;
 }
 
@@ -168,9 +181,9 @@ bool MsgPackRowInputFormat::readRow(MutableColumns & columns, RowReadExtension &
 void registerInputFormatProcessorMsgPack(FormatFactory & factory)
 {
     factory.registerInputFormatProcessor("MsgPack", [](
-            ReadBuffer &buf,
-            const Block &sample,
-            const RowInputFormatParams &params,
+            ReadBuffer & buf,
+            const Block & sample,
+            const RowInputFormatParams & params,
             const FormatSettings &)
     {
         return std::make_shared<MsgPackRowInputFormat>(sample, buf, params);
