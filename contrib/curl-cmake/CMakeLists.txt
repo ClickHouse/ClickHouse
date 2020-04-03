@@ -146,3 +146,5 @@ target_compile_definitions(curl PRIVATE HAVE_CONFIG_H BUILDING_LIBCURL CURL_HIDD
 target_include_directories(curl PUBLIC ${CURL_DIR}/include ${CURL_DIR}/lib .)
 
 target_compile_definitions(curl PRIVATE OS="${CMAKE_SYSTEM_NAME}")
+
+target_link_libraries(curl PRIVATE ssl)

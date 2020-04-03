@@ -17,6 +17,7 @@ project(ClickHouse)
 include (cmake/arch.cmake)
 include (cmake/target.cmake)
 include (cmake/tools.cmake)
+include (cmake/analysis.cmake)
 
 # Ignore export() since we don't use it,
 # but it gets broken with a global targets via link_libraries()
@@ -88,8 +89,7 @@ endif()
 
 include (cmake/sanitize.cmake)
 
-
-if (CMAKE_GENERATOR STREQUAL "Ninja")
+if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
     # Turn on colored output. https://github.com/ninja-build/ninja/wiki/FAQ
     set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fdiagnostics-color=always")
     set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fdiagnostics-color=always")
@@ -121,12 +121,8 @@ endif ()
 
 option (ENABLE_TESTS "Enables tests" ON)
 
-if (ARCH_AMD64)
-    option (USE_INTERNAL_MEMCPY "Use internal implementation of 'memcpy' function instead of provided by libc. Only for x86_64." ON)
-endif ()
-
 if (OS_LINUX AND NOT UNBUNDLED AND MAKE_STATIC_LIBRARIES AND NOT SPLIT_SHARED_LIBRARIES AND CMAKE_VERSION VERSION_GREATER "3.9.0")
-    option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies USE_INTERNAL_MEMCPY." ON)
+    option (GLIBC_COMPATIBILITY "Set to TRUE to enable compatibility with older glibc libraries. Only for x86_64, Linux. Implies ENABLE_FASTMEMCPY." ON)
 endif ()
 
 if (NOT CMAKE_VERSION VERSION_GREATER "3.9.0")
@@ -190,11 +186,13 @@ if (COMPILER_GCC OR COMPILER_CLANG)
 endif ()
 
 option(WITH_COVERAGE "Build with coverage." 0)
+
 if(WITH_COVERAGE AND COMPILER_CLANG)
    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
    # If we want to disable coverage for specific translation units
    set(WITHOUT_COVERAGE "-fno-profile-instr-generate -fno-coverage-mapping")
 endif()
+
 if(WITH_COVERAGE AND COMPILER_GCC)
    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fprofile-arcs -ftest-coverage")
    set(COVERAGE_OPTION "-lgcov")
@@ -215,6 +213,10 @@ if (COMPILER_CLANG)
     # TODO investigate that
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+    if (OS_DARWIN)
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -Wl,-U,_inside_main")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-U,_inside_main")
+    endif()
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
@@ -226,9 +228,15 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 
-# Using system libs can cause a lot of warnings in includes (on macro expansion).
 if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN) OR ARCH_32)
-    option (NO_WERROR "Disable -Werror compiler option" ON)
+    # Using system libs can cause a lot of warnings in includes (on macro expansion).
+    option (WERROR "Enable -Werror compiler option" OFF)
+else ()
+    option (WERROR "Enable -Werror compiler option" ON)
+endif ()
+
+if (WERROR)
+    add_warning(error)
 endif ()
 
 # Make this extra-checks for correct library dependencies.
@@ -276,24 +284,6 @@ if (USE_INCLUDE_WHAT_YOU_USE)
     endif()
 endif ()
 
-# Using clang-tidy static analyzer http://mariobadr.com/using-clang-tidy-with-cmake-36.html https://cmake.org/cmake/help/v3.6/prop_tgt/LANG_CLANG_TIDY.html
-option (ENABLE_CLANG_TIDY "Use 'clang-tidy' static analyzer" OFF)
-if (ENABLE_CLANG_TIDY)
-    if (${CMAKE_VERSION} VERSION_LESS "3.6.0")
-        message(FATAL_ERROR "clang-tidy requires CMake version at least 3.6.")
-    endif()
-    find_program (CLANG_TIDY_EXE NAMES "clang-tidy" DOC "Path to clang-tidy executable")
-    if (NOT CLANG_TIDY_EXE)
-        set (USE_CLANG_TIDY 0)
-        message (STATUS "clang-tidy not found.")
-    else ()
-        set (USE_CLANG_TIDY 1)
-        message (STATUS "clang-tidy found: ${CLANG_TIDY_EXE}")
-        set (DO_CLANG_TIDY "${CLANG_TIDY_EXE}" "-checks=*,-clang-analyzer-alpha.*")
-        # You can enable it within a directory by: set (CMAKE_CXX_CLANG_TIDY "${DO_CLANG_TIDY}")
-    endif ()
-endif ()
-
 if (ENABLE_TESTS)
     message (STATUS "Tests are enabled")
 endif ()
@@ -326,7 +316,6 @@ include (cmake/find/poco.cmake)
 include (cmake/find/lz4.cmake)
 include (cmake/find/xxhash.cmake)
 include (cmake/find/sparsehash.cmake)
-include (cmake/find/rt.cmake)
 include (cmake/find/execinfo.cmake)
 include (cmake/find/re2.cmake)
 include (cmake/find/libgsasl.cmake)
@@ -341,10 +330,10 @@ endif()
 include (cmake/find/libxml2.cmake)
 include (cmake/find/brotli.cmake)
 include (cmake/find/protobuf.cmake)
+include (cmake/find/grpc.cmake)
 include (cmake/find/pdqsort.cmake)
 include (cmake/find/hdfs3.cmake) # uses protobuf
 include (cmake/find/s3.cmake)
-include (cmake/find/consistent-hashing.cmake)
 include (cmake/find/base64.cmake)
 include (cmake/find/parquet.cmake)
 include (cmake/find/hyperscan.cmake)
@@ -364,18 +353,11 @@ if (ENABLE_TESTS)
 endif ()
 
 # Need to process before "contrib" dir:
-include (libs/libcommon/cmake/find_jemalloc.cmake)
-include (libs/libcommon/cmake/find_cctz.cmake)
-include (libs/libmysqlxx/cmake/find_mysqlclient.cmake)
+include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
-if (USE_JEMALLOC)
-    message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
-    set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
-elseif (SANITIZE)
-    message (STATUS "Will use ${SANITIZE} sanitizer.")
-elseif (OS_LINUX)
+if (OS_LINUX AND NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
@@ -398,8 +380,13 @@ macro (add_executable target)
     endif()
 endmacro()
 
-add_subdirectory (libs)
-add_subdirectory (utils)
+set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
+include_directories(${ConfigIncludePath})
+
+add_subdirectory (base)
 add_subdirectory (dbms)
+add_subdirectory (programs)
+add_subdirectory (tests)
+add_subdirectory (utils)
 
 include (cmake/print_include_directories.cmake)
