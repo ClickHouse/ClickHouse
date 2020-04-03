@@ -8,11 +8,11 @@ namespace DB
 /** Data for HyperLogLogBiasEstimator in the uniqCombined function.
   * The development plan is as follows:
   * 1. Assemble ClickHouse.
-  * 2. Run the script src/dbms/scripts/gen-bias-data.py, which returns one array for getRawEstimates()
+  * 2. Run the script src/src/scripts/gen-bias-data.py, which returns one array for getRawEstimates()
   *     and another array for getBiases().
   * 3. Update `raw_estimates` and `biases` arrays. Also update the size of arrays in InterpolatedData.
   * 4. Assemble ClickHouse.
-  * 5. Run the script src/dbms/scripts/linear-counting-threshold.py, which creates 3 files:
+  * 5. Run the script src/src/scripts/linear-counting-threshold.py, which creates 3 files:
   * - raw_graph.txt (1st column: the present number of unique values;
   *    2nd column: relative error in the case of HyperLogLog without applying any corrections)
   * - linear_counting_graph.txt (1st column: the present number of unique values;

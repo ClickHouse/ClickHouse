@@ -17,7 +17,7 @@ cmake .. -LA -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS
 ninja
 ccache --show-stats ||:
 mv ./programs/clickhouse* /output
-mv ./dbms/unit_tests_dbms /output
+mv ./src/unit_tests_dbms /output
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
 
