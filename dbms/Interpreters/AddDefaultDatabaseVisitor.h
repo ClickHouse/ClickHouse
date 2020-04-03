@@ -23,13 +23,10 @@ namespace DB
 class AddDefaultDatabaseVisitor
 {
 public:
-    using IDResolver = std::function<ASTPtr(const ASTIdentifier &)>;
-
-    AddDefaultDatabaseVisitor(const String & database_name_, std::ostream * ostr_ = nullptr, const IDResolver & resolver_ = {})
+    AddDefaultDatabaseVisitor(const String & database_name_, std::ostream * ostr_ = nullptr)
     :   database_name(database_name_),
         visit_depth(0),
-        ostr(ostr_),
-        resolver(resolver_)
+        ostr(ostr_)
     {}
 
     void visitDDL(ASTPtr & ast) const
@@ -65,7 +62,6 @@ private:
     const String database_name;
     mutable size_t visit_depth;
     std::ostream * ostr;
-    IDResolver resolver;
 
     void visit(ASTSelectWithUnionQuery & select, ASTPtr &) const
     {
@@ -105,12 +101,7 @@ private:
     void visit(const ASTIdentifier & identifier, ASTPtr & ast) const
     {
         if (!identifier.compound())
-        {
-            if (resolver)
-                ast = resolver(identifier);
-            else
-                ast = createTableIdentifier(database_name, identifier.name);
-        }
+            ast = createTableIdentifier(database_name, identifier.name);
     }
 
     void visit(ASTSubquery & subquery, ASTPtr &) const
