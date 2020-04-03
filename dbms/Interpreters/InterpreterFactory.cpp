@@ -66,6 +66,7 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
 
 
 namespace ProfileEvents
@@ -88,6 +89,13 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
 {
     ProfileEvents::increment(ProfileEvents::Query);
 
+    auto table_resolver = [&](const ASTIdentifier & table_name)
+    {
+        assert(table_name.uuid == UUIDHelpers::Nil);
+        auto resolved_id = context.resolveStorageID(table_name);
+        return createTableIdentifier(DatabaseCatalog::instance().getTable(resolved_id)->getStorageID());
+    };
+
     if (query->as<ASTSelectQuery>())
     {
         /// This is internal part of ASTSelectWithUnionQuery.
@@ -97,11 +105,15 @@ std::unique_ptr<IInterpreter> InterpreterFactory::get(ASTPtr & query, Context & 
     else if (query->as<ASTSelectWithUnionQuery>())
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
+        AddDefaultDatabaseVisitor visitor("", nullptr, table_resolver);
+        visitor.visit(query);
         return std::make_unique<InterpreterSelectWithUnionQuery>(query, context, SelectQueryOptions(stage));
     }
     else if (query->as<ASTInsertQuery>())
     {
         ProfileEvents::increment(ProfileEvents::InsertQuery);
+        AddDefaultDatabaseVisitor visitor("", nullptr, table_resolver);
+        visitor.visit(query);
         bool allow_materialized = static_cast<bool>(context.getSettingsRef().insert_allow_materialized_columns);
         return std::make_unique<InterpreterInsertQuery>(query, context, allow_materialized);
     }
