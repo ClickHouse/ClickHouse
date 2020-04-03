@@ -610,17 +610,17 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 }
 
 
-void MergeTreeData::setTTLExpressions(const ColumnsDescription & columns,
+void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
         const ASTPtr & new_ttl_table_ast, bool only_check)
 {
 
-    auto new_column_ttls = columns.getColumnTTLs();
+    auto new_column_ttls = new_columns.getColumnTTLs();
 
-    auto create_ttl_entry = [this, &columns](ASTPtr ttl_ast)
+    auto create_ttl_entry = [this, &new_columns](ASTPtr ttl_ast)
     {
         TTLEntry result;
 
-        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, columns.getAllPhysical());
+        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, new_columns.getAllPhysical());
         result.expression = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
         result.destination_type = PartDestinationType::DELETE;
         result.result_column = ttl_ast->getColumnName();
