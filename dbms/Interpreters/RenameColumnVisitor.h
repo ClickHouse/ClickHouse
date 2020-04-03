@@ -5,7 +5,8 @@
 
 namespace DB
 {
-/// Rename ASTIdentifiers to column name
+/// Data for RenameColumnVisitor which traverse tree and rename all columns with
+/// name column_name to rename_to
 struct RenameColumnData
 {
     using TypeToVisit = ASTIdentifier;
