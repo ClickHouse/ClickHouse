@@ -10,7 +10,7 @@ namespace DB
         extern const int BAD_CAST;
     }
 
-    /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/Storages/MergeTree/BoolMask.h).
+    /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
     /// This function provides "NOT" operation for BoolMasks by swapping last two bits ("can be true" <-> "can be false").
     template <typename A>
     struct BitSwapLastTwoImpl
