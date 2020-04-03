@@ -22,8 +22,8 @@ def concatenate(lang, docs_path, single_page_file, nav):
     lang_path = os.path.join(docs_path, lang)
     az_re = re.compile(r'[a-z]')
 
-    proj_config = f'{docs_path}/toc_{lang}'
-    if os.path.exists(f'{docs_path}/toc_{lang}'):
+    proj_config = f'{docs_path}/toc_{lang}.yml'
+    if os.path.exists(proj_config):
         with open(proj_config) as cfg_file:
             files_to_concatenate = [(l[l.index(':') + 1:]).strip(" '\n") for l in cfg_file]
     else:
