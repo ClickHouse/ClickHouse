@@ -4,7 +4,7 @@ CREATE TABLE table_for_rename_nested
     date Date,
     key UInt64,
     n Nested(x UInt32, y String),
-    value1 String
+    value1 LowCardinality(String) -- column with several files
 )
 ENGINE = MergeTree()
 PARTITION BY date
@@ -29,6 +29,14 @@ ALTER TABLE table_for_rename_nested RENAME COLUMN n.renamed_x TO not_nested_x; -
 
 -- Currently not implemented
 ALTER TABLE table_for_rename_nested RENAME COLUMN n TO renamed_n; --{serverError 48}
+
+ALTER TABLE table_for_rename_nested RENAME COLUMN value1 TO renamed_value1;
+
+SELECT renamed_value1 FROM table_for_rename_nested WHERE key = 7;
+
+SHOW CREATE TABLE table_for_rename_nested;
+
+SELECT * FROM table_for_rename_nested WHERE key = 7 FORMAT TSVWithNames;
 
 DROP TABLE IF EXISTS table_for_rename_nested;
 
