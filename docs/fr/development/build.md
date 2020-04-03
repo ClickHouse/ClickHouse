@@ -64,7 +64,7 @@ $ cd ..
 ```
 
 Pour créer un exécutable, exécutez `ninja clickhouse`.
-Cela va créer de l' `dbms/programs/clickhouse` exécutable, qui peut être utilisé avec `client` ou `server` argument.
+Cela va créer de l' `programs/clickhouse` exécutable, qui peut être utilisé avec `client` ou `server` argument.
 
 # Comment Construire ClickHouse sur N'importe quel Linux {#how-to-build-clickhouse-on-any-linux}
 

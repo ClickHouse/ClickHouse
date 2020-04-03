@@ -360,7 +360,7 @@ SELECT toTypeName(CAST(x, 'Nullable(UInt16)')) FROM t_null
 
 Приводит аргумент из числового типа данных к типу данных [IntervalType](../../data_types/special_data_types/interval.md).
 
-**Синтксис**
+**Синтаксис**
 
 ``` sql
 toIntervalSecond(number)
@@ -398,5 +398,121 @@ SELECT
 │                2019-01-08 │                   2019-01-08 │
 └───────────────────────────┴──────────────────────────────┘
 ```
+
+## parseDateTimeBestEffort {#parsedatetimebesteffort}
+
+Преобразует дату и время в [строковом](../../data_types/string.md) представлении к типу данных [DateTime](../../data_types/datetime.md#data_type-datetime).
+
+Функция распознаёт форматы [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14  RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), формат даты времени ClickHouse's а также некоторые другие форматы.
+
+**Синтаксис**
+
+```sql
+parseDateTimeBestEffort(time_string[, time_zone]);
+```
+
+**Параметры**
+
+- `time_string` — строка, содержащая дату и время для преобразования. [String](../../data_types/string.md).  
+- `time_zone` — часовой пояс. Функция анализирует `time_string` в соответствии с заданным часовым поясом. [String](../../data_types/string.md).
+
+**Поддерживаемые нестандартные форматы**
+
+- [Unix timestamp](https://ru.wikipedia.org/wiki/Unix-время) в строковом представлении. 9 или 10 символов.
+- Строка с датой и временем: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
+- Строка с датой, но без времени: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` и т.д.
+- Строка с временем, и с днём: `DD`, `DD hh`, `DD hh:mm`. В этом случае `YYYY-MM` принимается равным `2000-01`.
+- Строка, содержащая дату и время вместе с информацией о часовом поясе: `YYYY-MM-DD hh:mm:ss ±h:mm`, и т.д. Например, `2020-12-12 17:36:00 -5:00`.
+
+Для всех форматов с разделителями функция распознаёт названия месяцев, выраженных в виде полного англоязычного имени месяца или в виде первых трёх символов имени месяца. Примеры: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
+
+
+**Возвращаемое значение**
+
+- `time_string` преобразованная к типу данных `DateTime`.
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT parseDateTimeBestEffort('12/12/2020 12:12:57')
+AS parseDateTimeBestEffort;
+```
+
+Результат:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2020-12-12 12:12:57 │
+└─────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Europe/Moscow') 
+AS parseDateTimeBestEffort
+```
+
+Результат:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2018-08-18 10:22:16 │
+└─────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT parseDateTimeBestEffort('1284101485') 
+AS parseDateTimeBestEffort
+```
+
+Результат:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2015-07-07 12:04:41 │
+└─────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT parseDateTimeBestEffort('2018-12-12 10:12:12') 
+AS parseDateTimeBestEffort
+```
+
+Результат:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2018-12-12 10:12:12 │
+└─────────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT parseDateTimeBestEffort('10 20:19')
+```
+
+Результат:
+
+```text
+┌─parseDateTimeBestEffort('10 20:19')─┐
+│                 2000-01-10 20:19:00 │
+└─────────────────────────────────────┘
+```
+
+**См. также**
+
+- [Информация о формате ISO 8601 от @xkcd](https://xkcd.com/1179/)
+- [RFC 1123](https://tools.ietf.org/html/rfc1123)
+- [toDate](#todate)
+- [toDateTime](#todatetime)
+
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/functions/type_conversion_functions/) <!--hide-->

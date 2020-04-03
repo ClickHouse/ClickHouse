@@ -1,7 +1,7 @@
 <div class="bg-secondary-alt my-5 py-5">
     <div class="container">
 
-        <h2 id="community" class="text-white mb-5">{{ _('ClickHouse community') }}</h2>
+        <h2 id="community" class="display-4 text-white mb-5">{{ _('ClickHouse community') }}</h2>
         <div class="row mb-5">
             <div class="col-lg">
                 <div class="row">
@@ -139,9 +139,9 @@
         </div>
         <div class="row">
             <div class="col">
-                <p class="lead text-white"><strong>{{ _('Like ClickHouse?') }}</strong> {{ _('Help to spread the word about it via') }} <a rel="external nofollow noreferrer" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">Facebook</span></a>,
-                    <a rel="external nofollow noreferrer" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">Twitter</span></a>{{ _('and') }}
-                    <a rel="external nofollow noreferrer" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">LinkedIn</span></a>!</p>
+                <h3 class="display-5 text-white">{{ _('Like ClickHouse?') }}</h3>
+                <p class="lead text-white">{{ _('Help to spread the word about it via') }} <a rel="external nofollow noreferrer" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">Facebook</span></a>,
+                    <a rel="external nofollow noreferrer" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">Twitter</span></a> {{ _('and') }} <a rel="external nofollow noreferrer" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">LinkedIn</span></a>!</p>
             </div>
         </div>
     </div>
@@ -150,18 +150,18 @@
 
 <div>
     <div class="container">
-        <div class="row my-5">
-            <div class="col-lg">
-                <h2 id="meet">{{ _('Hosting ClickHouse Meetups') }}</h2>
+        <h2 id="meet" class="display-4 mt-5">{{ _('Hosting ClickHouse Meetups') }}</h2>
+        <div class="row">
+            <div class="col-lg  my-3">
                 <p class="lead">
                     {{ _('ClickHouse meetups are essential for strengthening community worldwide, but they couldn\'t be possible without the help of local organizers. Please, feel this form if you want to become one or want to meet ClickHouse core team for any other reason.') }}
                 </p>
-                <img src="images/index/meetup.svg" alt="{{ _('ClickHouse Meetup') }}" title="{{ _('ClickHouse Meetup') }}" class="img-fluid" />
+                <img src="images/index/meetup.svg" alt="{{ _('ClickHouse Meetup') }}" title="{{ _('ClickHouse Meetup') }}" class="img-fluid mt-5" />
             </div>
 
             <div class="col-lg">
                 <form id="meetup-form" action="" method="post">
-                  <div class="form-group">
+                  <div class="form-group my-3">
                     <input type="text" class="form-control" name="name" placeholder="{{ _('Name') }} *" required="true">
                   </div>
                   <div class="form-group">
@@ -206,7 +206,7 @@
             </div>
         </div>
 
-        <div class="row mb-5">
+        <div class="row my-5">
             <div class="col">
                 <p class="lead">
                     {{ _('If you have any more thoughts or questions, feel free to contact Yandex ClickHouse team directly at') }}

@@ -1,0 +1,1 @@
+../../../en/sql_reference/functions/type_conversion_functions.md

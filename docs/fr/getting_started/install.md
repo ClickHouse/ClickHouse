@@ -108,8 +108,8 @@ Pour compiler manuellement ClickHouse, suivez les instructions pour [Linux](../d
 
 Vous pouvez compiler des paquets et les installer ou utiliser des programmes sans installer de paquets. En outre, en construisant manuellement, vous pouvez désactiver L'exigence SSE 4.2 ou construire pour les processeurs AArch64.
 
-      Client: dbms/programs/clickhouse-client
-      Server: dbms/programs/clickhouse-server
+      Client: programs/clickhouse-client
+      Server: programs/clickhouse-server
 
 Vous devrez créer un dossier de données et de métadonnées et `chown` pour l'utilisateur souhaité. Leurs chemins peuvent être modifiés dans la configuration du serveur (src / SGBD / programs / server / config.xml), par défaut, ils sont:
 

@@ -1,0 +1,1 @@
+../../../en/sql_reference/statements/insert_into.md
