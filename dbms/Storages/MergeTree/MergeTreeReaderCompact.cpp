@@ -81,12 +81,10 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
         const auto & [name, type] = *name_and_type;
         auto position = data_part->getColumnPosition(name);
 
-        if (!position)
+        if (!position && alter_conversions.isColumnRenamed(name))
         {
-            auto renamed_it = alter_conversions.rename_map.find(name);
-
-            if (renamed_it != alter_conversions.rename_map.end())
-                position = data_part->getColumnPosition(renamed_it->second);
+            String old_name = alter_conversions.getColumnOldName(name);
+            position = data_part->getColumnPosition(old_name);
         }
 
         if (!position && typeid_cast<const DataTypeArray *>(type.get()))
@@ -136,11 +134,11 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
             auto [name, type] = *name_and_type;
 
-            if (alter_conversions.rename_map.count(name))
+            if (alter_conversions.isColumnRenamed(name))
             {
-                String original_name = alter_conversions.rename_map[name];
-                if (!data_part->getColumnPosition(name) && data_part->getColumnPosition(original_name))
-                    name = original_name;
+                String old_name = alter_conversions.getColumnOldName(name);
+                if (!data_part->getColumnPosition(name) && data_part->getColumnPosition(old_name))
+                    name = old_name;
             }
 
             auto & column = mutable_columns[pos];

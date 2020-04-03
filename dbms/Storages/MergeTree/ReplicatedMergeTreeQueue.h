@@ -331,7 +331,9 @@ public:
 
     MutationCommands getMutationCommands(const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const;
 
-    /// TODO(alesap)
+    /// Return mutation commands for part with smallest mutation version bigger
+    /// than data part version. Used when we apply alter commands on fly,
+    /// without actual data modification on disk.
     MutationCommands getFirstAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const;
 
     /// Mark finished mutations as done. If the function needs to be called again at some later time
