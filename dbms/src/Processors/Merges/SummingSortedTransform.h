@@ -54,8 +54,12 @@ public:
 
         void insertRow(const Row & row, const ColumnNumbers & column_numbers)
         {
-            for (auto column_number  :column_numbers)
-                columns[column_number]->insert(row[column_number]);
+            size_t next_column = columns.size() - column_numbers.size();
+            for (auto column_number : column_numbers)
+            {
+                columns[next_column]->insert(row[column_number]);
+                ++next_column;
+            }
 
             ++total_merged_rows;
             ++merged_rows;
