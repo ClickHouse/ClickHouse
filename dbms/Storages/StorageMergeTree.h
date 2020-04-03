@@ -120,7 +120,11 @@ private:
 
     BackgroundProcessingPoolTaskResult movePartsTask();
 
-    void mutateImpl(const MutationCommands & commands, size_t mutations_sync);
+    /// Allocate block number for new mutation, write mutation to disk
+    /// and into in-memory structures. Wake up merge-mutation task.
+    Int64 startMutation(const MutationCommands & commands, String & mutation_file_name);
+    /// Wait until mutation with version will finish mutation for all parts
+    void waitForMutation(Int64 version, const String & filename);
 
     /// Try and find a single part to mutate and mutate it. If some part was successfully mutated, return true.
     bool tryMutatePart();

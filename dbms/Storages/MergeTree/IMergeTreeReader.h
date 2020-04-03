@@ -78,6 +78,7 @@ protected:
     MarkRanges all_mark_ranges;
 
     friend class MergeTreeRangeReader::DelayedStream;
+    /// Alter conversions, which must be applied on fly if required
     MergeTreeData::AlterConversions alter_conversions;
 };
 
