@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #if defined(__SSE2__)
     #include <emmintrin.h>
