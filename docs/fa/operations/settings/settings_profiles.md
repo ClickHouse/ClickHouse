@@ -1,23 +1,27 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 61
+toc_title: "\u067E\u0631\u0648\u0641\u0627\u06CC\u0644 \u062A\u0646\u0638\u06CC\u0645\
+  \u0627\u062A"
 ---
 
-# Settings Profiles {#settings-profiles}
+# پروفایل تنظیمات {#settings-profiles}
 
-A settings profile is a collection of settings grouped under the same name. Each ClickHouse user has a profile.
-To apply all the settings in a profile, set the `profile` setting.
+مشخصات تنظیمات مجموعه ای از تنظیمات گروه بندی شده تحت همین نام است. هر کاربر کلیک دارای مشخصات.
+برای اعمال تمام تنظیمات در یک پروفایل, تنظیم `profile` تنظیمات.
 
-Example:
+مثال:
 
-Install the `web` profile.
+نصب `web` پرونده.
 
 ``` sql
 SET profile = 'web'
 ```
 
-Settings profiles are declared in the user config file. This is usually `users.xml`.
+پروفایل تنظیمات در فایل پیکربندی کاربر اعلام کرد. این است که معمولا `users.xml`.
 
-Example:
+مثال:
 
 ``` xml
 <!-- Settings profiles -->
@@ -61,8 +65,8 @@ Example:
 </profiles>
 ```
 
-The example specifies two profiles: `default` and `web`. The `default` profile has a special purpose: it must always be present and is applied when starting the server. In other words, the `default` profile contains default settings. The `web` profile is a regular profile that can be set using the `SET` query or using a URL parameter in an HTTP query.
+به عنوان مثال دو پروفایل مشخص: `default` و `web`. این `default` مشخصات دارای یک هدف خاص: همیشه باید وجود داشته باشد و در هنگام شروع سرور اعمال می شود. به عبارت دیگر `default` مشخصات شامل تنظیمات پیش فرض. این `web` مشخصات یک پروفایل به طور منظم است که می تواند با استفاده از مجموعه است `SET` پرسوجو یا استفاده از یک پارامتر نشانی وب در پرسوجو اچتیتیپی.
 
-Settings profiles can inherit from each other. To use inheritance, indicate one or multiple `profile` settings before the other settings that are listed in the profile. In case when one setting is defined in different profiles, the latest defined is used.
+پروفایل تنظیمات می توانید از یکدیگر به ارث می برند. برای استفاده از ارث, نشان می دهد یک یا چند `profile` تنظیمات قبل از تنظیمات دیگر که در مشخصات ذکر شده. در صورتی که یک تنظیم در پروفایل های مختلف تعریف شده, از تعریف استفاده شده است.
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->

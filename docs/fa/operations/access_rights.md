@@ -1,12 +1,15 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 48
+toc_title: "\u062D\u0642\u0648\u0642 \u062F\u0633\u062A\u0631\u0633\u06CC"
 ---
 
-# Access Rights {#access-rights}
+# حقوق دسترسی {#access-rights}
 
-Users and access rights are set up in the user config. This is usually `users.xml`.
+کاربران و حقوق دسترسی هستند تا در پیکربندی کاربر تنظیم شده است. این است که معمولا `users.xml`.
 
-Users are recorded in the `users` section. Here is a fragment of the `users.xml` file:
+کاربران در ثبت `users` بخش. در اینجا یک قطعه از است `users.xml` پرونده:
 
 ``` xml
 <!-- Users and ACL. -->
@@ -67,15 +70,15 @@ Users are recorded in the `users` section. Here is a fragment of the `users.xml`
 </users>
 ```
 
-You can see a declaration from two users: `default`and`web`. We added the `web` user separately.
+شما می توانید اعلامیه ای از دو کاربر را ببینید: `default`و`web`. ما اضافه کردیم `web` کاربر به طور جداگانه.
 
-The `default` user is chosen in cases when the username is not passed. The `default` user is also used for distributed query processing, if the configuration of the server or cluster doesn’t specify the `user` and `password` (see the section on the [Distributed](../operations/table_engines/distributed.md) engine).
+این `default` کاربر در مواردی که نام کاربری تصویب نشده است انتخاب شده است. این `default` کاربر همچنین برای پردازش پرس و جو توزیع شده استفاده می شود, اگر پیکربندی سرور یا خوشه می کند مشخص نیست `user` و `password` (نگاه کنید به بخش در [توزیع شده](../engines/table_engines/special/distributed.md) موتور).
 
 The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
 
-The password is specified in clear text (not recommended) or in SHA-256. The hash isn’t salted. In this regard, you should not consider these passwords as providing security against potential malicious attacks. Rather, they are necessary for protection from employees.
+رمز عبور در متن روشن مشخص (توصیه نمی شود) و یا در شا 256. هش شور نیست. در این راستا نباید این رمزهای عبور را به عنوان امنیت در برابر حملات مخرب بالقوه در نظر بگیرید. بلکه لازم است برای حفاظت از کارکنان.
 
-A list of networks is specified that access is allowed from. In this example, the list of networks for both users is loaded from a separate file (`/etc/metrika.xml`) containing the `networks` substitution. Here is a fragment of it:
+یک لیست از شبکه مشخص شده است که دسترسی از اجازه. در این مثال لیستی از شبکه ها برای هر دو کاربران لود شده از یک فایل جداگانه (`/etc/metrika.xml`) حاوی `networks` جایگزینی. در اینجا یک قطعه است:
 
 ``` xml
 <yandex>
@@ -89,22 +92,22 @@ A list of networks is specified that access is allowed from. In this example, th
 </yandex>
 ```
 
-You could define this list of networks directly in `users.xml`, or in a file in the `users.d` directory (for more information, see the section “[Configuration files](configuration_files.md#configuration_files)”).
+شما می توانید این لیست از شبکه به طور مستقیم در تعریف `users.xml` یا در یک فایل در `users.d` فهرست راهنما (برای اطلاعات بیشتر, بخش را ببینید “[پروندههای پیکربندی](configuration_files.md#configuration_files)”).
 
-The config includes comments explaining how to open access from everywhere.
+پیکربندی شامل نظرات توضیح میدهد که چگونه برای باز کردن دسترسی از همه جا.
 
-For use in production, only specify `ip` elements (IP addresses and their masks), since using `host` and `hoost_regexp` might cause extra latency.
+برای استفاده در تولید فقط مشخص کنید `ip` عناصر (نشانی اینترنتی و ماسک خود را), از زمان استفاده از `host` و `hoost_regexp` ممکن است تاخیر اضافی شود.
 
-Next the user settings profile is specified (see the section “[Settings profiles](settings/settings_profiles.md)”. You can specify the default profile, `default'`. The profile can have any name. You can specify the same profile for different users. The most important thing you can write in the settings profile is `readonly=1`, which ensures read-only access. Then specify the quota to be used (see the section “[Quotas](quotas.md#quotas)”). You can specify the default quota: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
+بعد مشخصات تنظیمات کاربر مشخص شده است (بخش را ببینید “[پروفایل تنظیمات](settings/settings_profiles.md)”. شما می توانید مشخصات پیش فرض را مشخص کنید, `default'`. مشخصات می توانید هر نام دارند. شما می توانید مشخصات مشابه برای کاربران مختلف را مشخص کنید. مهم ترین چیز شما می توانید در مشخصات تنظیمات ارسال شده است `readonly=1`, که تضمین می کند فقط خواندنی دسترسی. سپس سهمیه مشخص مورد استفاده قرار گیرد (بخش را ببینید “[سهمیه](quotas.md#quotas)”). شما می توانید سهمیه پیش فرض را مشخص کنید: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
 
-In the optional `<allow_databases>` section, you can also specify a list of databases that the user can access. By default, all databases are available to the user. You can specify the `default` database. In this case, the user will receive access to the database by default.
+در اختیاری `<allow_databases>` بخش, شما همچنین می توانید یک لیست از پایگاه داده که کاربر می تواند دسترسی مشخص. به طور پیش فرض تمام پایگاه های داده در دسترس کاربر هستند. شما می توانید مشخص کنید `default` پایگاه داده است. در این مورد, کاربر دسترسی به پایگاه داده به طور پیش فرض دریافت.
 
-In the optional `<allow_dictionaries>` section, you can also specify a list of dictionaries that the user can access. By default, all dictionaries are available to the user.
+در اختیاری `<allow_dictionaries>` بخش, شما همچنین می توانید یک لیست از لغت نامه که کاربر می تواند دسترسی مشخص. به طور پیش فرض تمام لغت نامه ها برای کاربر در دسترس هستند.
 
-Access to the `system` database is always allowed (since this database is used for processing queries).
+دسترسی به `system` پایگاه داده همیشه مجاز (از این پایگاه داده برای پردازش نمایش داده شد استفاده می شود).
 
-The user can get a list of all databases and tables in them by using `SHOW` queries or system tables, even if access to individual databases isn’t allowed.
+کاربر می تواند لیستی از تمام پایگاه های داده و جداول را با استفاده از `SHOW` نمایش داده شد و یا جداول سیستم, حتی اگر دسترسی به پایگاه داده های فردی مجاز نیست.
 
-Database access is not related to the [readonly](settings/permissions_for_queries.md#settings_readonly) setting. You can’t grant full access to one database and `readonly` access to another one.
+دسترسی به پایگاه داده به [فقط خواندنی](settings/permissions_for_queries.md#settings_readonly) تنظیمات. شما نمی توانید دسترسی کامل به یک پایگاه داده و `readonly` دسترسی به یکی دیگر.
 
-[Original article](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

@@ -1,57 +1,60 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 78
+toc_title: "\u0633\u0648\u0627\u0644\u0627\u062A \u0639\u0645\u0648\u0645\u06CC"
 ---
 
-# General Questions {#general-questions}
+# سوالات عمومی {#general-questions}
 
-## Why Not Use Something Like MapReduce? {#why-not-use-something-like-mapreduce}
+## چرا چیزی شبیه نگاشتکاهش استفاده نمی? {#why-not-use-something-like-mapreduce}
 
-We can refer to systems like MapReduce as distributed computing systems in which the reduce operation is based on distributed sorting. The most common open-source solution in this class is [Apache Hadoop](http://hadoop.apache.org). Yandex uses its in-house solution, YT.
+ما می توانیم به سیستم هایی مانند نگاشتکاهش به عنوان سیستم های محاسبات توزیع شده اشاره کنیم که عملیات کاهش بر اساس مرتب سازی توزیع شده است. شایع ترین راه حل منبع باز در این کلاس است [Apache Hadoop](http://hadoop.apache.org). یاندکس از راه حل داخلی خود استفاده می کند.
 
-These systems aren’t appropriate for online queries due to their high latency. In other words, they can’t be used as the back-end for a web interface. These types of systems aren’t useful for real-time data updates. Distributed sorting isn’t the best way to perform reduce operations if the result of the operation and all the intermediate results (if there are any) are located in the RAM of a single server, which is usually the case for online queries. In such a case, a hash table is an optimal way to perform reduce operations. A common approach to optimizing map-reduce tasks is pre-aggregation (partial reduce) using a hash table in RAM. The user performs this optimization manually. Distributed sorting is one of the main causes of reduced performance when running simple map-reduce tasks.
+این سیستم ها به دلیل زمان تاخیر بالا برای نمایش داده شد اینترنتی مناسب نیست. به عبارت دیگر نمی توانند به عنوان یک رابط وب به پایان برسند. این نوع سیستم ها برای به روز رسانی داده های زمان واقعی مفید نیستند. مرتب سازی توزیع شده بهترین راه برای انجام عملیات کاهش نیست اگر نتیجه عملیات و تمام نتایج متوسط (اگر وجود داشته باشد) در رم یک سرور قرار دارد که معمولا مورد نمایش داده شد اینترنتی است. در چنین حالتی یک جدول هش یک راه بهینه برای کاهش عملیات است. یک رویکرد مشترک برای بهینه سازی نقشه کاهش وظایف قبل از تجمع (بخشی کاهش) با استفاده از یک جدول هش در رم است. کاربر این بهینه سازی را به صورت دستی انجام می دهد. مرتب سازی توزیع شده یکی از علل اصلی کاهش عملکرد در هنگام اجرای نقشه ساده است-کاهش وظایف.
 
-Most MapReduce implementations allow you to execute arbitrary code on a cluster. But a declarative query language is better suited to OLAP to run experiments quickly. For example, Hadoop has Hive and Pig. Also consider Cloudera Impala or Shark (outdated) for Spark, as well as Spark SQL, Presto, and Apache Drill. Performance when running such tasks is highly sub-optimal compared to specialized systems, but relatively high latency makes it unrealistic to use these systems as the backend for a web interface.
+اکثر پیاده سازی نگاشتکاهش به شما اجازه اجرای کد دلخواه در یک خوشه. اما یک زبان پرس و جو اعلانی بهتر است به تاباندن لیزر به اجرا تجربه به سرعت مناسب است. مثلا, هادوپ است کندو و خوک. همچنین در نظر ابردرا ایمپالا یا کوسه (منسوخ شده) برای جرقه, و همچنین شمع جرقه, تند, و مته درد مقعد. عملکرد هنگامی که در حال اجرا از جمله وظایف بسیار زیر بهینه در مقایسه با سیستم های تخصصی, اما زمان تاخیر نسبتا بالا باعث می شود غیر واقعی برای استفاده از این سیستم به عنوان باطن برای یک رابط وب.
 
-## What If I Have a Problem with Encodings When Using Oracle Through ODBC? {#oracle-odbc-encodings}
+## اگر من یک مشکل با کدگذاریها در هنگام استفاده از اوراکل از طریق ان بی سی دارند? {#oracle-odbc-encodings}
 
-If you use Oracle through the ODBC driver as a source of external dictionaries, you need to set the correct value for the `NLS_LANG` environment variable in `/etc/default/clickhouse`. For more information, see the [Oracle NLS\_LANG FAQ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
+اگر شما استفاده از اوراکل از طریق راننده او بی سی به عنوان یک منبع از لغت نامه های خارجی, شما نیاز به تنظیم مقدار صحیح برای `NLS_LANG` متغیر محیطی در `/etc/default/clickhouse`. برای کسب اطلاعات بیشتر, دیدن [اوراکل nls\_lang پرسش و پاسخ](https://www.oracle.com/technetwork/products/globalization/nls-lang-099431.html).
 
-**Example**
+**مثال**
 
 ``` sql
 NLS_LANG=RUSSIAN_RUSSIA.UTF8
 ```
 
-## How Do I Export Data from ClickHouse to a File? {#how-to-export-to-file}
+## چگونه می توانم صادرات داده ها از خانه رعیتی به یک فایل? {#how-to-export-to-file}
 
-### Using INTO OUTFILE Clause {#using-into-outfile-clause}
+### با استفاده از به outfile بند {#using-into-outfile-clause}
 
-Add an [INTO OUTFILE](../query_language/select/#into-outfile-clause) clause to your query.
+افزودن یک [INTO OUTFILE](../query_language/select/#into-outfile-clause) بند به درخواست شما.
 
-For example:
+به عنوان مثال:
 
 ``` sql
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-By default, ClickHouse uses the [TabSeparated](../interfaces/formats.md#tabseparated) format for output data. To select the [data format](../interfaces/formats.md), use the [FORMAT clause](../query_language/select/#format-clause).
+به طور پیش فرض, تاتر با استفاده از [جدول دار](../interfaces/formats.md#tabseparated) فرمت برای داده های خروجی. برای انتخاب [قالب داده](../interfaces/formats.md), استفاده از [بند فرمت](../query_language/select/#format-clause).
 
-For example:
+به عنوان مثال:
 
 ``` sql
 SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 ```
 
-### Using a File-Engine Table {#using-a-file-engine-table}
+### با استفاده از جدول فایل موتور {#using-a-file-engine-table}
 
-See [File](../operations/table_engines/file.md).
+ببینید [پرونده](../engines/table_engines/special/file.md).
 
-### Using Command-Line Redirection {#using-command-line-redirection}
+### با استفاده از تغییر مسیر خط فرمان {#using-command-line-redirection}
 
 ``` sql
 $ clickhouse-client --query "SELECT * from table" --format FormatName > result.txt
 ```
 
-See [clickhouse-client](../interfaces/cli.md).
+ببینید [کلیک مشتری](../interfaces/cli.md).
 
-{## [Original article](https://clickhouse.tech/docs/en/faq/general/) ##}
+{## [مقاله اصلی](https://clickhouse.tech/docs/en/faq/general/) ##}
