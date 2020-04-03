@@ -46,7 +46,13 @@ BlockIO InterpreterAlterQuery::execute()
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions,
     /// mutation expression, etc.
-    AddDefaultDatabaseVisitor visitor(table_id.getDatabaseName());
+    auto resolver = [&](const ASTIdentifier & table_name)
+    {
+        assert(table_name.uuid == UUIDHelpers::Nil);
+        auto resolved_id = context.resolveStorageID(table_name, Context::ResolveOrdinary);
+        return createTableIdentifier(DatabaseCatalog::instance().getTable(resolved_id)->getStorageID());
+    };
+    AddDefaultDatabaseVisitor visitor(table_id.getDatabaseName(), nullptr, resolver);
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
