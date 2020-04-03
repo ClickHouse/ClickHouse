@@ -165,8 +165,6 @@ public:
     const DataTypes & getArgumentTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
 
-    virtual bool hasConstArgument() const { return false; } //will be comments later
-
 protected:
     DataTypes argument_types;
     Array parameters;

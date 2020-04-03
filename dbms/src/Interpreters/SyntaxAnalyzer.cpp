@@ -784,18 +784,17 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     SyntaxAnalyzerResult && result,
     const SelectQueryOptions & select_options,
     const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-    const Names & required_result_columns) const
-{
-    auto * select_query = query->as<ASTSelectQuery>();
+    const Names & required_result_columns) const {
+    auto *select_query = query->as<ASTSelectQuery>();
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
 
-    const auto & settings = context.getSettingsRef();
+    const auto &settings = context.getSettingsRef();
 
-    const NameSet & source_columns_set = result.source_columns_set;
+    const NameSet &source_columns_set = result.source_columns_set;
     result.analyzed_join = std::make_shared<AnalyzedJoin>(settings, context.getTemporaryVolume());
 
     if (remove_duplicates)
@@ -807,14 +806,13 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     /// TODO: Remove unneeded conversion
     std::vector<TableWithColumnNames> tables_with_column_names;
     tables_with_column_names.reserve(tables_with_columns.size());
-    for (const auto & table : tables_with_columns)
+    for (const auto &table : tables_with_columns)
         tables_with_column_names.emplace_back(table.removeTypes());
 
-    if (tables_with_columns.size() > 1)
-    {
+    if (tables_with_columns.size() > 1) {
         result.analyzed_join->columns_from_joined_table = tables_with_columns[1].columns;
         result.analyzed_join->deduplicateAndQualifyColumnNames(
-            source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
+                source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_column_names);
@@ -836,36 +834,39 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     {
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
-    ArithmeticOperationsInAgrFuncVisitor().visit(query);
+        ArithmeticOperationsInAgrFuncVisitor().visit(query);
 
-    if (select_query)
-    {
-        /// Push the predicate expression down to the subqueries.
-        result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_column_names, settings).optimize(*select_query);
+        if (select_query) {
+            /// Push the predicate expression down to the subqueries.
+            result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_column_names,
+                                                                      settings).optimize(*select_query);
 
-        /// GROUP BY injective function elimination.
-        optimizeGroupBy(select_query, source_columns_set, context);
+            /// GROUP BY injective function elimination.
+            optimizeGroupBy(select_query, source_columns_set, context);
 
-        /// Remove duplicate items from ORDER BY.
-        optimizeOrderBy(select_query);
+            /// Remove duplicate items from ORDER BY.
+            optimizeOrderBy(select_query);
 
-        /// Remove duplicated elements from LIMIT BY clause.
-        optimizeLimitBy(select_query);
+            /// Remove duplicated elements from LIMIT BY clause.
+            optimizeLimitBy(select_query);
 
-        /// Remove duplicated columns from USING(...).
-        optimizeUsing(select_query);
+            /// Remove duplicated columns from USING(...).
+            optimizeUsing(select_query);
 
-        /// array_join_alias_to_name, array_join_result_to_source.
-        getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
+            /// array_join_alias_to_name, array_join_result_to_source.
+            getArrayJoinedColumns(query, result, select_query, result.source_columns, source_columns_set);
 
-        setJoinStrictness(*select_query, settings.join_default_strictness, settings.any_join_distinct_right_table_keys,
-                          result.analyzed_join->table_join);
-        collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_column_names, result.aliases);
+            setJoinStrictness(*select_query, settings.join_default_strictness,
+                              settings.any_join_distinct_right_table_keys,
+                              result.analyzed_join->table_join);
+            collectJoinedColumns(*result.analyzed_join, *select_query, tables_with_column_names, result.aliases);
+        }
+
+        result.aggregates = getAggregates(query, *select_query);
+        result.collectUsedColumns(query);
+        return std::make_shared<const SyntaxAnalyzerResult>(result);
     }
 
-    result.aggregates = getAggregates(query, *select_query);
-    result.collectUsedColumns(query);
-    return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
 SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage) const
