@@ -280,7 +280,7 @@ Careful choice of the primary key is extremely important for processing short-ti
 Optional sampling expression can be specified in the SAMPLE BY clause. It is used to implement the SAMPLE clause in a SELECT query for approximate query execution.
 Sampling expression must be one of the elements of the primary key tuple. For example, if your primary key is (CounterID, EventDate, intHash64(UserID)), your sampling expression might be intHash64(UserID).
 
-Engine settings can be specified in the SETTINGS clause. Full list is in the source code in the 'dbms/Storages/MergeTree/MergeTreeSettings.h' file.
+Engine settings can be specified in the SETTINGS clause. Full list is in the source code in the 'src/Storages/MergeTree/MergeTreeSettings.h' file.
 E.g. you can specify the index (primary key) granularity with SETTINGS index_granularity = 8192.
 
 Examples:

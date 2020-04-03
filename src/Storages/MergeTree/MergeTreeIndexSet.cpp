@@ -239,7 +239,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         return;
 
     /// Replace logical functions with bit functions.
-    /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/Storages/MergeTree/BoolMask.h).
+    /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
     traverseAST(expression_ast);
 
     auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(

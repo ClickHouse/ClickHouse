@@ -446,7 +446,7 @@ Toutes les règles ci-dessus sont aussi valables pour la [OPTIMIZE](misc.md#misc
 OPTIMIZE TABLE table_not_partitioned PARTITION tuple() FINAL;
 ```
 
-Les exemples de `ALTER ... PARTITION` les requêtes sont démontrées dans les tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_local.sql) et [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
+Les exemples de `ALTER ... PARTITION` les requêtes sont démontrées dans les tests [`00502_custom_partitioning_local`](https://github.com/ClickHouse/ClickHouse/blob/master/src/tests/queries/0_stateless/00502_custom_partitioning_local.sql) et [`00502_custom_partitioning_replicated_zookeeper`](https://github.com/ClickHouse/ClickHouse/blob/master/src/tests/queries/0_stateless/00502_custom_partitioning_replicated_zookeeper.sql).
 
 ### Manipulations avec Table TTL {#manipulations-with-table-ttl}
 

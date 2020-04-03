@@ -256,7 +256,7 @@ Colonne:
 -   `value` ([Int64](../data_types/int_uint.md)) — Metric value.
 -   `description` ([Chaîne](../data_types/string.md)) — Metric description.
 
-La liste des mesures que vous pouvez trouver dans le [SGBD / src / Common / CurrentMetrics.rpc](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Common/CurrentMetrics.cpp) fichier source de ClickHouse.
+La liste des mesures que vous pouvez trouver dans le [SGBD / src / Common / CurrentMetrics.rpc](https://github.com/ClickHouse/ClickHouse/blob/master/src/src/Common/CurrentMetrics.cpp) fichier source de ClickHouse.
 
 **Exemple**
 

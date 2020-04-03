@@ -10,7 +10,7 @@ namespace DB
         extern const int BAD_CAST;
     }
 
-    /// Working with UInt8: last bit = can be true, previous = can be false (Like dbms/Storages/MergeTree/BoolMask.h).
+    /// Working with UInt8: last bit = can be true, previous = can be false (Like src/Storages/MergeTree/BoolMask.h).
     /// This function provides "AND" operation for BoolMasks.
     /// Returns: "can be true" = A."can be true" AND B."can be true"
     ///          "can be false" = A."can be false" OR B."can be false"

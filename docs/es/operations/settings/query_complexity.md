@@ -41,7 +41,7 @@ El consumo de memoria también está restringido por los parámetros `max_memory
 
 La cantidad máxima de RAM que se utilizará para ejecutar las consultas de un usuario en un único servidor.
 
-Los valores predeterminados se definen en [Configuración.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L288). De forma predeterminada, el importe no está restringido (`max_memory_usage_for_user = 0`).
+Los valores predeterminados se definen en [Configuración.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L288). De forma predeterminada, el importe no está restringido (`max_memory_usage_for_user = 0`).
 
 Ver también la descripción de [Método de codificación de datos:](#settings_max_memory_usage).
 
@@ -49,7 +49,7 @@ Ver también la descripción de [Método de codificación de datos:](#settings_m
 
 La cantidad máxima de RAM que se utilizará para ejecutar todas las consultas en un único servidor.
 
-Los valores predeterminados se definen en [Configuración.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L289). De forma predeterminada, el importe no está restringido (`max_memory_usage_for_all_queries = 0`).
+Los valores predeterminados se definen en [Configuración.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L289). De forma predeterminada, el importe no está restringido (`max_memory_usage_for_all_queries = 0`).
 
 Ver también la descripción de [Método de codificación de datos:](#settings_max_memory_usage).
 
