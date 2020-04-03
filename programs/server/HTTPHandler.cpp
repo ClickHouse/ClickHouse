@@ -328,15 +328,8 @@ void HTTPHandler::handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Ne
         internal_compression = params.getParsed<bool>("compress", false);
 
         /// Workaround. Poco does not detect 411 Length Required case.
-<<<<<<< HEAD:programs/server/HTTPHandler.cpp
         if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST && !request.getChunkedTransferEncoding() && !request.hasContentLength())
             throw Exception("The Transfer-Encoding is not chunked and there is no Content-Length header for POST request", ErrorCodes::HTTP_LENGTH_REQUIRED);
-=======
-        if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST
-                && !request.getChunkedTransferEncoding()
-                && !request.hasContentLength())
-            throw Exception("There is neither Transfer-Encoding header nor Content-Length header", ErrorCodes::HTTP_LENGTH_REQUIRED);
->>>>>>> ISSUES-5436 fix build failure & fix test failure:dbms/programs/server/HTTPHandler.cpp
 
         {
             Context query_context = server.context();

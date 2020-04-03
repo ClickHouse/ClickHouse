@@ -156,19 +156,16 @@ HTTPResponseBufferPtr HTTPQueryRequestHandler<QueryParamExtractor>::createRespon
         /// Both gzip and deflate are supported. If the client supports both, gzip is preferred.
         /// NOTE parsing of the list of methods is slightly incorrect.
         if (std::string::npos != http_response_compression_methods.find("gzip"))
-            return std::make_shared<WriteBufferFromHTTPServerResponse>(
-                request, response, keep_alive, true, CompressionMethod::Gzip, DBMS_DEFAULT_BUFFER_SIZE);
+            return std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive, true, CompressionMethod::Gzip);
         else if (std::string::npos != http_response_compression_methods.find("deflate"))
-            return std::make_shared<WriteBufferFromHTTPServerResponse>(
-                request, response, keep_alive, true, CompressionMethod::Zlib, DBMS_DEFAULT_BUFFER_SIZE);
+            return std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive, true, CompressionMethod::Zlib);
 #if USE_BROTLI
         else if (http_response_compression_methods == "br")
-            return std::make_shared<WriteBufferFromHTTPServerResponse>(
-                request, response, keep_alive, true, CompressionMethod::Brotli, DBMS_DEFAULT_BUFFER_SIZE);
+            return std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive, true, CompressionMethod::Brotli);
 #endif
     }
 
-    return std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive, false, CompressionMethod{}, DBMS_DEFAULT_BUFFER_SIZE);
+    return std::make_shared<WriteBufferFromHTTPServerResponse>(request, response, keep_alive, false, CompressionMethod{});
 }
 
 
