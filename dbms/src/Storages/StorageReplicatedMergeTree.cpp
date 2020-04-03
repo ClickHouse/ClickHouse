@@ -4717,7 +4717,8 @@ void StorageReplicatedMergeTree::clearBlocksInPartition(
 void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace,
                                                       const Context & context)
 {
-    auto lock1 = lockStructureForShare(false, context.getCurrentQueryId());
+    /// First argument is true, because we possibly will add new data to current table.
+    auto lock1 = lockStructureForShare(true, context.getCurrentQueryId());
     auto lock2 = source_table->lockStructureForShare(false, context.getCurrentQueryId());
 
     Stopwatch watch;
@@ -4774,6 +4775,9 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
                 ErrorCodes::LOGICAL_ERROR);
 
         String hash_hex = src_part->checksums.getTotalChecksumHex();
+
+        LOG_INFO(log, "Trying to " << (replace ? "replace " : "attach ") << src_part->name << " with hash_hex " << hash_hex);
+
         String block_id_path = replace ? "" : (zookeeper_path + "/blocks/" + partition_id + "_replace_from_" + hash_hex);
 
         auto lock = allocateBlockNumber(partition_id, zookeeper, block_id_path);

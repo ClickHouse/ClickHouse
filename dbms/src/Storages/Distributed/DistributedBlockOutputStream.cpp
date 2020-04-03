@@ -290,7 +290,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 if (throttler)
                     job.connection_entry->setThrottler(throttler);
 
-                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, &settings);
+                job.stream = std::make_shared<RemoteBlockOutputStream>(*job.connection_entry, timeouts, query_string, &settings, &context.getClientInfo());
                 job.stream->writePrefix();
             }
 
@@ -598,6 +598,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             writeVarUInt(ClickHouseRevision::get(), header_buf);
             writeStringBinary(query_string, header_buf);
             context.getSettingsRef().serialize(header_buf);
+            context.getClientInfo().write(header_buf, ClickHouseRevision::get());
 
             /// Add new fields here, for example:
             /// writeVarUInt(my_new_data, header_buf);

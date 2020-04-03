@@ -2,7 +2,6 @@
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/SyntaxAnalyzer.h>
-#include <Interpreters/InJoinSubqueriesPreprocessor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
@@ -819,9 +818,6 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_column_names);
 
-    /// Rewrite IN and/or JOIN for distributed tables according to distributed_product_mode setting.
-    InJoinSubqueriesPreprocessor(context).visit(query);
-
     /// Optimizes logical expressions.
     LogicalExpressionsOptimizer(select_query, settings.optimize_min_equality_disjunction_chain_length.value).perform();
 
@@ -867,7 +863,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     return std::make_shared<const SyntaxAnalyzerResult>(result);
 }
 
-SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, StoragePtr storage) const
+SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyze(ASTPtr & query, const NamesAndTypesList & source_columns, ConstStoragePtr storage) const
 {
     if (query->as<ASTSelectQuery>())
         throw Exception("Not select analyze for select asts.", ErrorCodes::LOGICAL_ERROR);
