@@ -2049,12 +2049,15 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
-    auto lock = getLock();
+    StorageID resolved = StorageID::createEmpty();
     std::optional<Exception> exc;
-    auto resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
+    {
+        auto lock = getLock();
+        resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
+    }
     if (exc)
         throw Exception(*exc);
-    return resolved;
+    return DatabaseCatalog::instance().getTable(resolved)->getStorageID();
 }
 
 StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace where) const
@@ -2062,8 +2065,14 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
-    auto lock = getLock();
-    return resolveStorageIDImpl(std::move(storage_id), where, nullptr);
+    StorageID resolved = StorageID::createEmpty();
+    {
+        auto lock = getLock();
+        resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
+    }
+    if (auto table = DatabaseCatalog::instance().tryGetTable(resolved))
+        return table->getStorageID();
+    return StorageID::createEmpty();
 }
 
 StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const

@@ -73,18 +73,20 @@ BlockIO InterpreterDropQuery::executeToTable(
                         ErrorCodes::UNKNOWN_TABLE);
     }
 
-    auto table_id = context.resolveStorageID(table_id_, Context::ResolveOrdinary);
+    auto table_id = query.if_exists ? context.tryResolveStorageID(table_id_, Context::ResolveOrdinary)
+                                    : context.resolveStorageID(table_id_, Context::ResolveOrdinary);
+    if (!table_id)
+        return {};
 
     auto ddl_guard = (!query.no_ddl_lock ? DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name) : nullptr);
 
-    auto [database, table] = tryGetDatabaseAndTable(table_id.database_name, table_id.table_name, query.if_exists);
+    auto [database, table] = DatabaseCatalog::instance().getDatabaseAndTable(table_id);
 
     if (database && table)
     {
         if (query_ptr->as<ASTDropQuery &>().is_view && !table->isView())
             throw Exception("Table " + table_id.getNameForLogs() + " is not a View", ErrorCodes::LOGICAL_ERROR);
 
-        table_id = table->getStorageID();
         if (query.kind == ASTDropQuery::Kind::Detach)
         {
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
