@@ -1,0 +1,1 @@
+../../../en/sql_reference/functions/encoding_functions.md

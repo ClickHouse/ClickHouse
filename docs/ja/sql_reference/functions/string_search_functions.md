@@ -1,0 +1,1 @@
+../../../en/sql_reference/functions/string_search_functions.md

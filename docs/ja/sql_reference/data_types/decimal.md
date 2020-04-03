@@ -1,0 +1,1 @@
+../../../en/sql_reference/data_types/decimal.md

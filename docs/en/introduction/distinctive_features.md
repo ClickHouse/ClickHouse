@@ -1,6 +1,6 @@
 ---
 toc_priority: 4
-toc_title: Distinctive Features of ClickHouse
+toc_title: Distinctive Features
 ---
 
 # Distinctive Features of ClickHouse {#distinctive-features-of-clickhouse}
