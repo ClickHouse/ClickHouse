@@ -4,7 +4,6 @@
 #include <Common/config.h>
 #if USE_CPUID
 #   include <libcpuid/libcpuid.h>
-#   include <Common/Exception.h>
 #elif USE_CPUINFO
 #   include <cpuinfo.h>
 #endif
