@@ -1,0 +1,1 @@
+../../../en/sql_reference/functions/logical_functions.md

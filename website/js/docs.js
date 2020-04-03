@@ -85,7 +85,11 @@ $(document).ready(function () {
                 advancedSyntax: true,
                 clickAnalytics: true,
                 hitsPerPage: 25,
-                'facetFilters': ["lang:" + $('html').attr('lang')]
+                'facetFilters': [
+                    'lang:' + $('html').attr('lang'),
+                    'version:' + $('html').attr('data-version'),
+                    'single-page:' + $('html').attr('single-page'),
+                ]
             },
             debug: true
         });

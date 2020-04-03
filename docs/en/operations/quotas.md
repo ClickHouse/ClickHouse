@@ -1,3 +1,8 @@
+---
+toc_priority: 51
+toc_title: Quotas
+---
+
 # Quotas {#quotas}
 
 Quotas allow you to limit resource usage over a period of time, or simply track the use of resources.
