@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 78
+toc_title: "Questions G\xE9n\xE9rales"
 ---
 
 # Questions Générales {#general-questions}
@@ -44,7 +47,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### Utilisation d'une Table de moteur de fichiers {#using-a-file-engine-table}
 
-Voir [Fichier](../operations/table_engines/file.md).
+Voir [Fichier](../engines/table_engines/special/file.md).
 
 ### Utilisation De La Redirection En Ligne De Commande {#using-command-line-redirection}
 
