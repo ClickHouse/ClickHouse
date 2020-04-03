@@ -549,17 +549,8 @@ Type of `x` and `weight` must be the same.
 Query:
 
 ``` sql
-SELECT avgWeighted(x, weight)
-FROM
-(
-    SELECT
-        t.1 AS x,
-        t.2 AS weight
-    FROM
-    (
-        SELECT arrayJoin([(4, 1), (1, 0), (10, 2)]) AS t
-    )
-)
+SELECT avgWeighted(x, w)
+FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
 ```
 
 Result:
