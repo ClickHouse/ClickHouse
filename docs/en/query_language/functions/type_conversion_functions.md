@@ -402,18 +402,128 @@ SELECT
 └───────────────────────────┴──────────────────────────────┘
 ```
 
-## parseDateTimeBestEffort {#type_conversion_functions-parsedatetimebesteffort}
+## parseDateTimeBestEffort {#parsedatetimebesteffort}
 
-Parse a number type argument to a Date or DateTime type.
-different from toDate and toDateTime, parseDateTimeBestEffort can progress more complex date format.
-For more information, see the link: [Complex Date Format](https://xkcd.com/1179/)
+Converts a date and time in the [String](../../data_types/string.md) representation to [DateTime](../../data_types/datetime.md#data_type-datetime) data type.
+
+The function parses [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), [RFC 1123 - 5.2.14  RFC-822 Date and Time Specification](https://tools.ietf.org/html/rfc1123#page-55), ClickHouse's and some other date and time formats.
+
+
+**Syntax**
+
+```sql
+parseDateTimeBestEffort(time_string [, time_zone]);
+```
+
+**Parameters**
+
+- `time_string` — String containing a date and time to convert. [String](../../data_types/string.md).  
+- `time_zone` — Time zone. The function parses `time_string` according to the time zone. [String](../../data_types/string.md).
+
+
+**Supported non-standard formats**
+
+- A string containing 9..10 digit [unix timestamp](https://en.wikipedia.org/wiki/Unix_time).
+- A string with a date and a time component: `YYYYMMDDhhmmss`, `DD/MM/YYYY hh:mm:ss`, `DD-MM-YY hh:mm`, `YYYY-MM-DD hh:mm:ss`, etc.
+- A string with a date, but no time component: `YYYY`, `YYYYMM`, `YYYY*MM`, `DD/MM/YYYY`, `DD-MM-YY` etc.
+- A string with a day and time:  `DD`, `DD hh`, `DD hh:mm`. In this case `YYYY-MM` are substituted as `2000-01`.
+- A string that includes the date and time along with time zone offset information: `YYYY-MM-DD hh:mm:ss ±h:mm`, etc. For example, `2020-12-12 17:36:00 -5:00`.
+
+For all of the formats with separator the function parses months names expressed by their full name or by the first three letters of a month name. Examples: `24/DEC/18`, `24-Dec-18`, `01-September-2018`.
+
+**Returned value**
+
+- `time_string` converted to the `DateTime` data type.
+
+**Examples**
+
+Query:
+
+```sql
+SELECT parseDateTimeBestEffort('12/12/2020 12:12:57')
+AS parseDateTimeBestEffort;
+```
+
+Result:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2020-12-12 12:12:57 │
+└─────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT parseDateTimeBestEffort('Sat, 18 Aug 2018 07:22:16 GMT', 'Europe/Moscow') 
+AS parseDateTimeBestEffort
+```
+
+Result:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2018-08-18 10:22:16 │
+└─────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT parseDateTimeBestEffort('1284101485') 
+AS parseDateTimeBestEffort
+```
+
+Result:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2015-07-07 12:04:41 │
+└─────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT parseDateTimeBestEffort('2018-12-12 10:12:12') 
+AS parseDateTimeBestEffort
+```
+
+Result:
+
+```text
+┌─parseDateTimeBestEffort─┐
+│     2018-12-12 10:12:12 │
+└─────────────────────────┘
+```
+
+Query:
+
+```sql
+SELECT parseDateTimeBestEffort('10 20:19')
+```
+
+Result:
+
+```text
+┌─parseDateTimeBestEffort('10 20:19')─┐
+│                 2000-01-10 20:19:00 │
+└─────────────────────────────────────┘
+```
+
+**See Also**
+
+- [ISO 8601 announcement by @xkcd](https://xkcd.com/1179/)
+- [RFC 1123](https://tools.ietf.org/html/rfc1123)
+- [toDate](#todate)
+- [toDateTime](#todatetime)
 
 ## parseDateTimeBestEffortOrNull {#parsedatetimebesteffortornull}
 
-Same as for [parseDateTimeBestEffort](#type_conversion_functions-parsedatetimebesteffort) except that it returns null when it encounters a date format that cannot be processed.
+Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it returns null when it encounters a date format that cannot be processed.
 
 ## parseDateTimeBestEffortOrZero {#parsedatetimebesteffortorzero}
 
-Same as for [parseDateTimeBestEffort](#type_conversion_functions-parsedatetimebesteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
+Same as for [parseDateTimeBestEffort](#parsedatetimebesteffort) except that it returns zero date or zero date time when it encounters a date format that cannot be processed.
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/type_conversion_functions/) <!--hide-->
