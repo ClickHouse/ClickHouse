@@ -8,7 +8,7 @@ select
    query 
 from
    (
-      select query, quantiles(0.05, 0.5, 0.95)(abs(time_by_label[1] - time_by_label[2])) rd_quantiles -- quantiles of randomization distribution
+      select query, quantiles(0.05, 0.5, 0.95, 0.99)(abs(time_by_label[1] - time_by_label[2])) rd_quantiles -- quantiles of randomization distribution
       from
          (
             select query, virtual_run, groupArrayInsertAt(median_time, random_label) time_by_label -- make array 'random label' -> 'median time'
@@ -18,7 +18,7 @@ from
                         select *, toUInt32(rowNumberInBlock() % 2) random_label -- randomly relabel measurements
                         from (
                               select query, time, number virtual_run 
-                              from table, numbers(1, 10000) -- duplicate input measurements into many virtual runs
+                              from table, numbers(1, 10000) nn -- duplicate input measurements into many virtual runs
                               order by query, virtual_run, rand() -- for each virtual run, randomly reorder measurements
                            ) virtual_runs
                      ) relabeled 

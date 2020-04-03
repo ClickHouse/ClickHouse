@@ -1,7 +1,5 @@
 # docker build -t yandex/clickhouse-integration-test .
-FROM ubuntu:18.04
-
-RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
+FROM ubuntu:19.10
 
 RUN apt-get update \
     && env DEBIAN_FRONTEND=noninteractive apt-get -y install \
@@ -10,7 +8,7 @@ RUN apt-get update \
         libreadline-dev \
         libicu-dev \
         bsdutils \
-        llvm-8 \
+        llvm-9 \
         gdb \
         unixodbc \
         odbcinst \
@@ -37,4 +35,4 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 RUN echo "TSAN_OPTIONS='verbosity=1000 halt_on_error=1 history_size=7'" >> /etc/environment; \
     echo "UBSAN_OPTIONS='print_stacktrace=1'" >> /etc/environment; \
     echo "MSAN_OPTIONS='abort_on_error=1'" >> /etc/environment; \
-    ln -s /usr/lib/llvm-8/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;
+    ln -s /usr/lib/llvm-9/bin/llvm-symbolizer /usr/bin/llvm-symbolizer;

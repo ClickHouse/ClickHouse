@@ -1,5 +1,5 @@
 # docker build -t yandex/clickhouse-deb-builder .
-FROM ubuntu:18.04
+FROM ubuntu:19.10
 
 RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
@@ -13,35 +13,15 @@ RUN apt-get --allow-unauthenticated update -y \
             apt-transport-https \
             ca-certificates
 
-
-RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-7 main" >> /etc/apt/sources.list
-RUN echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
-RUN add-apt-repository ppa:ubuntu-toolchain-r/test
-
+# Libraries from OS are only needed to test the "unbundled" build (that is not used in production).
 RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
-            gcc-7 \
-            g++-7 \
-            gcc-8 \
-            g++-8 \
             gcc-9 \
             g++-9 \
-            clang-6.0 \
-            lld-6.0 \
-            libclang-6.0-dev \
-            liblld-6.0-dev \
-            llvm-6.0 \
-            libllvm6.0 \
-            llvm-6.0-dev \
-            clang-7 \
-            lld-7 \
-            libclang-7-dev \
-            liblld-7-dev \
-            clang-8 \
-            lld-8 \
-            libclang-8-dev \
-            liblld-8-dev \
+            clang-9 \
+            lld-9 \
+            clang-tidy-9 \
             libicu-dev \
             libreadline-dev \
             gperf \
@@ -61,7 +41,7 @@ RUN apt-get --allow-unauthenticated update -y \
             liblz4-dev \
             libdouble-conversion-dev \
             librdkafka-dev \
-            libpoconetssl50 \
+            libpoconetssl62 \
             libpoco-dev \
             libgoogle-perftools-dev \
             libzstd-dev \
@@ -77,9 +57,8 @@ RUN apt-get --allow-unauthenticated update -y \
             cmake \
             gdb  \
             pigz \
-            moreutils
-
-
+            moreutils \
+            libcctz-dev
 
 # Special dpkg-deb (https://github.com/ClickHouse-Extras/dpkg) version which is able
 # to compress files using pigz (https://zlib.net/pigz/) instead of gzip.
@@ -87,6 +66,9 @@ RUN apt-get --allow-unauthenticated update -y \
 RUN curl -O https://clickhouse-builds.s3.yandex.net/utils/dpkg-deb
 RUN chmod +x dpkg-deb
 RUN cp dpkg-deb /usr/bin
+
+# This symlink required by gcc to find lld compiler
+RUN ln -s /usr/bin/lld-9 /usr/bin/ld.lld
 
 COPY build.sh /
 

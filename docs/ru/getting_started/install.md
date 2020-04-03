@@ -1,6 +1,6 @@
-# Установка
+# Установка {#ustanovka}
 
-## Системные требования
+## Системные требования {#sistemnye-trebovaniia}
 
 ClickHouse может работать на любой операционной системе Linux, FreeBSD или Mac OS X с архитектурой процессора x86\_64, AArch64 или PowerPC64LE.
 
@@ -12,7 +12,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 Чтобы запустить ClickHouse на процессорах, которые не поддерживают SSE 4.2, либо имеют архитектуру AArch64 или PowerPC64LE, необходимо самостоятельно [собрать ClickHouse из исходного кода](#from-sources) с соответствующими настройками конфигурации.
 
-## Доступные варианты установки
+## Доступные варианты установки {#dostupnye-varianty-ustanovki}
 
 ### Из DEB пакетов {#install-from-deb-packages}
 
@@ -20,29 +20,28 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 
 Чтобы установить официальные пакеты, пропишите репозиторий Яндекса в `/etc/apt/sources.list` или в отдельный файл `/etc/apt/sources.list.d/clickhouse.list`:
 
-```
-deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
-```
+    deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 
 Если вы хотите использовать наиболее свежую тестовую, замените `stable` на `testing` (не рекомендуется для production окружений).
 
 Затем для самой установки пакетов выполните:
 
-```bash
+``` bash
 sudo apt-get install dirmngr    # optional
 sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
 ```
 
-Также эти пакеты можно скачать и установить вручную отсюда: <https://repo.yandex.ru/clickhouse/deb/stable/main/>.
+Также эти пакеты можно скачать и установить вручную отсюда: https://repo.yandex.ru/clickhouse/deb/stable/main/.
 
 ### Из RPM пакетов {#from-rpm-packages}
 
 Команда ClickHouse в Яндексе рекомендует использовать официальные предкомпилированные `rpm` пакеты для CentOS, RedHad и всех остальных дистрибутивов Linux, основанных на rpm.
 
 Сначала нужно подключить официальный репозиторий:
-```bash
+
+``` bash
 sudo yum install yum-utils
 sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
 sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
@@ -52,19 +51,20 @@ sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/
 
 Для, собственно, установки пакетов необходимо выполнить следующие команды:
 
-```bash
+``` bash
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-Также есть возможность установить пакеты вручную, скачав отсюда: <https://repo.yandex.ru/clickhouse/rpm/stable/x86_64>.
+Также есть возможность установить пакеты вручную, скачав отсюда: https://repo.yandex.ru/clickhouse/rpm/stable/x86\_64.
 
 ### Из tgz архивов {#from-tgz-archives}
 
 Команда ClickHouse в Яндексе рекомендует использовать предкомпилированные бинарники из `tgz` архивов для всех дистрибутивов, где невозможна установка `deb` и `rpm` пакетов.
 
-Интересующую версию архивов можно скачать вручную с помощью `curl` или `wget` из репозитория <https://repo.yandex.ru/clickhouse/tgz/>.
+Интересующую версию архивов можно скачать вручную с помощью `curl` или `wget` из репозитория https://repo.yandex.ru/clickhouse/tgz/.
 После этого архивы нужно распаковать и воспользоваться скриптами установки. Пример установки самой свежей версии:
-```bash
+
+``` bash
 export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
 curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
 curl -O https://repo.yandex.ru/clickhouse/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
@@ -97,21 +97,17 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 Можно скомпилировать пакеты и установить их, либо использовать программы без установки пакетов. Также при ручой сборке можно отключить необходимость поддержки набора инструкций SSE 4.2 или собрать под процессоры архитектуры AArch64.
 
-```
-Client: dbms/programs/clickhouse-client
-Server: dbms/programs/clickhouse-server
-```
+    Client: programs/clickhouse-client
+    Server: programs/clickhouse-server
 
-Для работы собранного вручную сервера необходимо создать директории для данных и метаданных, а также сделать их `chown` для желаемого пользователя. Пути к этим директориям могут быть изменены в конфигурационном файле сервера (src/dbms/programs/server/config.xml), по умолчанию используются следующие:
+Для работы собранного вручную сервера необходимо создать директории для данных и метаданных, а также сделать их `chown` для желаемого пользователя. Пути к этим директориям могут быть изменены в конфигурационном файле сервера (src/programs/server/config.xml), по умолчанию используются следующие:
 
-```
-/opt/clickhouse/data/default/
-/opt/clickhouse/metadata/default/
-```
+    /opt/clickhouse/data/default/
+    /opt/clickhouse/metadata/default/
 
 На Gentoo для установки ClickHouse из исходного кода можно использовать просто `emerge clickhouse`.
 
-## Запуск
+## Запуск {#zapusk}
 
 Для запуска сервера в качестве демона, выполните:
 

@@ -1,25 +1,25 @@
-# SHOW Queries
+# SHOW Queries {#show-queries}
 
-## SHOW CREATE TABLE
+## SHOW CREATE TABLE {#show-create-table}
 
-```sql
+``` sql
 SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns a single `String`-type 'statement' column, which contains a single value – the `CREATE` query used for creating the specified object.
+Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
 
 ## SHOW DATABASES {#show-databases}
 
-```sql
+``` sql
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 ```
 
 Prints a list of all databases.
 This query is identical to `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
 
-## SHOW PROCESSLIST
+## SHOW PROCESSLIST {#show-processlist}
 
-```sql
+``` sql
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
@@ -29,23 +29,23 @@ The `SELECT * FROM system.processes` query returns data about all the current qu
 
 Tip (execute in the console):
 
-```bash
+``` bash
 $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 ```
 
-## SHOW TABLES
+## SHOW TABLES {#show-tables}
 
 Displays a list of tables.
 
-```sql
-SHOW [TEMPORARY] TABLES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
+``` sql
+SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 If the `FROM` clause is not specified, the query returns the list of tables from the current database.
 
 You can get the same results as the `SHOW TABLES` query in the following way:
 
-```sql
+``` sql
 SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
@@ -53,21 +53,22 @@ SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [
 
 The following query selects the first two rows from the list of tables in the `system` database, whose names contain `co`.
 
-```sql
+``` sql
 SHOW TABLES FROM system LIKE '%co%' LIMIT 2
 ```
-```text
+
+``` text
 ┌─name───────────────────────────┐
 │ aggregate_function_combinators │
 │ collations                     │
 └────────────────────────────────┘
 ```
 
-## SHOW DICTIONARIES
+## SHOW DICTIONARIES {#show-dictionaries}
 
 Displays a list of [external dictionaries](dicts/external_dicts.md).
 
-```sql
+``` sql
 SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
@@ -75,20 +76,23 @@ If the `FROM` clause is not specified, the query returns the list of dictionarie
 
 You can get the same results as the `SHOW DICTIONARIES` query in the following way:
 
-```sql
+``` sql
 SELECT name FROM system.dictionaries WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
 **Example**
 
-The following query selects the first two rows from the list of tables in the `system` database, whose names contain `co`.
+The following query selects the first two rows from the list of tables in the `system` database, whose names contain `reg`.
 
-```sql
+``` sql
 SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 ```
-```text
+
+``` text
 ┌─name─────────┐
 │ regions      │
 │ region_names │
 └──────────────┘
 ```
+
+[Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
