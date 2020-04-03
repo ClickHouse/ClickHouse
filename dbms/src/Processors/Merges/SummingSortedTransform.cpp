@@ -411,7 +411,7 @@ void SummingSortedTransform::updateCursor(Chunk chunk, size_t source_num)
     {
         /// Extend lifetime of last chunk.
         last_chunk = std::move(source_chunk);
-        last_chunk_sort_columns = std::move(cursors[source_num].all_columns);
+        last_chunk_sort_columns = std::move(cursors[source_num].sort_columns);
 
         source_chunk = std::move(chunk);
         cursors[source_num].reset(source_chunk.getColumns(), {});
