@@ -97,10 +97,6 @@ function run_tests
         touch "$x"
     done
 
-    # FIXME remove some broken long tests
-    rm "$test_prefix"/{IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format}.xml ||:
-
-    test_files=$(ls "$test_prefix"/*.xml)
 
     # FIXME a quick crutch to bring the run time down for the unstable tests --
     # if some performance tests xmls were changed in a PR, run only these ones.
@@ -124,6 +120,17 @@ function run_tests
         # I do want to expand the globs in the variable.
         # shellcheck disable=SC2086
         test_files=$(ls "$test_prefix"/$CHPC_TEST_GLOB.xml)
+    fi
+
+    if [ "$test_files" == "" ]
+    then
+        # FIXME remove some broken long tests
+        for test_name in {IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format,arithmetic,cryptographic_hashes,logical_functions_{medium,small}}
+        do
+            printf "$test_name\tMarked as broken (see compare.sh)\n" >> skipped-tests.tsv
+            rm "$test_prefix/$test_name.xml" ||:
+        done
+        test_files=$(ls "$test_prefix"/*.xml)
     fi
 
     # Run the tests.
@@ -275,9 +282,11 @@ create table test_times_tsv engine File(TSV, 'test-times.tsv') as
     from test_time join wall_clock using test
     order by avg_real_per_query desc;
 
-create table all_queries_tsv engine File(TSV, 'all-queries.tsv') as
-    select left, right, diff, rd, test, query
-    from queries order by rd[3] desc;
+create table all_tests_tsv engine File(TSV, 'all-queries.tsv') as
+    select left, right, diff,
+        floor(left > right ? left / right : right / left, 3),
+        rd, test, query
+    from queries order by test, query;
 " 2> >(head -2 >> report-errors.rep) ||:
 
 for version in {right,left}
@@ -429,6 +438,7 @@ case "$stage" in
 "report")
     time report ||:
 
+    time "$script_dir/report.py" --report=all-queries > all-queries.html 2> >(head -2 >> report-errors.rep) ||:
     time "$script_dir/report.py" > report.html
     ;&
 esac
