@@ -176,7 +176,7 @@ BlockIO InterpreterInsertQuery::execute()
                             "Expected exactly one connection for shard " + toString(shard_info.shard_num), ErrorCodes::LOGICAL_ERROR);
 
                     ///  INSERT SELECT query returns empty block
-                    auto in_stream = std::make_shared<RemoteBlockInputStream>(*connections.front(), new_query_str, Block{}, context);
+                    auto in_stream = std::make_shared<RemoteBlockInputStream>(std::move(connections), new_query_str, Block{}, context);
                     in_streams.push_back(in_stream);
                 }
                 out_streams.push_back(std::make_shared<NullBlockOutputStream>(Block()));
