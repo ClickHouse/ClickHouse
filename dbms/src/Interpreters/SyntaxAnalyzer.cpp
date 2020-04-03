@@ -784,17 +784,18 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     SyntaxAnalyzerResult && result,
     const SelectQueryOptions & select_options,
     const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-    const Names & required_result_columns) const {
-    auto *select_query = query->as<ASTSelectQuery>();
+    const Names & required_result_columns) const
+{
+    auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
         throw Exception("Select analyze for not select asts.", ErrorCodes::LOGICAL_ERROR);
 
     size_t subquery_depth = select_options.subquery_depth;
     bool remove_duplicates = select_options.remove_duplicates;
 
-    const auto &settings = context.getSettingsRef();
+    const auto & settings = context.getSettingsRef();
 
-    const NameSet &source_columns_set = result.source_columns_set;
+    const NameSet & source_columns_set = result.source_columns_set;
     result.analyzed_join = std::make_shared<AnalyzedJoin>(settings, context.getTemporaryVolume());
 
     if (remove_duplicates)
@@ -806,13 +807,14 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     /// TODO: Remove unneeded conversion
     std::vector<TableWithColumnNames> tables_with_column_names;
     tables_with_column_names.reserve(tables_with_columns.size());
-    for (const auto &table : tables_with_columns)
+    for (const auto & table : tables_with_columns)
         tables_with_column_names.emplace_back(table.removeTypes());
 
-    if (tables_with_columns.size() > 1) {
+    if (tables_with_columns.size() > 1)
+    {
         result.analyzed_join->columns_from_joined_table = tables_with_columns[1].columns;
         result.analyzed_join->deduplicateAndQualifyColumnNames(
-                source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
+            source_columns_set, tables_with_columns[1].table.getQualifiedNamePrefix());
     }
 
     translateQualifiedNames(query, *select_query, source_columns_set, tables_with_column_names);
@@ -831,12 +833,14 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, context, subquery_depth, result.scalars);
 
+    /// Removing arithmetic operations from functions
+    ArithmeticOperationsInAgrFuncVisitor().visit(query);
+
     {
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
-        ArithmeticOperationsInAgrFuncVisitor().visit(query);
-
-        if (select_query) {
+        if (select_query)
+        {
             /// Push the predicate expression down to the subqueries.
             result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_column_names,
                                                                       settings).optimize(*select_query);
