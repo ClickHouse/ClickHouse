@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 
+import closure
 import cssmin
 import htmlmin
 import jinja2
@@ -118,7 +119,6 @@ def minify_website(args):
     js_in = get_js_in(args)
     js_out = f'{args.output_dir}/js/base.js'
     if args.minify:
-        import closure
         js_in = [js[1:-1] for js in js_in]
         closure_args = [
             '--js', *js_in, '--js_output_file', js_out,

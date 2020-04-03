@@ -39,7 +39,7 @@ Motores en la familia:
 -   [StripeLog](stripelog.md)
 -   [Registro](log.md)
 
-### Motores de intergación {#intergation-engines}
+### Motores de integración {#integration-engines}
 
 Motores para comunicarse con otros sistemas de almacenamiento y procesamiento de datos.
 
