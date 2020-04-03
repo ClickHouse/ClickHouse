@@ -3,6 +3,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static GraphiteRollupSortedTransform::ColumnsDefinition defineColumns(
     const Block & header, const Graphite::Params & params)
 {
