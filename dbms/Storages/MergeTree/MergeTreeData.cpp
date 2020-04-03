@@ -3608,6 +3608,9 @@ MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const 
 
     AlterConversions result{};
     for (const auto & command : commands)
+        /// Currently we need explicit conversions only for RENAME alter
+        /// all other conversions can be deduced from diff between part columns
+        /// and columns in storage.
         if (command.type == MutationCommand::Type::RENAME_COLUMN)
             result.rename_map[command.rename_to] = command.column_name;
 
