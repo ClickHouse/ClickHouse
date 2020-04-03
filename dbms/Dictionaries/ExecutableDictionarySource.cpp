@@ -15,7 +15,7 @@
 #include "DictionarySourceHelpers.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
-
+#include "DictionarySourceHelpers.h"
 
 namespace DB
 {
@@ -232,9 +232,11 @@ void registerDictionarySourceExecutable(DictionarySourceFactory & factory)
         if (check_config)
             throw Exception("Dictionaries with Executable dictionary source is not allowed", ErrorCodes::DICTIONARY_ACCESS_DENIED);
 
+        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+
         return std::make_unique<ExecutableDictionarySource>(
             dict_struct, config, config_prefix + ".executable",
-            sample_block, context);
+            sample_block, context_local_copy);
     };
     factory.registerSource("executable", create_table_source);
 }
