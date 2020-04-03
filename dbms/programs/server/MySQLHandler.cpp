@@ -378,7 +378,8 @@ static bool isFederatedServerSetupSelectVarCommand(const String & query)
 {
      static const boost::regex expr{
          "|(^(SELECT @@(.*)))"\
-         "|(^((/\\*(.*)\\*/)([ \t]*)(SELECT([ \t]*)@@(.*))))"
+         "|(^((/\\*(.*)\\*/)([ \t]*)(SELECT([ \t]*)@@(.*))))"\
+         "|(^((/\\*(.*)\\*/)([ \t]*)(SHOW VARIABLES(.*))))"\
          , boost::regex::icase};
      return 1 == boost::regex_match(query, expr);
 }
