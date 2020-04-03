@@ -73,3 +73,6 @@ With this instruction you can run basic ClickHouse performance test on any serve
 1.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
 
 All the results are published here: https://clickhouse.tech/benchmark_hardware.html
+
+
+[Original article](https://clickhouse.tech/docs/en/operations/performance_test/) <!--hide-->
