@@ -623,6 +623,4 @@ void SummingSortedTransform::merge()
     is_finished = true;
 }
 
-
-
 }

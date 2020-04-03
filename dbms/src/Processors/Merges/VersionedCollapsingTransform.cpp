@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 static const size_t MAX_ROWS_IN_MULTIVERSION_QUEUE = 8192;
 
 VersionedCollapsingTransform::VersionedCollapsingTransform(
