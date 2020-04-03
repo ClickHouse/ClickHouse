@@ -1,3 +1,9 @@
+---
+toc_folder_title: Guides
+toc_priority: 38
+toc_title: Overview
+---
+
 # ClickHouse Guides {#clickhouse-guides}
 
 List of detailed step-by-step instructions that help to solve various tasks using ClickHouse:

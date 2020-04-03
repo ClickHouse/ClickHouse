@@ -1,3 +1,8 @@
+---
+toc_priority: 63
+toc_title: Browse ClickHouse Source Code
+---
+
 # Browse ClickHouse Source Code {#browse-clickhouse-source-code}
 
 You can use **Woboq** online code browser available [here](https://clickhouse-test-reports.s3.yandex.net/codebrowser/html_report///ClickHouse/dbms/index.html). It provides code navigation and semantic highlighting, search and indexing. The code snapshot is updated daily.

@@ -1,0 +1,1 @@
+../../../en/sql_reference/functions/functions_for_nulls.md

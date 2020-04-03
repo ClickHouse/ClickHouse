@@ -1,0 +1,1 @@
+../../../en/sql_reference/functions/splitting_merging_functions.md
