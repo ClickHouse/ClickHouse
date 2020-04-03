@@ -105,7 +105,8 @@ inline void intrusive_ptr_release(SharedChunk * ptr)
 /// This class represents a row in a chunk.
 struct RowRef
 {
-    ColumnRawPtrs * sort_columns = nullptr; /// Point to sort_columns from SortCursor or last_chunk_sort_columns.
+    const IColumn ** sort_columns = nullptr; /// Point to sort_columns from SortCursor or last_chunk_sort_columns.
+    size_t num_columns = 0;
     UInt64 row_num = 0;
 
     bool empty() const { return sort_columns == nullptr; }
@@ -113,19 +114,19 @@ struct RowRef
 
     void set(SortCursor & cursor)
     {
-        sort_columns = &cursor.impl->sort_columns;
+        sort_columns = cursor.impl->sort_columns.data();
+        num_columns = cursor.impl->sort_columns.size();
         row_num = cursor.impl->pos;
     }
 
-    static bool checkEquals(const ColumnRawPtrs * left, size_t left_row, const ColumnRawPtrs * right, size_t right_row)
+    static bool checkEquals(size_t size, const IColumn ** lhs, size_t lhs_row, const IColumn ** rhs, size_t rhs_row)
     {
-        auto size = left->size();
         for (size_t col_number = 0; col_number < size; ++col_number)
         {
-            auto & cur_column = (*left)[col_number];
-            auto & other_column = (*right)[col_number];
+            auto & cur_column = lhs[col_number];
+            auto & other_column = rhs[col_number];
 
-            if (0 != cur_column->compareAt(left_row, right_row, *other_column, 1))
+            if (0 != cur_column->compareAt(lhs_row, rhs_row, *other_column, 1))
                 return false;
         }
 
@@ -134,7 +135,7 @@ struct RowRef
 
     bool hasEqualSortColumnsWith(const RowRef & other)
     {
-        return checkEquals(sort_columns, row_num, other.sort_columns, other.row_num);
+        return checkEquals(num_columns, sort_columns, row_num, other.sort_columns, other.row_num);
     }
 };
 
@@ -178,7 +179,8 @@ struct RowRefWithOwnedChunk
 
     bool hasEqualSortColumnsWith(const RowRefWithOwnedChunk & other)
     {
-        return RowRef::checkEquals(sort_columns, row_num, other.sort_columns, other.row_num);
+        return RowRef::checkEquals(sort_columns->size(), sort_columns->data(), row_num,
+                                   other.sort_columns->data(), other.row_num);
     }
 };
 
