@@ -32,4 +32,7 @@ SELECT renamed_value2, renamed_value3 FROM table_for_rename WHERE key = 7;
 
 SELECT * FROM table_for_rename WHERE key = 7 FORMAT TSVWithNames;
 
+ALTER TABLE table_for_rename RENAME COLUMN value100 to renamed_value100; --{serverError 10}
+ALTER TABLE table_for_rename RENAME COLUMN IF EXISTS value100 to renamed_value100;
+
 DROP TABLE IF EXISTS table_for_rename;
