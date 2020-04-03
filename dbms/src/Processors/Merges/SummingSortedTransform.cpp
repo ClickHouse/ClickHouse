@@ -540,16 +540,22 @@ void SummingSortedTransform::merge()
         bool has_previous_group = !last_key.empty();
 
         SortCursor current = queue.current();
-        detail::RowRef current_key;
-        current_key.set(current);
 
-        if (!has_previous_group)    /// The first key encountered.
         {
-            key_differs = true;
-            current_row_is_zero = true;
+            detail::RowRef current_key;
+            current_key.set(current);
+
+            if (!has_previous_group)    /// The first key encountered.
+            {
+                key_differs = true;
+                current_row_is_zero = true;
+            }
+            else
+                key_differs = !last_key.hasEqualSortColumnsWith(current_key);
+
+            last_key = current_key;
+            last_chunk_sort_columns.clear();
         }
-        else
-            key_differs = !last_key.hasEqualSortColumnsWith(current_key);
 
         if (key_differs)
         {
@@ -599,8 +605,6 @@ void SummingSortedTransform::merge()
 
         if (!current->isLast())
         {
-            last_key = current_key;
-            last_chunk_sort_columns.clear();
             queue.next();
         }
         else
