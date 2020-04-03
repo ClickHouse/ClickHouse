@@ -52,6 +52,10 @@ namespace
         const AccessFlags truncate_flag = AccessType::TRUNCATE;
         const AccessFlags drop_table_flag = AccessType::DROP_TABLE;
         const AccessFlags drop_view_flag = AccessType::DROP_VIEW;
+        const AccessFlags alter_ttl_flag = AccessType::ALTER_TTL;
+        const AccessFlags alter_materialize_ttl_flag = AccessType::ALTER_MATERIALIZE_TTL;
+        const AccessFlags system_reload_dictionary = AccessType::SYSTEM_RELOAD_DICTIONARY;
+        const AccessFlags system_reload_embedded_dictionaries = AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES;
     };
 
     std::string_view checkCurrentDatabase(const std::string_view & current_database)
@@ -412,8 +416,14 @@ private:
                 implicit_access |= helper.show_tables_flag;
         }
 
-        if ((level == GLOBAL_LEVEL) && ((access | max_access_among_children) & helper.create_table_flag))
-            implicit_access |= helper.create_temporary_table_flag;
+        if (level == GLOBAL_LEVEL)
+        {
+            if ((access | max_access_among_children) & helper.create_table_flag)
+                implicit_access |= helper.create_temporary_table_flag;
+
+            if (access & helper.system_reload_dictionary)
+                implicit_access |= helper.system_reload_embedded_dictionaries;
+        }
 
         if (level <= TABLE_LEVEL)
         {
@@ -425,6 +435,9 @@ private:
 
             if (access & helper.alter_table_flag)
                 implicit_access |= helper.alter_view_flag;
+
+            if (access & helper.alter_ttl_flag)
+                implicit_access |= helper.alter_materialize_ttl_flag;
         }
 
         final_access = access | implicit_access;
