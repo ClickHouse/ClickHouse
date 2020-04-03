@@ -245,6 +245,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         command.type = AlterCommand::RENAME_COLUMN;
         command.column_name = command_ast->column->as<ASTIdentifier &>().name;
         command.rename_to = command_ast->rename_to->as<ASTIdentifier &>().name;
+        command.if_exists = command_ast->if_exists;
         return command;
     }
     else
@@ -704,7 +705,8 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 command.ignore = true;
         }
         else if (command.type == AlterCommand::DROP_COLUMN
-                || command.type == AlterCommand::COMMENT_COLUMN)
+                || command.type == AlterCommand::COMMENT_COLUMN
+                || command.type == AlterCommand::RENAME_COLUMN)
         {
             if (!has_column && command.if_exists)
                 command.ignore = true;
