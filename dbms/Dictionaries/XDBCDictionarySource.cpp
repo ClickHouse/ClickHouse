@@ -19,6 +19,9 @@
 #include <Common/config.h>
 #include "registerDictionaries.h"
 
+/// For custom settings support
+// #include "DictionarySourceHelpers.h"
+
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 #    include <Poco/Data/ODBC/Connector.h>
 #endif
@@ -269,6 +272,11 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
                                  bool /* check_config */) -> DictionarySourcePtr {
         throw Exception{"Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
+
+        ///       Here is the support for custom settings. Good luck with fixing Nullable's segfault :)
+        ///       NOTE: you should store the field context locally (const Context & -> Context) to make it work properly!
+        //        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+
         //        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".connection_string"));
         //        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".jdbc", sample_block, context, bridge);
     };

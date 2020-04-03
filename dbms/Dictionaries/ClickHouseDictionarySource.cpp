@@ -12,7 +12,7 @@
 #include "readInvalidateQuery.h"
 #include "writeParenthesisedString.h"
 #include "DictionaryFactory.h"
-
+#include "DictionarySourceHelpers.h"
 
 namespace DB
 {
@@ -216,7 +216,10 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const Context & context,
                                  bool /* check_config */) -> DictionarySourcePtr
     {
-        return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
+        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+        /// Note that processors are not supported yet (see constructor),
+        /// hence it is not possible to override experimental_use_processors setting
+        return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context_local_copy);
     };
     factory.registerSource("clickhouse", create_table_source);
 }

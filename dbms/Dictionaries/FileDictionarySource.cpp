@@ -7,6 +7,7 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
+#include "DictionarySourceHelpers.h"
 
 namespace DB
 {
@@ -21,7 +22,7 @@ namespace ErrorCodes
 
 FileDictionarySource::FileDictionarySource(
     const std::string & filepath_, const std::string & format_,
-    Block & sample_block_, Context & context_, bool check_config)
+    Block & sample_block_, const Context & context_, bool check_config)
     : filepath{filepath_}
     , format{format_}
     , sample_block{sample_block_}
@@ -83,16 +84,7 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
         const auto filepath = config.getString(config_prefix + ".file.path");
         const auto format = config.getString(config_prefix + ".file.format");
 
-        Context context_local_copy(context);
-        if (config.has(config_prefix + ".settings")) 
-        {
-            const auto prefix = config_prefix + ".settings";
-            Settings settings;
-
-            settings.loadSettingsFromConfig(prefix, config);
-            // const_cast<Context&>(context).setSettings(settings);
-            context_local_copy.setSettings(settings);
-        }
+        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
 
         return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context_local_copy, check_config);
     };
