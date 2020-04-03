@@ -1,3 +1,8 @@
+---
+toc_priority: 69
+toc_title: How to Run ClickHouse Tests
+---
+
 # ClickHouse Testing {#clickhouse-testing}
 
 ## Functional Tests {#functional-tests}

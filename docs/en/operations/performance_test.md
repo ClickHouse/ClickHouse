@@ -1,3 +1,8 @@
+---
+toc_priority: 54
+toc_title: Testing Hardware
+---
+
 # How To Test Your Hardware With ClickHouse {#how-to-test-your-hardware-with-clickhouse}
 
 With this instruction you can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
