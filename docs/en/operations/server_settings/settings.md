@@ -533,7 +533,7 @@ The path to the directory containing data.
 
 ## prometheus {#server_settings-prometheus}
 
-Expose metrics data for scraping from [Prometheus](https://prometheus.io).
+Exposing metrics data for scraping from [Prometheus](https://prometheus.io).
 
 Settings:
 
