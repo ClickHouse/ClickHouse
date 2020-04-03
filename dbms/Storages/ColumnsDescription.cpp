@@ -1,6 +1,5 @@
 #include <Storages/ColumnsDescription.h>
 
-#include <boost/algorithm/string/replace.hpp>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
