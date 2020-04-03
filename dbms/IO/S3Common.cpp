@@ -108,7 +108,7 @@ namespace S3
         /// Case when bucket name represented in domain name of S3 URL.
         /// E.g. (https://bucket-name.s3.Region.amazonaws.com/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#virtual-hosted-style-access
-        static const RE2 virtual_hosted_style_pattern("(.+\\.)?s3[.-][a-z0-9-.]+");
+        static const RE2 virtual_hosted_style_pattern("(.+\\.)?s3[.\\-][a-z0-9-.]+");
         /// Case when bucket name and key represented in path of S3 URL.
         /// E.g. (https://s3.Region.amazonaws.com/bucket-name/key)
         /// https://docs.aws.amazon.com/AmazonS3/latest/dev/VirtualHosting.html#path-style-access
