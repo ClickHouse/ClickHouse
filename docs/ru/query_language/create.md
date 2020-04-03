@@ -145,7 +145,7 @@ ENGINE = <Engine>
 Если задать кодек для столбца, то кодек по умолчанию не применяется. Кодеки можно последовательно комбинировать, например, `CODEC(Delta, ZSTD)`. Чтобы выбрать наиболее подходящую для вашего проекта комбинацию кодеков, необходимо провести сравнительные тесты, подобные тем, что описаны в статье Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse).
 
 !!! warning "Предупреждение"
-    Нельзя распаковать базу данных ClickHouse с помощью сторонних утилит наподобие `lz4`. Необходимо использовать специальную утилиту [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/programs/compressor).
+    Нельзя распаковать базу данных ClickHouse с помощью сторонних утилит наподобие `lz4`. Необходимо использовать специальную утилиту [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor).
 
 Сжатие поддерживается для следующих движков таблиц:
 

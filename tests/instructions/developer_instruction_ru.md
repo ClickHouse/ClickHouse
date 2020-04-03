@@ -1,0 +1,1 @@
+../../docs/ru/development/developer_instruction.md

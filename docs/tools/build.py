@@ -2,16 +2,14 @@
 
 import argparse
 import datetime
-import http.server
 import logging
-import multiprocessing
 import os
 import shutil
-import socketserver
 import subprocess
 import sys
 import time
 
+import bs4
 import jinja2
 import livereload
 import markdown.util
@@ -219,9 +217,6 @@ def build_single_page_version(lang, args, cfg):
                 
                 logging.info(f'Re-building single page for {lang} pdf/test')
                 with util.temp_dir() as test_dir:
-                    single_page_pdf = os.path.abspath(
-                        os.path.join(single_page_output_path, f'clickhouse_{lang}.pdf')
-                    )
                     extra['single_page'] = False
                     cfg.load_dict({
                         'docs_dir': docs_temp_lang,
@@ -237,42 +232,46 @@ def build_single_page_version(lang, args, cfg):
                     js_in = ' '.join(website.get_js_in(args))
                     subprocess.check_call(f'cat {css_in} > {test_dir}/css/base.css', shell=True)
                     subprocess.check_call(f'cat {js_in} > {test_dir}/js/base.js', shell=True)
-                    if not args.skip_pdf:
-                        port_for_pdf = util.get_free_port()
-                        httpd = socketserver.TCPServer(
-                            ('', port_for_pdf), http.server.SimpleHTTPRequestHandler
-                        )
-                        logging.info(f"Serving for {lang} pdf at port {port_for_pdf}")
-                        process = multiprocessing.Process(target=httpd.serve_forever)
-                        with util.cd(test_dir):
-                            process.start()
-                            create_pdf_command = [
-                                'wkhtmltopdf',
-                                '--print-media-type',
-                                '--log-level', 'warn',
-                                f'http://localhost:{port_for_pdf}/single/', single_page_pdf
-                            ]
-                            try:
-                                if args.save_raw_single_page:
-                                    shutil.copytree(test_dir, args.save_raw_single_page)
-                                logging.info(' '.join(create_pdf_command))
-                                subprocess.check_call(' '.join(create_pdf_command), shell=True)
-                            finally:
-                                logging.info(f'Stop serving for {lang} pdf at port {port_for_pdf}')
-                                process.kill()
-                                while True:
-                                    time.sleep(0.25)
-                                    try:
-                                        process.close()
-                                        break
-                                    except ValueError:
-                                        logging.info(f'Waiting for {lang} httpd at port {port_for_pdf} to stop')
-
+                    if args.save_raw_single_page:
+                        shutil.copytree(test_dir, args.save_raw_single_page)
 
                     if not args.version_prefix:  # maybe enable in future
                         logging.info(f'Running tests for {lang}')
                         test.test_single_page(
                             os.path.join(test_dir, 'single', 'index.html'), lang)
+
+                    if not args.skip_pdf:
+                        single_page_index_html = os.path.join(test_dir, 'single', 'index.html')
+                        single_page_pdf = os.path.abspath(
+                            os.path.join(single_page_output_path, f'clickhouse_{lang}.pdf')
+                        )
+
+                        with open(single_page_index_html, 'r') as f:
+                            soup = bs4.BeautifulSoup(
+                                f.read(),
+                                features='html.parser'
+                            )
+                        soup_prefix = f'file://{test_dir}'
+                        for img in soup.findAll('img'):
+                            if img['src'].startswith('/'):
+                                img['src'] = soup_prefix + img['src']
+                        for script in soup.findAll('script'):
+                            script['src'] = soup_prefix + script['src'].split('?', 1)[0]
+                        for link in soup.findAll('link'):
+                            link['href'] = soup_prefix + link['href'].split('?', 1)[0]
+
+                        with open(single_page_index_html, 'w') as f:
+                            f.write(str(soup))
+
+                        create_pdf_command = [
+                            'wkhtmltopdf',
+                            '--print-media-type',
+                            '--log-level', 'warn',
+                            single_page_index_html, single_page_pdf
+                        ]
+
+                        logging.info(' '.join(create_pdf_command))
+                        subprocess.check_call(' '.join(create_pdf_command), shell=True)
 
         logging.info(f'Finished building single page version for {lang}')
 

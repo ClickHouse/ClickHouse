@@ -60,4 +60,4 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 [اموزش کلیک](../../getting_started/tutorial.md) است در یاندکس بر اساس.مجموعه داده های متریکا و راه توصیه شده برای شروع این مجموعه داده ها فقط از طریق تدریس خصوصی است.
 
-نمونه های اضافی از نمایش داده شد به این جداول را می توان در میان یافت [تست های نفرت انگیز](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) از کلیک هاوس (به نام `test.hists` و `test.visits` وجود دارد).
+نمونه های اضافی از نمایش داده شد به این جداول را می توان در میان یافت [تست های نفرت انگیز](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) از کلیک هاوس (به نام `test.hists` و `test.visits` وجود دارد).
