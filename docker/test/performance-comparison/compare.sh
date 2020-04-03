@@ -127,7 +127,7 @@ function run_tests
         # FIXME remove some broken long tests
         for test_name in {IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format,arithmetic,cryptographic_hashes,logical_functions_{medium,small}}
         do
-            printf "$test_name\tMarked as broken (see compare.sh)" >> skipped-tests.tsv
+            printf "$test_name\tMarked as broken (see compare.sh)\n" >> skipped-tests.tsv
             rm "$test_prefix/$test_name.xml" ||:
         done
         test_files=$(ls "$test_prefix"/*.xml)
