@@ -1,0 +1,1 @@
+../../../en/sql_reference/functions/ip_address_functions.md

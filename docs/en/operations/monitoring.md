@@ -1,3 +1,8 @@
+---
+toc_priority: 45
+toc_title: Monitoring
+---
+
 # Monitoring {#monitoring}
 
 You can monitor:
@@ -17,20 +22,20 @@ It is highly recommended to set up monitoring for:
 
 -   Utilization of storage system, RAM and network.
 
-## ClickHouse Server Metrics {#clickhouse-server-metrics}
+## Clickhouse Server Metrics {#clickhouse-server-metrics}
 
 ClickHouse server has embedded instruments for self-state monitoring.
 
-To track server events use server logs. See the [logger](server_settings/settings.md#server_settings-logger) section of the configuration file.
+To track server events use server logs. See the [logger](server_configuration_parameters/settings.md#server_configuration_parameters-logger) section of the configuration file.
 
 ClickHouse collects:
 
 -   Different metrics of how the server uses computational resources.
 -   Common statistics on query processing.
 
-You can find metrics in the [system.metrics](system_tables.md#system_tables-metrics), [system.events](system_tables.md#system_tables-events), and [system.asynchronous\_metrics](system_tables.md#system_tables-asynchronous_metrics) tables.
+You can find metrics in the [system.metrics](../operations/system_tables.md#system_tables-metrics), [system.events](../operations/system_tables.md#system_tables-events), and [system.asynchronous\_metrics](../operations/system_tables.md#system_tables-asynchronous_metrics) tables.
 
-You can configure ClickHouse to export metrics to [Graphite](https://github.com/graphite-project). See the [Graphite section](server_settings/settings.md#server_settings-graphite) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Graphite by following their official [guide](https://graphite.readthedocs.io/en/latest/install.html).
+You can configure ClickHouse to export metrics to [Graphite](https://github.com/graphite-project). See the [Graphite section](server_configuration_parameters/settings.md#server_configuration_parameters-graphite) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Graphite by following their official [guide](https://graphite.readthedocs.io/en/latest/install.html).
 
 Additionally, you can monitor server availability through the HTTP API. Send the `HTTP GET` request to `/ping`. If the server is available, it responds with `200 OK`.
 

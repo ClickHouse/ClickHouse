@@ -25,9 +25,13 @@ struct StringHashMapCell<StringKey16, TMapped> : public HashMapCell<StringKey16,
     using Base::Base;
     static constexpr bool need_zero_value_storage = false;
     bool isZero(const HashTableNoState & state) const { return isZero(this->value.first, state); }
-    // Assuming String does not contain zero bytes. NOTE: Cannot be used in serialized method
-    static bool isZero(const StringKey16 & key, const HashTableNoState & /*state*/) { return key.low == 0; }
-    void setZero() { this->value.first.low = 0; }
+
+    // Zero means unoccupied cells in hash table. Use key with last word = 0 as
+    // zero keys, because such keys are unrepresentable (no way to encode length).
+    static bool isZero(const StringKey16 & key, const HashTableNoState &)
+    { return key.high == 0; }
+    void setZero() { this->value.first.high = 0; }
+
     // external
     const StringRef getKey() const { return toStringRef(this->value.first); }
     // internal
@@ -42,9 +46,13 @@ struct StringHashMapCell<StringKey24, TMapped> : public HashMapCell<StringKey24,
     using Base::Base;
     static constexpr bool need_zero_value_storage = false;
     bool isZero(const HashTableNoState & state) const { return isZero(this->value.first, state); }
-    // Assuming String does not contain zero bytes. NOTE: Cannot be used in serialized method
-    static bool isZero(const StringKey24 & key, const HashTableNoState & /*state*/) { return key.a == 0; }
-    void setZero() { this->value.first.a = 0; }
+
+    // Zero means unoccupied cells in hash table. Use key with last word = 0 as
+    // zero keys, because such keys are unrepresentable (no way to encode length).
+    static bool isZero(const StringKey24 & key, const HashTableNoState &)
+    { return key.c == 0; }
+    void setZero() { this->value.first.c = 0; }
+
     // external
     const StringRef getKey() const { return toStringRef(this->value.first); }
     // internal

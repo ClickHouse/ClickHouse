@@ -1,0 +1,1 @@
+../../../en/sql_reference/aggregate_functions/parametric_functions.md

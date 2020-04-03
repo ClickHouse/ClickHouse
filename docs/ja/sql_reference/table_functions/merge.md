@@ -1,0 +1,1 @@
+../../../en/sql_reference/table_functions/merge.md

@@ -1,3 +1,8 @@
+---
+toc_priority: 29
+toc_title: Proxies
+---
+
 # Proxy Servers from Third-party Developers {#proxy-servers-from-third-party-developers}
 
 ## chproxy {#chproxy}
