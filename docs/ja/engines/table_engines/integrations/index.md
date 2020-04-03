@@ -1,1 +1,8 @@
-../../../../en/engines/table_engines/integrations/index.md
+---
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_folder_title: Integrations
+toc_priority: 30
+---
+
+
