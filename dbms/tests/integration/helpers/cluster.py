@@ -104,12 +104,14 @@ class ClickHouseCluster:
         self.base_zookeeper_cmd = None
         self.base_mysql_cmd = []
         self.base_kafka_cmd = []
+        self.base_rabbitmq_cmd = []
         self.pre_zookeeper_commands = []
         self.instances = {}
         self.with_zookeeper = False
         self.with_mysql = False
         self.with_postgres = False
         self.with_kafka = False
+        self.with_rabbitmq = False
         self.with_odbc_drivers = False
         self.with_hdfs = False
         self.with_mongo = False
@@ -139,7 +141,7 @@ class ClickHouseCluster:
         return cmd
 
     def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={},
-                     with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None,
+                     with_zookeeper=False, with_mysql=False, with_kafka=False, with_rabbitmq=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False,
                      hostname=None, env_variables={}, image="yandex/clickhouse-integration-test",
@@ -161,7 +163,7 @@ class ClickHouseCluster:
 
         instance = ClickHouseInstance(
             self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
-            self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio,
+            self.zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio,
             self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
             env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
@@ -221,6 +223,13 @@ class ClickHouseCluster:
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                    self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
             cmds.append(self.base_kafka_cmd)
+
+        if with_rabbitmq and not self.with_rabbitmq:
+            self.with_rabbitmq = True
+            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_rabbitmq.yml')])
+            self.base_rabbitmq_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
+                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_rabbitmq.yml')]
+
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
@@ -393,6 +402,18 @@ class ClickHouseCluster:
                 logging.warning("Can't connect to SchemaRegistry: %s", str(ex))
                 time.sleep(1)
 
+    def wait_rabbitmq_to_start(self, timeout=10):
+        start = time.time()
+        while time.time() - start < timeout:
+            try:
+                # connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost', port=5672))
+                # connection.close()
+                return
+            except Exception as ex:
+                print "Can't connect to RabbitMQ " + str(ex)
+                time.sleep(0.5)
+
+
     def start(self, destroy_dirs=True):
         if self.is_up:
             return
@@ -437,6 +458,11 @@ class ClickHouseCluster:
                 subprocess_check_call(self.base_kafka_cmd + common_opts + ['--renew-anon-volumes'])
                 self.kafka_docker_id = self.get_instance_docker_id('kafka1')
                 self.wait_schema_registry_to_start(120)
+
+            if self.with_rabbitmq and self.base_rabbitmq_cmd:
+                subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
+                self.rabbitmq_id = self.get_instance_docker_id('rabbitmq1')
+                self.wait_rabbitmq_to_start(120)
 
             if self.with_hdfs and self.base_hdfs_cmd:
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)
@@ -570,7 +596,7 @@ class ClickHouseInstance:
 
     def __init__(
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
-            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio,
+            with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_rabbitmq, with_mongo, with_redis, with_minio,
             base_configs_dir, server_bin_path, odbc_bridge_bin_path,
             clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={},
             image="yandex/clickhouse-integration-test",
@@ -597,6 +623,7 @@ class ClickHouseInstance:
 
         self.with_mysql = with_mysql
         self.with_kafka = with_kafka
+        self.with_rabbitmq = with_rabbitmq
         self.with_mongo = with_mongo
         self.with_redis = with_redis
         self.with_minio = with_minio
@@ -938,6 +965,9 @@ class ClickHouseInstance:
         if self.with_kafka:
             depends_on.append("kafka1")
             depends_on.append("schema-registry")
+
+        if self.with_rabbitmq:
+            depends_on.append("rabbitmq1")
 
         if self.with_zookeeper:
             depends_on.append("zoo1")
