@@ -125,7 +125,7 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
         else if (s_rename_column.ignore(pos, expected))
         {
-            if (s_if_not_exists.ignore(pos, expected))
+            if (s_if_exists.ignore(pos, expected))
                 command->if_not_exists = true;
 
             if (!parser_name.parse(pos, command->column, expected))
