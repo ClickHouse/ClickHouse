@@ -1,0 +1,1 @@
+../../../en/sql_reference/functions/uuid_functions.md

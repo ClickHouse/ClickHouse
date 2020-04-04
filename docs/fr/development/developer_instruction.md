@@ -246,7 +246,7 @@ Le code Style Guide: https://clickhouse.tech/docs/fr/développement/style/
 
 Rédaction de tests: https://clickhouse.tech/docs/fr/développement/tests/
 
-Liste des tâches: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy\_tasks\_sorted\_en.md
+Liste des tâches: https://github.com/ClickHouse/ClickHouse/blob/master/src/tests/instructions/easy\_tasks\_sorted\_en.md
 
 # Des Données De Test {#test-data}
 

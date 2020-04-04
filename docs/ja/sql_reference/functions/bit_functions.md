@@ -1,0 +1,1 @@
+../../../en/sql_reference/functions/bit_functions.md

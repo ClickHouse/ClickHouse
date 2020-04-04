@@ -64,4 +64,4 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 [Tutoriel ClickHouse](../../getting_started/tutorial.md) est basé sur Yandex.Metrica dataset et la façon recommandée pour commencer avec cet ensemble de données est de simplement passer par tutoriel.
 
-D'autres exemples de requêtes pour ces tables peuvent être trouvés parmi [tests avec État](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) de ClickHouse (ils sont nommés `test.hists` et `test.visits` y).
+D'autres exemples de requêtes pour ces tables peuvent être trouvés parmi [tests avec État](https://github.com/ClickHouse/ClickHouse/tree/master/src/tests/queries/1_stateful) de ClickHouse (ils sont nommés `test.hists` et `test.visits` y).

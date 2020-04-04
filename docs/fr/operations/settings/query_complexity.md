@@ -41,7 +41,7 @@ La consommation de mémoire est également limitée par les paramètres `max_mem
 
 Quantité maximale de RAM à utiliser pour exécuter les requêtes d'un utilisateur sur un seul serveur.
 
-Les valeurs par défaut sont définies dans [Paramètre.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). Par défaut, le montant n'est pas limité (`max_memory_usage_for_user = 0`).
+Les valeurs par défaut sont définies dans [Paramètre.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/src/Core/Settings.h#L288). Par défaut, le montant n'est pas limité (`max_memory_usage_for_user = 0`).
 
 Voir aussi la description de [max\_memory\_usage](#settings_max_memory_usage).
 
@@ -49,7 +49,7 @@ Voir aussi la description de [max\_memory\_usage](#settings_max_memory_usage).
 
 La quantité maximale de RAM à utiliser pour exécuter toutes les requêtes sur un seul serveur.
 
-Les valeurs par défaut sont définies dans [Paramètre.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). Par défaut, le montant n'est pas limité (`max_memory_usage_for_all_queries = 0`).
+Les valeurs par défaut sont définies dans [Paramètre.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/src/Core/Settings.h#L289). Par défaut, le montant n'est pas limité (`max_memory_usage_for_all_queries = 0`).
 
 Voir aussi la description de [max\_memory\_usage](#settings_max_memory_usage).
 
