@@ -1,8 +1,15 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 17
+toc_title: Referencia de Big Data de AMPLab
+---
+
 # Referencia de Big Data de AMPLab {#amplab-big-data-benchmark}
 
 Ver https://amplab.cs.berkeley.edu/benchmark/
 
-Regístrese para obtener una cuenta gratuita en https://aws.amazon.com. Necesitará una tarjeta de crédito, correo electrónico y número de teléfono. Obtenga una nueva clave de acceso en https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
+Regístrese para obtener una cuenta gratuita en https://aws.amazon.com. Requiere una tarjeta de crédito, correo electrónico y número de teléfono. Obtenga una nueva clave de acceso en https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
 
 Ejecute lo siguiente en la consola:
 
@@ -119,4 +126,4 @@ ORDER BY totalRevenue DESC
 LIMIT 1
 ```
 
-[Artículo Original](https://clickhouse.tech/docs/es/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

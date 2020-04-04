@@ -1,3 +1,8 @@
+---
+toc_priority: 54
+toc_title: Testing Hardware
+---
+
 # How To Test Your Hardware With ClickHouse {#how-to-test-your-hardware-with-clickhouse}
 
 With this instruction you can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
@@ -19,25 +24,25 @@ With this instruction you can run basic ClickHouse performance test on any serve
       # Then do:
       chmod a+x clickhouse
 
-1.  Download configs:
+5.  Download configs:
 
 <!-- -->
 
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/config.xml
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/users.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/users.xml
       mkdir config.d
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/config.d/path.xml -O config.d/path.xml
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/path.xml -O config.d/path.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
 
-1.  Download benchmark files:
+6.  Download benchmark files:
 
 <!-- -->
 
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/benchmark/clickhouse/benchmark-new.sh
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/benchmark-new.sh
       chmod a+x benchmark-new.sh
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/benchmark/clickhouse/queries.sql
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 
-1.  Download test data according to the [Yandex.Metrica dataset](../getting_started/example_datasets/metrica.md) instruction (“hits” table containing 100 million rows).
+7.  Download test data according to the [Yandex.Metrica dataset](../getting_started/example_datasets/metrica.md) instruction (“hits” table containing 100 million rows).
 
 <!-- -->
 
@@ -45,31 +50,31 @@ With this instruction you can run basic ClickHouse performance test on any serve
       tar xvf hits_100m_obfuscated_v1.tar.xz -C .
       mv hits_100m_obfuscated_v1/* .
 
-1.  Run the server:
+8.  Run the server:
 
 <!-- -->
 
       ./clickhouse server
 
-1.  Check the data: ssh to the server in another terminal
+9.  Check the data: ssh to the server in another terminal
 
 <!-- -->
 
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-1.  Edit the benchmark-new.sh, change “clickhouse-client” to “./clickhouse client” and add “–max\_memory\_usage 100000000000” parameter.
+10.  Edit the benchmark-new.sh, change “clickhouse-client” to “./clickhouse client” and add “–max\_memory\_usage 100000000000” parameter.
 
 <!-- -->
 
       mcedit benchmark-new.sh
 
-1.  Run the benchmark:
+11.  Run the benchmark:
 
 <!-- -->
 
       ./benchmark-new.sh hits_100m_obfuscated
 
-1.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
+12.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
 
-All the results are published here: https://clickhouse.tech/benchmark\_hardware.html
+All the results are published here: https://clickhouse.tech/benchmark_hardware.html

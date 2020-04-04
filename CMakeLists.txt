@@ -354,17 +354,11 @@ if (ENABLE_TESTS)
 endif ()
 
 # Need to process before "contrib" dir:
-include (cmake/find/jemalloc.cmake)
 include (cmake/find/mysqlclient.cmake)
 
 # When testing for memory leaks with Valgrind, don't link tcmalloc or jemalloc.
 
-if (USE_JEMALLOC)
-    message (STATUS "Link jemalloc: ${JEMALLOC_LIBRARIES}")
-    set (MALLOC_LIBRARIES ${JEMALLOC_LIBRARIES})
-elseif (SANITIZE)
-    message (STATUS "Will use ${SANITIZE} sanitizer.")
-elseif (OS_LINUX)
+if (OS_LINUX AND NOT ENABLE_JEMALLOC)
     message (WARNING "Non default allocator is disabled. This is not recommended for production Linux builds.")
 endif ()
 
@@ -387,8 +381,13 @@ macro (add_executable target)
     endif()
 endmacro()
 
+set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
+include_directories(${ConfigIncludePath})
+
 add_subdirectory (base)
+add_subdirectory (programs)
+add_subdirectory (src)
+add_subdirectory (tests)
 add_subdirectory (utils)
-add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)

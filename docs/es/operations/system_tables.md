@@ -1,10 +1,17 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 52
+toc_title: Tablas del sistema
+---
+
 # Tablas del sistema {#system-tables}
 
 Las tablas del sistema se utilizan para implementar parte de la funcionalidad del sistema y para proporcionar acceso a información sobre cómo funciona el sistema.
 No puede eliminar una tabla del sistema (pero puede realizar DETACH).
 Las tablas del sistema no tienen archivos con datos en el disco o archivos con metadatos. El servidor crea todas las tablas del sistema cuando se inicia.
 Las tablas del sistema son de solo lectura.
-Están ubicados en el ‘system’ basar.
+Están ubicados en el ‘system’ base.
 
 ## sistema.asynchronous\_metrics {#system_tables-asynchronous_metrics}
 
@@ -12,8 +19,8 @@ Contiene métricas que se calculan periódicamente en segundo plano. Por ejemplo
 
 Columna:
 
--   `metric` ([Cadena](../data_types/string.md)) — Nombre métrico.
--   `value` ([Float64](../data_types/float.md)) — Valor métrico.
+-   `metric` ([Cadena](../sql_reference/data_types/string.md)) — Metric name.
+-   `value` ([Float64](../sql_reference/data_types/float.md)) — Metric value.
 
 **Ejemplo**
 
@@ -38,10 +45,10 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 
 **Ver también**
 
--   [Monitoreo](monitoring.md) — Conceptos básicos de monitoreo ClickHouse.
--   [sistema.métricas](#system_tables-metrics) - Contiene métricas calculadas al instante.
--   [sistema.evento](#system_tables-events) — Contiene una serie de eventos que han ocurrido.
--   [sistema.metric\_log](#system_tables-metric_log) — Contiene un historial de valores de métricas de tablas `system.metrics` , . `system.events`.
+-   [Monitoreo](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [sistema.métricas](#system_tables-metrics) — Contains instantly calculated metrics.
+-   [sistema.evento](#system_tables-events) — Contains a number of events that have occurred.
+-   [sistema.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 
 ## sistema.Cluster {#system-clusters}
 
@@ -49,14 +56,14 @@ Contiene información sobre los clústeres disponibles en el archivo de configur
 
 Columna:
 
--   `cluster` (String) — El nombre del clúster.
--   `shard_num` (UInt32) — El número de fragmento en el clúster, a partir de 1.
--   `shard_weight` (UInt32) — El peso relativo del fragmento al escribir datos.
--   `replica_num` (UInt32) — El número de réplica en el fragmento, a partir de 1.
--   `host_name` (String) — El nombre de host, como se especifica en la configuración.
--   `host_address` (String) — La dirección IP del host obtenida de DNS.
--   `port` (UInt16): el puerto que se utiliza para conectarse al servidor.
--   `user` (String) — El nombre del usuario para conectarse al servidor.
+-   `cluster` (String) — The cluster name.
+-   `shard_num` (UInt32) — The shard number in the cluster, starting from 1.
+-   `shard_weight` (UInt32) — The relative weight of the shard when writing data.
+-   `replica_num` (UInt32) — The replica number in the shard, starting from 1.
+-   `host_name` (String) — The host name, as specified in the config.
+-   `host_address` (String) — The host IP address obtained from DNS.
+-   `port` (UInt16) — The port to use for connecting to the server.
+-   `user` (String) — The name of the user for connecting to the server.
 -   `errors_count` (UInt32): número de veces que este host no pudo alcanzar la réplica.
 -   `estimated_recovery_time` (UInt32): quedan segundos hasta que el recuento de errores de réplica se ponga a cero y se considere que vuelve a la normalidad.
 
@@ -64,7 +71,7 @@ Tenga en cuenta que `errors_count` se actualiza una vez por consulta al clúster
 
 **Ver también**
 
--   [Motor de tabla distribuido](table_engines/distributed.md)
+-   [Motor de tabla distribuido](../engines/table_engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap configuración](settings/settings.md#settings-distributed_replica_error_cap)
 -   [distributed\_replica\_error\_half\_life configuración](settings/settings.md#settings-distributed_replica_error_half_life)
 
@@ -72,24 +79,24 @@ Tenga en cuenta que `errors_count` se actualiza una vez por consulta al clúster
 
 Contiene información sobre las columnas de todas las tablas.
 
-Puede utilizar esta tabla para obtener información similar a la [TABLA DE DESCRIBE](../query_language/misc.md#misc-describe-table) Consulta, pero para varias tablas a la vez.
+Puede utilizar esta tabla para obtener información similar a la [DESCRIBE TABLE](../sql_reference/statements/misc.md#misc-describe-table) consulta, pero para varias tablas a la vez.
 
 El `system.columns` tabla contiene las siguientes columnas (el tipo de columna se muestra entre corchetes):
 
--   `database` (String) — Nombre de la base de datos.
--   `table` (Cadena) — Nombre de tabla.
--   `name` (Cadena) — Nombre de columna.
--   `type` (Cadena) — Tipo de columna.
--   `default_kind` (String) — Tipo de expresión (`DEFAULT`, `MATERIALIZED`, `ALIAS`) para el valor predeterminado, o una cadena vacía si no está definida.
--   `default_expression` (String) — Expresión para el valor predeterminado, o una cadena vacía si no está definida.
--   `data_compressed_bytes` (UInt64): el tamaño de los datos comprimidos, en bytes.
--   `data_uncompressed_bytes` (UInt64): el tamaño de los datos descomprimidos, en bytes.
--   `marks_bytes` (UInt64) — El tamaño de las marcas, en bytes.
--   `comment` (Cadena): comenta la columna o una cadena vacía si no está definida.
--   `is_in_partition_key` (UInt8): marca que indica si la columna está en la expresión de partición.
--   `is_in_sorting_key` (UInt8): marca que indica si la columna está en la expresión de clave de ordenación.
--   `is_in_primary_key` (UInt8): marca que indica si la columna está en la expresión de clave principal.
--   `is_in_sampling_key` (UInt8): marca que indica si la columna está en la expresión de clave de muestreo.
+-   `database` (String) — Database name.
+-   `table` (String) — Table name.
+-   `name` (String) — Column name.
+-   `type` (String) — Column type.
+-   `default_kind` (String) — Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`) para el valor predeterminado, o una cadena vacía si no está definida.
+-   `default_expression` (String) — Expression for the default value, or an empty string if it is not defined.
+-   `data_compressed_bytes` (UInt64) — The size of compressed data, in bytes.
+-   `data_uncompressed_bytes` (UInt64) — The size of decompressed data, in bytes.
+-   `marks_bytes` (UInt64) — The size of marks, in bytes.
+-   `comment` (String) — Comment on the column, or an empty string if it is not defined.
+-   `is_in_partition_key` (UInt8) — Flag that indicates whether the column is in the partition expression.
+-   `is_in_sorting_key` (UInt8) — Flag that indicates whether the column is in the sorting key expression.
+-   `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
+-   `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
 ## sistema.colaborador {#system-contributors}
 
@@ -97,7 +104,7 @@ Contiene información sobre los colaboradores. Todos los constributores en orden
 
 Columna:
 
--   `name` (Cadena) - Nombre del colaborador (autor) del git log.
+-   `name` (String) — Contributor (author) name from git log.
 
 **Ejemplo**
 
@@ -132,35 +139,35 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 └──────────────────┘
 ```
 
-## sistema.basar {#system-databases}
+## sistema.base {#system-databases}
 
-Esta tabla contiene una sola columna String llamada ‘name’ – el nombre de una base de datos.
+Esta tabla contiene una sola columna String llamada ‘name’ – the name of a database.
 Cada base de datos que el servidor conoce tiene una entrada correspondiente en la tabla.
 Esta tabla del sistema se utiliza para implementar el `SHOW DATABASES` consulta.
 
 ## sistema.detached\_parts {#system_tables-detached_parts}
 
-Contiene información sobre piezas separadas de [Método de codificación de datos:](table_engines/mergetree.md) tabla. El `reason` columna especifica por qué se separó la pieza. Para las piezas separadas por el usuario, el motivo está vacío. Tales partes se pueden unir con [ALTER TABLE ATTACH PARTITION\|PARTE](../query_language/query_language/alter/#alter_attach-partition) comando. Para obtener la descripción de otras columnas, consulte [sistema.parte](#system_tables-parts). Si el nombre de la pieza no es válido, los valores de algunas columnas pueden ser `NULL`. Tales partes se pueden eliminar con [ALTER MESA GOTA PARTE DESMONTADA](../query_language/query_language/alter/#alter_drop-detached).
+Contiene información sobre piezas separadas de [Método de codificación de datos:](../engines/table_engines/mergetree_family/mergetree.md) tabla. El `reason` columna especifica por qué se separó la pieza. Para las piezas separadas por el usuario, el motivo está vacío. Tales partes se pueden unir con [ALTER TABLE ATTACH PARTITION\|PART](../query_language/query_language/alter/#alter_attach-partition) comando. Para obtener la descripción de otras columnas, consulte [sistema.parte](#system_tables-parts). Si el nombre de la pieza no es válido, los valores de algunas columnas pueden ser `NULL`. Tales partes se pueden eliminar con [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
 
-## sistema.Diccionario {#system-dictionaries}
+## sistema.diccionario {#system-dictionaries}
 
 Contiene información sobre diccionarios externos.
 
 Columna:
 
--   `name` (Cadena) — Nombre del diccionario.
--   `type` (Cadena) - Tipo de diccionario: plano, hash, caché.
--   `origin` (String) — Ruta de acceso al archivo de configuración que describe el diccionario.
--   `attribute.names` (Array(String)) — Matriz de nombres de atributos proporcionados por el diccionario.
--   `attribute.types` (Array(String)) — Matriz correspondiente de tipos de atributos que proporciona el diccionario.
--   `has_hierarchy` (UInt8) - Si el diccionario es jerárquico.
--   `bytes_allocated` (UInt64) - La cantidad de RAM que usa el diccionario.
--   `hit_rate` (Float64): para los diccionarios de caché, el porcentaje de usos para los que el valor estaba en la caché.
--   `element_count` (UInt64) — El número de elementos almacenados en el diccionario.
--   `load_factor` (Float64): el porcentaje rellenado en el diccionario (para un diccionario hash, el porcentaje rellenado en la tabla hash).
--   `creation_time` (DateTime): la hora en que se creó el diccionario o se recargó correctamente por última vez.
--   `last_exception` (Cadena) — Texto del error que se produce al crear o volver a cargar el diccionario si no se pudo crear el diccionario.
--   `source` (String) — Texto que describe el origen de datos para el diccionario.
+-   `name` (String) — Dictionary name.
+-   `type` (String) — Dictionary type: Flat, Hashed, Cache.
+-   `origin` (String) — Path to the configuration file that describes the dictionary.
+-   `attribute.names` (Array(String)) — Array of attribute names provided by the dictionary.
+-   `attribute.types` (Array(String)) — Corresponding array of attribute types that are provided by the dictionary.
+-   `has_hierarchy` (UInt8) — Whether the dictionary is hierarchical.
+-   `bytes_allocated` (UInt64) — The amount of RAM the dictionary uses.
+-   `hit_rate` (Float64) — For cache dictionaries, the percentage of uses for which the value was in the cache.
+-   `element_count` (UInt64) — The number of items stored in the dictionary.
+-   `load_factor` (Float64) — The percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
+-   `creation_time` (DateTime) — The time when the dictionary was created or last successfully reloaded.
+-   `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
+-   `source` (String) — Text describing the data source for the dictionary.
 
 Tenga en cuenta que la cantidad de memoria utilizada por el diccionario no es proporcional a la cantidad de elementos almacenados en él. Por lo tanto, para los diccionarios planos y en caché, todas las celdas de memoria se asignan previamente, independientemente de qué tan lleno esté realmente el diccionario.
 
@@ -170,9 +177,9 @@ Contiene información sobre el número de eventos que se han producido en el sis
 
 Columna:
 
--   `event` ([Cadena](../data_types/string.md)) — Nombre del evento.
--   `value` ([UInt64](../data_types/int_uint.md)) — Número de eventos ocurridos.
--   `description` ([Cadena](../data_types/string.md)) — Descripción del evento.
+-   `event` ([Cadena](../sql_reference/data_types/string.md)) — Event name.
+-   `value` ([UInt64](../sql_reference/data_types/int_uint.md)) — Number of events occurred.
+-   `description` ([Cadena](../sql_reference/data_types/string.md)) — Event description.
 
 **Ejemplo**
 
@@ -192,10 +199,10 @@ SELECT * FROM system.events LIMIT 5
 
 **Ver también**
 
--   [sistema.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contiene métricas calculadas periódicamente.
--   [sistema.métricas](#system_tables-metrics) - Contiene métricas calculadas al instante.
--   [sistema.metric\_log](#system_tables-metric_log) — Contiene un historial de valores de métricas de tablas `system.metrics` , . `system.events`.
--   [Monitoreo](monitoring.md) — Conceptos básicos de monitoreo ClickHouse.
+-   [sistema.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [sistema.métricas](#system_tables-metrics) — Contains instantly calculated metrics.
+-   [sistema.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [Monitoreo](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## sistema.función {#system-functions}
 
@@ -203,12 +210,12 @@ Contiene información sobre funciones normales y agregadas.
 
 Columna:
 
--   `name`(`String`) – El nombre de la función.
--   `is_aggregate`(`UInt8`) — Si la función es agregada.
+-   `name`(`String`) – The name of the function.
+-   `is_aggregate`(`UInt8`) — Whether the function is aggregate.
 
 ## sistema.graphite\_retentions {#system-graphite-retentions}
 
-Contiene información sobre los parámetros [graphite\_rollup](server_settings/settings.md#server_settings-graphite_rollup) que se utilizan en tablas con [\*GraphiteMergeTree](table_engines/graphitemergetree.md) motor.
+Contiene información sobre los parámetros [graphite\_rollup](server_configuration_parameters/settings.md#server_configuration_parameters-graphite_rollup) que se utilizan en tablas con [\*GraphiteMergeTree](../engines/table_engines/mergetree_family/graphitemergetree.md) motor.
 
 Columna:
 
@@ -222,25 +229,25 @@ Columna:
 -   `Tables.database` (Array(String)) - Matriz de nombres de tablas de base de datos que utilizan `config_name` parámetro.
 -   `Tables.table` (Array(String)) - Matriz de nombres de tablas que utilizan `config_name` parámetro.
 
-## sistema.Fusionar {#system-merges}
+## sistema.fusionar {#system-merges}
 
 Contiene información sobre fusiones y mutaciones de piezas actualmente en proceso para tablas de la familia MergeTree.
 
 Columna:
 
--   `database` (String) — El nombre de la base de datos en la que se encuentra la tabla.
--   `table` (Cadena) — Nombre de tabla.
--   `elapsed` (Float64) — El tiempo transcurrido (en segundos) desde que se inició la fusión.
--   `progress` (Float64) — El porcentaje de trabajo completado de 0 a 1.
--   `num_parts` (UInt64) — El número de piezas que se fusionarán.
--   `result_part_name` (Cadena) — El nombre de la parte que se formará como resultado de la fusión.
+-   `database` (String) — The name of the database the table is in.
+-   `table` (String) — Table name.
+-   `elapsed` (Float64) — The time elapsed (in seconds) since the merge started.
+-   `progress` (Float64) — The percentage of completed work from 0 to 1.
+-   `num_parts` (UInt64) — The number of pieces to be merged.
+-   `result_part_name` (String) — The name of the part that will be formed as the result of merging.
 -   `is_mutation` (UInt8) - 1 si este proceso es una mutación parte.
--   `total_size_bytes_compressed` (UInt64): el tamaño total de los datos comprimidos en los fragmentos combinados.
--   `total_size_marks` (UInt64) — Número total de marcas en las partes fusionadas.
--   `bytes_read_uncompressed` (UInt64) — Número de bytes leídos, sin comprimir.
--   `rows_read` (UInt64) — Número de filas leídas.
--   `bytes_written_uncompressed` (UInt64) — Número de bytes escritos, sin comprimir.
--   `rows_written` (UInt64) — Número de filas escritas.
+-   `total_size_bytes_compressed` (UInt64) — The total size of the compressed data in the merged chunks.
+-   `total_size_marks` (UInt64) — The total number of marks in the merged parts.
+-   `bytes_read_uncompressed` (UInt64) — Number of bytes read, uncompressed.
+-   `rows_read` (UInt64) — Number of rows read.
+-   `bytes_written_uncompressed` (UInt64) — Number of bytes written, uncompressed.
+-   `rows_written` (UInt64) — Number of rows written.
 
 ## sistema.métricas {#system_tables-metrics}
 
@@ -248,11 +255,11 @@ Contiene métricas que pueden calcularse instantáneamente o tener un valor actu
 
 Columna:
 
--   `metric` ([Cadena](../data_types/string.md)) — Nombre métrico.
--   `value` ([Int64](../data_types/int_uint.md)) — Valor métrico.
--   `description` ([Cadena](../data_types/string.md)) — Descripción métrica.
+-   `metric` ([Cadena](../sql_reference/data_types/string.md)) — Metric name.
+-   `value` ([Int64](../sql_reference/data_types/int_uint.md)) — Metric value.
+-   `description` ([Cadena](../sql_reference/data_types/string.md)) — Metric description.
 
-La lista de métricas admitidas que puede encontrar en el [dbms/src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Common/CurrentMetrics.cpp) archivo fuente de ClickHouse.
+La lista de métricas admitidas que puede encontrar en el [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp) archivo fuente de ClickHouse.
 
 **Ejemplo**
 
@@ -277,10 +284,10 @@ SELECT * FROM system.metrics LIMIT 10
 
 **Ver también**
 
--   [sistema.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contiene métricas calculadas periódicamente.
--   [sistema.evento](#system_tables-events) — Contiene una serie de eventos que ocurrieron.
--   [sistema.metric\_log](#system_tables-metric_log) — Contiene un historial de valores de métricas de tablas `system.metrics` , . `system.events`.
--   [Monitoreo](monitoring.md) — Conceptos básicos de monitoreo ClickHouse.
+-   [sistema.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [sistema.evento](#system_tables-events) — Contains a number of events that occurred.
+-   [sistema.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [Monitoreo](monitoring.md) — Base concepts of ClickHouse monitoring.
 
 ## sistema.metric\_log {#system_tables-metric_log}
 
@@ -333,12 +340,12 @@ CurrentMetric_ReplicatedChecks:                             0
 
 **Ver también**
 
--   [sistema.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contiene métricas calculadas periódicamente.
--   [sistema.evento](#system_tables-events) — Contiene una serie de eventos que ocurrieron.
--   [sistema.métricas](#system_tables-metrics) - Contiene métricas calculadas al instante.
--   [Monitoreo](monitoring.md) — Conceptos básicos de monitoreo ClickHouse.
+-   [sistema.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [sistema.evento](#system_tables-events) — Contains a number of events that occurred.
+-   [sistema.métricas](#system_tables-metrics) — Contains instantly calculated metrics.
+-   [Monitoreo](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## sistema.número {#system-numbers}
+## sistema.numero {#system-numbers}
 
 Esta tabla contiene una única columna UInt64 llamada ‘number’ que contiene casi todos los números naturales a partir de cero.
 Puede usar esta tabla para pruebas, o si necesita hacer una búsqueda de fuerza bruta.
@@ -357,133 +364,133 @@ Esto es similar a la tabla DUAL que se encuentra en otros DBMS.
 
 ## sistema.parte {#system_tables-parts}
 
-Contiene información sobre partes de [Método de codificación de datos:](table_engines/mergetree.md) tabla.
+Contiene información sobre partes de [Método de codificación de datos:](../engines/table_engines/mergetree_family/mergetree.md) tabla.
 
-Cada fila describe una parte de datos.
+Cada fila describe una parte de los datos.
 
 Columna:
 
--   `partition` (Cadena) – el nombre de La partición. Para saber qué es una partición, consulte la descripción del [ALTERAR](../query_language/alter.md#query_language_queries_alter) consulta.
+-   `partition` (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../sql_reference/statements/alter.md#query_language_queries_alter) consulta.
 
     Formato:
 
     -   `YYYYMM` para la partición automática por mes.
     -   `any_string` al particionar manualmente.
 
--   `name` (`String`) – Nombre de la parte de datos.
+-   `name` (`String`) – Name of the data part.
 
--   `active` (`UInt8`) – Indicador que indica si la parte de datos está activa. Si un elemento de datos está activo, se utiliza en una tabla. De lo contrario, se elimina. Las partes de datos inactivas permanecen después de la fusión.
+-   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
 
--   `marks` (`UInt64`) – El número de puntos. Para obtener el número aproximado de filas en una parte de datos, multiplique `marks` por la granularidad del índice (generalmente 8192) (esta sugerencia no funciona para la granularidad adaptativa).
+-   `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` por la granularidad del índice (generalmente 8192) (esta sugerencia no funciona para la granularidad adaptativa).
 
--   `rows` (`UInt64`) – El número de filas.
+-   `rows` (`UInt64`) – The number of rows.
 
--   `bytes_on_disk` (`UInt64`) – Tamaño total de todos los archivos de parte de datos en bytes.
+-   `bytes_on_disk` (`UInt64`) – Total size of all the data part files in bytes.
 
--   `data_compressed_bytes` (`UInt64`) – Tamaño total de los datos comprimidos en la parte de datos. Todos los archivos auxiliares (por ejemplo, archivos con marcas) no están incluidos.
+-   `data_compressed_bytes` (`UInt64`) – Total size of compressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
 
--   `data_uncompressed_bytes` (`UInt64`) – Tamaño total de los datos sin comprimir en la parte de datos. Todos los archivos auxiliares (por ejemplo, archivos con marcas) no están incluidos.
+-   `data_uncompressed_bytes` (`UInt64`) – Total size of uncompressed data in the data part. All the auxiliary files (for example, files with marks) are not included.
 
--   `marks_bytes` (`UInt64`) – El tamaño del archivo con marcas.
+-   `marks_bytes` (`UInt64`) – The size of the file with marks.
 
--   `modification_time` (`DateTime`) – La hora en que se modificó el directorio con la parte de datos. Esto normalmente corresponde a la hora de creación del elemento de datos.\|
+-   `modification_time` (`DateTime`) – The time the directory with the data part was modified. This usually corresponds to the time of data part creation.\|
 
--   `remove_time` (`DateTime`) – El momento en que la parte de datos quedó inactiva.
+-   `remove_time` (`DateTime`) – The time when the data part became inactive.
 
--   `refcount` (`UInt32`) – El número de lugares donde se utiliza la parte de datos. Un valor mayor que 2 indica que el elemento de datos se utiliza en consultas o fusiones.
+-   `refcount` (`UInt32`) – The number of places where the data part is used. A value greater than 2 indicates that the data part is used in queries or merges.
 
--   `min_date` (`Date`) – El valor mínimo de la clave de fecha en la parte de datos.
+-   `min_date` (`Date`) – The minimum value of the date key in the data part.
 
--   `max_date` (`Date`) – El valor máximo de la clave de fecha en la parte de datos.
+-   `max_date` (`Date`) – The maximum value of the date key in the data part.
 
--   `min_time` (`DateTime`) – El valor mínimo de la clave de fecha y hora en la parte de datos.
+-   `min_time` (`DateTime`) – The minimum value of the date and time key in the data part.
 
--   `max_time`(`DateTime`) – El valor máximo de la clave de fecha y hora en la parte de datos.
+-   `max_time`(`DateTime`) – The maximum value of the date and time key in the data part.
 
--   `partition_id` (`String`) – ID de la partición.
+-   `partition_id` (`String`) – ID of the partition.
 
--   `min_block_number` (`UInt64`) – El número mínimo de partes de datos que componen la parte actual después de la fusión.
+-   `min_block_number` (`UInt64`) – The minimum number of data parts that make up the current part after merging.
 
--   `max_block_number` (`UInt64`) – El número máximo de partes de datos que componen la parte actual después de la fusión.
+-   `max_block_number` (`UInt64`) – The maximum number of data parts that make up the current part after merging.
 
--   `level` (`UInt32`) – Profundidad del árbol de fusión. Cero significa que la parte actual se creó mediante inserción en lugar de fusionar otras partes.
+-   `level` (`UInt32`) – Depth of the merge tree. Zero means that the current part was created by insert rather than by merging other parts.
 
--   `data_version` (`UInt64`) – Número que se utiliza para determinar qué mutaciones se deben aplicar a la parte de datos (mutaciones con una versión superior a `data_version`).
+-   `data_version` (`UInt64`) – Number that is used to determine which mutations should be applied to the data part (mutations with a version higher than `data_version`).
 
--   `primary_key_bytes_in_memory` (`UInt64`) – La cantidad de memoria (en bytes) utilizada por los valores de clave primaria.
+-   `primary_key_bytes_in_memory` (`UInt64`) – The amount of memory (in bytes) used by primary key values.
 
--   `primary_key_bytes_in_memory_allocated` (`UInt64`) – La cantidad de memoria (en bytes) reservada para los valores de clave primaria.
+-   `primary_key_bytes_in_memory_allocated` (`UInt64`) – The amount of memory (in bytes) reserved for primary key values.
 
--   `is_frozen` (`UInt8`) – Indicador que muestra que existe una copia de seguridad de datos de partición. 1, la copia de seguridad existe. 0, la copia de seguridad no existe. Para obtener más información, consulte [CONGELAR PARTICIÓN](../query_language/alter.md#alter_freeze-partition)
+-   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../sql_reference/statements/alter.md#alter_freeze-partition)
 
--   `database` (`String`) – Nombre de la base de datos.
+-   `database` (`String`) – Name of the database.
 
--   `table` (`String`) – Nombre de la tabla.
+-   `table` (`String`) – Name of the table.
 
--   `engine` (`String`) – Nombre del motor de tabla sin parámetros.
+-   `engine` (`String`) – Name of the table engine without parameters.
 
--   `path` (`String`) – Ruta absoluta a la carpeta con archivos de parte de datos.
+-   `path` (`String`) – Absolute path to the folder with data part files.
 
--   `disk` (`String`) – Nombre de un disco que almacena la parte de datos.
+-   `disk` (`String`) – Name of a disk that stores the data part.
 
--   `hash_of_all_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) de archivos comprimidos.
+-   `hash_of_all_files` (`String`) – [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) de archivos comprimidos.
 
--   `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) de archivos sin comprimir (archivos con marcas, archivo de índice, etc.).
+-   `hash_of_uncompressed_files` (`String`) – [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) de archivos sin comprimir (archivos con marcas, archivo de índice, etc.).
 
--   `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) de datos en los archivos comprimidos como si estuvieran descomprimidos.
+-   `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) de datos en los archivos comprimidos como si estuvieran descomprimidos.
 
--   `bytes` (`UInt64`) – Alias para `bytes_on_disk`.
+-   `bytes` (`UInt64`) – Alias for `bytes_on_disk`.
 
--   `marks_size` (`UInt64`) – Alias para `marks_bytes`.
+-   `marks_size` (`UInt64`) – Alias for `marks_bytes`.
 
 ## sistema.part\_log {#system_tables-part-log}
 
-El `system.part_log` se crea sólo si el [part\_log](server_settings/settings.md#server_settings-part-log) se especifica la configuración del servidor.
+El `system.part_log` se crea sólo si el [part\_log](server_configuration_parameters/settings.md#server_configuration_parameters-part-log) se especifica la configuración del servidor.
 
-Esta tabla contiene información sobre eventos que ocurrieron con [partes de datos](table_engines/custom_partitioning_key.md) es el [Método de codificación de datos:](table_engines/mergetree.md) tablas familiares, como agregar o fusionar datos.
+Esta tabla contiene información sobre eventos que ocurrieron con [partes de datos](../engines/table_engines/mergetree_family/custom_partitioning_key.md) en el [Método de codificación de datos:](../engines/table_engines/mergetree_family/mergetree.md) tablas familiares, como agregar o fusionar datos.
 
 El `system.part_log` contiene las siguientes columnas:
 
--   `event_type` (Enum) — Tipo del evento que ocurrió con la parte de datos. Puede tener uno de los siguientes valores:
-    -   `NEW_PART` — Inserción de una nueva parte de datos.
-    -   `MERGE_PARTS` — Fusión de partes de datos.
-    -   `DOWNLOAD_PART` — Descarga de una parte de datos.
-    -   `REMOVE_PART` — Extracción o separación de una parte de datos mediante [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
-    -   `MUTATE_PART` — Mutación de una parte de datos.
-    -   `MOVE_PART` — Mover la parte de datos de un disco a otro.
--   `event_date` (Fecha) — fecha del Evento.
--   `event_time` (DateTime) — Hora del evento.
--   `duration_ms` (UInt64) — Duración.
--   `database` (String) — Nombre de la base de datos en la que se encuentra la parte de datos.
--   `table` (String) — Nombre de la tabla en la que se encuentra la parte de datos.
--   `part_name` (String) — Nombre de la parte de datos.
--   `partition_id` (String) — ID de la partición en la que se insertó la parte de datos. La columna toma el ‘all’ valor si la partición es por `tuple()`.
--   `rows` (UInt64): el número de filas en la parte de datos.
--   `size_in_bytes` (UInt64) — Tamaño de la parte de datos en bytes.
--   `merged_from` (Array(String)) - Una matriz de nombres de las partes de las que se componía la parte actual (después de la fusión).
--   `bytes_uncompressed` (UInt64): tamaño de bytes sin comprimir.
--   `read_rows` (UInt64): el número de filas que se leyó durante la fusión.
--   `read_bytes` (UInt64): el número de bytes que se leyeron durante la fusión.
--   `error` (UInt16) — El número de código del error ocurrido.
--   `exception` (Cadena) — Mensaje de texto del error ocurrido.
+-   `event_type` (Enum) — Type of the event that occurred with the data part. Can have one of the following values:
+    -   `NEW_PART` — Inserting of a new data part.
+    -   `MERGE_PARTS` — Merging of data parts.
+    -   `DOWNLOAD_PART` — Downloading a data part.
+    -   `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../sql_reference/statements/alter.md#alter_detach-partition).
+    -   `MUTATE_PART` — Mutating of a data part.
+    -   `MOVE_PART` — Moving the data part from the one disk to another one.
+-   `event_date` (Date) — Event date.
+-   `event_time` (DateTime) — Event time.
+-   `duration_ms` (UInt64) — Duration.
+-   `database` (String) — Name of the database the data part is in.
+-   `table` (String) — Name of the table the data part is in.
+-   `part_name` (String) — Name of the data part.
+-   `partition_id` (String) — ID of the partition that the data part was inserted to. The column takes the ‘all’ valor si la partición es por `tuple()`.
+-   `rows` (UInt64) — The number of rows in the data part.
+-   `size_in_bytes` (UInt64) — Size of the data part in bytes.
+-   `merged_from` (Array(String)) — An array of names of the parts which the current part was made up from (after the merge).
+-   `bytes_uncompressed` (UInt64) — Size of uncompressed bytes.
+-   `read_rows` (UInt64) — The number of rows was read during the merge.
+-   `read_bytes` (UInt64) — The number of bytes was read during the merge.
+-   `error` (UInt16) — The code number of the occurred error.
+-   `exception` (String) — Text message of the occurred error.
 
 El `system.part_log` se crea después de la primera inserción de datos `MergeTree` tabla.
 
-## sistema.proceso {#system_tables-processes}
+## sistema.procesa {#system_tables-processes}
 
 Esta tabla del sistema se utiliza para implementar el `SHOW PROCESSLIST` consulta.
 
 Columna:
 
--   `user` (Cadena): el usuario que realizó la consulta. Tenga en cuenta que para el procesamiento distribuido, las consultas se envían a servidores remotos `default` usuario. El campo contiene el nombre de usuario para una consulta específica, no para una consulta que esta consulta inició.
--   `address` (Cadena): la dirección IP desde la que se realizó la solicitud. Lo mismo para el procesamiento distribuido. Para realizar un seguimiento de dónde se hizo originalmente una consulta distribuida, mire `system.processes` en el servidor de solicitud de consulta.
--   `elapsed` (Float64): el tiempo en segundos desde que se inició la ejecución de la solicitud.
--   `rows_read` (UInt64): el número de filas leídas de la tabla. Para el procesamiento distribuido, en el solicitante servidor, este es el total para todos los servidores remotos.
--   `bytes_read` (UInt64): el número de bytes sin comprimir leídos de la tabla. Para el procesamiento distribuido, en el solicitante servidor, este es el total para todos los servidores remotos.
--   `total_rows_approx` (UInt64): la aproximación del número total de filas que se deben leer. Para el procesamiento distribuido, en el solicitante servidor, este es el total para todos los servidores remotos. Se puede actualizar durante el procesamiento de solicitudes, cuando se conozcan nuevas fuentes para procesar.
--   `memory_usage` (UInt64): cantidad de RAM que usa la solicitud. Puede que no incluya algunos tipos de memoria dedicada. Ver el [Método de codificación de datos:](../operations/settings/query_complexity.md#settings_max_memory_usage) configuración.
--   `query` (Cadena) – el texto de La consulta. Para `INSERT`, no incluye los datos para insertar.
--   `query_id` (Cadena): ID de consulta, si se define.
+-   `user` (String) – The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the `default` usuario. El campo contiene el nombre de usuario para una consulta específica, no para una consulta que esta consulta inició.
+-   `address` (String) – The IP address the request was made from. The same for distributed processing. To track where a distributed query was originally made from, look at `system.processes` en el servidor de solicitud de consulta.
+-   `elapsed` (Float64) – The time in seconds since request execution started.
+-   `rows_read` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+-   `bytes_read` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
+-   `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
+-   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [Método de codificación de datos:](../operations/settings/query_complexity.md#settings_max_memory_usage) configuración.
+-   `query` (String) – The query text. For `INSERT`, no incluye los datos para insertar.
+-   `query_id` (String) – Query ID, if defined.
 
 ## sistema.text\_log {#system-tables-text-log}
 
@@ -492,10 +499,10 @@ Contiene entradas de registro. El nivel de registro que va a esta tabla se puede
 Columna:
 
 -   `event_date` (`Date`) - Fecha de la entrada.
--   `event_time` (`DateTime`) - Hora de la entrada.
+-   `event_time` (`DateTime`) - Tiempo de la entrada.
 -   `microseconds` (`UInt32`) - Microsegundos de la entrada.
--   `thread_name` (Cadena) — Nombre del subproceso desde el que se realizó el registro.
--   `thread_id` (UInt64) - ID de subproceso del sistema operativo.
+-   `thread_name` (String) — Name of the thread from which the logging was done.
+-   `thread_id` (UInt64) — OS thread ID.
 -   `level` (`Enum8`) - Nivel de entrada.
     -   `'Fatal' = 1`
     -   `'Critical' = 2`
@@ -506,7 +513,7 @@ Columna:
     -   `'Debug' = 7`
     -   `'Trace' = 8`
 -   `query_id` (`String`) - ID de la consulta.
--   `logger_name` (`LowCardinality(String)`) - Nombre del registrador (es decir, `DDLWorker`)
+-   `logger_name` (`LowCardinality(String)`) - Name of the logger (i.e. `DDLWorker`)
 -   `message` (`String`) - El mensaje en sí.
 -   `revision` (`UInt32`) - Revisión de ClickHouse.
 -   `source_file` (`LowCardinality(String)`) - Archivo de origen desde el que se realizó el registro.
@@ -519,69 +526,69 @@ Contiene información sobre la ejecución de consultas. Para cada consulta, pued
 !!! note "Nota"
     La tabla no contiene datos de entrada para `INSERT` consulta.
 
-ClickHouse crea esta tabla sólo si el [query\_log](server_settings/settings.md#server_settings-query-log) se especifica el parámetro server. Este parámetro establece las reglas de registro, como el intervalo de registro o el nombre de la tabla en la que se registrarán las consultas.
+ClickHouse crea esta tabla sólo si el [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) se especifica el parámetro server. Este parámetro establece las reglas de registro, como el intervalo de registro o el nombre de la tabla en la que se registrarán las consultas.
 
 Para habilitar el registro de consultas, [Log\_queries](settings/settings.md#settings-log-queries) parámetro a 1. Para obtener más información, consulte el [Configuración](settings/settings.md) apartado.
 
 El `system.query_log` tabla registra dos tipos de consultas:
 
 1.  Consultas iniciales ejecutadas directamente por el cliente.
-2.  Consultas secundarias iniciadas por otras consultas (para la ejecución de consultas distribuidas). Para estos tipos de consultas, la información sobre las consultas principales se muestra en el `initial_*` columna.
+2.  Niño consultas que fueron iniciados por otras consultas (distribuida de la ejecución de la consulta). Para estos tipos de consultas, la información sobre el padre de las consultas se muestra en la `initial_*` columna.
 
 Columna:
 
--   `type` (`Enum8`) — Tipo de evento que se produjo al ejecutar la consulta. Valor:
-    -   `'QueryStart' = 1` — Inicio exitoso de la ejecución de la consulta.
-    -   `'QueryFinish' = 2` — Final exitoso de la ejecución de la consulta.
-    -   `'ExceptionBeforeStart' = 3` — Excepción antes del inicio de la ejecución de la consulta.
-    -   `'ExceptionWhileProcessing' = 4` — Excepción durante la ejecución de la consulta.
--   `event_date` (Fecha) — Fecha de inicio de la consulta.
--   `event_time` (DateTime) — Hora de inicio de la consulta.
--   `query_start_time` (DateTime) — Hora de inicio de la ejecución de la consulta.
--   `query_duration_ms` (UInt64) — Duración de la ejecución de la consulta.
--   `read_rows` (UInt64) — Número de filas leídas.
--   `read_bytes` (UInt64) — Número de bytes leídos.
--   `written_rows` (UInt64) — Para `INSERT` consultas, el número de filas escritas. Para otras consultas, el valor de la columna es 0.
--   `written_bytes` (UInt64) — Para `INSERT` consultas, el número de bytes escritos. Para otras consultas, el valor de la columna es 0.
--   `result_rows` (UInt64) — Número de filas en el resultado.
--   `result_bytes` (UInt64) — Número de bytes en el resultado.
--   `memory_usage` (UInt64) — Consumo de memoria por la consulta.
--   `query` (Cadena) — Cadena de consulta.
--   `exception` (String) — Mensaje de excepción.
--   `stack_trace` (String) - Rastreo de pila (una lista de métodos llamados antes de que ocurriera el error). Una cadena vacía, si la consulta se completa correctamente.
--   `is_initial_query` (UInt8) — Tipo de consulta. Valores posibles:
-    -   1 — La consulta fue iniciada por el cliente.
-    -   0 — La consulta fue iniciada por otra consulta para la ejecución de consultas distribuidas.
--   `user` (String) — Nombre del usuario que inició la consulta actual.
--   `query_id` (String) — ID de la consulta.
--   `address` (IPv6): dirección IP que se utilizó para realizar la consulta.
--   `port` (UInt16): el puerto de cliente que se utilizó para realizar la consulta.
--   `initial_user` (String) — Nombre del usuario que ejecutó la consulta inicial (para la ejecución de consultas distribuidas).
--   `initial_query_id` (String) — ID de la consulta inicial (para la ejecución de consultas distribuidas).
--   `initial_address` (IPv6): dirección IP desde la que se inició la consulta principal.
--   `initial_port` (UInt16): el puerto de cliente que se utilizó para realizar la consulta principal.
--   `interface` (UInt8): interfaz desde la que se inició la consulta. Valores posibles:
+-   `type` (`Enum8`) — Type of event that occurred when executing the query. Values:
+    -   `'QueryStart' = 1` — Successful start of query execution.
+    -   `'QueryFinish' = 2` — Successful end of query execution.
+    -   `'ExceptionBeforeStart' = 3` — Exception before the start of query execution.
+    -   `'ExceptionWhileProcessing' = 4` — Exception during the query execution.
+-   `event_date` (Date) — Query starting date.
+-   `event_time` (DateTime) — Query starting time.
+-   `query_start_time` (DateTime) — Start time of query execution.
+-   `query_duration_ms` (UInt64) — Duration of query execution.
+-   `read_rows` (UInt64) — Number of read rows.
+-   `read_bytes` (UInt64) — Number of read bytes.
+-   `written_rows` (UInt64) — For `INSERT` consultas, el número de filas escritas. Para otras consultas, el valor de la columna es 0.
+-   `written_bytes` (UInt64) — For `INSERT` consultas, el número de bytes escritos. Para otras consultas, el valor de la columna es 0.
+-   `result_rows` (UInt64) — Number of rows in the result.
+-   `result_bytes` (UInt64) — Number of bytes in the result.
+-   `memory_usage` (UInt64) — Memory consumption by the query.
+-   `query` (String) — Query string.
+-   `exception` (String) — Exception message.
+-   `stack_trace` (String) — Stack trace (a list of methods called before the error occurred). An empty string, if the query is completed successfully.
+-   `is_initial_query` (UInt8) — Query type. Possible values:
+    -   1 — Query was initiated by the client.
+    -   0 — Query was initiated by another query for distributed query execution.
+-   `user` (String) — Name of the user who initiated the current query.
+-   `query_id` (String) — ID of the query.
+-   `address` (IPv6) — IP address that was used to make the query.
+-   `port` (UInt16) — The client port that was used to make the query.
+-   `initial_user` (String) — Name of the user who ran the initial query (for distributed query execution).
+-   `initial_query_id` (String) — ID of the initial query (for distributed query execution).
+-   `initial_address` (IPv6) — IP address that the parent query was launched from.
+-   `initial_port` (UInt16) — The client port that was used to make the parent query.
+-   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (Cadena) — Nombre de usuario del sistema operativo que ejecuta [Casa de clics-cliente](../interfaces/cli.md).
--   `client_hostname` (String) — Nombre de host de la máquina cliente donde [Casa de clics-cliente](../interfaces/cli.md) o se ejecuta otro cliente TCP.
--   `client_name` (Cadena) — El [Casa de clics-cliente](../interfaces/cli.md) o otro nombre de cliente TCP.
--   `client_revision` (UInt32) — Revisión del [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
--   `client_version_major` (UInt32) — Versión principal del [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
--   `client_version_minor` (UInt32) — Versión menor de la [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
--   `client_version_patch` (UInt32) — Componente de parche del [Casa de clics-cliente](../interfaces/cli.md) o otra versión de cliente TCP.
--   `http_method` (UInt8): método HTTP que inició la consulta. Valores posibles:
-    -   0 — La consulta se inició desde la interfaz TCP.
-    -   Uno — `GET` se utilizó el método.
-    -   Cómo hacer — `POST` se utilizó el método.
--   `http_user_agent` (Cadena) — El `UserAgent` encabezado pasado en la solicitud HTTP.
--   `quota_key` (Cadena) — El “quota key” especificado en el [cuota](quotas.md) ajuste (ver `keyed`).
--   `revision` (UInt32) - Revisión de ClickHouse.
--   `thread_numbers` (Array(UInt32)) — Número de subprocesos que participan en la ejecución de la consulta.
--   `ProfileEvents.Names` (Array(String)) — Contadores que miden diferentes métricas. La descripción de ellos se puede encontrar en la tabla [sistema.evento](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Valores de las métricas que se enumeran en `ProfileEvents.Names` columna.
--   `Settings.Names` (Array(String)) — Nombres de la configuración que se cambiaron cuando el cliente ejecutó la consulta. Para habilitar los cambios de registro en la configuración, `log_query_settings` parámetro a 1.
--   `Settings.Values` (Array(String)) — Valores de configuración que se enumeran en el `Settings.Names` columna.
+-   `os_user` (String) — OS's username who runs [Casa de clics-cliente](../interfaces/cli.md).
+-   `client_hostname` (String) — Hostname of the client machine where the [Casa de clics-cliente](../interfaces/cli.md) o se ejecuta otro cliente TCP.
+-   `client_name` (String) — The [Casa de clics-cliente](../interfaces/cli.md) o otro nombre de cliente TCP.
+-   `client_revision` (UInt32) — Revision of the [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
+-   `client_version_major` (UInt32) — Major version of the [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
+-   `client_version_minor` (UInt32) — Minor version of the [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
+-   `client_version_patch` (UInt32) — Patch component of the [Casa de clics-cliente](../interfaces/cli.md) o otra versión de cliente TCP.
+-   `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
+    -   0 — The query was launched from the TCP interface.
+    -   1 — `GET` se utilizó el método.
+    -   2 — `POST` se utilizó el método.
+-   `http_user_agent` (String) — The `UserAgent` encabezado pasado en la solicitud HTTP.
+-   `quota_key` (String) — The “quota key” especificado en el [cuota](quotas.md) ajuste (ver `keyed`).
+-   `revision` (UInt32) — ClickHouse revision.
+-   `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
+-   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [sistema.evento](#system_tables-events)
+-   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` columna.
+-   `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parámetro a 1.
+-   `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` columna.
 
 Cada consulta crea una o dos filas en el `query_log` tabla, dependiendo del estado de la consulta:
 
@@ -589,108 +596,108 @@ Cada consulta crea una o dos filas en el `query_log` tabla, dependiendo del esta
 2.  Si se produjo un error durante el procesamiento de la consulta, se crean dos eventos con los tipos 1 y 4.
 3.  Si se produjo un error antes de iniciar la consulta, se crea un solo evento con el tipo 3.
 
-De forma predeterminada, los registros se agregan a la tabla a intervalos de 7,5 segundos. Puede establecer este intervalo en el [query\_log](server_settings/settings.md#server_settings-query-log) configuración del servidor (consulte el `flush_interval_milliseconds` parámetro). Para vaciar los registros a la fuerza desde el búfer de memoria a la tabla, utilice `SYSTEM FLUSH LOGS` consulta.
+De forma predeterminada, los registros se agregan a la tabla a intervalos de 7,5 segundos. Puede establecer este intervalo en el [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) configuración del servidor (consulte el `flush_interval_milliseconds` parámetro). Para vaciar los registros a la fuerza desde el búfer de memoria a la tabla, utilice `SYSTEM FLUSH LOGS` consulta.
 
 Cuando la tabla se elimina manualmente, se creará automáticamente sobre la marcha. Tenga en cuenta que se eliminarán todos los registros anteriores.
 
 !!! note "Nota"
     El período de almacenamiento para los registros es ilimitado. Los registros no se eliminan automáticamente de la tabla. Debe organizar la eliminación de registros obsoletos usted mismo.
 
-Puede especificar una clave de partición arbitraria `system.query_log` mesa en el [query\_log](server_settings/settings.md#server_settings-query-log) configuración del servidor (consulte el `partition_by` parámetro).
+Puede especificar una clave de partición arbitraria `system.query_log` mesa en el [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) configuración del servidor (consulte el `partition_by` parámetro).
 
 ## sistema.Sistema abierto. {#system_tables-query-thread-log}
 
 La tabla contiene información sobre cada subproceso de ejecución de consultas.
 
-ClickHouse crea esta tabla sólo si el [Sistema abierto.](server_settings/settings.md#server_settings-query-thread-log) se especifica el parámetro server. Este parámetro establece las reglas de registro, como el intervalo de registro o el nombre de la tabla en la que se registrarán las consultas.
+ClickHouse crea esta tabla sólo si el [Sistema abierto.](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) se especifica el parámetro server. Este parámetro establece las reglas de registro, como el intervalo de registro o el nombre de la tabla en la que se registrarán las consultas.
 
 Para habilitar el registro de consultas, [Log\_query\_threads](settings/settings.md#settings-log-query-threads) parámetro a 1. Para obtener más información, consulte el [Configuración](settings/settings.md) apartado.
 
 Columna:
 
--   `event_date` (Fecha) — la fecha en que el subproceso ha finalizado la ejecución de la consulta.
--   `event_time` (DateTime) — la fecha y hora en que el subproceso ha finalizado la ejecución de la consulta.
--   `query_start_time` (DateTime) — Hora de inicio de la ejecución de la consulta.
--   `query_duration_ms` (UInt64) — Duración de la ejecución de la consulta.
--   `read_rows` (UInt64) — Número de filas leídas.
--   `read_bytes` (UInt64) — Número de bytes leídos.
--   `written_rows` (UInt64) — Para `INSERT` consultas, el número de filas escritas. Para otras consultas, el valor de la columna es 0.
--   `written_bytes` (UInt64) — Para `INSERT` consultas, el número de bytes escritos. Para otras consultas, el valor de la columna es 0.
--   `memory_usage` (Int64) - La diferencia entre la cantidad de memoria asignada y liberada en el contexto de este hilo.
--   `peak_memory_usage` (Int64) - La diferencia máxima entre la cantidad de memoria asignada y liberada en el contexto de este hilo.
--   `thread_name` (String) — Nombre del hilo.
--   `thread_number` (UInt32) - ID de rosca interna.
--   `os_thread_id` (Int32) - ID de subproceso del sistema operativo.
--   `master_thread_id` (UInt64) - ID inicial del sistema operativo del hilo inicial.
--   `query` (Cadena) — Cadena de consulta.
--   `is_initial_query` (UInt8) — Tipo de consulta. Valores posibles:
-    -   1 — La consulta fue iniciada por el cliente.
-    -   0 — La consulta fue iniciada por otra consulta para la ejecución de consultas distribuidas.
--   `user` (String) — Nombre del usuario que inició la consulta actual.
--   `query_id` (String) — ID de la consulta.
--   `address` (IPv6): dirección IP que se utilizó para realizar la consulta.
--   `port` (UInt16): el puerto de cliente que se utilizó para realizar la consulta.
--   `initial_user` (String) — Nombre del usuario que ejecutó la consulta inicial (para la ejecución de consultas distribuidas).
--   `initial_query_id` (String) — ID de la consulta inicial (para la ejecución de consultas distribuidas).
--   `initial_address` (IPv6): dirección IP desde la que se inició la consulta principal.
--   `initial_port` (UInt16): el puerto de cliente que se utilizó para realizar la consulta principal.
--   `interface` (UInt8): interfaz desde la que se inició la consulta. Valores posibles:
+-   `event_date` (Date) — the date when the thread has finished execution of the query.
+-   `event_time` (DateTime) — the date and time when the thread has finished execution of the query.
+-   `query_start_time` (DateTime) — Start time of query execution.
+-   `query_duration_ms` (UInt64) — Duration of query execution.
+-   `read_rows` (UInt64) — Number of read rows.
+-   `read_bytes` (UInt64) — Number of read bytes.
+-   `written_rows` (UInt64) — For `INSERT` consultas, el número de filas escritas. Para otras consultas, el valor de la columna es 0.
+-   `written_bytes` (UInt64) — For `INSERT` consultas, el número de bytes escritos. Para otras consultas, el valor de la columna es 0.
+-   `memory_usage` (Int64) — The difference between the amount of allocated and freed memory in context of this thread.
+-   `peak_memory_usage` (Int64) — The maximum difference between the amount of allocated and freed memory in context of this thread.
+-   `thread_name` (String) — Name of the thread.
+-   `thread_number` (UInt32) — Internal thread ID.
+-   `os_thread_id` (Int32) — OS thread ID.
+-   `master_thread_id` (UInt64) — OS initial ID of initial thread.
+-   `query` (String) — Query string.
+-   `is_initial_query` (UInt8) — Query type. Possible values:
+    -   1 — Query was initiated by the client.
+    -   0 — Query was initiated by another query for distributed query execution.
+-   `user` (String) — Name of the user who initiated the current query.
+-   `query_id` (String) — ID of the query.
+-   `address` (IPv6) — IP address that was used to make the query.
+-   `port` (UInt16) — The client port that was used to make the query.
+-   `initial_user` (String) — Name of the user who ran the initial query (for distributed query execution).
+-   `initial_query_id` (String) — ID of the initial query (for distributed query execution).
+-   `initial_address` (IPv6) — IP address that the parent query was launched from.
+-   `initial_port` (UInt16) — The client port that was used to make the parent query.
+-   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (Cadena) — Nombre de usuario del sistema operativo que ejecuta [Casa de clics-cliente](../interfaces/cli.md).
--   `client_hostname` (String) — Nombre de host de la máquina cliente donde [Casa de clics-cliente](../interfaces/cli.md) o se ejecuta otro cliente TCP.
--   `client_name` (Cadena) — El [Casa de clics-cliente](../interfaces/cli.md) o otro nombre de cliente TCP.
--   `client_revision` (UInt32) — Revisión del [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
--   `client_version_major` (UInt32) — Versión principal del [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
--   `client_version_minor` (UInt32) — Versión menor de la [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
--   `client_version_patch` (UInt32) — Componente de parche del [Casa de clics-cliente](../interfaces/cli.md) o otra versión de cliente TCP.
--   `http_method` (UInt8): método HTTP que inició la consulta. Valores posibles:
-    -   0 — La consulta se inició desde la interfaz TCP.
-    -   Uno — `GET` se utilizó el método.
-    -   Cómo hacer — `POST` se utilizó el método.
--   `http_user_agent` (Cadena) — El `UserAgent` encabezado pasado en la solicitud HTTP.
--   `quota_key` (Cadena) — El “quota key” especificado en el [cuota](quotas.md) ajuste (ver `keyed`).
--   `revision` (UInt32) - Revisión de ClickHouse.
--   `ProfileEvents.Names` (Array(String)) - Contadores que miden diferentes métricas para este hilo. La descripción de ellos se puede encontrar en la tabla [sistema.evento](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Valores de métricas para este subproceso que se enumeran en el `ProfileEvents.Names` columna.
+-   `os_user` (String) — OS's username who runs [Casa de clics-cliente](../interfaces/cli.md).
+-   `client_hostname` (String) — Hostname of the client machine where the [Casa de clics-cliente](../interfaces/cli.md) o se ejecuta otro cliente TCP.
+-   `client_name` (String) — The [Casa de clics-cliente](../interfaces/cli.md) o otro nombre de cliente TCP.
+-   `client_revision` (UInt32) — Revision of the [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
+-   `client_version_major` (UInt32) — Major version of the [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
+-   `client_version_minor` (UInt32) — Minor version of the [Casa de clics-cliente](../interfaces/cli.md) o otro cliente TCP.
+-   `client_version_patch` (UInt32) — Patch component of the [Casa de clics-cliente](../interfaces/cli.md) o otra versión de cliente TCP.
+-   `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
+    -   0 — The query was launched from the TCP interface.
+    -   1 — `GET` se utilizó el método.
+    -   2 — `POST` se utilizó el método.
+-   `http_user_agent` (String) — The `UserAgent` encabezado pasado en la solicitud HTTP.
+-   `quota_key` (String) — The “quota key” especificado en el [cuota](quotas.md) ajuste (ver `keyed`).
+-   `revision` (UInt32) — ClickHouse revision.
+-   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [sistema.evento](#system_tables-events)
+-   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` columna.
 
-De forma predeterminada, los registros se agregan a la tabla a intervalos de 7,5 segundos. Puede establecer este intervalo en el [Sistema abierto.](server_settings/settings.md#server_settings-query-thread-log) configuración del servidor (consulte el `flush_interval_milliseconds` parámetro). Para vaciar los registros a la fuerza desde el búfer de memoria a la tabla, utilice `SYSTEM FLUSH LOGS` consulta.
+De forma predeterminada, los registros se agregan a la tabla a intervalos de 7,5 segundos. Puede establecer este intervalo en el [Sistema abierto.](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) configuración del servidor (consulte el `flush_interval_milliseconds` parámetro). Para vaciar los registros a la fuerza desde el búfer de memoria a la tabla, utilice `SYSTEM FLUSH LOGS` consulta.
 
 Cuando la tabla se elimina manualmente, se creará automáticamente sobre la marcha. Tenga en cuenta que se eliminarán todos los registros anteriores.
 
 !!! note "Nota"
     El período de almacenamiento para los registros es ilimitado. Los registros no se eliminan automáticamente de la tabla. Debe organizar la eliminación de registros obsoletos usted mismo.
 
-Puede especificar una clave de partición arbitraria `system.query_thread_log` mesa en el [Sistema abierto.](server_settings/settings.md#server_settings-query-thread-log) configuración del servidor (consulte el `partition_by` parámetro).
+Puede especificar una clave de partición arbitraria `system.query_thread_log` mesa en el [Sistema abierto.](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) configuración del servidor (consulte el `partition_by` parámetro).
 
 ## sistema.trace\_log {#system_tables-trace_log}
 
 Contiene seguimientos de pila recopilados por el generador de perfiles de consultas de muestreo.
 
-ClickHouse crea esta tabla cuando el [trace\_log](server_settings/settings.md#server_settings-trace_log) se establece la sección de configuración del servidor. También el [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) y [Los resultados de la prueba](settings/settings.md#query_profiler_cpu_time_period_ns) los ajustes deben establecerse.
+ClickHouse crea esta tabla cuando el [trace\_log](server_configuration_parameters/settings.md#server_configuration_parameters-trace_log) se establece la sección de configuración del servidor. También el [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) y [Los resultados de la prueba](settings/settings.md#query_profiler_cpu_time_period_ns) los ajustes deben establecerse.
 
 Para analizar los registros, utilice el `addressToLine`, `addressToSymbol` y `demangle` funciones de inspección.
 
 Columna:
 
--   `event_date`([Fecha](../data_types/date.md)) — Fecha del momento del muestreo.
+-   `event_date`([Fecha](../sql_reference/data_types/date.md)) — Date of sampling moment.
 
--   `event_time`([FechaHora](../data_types/datetime.md)) — Marca de tiempo del momento de muestreo.
+-   `event_time`([FechaHora](../sql_reference/data_types/datetime.md)) — Timestamp of sampling moment.
 
--   `revision`([UInt32](../data_types/int_uint.md)) — Revisión de compilación del servidor ClickHouse.
+-   `revision`([UInt32](../sql_reference/data_types/int_uint.md)) — ClickHouse server build revision.
 
     Cuando se conecta al servidor por `clickhouse-client`, ves la cadena similar a `Connected to ClickHouse server version 19.18.1 revision 54429.`. Este campo contiene el `revision`, pero no el `version` de un servidor.
 
--   `timer_type`([Enum8](../data_types/enum.md)) — Tipo de temporizador:
+-   `timer_type`([Enum8](../sql_reference/data_types/enum.md)) — Timer type:
 
     -   `Real` representa el tiempo del reloj de pared.
     -   `CPU` representa el tiempo de CPU.
 
--   `thread_number`([UInt32](../data_types/int_uint.md)) — Identificador del subproceso.
+-   `thread_number`([UInt32](../sql_reference/data_types/int_uint.md)) — Thread identifier.
 
--   `query_id`([Cadena](../data_types/string.md)) — Identificador de consulta que se puede utilizar para obtener detalles sobre una consulta que se estaba ejecutando desde el [query\_log](#system_tables-query_log) tabla del sistema.
+-   `query_id`([Cadena](../sql_reference/data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) tabla del sistema.
 
--   `trace`([Matriz (UInt64)](../data_types/array.md)) — Rastro de apilamiento en el momento del muestreo. Cada elemento es una dirección de memoria virtual dentro del proceso del servidor ClickHouse.
+-   `trace`([Matriz (UInt64)](../sql_reference/data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
 **Ejemplo**
 
@@ -776,7 +783,7 @@ Columna:
 -   `zookeeper_path` (`String`) - Ruta de acceso a los datos de la tabla en ZooKeeper.
 -   `replica_name` (`String`) - Nombre de réplica en ZooKeeper. Diferentes réplicas de la misma tabla tienen diferentes nombres.
 -   `replica_path` (`String`) - Ruta de acceso a los datos de réplica en ZooKeeper. Lo mismo que concatenar ‘zookeeper\_path/replicas/replica\_path’.
--   `columns_version` (`Int32`) - Número de versión de la estructura de la tabla. Indica cuántas veces se realizó ALTER. Si las réplicas tienen versiones diferentes, significa que algunas réplicas aún no han realizado todas las ALTER.
+-   `columns_version` (`Int32`) - Número de versión de la estructura de la tabla. Indica cuántas veces se realizó ALTER. Si las réplicas tienen versiones diferentes, significa que algunas réplicas aún no han hecho todas las ALTER.
 -   `queue_size` (`UInt32`) - Tamaño de la cola para las operaciones en espera de ser realizadas. Las operaciones incluyen insertar bloques de datos, fusiones y otras acciones. Por lo general, coincide con `future_parts`.
 -   `inserts_in_queue` (`UInt32`) - Número de inserciones de bloques de datos que deben realizarse. Las inserciones generalmente se replican con bastante rapidez. Si este número es grande, significa que algo anda mal.
 -   `merges_in_queue` (`UInt32`) - El número de fusiones en espera de hacerse. A veces las fusiones son largas, por lo que este valor puede ser mayor que cero durante mucho tiempo.
@@ -839,26 +846,43 @@ Es decir, se usa para ejecutar la consulta que está utilizando para leer del si
 
 Columna:
 
--   `name` (Cadena) — Nombre de configuración.
--   `value` (Cadena) — Valor de ajuste.
--   `changed` (UInt8): si la configuración se definió explícitamente en la configuración o si se cambió explícitamente.
+-   `name` (String) — Setting name.
+-   `value` (String) — Setting value.
+-   `description` (String) — Setting description.
+-   `type` (String) — Setting type (implementation specific string value).
+-   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
+-   `min` (Nullable(String)) — Get minimum allowed value (if any is set via [limitación](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `max` (Nullable(String)) — Get maximum allowed value (if any is set via [limitación](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `readonly` (UInt8) — Can user change this setting (for more info, look into [limitación](settings/constraints_on_settings.md#constraints-on-settings)).
 
 Ejemplo:
 
 ``` sql
-SELECT *
+SELECT name, value
 FROM system.settings
 WHERE changed
 ```
 
 ``` text
-┌─name───────────────────┬─value───────┬─changed─┐
-│ max_threads            │ 8           │       1 │
-│ use_uncompressed_cache │ 0           │       1 │
-│ load_balancing         │ random      │       1 │
-│ max_memory_usage       │ 10000000000 │       1 │
-└────────────────────────┴─────────────┴─────────┘
+┌─name───────────────────┬─value───────┐
+│ max_threads            │ 8           │
+│ use_uncompressed_cache │ 0           │
+│ load_balancing         │ random      │
+│ max_memory_usage       │ 10000000000 │
+└────────────────────────┴─────────────┘
 ```
+
+## sistema.merge\_tree\_settings {#system-merge_tree_settings}
+
+Contiene información sobre la configuración `MergeTree` tabla.
+
+Columna:
+
+-   `name` (String) — Setting name.
+-   `value` (String) — Setting value.
+-   `description` (String) — Setting description.
+-   `type` (String) — Setting type (implementation specific string value).
+-   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
 ## sistema.table\_engines {#system-table-engines}
 
@@ -866,13 +890,13 @@ Contiene la descripción de los motores de tablas admitidos por el servidor y su
 
 Esta tabla contiene las siguientes columnas (el tipo de columna se muestra entre corchetes):
 
--   `name` (Cadena) — El nombre del motor de tabla.
--   `supports_settings` (UInt8): marca que indica si el motor de tabla admite `SETTINGS` clausula.
--   `supports_skipping_indices` (UInt8): marca que indica si el motor de tabla admite [Índices de saltos](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
--   `supports_ttl` (UInt8): marca que indica si el motor de tabla admite [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
--   `supports_sort_order` (UInt8): marca que indica si el motor de tablas admite cláusulas `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` y `SAMPLE_BY`.
--   `supports_replication` (UInt8): marca que indica si el motor de tabla admite [Replicación de datos](table_engines/replication/).
--   `supports_duduplication` (UInt8): marca que indica si el motor de tablas admite la desduplicación de datos.
+-   `name` (String) — The name of table engine.
+-   `supports_settings` (UInt8) — Flag that indicates if table engine supports `SETTINGS` clausula.
+-   `supports_skipping_indices` (UInt8) — Flag that indicates if table engine supports [Índices de saltos](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-data_skipping-indexes).
+-   `supports_ttl` (UInt8) — Flag that indicates if table engine supports [TTL](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-ttl).
+-   `supports_sort_order` (UInt8) — Flag that indicates if table engine supports clauses `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` y `SAMPLE_BY`.
+-   `supports_replication` (UInt8) — Flag that indicates if table engine supports [Replicación de datos](../engines/table_engines/mergetree_family/replication.md).
+-   `supports_duduplication` (UInt8) — Flag that indicates if table engine supports data deduplication.
 
 Ejemplo:
 
@@ -892,9 +916,9 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 
 **Ver también**
 
--   Familia MergeTree [cláusulas de consulta](table_engines/mergetree.md#mergetree-query-clauses)
--   Kafka [configuración](table_engines/kafka.md#table_engine-kafka-creating-a-table)
--   Unir [configuración](table_engines/join.md#join-limitations-and-settings)
+-   Familia MergeTree [cláusulas de consulta](../engines/table_engines/mergetree_family/mergetree.md#mergetree-query-clauses)
+-   Kafka [configuración](../engines/table_engines/integrations/kafka.md#table_engine-kafka-creating-a-table)
+-   Unir [configuración](../engines/table_engines/special/join.md#join-limitations-and-settings)
 
 ## sistema.tabla {#system-tables}
 
@@ -902,49 +926,75 @@ Contiene metadatos de cada tabla que el servidor conoce. Las tablas separadas no
 
 Esta tabla contiene las siguientes columnas (el tipo de columna se muestra entre corchetes):
 
--   `database` (String) — El nombre de la base de datos en la que se encuentra la tabla.
--   `name` (Cadena) — Nombre de tabla.
--   `engine` (Cadena) — Nombre del motor de tabla (sin parámetros).
+-   `database` (String) — The name of the database the table is in.
+
+-   `name` (String) — Table name.
+
+-   `engine` (String) — Table engine name (without parameters).
+
 -   `is_temporary` (UInt8): marca que indica si la tabla es temporal.
+
 -   `data_path` (String) - Ruta de acceso a los datos de la tabla en el sistema de archivos.
+
 -   `metadata_path` (String) - Ruta de acceso a los metadatos de la tabla en el sistema de archivos.
+
 -   `metadata_modification_time` (DateTime) - Hora de la última modificación de los metadatos de la tabla.
+
 -   `dependencies_database` (Array(String)) - Dependencias de base de datos.
--   `dependencies_table` (Array(String)) - Dependencias de tabla ([Método de codificación de datos:](table_engines/materializedview.md) tablas basadas en la tabla real).
+
+-   `dependencies_table` (Array(String)) - Dependencias de tabla ([Método de codificación de datos:](../engines/table_engines/special/materializedview.md) tablas basadas en la tabla actual).
+
 -   `create_table_query` (String) - La consulta que se utilizó para crear la tabla.
+
 -   `engine_full` (String) - Parámetros del motor de tabla.
+
 -   `partition_key` (String) - La expresión de clave de partición especificada en la tabla.
--   `sorting_key` (String) - La expresión de clave de ordenación especificada en la tabla.
+
+-   `sorting_key` (Cadena) - La clave de clasificación de la expresión especificada en la tabla.
+
 -   `primary_key` (String) - La expresión de clave principal especificada en la tabla.
+
 -   `sampling_key` (String) - La expresión de clave de muestreo especificada en la tabla.
 
-El `system.tables` se utiliza en `SHOW TABLES` implementación de consultas.
+-   `storage_policy` (String) - La política de almacenamiento:
+
+    -   [Método de codificación de datos:](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes)
+    -   [Distribuido](../engines/table_engines/special/distributed.md#distributed)
+
+-   `total_rows` (Nullable(UInt64)) - Número total de filas, si es posible determinar rápidamente el número exacto de filas en la tabla, de lo contrario `Null` (incluyendo underying `Buffer` tabla).
+
+-   `total_bytes` (Nullable(UInt64)) - Número total de bytes, si es posible determinar rápidamente el número exacto de bytes para la tabla en el almacenamiento, de lo contrario `Null` (**no** incluye cualquier almacenamiento subyacente).
+
+    -   If the table stores data on disk, returns used space on disk (i.e. compressed).
+    -   Si la tabla almacena datos en la memoria, devuelve el número aproximado de bytes utilizados en la memoria.
+
+El `system.tables` se utiliza la tabla en `SHOW TABLES` implementación de consultas.
 
 ## sistema.Zookeeper {#system-zookeeper}
 
 La tabla no existe si ZooKeeper no está configurado. Permite leer datos del clúster ZooKeeper definido en la configuración.
 La consulta debe tener un ‘path’ condición de igualdad en la cláusula WHERE. Este es el camino en ZooKeeper para los niños para los que desea obtener datos.
 
-Consulta `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` salidas de datos para todos los niños en el `/clickhouse` Nodo.
+Consulta `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` salidas de datos para todos los niños en el `/clickhouse` nodo.
 Para generar datos para todos los nodos raíz, escriba path = ‘/’.
 Si la ruta especificada en ‘path’ no existe, se lanzará una excepción.
 
 Columna:
 
--   `name` (String) — El nombre del nodo.
--   `path` (String) — La ruta al nodo.
--   `value` (Cadena) - el Valor de nodo.
--   `dataLength` (Int32) — Tamaño del valor.
--   `numChildren` (Int32) — Número de descendientes.
--   `czxid` (Int64) — ID de la transacción que creó el nodo.
--   `mzxid` (Int64) — ID de la transacción que cambió el nodo por última vez.
--   `pzxid` (Int64) — ID de la transacción que eliminó o agregó descendientes por última vez.
--   `ctime` (DateTime) — Hora de creación del nodo.
--   `mtime` (DateTime) — Hora de la última modificación del nodo.
--   `version` (Int32) — Versión del nodo: el número de veces que se cambió el nodo.
--   `cversion` (Int32) — Número de descendientes añadidos o eliminados.
--   `aversion` (Int32) — Número de cambios en la ACL.
--   `ephemeralOwner` (Int64): para nodos efímeros, el ID de la sesión que posee este nodo.
+-   `name` (String) — The name of the node.
+-   `path` (String) — The path to the node.
+-   `value` (String) — Node value.
+-   `dataLength` (Int32) — Size of the value.
+-   `numChildren` (Int32) — Number of descendants.
+-   `czxid` (Int64) — ID of the transaction that created the node.
+-   `mzxid` (Int64) — ID of the transaction that last changed the node.
+-   `pzxid` (Int64) — ID of the transaction that last deleted or added descendants.
+-   `ctime` (DateTime) — Time of node creation.
+-   `mtime` (DateTime) — Time of the last modification of the node.
+-   `version` (Int32) — Node version: the number of times the node was changed.
+-   `cversion` (Int32) — Number of added or removed descendants.
+-   `aversion` (Int32) — Number of changes to the ACL.
+-   `ephemeralOwner` (Int64) — For ephemeral nodes, the ID of the session that owns this node.
 
 Ejemplo:
 
@@ -993,17 +1043,17 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ## sistema.mutación {#system_tables-mutations}
 
-La tabla contiene información sobre [mutación](../query_language/alter.md#alter-mutations) de las tablas MergeTree y su progreso. Cada comando de mutación está representado por una sola fila. La tabla tiene las siguientes columnas:
+La tabla contiene información sobre [mutación](../sql_reference/statements/alter.md#alter-mutations) de las tablas MergeTree y su progreso. Cada comando de mutación está representado por una sola fila. La tabla tiene las siguientes columnas:
 
-**basar**, **tabla** - El nombre de la base de datos y la tabla a la que se aplicó la mutación.
+**base**, **tabla** - El nombre de la base de datos y la tabla a la que se aplicó la mutación.
 
-**mutation\_id** - La identificación de la mutación. Para las tablas replicadas, estos identificadores corresponden a los nombres de znode `<table_path_in_zookeeper>/mutations/` Directorio en ZooKeeper. Para las tablas no duplicadas, los ID corresponden a los nombres de archivo en el directorio de datos de la tabla.
+**mutation\_id** - La identificación de la mutación. Para las tablas replicadas, estos identificadores corresponden a los nombres de znode `<table_path_in_zookeeper>/mutations/` directorio en ZooKeeper. Para las tablas no duplicadas, los ID corresponden a los nombres de archivo en el directorio de datos de la tabla.
 
 **comando** - La cadena de comandos de mutación (la parte de la consulta después de `ALTER TABLE [db.]table`).
 
 **create\_time** - Cuando este comando de mutación fue enviado para su ejecución.
 
-**block\_numbers.partition\_id**, **block\_numbers.número** - Una columna anidada. Para las mutaciones de tablas replicadas, contiene un registro para cada partición: el ID de partición y el número de bloque que fue adquirido por la mutación (en cada partición, solo se mutarán las partes que contienen bloques con números menores que el número de bloque adquirido por la mutación en esa partición). En tablas no replicadas, los números de bloque en todas las particiones forman una sola secuencia. Esto significa que para las mutaciones de tablas no replicadas, la columna contendrá un registro con un solo número de bloque adquirido por la mutación.
+**block\_numbers.partition\_id**, **block\_numbers.numero** - Una columna anidada. Para las mutaciones de tablas replicadas, contiene un registro para cada partición: el ID de partición y el número de bloque que fue adquirido por la mutación (en cada partición, solo se mutarán las partes que contienen bloques con números menores que el número de bloque adquirido por la mutación en esa partición). En tablas no replicadas, los números de bloque en todas las particiones forman una sola secuencia. Esto significa que para las mutaciones de tablas no replicadas, la columna contendrá un registro con un solo número de bloque adquirido por la mutación.
 
 **partes\_a\_do** - El número de partes de datos que deben mutarse para que finalice la mutación.
 
@@ -1017,31 +1067,31 @@ Si hubo problemas con la mutación de algunas partes, las siguientes columnas co
 
 **Método de codificación de datos:** - El mensaje de excepción que causó el error de mutación de parte más reciente.
 
-## sistema.Discoteca {#system_tables-disks}
+## sistema.disco {#system_tables-disks}
 
-Contiene información sobre los discos definidos en el [configuración del servidor](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+Contiene información sobre los discos definidos en el [configuración del servidor](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
 Columna:
 
--   `name` ([Cadena](../data_types/string.md)) — Nombre de un disco en la configuración del servidor.
--   `path` ([Cadena](../data_types/string.md)) — Ruta de acceso al punto de montaje en el sistema de archivos.
--   `free_space` ([UInt64](../data_types/int_uint.md)) — Espacio libre en el disco en bytes.
--   `total_space` ([UInt64](../data_types/int_uint.md)) — Volumen del disco en bytes.
--   `keep_free_space` ([UInt64](../data_types/int_uint.md)) — Cantidad de espacio en disco que debe permanecer libre en el disco en bytes. Definido en el `keep_free_space_bytes` parámetro de configuración del disco.
+-   `name` ([Cadena](../sql_reference/data_types/string.md)) — Name of a disk in the server configuration.
+-   `path` ([Cadena](../sql_reference/data_types/string.md)) — Path to the mount point in the file system.
+-   `free_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Free space on disk in bytes.
+-   `total_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Disk volume in bytes.
+-   `keep_free_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` parámetro de configuración del disco.
 
 ## sistema.almacenamiento\_policies {#system_tables-storage_policies}
 
-Contiene información sobre las directivas de almacenamiento y los volúmenes [configuración del servidor](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+Contiene información sobre las directivas de almacenamiento y los volúmenes [configuración del servidor](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
 Columna:
 
--   `policy_name` ([Cadena](../data_types/string.md)) — Nombre de la política de almacenamiento.
--   `volume_name` ([Cadena](../data_types/string.md)) — Nombre de volumen definido en la política de almacenamiento.
--   `volume_priority` ([UInt64](../data_types/int_uint.md)) — Número de orden de volumen en la configuración.
--   `disks` ([Matriz (Cadena)](../data_types/array.md)) — Nombres de disco, definidos en la directiva de almacenamiento.
--   `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — Tamaño máximo de una parte de datos que se puede almacenar en discos de volumen (0 — sin límite).
--   `move_factor` ([Float64](../data_types/float.md)) — Relación de espacio libre en disco. Cuando la relación excede el valor del parámetro de configuración, ClickHouse comienza a mover los datos al siguiente volumen en orden.
+-   `policy_name` ([Cadena](../sql_reference/data_types/string.md)) — Name of the storage policy.
+-   `volume_name` ([Cadena](../sql_reference/data_types/string.md)) — Volume name defined in the storage policy.
+-   `volume_priority` ([UInt64](../sql_reference/data_types/int_uint.md)) — Volume order number in the configuration.
+-   `disks` ([Array(Cadena)](../sql_reference/data_types/array.md)) — Disk names, defined in the storage policy.
+-   `max_data_part_size` ([UInt64](../sql_reference/data_types/int_uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
+-   `move_factor` ([Float64](../sql_reference/data_types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
 
 Si la directiva de almacenamiento contiene más de un volumen, la información de cada volumen se almacena en la fila individual de la tabla.
 
-[Artículo Original](https://clickhouse.tech/docs/es/operations/system_tables/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/operations/system_tables/) <!--hide-->
