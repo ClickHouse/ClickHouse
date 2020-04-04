@@ -175,7 +175,6 @@ void registerOutputFormatProcessorTemplate(FormatFactory & factory);
 void registerInputFormatProcessorMsgPack(FormatFactory & factory);
 void registerOutputFormatProcessorMsgPack(FormatFactory & factory);
 
-
 /// File Segmentation Engines for parallel reading
 
 void registerFileSegmentationEngineTabSeparated(FormatFactory & factory);
