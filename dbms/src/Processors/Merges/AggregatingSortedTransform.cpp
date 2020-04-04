@@ -186,9 +186,10 @@ void AggregatingSortedTransform::merge()
         {
             /// Write the simple aggregation result for the previous group.
             if (merged_data.mergedRows() > 0)
+            {
                 insertSimpleAggregationResult();
-
-            merged_data.insertRow();
+                merged_data.insertRow();
+            }
 
             /// if there are enough rows accumulated and the last one is calculated completely
             if (merged_data.hasEnoughRows())
