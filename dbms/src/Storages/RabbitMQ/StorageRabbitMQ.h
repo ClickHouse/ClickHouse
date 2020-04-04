@@ -19,7 +19,7 @@ namespace DB
 
 using ChannelPtr = std::shared_ptr<AMQP::Channel>;
 
-class StorageRabbitMQ : public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage
+class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage
 {
     friend struct ext::shared_ptr_helper<StorageRabbitMQ>;
 public:
@@ -30,7 +30,7 @@ public:
     void startup() override;
     void shutdown() override;
 
-    BlockInputStreams read(
+    Pipes read(
             const Names & column_names,
             const SelectQueryInfo & query_info,
             const Context & context,
