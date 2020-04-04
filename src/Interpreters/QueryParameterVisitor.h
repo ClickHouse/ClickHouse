@@ -3,6 +3,8 @@
 #include <Core/Names.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTQueryParameter.h>
+#include <Parsers/ParserQuery.h>
+#include <Parsers/parseQuery.h>
 
 namespace DB
 {
@@ -31,5 +33,17 @@ private:
         query_parameters.insert(query_parameter.name);
     }
 };
+
+NameSet analyzeReceiveQueryParams(const std::string & query)
+{
+    NameSet query_params;
+    const char * query_begin = query.data();
+    const char * query_end = query.data() + query.size();
+
+    ParserQuery parser(query_end, false);
+    ASTPtr extract_query_ast = parseQuery(parser, query_begin, query_end, "analyzeReceiveQueryParams", 0, 0);
+    QueryParameterVisitor(query_params).visit(extract_query_ast);
+    return query_params;
+}
 
 }

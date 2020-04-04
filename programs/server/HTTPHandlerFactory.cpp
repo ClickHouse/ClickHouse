@@ -1,9 +1,21 @@
 #include "HTTPHandlerFactory.h"
 
+#include <re2/re2.h>
+#include <re2/stringpiece.h>
+#include <common/find_symbols.h>
+#include <Poco/StringTokenizer.h>
+
+#include "HTTPHandler.h"
 #include "NotFoundHandler.h"
-#include "HTTPRequestHandler/HTTPRootRequestHandler.h"
-#include "HTTPRequestHandler/HTTPPingRequestHandler.h"
-#include "HTTPRequestHandler/HTTPReplicasStatusRequestHandler.h"
+#include "StaticRequestHandler.h"
+#include "ReplicasStatusHandler.h"
+#include "InterserverIOHTTPHandler.h"
+
+#if USE_RE2_ST
+#include <re2_st/re2.h>
+#else
+#define re2_st re2
+#endif
 
 
 namespace DB
@@ -11,130 +23,128 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int SYNTAX_ERROR;
-    extern const int UNKNOWN_HTTP_HANDLER_TYPE;
-    extern const int EMPTY_HTTP_HANDLER_IN_CONFIG;
+    extern const int CANNOT_COMPILE_REGEXP;
+    extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-InterserverIOHTTPHandlerFactory::InterserverIOHTTPHandlerFactory(IServer & server_, const std::string & name_)
+HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(IServer & server_, const std::string & name_)
     : server(server_), log(&Logger::get(name_)), name(name_)
 {
 }
 
-Poco::Net::HTTPRequestHandler * InterserverIOHTTPHandlerFactory::createRequestHandler(const Poco::Net::HTTPServerRequest & request)
+Poco::Net::HTTPRequestHandler * HTTPRequestHandlerFactoryMain::createRequestHandler(const Poco::Net::HTTPServerRequest & request) // override
 {
     LOG_TRACE(log, "HTTP Request for " << name << ". "
-       << "Method: " << request.getMethod()
-       << ", Address: " << request.clientAddress().toString()
-       << ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none")
-       << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : (""))
-       << ", Content Type: " << request.getContentType()
-       << ", Transfer Encoding: " << request.getTransferEncoding());
+        << "Method: "
+        << request.getMethod()
+        << ", Address: "
+        << request.clientAddress().toString()
+        << ", User-Agent: "
+        << (request.has("User-Agent") ? request.get("User-Agent") : "none")
+        << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : (""))
+        << ", Content Type: " << request.getContentType()
+        << ", Transfer Encoding: " << request.getTransferEncoding());
 
-    const auto & uri = request.getURI();
-
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD)
+    for (auto & handler_factory : child_handler_factories)
     {
-        if (uri == "/")
-            return new HTTPRootRequestHandler(server);
-        if (uri == "/ping")
-            return new HTTPPingRequestHandler(server);
-        else if (startsWith(uri, "/replicas_status"))
-            return new HTTPReplicasStatusRequestHandler(server.context());
+        auto handler = handler_factory->createRequestHandler(request);
+        if (handler != nullptr)
+            return handler;
     }
 
-    if (uri.find('?') != std::string::npos || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
-    {
-        return new InterserverIOHTTPHandler(server);
-    }
-
-    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
+    if (request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+        || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD
         || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST)
     {
-        return new NotFoundHandler(
-            "Use / or /ping for health checks.\n"
-            "Or /replicas_status for more sophisticated health checks.\n"
-            "Send queries from your program with POST method or GET /?query=...\n\n"
-            "   Use clickhouse-client:\n\n"
-            "   For interactive data analysis:\n"
-            "       clickhouse-client\n\n"
-            "   For batch query processing:\n"
-            "       clickhouse-client --query='SELECT 1' > result\n"
-            "       clickhouse-client < query > result"
-        );
+        return new NotFoundHandler;
     }
 
     return nullptr;
 }
 
-HTTPHandlerFactory::HTTPHandlerFactory(IServer & server_, const std::string & name_)
-    : server(server_), log(&Logger::get(name_)), name(name_)
+HTTPRequestHandlerFactoryMain::~HTTPRequestHandlerFactoryMain()
 {
-    updateHTTPHandlersCreator(server.config());
-
-    if (handlers_creator.empty())
-        throw Exception("The HTTPHandlers does not exist in the config.xml", ErrorCodes::EMPTY_HTTP_HANDLER_IN_CONFIG);
+    while (!child_handler_factories.empty())
+        delete child_handler_factories.back(), child_handler_factories.pop_back();
 }
 
-Poco::Net::HTTPRequestHandler * HTTPHandlerFactory::createRequestHandler(const Poco::Net::HTTPServerRequest & request)
+HTTPRequestHandlerFactoryMain::TThis * HTTPRequestHandlerFactoryMain::addHandler(Poco::Net::HTTPRequestHandlerFactory * child_factory)
 {
-    LOG_TRACE(log, "HTTP Request for " << name << ". "
-       << "Method: " << request.getMethod()
-       << ", Address: " << request.clientAddress().toString()
-       << ", User-Agent: " << (request.has("User-Agent") ? request.get("User-Agent") : "none")
-       << (request.hasContentLength() ? (", Length: " + std::to_string(request.getContentLength())) : (""))
-       << ", Content Type: " << request.getContentType()
-       << ", Transfer Encoding: " << request.getTransferEncoding());
-
-    for (const auto & [matcher, creator] : handlers_creator)
-    {
-        if (matcher(request))
-            return creator();
-    }
-
-    return new NotFoundHandler(no_handler_description);
+    child_handler_factories.emplace_back(child_factory);
+    return this;
 }
 
-HTTPHandlerMatcher createRootHandlerMatcher(IServer &, const String &);
-HTTPHandlerMatcher createPingHandlerMatcher(IServer &, const String &);
-HTTPHandlerMatcher createDynamicQueryHandlerMatcher(IServer &, const String &);
-HTTPHandlerMatcher createReplicasStatusHandlerMatcher(IServer &, const String &);
-HTTPHandlerMatcher createPredefinedQueryHandlerMatcher(IServer &, const String &);
-
-HTTPHandlerCreator createRootHandlerCreator(IServer &, const String &);
-HTTPHandlerCreator createPingHandlerCreator(IServer &, const String &);
-HTTPHandlerCreator createDynamicQueryHandlerCreator(IServer &, const String &);
-HTTPHandlerCreator createReplicasStatusHandlerCreator(IServer &, const String &);
-HTTPHandlerCreator createPredefinedQueryHandlerCreator(IServer &, const String &);
-
-void HTTPHandlerFactory::updateHTTPHandlersCreator(Poco::Util::AbstractConfiguration & configuration, const String & key)
+static inline auto createHandlersFactoryFromConfig(IServer & server, const std::string & name, const String & prefix)
 {
-    Poco::Util::AbstractConfiguration::Keys http_handlers_item_key;
-    configuration.keys(key, http_handlers_item_key);
+    auto main_handler_factory = new HTTPRequestHandlerFactoryMain(server, name);
 
-    handlers_creator.reserve(http_handlers_item_key.size());
-    for (const auto & http_handler_type_name : http_handlers_item_key)
+    Poco::Util::AbstractConfiguration::Keys keys;
+    server.config().keys(prefix, keys);
+
+    for (const auto & key : keys)
     {
-        if (http_handler_type_name.find('.') != String::npos)
-            throw Exception("HTTPHandler type name with dots are not supported: '" + http_handler_type_name + "'", ErrorCodes::SYNTAX_ERROR);
+        if (!startsWith(key, "routing_rule"))
+            throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'routing_rule'", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
-        const auto & handler_key = key + "." + http_handler_type_name;
+        const auto & handler_type = server.config().getString(prefix + "." + key + ".handler.type", "");
 
-        if (startsWith(http_handler_type_name, "root_handler"))
-            handlers_creator.push_back({createRootHandlerMatcher(server, handler_key), createRootHandlerCreator(server, handler_key)});
-        else if (startsWith(http_handler_type_name, "ping_handler"))
-            handlers_creator.push_back({createPingHandlerMatcher(server, handler_key), createPingHandlerCreator(server, handler_key)});
-        else if (startsWith(http_handler_type_name, "dynamic_query_handler"))
-            handlers_creator.push_back({createDynamicQueryHandlerMatcher(server, handler_key), createDynamicQueryHandlerCreator(server, handler_key)});
-        else if (startsWith(http_handler_type_name, "predefined_query_handler"))
-            handlers_creator.push_back({createPredefinedQueryHandlerMatcher(server, handler_key), createPredefinedQueryHandlerCreator(server, handler_key)});
-        else if (startsWith(http_handler_type_name, "replicas_status_handler"))
-            handlers_creator.push_back({createReplicasStatusHandlerMatcher(server, handler_key), createReplicasStatusHandlerCreator(server, handler_key)});
-        else if (http_handler_type_name == "no_handler_description")
-            no_handler_description = configuration.getString(key + ".no_handler_description");
+        if (handler_type == "static")
+            main_handler_factory->addHandler(createStaticHandlerFactory(server, prefix));
+        else if (handler_type == "dynamic_query_handler")
+            main_handler_factory->addHandler(createDynamicHandlerFactory(server, prefix));
+        else if (handler_type == "predefine_query_handler")
+            main_handler_factory->addHandler(createPredefineHandlerFactory(server, prefix));
         else
-            throw Exception("Unknown HTTPHandler type name: " + http_handler_type_name, ErrorCodes::UNKNOWN_HTTP_HANDLER_TYPE);
+            throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'routing_rule'", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
     }
+
+    return main_handler_factory;
+}
+
+static const auto ping_response_expression = "Ok.\n";
+static const auto root_response_expression = "config://http_server_default_response";
+
+static inline Poco::Net::HTTPRequestHandlerFactory * createHTTPHandlerFactory(IServer & server, const std::string & name)
+{
+    if (server.config().has("routing_rules"))
+        return createHandlersFactoryFromConfig(server, name, "routing_rules");
+    else
+    {
+        return (new HTTPRequestHandlerFactoryMain(server, name))
+            ->addHandler((new RoutingRuleHTTPHandlerFactory<StaticRequestHandler>(server, root_response_expression))
+                ->attachStrictPath("/")->allowGetAndHeadRequest())
+            ->addHandler((new RoutingRuleHTTPHandlerFactory<StaticRequestHandler>(server, ping_response_expression))
+                ->attachStrictPath("/ping")->allowGetAndHeadRequest())
+            ->addHandler((new RoutingRuleHTTPHandlerFactory<ReplicasStatusHandler>(server))
+                ->attachNonStrictPath("/replicas_status")->allowGetAndHeadRequest())
+            ->addHandler((new RoutingRuleHTTPHandlerFactory<DynamicQueryHandler>(server, "query"))->allowPostAndGetParamsRequest());
+        /// TODO:
+//    if (configuration.has("prometheus") && configuration.getInt("prometheus.port", 0) == 0)
+//        handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
+    }
+}
+
+static inline Poco::Net::HTTPRequestHandlerFactory * createInterserverHTTPHandlerFactory(IServer & server, const std::string & name)
+{
+    return (new HTTPRequestHandlerFactoryMain(server, name))
+        ->addHandler((new RoutingRuleHTTPHandlerFactory<StaticRequestHandler>(server, root_response_expression))
+            ->attachStrictPath("/")->allowGetAndHeadRequest())
+        ->addHandler((new RoutingRuleHTTPHandlerFactory<StaticRequestHandler>(server, ping_response_expression))
+            ->attachStrictPath("/ping")->allowGetAndHeadRequest())
+        ->addHandler((new RoutingRuleHTTPHandlerFactory<ReplicasStatusHandler>(server))
+            ->attachNonStrictPath("/replicas_status")->allowGetAndHeadRequest())
+        ->addHandler((new RoutingRuleHTTPHandlerFactory<InterserverIOHTTPHandler>(server))->allowPostAndGetParamsRequest());
+}
+
+Poco::Net::HTTPRequestHandlerFactory * createHandlerFactory(IServer & server, const std::string & name)
+{
+    if (name == "HTTPHandler-factory" || name == "HTTPSHandler-factory")
+        return createHTTPHandlerFactory(server, name);
+    else if (name == "InterserverIOHTTPHandler-factory" || name == "InterserverIOHTTPSHandler-factory")
+        return createInterserverHTTPHandlerFactory(server, name);
+
+    throw Exception("LOGICAL ERROR: Unknown HTTP handler factory name.", ErrorCodes::LOGICAL_ERROR);
 }
 
 }
