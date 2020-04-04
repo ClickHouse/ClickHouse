@@ -1,3 +1,8 @@
+---
+toc_priority: 5
+toc_title: ClickHouse Features that Can Be Considered Disadvantages
+---
+
 # ClickHouse Features that Can be Considered Disadvantages {#clickhouse-features-that-can-be-considered-disadvantages}
 
 1.  No full-fledged transactions.
