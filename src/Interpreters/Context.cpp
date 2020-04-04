@@ -41,7 +41,16 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
+<<<<<<< HEAD
 #include <Interpreters/SystemLog.h>
+=======
+#include <Interpreters/MetricLog.h>
+#include <Interpreters/QueryThreadLog.h>
+#include <Interpreters/QueryLog.h>
+#include <Interpreters/SystemLog.h>
+#include <Interpreters/TextLog.h>
+#include <Interpreters/TraceLog.h>
+>>>>>>> 53aedc245f... Fix deadlock in #9642
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Common/DNSResolver.h>
@@ -1549,6 +1558,32 @@ void Context::initializeSystemLogs()
     shared->system_logs.emplace(*global_context, getConfigRef());
 }
 
+<<<<<<< HEAD
+=======
+void Context::createSystemLogs()
+{
+    auto system_logs = std::make_optional<SystemLogs>(*global_context, getConfigRef());
+
+    int type = SystemLogType::UNDEFINED;
+    if (system_logs->query_log)
+        type |= SystemLogType::QUERY_LOG;
+    if (system_logs->query_thread_log)
+        type |= SystemLogType::QUERY_THREAD_LOG;
+    if (system_logs->part_log)
+        type |= SystemLogType::PART_LOG;
+    if (system_logs->trace_log)
+        type |= SystemLogType::TRACE_LOG;
+    if (system_logs->text_log)
+        type |= SystemLogType::TEXT_LOG;
+    if (system_logs->metric_log)
+        type |= SystemLogType::METRIC_LOG;
+    system_logs->initializeSystemLogs(type);
+
+    auto lock = getLock();
+    shared->system_logs.swap(system_logs);
+}
+
+>>>>>>> 53aedc245f... Fix deadlock in #9642
 void Context::initializeTraceCollector()
 {
     shared->initializeTraceCollector(getTraceLog());
