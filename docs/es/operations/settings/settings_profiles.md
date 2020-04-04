@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 61
+toc_title: "Perfiles de configuraci\xF3n"
+---
+
 # Perfiles de configuración {#settings-profiles}
 
 Un perfil de configuración es una colección de configuraciones agrupadas con el mismo nombre. Cada usuario de ClickHouse tiene un perfil.
@@ -61,4 +68,4 @@ El ejemplo especifica dos perfiles: `default` y `web`. El `default` tiene un pro
 
 Los perfiles de configuración pueden heredar unos de otros. Para usar la herencia, indique una o varias `profile` configuraciones antes de las demás configuraciones que se enumeran en el perfil. En caso de que se defina una configuración en diferentes perfiles, se utiliza la última definida.
 
-[Artículo Original](https://clickhouse.tech/docs/es/operations/settings/settings_profiles/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->

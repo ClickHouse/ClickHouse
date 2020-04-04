@@ -1,17 +1,17 @@
 <div class="bg-secondary-alt my-5 py-5">
     <div class="container">
 
-        <h2 id="community" class="text-white mb-5">ClickHouse Community</h2>
+        <h2 id="community" class="display-4 text-white mb-5">{{ _('ClickHouse community') }}</h2>
         <div class="row mb-5">
             <div class="col-lg">
                 <div class="row">
                     <div class="col text-center mb-3">
                         <a href="https://www.youtube.com/c/ClickHouseDB"
-                            rel="external nofollow" target="_blank">
+                            rel="external nofollow noreferrer" target="_blank">
                             <div class="bg-dark p-4">
                                 <img src="images/index/youtube.svg"
-                                     alt="ClickHouse YouTube Channel"
-                                     title="ClickHouse YouTube Channel"
+                                     alt="{{ _('ClickHouse YouTube Channel') }}"
+                                     title="{{ _('ClickHouse YouTube Channel') }}"
                                      class="bg-secondary-alt rounded-circle p-2" />
                             </div>
                         </a>
@@ -19,11 +19,11 @@
 
                     <div class="col text-center mb-3">
                         <a href="https://twitter.com/ClickHouseDB"
-                            rel="external nofollow" target="_blank">
+                            rel="external nofollow noreferrer" target="_blank">
                             <div class="bg-dark p-4">
                                 <img src="images/index/twitter.svg"
-                                     alt="ClickHouse Official Twitter Account"
-                                     title="ClickHouse Official Twitter Account"
+                                     alt="{{ _('ClickHouse Official Twitter Account') }}"
+                                     title="{{ _('ClickHouse Official Twitter Account') }}"
                                      class="bg-secondary-alt rounded-circle p-2" />
                             </div>
                         </a>
@@ -33,16 +33,18 @@
                     <div class="col-lg">
                         <div class="bg-dark p-4">
                             <img src="images/index/telegram.svg"
-                                 alt="ClickHouse at Telegram"
-                                 title="ClickHouse at Telegram"
+                                 alt="{{ _('ClickHouse at Telegram') }}"
+                                 title="{{ _('ClickHouse at Telegram') }}"
                                  class="bg-secondary-alt rounded-circle p-2 mb-4" />
 
                             <h5 class="text-white mb-lg-3">Telegram</h5>
-                            <p class="text-muted">Chat with real users in <a
+                            <p class="text-muted">{{ _('Chat with real users in ') }}<a
                                href="https://telegram.me/clickhouse_en"
-                               rel="external nofollow" target="_blank" class="text-decoration-none"><span class="text-yellow">English</span></a> or in
+                               rel="external nofollow noreferrer" target="_blank" class="text-decoration-none">
+                                <span class="text-yellow">{{ _('English') }}</span>
+                            </a> {{ _('or in') }}
                             <a href="https://telegram.me/clickhouse_ru"
-                               rel="external nofollow" target="_blank" class="text-decoration-none"><span class="text-yellow">Russian</span></a></p>
+                               rel="external nofollow noreferrer" target="_blank" class="text-decoration-none"><span class="text-yellow">{{ _('Russian') }}</span></a></p>
                         </div>
                     </div>
                 </div>
@@ -52,7 +54,7 @@
                 <div class="row mb-3">
                     <div class="col">
                         <a href="https://github.com/ClickHouse/ClickHouse/issues/new/choose"
-                            rel="external nofollow" target="_blank" class="text-decoration-none">
+                            rel="external nofollow noreferrer" target="_blank" class="text-decoration-none">
                             <div class="bg-dark p-4">
                                 <img src="images/index/github.svg"
                                      alt="ClickHouse GitHub"
@@ -60,7 +62,7 @@
                                      class="bg-secondary-alt rounded-circle p-2 mb-4" />
 
                                 <h5 class="text-yellow mb-lg-3">GitHub</h5>
-                                <p class="text-muted">Open GitHub issue to ask for help or to file a feature request</p>
+                                <p class="text-muted">{{ _('Open GitHub issue to ask for help or to file a feature request') }}</p>
                             </div>
                         </a>
                     </div>
@@ -68,16 +70,16 @@
                 <div class="row mb-3">
                     <div class="col w-100">
                         <a href="https://join.slack.com/t/clickhousedb/shared_invite/enQtOTUzMjM4ODQwNTc5LWJmMjE3Yjc2YmI1ZDBlZmI4ZTc3OWY3ZTIwYTljYzY4MzBlODM3YzBjZTc1YmYyODRlZTJkYTgzYzBiNTA2Yjk"
-                            rel="external nofollow" target="_blank" class="text-decoration-none">
+                            rel="external nofollow noreferrer" target="_blank" class="text-decoration-none">
                             <div class="bg-dark p-4">
                                 <img src="images/index/slack.svg"
-                                     alt="ClickHouse Slack Workspace"
-                                     title="ClickHouse Slack Workspace"
+                                     alt="{{ _('ClickHouse Slack Workspace') }}"
+                                     title="{{ _('ClickHouse Slack Workspace') }}"
                                      class="bg-secondary-alt rounded-circle p-2 mr-4 float-left"
                                      width="64" height="64"/>
 
                                 <h5 class="text-yellow">Slack</h5>
-                                <p class="text-muted mb-2">Multipurpose public hangout</p>
+                                <p class="text-muted mb-2">{{ _('Multipurpose public hangout') }}</p>
                             </div>
                         </a>
                     </div>
@@ -88,7 +90,7 @@
                 <div class="row mb-3">
                     <div class="col w-100">
                         <a href="https://stackoverflow.com/questions/tagged/clickhouse"
-                            rel="external nofollow" target="_blank" class="text-decoration-none">
+                            rel="external nofollow noreferrer" target="_blank" class="text-decoration-none">
                             <div class="bg-dark p-4">
                                 <img src="images/index/stack-overflow.svg"
                                      alt="ClickHouse at Stack Overflow"
@@ -96,7 +98,7 @@
                                      class="bg-secondary-alt rounded-circle p-2 mr-4 float-left" />
 
                                 <h5 class="text-yellow">Stack Overflow</h5>
-                                <p class="text-muted mb-2">Ask any questions</p>
+                                <p class="text-muted mb-2">{{ _('Ask any questions') }}</p>
                             </div>
                         </a>
                     </div>
@@ -110,9 +112,9 @@
                                  title="ClickHouse Blog"
                                  class="bg-secondary-alt rounded-circle p-2 mr-4 float-left" />
 
-                            <h5 class="text-white">ClickHouse Blog</h5>
-                            <p class="text-muted mb-2">in <a href="https://clickhouse.yandex/blog/en" target="_blank" class="text-decoration-none"><span class="text-yellow">English</span></a>
-                                or in <a href="https://clickhouse.yandex/blog/ru" target="_blank" class="text-decoration-none"><span class="text-yellow">Russian</span></a></p>
+                            <h5 class="text-white">{{ _('ClickHouse Blog') }}</h5>
+                            <p class="text-muted mb-2">{{ _('in') }} <a href="https://clickhouse.yandex/blog/en" target="_blank" class="text-decoration-none"><span class="text-yellow">{{ _('English') }}</span></a>
+                                or in <a href="https://clickhouse.yandex/blog/ru" target="_blank" class="text-decoration-none"><span class="text-yellow">{{ _('Russian') }}</span></a></p>
                         </div>
                     </div>
                 </div>
@@ -120,26 +122,26 @@
                 <div class="row mb-3">
                     <div class="col w-100">
                         <a href="https://groups.google.com/group/clickhouse"
-                            rel="external nofollow" target="_blank" class="text-decoration-none">
+                            rel="external nofollow noreferrer" target="_blank" class="text-decoration-none">
                             <div class="bg-dark p-4">
                                 <img src="images/index/google-groups.svg"
-                                     alt="ClickHouse at Google Groups"
-                                     title="ClickHouse at Google Groups"
+                                     alt="{{ _('ClickHouse at Google Groups') }}"
+                                     title="{{ _('ClickHouse at Google Groups') }}"
                                      class="bg-secondary-alt rounded-circle p-2 mr-4 float-left" />
 
                                 <h5 class="text-yellow">Google Group</h5>
-                                <p class="text-muted mb-2">Email discussions</p>
+                                <p class="text-muted mb-2">{{ _('Email discussions') }}</p>
                             </div>
                         </a>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="row text-muted">
+        <div class="row">
             <div class="col">
-                <p class="lead"><strong class="text-white">Like ClickHouse?</strong> Help to spread the word about it via <a rel="external nofollow" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">Facebook</span></a>,
-                    <a rel="external nofollow" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">Twitter</span></a> and
-                    <a rel="external nofollow" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">LinkedIn</span></a>!</p>
+                <h3 class="display-5 text-white">{{ _('Like ClickHouse?') }}</h3>
+                <p class="lead text-white">{{ _('Help to spread the word about it via') }} <a rel="external nofollow noreferrer" target="_blank" href="https://www.facebook.com/sharer.php?u=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">Facebook</span></a>,
+                    <a rel="external nofollow noreferrer" target="_blank" href="https://twitter.com/intent/tweet?url=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">Twitter</span></a> {{ _('and') }} <a rel="external nofollow noreferrer" target="_blank" href="https://www.linkedin.com/shareArticle?url=https://clickhouse.tech" class="text-decoration-none"><span class="text-yellow">LinkedIn</span></a>!</p>
             </div>
         </div>
     </div>
@@ -148,72 +150,69 @@
 
 <div>
     <div class="container">
-        <div class="row my-5">
-            <div class="col-lg">
-                <h2 id="meet">Hosting ClickHouse Meetups</h2>
+        <h2 id="meet" class="display-4 mt-5">{{ _('Hosting ClickHouse Meetups') }}</h2>
+        <div class="row">
+            <div class="col-lg  my-3">
                 <p class="lead">
-                    ClickHouse meetups are essential for strengthening community worldwide, but they couldn't be possible without the help of local organizers. Please, feel this form if you want to become one or want to meet ClickHouse core team for any other reason.
+                    {{ _('ClickHouse meetups are essential for strengthening community worldwide, but they couldn\'t be possible without the help of local organizers. Please, feel this form if you want to become one or want to meet ClickHouse core team for any other reason.') }}
                 </p>
-                <img src="images/index/meetup.svg" alt="ClickHouse Meetup" title="ClickHouse Meetup" class="img-fluid" />
+                <img src="images/index/meetup.svg" alt="{{ _('ClickHouse Meetup') }}" title="{{ _('ClickHouse Meetup') }}" class="img-fluid mt-5" />
             </div>
 
             <div class="col-lg">
                 <form id="meetup-form" action="" method="post">
-                  <div class="form-group">
-                    <input type="text" class="form-control" name="name" placeholder="Name *" required="true">
+                  <div class="form-group my-3">
+                    <input type="text" class="form-control" name="name" placeholder="{{ _('Name') }} *" required="true">
                   </div>
                   <div class="form-group">
-                    <input type="email" class="form-control" name="email" placeholder="Email *" required="true">
+                    <input type="email" class="form-control" name="email" placeholder="{{ _('Email') }} *" required="true">
                   </div>
                   <div class="form-group">
-                    <input type="text" class="form-control" name="company" placeholder="Company *" required="true">
+                    <input type="text" class="form-control" name="company" placeholder="{{ _('Company') }} *" required="true">
                   </div>
                   <div class="form-group">
-                    <input type="text" class="form-control" name="city" placeholder="City *" required="true">
+                    <input type="text" class="form-control" name="city" placeholder="{{ _('City') }} *" required="true">
                   </div>
                   <div class="form-group form-check">
                     <input type="checkbox" class="form-check-input" id="want-host-meetup" name="want-host-meetup">
                     <label class="form-check-label" for="want-host-meetup">
-                        We'd like to host a public ClickHouse Meetup
+                        {{ _('We\'d like to host a public ClickHouse Meetup') }}
                     </label>
                   </div>
                   <div class="form-group form-check">
                     <input type="checkbox" class="form-check-input" id="want-invite-to-office" name="want-invite-to-office">
                     <label class="form-check-label" for="want-invite-to-office">
-                        We'd like to invite Yandex ClickHouse team to our office
+                        {{ _('We\'d like to invite Yandex ClickHouse team to our office') }}
                     </label>
                   </div>
                   <div class="form-group form-check">
                     <input type="checkbox" class="form-check-input" id="want-invite-to-event" name="want-invite-to-event">
                     <label class="form-check-label" for="want-invite-to-event">
-                        We'd like to invite Yandex ClickHouse team to another event we organize
+                        {{ _('We\'d like to invite Yandex ClickHouse team to another event we organize') }}
                     </label>
                   </div>
                   <div class="form-group form-check">
                     <input type="checkbox" class="form-check-input" id="want-commercial" name="want-commercial">
                     <label class="form-check-label" for="want-commercial">
-                        We're interested in commercial consulting, support or managed service
+                        {{ _('We\'re interested in commercial consulting, support or managed service') }}
                     </label>
                   </div>
                    <div class="form-group">
-                    <textarea class="form-control" name="comments" rows="5" placeholder="Additional comments"></textarea>
+                    <textarea class="form-control" name="comments" rows="5" placeholder="{{ _('Additional comments') }}"></textarea>
                   </div>
-                  <button id="meetup-form-send" type="submit" class="btn btn-yellow w-100 text-center">Send</button>
+                  <button id="meetup-form-send" type="submit" class="btn btn-yellow w-100 text-center">{{ _('Send') }}</button>
                   <div id="meetup-form-error"></div>
                 </form>
             </div>
         </div>
 
-        <div class="row">
+        <div class="row my-5">
             <div class="col">
                 <p class="lead">
-                    If you have any more thoughts or questions, feel free to contact Yandex ClickHouse team directly at
-                        <a id="feedback_email" href="">turn on JavaScript to see email address</a>.
+                    {{ _('If you have any more thoughts or questions, feel free to contact Yandex ClickHouse team directly at') }}
+                        <a id="feedback_email" href="">{{ _('turn on JavaScript to see email address') }}</a>.
                 </p>
-
             </div>
-
         </div>
-
     </div>
 </div>

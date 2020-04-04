@@ -1,7 +1,12 @@
+---
+toc_priority: 51
+toc_title: Quotas
+---
+
 # Quotas {#quotas}
 
-Quotas allow you to limit resource usage over a period of time, or simply track the use of resources.
-Quotas are set up in the user config. This is usually ‘users.xml’.
+Quotas allow you to limit resource usage over a period of time or track the use of resources.
+Quotas are set up in the user config, which is usually ‘users.xml’.
 
 The system also has a feature for limiting the complexity of a single query. See the section “Restrictions on query complexity”).
 
@@ -32,7 +37,7 @@ Let’s look at the section of the ‘users.xml’ file that defines quotas.
     </default>
 ```
 
-By default, the quota just tracks resource consumption for each hour, without limiting usage.
+By default, the quota tracks resource consumption for each hour, without limiting usage.
 The resource consumption calculated for each interval is output to the server log after each request.
 
 ``` xml
@@ -61,7 +66,7 @@ The resource consumption calculated for each interval is output to the server lo
 </statbox>
 ```
 
-For the ‘statbox’ quota, restrictions are set for every hour and for every 24 hours (86,400 seconds). The time interval is counted starting from an implementation-defined fixed moment in time. In other words, the 24-hour interval doesn’t necessarily begin at midnight.
+For the ‘statbox’ quota, restrictions are set for every hour and for every 24 hours (86,400 seconds). The time interval is counted, starting from an implementation-defined fixed moment in time. In other words, the 24-hour interval doesn’t necessarily begin at midnight.
 
 When the interval ends, all collected values are cleared. For the next hour, the quota calculation starts over.
 
@@ -71,15 +76,15 @@ Here are the amounts that can be restricted:
 
 `errors` – The number of queries that threw an exception.
 
-`result_rows` – The total number of rows given as the result.
+`result_rows` – The total number of rows given as a result.
 
-`read_rows` – The total number of source rows read from tables for running the query, on all remote servers.
+`read_rows` – The total number of source rows read from tables for running the query on all remote servers.
 
 `execution_time` – The total query execution time, in seconds (wall time).
 
 If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
 
-Quotas can use the “quota key” feature in order to report on resources for multiple keys independently. Here is an example of this:
+Quotas can use the “quota key” feature to report on resources for multiple keys independently. Here is an example of this:
 
 ``` xml
 <!-- For the global reports designer. -->
@@ -90,7 +95,7 @@ Quotas can use the “quota key” feature in order to report on resources for m
             so the quota will be counted separately for each username.
         Using keys makes sense only if quota_key is transmitted by the program, not by a user.
 
-        You can also write <keyed_by_ip /> so the IP address is used as the quota key.
+        You can also write <keyed_by_ip />, so the IP address is used as the quota key.
         (But keep in mind that users can change the IPv6 address fairly easily.)
     -->
     <keyed />
