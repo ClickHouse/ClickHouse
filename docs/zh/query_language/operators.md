@@ -146,7 +146,7 @@ FROM test.Orders;
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
 ```
 
-You can see more examples in [tests](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/queries/0_stateless/00619_extract.sql).
+You can see more examples in [tests](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql).
 
 ### INTERVAL {#operator-interval}
 
