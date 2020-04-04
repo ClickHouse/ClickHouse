@@ -507,6 +507,24 @@ Example:
 log_queries=1
 ```
 
+## log\_queries\_min\_type {#settings-log-queries-min-type}
+
+`query_log` minimal type to log.
+
+Possible values:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Default value: `QUERY_START`.
+
+Can be used to limit which entiries will goes to `query_log`, say you are interesting only in errors, then you can use `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
+```
+
 ## log\_query\_threads {#settings-log-query-threads}
 
 Setting up query threads logging.
