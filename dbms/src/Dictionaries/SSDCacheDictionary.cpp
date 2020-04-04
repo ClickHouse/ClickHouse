@@ -71,6 +71,8 @@ namespace
     constexpr size_t DEFAULT_READ_BUFFER_SIZE = 16 * DEFAULT_SSD_BLOCK_SIZE;
     constexpr size_t DEFAULT_WRITE_BUFFER_SIZE = DEFAULT_SSD_BLOCK_SIZE;
 
+    constexpr size_t DEFAULT_MAX_STORED_KEYS = 100000;
+
     constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE;
     constexpr size_t BLOCK_SPECIAL_FIELDS_SIZE = 4;
 
@@ -167,14 +169,16 @@ CachePartition::CachePartition(
         const size_t max_size_,
         const size_t block_size_,
         const size_t read_buffer_size_,
-        const size_t write_buffer_size_)
+        const size_t write_buffer_size_,
+        const size_t max_stored_keys_)
     : file_id(file_id_)
     , max_size(max_size_)
     , block_size(block_size_)
     , read_buffer_size(read_buffer_size_)
     , write_buffer_size(write_buffer_size_)
+    , max_stored_keys(max_stored_keys_)
     , path(dir_path + "/" + std::to_string(file_id))
-    , key_to_index_and_metadata(100000)
+    , key_to_index_and_metadata(max_stored_keys)
     , attributes_structure(attributes_structure_)
 {
     keys_buffer.type = AttributeUnderlyingType::utUInt64;
@@ -866,7 +870,7 @@ void CachePartition::remove()
 {
     std::unique_lock lock(rw_lock);
     //Poco::File(path + BIN_FILE_EXT).remove();
-    //std::filesystem::remove(std::filesystem::path(path + BIN_FILE_EXT));
+    std::filesystem::remove(std::filesystem::path(path + BIN_FILE_EXT));
 }
 
 CacheStorage::CacheStorage(
@@ -876,7 +880,8 @@ CacheStorage::CacheStorage(
         const size_t partition_size_,
         const size_t block_size_,
         const size_t read_buffer_size_,
-        const size_t write_buffer_size_)
+        const size_t write_buffer_size_,
+        const size_t max_stored_keys_)
     : attributes_structure(attributes_structure_)
     , path(path_)
     , max_partitions_count(max_partitions_count_)
@@ -884,6 +889,7 @@ CacheStorage::CacheStorage(
     , block_size(block_size_)
     , read_buffer_size(read_buffer_size_)
     , write_buffer_size(write_buffer_size_)
+    , max_stored_keys(max_stored_keys_)
     , log(&Poco::Logger::get("CacheStorage"))
 {
 }
@@ -970,7 +976,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
                 partitions.emplace_front(std::make_unique<CachePartition>(
                         AttributeUnderlyingType::utUInt64, attributes_structure, path,
                         (partitions.empty() ? 0 : partitions.front()->getId() + 1),
-                        partition_size, block_size, read_buffer_size, write_buffer_size));
+                        partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
             }
         }
 
@@ -1057,7 +1063,7 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
                 partitions.emplace_front(std::make_unique<CachePartition>(
                         AttributeUnderlyingType::utUInt64, attributes_structure, path,
                         (partitions.empty() ? 0 : partitions.front()->getId() + 1),
-                        partition_size, block_size, read_buffer_size, write_buffer_size));
+                        partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys));
             }
         }
 
@@ -1232,7 +1238,8 @@ SSDCacheDictionary::SSDCacheDictionary(
     const size_t partition_size_,
     const size_t block_size_,
     const size_t read_buffer_size_,
-    const size_t write_buffer_size_)
+    const size_t write_buffer_size_,
+    const size_t max_stored_keys_)
     : name(name_)
     , dict_struct(dict_struct_)
     , source_ptr(std::move(source_ptr_))
@@ -1243,8 +1250,9 @@ SSDCacheDictionary::SSDCacheDictionary(
     , block_size(block_size_)
     , read_buffer_size(read_buffer_size_)
     , write_buffer_size(write_buffer_size_)
+    , max_stored_keys(max_stored_keys_)
     , storage(ext::map<std::vector>(dict_struct.attributes, [](const auto & attribute) { return attribute.underlying_type; }),
-            path, max_partitions_count, partition_size, block_size, read_buffer_size, write_buffer_size)
+            path, max_partitions_count, partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys)
     , log(&Poco::Logger::get("SSDCacheDictionary"))
 {
     if (!this->source_ptr->supportsSelectiveLoad())
@@ -1623,12 +1631,17 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
         if (path.empty())
             throw Exception{name + ": dictionary of layout 'ssdcache' cannot have empty path",
                             ErrorCodes::BAD_ARGUMENTS};
+        
+        const auto max_stored_keys = config.getInt64(layout_prefix + ".ssd.max_stored_keys", DEFAULT_MAX_STORED_KEYS);
+        if (max_stored_keys <= 0)
+            throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) max_stored_keys", ErrorCodes::BAD_ARGUMENTS};
 
         const DictionaryLifetime dict_lifetime{config, config_prefix + ".lifetime"};
         return std::make_unique<SSDCacheDictionary>(
                 name, dict_struct, std::move(source_ptr), dict_lifetime, path,
                 max_partitions_count, partition_size / block_size, block_size,
-                read_buffer_size / block_size, write_buffer_size / block_size);
+                read_buffer_size / block_size, write_buffer_size / block_size,
+                max_stored_keys);
     };
     factory.registerLayout("ssd", create_layout, false);
 }
