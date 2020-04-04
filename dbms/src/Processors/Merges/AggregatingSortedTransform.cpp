@@ -189,6 +189,7 @@ void AggregatingSortedTransform::merge()
             {
                 insertSimpleAggregationResult();
                 merged_data.insertRow();
+                last_key.reset();
             }
 
             /// if there are enough rows accumulated and the last one is calculated completely
