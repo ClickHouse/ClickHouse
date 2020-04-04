@@ -922,7 +922,7 @@ void DDLWorker::createStatusDirs(const std::string & node_path, const ZooKeeperP
     }
     Coordination::Responses responses;
     int code = zookeeper->tryMulti(ops, responses);
-    if (code && code != Coordination::ZNODEEXISTS)
+    if (code && code != Coordination::ZNODEEXISTS && code != Coordination::ZNONODE)
         throw Coordination::Exception(code);
 }
 
