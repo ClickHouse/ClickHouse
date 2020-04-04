@@ -189,12 +189,14 @@ void AggregatingSortedTransform::merge()
             {
                 insertSimpleAggregationResult();
                 merged_data.insertRow();
-                last_key.reset();
             }
 
             /// if there are enough rows accumulated and the last one is calculated completely
             if (merged_data.hasEnoughRows())
+            {
+                last_key.reset();
                 return;
+            }
 
             /// We will write the data for the group. We copy the values of ordinary columns.
             merged_data.initializeRow(current->all_columns, current->pos,
