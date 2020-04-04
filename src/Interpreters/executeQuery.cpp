@@ -157,7 +157,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     /// Log the start of query execution into the table if necessary.
     QueryLogElement elem;
 
-    elem.type = QueryLogElement::EXCEPTION_BEFORE_START;
+    elem.type = QueryLogElementType::EXCEPTION_BEFORE_START;
 
     elem.event_time = current_time;
     elem.query_start_time = current_time;
@@ -175,7 +175,7 @@ static void onExceptionBeforeStart(const String & query_for_logging, Context & c
     /// Update performance counters before logging to query_log
     CurrentThread::finalizePerformanceCounters();
 
-    if (settings.log_queries)
+    if (settings.log_queries && elem.type >= settings.log_queries_min_type)
         if (auto query_log = context.getQueryLog())
             query_log->add(elem);
 }
@@ -400,7 +400,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
         {
             QueryLogElement elem;
 
-            elem.type = QueryLogElement::QUERY_START;
+            elem.type = QueryLogElementType::QUERY_START;
 
             elem.event_time = current_time;
             elem.query_start_time = current_time;
@@ -412,7 +412,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             bool log_queries = settings.log_queries && !internal;
 
             /// Log into system table start of query execution, if need.
-            if (log_queries)
+            if (log_queries && elem.type >= settings.log_queries_min_type)
             {
                 if (settings.log_query_settings)
                     elem.query_settings = std::make_shared<Settings>(context.getSettingsRef());
@@ -422,7 +422,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
             }
 
             /// Also make possible for caller to log successful query finish and exception during execution.
-            auto finish_callback = [elem, &context, log_queries] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
+            auto finish_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type] (IBlockInputStream * stream_in, IBlockOutputStream * stream_out) mutable
             {
                 QueryStatus * process_list_elem = context.getProcessListElement();
 
@@ -436,7 +436,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
                 double elapsed_seconds = info.elapsed_seconds;
 
-                elem.type = QueryLogElement::QUERY_FINISH;
+                elem.type = QueryLogElementType::QUERY_FINISH;
 
                 elem.event_time = time(nullptr);
                 elem.query_duration_ms = elapsed_seconds * 1000;
@@ -484,19 +484,19 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 elem.thread_ids = std::move(info.thread_ids);
                 elem.profile_counters = std::move(info.profile_counters);
 
-                if (log_queries)
+                if (log_queries && elem.type >= log_queries_min_type)
                 {
                     if (auto query_log = context.getQueryLog())
                         query_log->add(elem);
                 }
             };
 
-            auto exception_callback = [elem, &context, log_queries, quota(quota)] () mutable
+            auto exception_callback = [elem, &context, log_queries, log_queries_min_type = settings.log_queries_min_type, quota(quota)] () mutable
             {
                 if (quota)
                     quota->used(Quota::ERRORS, 1, /* check_exceeded = */ false);
 
-                elem.type = QueryLogElement::EXCEPTION_WHILE_PROCESSING;
+                elem.type = QueryLogElementType::EXCEPTION_WHILE_PROCESSING;
 
                 elem.event_time = time(nullptr);
                 elem.query_duration_ms = 1000 * (elem.event_time - elem.query_start_time);
@@ -529,7 +529,7 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
                 logException(context, elem);
 
                 /// In case of exception we log internal queries also
-                if (log_queries)
+                if (log_queries && elem.type >= log_queries_min_type)
                 {
                     if (auto query_log = context.getQueryLog())
                         query_log->add(elem);
