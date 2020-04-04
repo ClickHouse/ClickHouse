@@ -63,10 +63,15 @@ private:
         {
             for (auto column_number : column_numbers)
                 columns[column_number]->insertFrom(*raw_columns[column_number], row);
+
+            is_group_started = true;
         }
+
+        bool isGroupStarted() const { return is_group_started; }
 
         void insertRow()
         {
+            is_group_started = false;
             ++total_merged_rows;
             ++merged_rows;
             /// TODO: sum_blocks_granularity += block_size;
@@ -81,6 +86,8 @@ private:
             for (auto & desc : def.columns_to_aggregate)
                 desc.column = typeid_cast<ColumnAggregateFunction *>(columns[desc.column_number].get());
         }
+    private:
+        bool is_group_started = false;
     };
 
     ColumnsDefinition columns_definition;

@@ -185,7 +185,7 @@ void AggregatingSortedTransform::merge()
         if (key_differs)
         {
             /// Write the simple aggregation result for the previous group.
-            if (merged_data.mergedRows() > 0)
+            if (merged_data.isGroupStarted())
             {
                 insertSimpleAggregationResult();
                 merged_data.insertRow();
@@ -227,7 +227,7 @@ void AggregatingSortedTransform::merge()
     }
 
     /// Write the simple aggregation result for the previous group.
-    if (merged_data.mergedRows() > 0)
+    if (merged_data.isGroupStarted())
     {
         insertSimpleAggregationResult();
         merged_data.insertRow();
