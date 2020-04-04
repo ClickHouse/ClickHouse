@@ -1,26 +1,30 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 64
+toc_title: "\u0646\u062D\u0648\u0647 \u0633\u0627\u062E\u062A \u06A9\u0644\u06CC\u06A9\
+  \ \u062F\u0631 \u0644\u06CC\u0646\u0648\u06A9\u0633"
 ---
 
-# How to Build ClickHouse for Development {#how-to-build-clickhouse-for-development}
+# چگونه برای ساخت خانه کلیک برای توسعه {#how-to-build-clickhouse-for-development}
 
-The following tutorial is based on the Ubuntu Linux system.
-With appropriate changes, it should also work on any other Linux distribution.
-Supported platforms: x86\_64 and AArch64. Support for Power9 is experimental.
+راهنمای زیر بر اساس سیستم لینوکس اوبونتو است.
+با تغییرات مناسب, همچنین باید بر روی هر توزیع لینوکس دیگر کار.
+سیستم عامل های پشتیبانی شده: ایکس86\_64 و عاشق64. پشتیبانی از قدرت9 تجربی است.
 
-## Install Git, CMake, Python and Ninja {#install-git-cmake-python-and-ninja}
+## شرح متنی (توضیحات سایت) در صفحات شما دیده نمی شود {#install-git-cmake-python-and-ninja}
 
 ``` bash
 $ sudo apt-get install git cmake python ninja-build
 ```
 
-Or cmake3 instead of cmake on older systems.
+یا سیمک 3 به جای کیک در سیستم های قدیمی تر.
 
-## Install GCC 9 {#install-gcc-9}
+## نصب شورای همکاری خلیج فارس 9 {#install-gcc-9}
 
-There are several ways to do this.
+راه های مختلفی برای انجام این کار وجود دارد.
 
-### Install from a PPA Package {#install-from-a-ppa-package}
+### نصب از یک بسته پپا {#install-from-a-ppa-package}
 
 ``` bash
 $ sudo apt-get install software-properties-common
@@ -29,30 +33,30 @@ $ sudo apt-get update
 $ sudo apt-get install gcc-9 g++-9
 ```
 
-### Install from Sources {#install-from-sources}
+### نصب از منابع {#install-from-sources}
 
-Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
+نگاه کن [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## Use GCC 9 for Builds {#use-gcc-9-for-builds}
+## استفاده از شورای همکاری خلیج فارس 9 برای ساخت {#use-gcc-9-for-builds}
 
 ``` bash
 $ export CC=gcc-9
 $ export CXX=g++-9
 ```
 
-## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
+## پرداخت منابع کلیک {#checkout-clickhouse-sources}
 
 ``` bash
 $ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 ```
 
-or
+یا
 
 ``` bash
 $ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 ```
 
-## Build ClickHouse {#build-clickhouse}
+## ساخت خانه کلیک {#build-clickhouse}
 
 ``` bash
 $ cd ClickHouse
@@ -63,23 +67,23 @@ $ ninja
 $ cd ..
 ```
 
-To create an executable, run `ninja clickhouse`.
-This will create the `programs/clickhouse` executable, which can be used with `client` or `server` arguments.
+برای ایجاد یک اجرایی, اجرا `ninja clickhouse`.
+این ایجاد خواهد شد `programs/clickhouse` قابل اجرا است که می تواند با استفاده `client` یا `server` بحث کردن.
 
-# How to Build ClickHouse on Any Linux {#how-to-build-clickhouse-on-any-linux}
+# چگونه برای ساخت کلیک بر روی هر لینوکس {#how-to-build-clickhouse-on-any-linux}
 
-The build requires the following components:
+ساخت نیاز به اجزای زیر دارد:
 
--   Git (is used only to checkout the sources, it’s not needed for the build)
--   CMake 3.10 or newer
--   Ninja (recommended) or Make
--   C++ compiler: gcc 9 or clang 8 or newer
--   Linker: lld or gold (the classic GNU ld won’t work)
--   Python (is only used inside LLVM build and it is optional)
+-   دستگاه گوارش (استفاده می شود تنها به پرداخت منابع مورد نیاز برای ساخت)
+-   کیک 3.10 یا جدیدتر
+-   نینجا (توصیه می شود) و یا
+-   ج ++ کامپایلر: شورای همکاری خلیج فارس 9 یا صدای شیپور 8 یا جدیدتر
+-   لینکر: لیلند یا طلا (کلاسیک گنو الدی کار نخواهد کرد)
+-   پایتون (فقط در داخل ساخت لورم استفاده می شود و اختیاری است)
 
-If all the components are installed, you may build in the same way as the steps above.
+اگر تمام اجزای نصب شده, شما ممکن است در همان راه به عنوان مراحل بالا ساخت.
 
-Example for Ubuntu Eoan:
+به عنوان مثال برای اوبونتو ایوان:
 
     sudo apt update
     sudo apt install git cmake ninja-build g++ python
@@ -88,7 +92,7 @@ Example for Ubuntu Eoan:
     cmake ../ClickHouse
     ninja
 
-Example for OpenSUSE Tumbleweed:
+به عنوان مثال برای لینوکس تاج خروس:
 
     sudo zypper install git cmake ninja gcc-c++ python lld
     git clone --recursive https://github.com/ClickHouse/ClickHouse.git
@@ -96,7 +100,7 @@ Example for OpenSUSE Tumbleweed:
     cmake ../ClickHouse
     ninja
 
-Example for Fedora Rawhide:
+به عنوان مثال برای فدورا پوست دباغی نشده:
 
     sudo yum update
     yum --nogpg install git cmake make gcc-c++ python2
@@ -105,34 +109,34 @@ Example for Fedora Rawhide:
     cmake ../ClickHouse
     make -j $(nproc)
 
-# You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
+# شما لازم نیست برای ساخت کلیک {#you-dont-have-to-build-clickhouse}
 
-ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.
+تاتر در فایل های باینری از پیش ساخته شده و بسته های موجود است. فایل های باینری قابل حمل هستند و می تواند بر روی هر عطر و طعم لینوکس اجرا شود.
 
-They are built for stable, prestable and testing releases as long as for every commit to master and for every pull request.
+تا زمانی که برای هر متعهد به کارشناسی کارشناسی ارشد و برای هر درخواست کشش ساخته شده است برای انتشار پایدار و قابل پرست و تست.
 
-To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green checkmark or red cross near commit, and click to the “Details” link right after “ClickHouse Build Check”.
+برای پیدا کردن تازه ترین ساخت از `master` برو به [مرتکب صفحه](https://github.com/ClickHouse/ClickHouse/commits/master), با کلیک بر روی اولین علامت سبز یا صلیب قرمز در نزدیکی ارتکاب, کلیک کنید و به “Details” پیوند درست بعد از “ClickHouse Build Check”.
 
-# How to Build ClickHouse Debian Package {#how-to-build-clickhouse-debian-package}
+# چگونه برای ساخت مخزن دبیان بسته {#how-to-build-clickhouse-debian-package}
 
-## Install Git and Pbuilder {#install-git-and-pbuilder}
+## نصب برنامه جی تی و پل ساز {#install-git-and-pbuilder}
 
 ``` bash
 $ sudo apt-get update
 $ sudo apt-get install git python pbuilder debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
 ```
 
-## Checkout ClickHouse Sources {#checkout-clickhouse-sources-1}
+## پرداخت منابع کلیک {#checkout-clickhouse-sources-1}
 
 ``` bash
 $ git clone --recursive --branch master https://github.com/ClickHouse/ClickHouse.git
 $ cd ClickHouse
 ```
 
-## Run Release Script {#run-release-script}
+## اجرای اسکریپت انتشار {#run-release-script}
 
 ``` bash
 $ ./release
 ```
 
-[Original article](https://clickhouse.tech/docs/en/development/build/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/development/build/) <!--hide-->

@@ -1,20 +1,21 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
 ---
 
-# ClickHouse Cloud Service Providers {#clickhouse-cloud-service-providers}
+# ClickHouse ابر ارائه دهندگان خدمات {#clickhouse-cloud-service-providers}
 
-!!! info "Info"
-    If you have launched a public cloud with managed ClickHouse service, feel free to [open a pull-request](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/commercial/cloud.md) adding it to the following list.
+!!! info "اطلاعات"
+    اگر شما راه اندازی یک ابر عمومی با مدیریت سرویس خانه کلیک, احساس رایگان به [درخواست کشش را باز کنید](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/commercial/cloud.md) اضافه کردن به لیست زیر.
 
-## Yandex Cloud {#yandex-cloud}
+## ابر یاندکس {#yandex-cloud}
 
-[Yandex Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) provides the following key features:
+[سرویس مدیریت یاندکس برای کلیک](https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) ویژگی های کلیدی زیر را فراهم می کند:
 
--   Fully managed ZooKeeper service for [ClickHouse replication](../operations/table_engines/replication.md)
--   Multiple storage type choices
--   Replicas in different availability zones
--   Encryption and isolation
--   Automated maintenance
+-   خدمات باغ وحش به طور کامل مدیریت برای [تکرار کلیک](../engines/table_engines/mergetree_family/replication.md)
+-   های متعدد ذخیره سازی انتخاب نوع
+-   کپی در مناطق مختلف در دسترس بودن
+-   رمزگذاری و جداسازی
+-   تعمیر و نگهداری خودکار
 
-{## [Original article](https://clickhouse.tech/docs/en/commercial/cloud/) ##}
+{## [مقاله اصلی](https://clickhouse.tech/docs/en/commercial/cloud/) ##}

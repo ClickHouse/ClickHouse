@@ -1,60 +1,65 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 61
+toc_title: "\u062F\u0633\u062A\u0648\u0631\u0627\u0644\u0639\u0645\u0644 \u062A\u0648\
+  \u0633\u0639\u0647 \u062F\u0647\u0646\u062F\u0647 \u06A9\u0644\u06CC\u06A9 \u0645\
+  \u0628\u062A\u062F\u06CC"
 ---
 
-Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
+ساختمان از خانه کلیک بر روی لینوکس پشتیبانی, بورس و سیستم عامل مک ایکس.
 
-# If you use Windows {#if-you-use-windows}
+# در صورت استفاده از ویندوز {#if-you-use-windows}
 
-If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/\#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
+اگر شما استفاده از ویندوز, شما نیاز به ایجاد یک ماشین مجازی با اوبونتو. برای شروع کار با یک ماشین مجازی لطفا مجازی نصب کنید. شما می توانید اوبونتو را از وب سایت دانلود کنید: https://www.ubuntu.com/\#download.لطفا یک ماشین مجازی از تصویر دانلود شده ایجاد کنید (شما باید حداقل 4 گیگابایت رم را رزرو کنید). برای اجرای یک ترمینال خط فرمان در اوبونتو, لطفا یک برنامه حاوی کلمه قرار “terminal” به نام (گنوم ترمینال, کنسول و غیره.) یا فقط کنترل را فشار دهید
 
-# If you use a 32-bit system {#if-you-use-a-32-bit-system}
+# اگر از یک سیستم 32 بیتی استفاده می کنید {#if-you-use-a-32-bit-system}
 
-ClickHouse cannot work or build on a 32-bit system. You should acquire access to a 64-bit system and you can continue reading.
+تاتر نمی تواند کار کند و یا ساخت بر روی یک سیستم 32 بیتی. شما باید دسترسی به یک سیستم 64 بیتی کسب و شما می توانید ادامه مطلب.
 
-# Creating a repository on GitHub {#creating-a-repository-on-github}
+# ایجاد یک مخزن در گیتهاب {#creating-a-repository-on-github}
 
-To start working with ClickHouse repository you will need a GitHub account.
+برای شروع کار با مخزن کلیک شما یک حساب گیتهاب نیاز.
 
-You probably already have one, but if you don’t, please register at https://github.com. In case you do not have SSH keys, you should generate them and then upload them on GitHub. It is required for sending over your patches. It is also possible to use the same SSH keys that you use with any other SSH servers - probably you already have those.
+شما احتمالا در حال حاضر یکی, اما اگر اینکار را نکنید, لطفا ثبت نام در https://github.com. در صورتی که کلید های سش را ندارید باید تولید کنید و سپس در گیتهاب بارگذاری کنید. این برای ارسال بیش از تکه های خود را مورد نیاز است. همچنین ممکن است به استفاده از کلید همان جلسه که شما با هر سرور جلسه دیگر استفاده کنید - احتمالا شما در حال حاضر کسانی که.
 
-Create a fork of ClickHouse repository. To do that please click on the “fork” button in the upper right corner at https://github.com/ClickHouse/ClickHouse. It will fork your own copy of ClickHouse/ClickHouse to your account.
+ایجاد یک چنگال مخزن مخزن مخزن. برای انجام این کار لطفا بر روی کلیک کنید “fork” دکمه در گوشه سمت راست بالا در https://github.com/ClickHouse/ClickHouse. آن را به چنگال خود کپی ClickHouse/ClickHouse به حساب کاربری خود.
 
-The development process consists of first committing the intended changes into your fork of ClickHouse and then creating a “pull request” for these changes to be accepted into the main repository (ClickHouse/ClickHouse).
+روند توسعه شامل اولین ارتکاب تغییرات در نظر گرفته شده را به چنگال خود را از خانه رعیتی و سپس ایجاد یک “pull request” برای این تغییرات پذیرفته می شود به مخزن اصلی (ClickHouse/ClickHouse).
 
-To work with git repositories, please install `git`.
+برای کار با مخازن دستگاه گوارش, لطفا نصب کنید `git`.
 
-To do that in Ubuntu you would run in the command line terminal:
+برای انجام این کار در اوبونتو شما در ترمینال خط فرمان اجرا می کنید:
 
     sudo apt update
     sudo apt install git
 
-A brief manual on using Git can be found here: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
-For a detailed manual on Git see https://git-scm.com/book/en/v2.
+کتابچه راهنمای مختصر در استفاده از دستگاه گوارش را می توان یافت: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
+برای یک کتابچه راهنمای دقیق در دستگاه گوارش را ببینید https://git-scm.com/book/en/v2.
 
-# Cloning a repository to your development machine {#cloning-a-repository-to-your-development-machine}
+# شبیه سازی یک مخزن به دستگاه توسعه خود را {#cloning-a-repository-to-your-development-machine}
 
-Next, you need to download the source files onto your working machine. This is called “to clone a repository” because it creates a local copy of the repository on your working machine.
+بعد, شما نیاز به دانلود فایل های منبع بر روی دستگاه کار خود را. این است که به نام “to clone a repository” زیرا ایجاد یک کپی محلی از مخزن بر روی دستگاه کار خود را.
 
-In the command line terminal run:
+در خط فرمان ترمینال اجرا:
 
     git clone --recursive git@guthub.com:your_github_username/ClickHouse.git
     cd ClickHouse
 
-Note: please, substitute *your\_github\_username* with what is appropriate!
+توجه: لطفا جایگزین کنید *تغییر \_نامهی تو* با چه مناسب است!
 
-This command will create a directory `ClickHouse` containing the working copy of the project.
+این دستور یک دایرکتوری ایجاد خواهد کرد `ClickHouse` حاوی کپی کار از پروژه.
 
-It is important that the path to the working directory contains no whitespaces as it may lead to problems with running the build system.
+مهم این است که مسیر به دایرکتوری کار شامل هیچ فضای سفید به عنوان ممکن است به مشکلات در حال اجرا سیستم ساخت منجر شود.
 
-Please note that ClickHouse repository uses `submodules`. That is what the references to additional repositories are called (i.e. external libraries on which the project depends). It means that when cloning the repository you need to specify the `--recursive` flag as in the example above. If the repository has been cloned without submodules, to download them you need to run the following:
+لطفا توجه داشته باشید که مخزن کلیک استفاده می کند `submodules`. That is what the references to additional repositories are called (i.e. external libraries on which the project depends). It means that when cloning the repository you need to specify the `--recursive` پرچم همانطور که در مثال بالا. اگر مخزن بدون زیر دستی مسدود شده باشد باید موارد زیر را دانلود کنید:
 
     git submodule init
     git submodule update
 
-You can check the status with the command: `git submodule status`.
+شما می توانید وضعیت را با فرمان بررسی کنید: `git submodule status`.
 
-If you get the following error message:
+اگر پیغام خطای زیر را دریافت کنید:
 
     Permission denied (publickey).
     fatal: Could not read from remote repository.
@@ -62,23 +67,23 @@ If you get the following error message:
     Please make sure you have the correct access rights
     and the repository exists.
 
-It generally means that the SSH keys for connecting to GitHub are missing. These keys are normally located in `~/.ssh`. For SSH keys to be accepted you need to upload them in the settings section of GitHub UI.
+به طور کلی به این معنی است که کلید های برش برای اتصال به گیتهاب از دست رفته است. این کلید ها به طور معمول در واقع `~/.ssh`. برای کلید های جلسه پذیرفته می شود شما نیاز به ارسال در بخش تنظیمات رابط کاربر گیتهاب.
 
-You can also clone the repository via https protocol:
+شما همچنین می توانید مخزن از طریق پروتکل قام کلون:
 
     git clone https://github.com/ClickHouse/ClickHouse.git
 
-This, however, will not let you send your changes to the server. You can still use it temporarily and add the SSH keys later replacing the remote address of the repository with `git remote` command.
+این, با این حال, نمی خواهد به شما اجازه تغییرات خود را به سرور ارسال. شما هنوز هم می توانید به طور موقت استفاده کنید و اضافه کردن کلید های جلسه بعد جایگزین نشانی از راه دور از مخزن با `git remote` فرمان.
 
-You can also add original ClickHouse repo’s address to your local repository to pull updates from there:
+شما همچنین می توانید نشانی اصلی مخزن مخزن محلی خود را اضافه کنید به جلو و به روز رسانی از وجود دارد:
 
     git remote add upstream git@github.com:ClickHouse/ClickHouse.git
 
-After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
+پس از موفقیت در حال اجرا این دستور شما قادر خواهید بود به جلو و به روز رسانی از مخزن کلیک اصلی در حال اجرا خواهد بود `git pull upstream master`.
 
-## Working with submodules {#working-with-submodules}
+## کار با submodules {#working-with-submodules}
 
-Working with submodules in git could be painful. Next commands will help to manage it:
+کار با زیربول در دستگاه گوارش می تواند دردناک باشد. دستورات بعدی کمک خواهد کرد که برای مدیریت:
 
     # ! each command accepts --recursive
     # Update remote URLs for submodules. Barely rare case
@@ -90,7 +95,7 @@ Working with submodules in git could be painful. Next commands will help to mana
     # Two last commands could be merged together
     git submodule update --init
 
-The next commands would help you to reset all submodules to the initial state (!WARNING! - any changes inside will be deleted):
+دستورات بعدی کمک خواهد کرد که شما را به تنظیم مجدد تمام زیربول به حالت اولیه (!هشدار! - هر گونه تغییر در داخل حذف خواهد شد):
 
     # Synchronizes submodules' remote URL with .gitmodules
     git submodule sync --recursive
@@ -106,151 +111,151 @@ The next commands would help you to reset all submodules to the initial state (!
     git submodule foreach git submodule foreach git reset --hard
     git submodule foreach git submodule foreach git clean -xfd
 
-# Build System {#build-system}
+# ساخت سیستم {#build-system}
 
-ClickHouse uses CMake and Ninja for building.
+تاتر با استفاده از کیک و نینجا برای ساخت و ساز.
 
-CMake - a meta-build system that can generate Ninja files (build tasks).
-Ninja - a smaller build system with a focus on the speed used to execute those cmake generated tasks.
+کیک-یک سیستم متا ساخت است که می تواند فایل های نینجا (ساخت وظایف) تولید کند.
+نینجا-یک سیستم ساخت کوچکتر با تمرکز بر سرعت مورد استفاده برای اجرای این کارهای تولید کیک.
 
-To install on Ubuntu, Debian or Mint run `sudo apt install cmake ninja-build`.
+برای نصب در اوبونتو, دبیان و یا نعنا اجرا `sudo apt install cmake ninja-build`.
 
-On CentOS, RedHat run `sudo yum install cmake ninja-build`.
+در حال بارگذاری `sudo yum install cmake ninja-build`.
 
-If you use Arch or Gentoo, you probably know it yourself how to install CMake.
+اگر شما استفاده از قوس یا جنتو, شما احتمالا خودتان می دانید که چگونه به نصب کیک.
 
-For installing CMake and Ninja on Mac OS X first install Homebrew and then install everything else via brew:
+برای نصب کیک و نینجا در سیستم عامل مک ایکس اول گشتن نصب و سپس نصب هر چیز دیگری از طریق دم:
 
     /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
     brew install cmake ninja
 
-Next, check the version of CMake: `cmake --version`. If it is below 3.3, you should install a newer version from the website: https://cmake.org/download/.
+بعد, بررسی نسخه از کیک: `cmake --version`. اگر زیر 3.3, شما باید یک نسخه جدیدتر از وب سایت نصب: https://cmake.org/download/.
 
-# Optional External Libraries {#optional-external-libraries}
+# کتابخانه های خارجی اختیاری {#optional-external-libraries}
 
-ClickHouse uses several external libraries for building. All of them do not need to be installed separately as they are built together with ClickHouse from the sources located in the submodules. You can check the list in `contrib`.
+تاتر با استفاده از چندین کتابخانه خارجی برای ساخت و ساز. همه آنها نمی نیاز به نصب به طور جداگانه به عنوان آنها ساخته شده است همراه با clickhouse از منابع واقع در submodules. شما می توانید لیست را بررسی کنید `contrib`.
 
-# C++ Compiler {#c-compiler}
+# ج ++ کامپایلر {#c-compiler}
 
-Compilers GCC starting from version 9 and Clang version 8 or above are supported for building ClickHouse.
+کامپایلر شورای همکاری خلیج فارس با شروع از نسخه 9 و صدای شیپور نسخه 8 یا بالاتر برای ساخت و ساز خانه عروسکی پشتیبانی می کند.
 
-Official Yandex builds currently use GCC because it generates machine code of slightly better performance (yielding a difference of up to several percent according to our benchmarks). And Clang is more convenient for development usually. Though, our continuous integration (CI) platform runs checks for about a dozen of build combinations.
+یاندکس رسمی ایجاد شده در حال حاضر با استفاده از شورای همکاری خلیج فارس به دلیل تولید کد ماشین از عملکرد کمی بهتر (بازده تفاوت تا چند درصد با توجه به معیار ما). و کلانگ معمولا برای توسعه راحت تر است. هر چند, ادغام مداوم ما (سی) پلت فرم اجرا می شود چک برای حدود یک دوجین از ترکیب ساخت.
 
-To install GCC on Ubuntu run: `sudo apt install gcc g++`
+برای نصب شورای همکاری خلیج فارس در اوبونتو اجرای: `sudo apt install gcc g++`
 
-Check the version of gcc: `gcc --version`. If it is below 9, then follow the instruction here: https://clickhouse.tech/docs/en/development/build/\#install-gcc-9.
+بررسی نسخه شورای همکاری خلیج فارس: `gcc --version`. اگر زیر است 9, سپس دستورالعمل اینجا را دنبال کنید: https://clickhouse.فناوری / اسناد / ارتباطات / توسعه/ساختن / \#نصب شورای همکاری خلیج فارس-9.
 
-Mac OS X build is supported only for Clang. Just run `brew install llvm`
+سیستم عامل مک ایکس ساخت فقط برای صدای جرنگ جرنگ پشتیبانی می شود. فقط فرار کن `brew install llvm`
 
-If you decide to use Clang, you can also install `libc++` and `lld`, if you know what it is. Using `ccache` is also recommended.
+اگر شما تصمیم به استفاده از صدای شیپور, شما همچنین می توانید نصب `libc++` و `lld`, اگر شما می دانید چه چیزی است. با استفاده از `ccache` همچنین توصیه می شود.
 
-# The Building process {#the-building-process}
+# روند ساخت و ساز {#the-building-process}
 
-Now that you are ready to build ClickHouse we recommend you to create a separate directory `build` inside `ClickHouse` that will contain all of the build artefacts:
+حالا که اماده ساخت خانه عروسکی هستید توصیه می کنیم یک دایرکتوری جداگانه ایجاد کنید `build` داخل `ClickHouse` که شامل تمام مصنوعات ساخت:
 
     mkdir build
     cd build
 
-You can have several different directories (build\_release, build\_debug, etc.) for different types of build.
+شما می توانید چندین دایرکتوری های مختلف (build\_release, build\_debug ، ) برای انواع مختلف ساخت.
 
-While inside the `build` directory, configure your build by running CMake. Before the first run, you need to define environment variables that specify compiler (version 9 gcc compiler in this example).
+در حالی که در داخل `build` فهرست, پیکربندی ساخت خود را با در حال اجرا کیک. قبل از اولین اجرا, شما نیاز به تعریف متغیرهای محیطی که کامپایلر را مشخص (نسخه 9 کامپایلر شورای همکاری خلیج فارس در این مثال).
 
-Linux:
+لینوکس:
 
     export CC=gcc-9 CXX=g++-9
     cmake ..
 
-Mac OS X:
+سیستم عامل مک ایکس:
 
     export CC=clang CXX=clang++
     cmake ..
 
-The `CC` variable specifies the compiler for C (short for C Compiler), and `CXX` variable instructs which C++ compiler is to be used for building.
+این `CC` متغیر کامپایلر برای ج مشخص (کوتاه برای کامپایلر ج), و `CXX` دستور متغیر که سی++ کامپایلر است که برای ساخت و ساز استفاده می شود.
 
-For a faster build, you can resort to the `debug` build type - a build with no optimizations. For that supply the following parameter `-D CMAKE_BUILD_TYPE=Debug`:
+برای ساخت سریع تر, شما می توانید به توسل `debug` نوع ساخت-ساخت بدون بهینه سازی. برای عرضه پارامتر زیر `-D CMAKE_BUILD_TYPE=Debug`:
 
     cmake -D CMAKE_BUILD_TYPE=Debug ..
 
-You can change the type of build by running this command in the `build` directory.
+شما می توانید نوع ساخت را با اجرای این دستور در تغییر دهید `build` فهرست راهنما.
 
-Run ninja to build:
+اجرای نینجا برای ساخت:
 
     ninja clickhouse-server clickhouse-client
 
-Only the required binaries are going to be built in this example.
+فقط باینری مورد نیاز در حال رفتن به در این مثال ساخته شده است.
 
-If you require to build all the binaries (utilities and tests), you should run ninja with no parameters:
+اگر شما نیاز به ساخت تمام فایل های باینری (تاسیسات و تست), شما باید نینجا بدون پارامتر اجرا:
 
     ninja
 
-Full build requires about 30GB of free disk space or 15GB to build the main binaries.
+ساخت کامل نیاز به حدود 30 گیگابایت فضای دیسک رایگان یا 15 گیگابایت برای ساخت باینری اصلی دارد.
 
-When a large amount of RAM is available on build machine you should limit the number of build tasks run in parallel with `-j` param:
+هنگامی که مقدار زیادی از رم در ساخت دستگاه در دسترس است شما باید تعداد وظایف ساخت به صورت موازی با اجرا محدود می کند `-j` پرم:
 
     ninja -j 1 clickhouse-server clickhouse-client
 
-On machines with 4GB of RAM, it is recommended to specify 1, for 8GB of RAM `-j 2` is recommended.
+در ماشین با 4 گیگابایت رم, توصیه می شود برای مشخص 1, برای 8گیگابایت رم `-j 2` توصیه می شود.
 
-If you get the message: `ninja: error: loading 'build.ninja': No such file or directory`, it means that generating a build configuration has failed and you need to inspect the message above.
+اگر پیام را دریافت کنید: `ninja: error: loading 'build.ninja': No such file or directory`, به این معنی که تولید یک پیکربندی ساخت شکست خورده است و شما نیاز به بازرسی پیام بالا.
 
-Upon the successful start of the building process, you’ll see the build progress - the number of processed tasks and the total number of tasks.
+پس از شروع موفق از روند ساخت و ساز, شما پیشرفت ساخت را ببینید-تعداد کارهای پردازش شده و تعداد کل وظایف.
 
-While building messages about protobuf files in libhdfs2 library like `libprotobuf WARNING` may show up. They affect nothing and are safe to be ignored.
+در حالی که ساختمان پیام در مورد protobuf فایل در libhdfs2 کتابخانه مانند `libprotobuf WARNING` ممکن است نشان دهد تا. هیچ چیز تاثیر می گذارد و امن نادیده گرفته می شود.
 
-Upon successful build you get an executable file `ClickHouse/<build_dir>/programs/clickhouse`:
+پس از ساخت موفق شما یک فایل اجرایی دریافت کنید `ClickHouse/<build_dir>/programs/clickhouse`:
 
     ls -l programs/clickhouse
 
-# Running the built executable of ClickHouse {#running-the-built-executable-of-clickhouse}
+# اجرای اجرایی ساخته شده از خانه کلیک {#running-the-built-executable-of-clickhouse}
 
-To run the server under the current user you need to navigate to `ClickHouse/programs/server/` (located outside of `build`) and run:
+برای اجرای سرور تحت کاربر فعلی شما نیاز به حرکت به `ClickHouse/programs/server/` (واقع در خارج از `build`) و اجرا:
 
     ../../../build/programs/clickhouse server
 
-In this case, ClickHouse will use config files located in the current directory. You can run `clickhouse server` from any directory specifying the path to a config file as a command-line parameter `--config-file`.
+در این مورد, تاتر خواهد فایل های پیکربندی واقع در دایرکتوری جاری استفاده. شما می توانید اجرا کنید `clickhouse server` از هر دایرکتوری مشخص کردن مسیر به یک فایل پیکربندی به عنوان یک پارامتر خط فرمان `--config-file`.
 
-To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `clickhouse client`.
+برای اتصال به clickhouse با clickhouse-مشتری در یکی دیگر از ترمینال حرکت به `ClickHouse/build/programs/` و فرار کن `clickhouse client`.
 
-If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying host address 127.0.0.1:
+اگر شما `Connection refused` سعی کنید مشخص نشانی میزبان 127.0.0.1:
 
     clickhouse client --host 127.0.0.1
 
-You can replace the production version of ClickHouse binary installed in your system with your custom-built ClickHouse binary. To do that install ClickHouse on your machine following the instructions from the official website. Next, run the following:
+شما می توانید جایگزین تولید نسخه clickhouse باینری در سیستم شما نصب شده خود را با سفارشی ساخته شده clickhouse دودویی. برای انجام این کار نصب کلیک بر روی دستگاه خود را به دنبال دستورالعمل از وب سایت رسمی. بعد زیر را اجرا کنید:
 
     sudo service clickhouse-server stop
     sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
     sudo service clickhouse-server start
 
-Note that `clickhouse-client`, `clickhouse-server` and others are symlinks to the commonly shared `clickhouse` binary.
+توجه داشته باشید که `clickhouse-client`, `clickhouse-server` و دیگران به طور معمول به اشتراک گذاشته می شوند `clickhouse` دودویی.
 
-You can also run your custom-built ClickHouse binary with the config file from the ClickHouse package installed on your system:
+شما همچنین می توانید خود را سفارشی ساخته شده clickhouse دودویی با فایل پیکربندی از clickhouse بسته نصب شده در سیستم شما:
 
     sudo service clickhouse-server stop
     sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
-# IDE (Integrated Development Environment) {#ide-integrated-development-environment}
+# محیط توسعه یکپارچه) {#ide-integrated-development-environment}
 
-If you do not know which IDE to use, we recommend that you use CLion. CLion is commercial software, but it offers 30 days free trial period. It is also free of charge for students. CLion can be used both on Linux and on Mac OS X.
+اگر شما نمی دانید که محیط برنامه نویسی برای استفاده, توصیه می کنیم که شما با استفاده از کلون. کلوون نرم افزار تجاری است, اما 30 روز رایگان دوره محاکمه. این نیز رایگان برای دانشجویان. clion می توان هم بر روی لینوکس و mac os x.
 
-KDevelop and QTCreator are other great alternatives of an IDE for developing ClickHouse. KDevelop comes in as a very handy IDE although unstable. If KDevelop crashes after a while upon opening project, you should click “Stop All” button as soon as it has opened the list of project’s files. After doing so KDevelop should be fine to work with.
+KDevelop و QTCreator دیگر از جایگزین های بسیار خوبی از یک IDE برای توسعه ClickHouse. توسعه و توسعه به عنوان یک محیط برنامه نویسی بسیار مفید هر چند ناپایدار. اگر توسعه پس از مدتی پس از باز کردن پروژه سقوط, شما باید کلیک کنید “Stop All” دکمه به محض این که لیستی از فایل های پروژه را باز کرده است. پس از انجام این کار کدولاپ باید خوب باشد برای کار با.
 
-As simple code editors, you can use Sublime Text or Visual Studio Code, or Kate (all of which are available on Linux).
+به عنوان ویراستاران کد ساده, شما می توانید متن والا و یا کد ویژوال استودیو استفاده, یا کیت (که همه در دسترس هستند در لینوکس).
 
-Just in case, it is worth mentioning that CLion creates `build` path on its own, it also on its own selects `debug` for build type, for configuration it uses a version of CMake that is defined in CLion and not the one installed by you, and finally, CLion will use `make` to run build tasks instead of `ninja`. This is normal behaviour, just keep that in mind to avoid confusion.
+فقط در مورد لازم به ذکر است که clion ایجاد `build` مسیر خود را نیز در انتخاب خود `debug` برای ساخت نوع پیکربندی آن را با استفاده از یک نسخه از CMake که تعریف شده است در CLion و نه یک نصب شده توسط شما, و در نهایت, CLion استفاده خواهد کرد `make` برای اجرای وظایف ساخت به جای `ninja`. این رفتار طبیعی است, فقط نگه دارید که در ذهن برای جلوگیری از سردرگمی.
 
-# Writing Code {#writing-code}
+# نوشتن کد {#writing-code}
 
-The description of ClickHouse architecture can be found here: https://clickhouse.tech/docs/en/development/architecture/
+شرح clickhouse معماری را می توان در اینجا یافت نشد: https://clickhouse.فناوری / اسناد/مهندسی / توسعه / معماری/
 
-The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
+راهنمای سبک کد: https://clickhouse.فناوری / اسناد/در/توسعه / سبک/
 
-Writing tests: https://clickhouse.tech/docs/en/development/tests/
+تست نوشتن: https://clickhouse.فناوری / اسناد/توسعه/تست/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
+فهرست تکلیفها: https://github.com/clickhouse/clickhouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
 
-# Test Data {#test-data}
+# داده های تست {#test-data}
 
-Developing ClickHouse often requires loading realistic datasets. It is particularly important for performance testing. We have a specially prepared set of anonymized data from Yandex.Metrica. It requires additionally some 3GB of free disk space. Note that this data is not required to accomplish most of the development tasks.
+در حال توسعه تاتر اغلب نیاز به بارگذاری مجموعه داده های واقع بینانه است. این امر به ویژه برای تست عملکرد مهم است. ما یک مجموعه خاص تهیه شده از داده های ناشناس از یاندکس.متریکا این علاوه بر برخی از 3 گیگابایت فضای دیسک رایگان نیاز دارد. توجه داشته باشید که این داده ها مورد نیاز است برای به انجام رساندن بسیاری از وظایف توسعه.
 
     sudo apt install wget xz-utils
 
@@ -269,14 +274,14 @@ Developing ClickHouse often requires loading realistic datasets. It is particula
     clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
     clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
 
-# Creating Pull Request {#creating-pull-request}
+# ایجاد درخواست کشش {#creating-pull-request}
 
-Navigate to your fork repository in GitHub’s UI. If you have been developing in a branch, you need to select that branch. There will be a “Pull request” button located on the screen. In essence, this means “create a request for accepting my changes into the main repository”.
+حرکت به مخزن چنگال خود را در رابط کاربر گیتهاب است. اگر شما شده اند در حال توسعه در یک شاخه, شما نیاز به انتخاب کنید که شاخه. وجود خواهد داشت “Pull request” دکمه واقع بر روی صفحه نمایش. در اصل این به این معنی است “create a request for accepting my changes into the main repository”.
 
-A pull request can be created even if the work is not completed yet. In this case please put the word “WIP” (work in progress) at the beginning of the title, it can be changed later. This is useful for cooperative reviewing and discussion of changes as well as for running all of the available tests. It is important that you provide a brief description of your changes, it will later be used for generating release changelogs.
+درخواست کشش را می توان ایجاد حتی اگر کار کامل نشده است. در این مورد لطفا کلمه را قرار دهید “WIP” (کار در حال پیشرفت) در ابتدای عنوان می تواند بعدا تغییر کند. این برای بررسی تعاونی و بحث در مورد تغییرات و همچنین برای اجرای تمام تست های موجود مفید است. این مهم است که شما شرح مختصری از تغییرات خود را فراهم, بعد برای تولید تغییرات انتشار استفاده خواهد شد.
 
-Testing will commence as soon as Yandex employees label your PR with a tag “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
+تست شروع خواهد شد به عنوان به زودی به عنوان کارکنان یاندکس برچسب روابط عمومی خود را با یک برچسب “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 
-The system will prepare ClickHouse binary builds for your pull request individually. To retrieve these builds click the “Details” link next to “ClickHouse build check” entry in the list of checks. There you will find direct links to the built .deb packages of ClickHouse which you can deploy even on your production servers (if you have no fear).
+این سیستم خواهد باینری کلیک ایجاد شده برای درخواست کشش خود را به صورت جداگانه تهیه. برای بازیابی این ایجاد کلیک کنید “Details” پیوند بعدی به “ClickHouse build check” ورود در لیست چک. وجود دارد شما لینک مستقیم به ساخته شده پیدا کنید .بسته دب از تاتر که شما می توانید حتی بر روی سرور تولید خود را استقرار (اگر شما هیچ ترس).
 
-Most probably some of the builds will fail at first times. This is due to the fact that we check builds both with gcc as well as with clang, with almost all of existing warnings (always with the `-Werror` flag) enabled for clang. On that same page, you can find all of the build logs so that you do not have to build ClickHouse in all of the possible ways.
+به احتمال زیاد برخی از ایجاد خواهد شد شکست در اولین بار. این به خاطر این واقعیت است که ما بررسی می کنیم ایجاد هر دو با شورای همکاری خلیج فارس و همچنین با صدای جرنگ, با تقریبا تمام هشدارهای موجود (همیشه با `-Werror` پرچم) را فعال کنید برای صدای جرنگ جرنگ. در همان صفحه, شما می توانید تمام سیاهههای مربوط ساخت پیدا به طوری که شما لازم نیست که برای ساخت خانه در تمام راه های ممکن.
