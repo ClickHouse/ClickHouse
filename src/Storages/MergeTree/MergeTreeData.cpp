@@ -57,7 +57,9 @@
 #include <typeinfo>
 #include <typeindex>
 #include <unordered_set>
+#include <filesystem>
 
+namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
@@ -248,6 +250,10 @@ MergeTreeData::MergeTreeData(
     String reason;
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
         LOG_WARNING(log, reason + " Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored.");
+    if (getSettings()->enable_insertion_deduplication)
+    {
+        histLoad();
+    }
 }
 
 
@@ -1321,6 +1327,8 @@ void MergeTreeData::rename(
 
     relative_data_path = new_table_path;
     renameInMemory(new_database_name, new_table_name);
+    log_name = new_database_name + "." + new_table_name;
+    log = &Logger::get(log_name);
 }
 
 void MergeTreeData::dropAllData()
@@ -1768,12 +1776,32 @@ MergeTreeData::DataPartsVector MergeTreeData::getActivePartsToReplace(
 }
 
 
-void MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction)
+bool MergeTreeData::renameTempPartAndAdd(MutableDataPartPtr & part, SimpleIncrement * increment, Transaction * out_transaction)
 {
+
+    if (getSettings()->enable_insertion_deduplication)
+    {
+        SipHash hash;
+        part->checksums.computeTotalChecksumDataOnly(hash);
+        union
+        {
+            char bytes[16];
+            UInt64 words[2];
+        } hash_value;
+        hash.get128(hash_value.bytes);
+        String block_id = part->info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
+        bool found = histFindAndAdd(block_id);
+        if (found)
+        {
+            LOG_WARNING(log, "Skipped inserting part " << block_id << " since it's already in history.");
+            return false;
+        }
+    }
     auto removed = renameTempPartAndReplace(part, increment, out_transaction);
     if (!removed.empty())
         throw Exception("Added part " + part->name + " covers " + toString(removed.size())
             + " existing part(s) (including " + removed[0]->name + ")", ErrorCodes::LOGICAL_ERROR);
+    return true;
 }
 
 
@@ -3587,6 +3615,114 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     }
 
     return true;
+}
+
+void MergeTreeData::histLoad()
+{
+    std::lock_guard guard(hist_mutex);
+    hist_id_list.clear();
+    hist_id_set.clear();
+    hist_cnt = 0;
+    String block_id;
+    String history_path = getDataPaths()[0] + "insertion_history.txt";
+    if (!fs::exists(history_path))
+    {
+        hist_writer = std::make_unique<WriteBufferFromFile>(history_path, 4096, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC);
+        return;
+    }
+    ReadBufferFromFile rbff(history_path);
+    UInt64 max_size = getSettings()->insertion_deduplication_window;
+    try
+    {
+        while (!rbff.eof())
+        {
+            readStringBinary(block_id, rbff);
+            hist_cnt++;
+            hist_id_list.push_back(block_id);
+            hist_id_set.insert(block_id);
+            while (hist_id_list.size() > max_size)
+            {
+                block_id = hist_id_list.front();
+                hist_id_list.pop_front();
+                hist_id_set.erase(block_id);
+            }
+        }
+        hist_writer = std::make_unique<WriteBufferFromFile>(history_path, 4096, O_WRONLY | O_CREAT | O_APPEND | O_SYNC);
+    }
+    catch (Poco::Exception & e)
+    {
+        LOG_ERROR(log, "Ignored broken " << history_path << " due to following exceptioin: " << e.message());
+        hist_id_list.clear();
+        hist_id_set.clear();
+        hist_cnt = 0;
+        hist_writer = std::make_unique<WriteBufferFromFile>(history_path, 4096, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC);
+        return;
+    }
+    if (hist_cnt >= std::max(2 * max_size, UInt64(1000000)))
+        histDump();
+}
+
+bool MergeTreeData::histFindAndAdd(const String & block_id)
+{
+    std::lock_guard guard(hist_mutex);
+    if (hist_id_set.end() != hist_id_set.find(block_id))
+        return true;
+    hist_id_list.push_back(block_id);
+    hist_id_set.insert(block_id);
+    writeStringBinary(block_id, *hist_writer);
+    hist_writer->sync();
+    hist_cnt++;
+    UInt64 max_size = getSettings()->insertion_deduplication_window;
+    while (hist_id_list.size() > max_size)
+    {
+        const String & block_id2 = hist_id_list.front();
+        hist_id_list.pop_front();
+        hist_id_set.erase(block_id2);
+    }
+    if (hist_cnt >= std::max(2 * max_size, UInt64(1000000)))
+        histDump();
+    return false;
+}
+
+void MergeTreeData::histDropPartition(const String & partition_id)
+{
+    String partition_prefix = partition_id + "_";
+    std::lock_guard guard(hist_mutex);
+    auto saved_it = hist_id_list.end();
+    int num_drop = 0;
+    for (auto it = hist_id_list.begin(); it != hist_id_list.end();)
+    {
+        const String & block_id = *it;
+        if (startsWith(block_id, partition_prefix))
+        {
+            saved_it = it++;
+            hist_id_list.erase(saved_it);
+            hist_id_set.erase(block_id);
+            num_drop++;
+        }
+        else
+            ++it;
+    }
+    if (num_drop <= 0)
+        return;
+    histDump();
+}
+
+void MergeTreeData::histDump()
+{
+    String history_path = getDataPaths()[0] + "insertion_history.txt";
+    String tmp_path = getDataPaths()[0] + "insertion_history.txt.tmp";
+    hist_writer->close();
+    WriteBufferFromFile tmp_writer(tmp_path, 4096, O_WRONLY | O_CREAT | O_TRUNC | O_SYNC);
+    for (auto&& block_id : hist_id_list)
+    {
+        writeStringBinary(block_id, tmp_writer);
+    }
+    tmp_writer.close();
+
+    fs::rename(tmp_path, history_path);
+    hist_writer = std::make_unique<WriteBufferFromFile>(history_path, 4096, O_WRONLY | O_CREAT | O_APPEND | O_SYNC);
+    hist_cnt = hist_id_list.size();
 }
 
 }

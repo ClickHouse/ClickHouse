@@ -1001,6 +1001,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, cons
         auto lock = lockExclusively(context.getCurrentQueryId());
 
         String partition_id = getPartitionIDFromQuery(partition, context);
+        histDropPartition(partition_id);
 
         /// TODO: should we include PreComitted parts like in Replicated case?
         auto parts_to_remove = getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);

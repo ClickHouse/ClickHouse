@@ -95,6 +95,8 @@ For a description of parameters, see the [CREATE query description](../../../sql
     -   `write_final_mark` — Enables or disables writing the final index mark at the end of data part (after the last byte). Default value: 1. Don’t turn it off.
     -   `merge_max_block_size` — Maximum number of rows in block for merge operations. Default value: 8192.
     -   `storage_policy` — Storage policy. See [Using Multiple Block Devices for Data Storage](#table_engine-mergetree-multiple-volumes).
+    - `enable_insertion_deduplication` - Enable block insertion deduplication. Default value: 0.
+    - `insertion_deduplication_window` - How many last blocks of hashes should be kept (older blocks will be deleted). Default value: 100.
 
 **Example of Sections Setting**
 
