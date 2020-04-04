@@ -12,8 +12,8 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int UNEXPECTED_AST_STRUCTURE;
 }
-///scalar values from the first level
-std::pair<ASTs, ASTs> tryToCatchConst(ASTs& argss)
+/// scalar values from the first level
+std::pair<ASTs, ASTs> tryToCatchConst(std::string & name, ASTs & argss)
 {
     ASTs const_num;
     ASTs not_const;
@@ -40,19 +40,25 @@ std::pair<ASTs, ASTs> tryToCatchConst(ASTs& argss)
         }
     }
 
+    if ((name == "plus" || name == "multiply") && const_num.size() + not_const.size() != 2)
+    {
+        throw Exception("Wrong number of arguments for function 'plus' or 'multiply' (" + toString(const_num.size() + not_const.size()) + " instead of 2)",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+    }
+
     return {const_num, not_const};
 }
 
-std::pair<ASTs, ASTs> findAllConsts(ASTFunction * func_node, std::string& inter_func_name)
+std::pair<ASTs, ASTs> findAllConsts(ASTFunction * func_node, std::string & inter_func_name)
 {
     if (!func_node->arguments)
     {
         return {};
     }
-    else if ( !(func_node->arguments->children[0]->as<ASTFunction>()))
+    else if (!(func_node->arguments->children[0]->as<ASTFunction>()))
     {
         auto arg = func_node->arguments->children;
-        std::pair<ASTs, ASTs> it = tryToCatchConst(arg);
+        std::pair<ASTs, ASTs> it = tryToCatchConst(func_node->name, arg);
         return it;
     }
     else if (inter_func_name != func_node->arguments->children[0]->as<ASTFunction>()->name)
@@ -61,7 +67,7 @@ std::pair<ASTs, ASTs> findAllConsts(ASTFunction * func_node, std::string& inter_
     }
     else
     {
-        std::pair<ASTs, ASTs> it = tryToCatchConst(func_node->arguments->children);
+        std::pair<ASTs, ASTs> it = tryToCatchConst(func_node->name, func_node->arguments->children);
         if (!it.second[0]->as<ASTFunction>())
         {
             std::pair<ASTs, ASTs> ans = {it.first, it.second};
@@ -91,7 +97,7 @@ std::pair<ASTs, ASTs> findAllConsts(ASTFunction * func_node, std::string& inter_
             }
             else
             {
-                std::cerr << "did not expect that";
+                throw Exception("did not expect that", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
             }
             return ans;
         }
@@ -99,8 +105,8 @@ std::pair<ASTs, ASTs> findAllConsts(ASTFunction * func_node, std::string& inter_
 
 }
 
-///rebuilds tree, all scalar values now outside the main func
-void buildTree(ASTFunction * old_tree, std::string& func_name, std::string& intro_func, std::pair<ASTs, ASTs>& tree_comp, std::pair<int, std::string> flag)
+/// rebuilds tree, all scalar values now outside the main func
+void buildTree(ASTFunction * old_tree, std::string& func_name, std::string& intro_func, std::pair<ASTs, ASTs> & tree_comp, std::pair<int, std::string> & flag)
 {
     ASTFunction copy = *old_tree;
     ASTs cons_val = tree_comp.first;
@@ -127,7 +133,8 @@ void buildTree(ASTFunction * old_tree, std::string& func_name, std::string& intr
 
     if (non_cons.empty())
     {
-        old_tree = &copy;
+        throw Exception("Aggregate function" + func_name + "requires single argument",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
     }
     else if (non_cons.size() == 1)
     {
@@ -139,14 +146,10 @@ void buildTree(ASTFunction * old_tree, std::string& func_name, std::string& intr
 
         while (i < non_cons.size() - 2)
         {
-            ASTPtr empty;
-            auto * function_node = empty->as<ASTFunction>();
-            function_node->name = intro_func;
-
             old_tree->arguments->children = {};
             old_tree->children.push_back(non_cons[i]);
 
-            old_tree->arguments->children.push_back(empty);
+            old_tree->arguments->children.push_back(makeASTFunction(intro_func));
             old_tree = old_tree->arguments->children[1]->as<ASTFunction>();
             ++i;
         }
@@ -159,6 +162,12 @@ void sumOptimize(ASTFunction * f_n)
     std::string sum = "sum";
     std::string mul = "multiply";
 
+    const auto * function_args = f_n->arguments->as<ASTExpressionList>();
+
+    if (!function_args || function_args->children.size() != 1)
+        throw Exception("Wrong number of arguments for function 'sum' (" + toString(function_args->children.size()) + " instead of 1)",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
     auto * inter_node = f_n->arguments->children[0]->as<ASTFunction>();
     if (inter_node && inter_node->name == mul)
     {
@@ -167,7 +176,8 @@ void sumOptimize(ASTFunction * f_n)
         if (it.first.empty())
             return;
 
-        buildTree(f_n, sum, mul, it, {1, "have no opposite func"});
+        std::pair<int, std::string> cur = {1, "have no opposite func"};
+        buildTree(f_n, sum, mul, it, cur);
     }
     else
     {
@@ -181,6 +191,12 @@ void minOptimize(ASTFunction * f_n)
     std::string max = "max";
     std::string mul = "multiply";
     std::string plus = "plus";
+
+    const auto * function_args = f_n->arguments->as<ASTExpressionList>();
+
+    if (!function_args || function_args->children.size() != 1)
+        throw Exception("Wrong number of arguments for function 'min' (" + toString(function_args->children.size()) + " instead of 1)",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     auto * inter_node = f_n->arguments->children[0]->as<ASTFunction>();
     if (inter_node && inter_node->name == mul)
@@ -201,12 +217,14 @@ void minOptimize(ASTFunction * f_n)
                 tp *= -1;
         }
 
-        buildTree(f_n, min, mul, it, {tp, max});
+        std::pair<int, std::string> cur = {tp, max};
+        buildTree(f_n, min, mul, it, cur);
     }
     else if (inter_node && inter_node->name == plus)
     {
         std::pair<ASTs, ASTs> it = findAllConsts(f_n, plus);
-        buildTree(f_n, min, plus, it, {1, min});
+        std::pair<int, std::string> cur = {1, min};
+        buildTree(f_n, min, plus, it, cur);
     }
     else
     {
@@ -220,6 +238,12 @@ void maxOptimize(ASTFunction * f_n)
     std::string min = "min";
     std::string mul = "multiply";
     std::string plus = "plus";
+
+    const auto * function_args = f_n->arguments->as<ASTExpressionList>();
+
+    if (!function_args || function_args->children.size() != 1)
+        throw Exception("Wrong number of arguments for function 'max' (" + toString(function_args->children.size()) + " instead of 1)",
+                        ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     auto * inter_node = f_n->arguments->children[0]->as<ASTFunction>();
     if (inter_node && inter_node->name == mul)
@@ -236,16 +260,19 @@ void maxOptimize(ASTFunction * f_n)
 
             /// if multiplication is negative, max function becomes min
 
-            if (num < 0)
+            if ((ar->as<ASTLiteral>()->value.getType() == Field::Types::Int64 ||
+                    ar->as<ASTLiteral>()->value.getType() == Field::Types::Int128) && static_cast<int64_t>(num) < 0)
                 tp *= -1;
         }
 
-        buildTree(f_n, max, mul, it, {tp, min});
+        std::pair<int, std::string> cur = {tp, min};
+        buildTree(f_n, max, mul, it, cur);
     }
     else if (inter_node && inter_node->name == plus)
     {
         std::pair<ASTs, ASTs> it = findAllConsts(f_n, plus);
-        buildTree(f_n, max, plus, it, {1, max});
+        std::pair<int, std::string> cur = {1, max};
+        buildTree(f_n, max, plus, it, cur);
     }
     else
     {
@@ -253,7 +280,7 @@ void maxOptimize(ASTFunction * f_n)
     }
 }
 
-///optimize for min, max, sum is ready, ToDo: any, anyLast, groupBitAnd, groupBitOr, groupBitXor
+/// optimize for min, max, sum is ready, ToDo: any, anyLast, groupBitAnd, groupBitOr, groupBitXor
 void ArithmeticOperationsInAgrFuncVisitor::visit(ASTPtr & current_ast)
 {
     if (!current_ast)
