@@ -1,24 +1,28 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_folder_title: Operations
+toc_priority: 41
+toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 ---
 
-# Operations {#operations}
+# عملیات {#operations}
 
-ClickHouse operations manual consists of the following major sections:
+کتابچه راهنمای عملیات کلیک متشکل از بخش های اصلی زیر است:
 
--   [Requirements](requirements.md)
--   [Monitoring](monitoring.md)
--   [Troubleshooting](troubleshooting.md)
--   [Usage Recommendations](tips.md)
--   [Update Procedure](update.md)
--   [Access Rights](access_rights.md)
--   [Data Backup](backup.md)
--   [Configuration Files](configuration_files.md)
--   [Quotas](quotas.md)
--   [System Tables](system_tables.md)
--   [Server Configuration Parameters](server_settings/index.md)
--   [How To Test Your Hardware With ClickHouse](performance_test.md)
--   [Settings](settings/index.md)
--   [Utilities](utils/index.md)
+-   [الزامات](requirements.md)
+-   [نظارت](monitoring.md)
+-   [عیب یابی](troubleshooting.md)
+-   [توصیه های استفاده](tips.md)
+-   [روش به روز رسانی](update.md)
+-   [حقوق دسترسی](access_rights.md)
+-   [پشتیبان گیری داده ها](backup.md)
+-   [پروندههای پیکربندی](configuration_files.md)
+-   [سهمیه](quotas.md)
+-   [جداول سیستم](system_tables.md)
+-   [پارامترهای پیکربندی سرور](server_configuration_parameters/index.md)
+-   [چگونه برای تست سخت افزار خود را با کلیک](performance_test.md)
+-   [تنظیمات](settings/index.md)
+-   [تاسیسات](utilities/index.md)
 
-[Original article](https://clickhouse.tech/docs/en/operations/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/) <!--hide-->

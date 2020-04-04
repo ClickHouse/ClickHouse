@@ -1,12 +1,15 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 63
+toc_title: "\u062A\u0646\u0638\u06CC\u0645\u0627\u062A \u06A9\u0627\u0631\u0628\u0631"
 ---
 
-# User Settings {#user-settings}
+# تنظیمات کاربر {#user-settings}
 
-The `users` section of the `user.xml` configuration file contains user settings.
+این `users` بخش از `user.xml` فایل پیکربندی شامل تنظیمات کاربر.
 
-Structure of the `users` section:
+ساختار `users` بخش:
 
 ``` xml
 <users>
@@ -35,98 +38,98 @@ Structure of the `users` section:
 </users>
 ```
 
-### user\_name/password {#user-namepassword}
+### نام / رمز عبور {#user-namepassword}
 
-Password can be specified in plaintext or in SHA256 (hex format).
+رمز عبور را می توان در متن یا در شی256 (فرمت سحر و جادو) مشخص شده است.
 
--   To assign a password in plaintext (**not recommended**), place it in a `password` element.
+-   برای اختصاص دادن رمز عبور به متن (**توصیه نمی شود**), جای خود را در یک `password` عنصر.
 
-    For example, `<password>qwerty</password>`. The password can be left blank.
+    به عنوان مثال, `<password>qwerty</password>`. رمز عبور را می توان خالی گذاشت.
 
 <a id="password_sha256_hex"></a>
 
--   To assign a password using its SHA256 hash, place it in a `password_sha256_hex` element.
+-   برای اختصاص دادن رمز عبور با استفاده از هش ش256 در یک `password_sha256_hex` عنصر.
 
-    For example, `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
+    به عنوان مثال, `<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>`.
 
-    Example of how to generate a password from shell:
+    نمونه ای از نحوه تولید رمز عبور از پوسته:
 
           PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
 
-    The first line of the result is the password. The second line is the corresponding SHA256 hash.
+    خط اول نتیجه رمز عبور است. خط دوم مربوط به هش ش256 است.
 
 <a id="password_double_sha1_hex"></a>
 
--   For compatibility with MySQL clients, password can be specified in double SHA1 hash. Place it in `password_double_sha1_hex` element.
+-   برای سازگاری با مشتریان خروجی زیر, رمز عبور را می توان در دو شی1 هش مشخص. محل را در `password_double_sha1_hex` عنصر.
 
-    For example, `<password_double_sha1_hex>08b4a0f1de6ad37da17359e592c8d74788a83eb0</password_double_sha1_hex>`.
+    به عنوان مثال, `<password_double_sha1_hex>08b4a0f1de6ad37da17359e592c8d74788a83eb0</password_double_sha1_hex>`.
 
-    Example of how to generate a password from shell:
+    نمونه ای از نحوه تولید رمز عبور از پوسته:
 
           PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
 
-    The first line of the result is the password. The second line is the corresponding double SHA1 hash.
+    خط اول نتیجه رمز عبور است. خط دوم مربوط به هش دو شی1 است.
 
-### user\_name/networks {#user-namenetworks}
+### نام / شبکه {#user-namenetworks}
 
-List of networks from which the user can connect to the ClickHouse server.
+لیست شبکه هایی که کاربر می تواند به سرور کلیک متصل شود.
 
-Each element of the list can have one of the following forms:
+هر عنصر از لیست می توانید یکی از اشکال زیر را داشته باشد:
 
 -   `<ip>` — IP address or network mask.
 
-    Examples: `213.180.204.3`, `10.0.0.1/8`, `10.0.0.1/255.255.255.0`, `2a02:6b8::3`, `2a02:6b8::3/64`, `2a02:6b8::3/ffff:ffff:ffff:ffff::`.
+    مثالها: `213.180.204.3`, `10.0.0.1/8`, `10.0.0.1/255.255.255.0`, `2a02:6b8::3`, `2a02:6b8::3/64`, `2a02:6b8::3/ffff:ffff:ffff:ffff::`.
 
 -   `<host>` — Hostname.
 
-    Example: `example01.host.ru`.
+    مثال: `example01.host.ru`.
 
-    To check access, a DNS query is performed, and all returned IP addresses are compared to the peer address.
+    برای بررسی دسترسی یک پرسوجوی دی ان اس انجام میشود و تمامی نشانیهای اینترنتی برگشتی با نشانی همکار مقایسه میشوند.
 
 -   `<host_regexp>` — Regular expression for hostnames.
 
-    Example, `^example\d\d-\d\d-\d\.host\.ru$`
+    مثال, `^example\d\d-\d\d-\d\.host\.ru$`
 
-    To check access, a [DNS PTR query](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) is performed for the peer address and then the specified regexp is applied. Then, another DNS query is performed for the results of the PTR query and all the received addresses are compared to the peer address. We strongly recommend that regexp ends with $.
+    برای بررسی دسترسی [جستجو](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) برای نشانی همکار انجام می شود و سپس عبارت منظم مشخص شده اعمال می شود. سپس پرس و جو دی ان اس دیگری برای نتایج پرس و جو انجام می شود و تمامی نشانیهای دریافتی با نشانی همکار مقایسه می شوند. ما قویا توصیه می کنیم که عبارت منظم به پایان می رسد با$.
 
-All results of DNS requests are cached until the server restarts.
+تمام نتایج درخواست دی ان اس ذخیره سازی تا زمانی که سرور راه اندازی مجدد.
 
-**Examples**
+**مثالها**
 
-To open access for user from any network, specify:
+برای باز کردن دسترسی برای کاربر از هر شبکه مشخص کنید:
 
 ``` xml
 <ip>::/0</ip>
 ```
 
-!!! warning "Warning"
-    It’s insecure to open access from any network unless you have a firewall properly configured or the server is not directly connected to Internet.
+!!! warning "اخطار"
+    این نا امن برای باز کردن دسترسی از هر شبکه مگر اینکه شما یک فایروال به درستی پیکربندی و یا سرور به طور مستقیم به اینترنت متصل نیست.
 
-To open access only from localhost, specify:
+برای باز کردن دسترسی فقط از جایل هاست مشخص کنید:
 
 ``` xml
 <ip>::1</ip>
 <ip>127.0.0.1</ip>
 ```
 
-### user\_name/profile {#user-nameprofile}
+### نام / پروفایل {#user-nameprofile}
 
-You can assign a settings profile for the user. Settings profiles are configured in a separate section of the `users.xml` file. For more information, see [Profiles of Settings](settings_profiles.md).
+شما می توانید یک پروفایل تنظیمات برای کاربر اختصاص دهید. پروفایل های تنظیمات در یک بخش جداگانه از پیکربندی `users.xml` پرونده. برای کسب اطلاعات بیشتر, دیدن [پروفایل تنظیمات](settings_profiles.md).
 
-### user\_name/quota {#user-namequota}
+### نام / سهمیه {#user-namequota}
 
-Quotas allow you to track or limit resource usage over a period of time. Quotas are configured in the `quotas`
-section of the `users.xml` configuration file.
+سهمیه اجازه می دهد شما را به پیگیری و یا محدود کردن استفاده از منابع بیش از یک دوره از زمان. سهمیه در پیکربندی `quotas`
+بخش از `users.xml` فایل پیکربندی.
 
-You can assign a quotas set for the user. For a detailed description of quotas configuration, see [Quotas](../quotas.md#quotas).
+شما می توانید یک سهمیه تعیین شده برای کاربر اختصاص. برای شرح مفصلی از پیکربندی سهمیه, دیدن [سهمیه](../quotas.md#quotas).
 
-### user\_name/databases {#user-namedatabases}
+### نام/پایگاه های داده {#user-namedatabases}
 
-In this section, you can you can limit rows that are returned by ClickHouse for `SELECT` queries made by the current user, thus implementing basic row-level security.
+در این بخش می توانید ردیف هایی را که توسط کلیک برای بازگشت هستند محدود کنید `SELECT` نمایش داده شد ساخته شده توسط کاربر فعلی, در نتیجه اجرای امنیت سطح ردیف پایه.
 
-**Example**
+**مثال**
 
-The following configuration forces that user `user1` can only see the rows of `table1` as the result of `SELECT` queries, where the value of the `id` field is 1000.
+پیکربندی زیر نیروهای که کاربر `user1` فقط می توانید ردیف ها را ببینید `table1` به عنوان نتیجه `SELECT` نمایش داده شد که ارزش `id` درست است 1000.
 
 ``` xml
 <user1>
@@ -140,6 +143,6 @@ The following configuration forces that user `user1` can only see the rows of `t
 </user1>
 ```
 
-The `filter` can be any expression resulting in a [UInt8](../../data_types/int_uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
+این `filter` می تواند هر بیان و در نتیجه [UInt8](../../sql_reference/data_types/int_uint.md)- نوع ارزش. این حالت معمولا شامل مقایسه و اپراتورهای منطقی. سطرها از `database_name.table1` از کجا نتایج فیلتر به 0 برای این کاربر بازگشت نیست. فیلتر کردن با ناسازگار است `PREWHERE` عملیات و معلولین `WHERE→PREWHERE` بهینهسازی.
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings_users/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/settings/settings_users/) <!--hide-->

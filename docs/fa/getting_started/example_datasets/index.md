@@ -1,18 +1,22 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_folder_title: Example Datasets
+toc_priority: 12
+toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 ---
 
-# Example Datasets
+# به عنوان مثال مجموعه داده {#example-datasets}
 
-This section describes how to obtain example datasets and import them into ClickHouse.
-For some datasets example queries are also available.
+در این بخش چگونگی اخذ مجموعه داده ها به عنوان مثال و وارد کردن را به کلیک کنید.
+برای برخی از نمونه های داده نمایش داده شد نمایش داده شد نیز در دسترس هستند.
 
-* [Anonymized Yandex.Metrica Dataset](metrica.md)
-* [Star Schema Benchmark](star_schema.md)
-* [WikiStat](wikistat.md)
-* [Terabyte of Click Logs from Criteo](criteo.md)
-* [AMPLab Big Data Benchmark](amplab_benchmark.md)
-* [New York Taxi Data](nyc_taxi.md)
-* [OnTime](ontime.md)
+-   [ناشناس یاندکس.مجموعه داده های متریکا](metrica.md)
+-   [معیار طرحواره ستاره](star_schema.md)
+-   [ویکیستات](wikistat.md)
+-   [ترابایت کلیک سیاهههای مربوط از مخلوق](criteo.md)
+-   [معیار بزرگ داده های تقویت کننده](amplab_benchmark.md)
+-   [داده های تاکسی نیویورک](nyc_taxi.md)
+-   [به موقع](ontime.md)
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->

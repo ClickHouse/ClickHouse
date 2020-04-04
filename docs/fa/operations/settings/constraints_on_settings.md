@@ -1,11 +1,15 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 62
+toc_title: "\u0645\u062D\u062F\u0648\u062F\u06CC\u062A \u062F\u0631 \u062A\u0646\u0638\
+  \u06CC\u0645\u0627\u062A"
 ---
 
-# Constraints on Settings {#constraints-on-settings}
+# محدودیت در تنظیمات {#constraints-on-settings}
 
-The constraints on settings can be defined in the `profiles` section of the `user.xml` configuration file and prohibit users from changing some of the settings with the `SET` query.
-The constraints are defined as the following:
+محدودیت در تنظیمات را می توان در تعریف `profiles` بخش از `user.xml` فایل پیکربندی و منع کاربران از تغییر برخی از تنظیمات با `SET` پرس و جو.
+محدودیت ها به صورت زیر تعریف می شوند:
 
 ``` xml
 <profiles>
@@ -29,10 +33,10 @@ The constraints are defined as the following:
 </profiles>
 ```
 
-If the user tries to violate the constraints an exception is thrown and the setting isn’t changed.
-There are supported three types of constraints: `min`, `max`, `readonly`. The `min` and `max` constraints specify upper and lower boundaries for a numeric setting and can be used in combination. The `readonly` constraint specifies that the user cannot change the corresponding setting at all.
+اگر کاربر تلاش می کند به نقض محدودیت یک استثنا پرتاب می شود و تنظیم تغییر نکرده است.
+سه نوع محدودیت پشتیبانی می شوند: `min`, `max`, `readonly`. این `min` و `max` محدودیت مشخص مرزهای بالا و پایین برای یک محیط عددی و می تواند در ترکیب استفاده می شود. این `readonly` محدودیت مشخص می کند که کاربر می تواند تنظیمات مربوطه را تغییر دهید و در همه.
 
-**Example:** Let `users.xml` includes lines:
+**مثال:** اجازه بدهید `users.xml` شامل خطوط:
 
 ``` xml
 <profiles>
@@ -53,7 +57,7 @@ There are supported three types of constraints: `min`, `max`, `readonly`. The `m
 </profiles>
 ```
 
-The following queries all throw exceptions:
+نمایش داده شد زیر همه استثنا پرتاب:
 
 ``` sql
 SET max_memory_usage=20000000001;
@@ -67,6 +71,6 @@ Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not 
 Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
 ```
 
-**Note:** the `default` profile has special handling: all the constraints defined for the `default` profile become the default constraints, so they restrict all the users until they’re overridden explicitly for these users.
+**یادداشت:** این `default` مشخصات است دست زدن به ویژه: همه محدودیت های تعریف شده برای `default` مشخصات تبدیل به محدودیت های پیش فرض, بنابراین محدود کردن تمام کاربران تا زمانی که به صراحت برای این کاربران باطل.
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/constraints_on_settings/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/settings/constraints_on_settings/) <!--hide-->

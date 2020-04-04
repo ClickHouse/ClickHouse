@@ -1,120 +1,124 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 59
+toc_title: "\u0645\u062D\u062F\u0648\u062F\u06CC\u062A \u062F\u0631 \u067E\u06CC\u0686\
+  \u06CC\u062F\u06AF\u06CC \u067E\u0631\u0633 \u0648 \u062C\u0648"
 ---
 
-# Restrictions on Query Complexity {#restrictions-on-query-complexity}
+# محدودیت در پیچیدگی پرس و جو {#restrictions-on-query-complexity}
 
-Restrictions on query complexity are part of the settings.
-They are used to provide safer execution from the user interface.
-Almost all the restrictions only apply to `SELECT`. For distributed query processing, restrictions are applied on each server separately.
+محدودیت در پیچیدگی پرس و جو بخشی از تنظیمات.
+برای اجرای امن تر از رابط کاربر استفاده می شود.
+تقریبا تمام محدودیت ها فقط برای اعمال `SELECT`. برای پردازش پرس و جو توزیع, محدودیت بر روی هر سرور به طور جداگانه اعمال.
 
-ClickHouse checks the restrictions for data parts, not for each row. It means that you can exceed the value of restriction with the size of the data part.
+خانه را کلیک کنید چک محدودیت برای قطعات داده, نه برای هر سطر. این بدان معنی است که شما می توانید ارزش محدودیت با اندازه بخش داده ها تجاوز.
 
-Restrictions on the “maximum amount of something” can take the value 0, which means “unrestricted”.
-Most restrictions also have an ‘overflow\_mode’ setting, meaning what to do when the limit is exceeded.
-It can take one of two values: `throw` or `break`. Restrictions on aggregation (group\_by\_overflow\_mode) also have the value `any`.
+محدودیت در “maximum amount of something” می توانید مقدار را 0, که به معنی “unrestricted”.
+اکثر محدودیت ها نیز دارند ‘overflow\_mode’ محیط, به این معنی چه باید بکنید هنگامی که از حد فراتر رفته است.
+این می تواند یکی از دو مقدار را: `throw` یا `break`. محدودیت در تجمع (کد \_شورت\_فلو\_وشه گروه) نیز ارزش داشته باشد `any`.
 
 `throw` – Throw an exception (default).
 
 `break` – Stop executing the query and return the partial result, as if the source data ran out.
 
-`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don’t add new keys to the set.
+`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don't add new keys to the set.
 
-## max\_memory\_usage {#settings_max_memory_usage}
+## \_کاساژ بیشینه {#settings_max_memory_usage}
 
-The maximum amount of RAM to use for running a query on a single server.
+حداکثر مقدار رم برای استفاده برای اجرای پرس و جو بر روی یک سرور واحد.
 
-In the default configuration file, the maximum is 10 GB.
+در فایل پیکربندی پیش فرض, حداکثر است 10 گیگابایت.
 
-The setting doesn’t consider the volume of available memory or the total volume of memory on the machine.
-The restriction applies to a single query within a single server.
-You can use `SHOW PROCESSLIST` to see the current memory consumption for each query.
-Besides, the peak memory consumption is tracked for each query and written to the log.
+تنظیم می کند حجم حافظه در دسترس و یا حجم کل حافظه بر روی دستگاه در نظر نمی.
+محدودیت شامل یک پرس و جو تنها در یک سرور.
+شما می توانید استفاده کنید `SHOW PROCESSLIST` برای دیدن مصرف حافظه فعلی برای هر پرس و جو.
+بعلاوه, مصرف حافظه اوج برای هر پرس و جو ردیابی و نوشته شده به ورود به سیستم.
 
-Memory usage is not monitored for the states of certain aggregate functions.
+استفاده از حافظه برای ایالت های توابع مجموع خاص نظارت نیست.
 
-Memory usage is not fully tracked for states of the aggregate functions `min`, `max`, `any`, `anyLast`, `argMin`, `argMax` from `String` and `Array` arguments.
+استفاده از حافظه به طور کامل برای ایالت ها از توابع کل ردیابی نیست `min`, `max`, `any`, `anyLast`, `argMin`, `argMax` از `String` و `Array` بحث کردن.
 
-Memory consumption is also restricted by the parameters `max_memory_usage_for_user` and `max_memory_usage_for_all_queries`.
+مصرف حافظه نیز توسط پارامترها محدود شده است `max_memory_usage_for_user` و `max_memory_usage_for_all_queries`.
 
-## max\_memory\_usage\_for\_user {#max-memory-usage-for-user}
+## \_شمارهگیر بیشینه {#max-memory-usage-for-user}
 
-The maximum amount of RAM to use for running a user’s queries on a single server.
+حداکثر مقدار رم برای استفاده برای اجرای نمایش داده شد کاربر بر روی یک سرور واحد.
 
-Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L288). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
+مقادیر پیش فرض در تعریف [تنظیمات.ه](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L288). به طور پیش فرض مقدار محدود نمی شود (`max_memory_usage_for_user = 0`).
 
-See also the description of [max\_memory\_usage](#settings_max_memory_usage).
+همچنین نگاه کنید به شرح [\_کاساژ بیشینه](#settings_max_memory_usage).
 
-## max\_memory\_usage\_for\_all\_queries {#max-memory-usage-for-all-queries}
+## \_شیشه بخاطر \_خروج {#max-memory-usage-for-all-queries}
 
-The maximum amount of RAM to use for running all queries on a single server.
+حداکثر مقدار رم برای استفاده برای اجرای تمام نمایش داده شد بر روی یک سرور واحد.
 
-Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L289). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
+مقادیر پیش فرض در تعریف [تنظیمات.ه](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L289). به طور پیش فرض مقدار محدود نمی شود (`max_memory_usage_for_all_queries = 0`).
 
-See also the description of [max\_memory\_usage](#settings_max_memory_usage).
+همچنین نگاه کنید به شرح [\_کاساژ بیشینه](#settings_max_memory_usage).
 
-## max\_rows\_to\_read {#max-rows-to-read}
+## \_گذرواژههای \_ورود {#max-rows-to-read}
 
-The following restrictions can be checked on each block (instead of on each row). That is, the restrictions can be broken a little.
-When running a query in multiple threads, the following restrictions apply to each thread separately.
+محدودیت های زیر را می توان در هر بلوک بررسی (به جای در هر سطر). به این معنا که, محدودیت را می توان شکسته کمی.
+هنگامی که در حال اجرا یک پرس و جو در موضوعات مختلف, محدودیت های زیر به هر موضوع اعمال می شود به طور جداگانه.
 
-A maximum number of rows that can be read from a table when running a query.
+حداکثر تعداد ردیف است که می تواند از یک جدول زمانی که در حال اجرا یک پرس و جو به عنوان خوانده شده.
 
-## max\_bytes\_to\_read {#max-bytes-to-read}
+## \_مخفی کردن {#max-bytes-to-read}
 
-A maximum number of bytes (uncompressed data) that can be read from a table when running a query.
+حداکثر تعداد بایت (داده های غیر فشرده) است که می تواند از یک جدول به عنوان خوانده شده در هنگام اجرای یک پرس و جو.
 
-## read\_overflow\_mode {#read-overflow-mode}
+## \_ورود به سیستم {#read-overflow-mode}
 
-What to do when the volume of data read exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+چه باید بکنید هنگامی که حجم داده ها به عنوان خوانده شده بیش از یکی از محدودیت های: ‘throw’ یا ‘break’. به طور پیش فرض, پرتاب.
 
-## max\_rows\_to\_group\_by {#settings-max-rows-to-group-by}
+## \_رو\_تو\_گروهها {#settings-max-rows-to-group-by}
 
-A maximum number of unique keys received from aggregation. This setting lets you limit memory consumption when aggregating.
+حداکثر تعداد کلید منحصر به فرد دریافت شده از تجمع. این تنظیم به شما امکان مصرف حافظه محدود در هنگام جمع.
 
-## group\_by\_overflow\_mode {#group-by-overflow-mode}
+## \_شماره \_شماره گروه {#group-by-overflow-mode}
 
-What to do when the number of unique keys for aggregation exceeds the limit: ‘throw’, ‘break’, or ‘any’. By default, throw.
-Using the ‘any’ value lets you run an approximation of GROUP BY. The quality of this approximation depends on the statistical nature of the data.
+چه باید بکنید هنگامی که تعدادی از کلید های منحصر به فرد برای تجمع بیش از حد: ‘throw’, ‘break’ یا ‘any’. به طور پیش فرض, پرتاب.
+با استفاده از ‘any’ ارزش شما اجازه می دهد یک تقریب از گروه های اجرا. کیفیت این تقریب بستگی به ماهیت استاتیک داده ها دارد.
 
-## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
+## ا\_فزون\_بر\_گونهی\_گونهی زیر\_گروهها {#settings-max_bytes_before_external_group_by}
 
-Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../query_language/select.md#select-group-by-in-external-memory).
+فعالسازی یا غیرفعالسازی اعدام `GROUP BY` بند در حافظه خارجی. ببینید [گروه در حافظه خارجی](../../sql_reference/statements/select.md#select-group-by-in-external-memory).
 
-Possible values:
+مقادیر ممکن:
 
--   Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
--   0 — `GROUP BY` in external memory disabled.
+-   حداکثر حجم رم (به بایت) است که می تواند توسط تک استفاده می شود [GROUP BY](../../sql_reference/statements/select.md#select-group-by-clause) عمل
+-   0 — `GROUP BY` در حافظه خارجی غیر فعال.
 
-Default value: 0.
+مقدار پیش فرض: 0.
 
-## max\_rows\_to\_sort {#max-rows-to-sort}
+## \_شماره بیشینه {#max-rows-to-sort}
 
-A maximum number of rows before sorting. This allows you to limit memory consumption when sorting.
+حداکثر تعداد ردیف قبل از مرتب سازی. این اجازه می دهد تا شما را به محدود کردن مصرف حافظه در هنگام مرتب سازی.
 
-## max\_bytes\_to\_sort {#max-bytes-to-sort}
+## ا\_سلایدی {#max-bytes-to-sort}
 
-A maximum number of bytes before sorting.
+حداکثر تعداد بایت قبل از مرتب سازی.
 
-## sort\_overflow\_mode {#sort-overflow-mode}
+## کد\_و\_وشهیابی {#sort-overflow-mode}
 
-What to do if the number of rows received before sorting exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+چه باید بکنید اگر تعداد ردیف قبل از مرتب سازی دریافت بیش از یکی از محدودیت: ‘throw’ یا ‘break’. به طور پیش فرض, پرتاب.
 
-## max\_result\_rows {#setting-max_result_rows}
+## بارشهای بیشینه {#setting-max_result_rows}
 
-Limit on the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
+محدود در تعداد ردیف در نتیجه. همچنین برای زیرمجموعه بررسی, و بر روی سرور از راه دور در هنگام اجرای بخش هایی از یک پرس و جو توزیع.
 
-## max\_result\_bytes {#max-result-bytes}
+## حداکثر\_زمین بایت {#max-result-bytes}
 
-Limit on the number of bytes in the result. The same as the previous setting.
+محدود در تعداد بایت در نتیجه. همان تنظیمات قبلی.
 
-## result\_overflow\_mode {#result-overflow-mode}
+## \_شماره حاصل {#result-overflow-mode}
 
-What to do if the volume of the result exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+چه باید بکنید اگر حجم نتیجه بیش از یکی از محدودیت های: ‘throw’ یا ‘break’. به طور پیش فرض, پرتاب.
 
-Using ‘break’ is similar to using LIMIT. `Break` interrupts execution only at the block level. This means that amount of returned rows is greater than [max\_result\_rows](#setting-max_result_rows), multiple of [max\_block\_size](settings.md#setting-max_block_size) and depends on [max\_threads](settings.md#settings-max_threads).
+با استفاده از ‘break’ شبیه به استفاده از حد است. `Break` قطع اعدام تنها در سطح بلوک. این به این معنی است که مقدار ردیف بازگشت بیشتر از [بارشهای بیشینه](#setting-max_result_rows) چندین [ت\_مایش بیشینه](settings.md#setting-max_block_size) و بستگی دارد [\_مخفی کردن](settings.md#settings-max_threads).
 
-Example:
+مثال:
 
 ``` sql
 SET max_threads = 3, max_block_size = 3333;
@@ -125,174 +129,174 @@ FROM numbers_mt(100000)
 FORMAT Null;
 ```
 
-Result:
+نتیجه:
 
 ``` text
 6666 rows in set. ...
 ```
 
-## max\_execution\_time {#max-execution-time}
+## زمان \_شنامهی حداکثر {#max-execution-time}
 
-Maximum query execution time in seconds.
-At this time, it is not checked for one of the sorting stages, or when merging and finalizing aggregate functions.
+حداکثر زمان اجرای پرس و جو در ثانیه.
+در این زمان برای یکی از مراحل مرتب سازی بررسی نمی شود و یا هنگام ادغام و نهایی کردن توابع کلی.
 
-## timeout\_overflow\_mode {#timeout-overflow-mode}
+## \_شروع مجدد {#timeout-overflow-mode}
 
-What to do if the query is run longer than ‘max\_execution\_time’: ‘throw’ or ‘break’. By default, throw.
+چه باید بکنید اگر پرس و جو اجرا می شود بیش از ‘max\_execution\_time’: ‘throw’ یا ‘break’. به طور پیش فرض, پرتاب.
 
-## min\_execution\_speed {#min-execution-speed}
+## \_شروع مجدد {#min-execution-speed}
 
-Minimal execution speed in rows per second. Checked on every data block when ‘timeout\_before\_checking\_execution\_speed’ expires. If the execution speed is lower, an exception is thrown.
+سرعت اجرای حداقل در ردیف در هر ثانیه. بررسی در هر بلوک داده زمانی که ‘timeout\_before\_checking\_execution\_speed’ انقضا مییابد. اگر سرعت اجرای پایین تر است, یک استثنا پرتاب می شود.
 
-## min\_execution\_speed\_bytes {#min-execution-speed-bytes}
+## ا\_فزونهها {#min-execution-speed-bytes}
 
-A minimum number of execution bytes per second. Checked on every data block when ‘timeout\_before\_checking\_execution\_speed’ expires. If the execution speed is lower, an exception is thrown.
+حداقل تعداد بایت اعدام در هر ثانیه. بررسی در هر بلوک داده زمانی که ‘timeout\_before\_checking\_execution\_speed’ انقضا مییابد. اگر سرعت اجرای پایین تر است, یک استثنا پرتاب می شود.
 
-## max\_execution\_speed {#max-execution-speed}
+## حداکثر\_حاقسازی سرعت {#max-execution-speed}
 
-A maximum number of execution rows per second. Checked on every data block when ‘timeout\_before\_checking\_execution\_speed’ expires. If the execution speed is high, the execution speed will be reduced.
+حداکثر تعداد ردیف اعدام در هر ثانیه. بررسی در هر بلوک داده زمانی که ‘timeout\_before\_checking\_execution\_speed’ انقضا مییابد. اگر سرعت اجرای بالا است, سرعت اجرای کاهش خواهد یافت.
 
-## max\_execution\_speed\_bytes {#max-execution-speed-bytes}
+## حداکثر\_کشن\_پیمایههای سرعت {#max-execution-speed-bytes}
 
-A maximum number of execution bytes per second. Checked on every data block when ‘timeout\_before\_checking\_execution\_speed’ expires. If the execution speed is high, the execution speed will be reduced.
+حداکثر تعداد بایت اعدام در هر ثانیه. بررسی در هر بلوک داده زمانی که ‘timeout\_before\_checking\_execution\_speed’ انقضا مییابد. اگر سرعت اجرای بالا است, سرعت اجرای کاهش خواهد یافت.
 
-## timeout\_before\_checking\_execution\_speed {#timeout-before-checking-execution-speed}
+## جستجو {#timeout-before-checking-execution-speed}
 
-Checks that execution speed is not too slow (no less than ‘min\_execution\_speed’), after the specified time in seconds has expired.
+چک که سرعت اجرای بیش از حد کند نیست (کمتر از ‘min\_execution\_speed’), پس از زمان مشخص شده در ثانیه تمام شده است.
 
-## max\_columns\_to\_read {#max-columns-to-read}
+## \_رنگ \_ورود {#max-columns-to-read}
 
-A maximum number of columns that can be read from a table in a single query. If a query requires reading a greater number of columns, it throws an exception.
+حداکثر تعداد ستون است که می تواند از یک جدول در یک پرس و جو به عنوان خوانده شده. اگر پرس و جو نیاز به خواندن تعداد بیشتری از ستون, این می اندازد یک استثنا.
 
-## max\_temporary\_columns {#max-temporary-columns}
+## \_رنگ بیشینه {#max-temporary-columns}
 
-A maximum number of temporary columns that must be kept in RAM at the same time when running a query, including constant columns. If there are more temporary columns than this, it throws an exception.
+حداکثر تعداد ستون موقت است که باید در رم در همان زمان نگه داشته شود که در حال اجرا یک پرس و جو, از جمله ستون ثابت. اگر ستون موقت بیش از این وجود دارد, این یک استثنا می اندازد.
 
-## max\_temporary\_non\_const\_columns {#max-temporary-non-const-columns}
+## \_رنگ {#max-temporary-non-const-columns}
 
-The same thing as ‘max\_temporary\_columns’, but without counting constant columns.
-Note that constant columns are formed fairly often when running a query, but they require approximately zero computing resources.
+همان چیزی که به عنوان ‘max\_temporary\_columns’, اما بدون شمارش ستون ثابت.
+توجه داشته باشید که ستون های ثابت در حال اجرا یک پرس و جو نسبتا اغلب تشکیل, اما نیاز به حدود صفر منابع محاسباتی.
 
-## max\_subquery\_depth {#max-subquery-depth}
+## حداکثر {#max-subquery-depth}
 
-Maximum nesting depth of subqueries. If subqueries are deeper, an exception is thrown. By default, 100.
+حداکثر عمق تودرتو از کارخانه های فرعی. اگر کارخانه های فرعی عمیق تر, یک استثنا پرتاب می شود. به طور پیش فرض, 100.
 
-## max\_pipeline\_depth {#max-pipeline-depth}
+## حداکثر \_پیپیلین {#max-pipeline-depth}
 
-Maximum pipeline depth. Corresponds to the number of transformations that each data block goes through during query processing. Counted within the limits of a single server. If the pipeline depth is greater, an exception is thrown. By default, 1000.
+حداکثر عمق خط لوله. مربوط به تعدادی از تحولات که هر بلوک داده می رود از طریق در طول پردازش پرس و جو. شمارش در محدوده یک سرور واحد. اگر عمق خط لوله بیشتر است, یک استثنا پرتاب می شود. به طور پیش فرض 1000.
 
-## max\_ast\_depth {#max-ast-depth}
+## \_ص\_خلاف {#max-ast-depth}
 
-Maximum nesting depth of a query syntactic tree. If exceeded, an exception is thrown.
-At this time, it isn’t checked during parsing, but only after parsing the query. That is, a syntactic tree that is too deep can be created during parsing, but the query will fail. By default, 1000.
+حداکثر عمق تودرتو از یک درخت نحوی پرس و جو. اگر بیش از, یک استثنا پرتاب می شود.
+در این زمان در تجزیه بررسی نمی شود اما تنها پس از تجزیه پرس و جو. به این معنا که, یک درخت نحوی است که بیش از حد عمیق می تواند در طول تجزیه ایجاد, اما پرس و جو شکست مواجه خواهد شد. به طور پیش فرض 1000.
 
-## max\_ast\_elements {#max-ast-elements}
+## \_محلولات حداکثر {#max-ast-elements}
 
-A maximum number of elements in a query syntactic tree. If exceeded, an exception is thrown.
-In the same way as the previous setting, it is checked only after parsing the query. By default, 50,000.
+حداکثر تعداد عناصر در یک درخت نحوی پرس و جو. اگر بیش از, یک استثنا پرتاب می شود.
+در همان راه به عنوان تنظیمات قبلی تنها پس از تجزیه پرس و جو بررسی می شود. به طور پیش فرض 50000.
 
-## max\_rows\_in\_set {#max-rows-in-set}
+## \_رو\_ تنظیم {#max-rows-in-set}
 
-A maximum number of rows for a data set in the IN clause created from a subquery.
+حداکثر تعداد ردیف برای یک مجموعه داده ها در بند در ایجاد شده از یک خرده فروشی.
 
-## max\_bytes\_in\_set {#max-bytes-in-set}
+## تنظیم \_سریع {#max-bytes-in-set}
 
-A maximum number of bytes (uncompressed data) used by a set in the IN clause created from a subquery.
+حداکثر تعداد بایت (داده های غیر فشرده) استفاده شده توسط یک مجموعه در بند در ایجاد شده از یک خرده فروشی.
 
-## set\_overflow\_mode {#set-overflow-mode}
+## \_حالت تنظیم {#set-overflow-mode}
 
-What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+چه باید بکنید هنگامی که مقدار داده ها بیش از یکی از محدودیت های: ‘throw’ یا ‘break’. به طور پیش فرض, پرتاب.
 
-## max\_rows\_in\_distinct {#max-rows-in-distinct}
+## حوزه \_کاربری مکس {#max-rows-in-distinct}
 
-A maximum number of different rows when using DISTINCT.
+حداکثر تعداد ردیف های مختلف در هنگام استفاده از متمایز.
 
-## max\_bytes\_in\_distinct {#max-bytes-in-distinct}
+## مک\_بتس\_ حوزه {#max-bytes-in-distinct}
 
-A maximum number of bytes used by a hash table when using DISTINCT.
+حداکثر تعداد بایت استفاده شده توسط یک جدول هش در هنگام استفاده متمایز.
 
-## distinct\_overflow\_mode {#distinct-overflow-mode}
+## \_شروع مجدد {#distinct-overflow-mode}
 
-What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+چه باید بکنید هنگامی که مقدار داده ها بیش از یکی از محدودیت های: ‘throw’ یا ‘break’. به طور پیش فرض, پرتاب.
 
-## max\_rows\_to\_transfer {#max-rows-to-transfer}
+## ترجمههای بیشینه {#max-rows-to-transfer}
 
-A maximum number of rows that can be passed to a remote server or saved in a temporary table when using GLOBAL IN.
+حداکثر تعداد ردیف است که می تواند به یک سرور از راه دور منتقل می شود و یا ذخیره شده در یک جدول موقت در هنگام استفاده از جهانی در.
 
-## max\_bytes\_to\_transfer {#max-bytes-to-transfer}
+## ترجمههای بیشینه {#max-bytes-to-transfer}
 
-A maximum number of bytes (uncompressed data) that can be passed to a remote server or saved in a temporary table when using GLOBAL IN.
+حداکثر تعداد بایت (داده های غیر فشرده) است که می تواند به یک سرور از راه دور منتقل می شود و یا ذخیره شده در یک جدول موقت در هنگام استفاده از جهانی در.
 
-## transfer\_overflow\_mode {#transfer-overflow-mode}
+## \_شروع مجدد {#transfer-overflow-mode}
 
-What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘break’. By default, throw.
+چه باید بکنید هنگامی که مقدار داده ها بیش از یکی از محدودیت های: ‘throw’ یا ‘break’. به طور پیش فرض, پرتاب.
 
-## max\_rows\_in\_join {#settings-max_rows_in_join}
+## \_پاک کردن \_روشن گرافیک {#settings-max_rows_in_join}
 
-Limits the number of rows in the hash table that is used when joining tables.
+محدودیت تعداد ردیف در جدول هش استفاده شده است که در هنگام پیوستن به جداول.
 
-This settings applies to [SELECT … JOIN](../../query_language/select.md#select-join) operations and the [Join](../table_engines/join.md) table engine.
+این تنظیمات در مورد [SELECT … JOIN](../../sql_reference/statements/select.md#select-join) عملیات و [پیوستن](../../engines/table_engines/special/join.md) موتور جدول.
 
-If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
+اگر یک پرس و جو شامل چند می پیوندد, خانه چک این تنظیم برای هر نتیجه متوسط.
 
-ClickHouse can proceed with different actions when the limit is reached. Use the [join\_overflow\_mode](#settings-join_overflow_mode) setting to choose the action.
+تاتر می توانید با اقدامات مختلف ادامه دهید زمانی که از حد رسیده است. استفاده از [\_شروع مجدد](#settings-join_overflow_mode) تنظیم برای انتخاب عمل.
 
-Possible values:
+مقادیر ممکن:
 
--   Positive integer.
+-   عدد صحیح مثبت.
 -   0 — Unlimited number of rows.
 
-Default value: 0.
+مقدار پیش فرض: 0.
 
-## max\_bytes\_in\_join {#settings-max_bytes_in_join}
+## \_پویش همیشگی {#settings-max_bytes_in_join}
 
-Limits the size in bytes of the hash table used when joining tables.
+محدودیت اندازه در بایت از جدول هش استفاده می شود در هنگام پیوستن به جداول.
 
-This settings applies to [SELECT … JOIN](../../query_language/select.md#select-join) operations and [Join table engine](../table_engines/join.md).
+این تنظیمات در مورد [SELECT … JOIN](../../sql_reference/statements/select.md#select-join) عملیات و [پیوستن به موتور جدول](../../engines/table_engines/special/join.md).
 
-If the query contains joins, ClickHouse checks this setting for every intermediate result.
+اگر پرس و جو شامل می پیوندد, کلیک چک این تنظیمات برای هر نتیجه متوسط.
 
-ClickHouse can proceed with different actions when the limit is reached. Use [join\_overflow\_mode](#settings-join_overflow_mode) settings to choose the action.
+تاتر می توانید با اقدامات مختلف ادامه دهید زمانی که از حد رسیده است. استفاده [\_شروع مجدد](#settings-join_overflow_mode) تنظیمات برای انتخاب عمل.
 
-Possible values:
+مقادیر ممکن:
 
--   Positive integer.
+-   عدد صحیح مثبت.
 -   0 — Memory control is disabled.
 
-Default value: 0.
+مقدار پیش فرض: 0.
 
-## join\_overflow\_mode {#settings-join_overflow_mode}
+## \_شروع مجدد {#settings-join_overflow_mode}
 
-Defines what action ClickHouse performs when any of the following join limits is reached:
+تعریف می کند که چه عمل کلیک انجام زمانی که هر یک از محدودیت های زیر ملحق رسیده است:
 
--   [max\_bytes\_in\_join](#settings-max_bytes_in_join)
--   [max\_rows\_in\_join](#settings-max_rows_in_join)
+-   [\_پویش همیشگی](#settings-max_bytes_in_join)
+-   [\_پاک کردن \_روشن گرافیک](#settings-max_rows_in_join)
 
-Possible values:
+مقادیر ممکن:
 
 -   `THROW` — ClickHouse throws an exception and breaks operation.
--   `BREAK` — ClickHouse breaks operation and doesn’t throw an exception.
+-   `BREAK` — ClickHouse breaks operation and doesn't throw an exception.
 
-Default value: `THROW`.
+مقدار پیشفرض: `THROW`.
 
-**See Also**
+**همچنین نگاه کنید**
 
--   [JOIN clause](../../query_language/select.md#select-join)
--   [Join table engine](../table_engines/join.md)
+-   [پیوستن بند](../../sql_reference/statements/select.md#select-join)
+-   [پیوستن به موتور جدول](../../engines/table_engines/special/join.md)
 
-## max\_partitions\_per\_insert\_block {#max-partitions-per-insert-block}
+## \_مسدود کردن بیشینه {#max-partitions-per-insert-block}
 
-Limits the maximum number of partitions in a single inserted block.
+حداکثر تعداد پارتیشن در یک بلوک قرار داده شده را محدود می کند.
 
--   Positive integer.
+-   عدد صحیح مثبت.
 -   0 — Unlimited number of partitions.
 
-Default value: 100.
+مقدار پیش فرض: 100.
 
-**Details**
+**اطلاعات دقیق**
 
-When inserting data, ClickHouse calculates the number of partitions in the inserted block. If the number of partitions is more than `max_partitions_per_insert_block`, ClickHouse throws an exception with the following text:
+هنگام قرار دادن داده ها, تاتر محاسبه تعداد پارتیشن در بلوک قرار داده. اگر تعداد پارتیشن ها بیش از `max_partitions_per_insert_block`, خانه را کلیک می اندازد یک استثنا با متن زیر:
 
-> “Too many partitions for single INSERT block (more than” + toString(max\_parts) + “). The limit is controlled by ‘max\_partitions\_per\_insert\_block’ setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).”
+> “Too many partitions for single INSERT block (more than” اطلاعات دقیق “). The limit is controlled by ‘max\_partitions\_per\_insert\_block’ setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).”
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/query_complexity/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/settings/query_complexity/) <!--hide-->
