@@ -174,6 +174,7 @@ CachePartition::CachePartition(
     , read_buffer_size(read_buffer_size_)
     , write_buffer_size(write_buffer_size_)
     , path(dir_path + "/" + std::to_string(file_id))
+    , key_to_index_and_metadata(100000)
     , attributes_structure(attributes_structure_)
 {
     keys_buffer.type = AttributeUnderlyingType::utUInt64;
@@ -215,9 +216,11 @@ size_t CachePartition::appendDefaults(
     const auto & ids = std::get<Attribute::Container<UInt64>>(new_keys.values);
     for (size_t index = begin; index < ids.size(); ++index)
     {
-        auto & index_and_metadata = key_to_index_and_metadata[ids[index]];
+        //auto & index_and_metadata = key_to_index_and_metadata[ids[index]];
+        IndexAndMetadata index_and_metadata;
         index_and_metadata.metadata = metadata[index];
         index_and_metadata.metadata.setDefault();
+        key_to_index_and_metadata.set(ids[index], index_and_metadata);
     }
 
     return ids.size() - begin;
@@ -338,7 +341,8 @@ size_t CachePartition::appendBlock(
 
         if (!flushed)
         {
-            key_to_index_and_metadata[ids[index]] = index_and_metadata;
+            //key_to_index_and_metadata[ids[index]] = index_and_metadata;
+            key_to_index_and_metadata.set(ids[index], index_and_metadata);
             ids_buffer.push_back(ids[index]);
             ++index;
             ++keys_in_block;
@@ -432,11 +436,17 @@ void CachePartition::flush()
     /// commit changes in index
     for (size_t row = 0; row < ids.size(); ++row)
     {
-        auto & index = key_to_index_and_metadata[ids[row]].index;
-        if (index.inMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
-        {
-            index.setInMemory(false);
-            index.setBlockId(current_file_block_id + index.getBlockId());
+        IndexAndMetadata index_and_metadata;
+        if (key_to_index_and_metadata.get(ids[row], index_and_metadata)) {
+            auto & index = index_and_metadata.index;
+            if (index.inMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
+            {
+                index.setInMemory(false);
+                index.setBlockId(current_file_block_id + index.getBlockId());
+            }
+            key_to_index_and_metadata.set(ids[row], index_and_metadata);
+        } else {
+            // Key was evicted from cache.
         }
     }
 
@@ -497,20 +507,20 @@ void CachePartition::getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, 
     PaddedPODArray<Index> indices(ids.size());
     for (size_t i = 0; i < ids.size(); ++i)
     {
+        IndexAndMetadata index_and_metadata;
         if (found[i])
         {
             indices[i].setNotExists();
         }
-        else if (auto it = key_to_index_and_metadata.find(ids[i]);
-            it != std::end(key_to_index_and_metadata) && it->second.metadata.expiresAt() > now)
+        else if (key_to_index_and_metadata.get(ids[i], index_and_metadata) && index_and_metadata.metadata.expiresAt() > now)
         {
-            if (unlikely(it->second.metadata.isDefault()))
+            if (unlikely(index_and_metadata.metadata.isDefault()))
             {
                 indices[i].setNotExists();
                 set_default(i);
             }
             else
-                indices[i] = it->second.index;
+                indices[i] = index_and_metadata.index;
             found[i] = true;
         }
         else
@@ -722,7 +732,6 @@ void CachePartition::clearOldestBlocks()
         #define DISPATCH(TYPE) \
                 case AttributeUnderlyingType::ut##TYPE: \
                     read_buffer.ignore(sizeof(TYPE)); \
-                    //Poco::Logger::get("GC").information("read TYPE");\
                     break;
 
                     DISPATCH(UInt8)
@@ -759,11 +768,11 @@ void CachePartition::clearOldestBlocks()
     const size_t finish_block = start_block + block_size * write_buffer_size;
     for (const auto& key : keys)
     {
-        auto it = key_to_index_and_metadata.find(key);
-        if (it != std::end(key_to_index_and_metadata)) {
-            size_t block_id = it->second.index.getBlockId();
+        IndexAndMetadata index_and_metadata;
+        if (key_to_index_and_metadata.get(key, index_and_metadata)) {
+            size_t block_id = index_and_metadata.index.getBlockId();
             if (start_block <= block_id && block_id < finish_block) {
-                key_to_index_and_metadata.erase(it);
+                key_to_index_and_metadata.erase(key);
             }
         }
     }
@@ -813,15 +822,14 @@ void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UIn
     std::shared_lock lock(rw_lock);
     for (size_t i = 0; i < ids.size(); ++i)
     {
-        auto it = key_to_index_and_metadata.find(ids[i]);
-
-        if (it == std::end(key_to_index_and_metadata) || it->second.metadata.expiresAt() <= now)
+        IndexAndMetadata index_and_metadata;
+        if (!key_to_index_and_metadata.get(ids[i], index_and_metadata) || index_and_metadata.metadata.expiresAt() <= now)
         {
             out[i] = HAS_NOT_FOUND;
         }
         else
         {
-            out[i] = !it->second.metadata.isDefault();
+            out[i] = !index_and_metadata.metadata.isDefault();
         }
     }
 }
@@ -849,7 +857,7 @@ PaddedPODArray<CachePartition::Key> CachePartition::getCachedIds(const std::chro
 
     PaddedPODArray<Key> array;
     for (const auto & [key, index_and_metadata] : key_to_index_and_metadata)
-        if (!index_and_metadata.metadata.isDefault() && index_and_metadata.metadata.expiresAt() > now)
+        if (!index_and_metadata.second.metadata.isDefault() && index_and_metadata.second.metadata.expiresAt() > now)
             array.push_back(key);
     return array;
 }
