@@ -1,3 +1,8 @@
+---
+toc_priority: 12
+toc_title: Tutorial
+---
+
 # ClickHouse Tutorial {#clickhouse-tutorial}
 
 ## What to Expect from This Tutorial? {#what-to-expect-from-this-tutorial}
@@ -99,11 +104,11 @@ As in most databases management systems, ClickHouse logically groups tables into
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 ```
 
-Syntax for creating tables is way more complicated compared to databases (see [reference](../query_language/create.md). In general `CREATE TABLE` statement has to specify three key things:
+Syntax for creating tables is way more complicated compared to databases (see [reference](../sql_reference/statements/create.md). In general `CREATE TABLE` statement has to specify three key things:
 
 1.  Name of table to create.
-2.  Table schema, i.e. list of columns and their [data types](../data_types/index.md).
-3.  [Table engine](../operations/table_engines/index.md) and it’s settings, which determines all the details on how queries to this table will be physically executed.
+2.  Table schema, i.e. list of columns and their [data types](../sql_reference/data_types/index.md).
+3.  [Table engine](../engines/table_engines/index.md) and it’s settings, which determines all the details on how queries to this table will be physically executed.
 
 Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
 
@@ -455,11 +460,11 @@ SETTINGS index_granularity = 8192
 
 You can execute those queries using the interactive mode of `clickhouse-client` (just launch it in a terminal without specifying a query in advance) or try some [alternative interface](../interfaces/index.md) if you want.
 
-As we can see, `hits_v1` uses the [basic MergeTree engine](../operations/table_engines/mergetree.md), while the `visits_v1` uses the [Collapsing](../operations/table_engines/collapsingmergetree.md) variant.
+As we can see, `hits_v1` uses the [basic MergeTree engine](../engines/table_engines/mergetree_family/mergetree.md), while the `visits_v1` uses the [Collapsing](../engines/table_engines/mergetree_family/collapsingmergetree.md) variant.
 
 ### Import Data {#import-data}
 
-Data import to ClickHouse is done via [INSERT INTO](../query_language/insert_into.md) query like in many other SQL databases. However, data is usually provided in one of the [supported serialization formats](../interfaces/formats.md) instead of `VALUES` clause (which is also supported).
+Data import to ClickHouse is done via [INSERT INTO](../sql_reference/statements/insert_into.md) query like in many other SQL databases. However, data is usually provided in one of the [supported serialization formats](../interfaces/formats.md) instead of `VALUES` clause (which is also supported).
 
 The files we downloaded earlier are in tab-separated format, so here’s how to import them via console client:
 
@@ -524,9 +529,9 @@ ClickHouse cluster is a homogenous cluster. Steps to set up:
 1.  Install ClickHouse server on all machines of the cluster
 2.  Set up cluster configs in configuration files
 3.  Create local tables on each instance
-4.  Create a [Distributed table](../operations/table_engines/distributed.md)
+4.  Create a [Distributed table](../engines/table_engines/special/distributed.md)
 
-[Distributed table](../operations/table_engines/distributed.md) is actually a kind of “view” to local tables of ClickHouse cluster. SELECT query from a distributed table executes using resources of all cluster’s shards. You may specify configs for multiple clusters and create multiple distributed tables providing views to different clusters.
+[Distributed table](../engines/table_engines/special/distributed.md) is actually a kind of “view” to local tables of ClickHouse cluster. SELECT query from a distributed table executes using resources of all cluster’s shards. You may specify configs for multiple clusters and create multiple distributed tables providing views to different clusters.
 
 Example config for a cluster with three shards, one replica each:
 
@@ -568,16 +573,16 @@ CREATE TABLE tutorial.hits_all AS tutorial.hits_local
 ENGINE = Distributed(perftest_3shards_1replicas, tutorial, hits_local, rand());
 ```
 
-A common practice is to create similar Distributed tables on all machines of the cluster. It allows running distributed queries on any machine of the cluster. Also there’s an alternative option to create temporary distributed table for a given SELECT query using [remote](../query_language/table_functions/remote.md) table function.
+A common practice is to create similar Distributed tables on all machines of the cluster. It allows running distributed queries on any machine of the cluster. Also there’s an alternative option to create temporary distributed table for a given SELECT query using [remote](../sql_reference/table_functions/remote.md) table function.
 
-Let’s run [INSERT SELECT](../query_language/insert_into.md) into the Distributed table to spread the table to multiple servers.
+Let’s run [INSERT SELECT](../sql_reference/statements/insert_into.md) into the Distributed table to spread the table to multiple servers.
 
 ``` sql
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
 !!! warning "Notice"
-    This approach is not suitable for the sharding of large tables. There’s a separate tool [clickhouse-copier](../operations/utils/clickhouse-copier.md) that can re-shard arbitrary large tables.
+    This approach is not suitable for the sharding of large tables. There’s a separate tool [clickhouse-copier](../operations/utilities/clickhouse-copier.md) that can re-shard arbitrary large tables.
 
 As you could expect, computationally heavy queries run N times faster if they utilize 3 servers instead of one.
 
@@ -653,7 +658,7 @@ ENGINE = ReplcatedMergeTree(
 ...
 ```
 
-Here we use [ReplicatedMergeTree](../operations/table_engines/replication.md) table engine. In parameters we specify ZooKeeper path containing shard and replica identifiers.
+Here we use [ReplicatedMergeTree](../engines/table_engines/mergetree_family/replication.md) table engine. In parameters we specify ZooKeeper path containing shard and replica identifiers.
 
 ``` sql
 INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;

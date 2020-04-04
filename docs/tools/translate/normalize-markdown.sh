@@ -7,6 +7,7 @@ trap 'rm -f -- "${TEMP_FILE}"' INT TERM HUP EXIT
 INPUT="$1"
 if [[ ! -L "${INPUT}" ]]
 then
+    export INPUT
     cat "${INPUT}" > "${TEMP_FILE}"
     "${BASE_DIR}/translate.sh" "en" "${TEMP_FILE}" "${INPUT}"
 fi

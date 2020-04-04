@@ -1,3 +1,8 @@
+---
+toc_priority: 69
+toc_title: How to Run ClickHouse Tests
+---
+
 # ClickHouse Testing {#clickhouse-testing}
 
 ## Functional Tests {#functional-tests}
@@ -55,7 +60,7 @@ If you want to improve performance of ClickHouse in some scenario, and if improv
 
 ## Test Tools And Scripts {#test-tools-and-scripts}
 
-Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `dbms/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
+Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `src/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
 
 You can also place pair of files `.sh` and `.reference` along with the tool to run it on some predefined input - then script result can be compared to `.reference` file. These kind of tests are not automated.
 

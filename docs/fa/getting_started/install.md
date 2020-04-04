@@ -165,7 +165,7 @@ clickhouse-client --host=example.com
 </div>
 
 ``` bash
-milovidov@hostname:~/work/metrica/src/dbms/Client$ ./clickhouse-client
+milovidov@hostname:~/work/metrica/src/src/Client$ ./clickhouse-client
 ClickHouse client version 0.0.18749.
 Connecting to localhost:9000.
 Connected to ClickHouse server version 0.0.18749.

@@ -1,3 +1,8 @@
+---
+toc_priority: 14
+toc_title: Playground
+---
+
 # ClickHouse Playground {#clickhouse-playground}
 
 [ClickHouse Playground](https://play.clickhouse.tech?file=welcome) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
@@ -27,7 +32,7 @@ You can make queries to playground using any HTTP client, for example [curl](htt
 More information about software products that support ClickHouse is available [here](../interfaces/index.md).
 
 | Parameter | Value                                 |
-|:----------|:--------------------------------------|
+|:------|:------------------------|
 | Endpoint  | https://play-api.clickhouse.tech:8443 |
 | User      | `playground`                          |
 | Password  | `clickhouse`                          |
