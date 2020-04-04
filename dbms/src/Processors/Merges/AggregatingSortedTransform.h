@@ -59,11 +59,14 @@ private:
     public:
         using MergedData::MergedData;
 
-        void insertRow(const ColumnRawPtrs & raw_columns, size_t row, const ColumnNumbers & column_numbers)
+        void initializeRow(const ColumnRawPtrs & raw_columns, size_t row, const ColumnNumbers & column_numbers)
         {
-            for (auto column_number  :column_numbers)
+            for (auto column_number : column_numbers)
                 columns[column_number]->insertFrom(*raw_columns[column_number], row);
+        }
 
+        void insertRow()
+        {
             ++total_merged_rows;
             ++merged_rows;
             /// TODO: sum_blocks_granularity += block_size;
