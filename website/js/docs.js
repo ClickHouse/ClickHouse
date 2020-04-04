@@ -87,11 +87,10 @@ $(document).ready(function () {
                 hitsPerPage: 25,
                 'facetFilters': [
                     'lang:' + $('html').attr('lang'),
-                    'version:' + $('html').attr('data-version'),
-                    'single-page:' + $('html').attr('single-page'),
+                    'version:' + $('html').attr('data-version')
                 ]
             },
-            debug: true
+            debug: false
         });
     }
 });

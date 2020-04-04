@@ -259,7 +259,7 @@ Columna:
 -   `value` ([Int64](../sql_reference/data_types/int_uint.md)) — Metric value.
 -   `description` ([Cadena](../sql_reference/data_types/string.md)) — Metric description.
 
-La lista de métricas admitidas que puede encontrar en el [dbms/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Common/CurrentMetrics.cpp) archivo fuente de ClickHouse.
+La lista de métricas admitidas que puede encontrar en el [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp) archivo fuente de ClickHouse.
 
 **Ejemplo**
 
