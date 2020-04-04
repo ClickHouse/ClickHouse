@@ -833,11 +833,11 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     /// Executing scalar subqueries - replacing them with constant values.
     executeScalarSubqueries(query, context, subquery_depth, result.scalars);
 
-    /// Removing arithmetic operations from functions
-    ArithmeticOperationsInAgrFuncVisitor().visit(query);
-
     {
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
+
+        /// Removing arithmetic operations from functions
+        ArithmeticOperationsInAgrFuncVisitor().visit(query);
 
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_column_names, settings).optimize(*select_query);
