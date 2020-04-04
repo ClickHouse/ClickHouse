@@ -184,25 +184,23 @@ void AggregatingSortedTransform::merge()
 
         if (key_differs)
         {
+            /// Write the simple aggregation result for the previous group.
+            if (merged_data.mergedRows() > 0)
+                insertSimpleAggregationResult();
+
+            merged_data.insertRow();
+
             /// if there are enough rows accumulated and the last one is calculated completely
             if (merged_data.hasEnoughRows())
-            {
-                /// Write the simple aggregation result for the previous group.
-                insertSimpleAggregationResult();
                 return;
-            }
 
             /// We will write the data for the group. We copy the values of ordinary columns.
-            merged_data.insertRow(current->all_columns, current->pos,
-                                  columns_definition.column_numbers_not_to_aggregate);
+            merged_data.initializeRow(current->all_columns, current->pos,
+                                      columns_definition.column_numbers_not_to_aggregate);
 
             /// Add the empty aggregation state to the aggregate columns. The state will be updated in the `addRow` function.
             for (auto & column_to_aggregate : columns_definition.columns_to_aggregate)
                 column_to_aggregate.column->insertDefault();
-
-            /// Write the simple aggregation result for the previous group.
-            if (merged_data.mergedRows() > 0)
-                insertSimpleAggregationResult();
 
             /// Reset simple aggregation states for next row
             for (auto & desc : columns_definition.columns_to_simple_aggregate)
@@ -229,7 +227,10 @@ void AggregatingSortedTransform::merge()
 
     /// Write the simple aggregation result for the previous group.
     if (merged_data.mergedRows() > 0)
+    {
         insertSimpleAggregationResult();
+        merged_data.insertRow();
+    }
 
     last_chunk_sort_columns.clear();
     is_finished = true;
