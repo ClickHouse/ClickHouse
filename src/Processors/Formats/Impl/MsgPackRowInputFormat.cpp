@@ -31,7 +31,7 @@ bool MsgPackRowInputFormat::readObject()
     if (buf.eof())
         return false;
     PeekableReadBufferCheckpoint checkpoint{buf};
-    size_t offset;
+    size_t offset = 0;
     bool need_more_data = true;
     while (need_more_data)
     {
