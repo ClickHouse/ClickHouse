@@ -1,51 +1,113 @@
 #pragma once
 
+#include "IServer.h"
+#include <common/logger_useful.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
-#include <Poco/Util/AbstractConfiguration.h>
-#include <common/logger_useful.h>
-#include "IServer.h"
-#include "InterserverIOHTTPHandler.h"
-
 
 namespace DB
 {
 
-class InterserverIOHTTPHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+/// Handle request using child handlers
+class HTTPRequestHandlerFactoryMain : public Poco::Net::HTTPRequestHandlerFactory
 {
-public:
-    InterserverIOHTTPHandlerFactory(IServer & server_, const std::string & name_);
-
-    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override;
-
 private:
-    IServer & server;
-    Logger * log;
-    std::string name;
-};
+    using TThis = HTTPRequestHandlerFactoryMain;
 
-using HTTPHandlerCreator = std::function<Poco::Net::HTTPRequestHandler * ()>;
-using HTTPHandlerMatcher = std::function<bool(const Poco::Net::HTTPServerRequest &)>;
-using HTTPHandlerMatcherAndCreator = std::pair<HTTPHandlerMatcher, HTTPHandlerCreator>;
-using HTTPHandlersMatcherAndCreator = std::vector<HTTPHandlerMatcherAndCreator>;
-
-class HTTPHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
-{
-public:
-    HTTPHandlerFactory(IServer & server_, const std::string & name_);
-
-    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override;
-
-    void updateHTTPHandlersCreator(Poco::Util::AbstractConfiguration & configuration, const String & key = "http_handlers");
-
-private:
     IServer & server;
     Logger * log;
     std::string name;
 
-    String no_handler_description;
-    HTTPHandlersMatcherAndCreator handlers_creator;
+    std::vector<Poco::Net::HTTPRequestHandlerFactory *> child_handler_factories;
+public:
+
+    ~HTTPRequestHandlerFactoryMain();
+
+    HTTPRequestHandlerFactoryMain(IServer & server_, const std::string & name_);
+
+    TThis * addHandler(Poco::Net::HTTPRequestHandlerFactory * child_factory);
+
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override;
 };
+
+template <typename TEndpoint>
+class RoutingRuleHTTPHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+{
+public:
+    using TThis = RoutingRuleHTTPHandlerFactory<TEndpoint>;
+    using Filter = std::function<bool(const Poco::Net::HTTPServerRequest &)>;
+
+    template <typename... TArgs>
+    RoutingRuleHTTPHandlerFactory(TArgs &&... args)
+    {
+        creator = [args = std::tuple<TArgs...>(std::forward<TArgs>(args) ...)]()
+        {
+            return std::apply([&](auto && ... endpoint_args)
+            {
+                return new TEndpoint(std::forward<decltype(endpoint_args)>(endpoint_args)...);
+            }, std::move(args));
+        };
+    }
+
+    TThis * addFilter(Filter cur_filter)
+    {
+        Filter prev_filter = filter;
+        filter = [prev_filter, cur_filter](const auto & request)
+        {
+            return prev_filter ? prev_filter(request) && cur_filter(request) : cur_filter(request);
+        };
+
+        return this;
+    }
+
+    TThis * attachStrictPath(const String & strict_path)
+    {
+        return addFilter([strict_path](const auto & request) { return request.getURI() == strict_path; });
+    }
+
+    TThis * attachNonStrictPath(const String & non_strict_path)
+    {
+        return addFilter([non_strict_path](const auto & request) { return startsWith(request.getURI(), non_strict_path); });
+    }
+
+    /// Handle GET or HEAD endpoint on specified path
+    TThis * allowGetAndHeadRequest()
+    {
+        return addFilter([](const auto & request)
+        {
+            return request.getMethod() == Poco::Net::HTTPRequest::HTTP_GET
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_HEAD;
+        });
+    }
+
+    /// Handle POST or GET with params
+    TThis * allowPostAndGetParamsRequest()
+    {
+        return addFilter([](const auto & request)
+        {
+            return request.getURI().find('?') != std::string::npos
+                || request.getMethod() == Poco::Net::HTTPRequest::HTTP_POST;
+        });
+    }
+
+    Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest & request) override
+    {
+        return filter(request) ? creator() : nullptr;
+    }
+
+private:
+    Filter filter;
+    std::function<Poco::Net::HTTPRequestHandler * ()> creator;
+};
+
+Poco::Net::HTTPRequestHandlerFactory * createHandlerFactory(IServer & server, const std::string & name);
+
+Poco::Net::HTTPRequestHandlerFactory * createStaticHandlerFactory(IServer & server, const std::string & config_prefix);
+
+Poco::Net::HTTPRequestHandlerFactory * createDynamicHandlerFactory(IServer & server, const std::string & config_prefix);
+
+Poco::Net::HTTPRequestHandlerFactory * createPredefineHandlerFactory(IServer & server, const std::string & config_prefix);
 
 }

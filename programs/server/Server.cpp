@@ -767,9 +767,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
-                auto handler_factory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
-                if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
-                    handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
+                auto handler_factory = createHandlerFactory(*this, "HTTPHandler-factory");
+//                if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
+//                    handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
 
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     handler_factory,
@@ -789,7 +789,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPSHandler-factory"),
+                    createHandlerFactory(*this, "HTTPSHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -847,7 +847,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
+                    createHandlerFactory(*this, "InterserverIOHTTPHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -863,7 +863,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
+                    createHandlerFactory(*this, "InterserverIOHTTPSHandler-factory"),
                     server_pool,
                     socket,
                     http_params));
@@ -892,22 +892,22 @@ int Server::main(const std::vector<std::string> & /*args*/)
             });
 
             /// Prometheus (if defined and not setup yet with http_port)
-            create_server("prometheus.port", [&](UInt16 port)
-            {
-                Poco::Net::ServerSocket socket;
-                auto address = socket_bind_listen(socket, listen_host, port);
-                socket.setReceiveTimeout(settings.http_receive_timeout);
-                socket.setSendTimeout(settings.http_send_timeout);
-                auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
-                handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
-                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
-                    handler_factory,
-                    server_pool,
-                    socket,
-                    http_params));
-
-                LOG_INFO(log, "Listening for Prometheus: http://" + address.toString());
-            });
+//            create_server("prometheus.port", [&](UInt16 port)
+//            {
+//                Poco::Net::ServerSocket socket;
+//                auto address = socket_bind_listen(socket, listen_host, port);
+//                socket.setReceiveTimeout(settings.http_receive_timeout);
+//                socket.setSendTimeout(settings.http_send_timeout);
+//                auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
+//                handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
+//                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+//                    handler_factory,
+//                    server_pool,
+//                    socket,
+//                    http_params));
+//
+//                LOG_INFO(log, "Listening for Prometheus: http://" + address.toString());
+//            });
         }
 
         if (servers.empty())

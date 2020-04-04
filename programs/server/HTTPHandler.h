@@ -7,8 +7,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/HTMLForm.h>
 
-#include <Interpreters/CustomHTTP/HTTPOutputStreams.h>
-
 
 namespace CurrentMetrics
 {
@@ -26,26 +24,39 @@ class WriteBufferFromHTTPServerResponse;
 class HTTPHandler : public Poco::Net::HTTPRequestHandler
 {
 public:
-    explicit HTTPHandler(IServer & server_);
+    explicit HTTPHandler(IServer & server_, const std::string & name);
 
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
+    /// This method is called right before the query execution.
+    virtual void customizeContext(Context & /* context */) {}
+
+    virtual bool customizeQueryParam(Context & context, const std::string & key, const std::string & value) = 0;
+
+    virtual std::string getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context) = 0;
+
 private:
-    using HTTPRequest = Poco::Net::HTTPServerRequest;
-    using HTTPResponse = Poco::Net::HTTPServerResponse;
-
-    struct SessionContextHolder
+    struct Output
     {
-        ~SessionContextHolder();
+        /* Raw data
+         * ↓
+         * CascadeWriteBuffer out_maybe_delayed_and_compressed (optional)
+         * ↓ (forwards data if an overflow is occur or explicitly via pushDelayedResults)
+         * CompressedWriteBuffer out_maybe_compressed (optional)
+         * ↓
+         * WriteBufferFromHTTPServerResponse out
+         */
 
-        void authentication(HTTPServerRequest & request, HTMLForm & params);
+        std::shared_ptr<WriteBufferFromHTTPServerResponse> out;
+        /// Points to 'out' or to CompressedWriteBuffer(*out), depending on settings.
+        std::shared_ptr<WriteBuffer> out_maybe_compressed;
+        /// Points to 'out' or to CompressedWriteBuffer(*out) or to CascadeWriteBuffer.
+        std::shared_ptr<WriteBuffer> out_maybe_delayed_and_compressed;
 
-        SessionContextHolder(Context & query_context_, HTTPRequest & request, HTMLForm & params);
-
-        String session_id;
-        Context & query_context;
-        std::shared_ptr<Context> session_context = nullptr;
-        std::chrono::steady_clock::duration session_timeout;
+        inline bool hasDelayed() const
+        {
+            return out_maybe_delayed_and_compressed != out_maybe_compressed;
+        }
     };
 
     IServer & server;
@@ -56,16 +67,46 @@ private:
 
     CurrentMetrics::Increment metric_increment{CurrentMetrics::HTTPConnection};
 
-    size_t getKeepAliveTimeout() { return server.config().getUInt("keep_alive_timeout", 10); }
-
-    HTTPResponseBufferPtr createResponseOut(HTTPServerRequest & request, HTTPServerResponse & response);
-
-    void processQuery(Context & context, HTTPRequest & request, HTMLForm & params, HTTPResponse & response, HTTPResponseBufferPtr & response_out);
+    /// Also initializes 'used_output'.
+    void processQuery(
+        Poco::Net::HTTPServerRequest & request,
+        HTMLForm & params,
+        Poco::Net::HTTPServerResponse & response,
+        Output & used_output);
 
     void trySendExceptionToClient(
-        const std::string & message, int exception_code, HTTPRequest & request,
-        HTTPResponse & response, HTTPResponseBufferPtr response_out, bool compression);
+        const std::string & s,
+        int exception_code,
+        Poco::Net::HTTPServerRequest & request,
+        Poco::Net::HTTPServerResponse & response,
+        Output & used_output);
 
+    static void pushDelayedResults(Output & used_output);
+};
+
+class DynamicQueryHandler : public HTTPHandler
+{
+private:
+    std::string param_name;
+public:
+    explicit DynamicQueryHandler(IServer & server_, const std::string & param_name_ = "query");
+
+    std::string getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context) override;
+
+    bool customizeQueryParam(Context &context, const std::string &key, const std::string &value) override;
+};
+
+class PredefineQueryHandler : public HTTPHandler
+{
+private:
+    NameSet receive_params;
+    std::string predefine_query;
+public:
+    explicit PredefineQueryHandler(IServer & server, const NameSet & receive_params, const std::string & predefine_query_);
+
+    std::string getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context) override;
+
+    bool customizeQueryParam(Context &context, const std::string &key, const std::string &value) override;
 };
 
 }
