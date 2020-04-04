@@ -1,8 +1,13 @@
+---
+toc_priority: 11
+toc_title: Installation
+---
+
 # Installation {#installation}
 
 ## System Requirements {#system-requirements}
 
-ClickHouse can run on any Linux, FreeBSD or Mac OS X with x86\_64, AArch64 or PowerPC64LE CPU architecture.
+ClickHouse can run on any Linux, FreeBSD, or Mac OS X with x86\_64, AArch64, or PowerPC64LE CPU architecture.
 
 Official pre-built binaries are typically compiled for x86\_64 and leverage SSE 4.2 instruction set, so unless otherwise stated usage of CPU that supports it becomes an additional system requirement. Here’s the command to check if current CPU has support for SSE 4.2:
 
@@ -24,7 +29,7 @@ To install official packages add the Yandex repository in `/etc/apt/sources.list
 
 If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
 
-Then run these commands to actually install packages:
+Then run these commands to install packages:
 
 ``` bash
 sudo apt-get install dirmngr # optional
@@ -38,13 +43,13 @@ You can also download and install packages manually from here: https://repo.yand
 #### Packages {#packages}
 
 -   `clickhouse-common-static` — Installs ClickHouse compiled binary files.
--   `clickhouse-server` — Creates a symbolic link for `clickhouse-server`. Installs server configuration.
--   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. Installs client configurations.
+-   `clickhouse-server` — Creates a symbolic link for `clickhouse-server` and installs the default server configuration.
+-   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` and other client-related tools. and installs client configuration files.
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
 ### From RPM Packages {#from-rpm-packages}
 
-It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat and all other rpm-based Linux distributions.
+It is recommended to use official pre-compiled `rpm` packages for CentOS, RedHat, and all other rpm-based Linux distributions.
 
 First, you need to add the official repository:
 
@@ -104,10 +109,10 @@ To manually compile ClickHouse, follow the instructions for [Linux](../developme
 
 You can compile packages and install them or use programs without installing packages. Also by building manually you can disable SSE 4.2 requirement or build for AArch64 CPUs.
 
-      Client: dbms/programs/clickhouse-client
-      Server: dbms/programs/clickhouse-server
+      Client: programs/clickhouse-client
+      Server: programs/clickhouse-server
 
-You’ll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/dbms/programs/server/config.xml), by default they are:
+You’ll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
       /opt/clickhouse/data/default/
       /opt/clickhouse/metadata/default/
