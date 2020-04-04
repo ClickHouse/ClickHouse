@@ -1,8 +1,11 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 52
+toc_title: "Les Tables Syst\xE8me"
 ---
 
-# Les tables système {#system-tables}
+# Les Tables Système {#system-tables}
 
 Les tables système sont utilisées pour implémenter une partie des fonctionnalités du système et pour fournir un accès à des informations sur le fonctionnement du système.
 Vous ne pouvez pas supprimer une table système (mais vous pouvez effectuer un détachement).
@@ -16,8 +19,8 @@ Contient des mesures qui sont calculées périodiquement en arrière-plan. Par e
 
 Colonne:
 
--   `metric` ([Chaîne](../data_types/string.md)) — Metric name.
--   `value` ([Float64](../data_types/float.md)) — Metric value.
+-   `metric` ([Chaîne](../sql_reference/data_types/string.md)) — Metric name.
+-   `value` ([Float64](../sql_reference/data_types/float.md)) — Metric value.
 
 **Exemple**
 
@@ -68,7 +71,7 @@ Veuillez noter que `errors_count` est mise à jour une fois par requête à la g
 
 **Voir aussi**
 
--   [Tableau moteur Distribués](table_engines/distributed.md)
+-   [Tableau moteur Distribués](../engines/table_engines/special/distributed.md)
 -   [paramètre distributed\_replica\_error\_cap](settings/settings.md#settings-distributed_replica_error_cap)
 -   [paramètre distributed\_replica\_error\_half\_life](settings/settings.md#settings-distributed_replica_error_half_life)
 
@@ -76,7 +79,7 @@ Veuillez noter que `errors_count` est mise à jour une fois par requête à la g
 
 Contient des informations sur les colonnes de toutes les tables.
 
-Vous pouvez utiliser ce tableau pour obtenir des informations similaires à l' [DESCRIBE TABLE](../query_language/misc.md#misc-describe-table) requête, mais pour plusieurs tables à la fois.
+Vous pouvez utiliser ce tableau pour obtenir des informations similaires à l' [DESCRIBE TABLE](../sql_reference/statements/misc.md#misc-describe-table) requête, mais pour plusieurs tables à la fois.
 
 Le `system.columns` le tableau contient les colonnes suivantes (la colonne type est indiqué entre parenthèses):
 
@@ -144,7 +147,7 @@ Cette table système est utilisée pour implémenter `SHOW DATABASES` requête.
 
 ## système.detached\_parts {#system_tables-detached_parts}
 
-Contient des informations sur les pièces détachées de [MergeTree](table_engines/mergetree.md) table. Le `reason` colonne spécifie pourquoi la pièce a été détachée. Pour les pièces détachées par l'utilisateur, la raison est vide. De telles pièces peuvent être attachées avec [ALTER TABLE ATTACH PARTITION\|PART](../query_language/query_language/alter/#alter_attach-partition) commande. Pour la description des autres colonnes, voir [système.partie](#system_tables-parts). Si le nom de pièce n'est pas valide, les valeurs de certaines colonnes peuvent être `NULL`. Ces pièces peuvent être supprimés avec [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
+Contient des informations sur les pièces détachées de [MergeTree](../engines/table_engines/mergetree_family/mergetree.md) table. Le `reason` colonne spécifie pourquoi la pièce a été détachée. Pour les pièces détachées par l'utilisateur, la raison est vide. De telles pièces peuvent être attachées avec [ALTER TABLE ATTACH PARTITION\|PART](../query_language/query_language/alter/#alter_attach-partition) commande. Pour la description des autres colonnes, voir [système.partie](#system_tables-parts). Si le nom de pièce n'est pas valide, les valeurs de certaines colonnes peuvent être `NULL`. Ces pièces peuvent être supprimés avec [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
 
 ## système.dictionnaire {#system-dictionaries}
 
@@ -174,9 +177,9 @@ Contient des informations sur le nombre d'événements survenus dans le système
 
 Colonne:
 
--   `event` ([Chaîne](../data_types/string.md)) — Event name.
--   `value` ([UInt64](../data_types/int_uint.md)) — Number of events occurred.
--   `description` ([Chaîne](../data_types/string.md)) — Event description.
+-   `event` ([Chaîne](../sql_reference/data_types/string.md)) — Event name.
+-   `value` ([UInt64](../sql_reference/data_types/int_uint.md)) — Number of events occurred.
+-   `description` ([Chaîne](../sql_reference/data_types/string.md)) — Event description.
 
 **Exemple**
 
@@ -212,7 +215,7 @@ Colonne:
 
 ## système.graphite\_retentions {#system-graphite-retentions}
 
-Contient des informations sur les paramètres [graphite\_rollup](server_settings/settings.md#server_settings-graphite_rollup) qui sont utilisés dans les tableaux avec [\* GraphiteMergeTree](table_engines/graphitemergetree.md) moteur.
+Contient des informations sur les paramètres [graphite\_rollup](server_configuration_parameters/settings.md#server_configuration_parameters-graphite_rollup) qui sont utilisés dans les tableaux avec [\* GraphiteMergeTree](../engines/table_engines/mergetree_family/graphitemergetree.md) moteur.
 
 Colonne:
 
@@ -252,11 +255,11 @@ Contient des mesures qui peuvent être calculées instantanément, ou ont une va
 
 Colonne:
 
--   `metric` ([Chaîne](../data_types/string.md)) — Metric name.
--   `value` ([Int64](../data_types/int_uint.md)) — Metric value.
--   `description` ([Chaîne](../data_types/string.md)) — Metric description.
+-   `metric` ([Chaîne](../sql_reference/data_types/string.md)) — Metric name.
+-   `value` ([Int64](../sql_reference/data_types/int_uint.md)) — Metric value.
+-   `description` ([Chaîne](../sql_reference/data_types/string.md)) — Metric description.
 
-La liste des mesures que vous pouvez trouver dans le [SGBD / src / Common / CurrentMetrics.rpc](https://github.com/ClickHouse/ClickHouse/blob/master/src/src/Common/CurrentMetrics.cpp) fichier source de ClickHouse.
+La liste des mesures que vous pouvez trouver dans le [SGBD / commun / CurrentMetrics.rpc](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Common/CurrentMetrics.cpp) fichier source de ClickHouse.
 
 **Exemple**
 
@@ -361,13 +364,13 @@ Ceci est similaire à la table double trouvée dans d'autres SGBD.
 
 ## système.partie {#system_tables-parts}
 
-Contient des informations sur les parties de [MergeTree](table_engines/mergetree.md) table.
+Contient des informations sur les parties de [MergeTree](../engines/table_engines/mergetree_family/mergetree.md) table.
 
 Chaque ligne décrit une partie des données.
 
 Colonne:
 
--   `partition` (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../query_language/alter.md#query_language_queries_alter) requête.
+-   `partition` (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../sql_reference/statements/alter.md#query_language_queries_alter) requête.
 
     Format:
 
@@ -418,7 +421,7 @@ Colonne:
 
 -   `primary_key_bytes_in_memory_allocated` (`UInt64`) – The amount of memory (in bytes) reserved for primary key values.
 
--   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
+-   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../sql_reference/statements/alter.md#alter_freeze-partition)
 
 -   `database` (`String`) – Name of the database.
 
@@ -430,11 +433,11 @@ Colonne:
 
 -   `disk` (`String`) – Name of a disk that stores the data part.
 
--   `hash_of_all_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) de fichiers compressés.
+-   `hash_of_all_files` (`String`) – [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) de fichiers compressés.
 
--   `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) de fichiers non compressés (fichiers avec des marques, fichier d'index, etc.).
+-   `hash_of_uncompressed_files` (`String`) – [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) de fichiers non compressés (fichiers avec des marques, fichier d'index, etc.).
 
--   `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) des données dans les fichiers compressés comme s'ils étaient non compressé.
+-   `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) des données dans les fichiers compressés comme s'ils étaient non compressé.
 
 -   `bytes` (`UInt64`) – Alias for `bytes_on_disk`.
 
@@ -442,9 +445,9 @@ Colonne:
 
 ## système.part\_log {#system_tables-part-log}
 
-Le `system.part_log` la table est créée uniquement si [part\_log](server_settings/settings.md#server_settings-part-log) serveur paramètre est spécifié.
+Le `system.part_log` la table est créée uniquement si [part\_log](server_configuration_parameters/settings.md#server_configuration_parameters-part-log) serveur paramètre est spécifié.
 
-Ce tableau contient des informations sur les événements survenus avec [les parties de données](table_engines/custom_partitioning_key.md) dans le [MergeTree](table_engines/mergetree.md) table de famille, telles que l'ajout ou la fusion de données.
+Ce tableau contient des informations sur les événements survenus avec [les parties de données](../engines/table_engines/mergetree_family/custom_partitioning_key.md) dans le [MergeTree](../engines/table_engines/mergetree_family/mergetree.md) table de famille, telles que l'ajout ou la fusion de données.
 
 Le `system.part_log` le tableau contient les colonnes suivantes:
 
@@ -452,7 +455,7 @@ Le `system.part_log` le tableau contient les colonnes suivantes:
     -   `NEW_PART` — Inserting of a new data part.
     -   `MERGE_PARTS` — Merging of data parts.
     -   `DOWNLOAD_PART` — Downloading a data part.
-    -   `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
+    -   `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../sql_reference/statements/alter.md#alter_detach-partition).
     -   `MUTATE_PART` — Mutating of a data part.
     -   `MOVE_PART` — Moving the data part from the one disk to another one.
 -   `event_date` (Date) — Event date.
@@ -523,7 +526,7 @@ Contient des informations sur l'exécution de requêtes. Pour chaque requête, v
 !!! note "Note"
     Le tableau ne contient pas les données d'entrée pour `INSERT` requête.
 
-Clickhouse crée cette table uniquement si [query\_log](server_settings/settings.md#server_settings-query-log) serveur paramètre est spécifié. Ce paramètre définit les règles de journalisation, tels que l'intervalle d'enregistrement ou le nom de la table, la requête sera connecté.
+Clickhouse crée cette table uniquement si [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) serveur paramètre est spécifié. Ce paramètre définit les règles de journalisation, tels que l'intervalle d'enregistrement ou le nom de la table, la requête sera connecté.
 
 Pour activer la journalisation des requêtes, définissez [log\_queries](settings/settings.md#settings-log-queries) paramètre 1. Pour plus de détails, voir le [Paramètre](settings/settings.md) section.
 
@@ -593,20 +596,20 @@ Chaque requête crée une ou deux lignes dans le `query_log` le tableau, en fonc
 2.  Si une erreur s'est produite pendant le traitement de la requête, deux événements avec les types 1 et 4 sont créés.
 3.  Si une erreur s'est produite avant le lancement de la requête, un seul événement de type 3 est créé.
 
-Par défaut, les journaux sont ajoutés à la table à des intervalles de 7,5 secondes. Vous pouvez définir cet intervalle dans la [query\_log](server_settings/settings.md#server_settings-query-log) configuration du serveur (voir `flush_interval_milliseconds` paramètre). Pour vider les journaux de force du tampon mémoire dans la table, utilisez le `SYSTEM FLUSH LOGS` requête.
+Par défaut, les journaux sont ajoutés à la table à des intervalles de 7,5 secondes. Vous pouvez définir cet intervalle dans la [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) configuration du serveur (voir `flush_interval_milliseconds` paramètre). Pour vider les journaux de force du tampon mémoire dans la table, utilisez le `SYSTEM FLUSH LOGS` requête.
 
 Lorsque la table est supprimée manuellement, il sera automatiquement créé à la volée. Notez que tous les précédents journaux seront supprimés.
 
 !!! note "Note"
     La période de stockage des journaux est illimitée. Les journaux ne sont pas automatiquement supprimés de la table. Vous devez organiser vous-même la suppression des journaux obsolètes.
 
-Vous pouvez spécifier une clé de partitionnement arbitraire pour `system.query_log` la table dans le [query\_log](server_settings/settings.md#server_settings-query-log) configuration du serveur (voir `partition_by` paramètre).
+Vous pouvez spécifier une clé de partitionnement arbitraire pour `system.query_log` la table dans le [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) configuration du serveur (voir `partition_by` paramètre).
 
 ## système.query\_thread\_log {#system_tables-query-thread-log}
 
 La table contient des informations sur chaque thread d'exécution de requête.
 
-Clickhouse crée cette table uniquement si [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) serveur paramètre est spécifié. Ce paramètre définit les règles de journalisation, tels que l'intervalle d'enregistrement ou le nom de la table, la requête sera connecté.
+Clickhouse crée cette table uniquement si [query\_thread\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) serveur paramètre est spécifié. Ce paramètre définit les règles de journalisation, tels que l'intervalle d'enregistrement ou le nom de la table, la requête sera connecté.
 
 Pour activer la journalisation des requêtes, définissez [log\_query\_threads](settings/settings.md#settings-log-query-threads) paramètre 1. Pour plus de détails, voir le [Paramètre](settings/settings.md) section.
 
@@ -658,43 +661,43 @@ Colonne:
 -   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [système.événement](#system_tables-events)
 -   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` colonne.
 
-Par défaut, les journaux sont ajoutés à la table à des intervalles de 7,5 secondes. Vous pouvez définir cet intervalle dans la [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) configuration du serveur (voir `flush_interval_milliseconds` paramètre). Pour vider les journaux de force du tampon mémoire dans la table, utilisez le `SYSTEM FLUSH LOGS` requête.
+Par défaut, les journaux sont ajoutés à la table à des intervalles de 7,5 secondes. Vous pouvez définir cet intervalle dans la [query\_thread\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) configuration du serveur (voir `flush_interval_milliseconds` paramètre). Pour vider les journaux de force du tampon mémoire dans la table, utilisez le `SYSTEM FLUSH LOGS` requête.
 
 Lorsque la table est supprimée manuellement, il sera automatiquement créé à la volée. Notez que tous les précédents journaux seront supprimés.
 
 !!! note "Note"
     La période de stockage des journaux est illimitée. Les journaux ne sont pas automatiquement supprimés de la table. Vous devez organiser vous-même la suppression des journaux obsolètes.
 
-Vous pouvez spécifier une clé de partitionnement arbitraire pour `system.query_thread_log` la table dans le [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) configuration du serveur (voir `partition_by` paramètre).
+Vous pouvez spécifier une clé de partitionnement arbitraire pour `system.query_thread_log` la table dans le [query\_thread\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) configuration du serveur (voir `partition_by` paramètre).
 
 ## système.trace\_log {#system_tables-trace_log}
 
 Contient des traces de pile collectées par le profileur de requête d'échantillonnage.
 
-Clickhouse crée cette table lorsque le [trace\_log](server_settings/settings.md#server_settings-trace_log) la section de configuration du serveur est définie. Aussi l' [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) et [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) paramètres doivent être définis.
+Clickhouse crée cette table lorsque le [trace\_log](server_configuration_parameters/settings.md#server_configuration_parameters-trace_log) la section de configuration du serveur est définie. Aussi l' [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) et [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) paramètres doivent être définis.
 
 Pour analyser les journaux, utilisez `addressToLine`, `addressToSymbol` et `demangle` fonctions d'introspection.
 
 Colonne:
 
--   `event_date`([Date](../data_types/date.md)) — Date of sampling moment.
+-   `event_date`([Date](../sql_reference/data_types/date.md)) — Date of sampling moment.
 
--   `event_time`([DateTime](../data_types/datetime.md)) — Timestamp of sampling moment.
+-   `event_time`([DateTime](../sql_reference/data_types/datetime.md)) — Timestamp of sampling moment.
 
--   `revision`([UInt32](../data_types/int_uint.md)) — ClickHouse server build revision.
+-   `revision`([UInt32](../sql_reference/data_types/int_uint.md)) — ClickHouse server build revision.
 
     Lors de la connexion au serveur par `clickhouse-client`, vous voyez la chaîne similaire à `Connected to ClickHouse server version 19.18.1 revision 54429.`. Ce champ contient le `revision` mais pas le `version` d'un serveur.
 
--   `timer_type`([Enum8](../data_types/enum.md)) — Timer type:
+-   `timer_type`([Enum8](../sql_reference/data_types/enum.md)) — Timer type:
 
     -   `Real` représente l'horloge murale.
     -   `CPU` représente le temps CPU.
 
--   `thread_number`([UInt32](../data_types/int_uint.md)) — Thread identifier.
+-   `thread_number`([UInt32](../sql_reference/data_types/int_uint.md)) — Thread identifier.
 
--   `query_id`([Chaîne](../data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) système de table.
+-   `query_id`([Chaîne](../sql_reference/data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) système de table.
 
--   `trace`([Tableau (UInt64)](../data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace`([Tableau (UInt64)](../sql_reference/data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
 **Exemple**
 
@@ -845,24 +848,41 @@ Colonne:
 
 -   `name` (String) — Setting name.
 -   `value` (String) — Setting value.
+-   `description` (String) — Setting description.
+-   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
+-   `min` (Nullable(String)) — Get minimum allowed value (if any is set via [contraintes](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `max` (Nullable(String)) — Get maximum allowed value (if any is set via [contraintes](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `readonly` (UInt8) — Can user change this setting (for more info, look into [contraintes](settings/constraints_on_settings.md#constraints-on-settings)).
 
 Exemple:
 
 ``` sql
-SELECT *
+SELECT name, value
 FROM system.settings
 WHERE changed
 ```
 
 ``` text
-┌─name───────────────────┬─value───────┬─changed─┐
-│ max_threads            │ 8           │       1 │
-│ use_uncompressed_cache │ 0           │       1 │
-│ load_balancing         │ random      │       1 │
-│ max_memory_usage       │ 10000000000 │       1 │
-└────────────────────────┴─────────────┴─────────┘
+┌─name───────────────────┬─value───────┐
+│ max_threads            │ 8           │
+│ use_uncompressed_cache │ 0           │
+│ load_balancing         │ random      │
+│ max_memory_usage       │ 10000000000 │
+└────────────────────────┴─────────────┘
 ```
+
+## système.merge\_tree\_settings {#system-merge_tree_settings}
+
+Contient des informations sur les paramètres pour `MergeTree` table.
+
+Colonne:
+
+-   `name` (String) — Setting name.
+-   `value` (String) — Setting value.
+-   `description` (String) — Setting description.
+-   `type` (String) — Setting type (implementation specific string value).
+-   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
 ## système.tableau\_moteurs {#system-table-engines}
 
@@ -872,10 +892,10 @@ Ce tableau contient les colonnes suivantes (le type de colonne est indiqué entr
 
 -   `name` (String) — The name of table engine.
 -   `supports_settings` (UInt8) — Flag that indicates if table engine supports `SETTINGS` clause.
--   `supports_skipping_indices` (UInt8) — Flag that indicates if table engine supports [sauter les indices](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
--   `supports_ttl` (UInt8) — Flag that indicates if table engine supports [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
+-   `supports_skipping_indices` (UInt8) — Flag that indicates if table engine supports [sauter les indices](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-data_skipping-indexes).
+-   `supports_ttl` (UInt8) — Flag that indicates if table engine supports [TTL](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-ttl).
 -   `supports_sort_order` (UInt8) — Flag that indicates if table engine supports clauses `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` et `SAMPLE_BY`.
--   `supports_replication` (UInt8) — Flag that indicates if table engine supports [réplication des données](table_engines/replication/).
+-   `supports_replication` (UInt8) — Flag that indicates if table engine supports [réplication des données](../engines/table_engines/mergetree_family/replication.md).
 -   `supports_duduplication` (UInt8) — Flag that indicates if table engine supports data deduplication.
 
 Exemple:
@@ -896,9 +916,9 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 
 **Voir aussi**
 
--   Famille MergeTree [les clauses de requête](table_engines/mergetree.md#mergetree-query-clauses)
--   Kafka [paramètre](table_engines/kafka.md#table_engine-kafka-creating-a-table)
--   Rejoindre [paramètre](table_engines/join.md#join-limitations-and-settings)
+-   Famille MergeTree [les clauses de requête](../engines/table_engines/mergetree_family/mergetree.md#mergetree-query-clauses)
+-   Kafka [paramètre](../engines/table_engines/integrations/kafka.md#table_engine-kafka-creating-a-table)
+-   Rejoindre [paramètre](../engines/table_engines/special/join.md#join-limitations-and-settings)
 
 ## système.table {#system-tables}
 
@@ -907,20 +927,46 @@ Contient les métadonnées de chaque table que le serveur connaît. Les tableaux
 Ce tableau contient les colonnes suivantes (le type de colonne est indiqué entre parenthèses):
 
 -   `database` (String) — The name of the database the table is in.
+
 -   `name` (String) — Table name.
+
 -   `engine` (String) — Table engine name (without parameters).
+
 -   `is_temporary` (UInt8) - indicateur qui indique si la table est temporaire.
+
 -   `data_path` (Chaîne) - chemin d'accès aux données de la table dans le système de fichiers.
+
 -   `metadata_path` (Chaîne) - chemin d'accès aux métadonnées de la table dans le système de fichiers.
+
 -   `metadata_modification_time` (DateTime) - Heure de la dernière modification des métadonnées de la table.
+
 -   `dependencies_database` (Array (String)) - dépendances de base de données.
--   `dependencies_table` (Array (String)) - dépendances de Table ([MaterializedView](table_engines/materializedview.md) tables basées sur le tableau actuel).
+
+-   `dependencies_table` (Array (String)) - dépendances de Table ([MaterializedView](../engines/table_engines/special/materializedview.md) tables basées sur le tableau actuel).
+
 -   `create_table_query` (Chaîne) - la requête qui a été utilisée pour créer la table.
+
 -   `engine_full` (Chaîne) - paramètres du moteur de table.
+
 -   `partition_key` (String) - l'expression de clé de partition spécifiée dans le tableau.
+
 -   `sorting_key` (String) - l'expression de clé de tri spécifiée dans la table.
+
 -   `primary_key` (String) - l'expression de clé primaire spécifiée dans la table.
+
 -   `sampling_key` (String) - l'expression de clé d'échantillonnage spécifiée dans la table.
+
+-   `storage_policy` (String) - La politique de stockage:
+
+    -   [MergeTree](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes)
+    -   [Distribué](../engines/table_engines/special/distributed.md#distributed)
+
+-   `total_rows` (Nullable (UInt64)) - nombre Total de lignes, s'il est possible de déterminer rapidement le nombre exact de lignes dans la table, sinon `Null` (y compris underying `Buffer` table).
+
+-   `total_bytes` (Nullable (UInt64)) - nombre Total d'octets, s'il est possible de déterminer rapidement le nombre exact d'octets pour la table sur le stockage, sinon `Null` (**ne pas** comprend tout de stockage sous-jacent).
+
+    -   If the table stores data on disk, returns used space on disk (i.e. compressed).
+    -   Si la table stocke des données en mémoire, renvoie un nombre approximatif d'octets utilisés en mémoire.
 
 Le `system.tables` le tableau est utilisé dans `SHOW TABLES` implémentation de requête.
 
@@ -997,7 +1043,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ## système.mutation {#system_tables-mutations}
 
-Le tableau contient des informations sur [mutation](../query_language/alter.md#alter-mutations) des tables MergeTree et leur progression. Chaque commande de mutation est représentée par une seule ligne. Le tableau comporte les colonnes suivantes:
+Le tableau contient des informations sur [mutation](../sql_reference/statements/alter.md#alter-mutations) des tables MergeTree et leur progression. Chaque commande de mutation est représentée par une seule ligne. Le tableau comporte les colonnes suivantes:
 
 **base de données**, **table** - Le nom de la base de données et de la table à laquelle la mutation a été appliquée.
 
@@ -1023,28 +1069,28 @@ S'il y avait des problèmes avec la mutation de certaines parties, les colonnes 
 
 ## système.disque {#system_tables-disks}
 
-Contient des informations sur les disques définis dans [configuration du serveur](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+Contient des informations sur les disques définis dans [configuration du serveur](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
 Colonne:
 
--   `name` ([Chaîne](../data_types/string.md)) — Name of a disk in the server configuration.
--   `path` ([Chaîne](../data_types/string.md)) — Path to the mount point in the file system.
--   `free_space` ([UInt64](../data_types/int_uint.md)) — Free space on disk in bytes.
--   `total_space` ([UInt64](../data_types/int_uint.md)) — Disk volume in bytes.
--   `keep_free_space` ([UInt64](../data_types/int_uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` paramètre de configuration du disque.
+-   `name` ([Chaîne](../sql_reference/data_types/string.md)) — Name of a disk in the server configuration.
+-   `path` ([Chaîne](../sql_reference/data_types/string.md)) — Path to the mount point in the file system.
+-   `free_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Free space on disk in bytes.
+-   `total_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Disk volume in bytes.
+-   `keep_free_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` paramètre de configuration du disque.
 
 ## système.storage\_policies {#system_tables-storage_policies}
 
-Contient des informations sur les stratégies de stockage et les volumes définis [configuration du serveur](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+Contient des informations sur les stratégies de stockage et les volumes définis [configuration du serveur](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
 Colonne:
 
--   `policy_name` ([Chaîne](../data_types/string.md)) — Name of the storage policy.
--   `volume_name` ([Chaîne](../data_types/string.md)) — Volume name defined in the storage policy.
--   `volume_priority` ([UInt64](../data_types/int_uint.md)) — Volume order number in the configuration.
--   `disks` ([Tableau(String)](../data_types/array.md)) — Disk names, defined in the storage policy.
--   `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
--   `move_factor` ([Float64](../data_types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
+-   `policy_name` ([Chaîne](../sql_reference/data_types/string.md)) — Name of the storage policy.
+-   `volume_name` ([Chaîne](../sql_reference/data_types/string.md)) — Volume name defined in the storage policy.
+-   `volume_priority` ([UInt64](../sql_reference/data_types/int_uint.md)) — Volume order number in the configuration.
+-   `disks` ([Tableau(String)](../sql_reference/data_types/array.md)) — Disk names, defined in the storage policy.
+-   `max_data_part_size` ([UInt64](../sql_reference/data_types/int_uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
+-   `move_factor` ([Float64](../sql_reference/data_types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
 
 Si la stratégie de stockage contient plus d'un volume, les informations pour chaque volume sont stockées dans la ligne individuelle de la table.
 

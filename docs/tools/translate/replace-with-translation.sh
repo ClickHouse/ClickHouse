@@ -11,7 +11,7 @@ if [[ ! -z $SLEEP ]]
 then
     sleep $[ ( $RANDOM % 20 )  + 1 ]s
 fi
-git rm -f "${INPUT}"
+rm -f "${INPUT}"
 mkdir -p $(dirname "${INPUT}") || true
 YANDEX=1 "${BASE_DIR}/translate.sh" "${TARGET_LANGUAGE}" "${TEMP_FILE}" "${INPUT}"
 git add "${INPUT}"

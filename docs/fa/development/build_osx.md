@@ -1,30 +1,35 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 65
+toc_title: "\u0686\u06AF\u0648\u0646\u0647 \u0628\u0631\u0627\u06CC \u0633\u0627\u062E\
+  \u062A \u062A\u0627\u062A\u0631 \u062F\u0631 \u0633\u06CC\u0633\u062A\u0645 \u0639\
+  \u0627\u0645\u0644 \u0645\u06A9 \u0627\u06CC\u06A9\u0633"
 ---
 
-# How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
+# چگونه برای ساخت تاتر در سیستم عامل مک ایکس {#how-to-build-clickhouse-on-mac-os-x}
 
-Build should work on Mac OS X 10.15 (Catalina)
+ساخت باید در سیستم عامل مک ایکس کار 10.15 (کاتالینا)
 
-## Install Homebrew {#install-homebrew}
+## نصب گشتن {#install-homebrew}
 
 ``` bash
 $ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
 
-## Install Required Compilers, Tools, and Libraries {#install-required-compilers-tools-and-libraries}
+## نصب کامپایلرهای مورد نیاز, ابزار, و کتابخانه {#install-required-compilers-tools-and-libraries}
 
 ``` bash
 $ brew install cmake ninja libtool gettext
 ```
 
-## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
+## پرداخت منابع کلیک {#checkout-clickhouse-sources}
 
 ``` bash
 $ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 ```
 
-or
+یا
 
 ``` bash
 $ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
@@ -32,7 +37,7 @@ $ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 $ cd ClickHouse
 ```
 
-## Build ClickHouse {#build-clickhouse}
+## ساخت خانه کلیک {#build-clickhouse}
 
 ``` bash
 $ mkdir build
@@ -42,16 +47,16 @@ $ ninja
 $ cd ..
 ```
 
-## Caveats {#caveats}
+## هشدارها {#caveats}
 
-If you intend to run clickhouse-server, make sure to increase the system’s maxfiles variable.
+اگر شما قصد اجرای clickhouse-سرور مطمئن شوید که برای افزایش سیستم maxfiles متغیر است.
 
-!!! info "Note"
-    You’ll need to use sudo.
+!!! info "یادداشت"
+    باید از سودو استفاده کنی
 
-To do so, create the following file:
+برای انجام این کار فایل زیر را ایجاد کنید:
 
-/Library/LaunchDaemons/limit.maxfiles.plist:
+/Library/LaunchDaemons/محدود می کند.مکسفیلزجان کلام:
 
 ``` xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -77,14 +82,14 @@ To do so, create the following file:
 </plist>
 ```
 
-Execute the following command:
+دستور زیر را اجرا کنید:
 
 ``` bash
 $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
-Reboot.
+راه اندازی مجدد.
 
-To check if it’s working, you can use `ulimit -n` command.
+برای بررسی اگر این کار, شما می توانید استفاده کنید `ulimit -n` فرمان.
 
-[Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->
