@@ -5,6 +5,7 @@
 #include <shared_mutex>
 #include <variant>
 #include <vector>
+#include <list>
 #include <Core/Block.h>
 #include <common/logger_useful.h>
 #include <Columns/ColumnDecimal.h>
@@ -21,6 +22,67 @@
 
 namespace DB
 {
+
+template <typename K, typename V>
+class CLRUCache
+{
+    using Iter = std::list<K>::iterator;
+public:
+    CLRUCache(size_t max_size_) : max_size(max_size_) {
+    }
+
+    void set(K key, V val) {
+        auto it = cache.find(key);
+        if (it == std::end(cache)) {
+            auto & item = cache[key];
+            item.first = queue.insert(std::end(queue), key);
+            item.second = val;
+            if (queue.size() > max_size) {
+                //Poco::Logger::get("Evict").fatal("eviction");
+                cache.erase(queue.front());
+                queue.pop_front();   
+            }
+        } else {
+            queue.erase(it->second.first);
+            it->second.first = queue.insert(std::end(queue), key);
+            it->second.second = val;
+        }
+    }
+
+    bool get(K key, V & val) {
+        auto it = cache.find(key);
+        if (it == std::end(cache)) {
+            return false;
+        }
+        val = it->second.second;
+        queue.erase(it->second.first);
+        it->second.first = queue.insert(std::end(queue), key);
+        return true;
+    }
+
+    void erase(K key) {
+        auto it = cache.find(key);
+        queue.erase(it->second.first);
+        cache.erase(it);
+    }
+
+    size_t size() const {
+        return cache.size();
+    }
+
+    auto begin() {
+        return std::begin(cache);
+    }
+
+    auto end() {
+        return std::end(cache);
+    }
+
+private:
+    std::unordered_map<K, std::pair<Iter, V>> cache;
+    std::list<K> queue;
+    size_t max_size;
+};
 
 using AttributeValueVariant = std::variant<
         UInt8,
@@ -59,7 +121,7 @@ public:
         bool operator< (const Index & rhs) const { return index < rhs.index; }
 
         /// Stores `is_in_memory` flag, block id, address in uncompressed block
-        size_t index = 0;
+        uint64_t index = 0;
     };
 
     struct Metadata final
@@ -182,7 +244,8 @@ private:
         Metadata metadata{};
     };
 
-    mutable std::unordered_map<UInt64, IndexAndMetadata> key_to_index_and_metadata;
+    //mutable std::unordered_map<UInt64, IndexAndMetadata> key_to_index_and_metadata;
+    mutable CLRUCache<UInt64, IndexAndMetadata> key_to_index_and_metadata;
 
     Attribute keys_buffer;
     const std::vector<AttributeUnderlyingType> attributes_structure;
