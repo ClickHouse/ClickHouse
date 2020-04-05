@@ -195,7 +195,7 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (add_hosts)
         formatHosts("ADD", *add_hosts, format);
     if (remove_hosts)
-        formatHosts("REMOVE", *remove_hosts, format);
+        formatHosts("DROP", *remove_hosts, format);
 
     if (default_roles)
         formatDefaultRoles(*default_roles, format);

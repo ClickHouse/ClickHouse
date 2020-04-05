@@ -19,7 +19,7 @@ class ASTSettingsProfileElements;
   * ALTER USER [IF EXISTS] name
   *      [RENAME TO new_name]
   *      [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
-  *      [[ADD|REMOVE] HOST {LOCAL | NAME 'name' | NAME REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+  *      [[ADD|DROP] HOST {LOCAL | NAME 'name' | NAME REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
   *      [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
   *      [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   */

@@ -15,7 +15,7 @@ namespace
 
         boost::algorithm::trim(name);
 
-        String pattern = "@";
+        String pattern = "%";
 
         if (ParserToken{TokenType::At}.ignore(pos, expected))
         {
@@ -25,7 +25,7 @@ namespace
             boost::algorithm::trim(pattern);
         }
 
-        if (pattern != "@")
+        if (pattern != "%")
             name += '@' + pattern;
 
         user_name = std::move(name);
