@@ -1,6 +1,60 @@
 #pragma once
 
-namespace DB::DynamicTarget
+/// This file contains macros and helpers for writing platform-dependent code.
+/// 
+/// Macroses DECLARE_<Arch>_SPECIFIC_CODE will wrap code inside them into the namespace TargetSpecific::<Arch> and enable
+/// Arch-specific compile options.
+/// Thus, it's allowed to call functions inside only after checking platform in runtime (see IsArchSupported() below)
+/// For similarities there is a macros DECLARE_DEFAULT_CODE, which wraps code into the namespace TargetSpecific::Default
+/// but dosn't specify any additional copile options.
+/// 
+/// Example:
+/// 
+/// DECLARE_DEFAULT_CODE (
+/// int func() {
+///     return 1;
+/// }
+/// ) // DECLARE_DEFAULT_CODE
+/// 
+/// DECLARE_AVX2_SPECIFIC_CODE (
+/// int func() {
+///     return 2;
+/// }
+/// ) // DECLARE_DEFAULT_CODE
+/// 
+/// int func() {
+///     if (IsArchSupported(TargetArch::AVX2)) 
+///         return TargetSpecifc::AVX2::func();
+///     return TargetSpecifc::Default::func();
+/// } 
+/// 
+/// Sometimes code may benefit from compiling with different options.
+/// For these purposes use DECLARE_MULTITARGET_CODE macros. It will create several copies of the code and
+/// compile it with different options. These copies are available via TargetSpecifc namespaces described above.
+/// 
+/// Inside every TargetSpecific namespace there is a constexpr variable BuildArch, which TODO
+/// 
+/// Example:
+/// 
+/// DECLARE_MULTITARGET_CODE(
+/// int func(int size, ...) {
+///     int iteration_size = 1;
+///     if constexpr (BuildArch == TargetArch::SSE4)
+///         iteration_size = 2
+///     else if constexpr (BuildArch == TargetArch::AVX || BuildArch == TargetArch::AVX2)
+///         iteration_size = 4;
+///     else if constexpr (BuildArch == TargetArch::AVX512)
+///         iteration_size = 8;
+///     for (int i = 0; i < size; i += iteration_size)
+///     ...
+/// }
+/// ) // DECLARE_MULTITARGET_CODE
+///
+/// // All 5 versions of func are available here. Use runtime detection to choose one.
+///
+/// If you want to write IFunction or IExecutableFuncionImpl with runtime dispatching, see PerformanceAdaptors.h.
+
+namespace DB
 {
 
 enum class TargetArch : int {
@@ -11,11 +65,14 @@ enum class TargetArch : int {
     AVX512,
 };
 
+// Runtime detection.
+bool IsArchSupported(TargetArch arch);
+
 #if defined(__GNUC__)
 // TODO: There are lots of different AVX512 :(
 #   define BEGIN_AVX512_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
-        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2,tune=native\")")
+        _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2,avx512f,tune=native\")")
 #   define BEGIN_AVX2_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2,tune=native\")")
@@ -40,19 +97,19 @@ enum class TargetArch : int {
 #   define END_TARGET_SPECIFIC_CODE \
         _Pragma("clang attribute pop")
 #else
-#   error "Only CLANG and GCC compilers are supported"
+#   error "Only CLANG and GCC compilers are supported for vectorized code generation"
 #endif
 
 #define DECLARE_DEFAULT_CODE(...) \
 namespace TargetSpecific::Default { \
-    using namespace DB::DynamicTarget::TargetSpecific::Default; \
+    using namespace DB::TargetSpecific::Default; \
     __VA_ARGS__ \
 }
 
 #define DECLARE_SSE4_SPECIFIC_CODE(...) \
 BEGIN_SSE4_SPECIFIC_CODE \
 namespace TargetSpecific::SSE4 { \
-    using namespace DB::DynamicTarget::TargetSpecific::SSE4; \
+    using namespace DB::TargetSpecific::SSE4; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
@@ -60,7 +117,7 @@ END_TARGET_SPECIFIC_CODE
 #define DECLARE_AVX_SPECIFIC_CODE(...) \
 BEGIN_AVX_SPECIFIC_CODE \
 namespace TargetSpecific::AVX { \
-    using namespace DB::DynamicTarget::TargetSpecific::AVX; \
+    using namespace DB::TargetSpecific::AVX; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
@@ -68,7 +125,7 @@ END_TARGET_SPECIFIC_CODE
 #define DECLARE_AVX2_SPECIFIC_CODE(...) \
 BEGIN_AVX2_SPECIFIC_CODE \
 namespace TargetSpecific::AVX2 { \
-    using namespace DB::DynamicTarget::TargetSpecific::AVX2; \
+    using namespace DB::TargetSpecific::AVX2; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
@@ -76,7 +133,7 @@ END_TARGET_SPECIFIC_CODE
 #define DECLARE_AVX512_SPECIFIC_CODE(...) \
 BEGIN_AVX512_SPECIFIC_CODE \
 namespace TargetSpecific::AVX512 { \
-    using namespace DB::DynamicTarget::TargetSpecific::AVX512; \
+    using namespace DB::TargetSpecific::AVX512; \
     __VA_ARGS__ \
 } \
 END_TARGET_SPECIFIC_CODE
@@ -108,6 +165,4 @@ DECLARE_AVX512_SPECIFIC_CODE(
     constexpr auto BuildArch = TargetArch::AVX512;
 ) // DECLARE_AVX512_SPECIFIC_CODE
 
-bool IsArchSupported(TargetArch arch);
-
-} // namespace DB::DynamicTarget
+} // namespace DB

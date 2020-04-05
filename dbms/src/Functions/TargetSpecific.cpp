@@ -1,6 +1,6 @@
-#include "Target.h"
+#include <Functions/TargetSpecific.h>
 
-namespace DB::DynamicTarget
+namespace DB
 {
 
 bool IsArchSupported(TargetArch arch)
@@ -9,4 +9,4 @@ bool IsArchSupported(TargetArch arch)
     return arch != TargetArch::AVX512;
 }
 
-} // namespace DB::DynamicTarget
+} // namespace DB

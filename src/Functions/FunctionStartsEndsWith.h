@@ -6,8 +6,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
 
-#include <Functions/DynamicTarget/Target.h>
-#include <Functions/DynamicTarget/Selector.h>
+#include <Functions/TargetSpecific.h>
+#include <Functions/PerformanceAdaptors.h>
 
 namespace DB
 {
@@ -36,10 +36,6 @@ class FunctionStartsEndsWith : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &)
-    {
-        return std::make_shared<FunctionStartsEndsWith>();
-    }
 
     String getName() const override
     {
@@ -144,24 +140,21 @@ private:
 
 template <typename Name>
 class FunctionStartsEndsWith
-    : public DynamicTarget::FunctionDynamicAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>
+    : public FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>
 {
 public:
-    FunctionStartsEndsWith(const Context & context_)
-        : DynamicTarget::FunctionDynamicAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>(context_)
+    FunctionStartsEndsWith(const Context &)
+        : FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>()
     {
-        registerImplementation<TargetSpecific::SSE4::FunctionStartsEndsWith<Name>>(DynamicTarget::TargetArch::SSE4);
-        registerImplementation<TargetSpecific::AVX::FunctionStartsEndsWith<Name>>(DynamicTarget::TargetArch::AVX);
-        registerImplementation<TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>(DynamicTarget::TargetArch::AVX2);
-        registerImplementation<TargetSpecific::AVX512::FunctionStartsEndsWith<Name>>(DynamicTarget::TargetArch::AVX512);
+        registerImplementation<TargetSpecific::SSE4::FunctionStartsEndsWith<Name>>(TargetArch::SSE4);
+        registerImplementation<TargetSpecific::AVX::FunctionStartsEndsWith<Name>>(TargetArch::AVX);
+        registerImplementation<TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>(TargetArch::AVX2);
+        registerImplementation<TargetSpecific::AVX512::FunctionStartsEndsWith<Name>>(TargetArch::AVX512);
     }
     static FunctionPtr create(const Context & context)
     {
         return std::make_shared<FunctionStartsEndsWith<Name>>(context);
     }
 };
-
-// template <typename Name>
-// using FunctionStartsEndsWith = TargetSpecific::Default::FunctionStartsEndsWith<Name>;
 
 }
