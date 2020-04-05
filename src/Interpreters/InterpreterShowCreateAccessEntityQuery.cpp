@@ -256,6 +256,7 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const ASTShowCreateAccessEntityQuery & show_query) const
 {
     const auto & access_control = context.getAccessControlManager();
+    context.checkAccess(getRequiredAccess());
 
     if (show_query.current_user)
     {
@@ -278,6 +279,22 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const ASTShowCreat
 
     auto entity = access_control.read(access_control.getID(type, show_query.name));
     return getCreateQueryImpl(*entity, &access_control);
+}
+
+
+AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess() const
+{
+    const auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
+    AccessRightsElements res;
+    switch (show_query.kind)
+    {
+        case Kind::USER: res.emplace_back(AccessType::SHOW_USERS); break;
+        case Kind::ROLE: res.emplace_back(AccessType::SHOW_ROLES); break;
+        case Kind::ROW_POLICY: res.emplace_back(AccessType::SHOW_ROW_POLICIES); break;
+        case Kind::SETTINGS_PROFILE: res.emplace_back(AccessType::SHOW_SETTINGS_PROFILES); break;
+        case Kind::QUOTA: res.emplace_back(AccessType::SHOW_QUOTAS); break;
+    }
+    return res;
 }
 
 
