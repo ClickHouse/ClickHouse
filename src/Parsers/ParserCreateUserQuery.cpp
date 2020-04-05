@@ -318,7 +318,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             if (new_name.empty() && parseRenameTo(pos, expected, new_name, new_host_pattern))
                 continue;
 
-            if (parseHosts(pos, expected, "ADD", add_hosts) || parseHosts(pos, expected, "REMOVE", remove_hosts))
+            if (parseHosts(pos, expected, "ADD", add_hosts) || parseHosts(pos, expected, "DROP", remove_hosts))
                 continue;
         }
 
