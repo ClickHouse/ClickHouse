@@ -29,14 +29,45 @@ struct NameEndsWith
     static constexpr auto name = "endsWith";
 };
 
-using DynamicTarget::TargetArch;
-
 DECLARE_MULTITARGET_CODE(
 
 template <typename Name>
-class FunctionStartsEndsWithImpl {
+class FunctionStartsEndsWith : public IFunction
+{
 public:
-    static void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    static constexpr auto name = Name::name;
+    static FunctionPtr create(const Context &)
+    {
+        return std::make_shared<FunctionStartsEndsWith>();
+    }
+
+    String getName() const override
+    {
+        return name;
+    }
+
+    size_t getNumberOfArguments() const override
+    {
+        return 2;
+    }
+
+    bool useDefaultImplementationForConstants() const override
+    {
+        return true;
+    }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (!isStringOrFixedString(arguments[0]))
+            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        if (!isStringOrFixedString(arguments[1]))
+            throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
+
+        return std::make_shared<DataTypeUInt8>();
+    }
+
+    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const IColumn * haystack_column = block.getByPosition(arguments[0]).column.get();
         const IColumn * needle_column = block.getByPosition(arguments[1]).column.get();
@@ -55,14 +86,14 @@ public:
         else if (const ColumnConst * haystack_const_fixed = checkAndGetColumnConst<ColumnFixedString>(haystack_column))
             dispatch<ConstSource<FixedStringSource>>(ConstSource<FixedStringSource>(*haystack_const_fixed), needle_column, vec_res);
         else
-            throw Exception("Illegal combination of columns as arguments of function " "getName()", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Illegal combination of columns as arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
         block.getByPosition(result).column = std::move(col_res);
     }
 
 private:
     template <typename HaystackSource>
-    static void dispatch(HaystackSource haystack_source, const IColumn * needle_column, PaddedPODArray<UInt8> & res_data)
+    void dispatch(HaystackSource haystack_source, const IColumn * needle_column, PaddedPODArray<UInt8> & res_data) const
     {
         if (const ColumnString * needle = checkAndGetColumn<ColumnString>(needle_column))
             execute<HaystackSource, StringSource>(haystack_source, StringSource(*needle), res_data);
@@ -73,7 +104,7 @@ private:
         else if (const ColumnConst * needle_const_fixed = checkAndGetColumnConst<ColumnFixedString>(needle_column))
             execute<HaystackSource, ConstSource<FixedStringSource>>(haystack_source, ConstSource<FixedStringSource>(*needle_const_fixed), res_data);
         else
-            throw Exception("Illegal combination of columns as arguments of function "  "getName()", ErrorCodes::ILLEGAL_COLUMN);
+            throw Exception("Illegal combination of columns as arguments of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
     }
 
     template <typename HaystackSource, typename NeedleSource>
@@ -112,55 +143,22 @@ private:
 ) // DECLARE_MULTITARGET_CODE
 
 template <typename Name>
-class FunctionStartsEndsWith : public IFunction
+class FunctionStartsEndsWith : public DynamicTarget::FunctionDynamicAdaptor
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &)
+    FunctionStartsEndsWith(const Context & context_)
+        : FunctionDynamicAdaptor<typename TargetSpecific::Default::FunctionStartsEndsWith<Name>>(context_)
     {
-        return std::make_shared<FunctionStartsEndsWith>();
+        registerImplementation<TargetSpecific::SSE4::FunctionStartsEndsWith<Name>>(TargetArch::SSE4);
+        registerImplementation<TargetSpecific::AVX::FunctionStartsEndsWith<Name>>(TargetArch::AVX);
+        registerImplementation<TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>(TargetArch::AVX2);
+        registerImplementation<TargetSpecific::AVX512::FunctionStartsEndsWith<Name>>(TargetArch::AVX512);
     }
-
-    FunctionStartsEndsWith() {
-        executor_.registerExecutor(std::nullopt, TargetSpecific::Default::FunctionStartsEndsWithImpl<Name>::executeImpl);
-        executor_.registerExecutor(TargetArch::SSE4, TargetSpecific::SSE4::FunctionStartsEndsWithImpl<Name>::executeImpl);
-        executor_.registerExecutor(TargetArch::AVX, TargetSpecific::AVX::FunctionStartsEndsWithImpl<Name>::executeImpl);
-        executor_.registerExecutor(TargetArch::AVX2, TargetSpecific::AVX2::FunctionStartsEndsWithImpl<Name>::executeImpl);
-        executor_.registerExecutor(TargetArch::AVX512, TargetSpecific::AVX512::FunctionStartsEndsWithImpl<Name>::executeImpl);
-    }
-
-    String getName() const override
+    static FunctionPtr create(const Context & context)
     {
-        return name;
+        return std::make_shared<FunctionStartsEndsWith<Name>>(context); \
     }
-
-    size_t getNumberOfArguments() const override
-    {
-        return 2;
-    }
-
-    bool useDefaultImplementationForConstants() const override
-    {
-        return true;
-    }
-
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        if (!isStringOrFixedString(arguments[0]))
-            throw Exception("Illegal type " + arguments[0]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        if (!isStringOrFixedString(arguments[1]))
-            throw Exception("Illegal type " + arguments[1]->getName() + " of argument of function " + getName(), ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
-
-        return std::make_shared<DataTypeUInt8>();
-    }
-
-    void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
-    {
-        executor_.execute(block, arguments, result, input_rows_count);
-    }
-private:
-    DynamicTarget::SelectorExecutor<Block &, const ColumnNumbers &, size_t, size_t> executor_;
 };
 
 }

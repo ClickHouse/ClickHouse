@@ -4,7 +4,7 @@ namespace DB::DynamicTarget
 {
 
 enum class TargetArch : int {
-    Scalar,
+    Default, // Without any additional compiler options.
     SSE4,
     AVX,
     AVX2,
@@ -89,7 +89,7 @@ DECLARE_AVX2_SPECIFIC_CODE  (__VA_ARGS__) \
 DECLARE_AVX512_SPECIFIC_CODE(__VA_ARGS__)
 
 DECLARE_DEFAULT_CODE(
-    constexpr auto BuildArch = TargetArch::Scalar;
+    constexpr auto BuildArch = TargetArch::Default;
 ) // DECLARE_DEFAULT_CODE
 
 DECLARE_SSE4_SPECIFIC_CODE(
