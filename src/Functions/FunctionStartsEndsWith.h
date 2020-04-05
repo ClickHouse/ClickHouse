@@ -143,22 +143,25 @@ private:
 ) // DECLARE_MULTITARGET_CODE
 
 template <typename Name>
-class FunctionStartsEndsWith : public DynamicTarget::FunctionDynamicAdaptor
+class FunctionStartsEndsWith
+    : public DynamicTarget::FunctionDynamicAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>
 {
 public:
-    static constexpr auto name = Name::name;
     FunctionStartsEndsWith(const Context & context_)
-        : FunctionDynamicAdaptor<typename TargetSpecific::Default::FunctionStartsEndsWith<Name>>(context_)
+        : DynamicTarget::FunctionDynamicAdaptor<TargetSpecific::Default::FunctionStartsEndsWith<Name>>(context_)
     {
-        registerImplementation<TargetSpecific::SSE4::FunctionStartsEndsWith<Name>>(TargetArch::SSE4);
-        registerImplementation<TargetSpecific::AVX::FunctionStartsEndsWith<Name>>(TargetArch::AVX);
-        registerImplementation<TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>(TargetArch::AVX2);
-        registerImplementation<TargetSpecific::AVX512::FunctionStartsEndsWith<Name>>(TargetArch::AVX512);
+        registerImplementation<TargetSpecific::SSE4::FunctionStartsEndsWith<Name>>(DynamicTarget::TargetArch::SSE4);
+        registerImplementation<TargetSpecific::AVX::FunctionStartsEndsWith<Name>>(DynamicTarget::TargetArch::AVX);
+        registerImplementation<TargetSpecific::AVX2::FunctionStartsEndsWith<Name>>(DynamicTarget::TargetArch::AVX2);
+        registerImplementation<TargetSpecific::AVX512::FunctionStartsEndsWith<Name>>(DynamicTarget::TargetArch::AVX512);
     }
     static FunctionPtr create(const Context & context)
     {
-        return std::make_shared<FunctionStartsEndsWith<Name>>(context); \
+        return std::make_shared<FunctionStartsEndsWith<Name>>(context);
     }
 };
+
+// template <typename Name>
+// using FunctionStartsEndsWith = TargetSpecific::Default::FunctionStartsEndsWith<Name>;
 
 }

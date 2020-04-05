@@ -133,161 +133,30 @@ struct PerformanceStatistics
 //     PerformanceStatistics statistics;
 // };
 
-class FunctionDynamicAdaptor : public IFunction
+template <typename DefaultFunction>
+class FunctionDynamicAdaptor : public DefaultFunction
 {
 public:
-    template<typename DefaultFunction>
-    FunctionDynamicAdaptor(const Context & context_) : context(context_)
+    template <typename ...Params>
+    FunctionDynamicAdaptor(const Context & context_, Params ...params)
+        : DefaultFunction(params...)
+        , context(context_)
     {
-        registerImplementation<DefaultFunction>();
-    }
-
-    virtual String getName() const override {
-        return impls.front()->getName();
+        statistics.emplace_back();
     }
 
     virtual void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         int id = statistics.select();
         // TODO(dakovalkov): measure time and change statistics.
-        impls[id]->executeImpl(block, arguments, result, input_rows_count);
-    }
-    virtual void executeImplDryRun(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
-    {
-        impls.front()->executeImplDryRun(block, arguments, result, input_rows_count);
-    }
-
-    virtual bool useDefaultImplementationForNulls() const override
-    {
-        return impls.front()->useDefaultImplementationForNulls();
-    }
-
-    virtual bool useDefaultImplementationForConstants() const override
-    {
-        return impls.front()->useDefaultImplementationForConstants();
-    }
-
-    virtual bool useDefaultImplementationForLowCardinalityColumns() const override
-    {
-        return impls.front()->useDefaultImplementationForLowCardinalityColumns();
-    }
-
-    virtual bool canBeExecutedOnLowCardinalityDictionary() const override
-    {
-        return impls.front()->canBeExecutedOnLowCardinalityDictionary();
-    }
-
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
-    {
-        return impls.front()->getArgumentsThatAreAlwaysConstant();
-    }
-
-    virtual bool canBeExecutedOnDefaultArguments() const override 
-    {
-        return impls.front()->canBeExecutedOnDefaultArguments();
-    }
-
-#if USE_EMBEDDED_COMPILER
-
-    virtual bool isCompilable() const override
-    {
-        return impls.front()->isCompilable();
-    }
-
-    virtual llvm::Value * compile(llvm::IRBuilderBase & builder, ValuePlaceholders values) const override
-    {
-        return impls.front()->compile(builder, std::move(values));
-    }
-
-#endif
-
-    /// Properties from IFunctionBase (see IFunction.h)
-    virtual bool isSuitableForConstantFolding() const override
-    {
-        return impls.front()->isSuitableForConstantFolding();
-    }
-    virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & block, const ColumnNumbers & arguments) const override
-    {
-        return impls.front()->getResultIfAlwaysReturnsConstantAndHasArguments(block, arguments);
-    }
-    virtual bool isInjective(const Block & sample_block) override
-    {
-        return impls.front()->isInjective(sample_block);
-    }
-    virtual bool isDeterministic() const override
-    {
-        return impls.front()->isDeterministic();
-    }
-    virtual bool isDeterministicInScopeOfQuery() const override
-    {
-        return impls.front()->isDeterministicInScopeOfQuery();
-    }
-    virtual bool isStateful() const override
-    {
-        return impls.front()->isStateful();
-    }
-    virtual bool hasInformationAboutMonotonicity() const override
-    {
-        return impls.front()->hasInformationAboutMonotonicity();
-    }
-
-    using Monotonicity = IFunctionBase::Monotonicity;
-    virtual Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
-    {
-        return impls.front()->getMonotonicityForRange(type, left, right);
-    }
-
-    virtual size_t getNumberOfArguments() const override {
-        return impls.front()->getNumberOfArguments();
-    }
-
-    virtual DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
-    {
-        return impls.front()->getReturnTypeImpl(arguments);
-    }
-
-    virtual DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
-    {
-        return impls.front()->getReturnTypeImpl(arguments);
-    }
-
-    virtual bool isVariadic() const override
-    {
-        return impls.front()->isVariadic();
-    }
-
-    virtual void checkNumberOfArgumentsIfVariadic(size_t number_of_arguments) const override
-    {
-        impls.front()->checkNumberOfArgumentsIfVariadic(number_of_arguments);
-    }
-
-    virtual void getLambdaArgumentTypes(DataTypes & arguments) const override
-    {
-        impls.front()->getLambdaArgumentTypes(arguments);
-    }
-
-    virtual ColumnNumbers getArgumentsThatDontImplyNullableReturnType(size_t number_of_arguments) const override
-    {
-        return impls.front()->getArgumentsThatDontImplyNullableReturnType(number_of_arguments);
+        if (id == 0) {
+            DefaultFunction::executeImpl(block, arguments, result, input_rows_count);
+        } else {
+            impls[id - 1]->executeImpl(block, arguments, result, input_rows_count);
+        }
     }
 
 protected:
-
-#if USE_EMBEDDED_COMPILER
-
-    virtual bool isCompilableImpl(const DataTypes & /* types */) const override
-    {
-        return false;
-        // return impls.front()->isCompilableImpl(types);
-    }
-
-    virtual llvm::Value * compileImpl(llvm::IRBuilderBase & /* builder */, const DataTypes & /* types */, ValuePlaceholders /* ph */) const override
-    {
-        throw "safasf Error";
-        // return impls.front()->compileImpl(builder, types, ph);
-    }
-
-#endif
     /*
      * Register implementation of the function.
      */  
@@ -301,15 +170,16 @@ protected:
 
 private:
     const Context & context;
-    std::vector<FunctionPtr> impls;
+    std::vector<FunctionPtr> impls; // Alternative implementations.
     PerformanceStatistics statistics;
 };
 
+// TODO(dakovalkov): May be it's better to delete this macros and write every function explicitly for better readability.
 #define DECLARE_STANDART_TARGET_ADAPTOR(Function) \
-class Function : public FunctionDynamicAdaptor \
+class Function : public FunctionDynamicAdaptor<TargetSpecific::Default::Function> \
 { \
 public: \
-    Function(const Context & context) : FunctionDynamicAdaptor<TargetSpecific::Default::Function>(context) \
+    Function(const Context & context) : FunctionDynamicAdaptor(context) \
     { \
         registerImplementation<TargetSpecific::SSE4::Function>(TargetArch::SSE4); \
         registerImplementation<TargetSpecific::AVX::Function>(TargetArch::AVX); \
