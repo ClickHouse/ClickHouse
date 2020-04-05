@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 
 import argparse
+import collections
 import datetime
-import http.server
 import logging
-import multiprocessing
 import os
 import shutil
-import socketserver
 import subprocess
 import sys
 import time
 
+import bs4
 import jinja2
 import livereload
 import markdown.util
@@ -40,6 +39,39 @@ class ClickHouseMarkdown(markdown.extensions.Extension):
 
 
 markdown.extensions.ClickHouseMarkdown = ClickHouseMarkdown
+
+
+def build_nav_entry(root):
+    if root.endswith('images'):
+        return None, None, None
+    result_items = []
+    index_meta, _ = util.read_md_file(os.path.join(root, 'index.md'))
+    current_title = index_meta.get('toc_folder_title', index_meta.get('toc_title', 'hidden'))
+    for filename in os.listdir(root):
+        path = os.path.join(root, filename)
+        if os.path.isdir(path):
+            prio, title, payload = build_nav_entry(path)
+            if title and payload:
+                result_items.append((prio, title, payload))
+        elif filename.endswith('.md'):
+            path = os.path.join(root, filename)
+            meta, _ = util.read_md_file(path)
+            path = path.split('/', 2)[-1]
+            title = meta.get('toc_title', 'hidden')
+            prio = meta.get('toc_priority', 9999)
+            result_items.append((prio, title, path))
+    result_items = sorted(result_items, key=lambda x: (x[0], x[1]))
+    result = collections.OrderedDict([(item[1], item[2]) for item in result_items])
+    return index_meta.get('toc_priority', 10000), current_title, result
+
+
+def build_nav(lang, args):
+    docs_dir = os.path.join(args.docs_dir, lang)
+    _, _, nav = build_nav_entry(docs_dir)
+    result = []
+    for key, value in nav.items():
+        result.append({key: value})
+    return result
 
 
 def build_for_lang(lang, args):
@@ -126,7 +158,6 @@ def build_for_lang(lang, args):
             plugins.append('htmlproofer')
 
         raw_config = dict(
-            config_file=config_path,
             site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
             site_url=f'https://clickhouse.tech/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
@@ -153,6 +184,13 @@ def build_for_lang(lang, args):
             }
         )
 
+        if os.path.exists(config_path):
+            nav = None
+            raw_config['config_file'] = config_path
+        else:
+            nav = build_nav(lang, args)
+            raw_config['nav'] = nav
+
         cfg = config.load_config(**raw_config)
 
         try:
@@ -164,7 +202,7 @@ def build_for_lang(lang, args):
             mkdocs_build.build(cfg)
 
         if not args.skip_single_page:
-            build_single_page_version(lang, args, cfg)
+            build_single_page_version(lang, args, nav, cfg)
 
         mdx_clickhouse.PatchedMacrosPlugin.disabled = False
 
@@ -174,14 +212,14 @@ def build_for_lang(lang, args):
         raise SystemExit('\n' + str(e))
 
 
-def build_single_page_version(lang, args, cfg):
+def build_single_page_version(lang, args, nav, cfg):
     logging.info(f'Building single page version for {lang}')
     os.environ['SINGLE_PAGE'] = '1'
     extra = cfg.data['extra']
     extra['single_page'] = True
 
     with util.autoremoved_file(os.path.join(args.docs_dir, lang, 'single.md')) as single_md:
-        concatenate(lang, args.docs_dir, single_md)
+        concatenate(lang, args.docs_dir, single_md, nav)
 
         with util.temp_dir() as site_temp:
             with util.temp_dir() as docs_temp:
@@ -219,9 +257,6 @@ def build_single_page_version(lang, args, cfg):
                 
                 logging.info(f'Re-building single page for {lang} pdf/test')
                 with util.temp_dir() as test_dir:
-                    single_page_pdf = os.path.abspath(
-                        os.path.join(single_page_output_path, f'clickhouse_{lang}.pdf')
-                    )
                     extra['single_page'] = False
                     cfg.load_dict({
                         'docs_dir': docs_temp_lang,
@@ -237,43 +272,46 @@ def build_single_page_version(lang, args, cfg):
                     js_in = ' '.join(website.get_js_in(args))
                     subprocess.check_call(f'cat {css_in} > {test_dir}/css/base.css', shell=True)
                     subprocess.check_call(f'cat {js_in} > {test_dir}/js/base.js', shell=True)
-                    if not args.skip_pdf:
-                        port_for_pdf = util.get_free_port()
-                        httpd = socketserver.TCPServer(
-                            ('', port_for_pdf), http.server.SimpleHTTPRequestHandler
-                        )
-                        logging.info(f"Serving for {lang} pdf at port {port_for_pdf}")
-                        process = multiprocessing.Process(target=httpd.serve_forever)
-                        with util.cd(test_dir):
-                            process.start()
-                            create_pdf_command = [
-                                'wkhtmltopdf',
-                                '--print-media-type',
-                                '--disable-javascript',
-                                # TODO: restore '--log-level', 'warn',
-                                f'http://localhost:{port_for_pdf}/single/', single_page_pdf
-                            ]
-                            try:
-                                if args.save_raw_single_page:
-                                    shutil.copytree(test_dir, args.save_raw_single_page)
-                                logging.info(' '.join(create_pdf_command))
-                                subprocess.check_call(' '.join(create_pdf_command), shell=True)
-                            finally:
-                                logging.info(f'Stop serving for {lang} pdf at port {port_for_pdf}')
-                                process.kill()
-                                while True:
-                                    time.sleep(0.25)
-                                    try:
-                                        process.close()
-                                        break
-                                    except ValueError:
-                                        logging.info(f'Waiting for {lang} httpd at port {port_for_pdf} to stop')
-
+                    if args.save_raw_single_page:
+                        shutil.copytree(test_dir, args.save_raw_single_page)
 
                     if not args.version_prefix:  # maybe enable in future
                         logging.info(f'Running tests for {lang}')
                         test.test_single_page(
                             os.path.join(test_dir, 'single', 'index.html'), lang)
+
+                    if not args.skip_pdf:
+                        single_page_index_html = os.path.join(test_dir, 'single', 'index.html')
+                        single_page_pdf = os.path.abspath(
+                            os.path.join(single_page_output_path, f'clickhouse_{lang}.pdf')
+                        )
+
+                        with open(single_page_index_html, 'r') as f:
+                            soup = bs4.BeautifulSoup(
+                                f.read(),
+                                features='html.parser'
+                            )
+                        soup_prefix = f'file://{test_dir}'
+                        for img in soup.findAll('img'):
+                            if img['src'].startswith('/'):
+                                img['src'] = soup_prefix + img['src']
+                        for script in soup.findAll('script'):
+                            script['src'] = soup_prefix + script['src'].split('?', 1)[0]
+                        for link in soup.findAll('link'):
+                            link['href'] = soup_prefix + link['href'].split('?', 1)[0]
+
+                        with open(single_page_index_html, 'w') as f:
+                            f.write(str(soup))
+
+                        create_pdf_command = [
+                            'wkhtmltopdf',
+                            '--print-media-type',
+                            '--log-level', 'warn',
+                            single_page_index_html, single_page_pdf
+                        ]
+
+                        logging.info(' '.join(create_pdf_command))
+                        subprocess.check_call(' '.join(create_pdf_command), shell=True)
 
         logging.info(f'Finished building single page version for {lang}')
 
@@ -302,7 +340,7 @@ def write_redirect_html(out_path, to_url):
 
 
 def build_redirect_html(args, from_path, to_path):
-    for lang in args.lang.split(','):
+    for lang in ['en', 'es', 'fr', 'ja', 'fa']: # TODO: args.lang.split(','):
         out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
         version_prefix = args.version_prefix + '/' if args.version_prefix else '/'
         target_path = to_path.replace('.md', '/')

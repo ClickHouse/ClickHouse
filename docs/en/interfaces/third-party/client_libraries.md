@@ -1,3 +1,8 @@
+---
+toc_priority: 26
+toc_title: Client Libraries
+---
+
 # Client Libraries from Third-party Developers {#client-libraries-from-third-party-developers}
 
 !!! warning "Disclaimer"
