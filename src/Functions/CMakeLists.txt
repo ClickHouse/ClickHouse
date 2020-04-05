@@ -91,6 +91,3 @@ target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_url)
 
 add_subdirectory(array)
 target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_array)
-
-add_subdirectory(DynamicTarget)
-target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_dynamic_target)
