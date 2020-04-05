@@ -409,14 +409,8 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
     static const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
     static const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
 
-    static const AccessFlags all_dcl = AccessType::CREATE_USER | AccessType::ALTER_USER | AccessType::DROP_USER
-                                     | AccessType::CREATE_ROLE | AccessType::ALTER_ROLE | AccessType::DROP_ROLE | AccessType::ROLE_ADMIN
-                                     | AccessType::CREATE_ROW_POLICY | AccessType::ALTER_ROW_POLICY | AccessType::DROP_ROW_POLICY
-                                     | AccessType::CREATE_SETTINGS_PROFILE | AccessType::ALTER_SETTINGS_PROFILE | AccessType::DROP_SETTINGS_PROFILE
-                                     | AccessType::CREATE_QUOTA | AccessType::ALTER_QUOTA | AccessType::DROP_QUOTA;
-
     if (readonly_)
-        merged_access->revoke(write_table_access | all_dcl | table_and_dictionary_ddl | AccessType::SYSTEM | AccessType::KILL_QUERY);
+        merged_access->revoke(write_table_access | table_and_dictionary_ddl | AccessType::SYSTEM | AccessType::KILL_QUERY | AccessType::ACCESS_MANAGEMENT);
 
     if (readonly_ == 1)
     {
