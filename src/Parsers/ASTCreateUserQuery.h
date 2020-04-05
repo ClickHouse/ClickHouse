@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/Authentication.h>
 #include <Access/AllowedClientHosts.h>
 
@@ -23,7 +24,7 @@ class ASTSettingsProfileElements;
   *      [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
   *      [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   */
-class ASTCreateUserQuery : public IAST
+class ASTCreateUserQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     bool alter = false;
@@ -49,5 +50,6 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateUserQuery>(clone()); }
 };
 }
