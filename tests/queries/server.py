@@ -118,6 +118,7 @@ ServerThread.DEFAULT_SERVER_CONFIG = \
 
     <path>{tmp_dir}/data/</path>
     <tmp_path>{tmp_dir}/tmp/</tmp_path>
+    <access_control_path>{tmp_dir}/data/access/</access_control_path>
     <users_config>users.xml</users_config>
     <mark_cache_size>5368709120</mark_cache_size>
 
