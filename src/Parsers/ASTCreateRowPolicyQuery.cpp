@@ -157,6 +157,8 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
     settings.ostr << " " << backQuoteIfNeed(policy_name) << (settings.hilite ? hilite_keyword : "") << " ON "
                   << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".") << table_name;
 
+    formatOnCluster(settings);
+
     if (!new_policy_name.empty())
         formatRenameTo(new_policy_name, settings);
 
@@ -167,5 +169,12 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
 
     if (roles && (!roles->empty() || alter))
         formatToRoles(*roles, settings);
+}
+
+
+void ASTCreateRowPolicyQuery::replaceCurrentUserTagWithName(const String & current_user_name)
+{
+    if (roles)
+        roles->replaceCurrentUserTagWithName(current_user_name);
 }
 }

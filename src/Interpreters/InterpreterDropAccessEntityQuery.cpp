@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterDropAccessEntityQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
 #include <Access/User.h>
@@ -51,6 +52,9 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 
     std::type_index type = getType(query.kind);
     context.checkAccess(getRequiredAccessType(query.kind));
+
+    if (!query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
 
     if (query.kind == Kind::ROW_POLICY)
     {

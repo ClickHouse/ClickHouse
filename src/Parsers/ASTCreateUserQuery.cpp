@@ -184,6 +184,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     format.ostr << " " << backQuoteIfNeed(name);
 
+    formatOnCluster(format);
+
     if (!new_name.empty())
         formatRenameTo(new_name, format);
 

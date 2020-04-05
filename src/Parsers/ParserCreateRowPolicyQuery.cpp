@@ -243,6 +243,13 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         || !parseDatabaseAndTableName(pos, expected, database, table_name))
         return false;
 
+    String cluster;
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+            return false;
+    }
+
     String new_policy_name;
     std::optional<bool> is_restrictive;
     std::vector<std::pair<ConditionType, ASTPtr>> conditions;
@@ -272,6 +279,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
+    query->cluster = std::move(cluster);
     query->name_parts = std::move(name_parts);
     query->new_policy_name = std::move(new_policy_name);
     query->is_restrictive = is_restrictive;

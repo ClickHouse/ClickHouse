@@ -290,6 +290,13 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parseUserName(pos, expected, name, host_pattern))
         return false;
 
+    String cluster;
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+            return false;
+    }
+
     String new_name;
     std::optional<String> new_host_pattern;
     std::optional<Authentication> authentication;
@@ -341,6 +348,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
+    query->cluster = std::move(cluster);
     query->name = std::move(name);
     query->new_name = std::move(new_name);
     query->authentication = std::move(authentication);
