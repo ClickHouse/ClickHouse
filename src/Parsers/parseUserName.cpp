@@ -3,48 +3,39 @@
 #include <Parsers/CommonParsers.h>
 #include <boost/algorithm/string.hpp>
 
+
 namespace DB
 {
-namespace
+bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name, std::optional<String> & host_like_pattern)
 {
-    bool parseUserNameImpl(IParser::Pos & pos, Expected & expected, String & user_name, String * host_like_pattern)
+    String name;
+    if (!parseIdentifierOrStringLiteral(pos, expected, name))
+        return false;
+
+    boost::algorithm::trim(name);
+
+    std::optional<String> pattern;
+    if (ParserToken{TokenType::At}.ignore(pos, expected))
     {
-        String name;
-        if (!parseIdentifierOrStringLiteral(pos, expected, name))
+        if (!parseIdentifierOrStringLiteral(pos, expected, pattern.emplace()))
             return false;
 
-        boost::algorithm::trim(name);
-
-        String pattern = "%";
-
-        if (ParserToken{TokenType::At}.ignore(pos, expected))
-        {
-            if (!parseIdentifierOrStringLiteral(pos, expected, pattern))
-                return false;
-
-            boost::algorithm::trim(pattern);
-        }
-
-        if (pattern != "%")
-            name += '@' + pattern;
-
-        user_name = std::move(name);
-        if (host_like_pattern)
-            *host_like_pattern = std::move(pattern);
-        return true;
+        boost::algorithm::trim(*pattern);
     }
+
+    if (pattern && (pattern != "%"))
+        name += '@' + *pattern;
+
+    user_name = std::move(name);
+    host_like_pattern = std::move(pattern);
+    return true;
 }
 
 
 bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name)
 {
-    return parseUserNameImpl(pos, expected, user_name, nullptr);
-}
-
-
-bool parseUserName(IParser::Pos & pos, Expected & expected, String & user_name, String & host_like_pattern)
-{
-    return parseUserNameImpl(pos, expected, user_name, &host_like_pattern);
+    std::optional<String> unused_pattern;
+    return parseUserName(pos, expected, user_name, unused_pattern);
 }
 
 
