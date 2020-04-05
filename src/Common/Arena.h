@@ -179,8 +179,8 @@ public:
 
     /** Rollback just performed allocation.
       * Must pass size not more that was just allocated.
-	  * Return the resulting head pointer, so that the caller can assert that
-	  * the allocation it intended to roll back was indeed the last one.
+      * Return the resulting head pointer, so that the caller can assert that
+      * the allocation it intended to roll back was indeed the last one.
       */
     void * rollback(size_t size)
     {
