@@ -213,7 +213,8 @@ void minOptimize(ASTFunction * f_n)
 
             /// if multiplication is negative, min function becomes max
 
-            if (num < 0)
+            if ((ar->as<ASTLiteral>()->value.getType() == Field::Types::Int64 ||
+                 ar->as<ASTLiteral>()->value.getType() == Field::Types::Int128) && static_cast<int64_t>(num) < 0)
                 tp *= -1;
         }
 
