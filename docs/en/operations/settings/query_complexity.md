@@ -1,4 +1,9 @@
-# Restrictions on Query Complexity {#restrictions-on-query-complexity}
+---
+toc_priority: 59
+toc_title: Restrictions on Query Complexity
+---
+
+# Restrictions On Query Complexity {#restrictions-on-query-complexity}
 
 Restrictions on query complexity are part of the settings.
 They are used to provide safer execution from the user interface.
@@ -37,7 +42,7 @@ Memory consumption is also restricted by the parameters `max_memory_usage_for_us
 
 The maximum amount of RAM to use for running a user’s queries on a single server.
 
-Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L288). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
+Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L288). By default, the amount is not restricted (`max_memory_usage_for_user = 0`).
 
 See also the description of [max\_memory\_usage](#settings_max_memory_usage).
 
@@ -45,7 +50,7 @@ See also the description of [max\_memory\_usage](#settings_max_memory_usage).
 
 The maximum amount of RAM to use for running all queries on a single server.
 
-Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L289). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
+Default values are defined in [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L289). By default, the amount is not restricted (`max_memory_usage_for_all_queries = 0`).
 
 See also the description of [max\_memory\_usage](#settings_max_memory_usage).
 
@@ -75,11 +80,11 @@ Using the ‘any’ value lets you run an approximation of GROUP BY. The quality
 
 ## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
-Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../query_language/select.md#select-group-by-in-external-memory).
+Enables or disables execution of `GROUP BY` clauses in external memory. See [GROUP BY in external memory](../../sql_reference/statements/select.md#select-group-by-in-external-memory).
 
 Possible values:
 
--   Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../query_language/select.md#select-group-by-clause) operation.
+-   Maximum volume of RAM (in bytes) that can be used by the single [GROUP BY](../../sql_reference/statements/select.md#select-group-by-clause) operation.
 -   0 — `GROUP BY` in external memory disabled.
 
 Default value: 0.
@@ -227,7 +232,7 @@ What to do when the amount of data exceeds one of the limits: ‘throw’ or ‘
 
 Limits the number of rows in the hash table that is used when joining tables.
 
-This settings applies to [SELECT … JOIN](../../query_language/select.md#select-join) operations and the [Join](../table_engines/join.md) table engine.
+This settings applies to [SELECT … JOIN](../../sql_reference/statements/select.md#select-join) operations and the [Join](../../engines/table_engines/special/join.md) table engine.
 
 If a query contains multiple joins, ClickHouse checks this setting for every intermediate result.
 
@@ -244,7 +249,7 @@ Default value: 0.
 
 Limits the size in bytes of the hash table used when joining tables.
 
-This settings applies to [SELECT … JOIN](../../query_language/select.md#select-join) operations and [Join table engine](../table_engines/join.md).
+This settings applies to [SELECT … JOIN](../../sql_reference/statements/select.md#select-join) operations and [Join table engine](../../engines/table_engines/special/join.md).
 
 If the query contains joins, ClickHouse checks this setting for every intermediate result.
 
@@ -273,8 +278,8 @@ Default value: `THROW`.
 
 **See Also**
 
--   [JOIN clause](../../query_language/select.md#select-join)
--   [Join table engine](../table_engines/join.md)
+-   [JOIN clause](../../sql_reference/statements/select.md#select-join)
+-   [Join table engine](../../engines/table_engines/special/join.md)
 
 ## max\_partitions\_per\_insert\_block {#max-partitions-per-insert-block}
 
