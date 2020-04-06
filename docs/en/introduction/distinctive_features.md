@@ -1,3 +1,8 @@
+---
+toc_priority: 4
+toc_title: Distinctive Features
+---
+
 # Distinctive Features of ClickHouse {#distinctive-features-of-clickhouse}
 
 ## True Column-Oriented DBMS {#true-column-oriented-dbms}
@@ -59,6 +64,6 @@ ClickHouse provides various ways to trade accuracy for performance:
 
 ClickHouse uses asynchronous multi-master replication. After being written to any available replica, all the remaining replicas retrieve their copy in the background. The system maintains identical data on different replicas. Recovery after most failures is performed automatically, or semi-automatically in complex cases.
 
-For more information, see the section [Data replication](../operations/table_engines/replication.md).
+For more information, see the section [Data replication](../engines/table_engines/mergetree_family/replication.md).
 
 [Original article](https://clickhouse.tech/docs/en/introduction/distinctive_features/) <!--hide-->
