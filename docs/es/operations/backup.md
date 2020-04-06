@@ -1,10 +1,13 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 49
+toc_title: Copia de seguridad de datos
 ---
 
 # Copia de seguridad de datos {#data-backup}
 
-Mientras [replicación](table_engines/replication.md) proporciona protección contra fallas de hardware, no protege contra errores humanos: eliminación accidental de datos, eliminación de la tabla incorrecta o una tabla en el clúster incorrecto y errores de software que resultan en un procesamiento incorrecto de datos o daños en los datos. En muchos casos, errores como estos afectarán a todas las réplicas. ClickHouse tiene protecciones integradas para evitar algunos tipos de errores, por ejemplo, de forma predeterminada [no puede simplemente colocar tablas con un motor similar a MergeTree que contenga más de 50 Gb de datos](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). Sin embargo, estas garantías no cubren todos los casos posibles y pueden eludirse.
+Mientras [replicación](../engines/table_engines/mergetree_family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [no puede simplemente eliminar tablas con un motor similar a MergeTree que contenga más de 50 Gb de datos](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). Sin embargo, estas garantías no cubren todos los casos posibles y pueden eludirse.
 
 Para mitigar eficazmente los posibles errores humanos, debe preparar cuidadosamente una estrategia para realizar copias de seguridad y restaurar sus datos **previamente**.
 
@@ -19,20 +22,20 @@ A menudo, los datos que se ingieren en ClickHouse se entregan a través de algú
 
 ## Instantáneas del sistema de archivos {#filesystem-snapshots}
 
-Algunos sistemas de archivos locales proporcionan funcionalidad de instantánea (por ejemplo, [ZFS](https://en.wikipedia.org/wiki/ZFS)), pero podrían no ser la mejor opción para servir consultas en vivo. Una posible solución es crear réplicas adicionales con este tipo de sistema de archivos y excluirlas del [Distribuido](table_engines/distributed.md) tablas que se utilizan para `SELECT` consulta. Las instantáneas en tales réplicas estarán fuera del alcance de cualquier consulta que modifique los datos. Como beneficio adicional, estas réplicas podrían tener configuraciones de hardware especiales con más discos conectados por servidor, lo que sería rentable.
+Algunos sistemas de archivos locales proporcionan funcionalidad de instantánea (por ejemplo, [ZFS](https://en.wikipedia.org/wiki/ZFS)), pero podrían no ser la mejor opción para servir consultas en vivo. Una posible solución es crear réplicas adicionales con este tipo de sistema de archivos y excluirlas del [Distribuido](../engines/table_engines/special/distributed.md) tablas que se utilizan para `SELECT` consulta. Las instantáneas en tales réplicas estarán fuera del alcance de cualquier consulta que modifique los datos. Como beneficio adicional, estas réplicas podrían tener configuraciones de hardware especiales con más discos conectados por servidor, lo que sería rentable.
 
 ## Método de codificación de datos: {#clickhouse-copier}
 
-[Método de codificación de datos:](utils/clickhouse-copier.md) es una herramienta versátil que se creó inicialmente para volver a dividir tablas de tamaño petabyte. También se puede usar con fines de copia de seguridad y restauración porque copia datos de forma fiable entre tablas y clústeres de ClickHouse.
+[Método de codificación de datos:](utilities/clickhouse-copier.md) es una herramienta versátil que se creó inicialmente para volver a dividir tablas de tamaño petabyte. También se puede usar con fines de copia de seguridad y restauración porque copia datos de forma fiable entre tablas y clústeres de ClickHouse.
 
 Para volúmenes de datos más pequeños, un simple `INSERT INTO ... SELECT ...` a tablas remotas podría funcionar también.
 
 ## Manipulaciones con piezas {#manipulations-with-parts}
 
-Haz clickHouse permite usar el `ALTER TABLE ... FREEZE PARTITION ...` consulta para crear una copia local de particiones de tabla. Esto se implementa utilizando enlaces duros al `/var/lib/clickhouse/shadow/` carpeta, por lo que generalmente no consume espacio adicional en disco para datos antiguos. Las copias creadas de archivos no son manejadas por el servidor ClickHouse, por lo que puede dejarlos allí: tendrá una copia de seguridad simple que no requiere ningún sistema externo adicional, pero aún así será propenso a problemas de hardware. Por esta razón, es mejor copiarlos de forma remota en otra ubicación y luego eliminar las copias locales. Los sistemas de archivos distribuidos y los almacenes de objetos siguen siendo una buena opción para esto, pero los servidores de archivos conectados normales con una capacidad lo suficientemente grande podrían funcionar también (en este caso, la transferencia ocurrirá a través del sistema de archivos de red o tal vez [rsync](https://en.wikipedia.org/wiki/Rsync)).
+ClickHouse permite usar el `ALTER TABLE ... FREEZE PARTITION ...` consulta para crear una copia local de particiones de tabla. Esto se implementa utilizando enlaces duros al `/var/lib/clickhouse/shadow/` carpeta, por lo que generalmente no consume espacio adicional en disco para datos antiguos. Las copias creadas de archivos no son manejadas por el servidor ClickHouse, por lo que puede dejarlas allí: tendrá una copia de seguridad simple que no requiere ningún sistema externo adicional, pero seguirá siendo propenso a problemas de hardware. Por esta razón, es mejor copiarlos de forma remota en otra ubicación y luego eliminar las copias locales. Los sistemas de archivos distribuidos y los almacenes de objetos siguen siendo una buena opción para esto, pero los servidores de archivos conectados normales con una capacidad lo suficientemente grande podrían funcionar también (en este caso, la transferencia ocurrirá a través del sistema de archivos de red o tal vez [rsync](https://en.wikipedia.org/wiki/Rsync)).
 
-Para obtener más información sobre las consultas relacionadas con las manipulaciones de particiones, consulte [Documentación de ALTER](../query_language/alter.md#alter_manipulations-with-partitions).
+Para obtener más información sobre las consultas relacionadas con las manipulaciones de particiones, consulte [Documentación de ALTER](../sql_reference/statements/alter.md#alter_manipulations-with-partitions).
 
 Una herramienta de terceros está disponible para automatizar este enfoque: [Haga clic en el botón de copia de seguridad](https://github.com/AlexAkulov/clickhouse-backup).
 
-[Artículo Original](https://clickhouse.tech/docs/es/operations/backup/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/operations/backup/) <!--hide-->

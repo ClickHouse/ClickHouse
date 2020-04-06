@@ -1,5 +1,9 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_folder_title: Interfaces
+toc_priority: 14
+toc_title: "Implantaci\xF3n"
 ---
 
 # Interfaz {#interfaces}
@@ -22,4 +26,4 @@ También hay una amplia gama de bibliotecas de terceros para trabajar con ClickH
 -   [Integración](third-party/integrations.md)
 -   [Interfaces visuales](third-party/gui.md)
 
-[Artículo Original](https://clickhouse.tech/docs/es/interfaces/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/interfaces/) <!--hide-->
