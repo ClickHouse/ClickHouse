@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 41
+toc_title: "Application Des Mod\xE8les CatBoost"
 ---
 
 # Application D'un modèle Catboost dans ClickHouse {#applying-catboost-model-in-clickhouse}
@@ -113,7 +116,7 @@ FROM amazon_train
 
 +-count()-+
 |   65538 |
-+---------+
++-------+
 ```
 
 ## 3. Intégrer CatBoost dans ClickHouse {#integrate-catboost-into-clickhouse}
@@ -182,7 +185,7 @@ LIMIT 10
 ```
 
 !!! note "Note"
-    Fonction [modelEvaluate](../query_language/functions/other_functions.md#function-modelevaluate) retourne tuple avec des prédictions brutes par classe pour les modèles multiclasse.
+    Fonction [modelEvaluate](../sql_reference/functions/other_functions.md#function-modelevaluate) retourne tuple avec des prédictions brutes par classe pour les modèles multiclasse.
 
 Prédisons la probabilité:
 
@@ -205,7 +208,7 @@ LIMIT 10
 ```
 
 !!! note "Note"
-    Plus d'infos sur [exp()](../query_language/functions/math_functions.md) fonction.
+    Plus d'infos sur [exp()](../sql_reference/functions/math_functions.md) fonction.
 
 Calculons LogLoss sur l'échantillon:
 
@@ -231,6 +234,6 @@ FROM
 ```
 
 !!! note "Note"
-    Plus d'infos sur [avg()](../query_language/agg_functions/reference.md#agg_function-avg) et [journal()](../query_language/functions/math_functions.md) fonction.
+    Plus d'infos sur [avg()](../sql_reference/aggregate_functions/reference.md#agg_function-avg) et [journal()](../sql_reference/functions/math_functions.md) fonction.
 
 [Article Original](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->
