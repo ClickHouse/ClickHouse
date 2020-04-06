@@ -1,3 +1,8 @@
+---
+toc_priority: 78
+toc_title: General Questions
+---
+
 # General Questions {#general-questions}
 
 ## Why Not Use Something Like MapReduce? {#why-not-use-something-like-mapreduce}
@@ -40,7 +45,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### Using a File-Engine Table {#using-a-file-engine-table}
 
-See [File](../operations/table_engines/file.md).
+See [File](../engines/table_engines/special/file.md).
 
 ### Using Command-Line Redirection {#using-command-line-redirection}
 

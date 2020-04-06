@@ -1,1 +1,0 @@
-../../en/query_language/index.md
