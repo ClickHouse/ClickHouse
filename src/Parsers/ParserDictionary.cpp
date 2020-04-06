@@ -129,7 +129,7 @@ bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     /// if layout has params than brackets must be specified
-    if (type_expr_list.children.size() != 0 && !res->has_brackets)
+    if (!type_expr_list.children.empty() && !res->has_brackets)
         return false;
 
     if (type_expr_list.children.size() == 1)
