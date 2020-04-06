@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 67
+toc_title: Comment Construire ClickHouse sur Linux pour AARCH64 (ARM64)
 ---
 
 # Comment Construire ClickHouse sur Linux pour l'architecture AARCH64 (ARM64)  {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}

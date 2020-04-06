@@ -101,8 +101,8 @@ function gen_revision_author {
 
             gen_changelog "$VERSION_STRING" "" "$AUTHOR" ""
             gen_dockerfiles "$VERSION_STRING"
-            dbms/Storages/System/StorageSystemContributors.sh ||:
-            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" cmake/version.cmake debian/changelog docker/*/Dockerfile dbms/Storages/System/StorageSystemContributors.generated.cpp
+            src/Storages/System/StorageSystemContributors.sh ||:
+            git commit -m "$auto_message [$VERSION_STRING] [$VERSION_REVISION]" cmake/version.cmake debian/changelog docker/*/Dockerfile src/Storages/System/StorageSystemContributors.generated.cpp
             if [ -z $NO_PUSH ]; then
                 git push
             fi
