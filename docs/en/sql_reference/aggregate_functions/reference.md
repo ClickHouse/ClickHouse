@@ -547,8 +547,10 @@ Type of `x` and `weight` must be the same.
 
 **Returned value**
 
-- Weighted mean. Type: [Float](../data_types/float.md).
+- Weighted mean.
 - `NaN`. If all the weights are equal to 0.
+
+Type: [Float64](../data_types/float.md).
 
 **Example**
 
