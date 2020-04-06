@@ -112,7 +112,7 @@ StorageSet::StorageSet(
     const ConstraintsDescription & constraints_,
     const Context & context_)
     : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_},
-    set(std::make_shared<Set>(SizeLimits(), false))
+    set(std::make_shared<Set>(SizeLimits(), false, context_))
 {
     Block header = getSampleBlock();
     header = header.sortColumns();
@@ -127,7 +127,7 @@ void StorageSet::finishInsert() { set->finishInsert(); }
 size_t StorageSet::getSize() const { return set->getTotalRowCount(); }
 
 
-void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &)
+void StorageSet::truncate(const ASTPtr &, const Context & context, TableStructureWriteLockHolder &)
 {
     Poco::File(path).remove(true);
     Poco::File(path).createDirectories();
@@ -137,7 +137,7 @@ void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
     header = header.sortColumns();
 
     increment = 0;
-    set = std::make_shared<Set>(SizeLimits(), false);
+    set = std::make_shared<Set>(SizeLimits(), false, context);
     set->setHeader(header);
 }
 

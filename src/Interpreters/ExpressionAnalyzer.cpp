@@ -291,7 +291,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
     BlockIO res = interpreter_subquery->execute();
 
-    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true);
+    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context);
     set->setHeader(res.in->getHeader());
 
     res.in->readPrefix();
