@@ -13,6 +13,10 @@
 namespace DB
 {
 
+/** Merges several sorted ports into one.
+  * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
+  *  keeps row with max `version` value.
+  */
 class ReplacingSortedTransform final : public IMergingTransform
 {
 public:

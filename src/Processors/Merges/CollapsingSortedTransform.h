@@ -12,7 +12,7 @@
 namespace DB
 {
 
-/** Merges several sorted inputs to one.
+/** Merges several sorted ports to one.
   * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
   *  keeps no more than one row with the value of the column `sign_column = -1` ("negative row")
   *  and no more than a row with the value of the column `sign_column = 1` ("positive row").
