@@ -1,1 +1,0 @@
-../../../en/query_language/functions/higher_order_functions.md
