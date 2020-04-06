@@ -219,6 +219,8 @@ void CollapsingSortedTransform::merge()
             throw Exception("Incorrect data: Sign = " + toString(sign) + " (must be 1 or -1).",
                             ErrorCodes::INCORRECT_DATA);
 
+        ++current_pos;
+
         if (!current->isLast())
         {
             queue.next();
