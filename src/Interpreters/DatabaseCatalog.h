@@ -154,6 +154,8 @@ public:
     /// For moving table between databases
     void updateUUIDMapping(const UUID & uuid, DatabasePtr database, StoragePtr table);
 
+    static String getPathForUUID(const UUID & uuid);
+
     DatabaseAndTable tryGetByUUID(const UUID & uuid) const;
 
     String getPathForDroppedMetadata(const StorageID & table_id) const;

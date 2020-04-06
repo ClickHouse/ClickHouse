@@ -30,7 +30,7 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query);
 class DatabaseOnDisk : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseOnDisk(const String & name, const String & metadata_path_, const String & logger, const Context & context);
+    DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context);
 
     void createTable(
         const Context & context,
@@ -72,8 +72,6 @@ protected:
     using IteratingFunction = std::function<void(const String &)>;
 
     void iterateMetadataFiles(const Context & context, const IteratingFunction & process_metadata_file) const;
-    void iterateMetadataFiles(const Context & context, const IteratingFunction & process_metadata_file,
-                              const IteratingFunction & process_tmp_drop_metadata_file) const;
 
     ASTPtr getCreateTableQueryImpl(
         const Context & context,
@@ -82,15 +80,11 @@ protected:
 
     ASTPtr getCreateQueryFromMetadata(const Context & context, const String & metadata_path, bool throw_on_error) const;
 
-    virtual void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path);
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                    const String & table_metadata_tmp_path, const String & table_metadata_path);
 
-    //bool detachTableAndRemoveMetadata(const String & table_name);
-    //void replaceMetadata(const ASTPtr & create, );
-
     const String metadata_path;
-    /*const*/ String data_path;
+    const String data_path;
     const Context & global_context;
 };
 

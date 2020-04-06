@@ -29,17 +29,10 @@
 #include <Common/typeid_cast.h>
 #include <common/logger_useful.h>
 #include <ext/scope_guard.h>
-#include "DatabaseAtomic.h"
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int CANNOT_ASSIGN_ALTER;
-}
-
 
 static constexpr size_t PRINT_MESSAGE_EACH_N_OBJECTS = 256;
 static constexpr size_t PRINT_MESSAGE_EACH_N_SECONDS = 5;
@@ -104,17 +97,19 @@ namespace
 
 
 DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const Context & context_)
-    : DatabaseWithDictionaries(name_, metadata_path_,"DatabaseOrdinary (" + name_ + ")", context_)
+    : DatabaseOrdinary(name_, metadata_path_, "data/" + escapeForFileName(name_) + "/", "DatabaseOrdinary (" + name_ + ")", context_)
 {
 }
 
+DatabaseOrdinary::DatabaseOrdinary(const String & name_, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context_)
+        : DatabaseWithDictionaries(name_, metadata_path_, data_path_, logger, context_)
+{
+}
 
 void DatabaseOrdinary::loadStoredObjects(
     Context & context,
     bool has_force_restore_data_flag)
 {
-    Poco::File(context.getPath() + getDataPath()).createDirectories();
-    Poco::File(getMetadataPath()).createDirectories();
     /** Tables load faster if they are loaded in sorted (by name) order.
       * Otherwise (for the ext4 filesystem), `DirectoryIterator` iterates through them in some order,
       *  which does not correspond to order tables creation and does not correspond to order of their location on disk.
@@ -123,7 +118,8 @@ void DatabaseOrdinary::loadStoredObjects(
     FileNames file_names;
 
     size_t total_dictionaries = 0;
-    iterateMetadataFiles(context, [&context, &file_names, &total_dictionaries, this](const String & file_name)
+
+    auto process_metadata = [&context, &file_names, &total_dictionaries, this](const String & file_name)
     {
         String full_path = getMetadataPath() + file_name;
         try
@@ -142,7 +138,9 @@ void DatabaseOrdinary::loadStoredObjects(
             throw;
         }
 
-    });
+    };
+
+    iterateMetadataFiles(context, process_metadata);
 
     size_t total_tables = file_names.size() - total_dictionaries;
 
@@ -283,6 +281,20 @@ void DatabaseOrdinary::alterTable(
     }
 
     commitAlterTable(table_id, table_metadata_tmp_path, table_metadata_path);
+}
+
+void DatabaseOrdinary::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path)
+{
+    try
+    {
+        /// rename atomically replaces the old file with the new one.
+        Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
+    }
+    catch (...)
+    {
+        Poco::File(table_metadata_tmp_path).remove();
+        throw;
+    }
 }
 
 }

@@ -28,10 +28,8 @@ public:
 
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, Context & context_)
-    : DatabaseOrdinary(name_, metadata_path_, context_)
+    : DatabaseOrdinary(name_, metadata_path_, "store/", "DatabaseAtomic (" + name_ + ")", context_)
 {
-    data_path = "store/";
-    log = &Logger::get("DatabaseAtomic (" + name_ + ")");
 }
 
 String DatabaseAtomic::getTableDataPath(const String & table_name) const
@@ -46,7 +44,7 @@ String DatabaseAtomic::getTableDataPath(const String & table_name) const
 
 String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
 {
-    auto tmp = data_path + getPathForUUID(query.uuid);
+    auto tmp = data_path + DatabaseCatalog::getPathForUUID(query.uuid);
     assert(tmp != data_path && !tmp.empty());
     return tmp;
 
@@ -60,7 +58,9 @@ void DatabaseAtomic::drop(const Context &)
 void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, const String & relative_table_path)
 {
     assert(relative_table_path != data_path && !relative_table_path.empty());
+    DetachedTables not_in_use;
     std::lock_guard lock(mutex);
+    not_in_use = cleenupDetachedTables();
     assertDetachedTableNotInUse(table->getStorageID().uuid);
     DatabaseWithDictionaries::attachTableUnlocked(name, table, relative_table_path);
     table_name_to_path.emplace(std::make_pair(name, relative_table_path));
@@ -68,11 +68,12 @@ void DatabaseAtomic::attachTable(const String & name, const StoragePtr & table, 
 
 StoragePtr DatabaseAtomic::detachTable(const String & name)
 {
+    DetachedTables  not_in_use;
     std::lock_guard lock(mutex);
     auto table = DatabaseWithDictionaries::detachTableUnlocked(name);
     table_name_to_path.erase(name);
     detached_tables.emplace(table->getStorageID().uuid, table);
-    cleenupDetachedTables();
+    not_in_use = cleenupDetachedTables();
     return table;
 }
 
@@ -179,23 +180,15 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
         attach(*this, table_name, other_table_data_path, other_table);
 }
 
-void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
-{
-    DatabaseOrdinary::loadStoredObjects(context, has_force_restore_data_flag);
-}
-
-void DatabaseAtomic::shutdown()
-{
-    DatabaseWithDictionaries::shutdown();
-}
-
 void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                        const String & table_metadata_tmp_path, const String & table_metadata_path)
 {
+    DetachedTables not_in_use;
     auto table_data_path = getTableDataPath(query);
     try
     {
         std::lock_guard lock{mutex};
+        not_in_use = cleenupDetachedTables();
         assertDetachedTableNotInUse(query.uuid);
         renameNoReplace(table_metadata_tmp_path, table_metadata_path);
         attachTableUnlocked(query.table, table, table_data_path);   /// Should never throw
@@ -224,22 +217,26 @@ void DatabaseAtomic::commitAlterTable(const StorageID & table_id, const String &
 
 void DatabaseAtomic::assertDetachedTableNotInUse(const UUID & uuid)
 {
-    cleenupDetachedTables();
     if (detached_tables.count(uuid))
         throw Exception("Cannot attach table with UUID " + toString(uuid) +
               ", because it was detached but still used by come query. Retry later.", ErrorCodes::TABLE_ALREADY_EXISTS);
 }
 
-void DatabaseAtomic::cleenupDetachedTables()
+DatabaseAtomic::DetachedTables DatabaseAtomic::cleenupDetachedTables()
 {
+    DetachedTables not_in_use;
     auto it = detached_tables.begin();
     while (it != detached_tables.end())
     {
         if (it->second.unique())
+        {
+            not_in_use.emplace(it->first, it->second);
             it = detached_tables.erase(it);
+        }
         else
             ++it;
     }
+    return not_in_use;
 }
 
 DatabaseTablesIteratorPtr DatabaseAtomic::getTablesIterator(const IDatabase::FilterByNameFunction & filter_by_table_name)

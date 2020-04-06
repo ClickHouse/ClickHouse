@@ -525,7 +525,7 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
 
         if (create)
         {
-            String data_path = "store/" + DatabaseAtomic::getPathForUUID(table_id.uuid);
+            String data_path = "store/" + getPathForUUID(table_id.uuid);
             create->database = table_id.database_name;
             create->table = table_id.table_name;
             try
@@ -560,18 +560,13 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
 
 void DatabaseCatalog::dropTableDataTask()
 {
-    //LOG_INFO(log, String("Wake up ") + __PRETTY_FUNCTION__);
     TableMarkedAsDropped table;
     try
     {
         std::lock_guard lock(tables_marked_droped_mutex);
-        LOG_INFO(log, "There are " + std::to_string(tables_marked_droped.size()) + " tables to drop");
         time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        auto it = std::find_if(tables_marked_droped.begin(), tables_marked_droped.end(), [current_time/*, this*/](const auto & elem)
+        auto it = std::find_if(tables_marked_droped.begin(), tables_marked_droped.end(), [current_time](const auto & elem)
         {
-            //LOG_INFO(log, "Check table " + elem.table_id.getNameForLogs() + ": " +
-            //              "refcount = " + std::to_string(elem.table.use_count()) + ", " +
-            //              "time elapsed = " + std::to_string(current_time - elem.drop_time));
             bool not_in_use = !elem.table || elem.table.unique();
             bool old_enough = elem.drop_time + drop_delay_s < current_time;
             return not_in_use && old_enough;
@@ -613,22 +608,28 @@ void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table) const
 {
     if (table.table)
     {
-        LOG_INFO(log, "Trying to drop table " + table.table_id.getNameForLogs());
         table.table->drop();
         table.table->is_dropped = true;
     }
 
     /// Even if table is not loaded, try remove its data from disk.
     /// TODO remove data from all volumes
-    String data_path = global_context->getPath() + "store/" + DatabaseAtomic::getPathForUUID(table.table_id.uuid);
+    String data_path = global_context->getPath() + "store/" + getPathForUUID(table.table_id.uuid);
     Poco::File table_data_dir{data_path};
     if (table_data_dir.exists())
     {
-        LOG_INFO(log, "Removing data directory " << data_path << " of table " << table.table_id.getNameForLogs());
+        LOG_INFO(log, "Removing data directory " << data_path << " of dropped table " << table.table_id.getNameForLogs());
         table_data_dir.remove(true);
     }
 
+    LOG_INFO(log, "Removing metadata " << table.metadata_path << " of dropped table " << table.table_id.getNameForLogs());
     Poco::File(table.metadata_path).remove();
+}
+
+String DatabaseCatalog::getPathForUUID(const UUID & uuid)
+{
+    const size_t uuid_prefix_len = 3;
+    return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
 }
 
 

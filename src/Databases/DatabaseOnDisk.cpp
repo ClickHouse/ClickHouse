@@ -57,7 +57,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
         StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
-        storage->resetStorageIDForTableFunction({ast_create_query.database, ast_create_query.table, ast_create_query.uuid});
+        storage->resetStorageID({ast_create_query.database, ast_create_query.table, ast_create_query.uuid});
         return {ast_create_query.table, storage};
     }
     /// We do not directly use `InterpreterCreateQuery::execute`, because
@@ -123,12 +123,14 @@ String getObjectDefinitionFromCreateQuery(const ASTPtr & query)
     return statement_stream.str();
 }
 
-DatabaseOnDisk::DatabaseOnDisk(const String & name, const String & metadata_path_, const String & logger, const Context & context)
+DatabaseOnDisk::DatabaseOnDisk(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context)
     : DatabaseWithOwnTablesBase(name, logger)
     , metadata_path(metadata_path_)
-    , data_path("data/" + escapeForFileName(database_name) + "/")
+    , data_path(data_path_)
     , global_context(context.getGlobalContext())
 {
+    Poco::File(context.getPath() + data_path).createDirectories();
+    Poco::File(metadata_path).createDirectories();
 }
 
 
@@ -284,7 +286,7 @@ void DatabaseOnDisk::renameTable(
 
         /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
         table->rename(to_database.getTableDataPath(create), to_database.getDatabaseName(), to_table_name, table_lock);
-        table->resetStorageIDForTableFunction({create.database, create.table, create.uuid});  /// reset UUID
+        table->resetStorageID({create.database, create.table, create.uuid});  /// reset UUID
     }
     catch (const Exception &)
     {
@@ -366,11 +368,11 @@ time_t DatabaseOnDisk::getObjectMetadataModificationTime(const String & object_n
         return static_cast<time_t>(0);
 }
 
-void DatabaseOnDisk::iterateMetadataFiles(const Context & context,
-                                          const DatabaseOnDisk::IteratingFunction & process_metadata_file) const
+void DatabaseOnDisk::iterateMetadataFiles(const Context & context, const IteratingFunction & process_metadata_file) const
 {
-    IteratingFunction process_tmp_drop_metadata_file = [&](const String & file_name)
+    auto process_tmp_drop_metadata_file = [&](const String & file_name)
     {
+        assert(getEngineName() != "Atomic");
         static const char * tmp_drop_ext = ".sql.tmp_drop";
         const std::string object_name = file_name.substr(0, file_name.size() - strlen(tmp_drop_ext));
         if (Poco::File(context.getPath() + getDataPath() + '/' + object_name).exists())
@@ -386,14 +388,6 @@ void DatabaseOnDisk::iterateMetadataFiles(const Context & context,
         }
     };
 
-    IteratingFunction do_nothing = [](const String &){};
-    //FIXME refactor this trash
-    iterateMetadataFiles(context, process_metadata_file, dynamic_cast<const DatabaseAtomic *>(this) ? do_nothing : process_tmp_drop_metadata_file);
-}
-
-void DatabaseOnDisk::iterateMetadataFiles(const Context & /*context*/, const IteratingFunction & process_metadata_file,
-                                          const IteratingFunction & process_tmp_drop_metadata_file) const
-{
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator dir_it(getMetadataPath()); dir_it != dir_end; ++dir_it)
     {
@@ -494,20 +488,6 @@ ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const Context & context, const
     }
 
     return ast;
-}
-
-void DatabaseOnDisk::commitAlterTable(const StorageID &, const String & table_metadata_tmp_path, const String & table_metadata_path)
-{
-    try
-    {
-        /// rename atomically replaces the old file with the new one.
-        Poco::File(table_metadata_tmp_path).renameTo(table_metadata_path);
-    }
-    catch (...)
-    {
-        Poco::File(table_metadata_tmp_path).remove();
-        throw;
-    }
 }
 
 }

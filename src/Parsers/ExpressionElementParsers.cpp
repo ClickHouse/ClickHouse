@@ -191,45 +191,23 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
         name += parts.back();
     }
 
+    ParserKeyword s_uuid("UUID");
+    UUID uuid = UUIDHelpers::Nil;
+
+    if (allow_uuid && s_uuid.ignore(pos, expected))
+    {
+        ParserStringLiteral uuid_p;
+        ASTPtr ast_uuid;
+        if (!uuid_p.parse(pos, ast_uuid, expected))
+            return false;
+        uuid = parseFromString<UUID>(ast_uuid->as<ASTLiteral>()->value.get<String>());
+    }
+
     if (parts.size() == 1)
         parts.clear();
     node = std::make_shared<ASTIdentifier>(name, std::move(parts));
+    node->as<ASTIdentifier>()->uuid = uuid;
 
-    return true;
-}
-
-
-bool parseStorageID(IParser::Pos & pos, StorageID & res, Expected & expected)
-{
-    ParserKeyword s_uuid("UUID");
-    ParserIdentifier name_p;
-    ParserStringLiteral uuid_p;
-    ParserToken s_dot(TokenType::Dot);
-
-    ASTPtr database;
-    ASTPtr table;
-    ASTPtr uuid;
-
-    if (!name_p.parse(pos, table, expected))
-        return false;
-
-    if (s_dot.ignore(pos, expected))
-    {
-        database = table;
-        if (!name_p.parse(pos, table, expected))
-            return false;
-    }
-
-    if (s_uuid.ignore(pos, expected))
-    {
-        if (!uuid_p.parse(pos, uuid, expected))
-            return false;
-    }
-
-    tryGetIdentifierNameInto(database, res.database_name);
-    tryGetIdentifierNameInto(table, res.table_name);
-    //FIXME
-    res.uuid = uuid ? parseFromString<UUID>(uuid->as<ASTLiteral>()->value.get<String>()) : UUIDHelpers::Nil;
     return true;
 }
 

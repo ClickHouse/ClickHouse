@@ -338,6 +338,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserKeyword s_temporary("TEMPORARY");
     ParserKeyword s_table("TABLE");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserCompoundIdentifier table_name_p(true);
     ParserKeyword s_on("ON");
     ParserKeyword s_as("AS");
     ParserToken s_dot(TokenType::Dot);
@@ -350,7 +351,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     ParserFunction table_function_p;
     ParserNameList names_p;
 
-    StorageID table_id = StorageID::createEmpty();
+    ASTPtr table;
     ASTPtr columns_list;
     ASTPtr storage;
     ASTPtr as_database;
@@ -381,7 +382,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
-    if (!parseStorageID(pos, table_id, expected))
+    if (!table_name_p.parse(pos, table, expected))
         return false;
 
     if (s_on.ignore(pos, expected))
@@ -389,6 +390,8 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!ASTQueryWithOnCluster::parse(pos, cluster_str, expected))
             return false;
     }
+
+    StorageID table_id{table};
 
     // Shortcut for ATTACH a previously detached table
     if (attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
@@ -479,6 +482,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
+    ParserCompoundIdentifier table_name_p(true);
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_live("LIVE");
@@ -490,8 +494,8 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
 
-    StorageID table_id = StorageID::createEmpty();
-    StorageID to_table_id = StorageID::createEmpty();
+    ASTPtr table;
+    ASTPtr to_table;
     ASTPtr columns_list;
     ASTPtr storage;
     ASTPtr as_database;
@@ -520,7 +524,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     if (s_if_not_exists.ignore(pos, expected))
        if_not_exists = true;
 
-    if (!parseStorageID(pos, table_id, expected))
+    if (!table_name_p.parse(pos, table, expected))
         return false;
 
     if (ParserKeyword{"WITH TIMEOUT"}.ignore(pos, expected))
@@ -538,7 +542,7 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     // TO [db.]table
     if (ParserKeyword{"TO"}.ignore(pos, expected))
     {
-        if (!parseStorageID(pos, to_table_id, expected))
+        if (!table_name_p.parse(pos, to_table, expected))
             return false;
     }
 
@@ -567,12 +571,13 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->if_not_exists = if_not_exists;
     query->is_live_view = true;
 
+    StorageID table_id{table};
     query->database = table_id.database_name;
     query->table = table_id.table_name;
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
-    query->to_table_id = to_table_id;
+    query->to_table_id = StorageID(to_table);
 
     query->set(query->columns_list, columns_list);
 
@@ -647,7 +652,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserKeyword s_create("CREATE");
     ParserKeyword s_attach("ATTACH");
     ParserKeyword s_if_not_exists("IF NOT EXISTS");
-    ParserKeyword s_uuid("UUID");
+    ParserCompoundIdentifier table_name_p(true);
     ParserKeyword s_as("AS");
     ParserKeyword s_view("VIEW");
     ParserKeyword s_materialized("MATERIALIZED");
@@ -661,10 +666,9 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     ParserTablePropertiesDeclarationList table_properties_p;
     ParserSelectWithUnionQuery select_p;
     ParserNameList names_p;
-    ParserStringLiteral uuid_p;
 
-    StorageID table_id = StorageID::createEmpty();
-    StorageID to_table_id = StorageID::createEmpty();
+    ASTPtr table;
+    ASTPtr to_table;
     ASTPtr columns_list;
     ASTPtr storage;
     ASTPtr as_database;
@@ -706,7 +710,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!replace_view && s_if_not_exists.ignore(pos, expected))
         if_not_exists = true;
 
-    if (!parseStorageID(pos, table_id, expected))
+    if (!table_name_p.parse(pos, table, expected))
         return false;
 
     if (ParserKeyword{"ON"}.ignore(pos, expected))
@@ -718,7 +722,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     // TO [db.]table
     if (ParserKeyword{"TO"}.ignore(pos, expected))
     {
-        if (!parseStorageID(pos, to_table_id, expected))
+        if (!table_name_p.parse(pos, to_table, expected))
             return false;
     }
 
@@ -732,7 +736,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             return false;
     }
 
-    if (is_materialized_view && to_table_id.empty())
+    if (is_materialized_view && !to_table)
     {
         /// Internal ENGINE for MATERIALIZED VIEW must be specified.
         if (!storage_p.parse(pos, storage, expected))
@@ -760,12 +764,13 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->replace_view = replace_view;
 
+    StorageID table_id{table};
     query->database = table_id.database_name;
     query->table = table_id.table_name;
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
-    query->to_table_id = to_table_id;
+    query->to_table_id = StorageID(to_table);
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);

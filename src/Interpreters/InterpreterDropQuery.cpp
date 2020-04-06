@@ -11,7 +11,6 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
-#include <Databases/DatabaseAtomic.h>
 
 
 namespace DB
@@ -73,6 +72,7 @@ BlockIO InterpreterDropQuery::executeToTable(
                         ErrorCodes::UNKNOWN_TABLE);
     }
 
+    /// If table was already dropped by anyone, an exception will be thrown
     auto table_id = query.if_exists ? context.tryResolveStorageID(table_id_, Context::ResolveOrdinary)
                                     : context.resolveStorageID(table_id_, Context::ResolveOrdinary);
     if (!table_id)
@@ -93,9 +93,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             table->shutdown();
             TableStructureWriteLockHolder table_lock;
             if (database->getEngineName() != "Atomic")
-            {
                 table_lock = table->lockExclusively(context.getCurrentQueryId());
-            }
             /// Drop table from memory, don't touch data and metadata
             database->detachTable(table_id.table_name);
         }
@@ -104,7 +102,6 @@ BlockIO InterpreterDropQuery::executeToTable(
             context.checkAccess(table->isView() ? AccessType::TRUNCATE_VIEW : AccessType::TRUNCATE_TABLE, table_id);
             table->checkTableCanBeDropped();
 
-            /// If table was already dropped by anyone, an exception will be thrown
             auto table_lock = table->lockExclusively(context.getCurrentQueryId());
             /// Drop table data, don't touch metadata
             table->truncate(query_ptr, context, table_lock);
@@ -186,7 +183,6 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id);
             if (kind == ASTDropQuery::Kind::Truncate)
             {
-                /// If table was already dropped by anyone, an exception will be thrown
                 auto table_lock = table->lockExclusively(context.getCurrentQueryId());
                 /// Drop table data, don't touch metadata
                 table->truncate(query_ptr, context, table_lock);
@@ -195,7 +191,6 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             {
                 context_handle.removeExternalTable(table_name);
                 table->shutdown();
-                /// If table was already dropped by anyone, an exception will be thrown
                 auto table_lock = table->lockExclusively(context.getCurrentQueryId());
                 /// Delete table data
                 table->drop();
@@ -244,23 +239,6 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
         }
     }
 
-    return {};
-}
-
-
-DatabaseAndTable InterpreterDropQuery::tryGetDatabaseAndTable(const String & database_name, const String & table_name, bool if_exists)
-{
-    DatabasePtr database = tryGetDatabase(database_name, if_exists);
-
-    if (database)
-    {
-        StoragePtr table = database->tryGetTable(context, table_name);
-        if (!table && !if_exists)
-            throw Exception("Table " + backQuoteIfNeed(database_name) + "." + backQuoteIfNeed(table_name) + " doesn't exist",
-                            ErrorCodes::UNKNOWN_TABLE);
-
-        return {std::move(database), std::move(table)};
-    }
     return {};
 }
 
