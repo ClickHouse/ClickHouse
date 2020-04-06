@@ -55,20 +55,18 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime
+/** An identifier, possibly containing a dot, for example, x_yz123 or `something special` or Hits.EventTime,
+ *  possibly with UUID clause like `db name`.`table name` UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   */
 class ParserCompoundIdentifier : public IParserBase
 {
+public:
+    ParserCompoundIdentifier(bool allow_uuid_ = false) : allow_uuid(allow_uuid_) {}
 protected:
     const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+    bool allow_uuid;
 };
-
-struct StorageID;
-/// Table name, possibly with database name and UUID as string literal
-/// [db_name.]table_name [UUID 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx']
-//TODO replace with class
-bool parseStorageID(IParser::Pos & pos, StorageID & res, Expected & expected);
 
 /// Just *
 class ParserAsterisk : public IParserBase

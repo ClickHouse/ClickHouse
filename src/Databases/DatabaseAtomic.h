@@ -31,16 +31,7 @@ public:
     String getTableDataPath(const String & table_name) const override;
     String getTableDataPath(const ASTCreateQuery & query) const override;
 
-    inline static String getPathForUUID(const UUID & uuid)
-    {
-        const size_t uuid_prefix_len = 3;
-        return toString(uuid).substr(0, uuid_prefix_len) + '/' + toString(uuid) + '/';
-    }
-
     void drop(const Context & /*context*/) override;
-
-    void loadStoredObjects(Context & context, bool has_force_restore_data_flag) override;
-    void shutdown() override;
 
     DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name) override;
     DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const FilterByNameFunction & filter_by_dictionary_name) override;
@@ -51,12 +42,13 @@ private:
                            const String & table_metadata_tmp_path, const String & table_metadata_path) override;
 
     void assertDetachedTableNotInUse(const UUID & uuid);
-    void cleenupDetachedTables();
+    typedef std::map<UUID, StoragePtr> DetachedTables;
+    DetachedTables cleenupDetachedTables();
 
     //TODO store path in DatabaseWithOwnTables::tables
     std::map<String, String> table_name_to_path;
 
-    std::map<UUID, StoragePtr> detached_tables;
+    DetachedTables detached_tables;
 };
 
 }

@@ -33,7 +33,6 @@ limitations under the License. */
 #include <Storages/LiveView/StorageBlocks.h>
 
 #include <Storages/StorageFactory.h>
-#include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/queryToString.h>

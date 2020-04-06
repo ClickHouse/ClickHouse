@@ -49,7 +49,7 @@
 namespace DB
 {
 
-//FIXME cannot store system tables in DatabaseAtomic
+///TODO allow store system tables in DatabaseAtomic
 void attachSystemTablesLocal(IDatabase & system_database)
 {
     system_database.attachTable("one", StorageSystemOne::create("one"));

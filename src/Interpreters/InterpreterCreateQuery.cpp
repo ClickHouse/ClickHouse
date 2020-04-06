@@ -51,8 +51,6 @@
 
 #include <TableFunctions/TableFunctionFactory.h>
 
-#include <boost/uuid/uuid_generators.hpp>
-#include <boost/uuid/uuid_io.hpp>
 
 namespace DB
 {
@@ -96,7 +94,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     {
         /// For new-style databases engine is explicitly specified in .sql
         /// When attaching old-style database during server startup, we must always use Ordinary engine
-        //FIXME is it possible, that database engine is not specified in metadata file?
         if (create.attach)
             throw Exception("Database engine must be specified for ATTACH DATABASE query", ErrorCodes::UNKNOWN_DATABASE_ENGINE);
         bool old_style_database = context.getSettingsRef().default_database_engine.value == DefaultDatabaseEngine::Ordinary;
@@ -150,7 +147,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     bool renamed = false;
     try
     {
-        //FIXME is it possible to attach db only after it was loaded? (no, loadStoredObjects adds view dependencies)
+        /// TODO Attach db only after it was loaded. Now it's not possible because of view dependencies
         DatabaseCatalog::instance().attachDatabase(database_name, database);
         added = true;
 
@@ -576,7 +573,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     return fillTableIfNeeded(create);
 }
 
-bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
+bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
                                            const InterpreterCreateQuery::TableProperties & properties)
 {
     std::unique_ptr<DDLGuard> guard;
@@ -591,7 +588,7 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
         database = DatabaseCatalog::instance().getDatabase(create.database);
         if (database->getEngineName() == "Atomic")
         {
-            //TODO implement ATTACH FROM 'path/to/data': generate UUID and move table data to store/
+            /// TODO implement ATTACH FROM 'path/to/data': generate UUID and move table data to store/
             if (create.attach && create.uuid == UUIDHelpers::Nil)
                 throw Exception("UUID must be specified in ATTACH TABLE query for Atomic database engine", ErrorCodes::INCORRECT_QUERY);
             if (!create.attach && create.uuid == UUIDHelpers::Nil)
@@ -602,9 +599,6 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
             if (create.uuid != UUIDHelpers::Nil)
                 throw Exception("Table UUID specified, but engine of database " + create.database + " is not Atomic", ErrorCodes::INCORRECT_QUERY);
         }
-
-        if (!create.attach && create.uuid == UUIDHelpers::Nil && database->getEngineName() == "Atomic")
-            create.uuid = UUIDHelpers::generateV4();
 
         /** If the request specifies IF NOT EXISTS, we allow concurrent CREATE queries (which do nothing).
           * If table doesnt exist, one thread is creating table, while others wait in DDLGuard.
@@ -653,7 +647,7 @@ bool InterpreterCreateQuery::doCreateTable(/*const*/ ASTCreateQuery & create,
         const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
         res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
-        res->resetStorageIDForTableFunction({create.database, create.table, create.uuid});
+        res->resetStorageID({create.database, create.table, create.uuid});
     }
     else
     {
@@ -720,13 +714,6 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
         else
             throw Exception(
                 "Dictionary " + database_name + "." + dictionary_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
-    }
-
-    if (create.attach)
-    {
-        auto query = DatabaseCatalog::instance().getDatabase(database_name)->getCreateDictionaryQuery(context, dictionary_name);
-        create = query->as<ASTCreateQuery &>();
-        create.attach = true;
     }
 
     if (create.attach)

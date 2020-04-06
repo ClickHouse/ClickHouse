@@ -67,6 +67,7 @@ protected:
 
 private:
     explicit StorageFile(CommonArguments args);
+
     std::string format_name;
 
     int table_fd = -1;

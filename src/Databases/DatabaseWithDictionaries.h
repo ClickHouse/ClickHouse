@@ -31,8 +31,8 @@ public:
     ~DatabaseWithDictionaries() override;
 
 protected:
-    DatabaseWithDictionaries(const String & name, const String & metadata_path_, const String & logger, const Context & context)
-        : DatabaseOnDisk(name, metadata_path_, logger, context) {}
+    DatabaseWithDictionaries(const String & name, const String & metadata_path_, const String & data_path_, const String & logger, const Context & context)
+        : DatabaseOnDisk(name, metadata_path_, data_path_, logger, context) {}
 
     void attachToExternalDictionariesLoader(Context & context);
     void detachFromExternalDictionariesLoader();

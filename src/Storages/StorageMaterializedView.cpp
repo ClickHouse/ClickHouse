@@ -330,6 +330,7 @@ void StorageMaterializedView::mutate(const MutationCommands & commands, const Co
 void StorageMaterializedView::renameInMemory(const String & new_database_name, const String & new_table_name)
 {
     auto old_table_id = getStorageID();
+    ///FIXME case when moving between DBs
     if (has_inner_table && tryGetTargetTable() && !old_table_id.hasUUID())
     {
         auto new_target_table_name = generateInnerTableName({new_database_name, new_table_name});
