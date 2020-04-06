@@ -1,10 +1,18 @@
-# ناشناس یاندکس.اطلاعات متریکا {#nshns-yndkhs-tl-t-mtrykh}
+---
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 21
+toc_title: "\u06CC\u0627\u0646\u062F\u06A9\u0633\u0627\u0637\u0644\u0627\u0639\u0627\
+  \u062A \u0645\u062A\u0631\u06CC\u06A9\u0627"
+---
+
+# ناشناس یاندکس.اطلاعات متریکا {#anonymized-yandex-metrica-data}
 
 مجموعه داده شامل دو جدول حاوی داده های ناشناس در مورد بازدید (`hits_v1`) و بازدیدکننده داشته است (`visits_v1`) یاندکس . متریکا شما می توانید اطلاعات بیشتر در مورد یاندکس به عنوان خوانده شده.متریکا در [تاریخچه کلیک](../../introduction/history.md) بخش.
 
-مجموعه داده ها شامل دو جدول است که هر کدام می توانند به عنوان یک فشرده دانلود شوند `tsv.xz` فایل و یا به عنوان پارتیشن تهیه شده است. علاوه بر این, یک نسخه طولانی از `hits` جدول حاوی 100 میلیون ردیف به عنوان تسو در دسترس است <a href="https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz" class="uri">https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz</a> و به عنوان پارتیشن تهیه شده در <a href="https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz" class="uri">https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz</a>.
+مجموعه داده ها شامل دو جدول است که هر کدام می توانند به عنوان یک فشرده دانلود شوند `tsv.xz` فایل و یا به عنوان پارتیشن تهیه شده است. علاوه بر این, یک نسخه طولانی از `hits` جدول حاوی 100 میلیون ردیف به عنوان تسو در دسترس است https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz و به عنوان پارتیشن تهیه شده در https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
 
-## اخذ جداول از پارتیشن های تهیه شده {#khdh-jdwl-z-prtyshn-hy-thyh-shdh}
+## اخذ جداول از پارتیشن های تهیه شده {#obtaining-tables-from-prepared-partitions}
 
 دانلود و وارد کردن جدول بازدید:
 
@@ -26,7 +34,7 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## اخذ جداول از فایل تسو فشرده {#khdh-jdwl-z-fyl-tsw-fshrdh}
+## اخذ جداول از فایل تسو فشرده {#obtaining-tables-from-compressed-tsv-file}
 
 دانلود و وارد کردن بازدید از فایل تسو فشرده:
 
@@ -56,8 +64,8 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.visits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## به عنوان مثال نمایش داده شد {#bh-nwn-mthl-nmysh-ddh-shd}
+## به عنوان مثال نمایش داده شد {#example-queries}
 
 [اموزش کلیک](../../getting_started/tutorial.md) است در یاندکس بر اساس.مجموعه داده های متریکا و راه توصیه شده برای شروع این مجموعه داده ها فقط از طریق تدریس خصوصی است.
 
-نمونه های اضافی از نمایش داده شد به این جداول را می توان در میان یافت [تست های نفرت انگیز](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) از کلیک هاوس (به نام `test.hists` و `test.visits` وجود دارد).
+نمونه های اضافی از نمایش داده شد به این جداول را می توان در میان یافت [تست های نفرت انگیز](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) از کلیک هاوس (به نام `test.hists` و `test.visits` وجود دارد).

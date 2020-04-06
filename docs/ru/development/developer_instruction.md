@@ -195,19 +195,19 @@ Mac OS X:
 
 В процессе сборки могут появится сообщения `libprotobuf WARNING` про protobuf файлы в библиотеке libhdfs2. Это не имеет значения.
 
-При успешной сборке, вы получите готовый исполняемый файл `ClickHouse/build/dbms/programs/clickhouse`:
+При успешной сборке, вы получите готовый исполняемый файл `ClickHouse/build/programs/clickhouse`:
 
-    ls -l dbms/programs/clickhouse
+    ls -l programs/clickhouse
 
 # Запуск собранной версии ClickHouse {#zapusk-sobrannoi-versii-clickhouse}
 
-Для запуска сервера из под текущего пользователя, с выводом логов в терминал и с использованием примеров конфигурационных файлов, расположенных в исходниках, перейдите в директорию `ClickHouse/dbms/programs/server/` (эта директория находится не в директории build) и выполните:
+Для запуска сервера из под текущего пользователя, с выводом логов в терминал и с использованием примеров конфигурационных файлов, расположенных в исходниках, перейдите в директорию `ClickHouse/programs/server/` (эта директория находится не в директории build) и выполните:
 
-    ../../../build/dbms/programs/clickhouse server
+    ../../../build/programs/clickhouse server
 
 В этом случае, ClickHouse будет использовать конфигурационные файлы, расположенные в текущей директории. Вы можете запустить `clickhouse server` из любой директории, передав ему путь к конфигурационному файлу в аргументе командной строки `--config-file`.
 
-Для подключения к ClickHouse с помощью clickhouse-client, в соседнем терминале, зайдите в директорию `ClickHouse/build/dbms/programs/` и выполните `clickhouse client`.
+Для подключения к ClickHouse с помощью clickhouse-client, в соседнем терминале, зайдите в директорию `ClickHouse/build/programs/` и выполните `clickhouse client`.
 
 Если вы получили сообщение `Connection refused` на Mac OS X или FreeBSD, то укажите для клиента 127.0.0.1 в качестве имени хоста:
 
@@ -216,7 +216,7 @@ Mac OS X:
 Вы можете заменить собранным вами ClickHouse продакшен версию, установленную в системе. Для этого, установите ClickHouse на свою машину по инструкции с официального сайта. Затем выполните:
 
     sudo service clickhouse-server stop
-    sudo cp ClickHouse/build/dbms/programs/clickhouse /usr/bin/
+    sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
     sudo service clickhouse-server start
 
 Обратите внимание, что `clickhouse-client`, `clickhouse-server` и другие, являеются симлинками на общий бинарник `clickhouse`.
@@ -224,7 +224,7 @@ Mac OS X:
 Также вы можете запустить собранный вами ClickHouse с конфигурационным файлом системного ClickHouse:
 
     sudo service clickhouse-server stop
-    sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+    sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
 # Среда разработки {#sreda-razrabotki}
 
@@ -244,7 +244,7 @@ Mac OS X:
 
 Разработка тестов: https://clickhouse.tech/docs/ru/development/tests/
 
-Список задач: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy\_tasks\_sorted\_ru.md
+Список задач: https://github.com/ClickHouse/ClickHouse/blob/master/tests/instructions/easy\_tasks\_sorted\_ru.md
 
 # Тестовые данные {#testovye-dannye}
 
