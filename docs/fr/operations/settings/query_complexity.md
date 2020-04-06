@@ -1,8 +1,11 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 59
+toc_title: "Restrictions sur la complexit\xE9 des requ\xEAtes"
 ---
 
-# Restrictions sur la complexité des requêtes {#restrictions-on-query-complexity}
+# Restrictions Sur La Complexité Des Requêtes {#restrictions-on-query-complexity}
 
 Les Restrictions sur la complexité des requêtes font partie des paramètres.
 Ils sont utilisés pour fournir une exécution plus sûre à partir de l'interface utilisateur.
@@ -41,7 +44,7 @@ La consommation de mémoire est également limitée par les paramètres `max_mem
 
 Quantité maximale de RAM à utiliser pour exécuter les requêtes d'un utilisateur sur un seul serveur.
 
-Les valeurs par défaut sont définies dans [Paramètre.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). Par défaut, le montant n'est pas limité (`max_memory_usage_for_user = 0`).
+Les valeurs par défaut sont définies dans [Paramètre.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L288). Par défaut, le montant n'est pas limité (`max_memory_usage_for_user = 0`).
 
 Voir aussi la description de [max\_memory\_usage](#settings_max_memory_usage).
 
@@ -49,7 +52,7 @@ Voir aussi la description de [max\_memory\_usage](#settings_max_memory_usage).
 
 La quantité maximale de RAM à utiliser pour exécuter toutes les requêtes sur un seul serveur.
 
-Les valeurs par défaut sont définies dans [Paramètre.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). Par défaut, le montant n'est pas limité (`max_memory_usage_for_all_queries = 0`).
+Les valeurs par défaut sont définies dans [Paramètre.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L289). Par défaut, le montant n'est pas limité (`max_memory_usage_for_all_queries = 0`).
 
 Voir aussi la description de [max\_memory\_usage](#settings_max_memory_usage).
 
@@ -79,11 +82,11 @@ Que faire lorsque le nombre de clés uniques pour l'agrégation dépasse la limi
 
 ## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
-Active ou désactive l'exécution de `GROUP BY` clauses dans la mémoire externe. Voir [Groupe par dans la mémoire externe](../../query_language/select.md#select-group-by-in-external-memory).
+Active ou désactive l'exécution de `GROUP BY` clauses dans la mémoire externe. Voir [Groupe par dans la mémoire externe](../../sql_reference/statements/select.md#select-group-by-in-external-memory).
 
 Valeurs possibles:
 
--   Volume maximal de RAM (en octets) pouvant être utilisé par le [GROUP BY](../../query_language/select.md#select-group-by-clause) opération.
+-   Volume maximal de RAM (en octets) pouvant être utilisé par le [GROUP BY](../../sql_reference/statements/select.md#select-group-by-clause) opération.
 -   0 — `GROUP BY` dans la mémoire externe désactivé.
 
 Valeur par défaut: 0.
@@ -231,7 +234,7 @@ Que faire lorsque la quantité de données dépasse l'une des limites: ‘throw�
 
 Limite le nombre de lignes dans la table de hachage utilisée lors de la jonction de tables.
 
-Ce réglage s'applique à [SELECT … JOIN](../../query_language/select.md#select-join) les opérations et les [Rejoindre](../table_engines/join.md) tableau moteur.
+Ce réglage s'applique à [SELECT … JOIN](../../sql_reference/statements/select.md#select-join) les opérations et les [Rejoindre](../../engines/table_engines/special/join.md) tableau moteur.
 
 Si une requête contient plusieurs jointures, ClickHouse vérifie ce paramètre pour chaque résultat intermédiaire.
 
@@ -248,7 +251,7 @@ Valeur par défaut: 0.
 
 Limite la taille en octets de la table de hachage utilisée lors de l'assemblage de tables.
 
-Ce réglage s'applique à [SELECT … JOIN](../../query_language/select.md#select-join) les opérations et les [Rejoindre le moteur de table](../table_engines/join.md).
+Ce réglage s'applique à [SELECT … JOIN](../../sql_reference/statements/select.md#select-join) les opérations et les [Rejoindre le moteur de table](../../engines/table_engines/special/join.md).
 
 Si la requête contient des jointures, ClickHouse vérifie ce paramètre pour chaque résultat intermédiaire.
 
@@ -277,8 +280,8 @@ Valeur par défaut: `THROW`.
 
 **Voir Aussi**
 
--   [Clause de JOINTURE](../../query_language/select.md#select-join)
--   [Rejoindre le moteur de table](../table_engines/join.md)
+-   [Clause de JOINTURE](../../sql_reference/statements/select.md#select-join)
+-   [Rejoindre le moteur de table](../../engines/table_engines/special/join.md)
 
 ## max\_partitions\_per\_insert\_block {#max-partitions-per-insert-block}
 
