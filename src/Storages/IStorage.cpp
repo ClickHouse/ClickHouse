@@ -28,6 +28,7 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
     extern const int TABLE_IS_DROPPED;
     extern const int NOT_IMPLEMENTED;
+    extern const int DEADLOCK_AVOIDED;
 }
 
 IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), virtuals(std::move(virtuals_))
@@ -314,12 +315,22 @@ bool IStorage::isVirtualColumn(const String & column_name) const
     return getColumns().get(column_name).is_virtual;
 }
 
+RWLockImpl::LockHolder tryLockTimed(const RWLock & rwlock, RWLockImpl::Type type, const String & query_id)
+{
+    auto lock_holder = rwlock->getLock(type, query_id, RWLockImpl::default_locking_timeout);
+    if (!lock_holder)
+        throw Exception(
+                "Locking attempt timed out! Possible deadlock avoided. Client should retry.",
+                ErrorCodes::DEADLOCK_AVOIDED);
+    return std::move(lock_holder);
+}
+
 TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
 {
     TableStructureReadLockHolder result;
     if (will_add_new_data)
-        result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Read, query_id);
-    result.structure_lock = structure_lock->getLock(RWLockImpl::Read, query_id);
+        result.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Read, query_id);
+    result.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Read, query_id);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
@@ -329,7 +340,7 @@ TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_d
 TableStructureWriteLockHolder IStorage::lockAlterIntention(const String & query_id)
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_intention_lock = tryLockTimed(alter_intention_lock, RWLockImpl::Write, query_id);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
@@ -342,20 +353,20 @@ void IStorage::lockStructureExclusively(TableStructureWriteLockHolder & lock_hol
         throw Exception("Alter intention lock for table " + getStorageID().getNameForLogs() + " was not taken. This is a bug.", ErrorCodes::LOGICAL_ERROR);
 
     if (!lock_holder.new_data_structure_lock)
-        lock_holder.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-    lock_holder.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
+        lock_holder.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Write, query_id);
+    lock_holder.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Write, query_id);
 }
 
 TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id)
 {
     TableStructureWriteLockHolder result;
-    result.alter_intention_lock = alter_intention_lock->getLock(RWLockImpl::Write, query_id);
+    result.alter_intention_lock = tryLockTimed(alter_intention_lock, RWLockImpl::Write, query_id);
 
     if (is_dropped)
         throw Exception("Table is dropped", ErrorCodes::TABLE_IS_DROPPED);
 
-    result.new_data_structure_lock = new_data_structure_lock->getLock(RWLockImpl::Write, query_id);
-    result.structure_lock = structure_lock->getLock(RWLockImpl::Write, query_id);
+    result.new_data_structure_lock = tryLockTimed(new_data_structure_lock, RWLockImpl::Write, query_id);
+    result.structure_lock = tryLockTimed(structure_lock, RWLockImpl::Write, query_id);
 
     return result;
 }
