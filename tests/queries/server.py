@@ -193,6 +193,8 @@ ServerThread.DEFAULT_USERS_CONFIG = \
             <profile>default</profile>
 
             <quota>default</quota>
+
+            <access_management>1</access_management>
         </default>
 
         <readonly>
