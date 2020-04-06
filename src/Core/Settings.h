@@ -406,6 +406,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, validate_polygons, true, "Throw exception if polygon is invalid in function pointInPolygon (e.g. self-tangent, self-intersecting). If the setting is false, the function will accept invalid polygons but may silently return wrong result.", 0) \
     M(SettingUInt64, max_parser_depth, 1000, "Maximum parser depth.", 0) \
     M(SettingSeconds, temporary_live_view_timeout, DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC, "Timeout after which temporary live view is deleted.", 0) \
+    M(SettingBool, transform_null_in, false, "Enable null verification of the 'IN' operator.", 0) \
     \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
