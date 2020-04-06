@@ -275,7 +275,7 @@ void GroupingAggregatedTransform::work()
 {
     if (!single_level_chunks.empty())
     {
-        auto & header = getInputs().front().getHeader();
+        auto & header = getInputs().front().getHeader();  /// Take header from input port. Output header is empty.
         auto block = header.cloneWithColumns(single_level_chunks.back().detachColumns());
         single_level_chunks.pop_back();
         auto blocks = params->aggregator.convertBlockToTwoLevel(block);
