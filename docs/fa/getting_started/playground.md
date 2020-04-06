@@ -1,44 +1,47 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 14
+toc_title: "\u0632\u0645\u06CC\u0646 \u0628\u0627\u0632\u06CC"
 ---
 
-# ClickHouse Playground {#clickhouse-playground}
+# تاتر زمین بازی {#clickhouse-playground}
 
-[ClickHouse Playground](https://play.clickhouse.tech?file=welcome) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.
-Several example datasets are available in the Playground as well as sample queries that show ClickHouse features.
+[تاتر زمین بازی](https://play.clickhouse.tech?file=welcome) اجازه می دهد تا مردم را به تجربه با تاتر در حال اجرا نمایش داده شد فورا, بدون راه اندازی سرور و یا خوشه خود را.
+چند مجموعه داده به عنوان مثال در زمین بازی و همچنین نمونه نمایش داده شد که نشان می دهد ویژگی های تاتر در دسترس هستند.
 
-The queries are executed as a read-only user. It implies some limitations:
+نمایش داده شد به عنوان یک کاربر فقط خواندنی اجرا شده است. این نشان میدهد برخی از محدودیت:
 
--   DDL queries are not allowed
--   INSERT queries are not allowed
+-   پرسشهای دادل مجاز نیستند
+-   درج نمایش داده شد امکان پذیر نیست
 
-The following settings are also enforced:
+تنظیمات زیر نیز اجرا می شوند:
 - [`max_result_bytes=10485760`](../operations/settings/query_complexity/#max-result-bytes)
 - [`max_result_rows=2000`](../operations/settings/query_complexity/#setting-max_result_rows)
 - [`result_overflow_mode=break`](../operations/settings/query_complexity/#result-overflow-mode)
 - [`max_execution_time=60000`](../operations/settings/query_complexity/#max-execution-time)
 
-ClickHouse Playground gives the experience of m2.small
-[Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse)
-instance hosted in [Yandex.Cloud](https://cloud.yandex.com/).
-More information about [cloud providers](../commercial/cloud.md).
+زمین بازی کلیک می دهد تجربه متر2.کوچک
+[خدمات مدیریت شده برای کلیک](https://cloud.yandex.com/services/managed-clickhouse)
+به عنوان مثال میزبانی شده در [یاندکسابر](https://cloud.yandex.com/).
+اطلاعات بیشتر در مورد [ابر دهندگان](../commercial/cloud.md).
 
-ClickHouse Playground web interface makes requests via ClickHouse [HTTP API](../interfaces/http.md).
-The Playground backend is just a ClickHouse cluster without any additional server-side application.
-ClickHouse HTTPS endpoint is also available as a part of the Playground.
+ClickHouse زمین بازی و رابط کاربری وب سایت باعث می شود درخواست از طریق ClickHouse [HTTP API](../interfaces/http.md).
+باطن زمین بازی فقط یک خوشه محل کلیک بدون هیچ گونه نرم افزار سمت سرور اضافی است.
+نقطه پایانی کلیک اچتیتیپس نیز به عنوان بخشی از زمین بازی در دسترس است.
 
-You can make queries to playground using any HTTP client, for example [curl](https://curl.haxx.se) or [wget](https://www.gnu.org/software/wget/), or set up a connection using [JDBC](../interfaces/jdbc.md) or [ODBC](../interfaces/odbc.md) drivers.
-More information about software products that support ClickHouse is available [here](../interfaces/index.md).
+شما می توانید نمایش داده شد به زمین بازی با استفاده از هر مشتری قام را, مثلا [حلقه](https://curl.haxx.se) یا [عناصر](https://www.gnu.org/software/wget/), و یا راه اندازی یک اتصال با استفاده از [JDBC](../interfaces/jdbc.md) یا [ODBC](../interfaces/odbc.md) رانندگان.
+اطلاعات بیشتر در مورد محصولات نرم افزاری است که پشتیبانی از تاتر در دسترس است [اینجا](../interfaces/index.md).
 
-| Parameter | Value                                 |
-|:----------|:--------------------------------------|
-| Endpoint  | https://play-api.clickhouse.tech:8443 |
-| User      | `playground`                          |
-| Password  | `clickhouse`                          |
+| پارامتر     | مقدار                                    |
+|:------------|:-----------------------------------------|
+| نقطه پایانی | https://play-api.فاحشه خانه.فناوری: 8443 |
+| کاربر       | `playground`                             |
+| اسم رمز     | `clickhouse`                             |
 
-Note that this endpoint requires a secure connection.
+توجه داشته باشید که این نقطه پایانی نیاز به یک اتصال امن.
 
-Example:
+مثال:
 
 ``` bash
 curl "https://play-api.clickhouse.tech:8443/?query=SELECT+'Play+ClickHouse!';&user=playground&password=clickhouse&database=datasets"

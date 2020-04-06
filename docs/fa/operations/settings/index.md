@@ -1,28 +1,32 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_folder_title: Settings
+toc_priority: 55
+toc_title: "\u0645\u0639\u0631\u0641\u06CC \u0634\u0631\u06A9\u062A"
 ---
 
-# Settings {#settings}
+# تنظیمات {#settings}
 
-There are multiple ways to make all the settings described below.
-Settings are configured in layers, so each subsequent layer redefines the previous settings.
+راه های متعدد را به تمام تنظیمات زیر توضیح داده شده وجود دارد.
+تنظیمات در لایه پیکربندی, بنابراین هر لایه های بعدی دوباره تعریف تنظیمات قبلی.
 
-Ways to configure settings, in order of priority:
+راه های پیکربندی تنظیمات به ترتیب اولویت:
 
--   Settings in the `users.xml` server configuration file.
+-   تنظیمات در `users.xml` فایل پیکربندی سرور.
 
-    Set in the element `<profiles>`.
+    تنظیم در عنصر `<profiles>`.
 
--   Session settings.
+-   تنظیمات جلسه.
 
-    Send `SET setting=value` from the ClickHouse console client in interactive mode.
-    Similarly, you can use ClickHouse sessions in the HTTP protocol. To do this, you need to specify the `session_id` HTTP parameter.
+    ارسال `SET setting=value` از مشتری کنسول کلیک در حالت تعاملی.
+    به طور مشابه, شما می توانید جلسات کلیک در پروتکل قام استفاده. برای انجام این, شما نیاز به مشخص `session_id` پارامتر قام.
 
--   Query settings.
+-   تنظیمات پرس و جو.
 
-    -   When starting the ClickHouse console client in non-interactive mode, set the startup parameter `--setting=value`.
-    -   When using the HTTP API, pass CGI parameters (`URL?setting_1=value&setting_2=value...`).
+    -   هنگام شروع مشتری کنسول کلیک در حالت غیر تعاملی, تنظیم پارامتر راه اندازی `--setting=value`.
+    -   هنگام استفاده از پارامترهای سیستم (`URL?setting_1=value&setting_2=value...`).
 
-Settings that can only be made in the server config file are not covered in this section.
+تنظیمات است که تنها می تواند در فایل پیکربندی سرور ساخته شده در این بخش پوشش داده نمی شود.
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/settings/) <!--hide-->

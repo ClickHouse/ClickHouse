@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 50
+toc_title: Fichiers De Configuration
 ---
 
 # Fichiers De Configuration {#configuration_files}
@@ -17,7 +20,7 @@ Si `replace` est spécifié, il remplace l'élément entier par celui spécifié
 
 Si `remove` est spécifié, il supprime l'élément.
 
-La configuration peut également définir “substitutions”. Si un élément a le `incl` attribut, la substitution correspondante du fichier sera utilisée comme valeur. Par défaut, le chemin d'accès au fichier avec des substitutions est `/etc/metrika.xml`. Ceci peut être changé dans le [include\_from](server_settings/settings.md#server_settings-include_from) élément dans la configuration du serveur. Les valeurs de substitution sont spécifiées dans `/yandex/substitution_name` les éléments de ce fichier. Si une substitution spécifiée dans `incl` n'existe pas, il est enregistré dans le journal. Pour empêcher ClickHouse de consigner les substitutions manquantes, spécifiez `optional="true"` attribut (par exemple, les paramètres de [macro](server_settings/settings.md)).
+La configuration peut également définir “substitutions”. Si un élément a le `incl` attribut, la substitution correspondante du fichier sera utilisée comme valeur. Par défaut, le chemin d'accès au fichier avec des substitutions est `/etc/metrika.xml`. Ceci peut être changé dans le [include\_from](server_configuration_parameters/settings.md#server_configuration_parameters-include_from) élément dans la configuration du serveur. Les valeurs de substitution sont spécifiées dans `/yandex/substitution_name` les éléments de ce fichier. Si une substitution spécifiée dans `incl` n'existe pas, il est enregistré dans le journal. Pour empêcher ClickHouse de consigner les substitutions manquantes, spécifiez `optional="true"` attribut (par exemple, les paramètres de [macro](server_configuration_parameters/settings.md)).
 
 Les Substitutions peuvent également être effectuées à partir de ZooKeeper. Pour ce faire, spécifiez l'attribut `from_zk = "/path/to/node"`. La valeur de l'élément est remplacé par le contenu du noeud au `/path/to/node` dans ZooKeeper. Vous pouvez également placer un sous-arbre XML entier sur le nœud ZooKeeper et il sera entièrement inséré dans l'élément source.
 

@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 59
+toc_title: Restricciones en la complejidad de consultas
 ---
 
 # Restricciones en la complejidad de consultas {#restrictions-on-query-complexity}
@@ -14,11 +17,11 @@ Restricciones en el “maximum amount of something” puede tomar el valor 0, lo
 La mayoría de las restricciones también tienen un ‘overflow\_mode’ establecer, lo que significa qué hacer cuando se excede el límite.
 Puede tomar uno de dos valores: `throw` o `break`. Las restricciones en la agregación (group\_by\_overflow\_mode) también tienen el valor `any`.
 
-`throw` – Lanzar una excepción (por defecto).
+`throw` – Throw an exception (default).
 
-`break` – Detener la ejecución de la consulta y devolver el resultado parcial, como si los datos de origen se agotaron.
+`break` – Stop executing the query and return the partial result, as if the source data ran out.
 
-`any (only for group_by_overflow_mode)` – Continuar la agregación de las claves que se metieron en el conjunto, pero no añadir nuevas claves al conjunto.
+`any (only for group_by_overflow_mode)` – Continuing aggregation for the keys that got into the set, but don't add new keys to the set.
 
 ## Método de codificación de datos: {#settings_max_memory_usage}
 
@@ -26,7 +29,7 @@ La cantidad máxima de RAM que se utiliza para ejecutar una consulta en un únic
 
 En el archivo de configuración predeterminado, el máximo es de 10 GB.
 
-El ajuste no tiene en cuenta el volumen de memoria disponible o el volumen total de memoria en la máquina.
+La configuración no tiene en cuenta el volumen de memoria disponible ni el volumen total de memoria en la máquina.
 La restricción se aplica a una sola consulta dentro de un único servidor.
 Usted puede utilizar `SHOW PROCESSLIST` para ver el consumo de memoria actual para cada consulta.
 Además, el consumo máximo de memoria se rastrea para cada consulta y se escribe en el registro.
@@ -41,7 +44,7 @@ El consumo de memoria también está restringido por los parámetros `max_memory
 
 La cantidad máxima de RAM que se utilizará para ejecutar las consultas de un usuario en un único servidor.
 
-Los valores predeterminados se definen en [Configuración.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L288). De forma predeterminada, el importe no está restringido (`max_memory_usage_for_user = 0`).
+Los valores predeterminados se definen en [Configuración.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L288). De forma predeterminada, el importe no está restringido (`max_memory_usage_for_user = 0`).
 
 Ver también la descripción de [Método de codificación de datos:](#settings_max_memory_usage).
 
@@ -49,7 +52,7 @@ Ver también la descripción de [Método de codificación de datos:](#settings_m
 
 La cantidad máxima de RAM que se utilizará para ejecutar todas las consultas en un único servidor.
 
-Los valores predeterminados se definen en [Configuración.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Core/Settings.h#L289). De forma predeterminada, el importe no está restringido (`max_memory_usage_for_all_queries = 0`).
+Los valores predeterminados se definen en [Configuración.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L289). De forma predeterminada, el importe no está restringido (`max_memory_usage_for_all_queries = 0`).
 
 Ver también la descripción de [Método de codificación de datos:](#settings_max_memory_usage).
 
@@ -66,7 +69,7 @@ Un número máximo de bytes (datos sin comprimir) que se pueden leer de una tabl
 
 ## Método de codificación de datos: {#read-overflow-mode}
 
-Qué hacer cuando el volumen de datos leídos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
+Qué hacer cuando el volumen de datos leídos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
 
 ## Método de codificación de datos: {#settings-max-rows-to-group-by}
 
@@ -74,17 +77,17 @@ Un número máximo de claves únicas recibidas de la agregación. Esta configura
 
 ## Grupo\_by\_overflow\_mode {#group-by-overflow-mode}
 
-Qué hacer cuando el número de claves únicas para la agregación excede el límite: ‘throw’, ‘break’, o ‘any’. Por defecto, tirar.
+Qué hacer cuando el número de claves únicas para la agregación excede el límite: ‘throw’, ‘break’, o ‘any’. Por defecto, throw.
 Uso de la ‘any’ valor le permite ejecutar una aproximación de GROUP BY. La calidad de esta aproximación depende de la naturaleza estadística de los datos.
 
 ## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
-Habilita o deshabilita la ejecución de `GROUP BY` en la memoria externa. Ver [GRUPO POR en memoria externa](../../query_language/select.md#select-group-by-in-external-memory).
+Habilita o deshabilita la ejecución de `GROUP BY` en la memoria externa. Ver [GROUP BY en memoria externa](../../sql_reference/statements/select.md#select-group-by-in-external-memory).
 
 Valores posibles:
 
--   Volumen máximo de RAM (en bytes) que puede ser utilizado por el único [GRUPO POR](../../query_language/select.md#select-group-by-clause) operación.
--   Cero — `GROUP BY` en la memoria externa deshabilitada.
+-   Volumen máximo de RAM (en bytes) que puede ser utilizado por el único [GROUP BY](../../sql_reference/statements/select.md#select-group-by-clause) operación.
+-   0 — `GROUP BY` en la memoria externa deshabilitada.
 
 Valor predeterminado: 0.
 
@@ -98,7 +101,7 @@ Un número máximo de bytes antes de ordenar.
 
 ## sort\_overflow\_mode {#sort-overflow-mode}
 
-Qué hacer si el número de filas recibidas antes de ordenar excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
+Qué hacer si el número de filas recibidas antes de ordenar excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
 
 ## max\_result\_rows {#setting-max_result_rows}
 
@@ -110,9 +113,9 @@ Límite en el número de bytes en el resultado. Lo mismo que el ajuste anterior.
 
 ## result\_overflow\_mode {#result-overflow-mode}
 
-Qué hacer si el volumen del resultado excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
+Qué hacer si el volumen del resultado excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
 
-Utilizar ‘break’ es similar a un límite de usar. `Break` interrumpe la ejecución sólo en el nivel de bloque. Esto significa que la cantidad de filas devueltas es mayor que [max\_result\_rows](#setting-max_result_rows), múltiplo de [max\_block\_size](settings.md#setting-max_block_size) y depende de [max\_threads](settings.md#settings-max_threads).
+Utilizar ‘break’ es similar a usar LIMIT. `Break` interrumpe la ejecución sólo en el nivel de bloque. Esto significa que la cantidad de filas devueltas es mayor que [max\_result\_rows](#setting-max_result_rows), múltiplo de [max\_block\_size](settings.md#setting-max_block_size) y depende de [max\_threads](settings.md#settings-max_threads).
 
 Ejemplo:
 
@@ -138,7 +141,7 @@ En este momento, no se comprueba una de las etapas de clasificación, o al fusio
 
 ## timeout\_overflow\_mode {#timeout-overflow-mode}
 
-Qué hacer si la consulta se ejecuta más de ‘max\_execution\_time’: ‘throw’ o ‘break’. Por defecto, tirar.
+Qué hacer si la consulta se ejecuta más de ‘max\_execution\_time’: ‘throw’ o ‘break’. Por defecto, throw.
 
 ## Método de codificación de datos: {#min-execution-speed}
 
@@ -184,7 +187,7 @@ Profundidad máxima de la tubería. Corresponde al número de transformaciones q
 ## max\_ast\_depth {#max-ast-depth}
 
 Profundidad máxima de anidamiento de un árbol sintáctico de consulta. Si se supera, se produce una excepción.
-En este momento, no se comprueba durante el análisis, sino solo después de analizar la consulta. Es decir, se puede crear un árbol sintáctico demasiado profundo durante el análisis, pero la consulta fallará. Por defecto, 1000.
+En este momento, no se verifica durante el análisis, sino solo después de analizar la consulta. Es decir, se puede crear un árbol sintáctico demasiado profundo durante el análisis, pero la consulta fallará. Por defecto, 1000.
 
 ## max\_ast\_elements {#max-ast-elements}
 
@@ -201,7 +204,7 @@ Número máximo de bytes (datos sin comprimir) utilizados por un conjunto en la 
 
 ## set\_overflow\_mode {#set-overflow-mode}
 
-Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
+Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
 
 ## Método de codificación de datos: {#max-rows-in-distinct}
 
@@ -213,7 +216,7 @@ Un número máximo de bytes utilizados por una tabla hash cuando se utiliza DIST
 
 ## distinct\_overflow\_mode {#distinct-overflow-mode}
 
-Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
+Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
 
 ## max\_rows\_to\_transfer {#max-rows-to-transfer}
 
@@ -225,13 +228,13 @@ Un número máximo de bytes (datos sin comprimir) que se pueden pasar a un servi
 
 ## transfer\_overflow\_mode {#transfer-overflow-mode}
 
-Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, tirar.
+Qué hacer cuando la cantidad de datos excede uno de los límites: ‘throw’ o ‘break’. Por defecto, throw.
 
 ## Método de codificación de datos: {#settings-max_rows_in_join}
 
 Limita el número de filas de la tabla hash que se utiliza al unir tablas.
 
-Esta configuración se aplica a [SELECCIONAR … UNIRSE](../../query_language/select.md#select-join) operaciones y la [Unir](../table_engines/join.md) motor de mesa.
+Esta configuración se aplica a [SELECT … JOIN](../../sql_reference/statements/select.md#select-join) operaciones y la [Unir](../../engines/table_engines/special/join.md) motor de mesa.
 
 Si una consulta contiene varias combinaciones, ClickHouse comprueba esta configuración para cada resultado intermedio.
 
@@ -240,7 +243,7 @@ ClickHouse puede proceder con diferentes acciones cuando se alcanza el límite. 
 Valores posibles:
 
 -   Entero positivo.
--   0 — Número ilimitado de filas.
+-   0 — Unlimited number of rows.
 
 Valor predeterminado: 0.
 
@@ -248,7 +251,7 @@ Valor predeterminado: 0.
 
 Limita el tamaño en bytes de la tabla hash utilizada al unir tablas.
 
-Esta configuración se aplica a [SELECCIONAR … UNIRSE](../../query_language/select.md#select-join) operaciones y [Unirse al motor de tabla](../table_engines/join.md).
+Esta configuración se aplica a [SELECT … JOIN](../../sql_reference/statements/select.md#select-join) operaciones y [Unirse al motor de tabla](../../engines/table_engines/special/join.md).
 
 Si la consulta contiene combinaciones, ClickHouse comprueba esta configuración para cada resultado intermedio.
 
@@ -257,7 +260,7 @@ ClickHouse puede proceder con diferentes acciones cuando se alcanza el límite. 
 Valores posibles:
 
 -   Entero positivo.
--   0 — El control de memoria está desactivado.
+-   0 — Memory control is disabled.
 
 Valor predeterminado: 0.
 
@@ -270,22 +273,22 @@ Define qué acción realiza ClickHouse cuando se alcanza cualquiera de los sigui
 
 Valores posibles:
 
--   `THROW` - ClickHouse lanza una excepción y rompe la operación.
--   `BREAK` - ClickHouse interrumpe la operación y no lanza una excepción.
+-   `THROW` — ClickHouse throws an exception and breaks operation.
+-   `BREAK` — ClickHouse breaks operation and doesn't throw an exception.
 
 Valor predeterminado: `THROW`.
 
 **Ver también**
 
--   [Cláusula JOIN](../../query_language/select.md#select-join)
--   [Unirse al motor de tabla](../table_engines/join.md)
+-   [Cláusula JOIN](../../sql_reference/statements/select.md#select-join)
+-   [Unirse al motor de tabla](../../engines/table_engines/special/join.md)
 
 ## max\_partitions\_per\_insert\_block {#max-partitions-per-insert-block}
 
 Limita el número máximo de particiones en un único bloque insertado.
 
 -   Entero positivo.
--   0 — número Ilimitado de particiones.
+-   0 — Unlimited number of partitions.
 
 Valor predeterminado: 100.
 
@@ -295,4 +298,4 @@ Al insertar datos, ClickHouse calcula el número de particiones en el bloque ins
 
 > “Too many partitions for single INSERT block (more than” ¿Cómo puedo hacerlo? “). The limit is controlled by ‘max\_partitions\_per\_insert\_block’ setting. A large number of partitions is a common misconception. It will lead to severe negative performance impact, including slow server startup, slow INSERT queries and slow SELECT queries. Recommended total number of partitions for a table is under 1000..10000. Please note, that partitioning is not intended to speed up SELECT queries (ORDER BY key is sufficient to make range queries fast). Partitions are intended for data manipulation (DROP PARTITION, etc).”
 
-[Artículo Original](https://clickhouse.tech/docs/es/operations/settings/query_complexity/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/operations/settings/query_complexity/) <!--hide-->

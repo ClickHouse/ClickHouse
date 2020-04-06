@@ -1,5 +1,9 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 5
+toc_title: "Caract\xE9ristiques de ClickHouse qui peuvent \xEAtre consid\xE9r\xE9\
+  es comme des inconv\xE9nients"
 ---
 
 # Caractéristiques de ClickHouse qui peuvent être considérées comme des inconvénients {#clickhouse-features-that-can-be-considered-disadvantages}

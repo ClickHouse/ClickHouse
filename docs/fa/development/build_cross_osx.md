@@ -1,26 +1,32 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 66
+toc_title: "\u0686\u06AF\u0648\u0646\u0647 \u0628\u0631\u0627\u06CC \u0633\u0627\u062E\
+  \u062A \u062A\u0627\u062A\u0631 \u062F\u0631 \u0644\u06CC\u0646\u0648\u06A9\u0633\
+  \ \u0628\u0631\u0627\u06CC \u0633\u06CC\u0633\u062A\u0645 \u0639\u0627\u0645\u0644\
+  \ \u0645\u06A9 \u0627\u06CC\u06A9\u0633"
 ---
 
-# How to Build ClickHouse on Linux for Mac OS X {#how-to-build-clickhouse-on-linux-for-mac-os-x}
+# چگونه برای ساخت تاتر در لینوکس برای سیستم عامل مک ایکس {#how-to-build-clickhouse-on-linux-for-mac-os-x}
 
-This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on OS X. This is intended for continuous integration checks that run on Linux servers. If you want to build ClickHouse directly on Mac OS X, then proceed with [another instruction](build_osx.md).
+این برای مواردی است که شما دستگاه لینوکس دارید و می خواهید از این برای ساخت استفاده کنید `clickhouse` این است که برای چک ادغام مداوم است که بر روی سرور های لینوکس اجرا در نظر گرفته شده. اگر شما می خواهید برای ساخت خانه کلیک به طور مستقیم در سیستم عامل مک ایکس, سپس با ادامه [دستورالعمل دیگر](build_osx.md).
 
-The cross-build for Mac OS X is based on the [Build instructions](build.md), follow them first.
+کراس ساخت برای سیستم عامل مک ایکس بر اساس [ساخت دستورالعمل](build.md) اول دنبالشون کن
 
-# Install Clang-8 {#install-clang-8}
+# نصب کلانگ-8 {#install-clang-8}
 
-Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
-For example the commands for Bionic are like:
+دستورالعمل از دنبال https://apt.llvm.org / برای اوبونتو یا دبیان راه اندازی خود را.
+به عنوان مثال دستورات برای بیونیک مانند:
 
 ``` bash
 sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
 sudo apt-get install clang-8
 ```
 
-# Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
+# نصب مجموعه ابزار صلیب کشی {#install-cross-compilation-toolset}
 
-Let’s remember the path where we install `cctools` as ${CCTOOLS}
+بیایید مسیری را که ما نصب می کنیم به یاد داشته باشیم `cctools` به عنوان ${CCTOOLS}
 
 ``` bash
 mkdir ${CCTOOLS}
@@ -37,7 +43,7 @@ cd cctools-port/cctools
 make install
 ```
 
-Also, we need to download macOS X SDK into the working tree.
+همچنین, ما نیاز به دانلود ماکو ایکس انحراف معیار به درخت کار.
 
 ``` bash
 cd ClickHouse
@@ -46,7 +52,7 @@ mkdir -p build-darwin/cmake/toolchain/darwin-x86_64
 tar xJf MacOSX10.14.sdk.tar.xz -C build-darwin/cmake/toolchain/darwin-x86_64 --strip-components=1
 ```
 
-# Build ClickHouse {#build-clickhouse}
+# ساخت خانه کلیک {#build-clickhouse}
 
 ``` bash
 cd ClickHouse
@@ -58,4 +64,4 @@ CC=clang-8 CXX=clang++-8 cmake . -Bbuild-osx -DCMAKE_TOOLCHAIN_FILE=cmake/darwin
 ninja -C build-osx
 ```
 
-The resulting binary will have a Mach-O executable format and can’t be run on Linux.
+باینری حاصل یک فرمت اجرایی ماخ ای داشته باشد و نمی تواند در لینوکس اجرا شود.

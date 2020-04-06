@@ -1,20 +1,23 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 51
+toc_title: "\u0633\u0647\u0645\u06CC\u0647"
 ---
 
-# Quotas {#quotas}
+# سهمیه {#quotas}
 
-Quotas allow you to limit resource usage over a period of time, or simply track the use of resources.
-Quotas are set up in the user config. This is usually ‘users.xml’.
+سهمیه به شما اجازه محدود کردن استفاده از منابع بیش از یک دوره از زمان, و یا به سادگی پیگیری استفاده از منابع.
+سهمیه در پیکربندی کاربر راه اندازی. این است که معمولا ‘users.xml’.
 
-The system also has a feature for limiting the complexity of a single query. See the section “Restrictions on query complexity”).
+این سیستم همچنین دارای یک ویژگی برای محدود کردن پیچیدگی یک پرس و جو واحد. بخش را ببینید “Restrictions on query complexity”).
 
-In contrast to query complexity restrictions, quotas:
+در مقابل به پرس و جو محدودیت پیچیدگی, سهمیه:
 
--   Place restrictions on a set of queries that can be run over a period of time, instead of limiting a single query.
--   Account for resources spent on all remote servers for distributed query processing.
+-   محل محدودیت در مجموعه ای از نمایش داده شد که می تواند بیش از یک دوره از زمان اجرا, به جای محدود کردن یک پرس و جو.
+-   حساب برای منابع صرف شده در تمام سرور از راه دور برای پردازش پرس و جو توزیع شده است.
 
-Let’s look at the section of the ‘users.xml’ file that defines quotas.
+بیایید به بخش ‘users.xml’ فایل که سهمیه را تعریف می کند.
 
 ``` xml
 <!-- Quotas -->
@@ -36,8 +39,8 @@ Let’s look at the section of the ‘users.xml’ file that defines quotas.
     </default>
 ```
 
-By default, the quota just tracks resource consumption for each hour, without limiting usage.
-The resource consumption calculated for each interval is output to the server log after each request.
+به طور پیش فرض, سهمیه فقط ردیابی مصرف منابع برای هر ساعت, بدون محدود کردن استفاده.
+مصرف منابع محاسبه شده برای هر فاصله خروجی به ورود به سیستم سرور بعد از هر درخواست است.
 
 ``` xml
 <statbox>
@@ -65,11 +68,11 @@ The resource consumption calculated for each interval is output to the server lo
 </statbox>
 ```
 
-For the ‘statbox’ quota, restrictions are set for every hour and for every 24 hours (86,400 seconds). The time interval is counted starting from an implementation-defined fixed moment in time. In other words, the 24-hour interval doesn’t necessarily begin at midnight.
+برای ‘statbox’ سهمیه, محدودیت برای هر ساعت و برای هر مجموعه 24 ساعت ها (86,400 ثانیه). فاصله زمانی شمارش شروع از یک لحظه ثابت پیاده سازی تعریف شده در زمان. به عبارت دیگر فاصله 24 ساعته لزوما در نیمه شب شروع نمی شود.
 
-When the interval ends, all collected values are cleared. For the next hour, the quota calculation starts over.
+هنگامی که فاصله به پایان می رسد تمام مقادیر جمع شده پاک می شوند. برای ساعت بعد محاسبه سهمیه بیش از شروع می شود.
 
-Here are the amounts that can be restricted:
+در اینجا مقدار است که می تواند محدود می شود:
 
 `queries` – The total number of requests.
 
@@ -81,9 +84,9 @@ Here are the amounts that can be restricted:
 
 `execution_time` – The total query execution time, in seconds (wall time).
 
-If the limit is exceeded for at least one time interval, an exception is thrown with a text about which restriction was exceeded, for which interval, and when the new interval begins (when queries can be sent again).
+اگر حد برای حداقل یک فاصله زمانی بیش از, یک استثنا با یک متن که در مورد محدودیت بیش از حد شد پرتاب, که فاصله, و هنگامی که فاصله جدید شروع می شود (هنگامی که نمایش داده شد را می توان دوباره ارسال).
 
-Quotas can use the “quota key” feature in order to report on resources for multiple keys independently. Here is an example of this:
+سهمیه می توانید استفاده کنید “quota key” ویژگی به منظور گزارش منابع برای کلید های متعدد به طور مستقل. در اینجا یک مثال از این است:
 
 ``` xml
 <!-- For the global reports designer. -->
@@ -100,10 +103,10 @@ Quotas can use the “quota key” feature in order to report on resources for m
     <keyed />
 ```
 
-The quota is assigned to users in the ‘users’ section of the config. See the section “Access rights”.
+سهمیه به کاربران در اختصاص داده ‘users’ بخش پیکربندی. بخش را ببینید “Access rights”.
 
-For distributed query processing, the accumulated amounts are stored on the requestor server. So if the user goes to another server, the quota there will “start over”.
+برای پردازش پرس و جو توزیع, مقدار انباشته شده بر روی سرور درخواست ذخیره می شود. بنابراین اگر کاربر می رود به سرور دیگر, سهمیه وجود خواهد داشت “start over”.
 
-When the server is restarted, quotas are reset.
+هنگامی که سرور دوباره راه اندازی شده است, سهمیه تنظیم مجدد.
 
-[Original article](https://clickhouse.tech/docs/en/operations/quotas/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/quotas/) <!--hide-->

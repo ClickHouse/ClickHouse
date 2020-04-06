@@ -1,40 +1,45 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 41
+toc_title: "\u0627\u0633\u062A\u0641\u0627\u062F\u0647 \u0627\u0632 \u0645\u062F\u0644\
+  \ \u0647\u0627\u06CC \u0627\u062F\u0645 \u06A9\u0648\u062F\u0646 \u0648 \u0627\u062D\
+  \u0645\u0642"
 ---
 
-# Applying a Catboost Model in ClickHouse {#applying-catboost-model-in-clickhouse}
+# استفاده از مدل ادم کودن و احمق در فاحشه خانه {#applying-catboost-model-in-clickhouse}
 
-[CatBoost](https://catboost.ai) is a free and open-source gradient boosting library developed at [Yandex](https://yandex.com/company/) for machine learning.
+[مانتو](https://catboost.ai) یک کتابخانه تقویت شیب رایگان و منبع باز توسعه یافته در [یاندکس](https://yandex.com/company/) برای یادگیری ماشین.
 
-With this instruction, you will learn to apply pre-trained models in ClickHouse by running model inference from SQL.
+با استفاده از این دستورالعمل یاد خواهید گرفت که با اجرای مدل استنتاج از میدان از مدل های پیش روت شده در خانه استفاده کنید.
 
-To apply a CatBoost model in ClickHouse:
+برای اعمال یک مدل ادم کودن و احمق در خانه کلیک کنید:
 
-1.  [Create a Table](#create-table).
-2.  [Insert the Data to the Table](#insert-data-to-table).
-3.  [Integrate CatBoost into ClickHouse](#integrate-catboost-into-clickhouse) (Optional step).
-4.  [Run the Model Inference from SQL](#run-model-inference).
+1.  [ایجاد یک جدول](#create-table).
+2.  [درج داده به جدول](#insert-data-to-table).
+3.  [ادغام کاتبوست به کلیک](#integrate-catboost-into-clickhouse) (مرحله اختیاری).
+4.  [اجرای مدل استنتاج از گذاشتن](#run-model-inference).
 
-For more information about training CatBoost models, see [Training and applying models](https://catboost.ai/docs/features/training.html#training).
+برای کسب اطلاعات بیشتر در مورد اموزش مدل های کاتبوست مراجعه کنید [اموزش و مدل سازی](https://catboost.ai/docs/features/training.html#training).
 
-## Prerequisites {#prerequisites}
+## پیش نیازها {#prerequisites}
 
-If you don’t have the [Docker](https://docs.docker.com/install/) yet, install it.
+اگر شما لازم نیست که [کارگر بارانداز](https://docs.docker.com/install/) هنوز, نصب کنید.
 
-!!! note "Note"
-    [Docker](https://www.docker.com) is a software platform that allows you to create containers that isolate a CatBoost and ClickHouse installation from the rest of the system.
+!!! note "یادداشت"
+    [کارگر بارانداز](https://www.docker.com) یک پلت فرم نرم افزار است که اجازه می دهد تا به شما برای ایجاد ظروف که منزوی CatBoost و ClickHouse نصب و راه اندازی از بقیه سیستم.
 
-Before applying a CatBoost model:
+قبل از استفاده از مدل ادم کودن و احمق:
 
-**1.** Pull the [Docker image](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) from the registry:
+**1.** بکش [تصویر کارگر بارانداز](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) از رجیستری:
 
 ``` bash
 $ docker pull yandex/tutorial-catboost-clickhouse
 ```
 
-This Docker image contains everything you need to run CatBoost and ClickHouse: code, runtime, libraries, environment variables, and configuration files.
+این docker تصویر شامل همه چیز شما نیاز به اجرای catboost و clickhouse: کد در زمان اجرا کتابخانه های محیط متغیر و فایل های پیکربندی.
 
-**2.** Make sure the Docker image has been successfully pulled:
+**2.** اطمینان حاصل کنید که تصویر کارگر بارانداز شده است با موفقیت کشیده:
 
 ``` bash
 $ docker image ls
@@ -42,26 +47,26 @@ REPOSITORY                            TAG                 IMAGE ID            CR
 yandex/tutorial-catboost-clickhouse   latest              622e4d17945b        22 hours ago        1.37GB
 ```
 
-**3.** Start a Docker container based on this image:
+**3.** شروع یک ظرف کارگر بارانداز بر اساس این تصویر:
 
 ``` bash
 $ docker run -it -p 8888:8888 yandex/tutorial-catboost-clickhouse
 ```
 
-## 1. Create a Table {#create-table}
+## 1. ایجاد یک جدول {#create-table}
 
-To create a ClickHouse table for the training sample:
+برای ایجاد یک میز کلیک برای نمونه تمرین:
 
-**1.** Start ClickHouse console client in the interactive mode:
+**1.** شروع مشتری کنسول کلیک در حالت تعاملی:
 
 ``` bash
 $ clickhouse client
 ```
 
-!!! note "Note"
-    The ClickHouse server is already running inside the Docker container.
+!!! note "یادداشت"
+    سرور کلیک در حال حاضر در داخل ظرف کارگر بارانداز در حال اجرا.
 
-**2.** Create the table using the command:
+**2.** ایجاد جدول با استفاده از دستور:
 
 ``` sql
 :) CREATE TABLE amazon_train
@@ -81,29 +86,29 @@ $ clickhouse client
 ENGINE = MergeTree ORDER BY date
 ```
 
-**3.** Exit from ClickHouse console client:
+**3.** خروج از مشتری کنسول کلیک کنید:
 
 ``` sql
 :) exit
 ```
 
-## 2. Insert the Data to the Table {#insert-data-to-table}
+## 2. درج داده به جدول {#insert-data-to-table}
 
-To insert the data:
+برای وارد کردن داده ها:
 
-**1.** Run the following command:
+**1.** دستور زیر را اجرا کنید:
 
 ``` bash
 $ clickhouse client --host 127.0.0.1 --query 'INSERT INTO amazon_train FORMAT CSVWithNames' < ~/amazon/train.csv
 ```
 
-**2.** Start ClickHouse console client in the interactive mode:
+**2.** شروع مشتری کنسول کلیک در حالت تعاملی:
 
 ``` bash
 $ clickhouse client
 ```
 
-**3.** Make sure the data has been uploaded:
+**3.** اطمینان حاصل کنید که داده ها ارسال شده است:
 
 ``` sql
 :) SELECT count() FROM amazon_train
@@ -113,27 +118,27 @@ FROM amazon_train
 
 +-count()-+
 |   65538 |
-+---------+
++-------+
 ```
 
-## 3. Integrate CatBoost into ClickHouse {#integrate-catboost-into-clickhouse}
+## 3. ادغام کاتبوست به کلیک {#integrate-catboost-into-clickhouse}
 
-!!! note "Note"
-    **Optional step.** The Docker image contains everything you need to run CatBoost and ClickHouse.
+!!! note "یادداشت"
+    **گام اختیاری.** این Docker تصویر شامل همه چیز شما نیاز به اجرای CatBoost و ClickHouse.
 
-To integrate CatBoost into ClickHouse:
+برای ادغام کاتبوست به کلیک:
 
-**1.** Build the evaluation library.
+**1.** ساخت کتابخانه ارزیابی.
 
-The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dll|dylib>` library. For more information about how to build the library, see [CatBoost documentation](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
+سریعترین راه برای ارزیابی مدل ادم کودن و احمق کامپایل است `libcatboostmodel.<so|dll|dylib>` کتابخونه. برای کسب اطلاعات بیشتر در مورد چگونگی ساخت کتابخانه, دیدن [مستندات غلطیاب](https://catboost.ai/docs/concepts/c-plus-plus-api_dynamic-c-pluplus-wrapper.html).
 
-**2.** Create a new directory anywhere and with any name, for example, `data` and put the created library in it. The Docker image already contains the library `data/libcatboostmodel.so`.
+**2.** ایجاد یک دایرکتوری جدید در هر کجا و با هر نام, مثلا, `data` و کتابخونه درستشون رو توش بذار. تصویر کارگر بارانداز در حال حاضر شامل کتابخانه `data/libcatboostmodel.so`.
 
-**3.** Create a new directory for config model anywhere and with any name, for example, `models`.
+**3.** ایجاد یک دایرکتوری جدید برای مدل پیکربندی در هر کجا و با هر نام, مثلا, `models`.
 
-**4.** Create a model configuration file with any name, for example, `models/amazon_model.xml`.
+**4.** برای مثال یک فایل پیکربندی مدل با هر نام ایجاد کنید, `models/amazon_model.xml`.
 
-**5.** Describe the model configuration:
+**5.** توصیف پیکربندی مدل:
 
 ``` xml
 <models>
@@ -150,7 +155,7 @@ The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dl
 </models>
 ```
 
-**6.** Add the path to CatBoost and the model configuration to the ClickHouse configuration:
+**6.** اضافه کردن مسیر به CatBoost و مدل پیکربندی به پیکربندی ClickHouse:
 
 ``` xml
 <!-- File etc/clickhouse-server/config.d/models_config.xml. -->
@@ -158,11 +163,11 @@ The fastest way to evaluate a CatBoost model is compile `libcatboostmodel.<so|dl
 <models_config>/home/catboost/models/*_model.xml</models_config>
 ```
 
-## 4. Run the Model Inference from SQL {#run-model-inference}
+## 4. اجرای مدل استنتاج از گذاشتن {#run-model-inference}
 
-For test model run the ClickHouse client `$ clickhouse client`.
+برای مدل تست اجرای مشتری کلیک `$ clickhouse client`.
 
-Let’s make sure that the model is working:
+بیایید اطمینان حاصل کنیم که مدل کار می کند:
 
 ``` sql
 :) SELECT
@@ -181,10 +186,10 @@ FROM amazon_train
 LIMIT 10
 ```
 
-!!! note "Note"
-    Function [modelEvaluate](../query_language/functions/other_functions.md#function-modelevaluate) returns tuple with per-class raw predictions for multiclass models.
+!!! note "یادداشت"
+    تابع [مدلووات](../sql_reference/functions/other_functions.md#function-modelevaluate) را برمی گرداند تاپل با پیش بینی های خام در هر کلاس برای مدل های چند طبقه.
 
-Let’s predict the probability:
+بیایید احتمال را پیش بینی کنیم:
 
 ``` sql
 :) SELECT
@@ -204,10 +209,10 @@ FROM amazon_train
 LIMIT 10
 ```
 
-!!! note "Note"
-    More info about [exp()](../query_language/functions/math_functions.md) function.
+!!! note "یادداشت"
+    اطلاعات بیشتر در مورد [خروج()](../sql_reference/functions/math_functions.md) تابع.
 
-Let’s calculate LogLoss on the sample:
+بیایید محاسبه لگ در نمونه:
 
 ``` sql
 :) SELECT -avg(tg * log(prob) + (1 - tg) * log(1 - prob)) AS logloss
@@ -230,7 +235,7 @@ FROM
 )
 ```
 
-!!! note "Note"
-    More info about [avg()](../query_language/agg_functions/reference.md#agg_function-avg) and [log()](../query_language/functions/math_functions.md) functions.
+!!! note "یادداشت"
+    اطلاعات بیشتر در مورد [میانگین()](../sql_reference/aggregate_functions/reference.md#agg_function-avg) و [ثبت()](../sql_reference/functions/math_functions.md) توابع.
 
-[Original article](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->
