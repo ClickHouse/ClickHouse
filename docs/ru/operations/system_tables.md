@@ -890,7 +890,7 @@ WHERE
 
 - `name` ([String](../data_types/string.md)) — имя настройки.
 - `value` ([String](../data_types/string.md)) — значение настройки.
-- `changed` ([UInt8](../data_types/int_uint.md#uint-ranges)) — показывает, изменена ли настройка во время сессии.
+- `changed` ([UInt8](../data_types/int_uint.md#uint-ranges)) — показывает, изменена ли настройка по отношению к значению по умолчанию.
 - `description` ([String](../data_types/string.md)) — краткое описание настройки. 
 - `min` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — минимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../query_language/syntax.md#null-literal). 
 - `max` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — максимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../query_language/syntax.md#null-literal). 
@@ -901,15 +901,8 @@ WHERE
 **Пример**
 
 ```sql
-SELECT
-    name,
-    value,
-    changed,
-    description,
-    min,
-    max,
-    readonly
-FROM system.settings
+SELECT * 
+FROM system.settings 
 WHERE name LIKE '%min_i%'
 ```
 

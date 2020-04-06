@@ -845,7 +845,7 @@ Columns:
 
 - `name` ([String](../data_types/string.md)) — Setting name.
 - `value` ([String](../data_types/string.md)) — Setting value.
-- `changed` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Shows whether a setting is changed during the session.
+- `changed` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Shows whether a setting is changed from its default value.
 - `description` ([String](../data_types/string.md)) — Short setting description. 
 - `min` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — Minimum value of the setting, if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings). If the setting has no minimum value, contains [NULL](../query_language/syntax.md#null-literal). 
 - `max` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — Maximum value of the setting, if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings). If the setting has no maximum value, contains [NULL](../query_language/syntax.md#null-literal). 
@@ -857,14 +857,7 @@ Columns:
 **Example**
 
 ```sql
-SELECT
-    name,
-    value,
-    changed,
-    description,
-    min,
-    max,
-    readonly
+SELECT *
 FROM system.settings
 WHERE name LIKE '%min_i%'
 ```
