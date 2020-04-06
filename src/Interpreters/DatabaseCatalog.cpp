@@ -244,14 +244,17 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
     if (database_name == TEMPORARY_DATABASE)
         throw Exception("Cannot detach database with temporary tables.", ErrorCodes::DATABASE_ACCESS_DENIED);
 
-    std::lock_guard lock{databases_mutex};
-    assertDatabaseExistsUnlocked(database_name);
-    auto db = databases.find(database_name)->second;
+    std::shared_ptr<IDatabase> db;
+    {
+        std::lock_guard lock{databases_mutex};
+        assertDatabaseExistsUnlocked(database_name);
+        db = databases.find(database_name)->second;
 
-    if (check_empty && !db->empty(*global_context))
-        throw Exception("New table appeared in database being dropped or detached. Try again.", ErrorCodes::DATABASE_NOT_EMPTY);
+        if (check_empty && !db->empty(*global_context))
+            throw Exception("New table appeared in database being dropped or detached. Try again.", ErrorCodes::DATABASE_NOT_EMPTY);
 
-    databases.erase(database_name);
+        databases.erase(database_name);
+    }
 
     db->shutdown();
 
