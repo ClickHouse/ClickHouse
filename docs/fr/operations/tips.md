@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 58
+toc_title: Recommandations D'Utilisation
 ---
 
 # Recommandations D'Utilisation {#usage-recommendations}
@@ -245,4 +248,4 @@ script
 end script
 ```
 
-[Article Original](https://clickhouse.tech/docs/en/operations/tips/) <!--hide-->
+{## [Article Original](https://clickhouse.tech/docs/en/operations/tips/) ##}

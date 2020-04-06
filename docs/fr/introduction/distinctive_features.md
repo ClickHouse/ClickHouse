@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 4
+toc_title: "particularit\xE9"
 ---
 
 # Caractéristiques distinctives de ClickHouse {#distinctive-features-of-clickhouse}
@@ -63,6 +66,6 @@ ClickHouse offre différentes façons d'échanger la précision pour la performa
 
 ClickHouse utilise la réplication multi-maître asynchrone. Après avoir été écrit dans n'importe quelle réplique disponible, toutes les répliques restantes récupèrent leur copie en arrière-plan. Le système conserve des données identiques sur différentes répliques. La récupération après la plupart des échecs est effectuée automatiquement ou semi-automatiquement dans les cas complexes.
 
-Pour plus d'informations, consultez la section [Réplication des données](../operations/table_engines/replication.md).
+Pour plus d'informations, consultez la section [Réplication des données](../engines/table_engines/mergetree_family/replication.md).
 
 [Article Original](https://clickhouse.tech/docs/en/introduction/distinctive_features/) <!--hide-->

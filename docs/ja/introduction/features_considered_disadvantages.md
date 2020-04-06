@@ -1,3 +1,8 @@
+---
+toc_priority: 5
+toc_title: 欠点と見なすことができるClickHouseの機能
+---
+
 # 欠点と考えられるClickHouseの機能 {#qian-dian-tokao-erareruclickhousenoji-neng}
 
 1.  本格的なトランザクションはありません。
