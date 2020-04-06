@@ -19,9 +19,14 @@
 
 #include <boost/algorithm/string.hpp>
 
+#if defined(__SSE2__)
 #include <immintrin.h>
+
+#if defined(__SSE4_2__)
 #include <nmmintrin.h>
-#include <emmintrin.h>
+#endif
+
+#endif
 
 
 namespace DB
@@ -620,19 +625,19 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 
 #if defined(__SSE4_2__)
         // With the help of https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
-        static const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
+        const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
                 '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
         // Every bit represents if `haystack` character is in the ranges (1) or not(0)
         const int result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
 #else
         // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
-        static const auto number_begin =      _mm_set1_epi8('0' - 1);
-        static const auto number_end =        _mm_set1_epi8('9' + 1);
-        static const auto alpha_lower_begin = _mm_set1_epi8('a' - 1);
-        static const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
-        static const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
-        static const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
-        static const auto zero  =             _mm_set1_epi8(0);
+        const auto number_begin =      _mm_set1_epi8('0' - 1);
+        const auto number_end =        _mm_set1_epi8('9' + 1);
+        const auto alpha_lower_begin = _mm_set1_epi8('a' - 1);
+        const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
+        const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
+        const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
+        const auto zero  =             _mm_set1_epi8(0);
 
         // every bit represents if `haystack` character `c` statisfies condition:
         // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
@@ -669,7 +674,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
             // check if there are leftovers in next `haystack`
             continue;
 
-        return true;
+        break;
 #else
         if (isASCII(data[*pos]) && !isAlphaNumericASCII(data[*pos]))
         {
@@ -691,7 +696,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
     // Could happen only if string is not padded with zeroes, and we accidentally hopped over end of data.
     if (*token_start > len)
         return false;
-    *token_len = len - *token_start;
+    *token_len = std::min(len - *token_start, *token_len);
 #endif
 
     return *token_len > 0;

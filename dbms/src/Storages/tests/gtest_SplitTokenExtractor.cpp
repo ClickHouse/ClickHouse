@@ -17,7 +17,7 @@ using namespace DB;
 
 struct SplitTokenExtractorTestCase
 {
-    const char * description;
+    const std::string_view description;
     const std::string source;
     const std::vector<std::string> tokens;
 };
@@ -35,6 +35,12 @@ public:
         const auto & param = GetParam();
         const auto & source = param.source;
         data = std::make_unique<PaddedPODArray<const char>>(source.data(), source.data() + source.size());
+
+        // add predefined padding that forms tokens to ensure no reads past end of buffer.
+        const char extra_padding[] = "this is the end \xd1\x8d\xd1\x82\xd0\xbe\xd0\xba\xd0\xbe \xd0\xbd\xd0\xb5\xd1\x86";
+        data->insert(data->end(), std::begin(extra_padding), std::end(extra_padding));
+
+        data->resize(data->size() - sizeof(extra_padding));
     }
 
     std::unique_ptr<PaddedPODArray<const char>> data;
