@@ -1,7 +1,7 @@
 LIBRARY()
 
 PEERDIR(
-    clickhouse/dbms/src/Common
+    clickhouse/src/Common
 )
 
 SRCS(

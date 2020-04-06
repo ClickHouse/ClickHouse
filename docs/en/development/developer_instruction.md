@@ -1,3 +1,8 @@
+---
+toc_priority: 61
+toc_title: The Beginner ClickHouse Developer Instruction
+---
+
 Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
 # If you use Windows {#if-you-use-windows}
@@ -193,19 +198,19 @@ Upon the successful start of the building process, you’ll see the build progre
 
 While building messages about protobuf files in libhdfs2 library like `libprotobuf WARNING` may show up. They affect nothing and are safe to be ignored.
 
-Upon successful build you get an executable file `ClickHouse/<build_dir>/dbms/programs/clickhouse`:
+Upon successful build you get an executable file `ClickHouse/<build_dir>/programs/clickhouse`:
 
-    ls -l dbms/programs/clickhouse
+    ls -l programs/clickhouse
 
 # Running the built executable of ClickHouse {#running-the-built-executable-of-clickhouse}
 
-To run the server under the current user you need to navigate to `ClickHouse/dbms/programs/server/` (located outside of `build`) and run:
+To run the server under the current user you need to navigate to `ClickHouse/programs/server/` (located outside of `build`) and run:
 
-    ../../../build/dbms/programs/clickhouse server
+    ../../../build/programs/clickhouse server
 
 In this case, ClickHouse will use config files located in the current directory. You can run `clickhouse server` from any directory specifying the path to a config file as a command-line parameter `--config-file`.
 
-To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/dbms/programs/` and run `clickhouse client`.
+To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `clickhouse client`.
 
 If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying host address 127.0.0.1:
 
@@ -214,7 +219,7 @@ If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying h
 You can replace the production version of ClickHouse binary installed in your system with your custom-built ClickHouse binary. To do that install ClickHouse on your machine following the instructions from the official website. Next, run the following:
 
     sudo service clickhouse-server stop
-    sudo cp ClickHouse/build/dbms/programs/clickhouse /usr/bin/
+    sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
     sudo service clickhouse-server start
 
 Note that `clickhouse-client`, `clickhouse-server` and others are symlinks to the commonly shared `clickhouse` binary.
@@ -222,7 +227,7 @@ Note that `clickhouse-client`, `clickhouse-server` and others are symlinks to th
 You can also run your custom-built ClickHouse binary with the config file from the ClickHouse package installed on your system:
 
     sudo service clickhouse-server stop
-    sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+    sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
 # IDE (Integrated Development Environment) {#ide-integrated-development-environment}
 
@@ -242,7 +247,7 @@ The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
 Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy\_tasks\_sorted\_en.md
+List of tasks: https://github.com/ClickHouse/ClickHouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
 
 # Test Data {#test-data}
 

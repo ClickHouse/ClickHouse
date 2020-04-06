@@ -7,5 +7,6 @@ OWNER(g:clickhouse)
 
 RECURSE(
     base
-    dbms
+    programs
+    src
 )

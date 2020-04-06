@@ -1,3 +1,8 @@
+---
+toc_priority: 11
+toc_title: Installation
+---
+
 # Installation {#installation}
 
 ## System Requirements {#system-requirements}
@@ -104,10 +109,10 @@ To manually compile ClickHouse, follow the instructions for [Linux](../developme
 
 You can compile packages and install them or use programs without installing packages. Also by building manually you can disable SSE 4.2 requirement or build for AArch64 CPUs.
 
-      Client: dbms/programs/clickhouse-client
-      Server: dbms/programs/clickhouse-server
+      Client: programs/clickhouse-client
+      Server: programs/clickhouse-server
 
-You’ll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/dbms/programs/server/config.xml), by default they are:
+You’ll need to create a data and metadata folders and `chown` them for the desired user. Their paths can be changed in server config (src/programs/server/config.xml), by default they are:
 
       /opt/clickhouse/data/default/
       /opt/clickhouse/metadata/default/

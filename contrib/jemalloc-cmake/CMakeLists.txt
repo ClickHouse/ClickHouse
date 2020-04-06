@@ -74,9 +74,13 @@ if (ENABLE_JEMALLOC)
         find_library(LIBRARY_JEMALLOC jemalloc)
         find_path(INCLUDE_JEMALLOC jemalloc/jemalloc.h)
 
+        set(THREADS_PREFER_PTHREAD_FLAG ON)
+        find_package(Threads REQUIRED)
+
         add_library (jemalloc STATIC IMPORTED)
         set_property (TARGET jemalloc PROPERTY IMPORTED_LOCATION ${LIBRARY_JEMALLOC})
         set_property (TARGET jemalloc PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_JEMALLOC})
+        set_property (TARGET jemalloc PROPERTY INTERFACE_LINK_LIBRARIES Threads::Threads dl)
 
         set(THREADS_PREFER_PTHREAD_FLAG ON)
         find_package(Threads REQUIRED)
@@ -97,7 +101,7 @@ if (ENABLE_JEMALLOC)
         endif ()
     endif ()
 
-    target_compile_definitions(jemalloc PUBLIC USE_JEMALLOC=1)
+    set_property(TARGET jemalloc APPEND PROPERTY INTERFACE_COMPILE_DEFINITIONS USE_JEMALLOC=1)
 
     message (STATUS "Using jemalloc")
 else ()

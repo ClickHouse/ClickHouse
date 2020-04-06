@@ -72,8 +72,8 @@ sudo yum install clickhouse-server clickhouse-client
 你也可以直接使用而不进行安装。
 
 ``` text
-Client: dbms/programs/clickhouse-client
-Server: dbms/programs/clickhouse-server
+Client: programs/clickhouse-client
+Server: programs/clickhouse-server
 ```
 
 在服务器中为数据创建如下目录：
@@ -86,7 +86,7 @@ Server: dbms/programs/clickhouse-server
 (它们可以在server config中配置。)
 为需要的用户运行‘chown’
 
-日志的路径可以在server config (src/dbms/programs/server/config.xml)中配置。
+日志的路径可以在server config (src/programs/server/config.xml)中配置。
 
 ## 启动 {#qi-dong}
 
@@ -127,7 +127,7 @@ clickhouse-client --host=example.com
 检查系统是否工作：
 
 ``` bash
-milovidov@hostname:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
+milovidov@hostname:~/work/metrica/src/src/Client$ ./clickhouse-client
 ClickHouse client version 0.0.18749.
 Connecting to localhost:9000.
 Connected to ClickHouse server version 0.0.18749.

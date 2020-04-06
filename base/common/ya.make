@@ -4,7 +4,7 @@ ADDINCL(
     # public
     GLOBAL clickhouse/base
     GLOBAL clickhouse/contrib/cityhash
-    GLOBAL clickhouse/dbms/src
+    GLOBAL clickhouse/src
 
     # private
     contrib/libs/cctz/include
@@ -20,10 +20,6 @@ PEERDIR(
 
 CFLAGS(
     GLOBAL -DARCADIA_BUILD
-)
-
-CXXFLAGS(
-    GLOBAL -std=c++20
 )
 
 IF (OS_DARWIN)

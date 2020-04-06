@@ -1,4 +1,0 @@
-RECURSE(
-    programs/server
-    src
-)
