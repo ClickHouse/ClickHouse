@@ -1,13 +1,12 @@
-#include <Functions/IFunctionImpl.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/GatherUtils/GatherUtils.h>
 #include <Functions/GatherUtils/Sources.h>
+#include <Functions/IFunctionImpl.h>
+#include <Functions/PerformanceAdaptors.h>
+#include <Functions/TargetSpecific.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnString.h>
-
-#include <Functions/TargetSpecific.h>
-#include <Functions/PerformanceAdaptors.h>
 
 namespace DB
 {
