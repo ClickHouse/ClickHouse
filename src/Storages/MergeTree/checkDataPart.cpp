@@ -99,19 +99,6 @@ IMergeTreeDataPart::Checksums checkDataPart(
         throw Exception("Unknown type in part " + path, ErrorCodes::UNKNOWN_PART_TYPE);
     }
 
-    for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
-    {
-        const String & file_name = it->name();
-        auto checksum_it = checksums_data.files.find(file_name);
-        if (checksum_it == checksums_data.files.end() && file_name != "checksums.txt" && file_name != "columns.txt")
-        {
-            auto file_buf = disk->readFile(it->path());
-            HashingReadBuffer hashing_buf(*file_buf);
-            hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
-            checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
-        }
-    }
-
     /// Checksums from file checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.
     IMergeTreeDataPart::Checksums checksums_txt;
 
@@ -120,6 +107,28 @@ IMergeTreeDataPart::Checksums checkDataPart(
         auto buf = disk->readFile(path + "checksums.txt");
         checksums_txt.read(*buf);
         assertEOF(*buf);
+    }
+
+    const auto & checksum_files_txt = checksums_txt.files;
+    for (auto it = disk->iterateDirectory(path); it->isValid(); it->next())
+    {
+        const String & file_name = it->name();
+        auto checksum_it = checksums_data.files.find(file_name);
+        if (checksum_it == checksums_data.files.end() && file_name != "checksums.txt" && file_name != "columns.txt")
+        {
+            auto txt_checksum_it = checksum_files_txt.find(file_name);
+            if (txt_checksum_it == checksum_files_txt.end() || txt_checksum_it->second.uncompressed_size == 0)
+            {
+                auto file_buf = disk->readFile(it->path());
+                HashingReadBuffer hashing_buf(*file_buf);
+                hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
+                checksums_data.files[file_name] = IMergeTreeDataPart::Checksums::Checksum(hashing_buf.count(), hashing_buf.getHash());
+            }
+            else /// If we have both compressed and uncompressed in txt, than calculate them
+            {
+                checksums_data.files[file_name] = checksum_compressed_file(disk, it->path());
+            }
+        }
     }
 
     if (is_cancelled())
