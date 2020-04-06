@@ -349,17 +349,28 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
 /// recursive traversal and check for optimizeGroupByFunctionKeys
 int optimizeGroupByFunctionKeysChecks(const ASTPtr& child, std::unordered_map<String, int> * checks)
 {
+    /// check if function has no arguments
+    if ((child->children).empty())
+    {
+        return 1;
+    }
     for (auto & child_key : child->children)
     {
         if (!child_key->as<ASTFunction>())
         {
-            if ((*checks).find(child_key->getID()) == (*checks).end())
+            if ((*checks).find(child_key->getColumnName()) == (*checks).end())
             {
-                /// if name of a variable of a function is not in GROUP BY keys, this function should not be deleted
+                /// if variable of a function is not in GROUP BY keys, this function should not be deleted
                 return 1;
             }
-        } else {
-            return optimizeGroupByFunctionKeysChecks(child_key->as<ASTFunction>()->arguments, checks);
+        }
+        else
+        {
+            /// if function is not in keys, check for its variables
+            if ((*checks).find(child_key->getColumnName()) == (*checks).end())
+            {
+                return optimizeGroupByFunctionKeysChecks(child_key->as<ASTFunction>()->arguments, checks);
+            }
         }
     }
     return 0;
@@ -397,7 +408,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     ///filling map with pairs <key name, 1>
     for (auto & group_key : group_keys)
     {
-        checks[group_key->getID()] = 1;
+        checks[group_key->getColumnName()] = 1;
     }
     size_t modified_size = group_keys.size();
     for (auto & group_key : group_keys)
@@ -407,7 +418,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
             if (optimizeGroupByFunctionKeysChecks(group_key->as<ASTFunction>()->arguments, &checks) == 0)
             {
                 ///if function of a key should be deleted, mark it as 0 in checks
-                checks[group_key->getID()] = 0;
+                checks[group_key->getColumnName()] = 0;
                 --modified_size;
             }
         }
@@ -416,7 +427,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     ///filling the result
     for (auto & group_key : group_keys)
     {
-        if (checks[group_key->getID()] == 1)
+        if (checks[group_key->getColumnName()] == 1)
         {
             modified.push_back(group_key);
         }
