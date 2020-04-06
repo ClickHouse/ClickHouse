@@ -15,6 +15,11 @@
 namespace DB
 {
 
+/** Merges several sorted ports to one.
+  * For each group of consecutive identical values of the sorting key
+  *   (the columns by which the data is sorted, including specially specified version column),
+  *   merges any pair of consecutive rows with opposite sign.
+  */
 class VersionedCollapsingTransform final : public IMergingTransform
 {
 public:

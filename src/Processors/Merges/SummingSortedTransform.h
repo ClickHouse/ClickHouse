@@ -14,6 +14,11 @@
 namespace DB
 {
 
+/** Merges several sorted ports into one.
+  * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
+  *  collapses them into one row, summing all the numeric columns except the primary key.
+  * If in all numeric columns, except for the primary key, the result is zero, it deletes the row.
+  */
 class SummingSortedTransform final : public IMergingTransform
 {
 public:
