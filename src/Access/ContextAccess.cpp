@@ -416,7 +416,7 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
     {
         /// Table functions are forbidden in readonly mode.
         /// For example, for readonly = 2 - allowed.
-        merged_access->revoke(AccessType::CREATE_TEMPORARY_TABLE | AccessType::TABLE_FUNCTIONS);
+        merged_access->revoke(AccessType::CREATE_TEMPORARY_TABLE);
     }
 
     if (!allow_ddl_ && !grant_option)
