@@ -147,20 +147,15 @@ enum class AccessType
     M(demangle, "", GLOBAL, INTROSPECTION) /* allows to execute function demangle() */\
     M(INTROSPECTION, "INTROSPECTION FUNCTIONS", GROUP, ALL) /* allows to execute functions addressToLine(), addressToSymbol(), demangle()*/\
     \
-    M(file, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(url, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(input, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(values, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(numbers, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(zeros, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(merge, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(remote, "remoteSecure, cluster", GLOBAL, TABLE_FUNCTIONS) \
-    M(mysql, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(odbc, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(jdbc, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(hdfs, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(s3, "", GLOBAL, TABLE_FUNCTIONS) \
-    M(TABLE_FUNCTIONS, "", GROUP, ALL) \
+    M(FILE, "", GLOBAL, SOURCES) \
+    M(URL, "", GLOBAL, SOURCES) \
+    M(REMOTE, "", GLOBAL, SOURCES) \
+    M(MYSQL, "", GLOBAL, SOURCES) \
+    M(ODBC, "", GLOBAL, SOURCES) \
+    M(JDBC, "", GLOBAL, SOURCES) \
+    M(HDFS, "", GLOBAL, SOURCES) \
+    M(S3, "", GLOBAL, SOURCES) \
+    M(SOURCES, "", GROUP, ALL) \
     \
     M(ALL, "ALL PRIVILEGES", GROUP, NONE) /* full access */ \
     M(NONE, "USAGE, NO PRIVILEGES", GROUP, NONE) /* no access */
@@ -171,8 +166,6 @@ enum class AccessType
     APPLY_FOR_ACCESS_TYPES(DECLARE_ACCESS_TYPE_ENUM_CONST)
 #undef DECLARE_ACCESS_TYPE_ENUM_CONST
 };
-
-constexpr size_t MAX_ACCESS_TYPE = static_cast<size_t>(AccessType::TABLE_FUNCTIONS) + 1;
 
 std::string_view toString(AccessType type);
 

@@ -339,6 +339,9 @@ void registerStorageHDFS(StorageFactory & factory)
         } else compression_method = "auto";
 
         return StorageHDFS::create(url, args.table_id, format_name, args.columns, args.constraints, args.context, compression_method);
+    },
+    {
+        .source_access_type = AccessType::HDFS,
     });
 }
 
