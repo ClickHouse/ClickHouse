@@ -31,22 +31,20 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   */
 struct FieldRef : public Field
 {
-    using SharedBlock = std::shared_ptr<Block>;
-
     FieldRef() = default;
 
     /// Create as explicit field without block.
     template <typename T>
-    FieldRef(const T & value) : Field(value) {}
+    FieldRef(T && value) : Field(std::forward<T>(value)) {}
 
     /// Create as reference to field in block.
-    FieldRef(const SharedBlock & block_, size_t row_idx_, size_t column_idx_)
+    FieldRef(Block * block_, size_t row_idx_, size_t column_idx_)
         : Field((*block_->getByPosition(column_idx_).column)[row_idx_]),
         block(block_), row_idx(row_idx_), column_idx(column_idx_) {}
 
     bool isExplicit() const { return block == nullptr; }
 
-    SharedBlock block;
+    Block * block;
     size_t row_idx;
     size_t column_idx;
 };
