@@ -1,3 +1,8 @@
+---
+toc_priority: 22
+toc_title: JDBC Driver
+---
+
 # JDBC Driver {#jdbc-driver}
 
 -   **[Official driver](https://github.com/ClickHouse/clickhouse-jdbc)**

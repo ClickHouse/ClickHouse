@@ -107,7 +107,7 @@ function run_tests
         # and not always correct (e.g. when the reference SHA is really old and
         # has some other differences to the tested SHA, besides the one introduced
         # by the PR).
-        test_files_override=$(sed "s/dbms\/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
+        test_files_override=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
         if [ "$test_files_override" != "" ]
         then
             test_files=$test_files_override
@@ -127,7 +127,7 @@ function run_tests
         # FIXME remove some broken long tests
         for test_name in {IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format,arithmetic,cryptographic_hashes,logical_functions_{medium,small}}
         do
-            printf "$test_name\tMarked as broken (see compare.sh)" >> skipped-tests.tsv
+            printf "$test_name\tMarked as broken (see compare.sh)\n" >> skipped-tests.tsv
             rm "$test_prefix/$test_name.xml" ||:
         done
         test_files=$(ls "$test_prefix"/*.xml)
@@ -406,7 +406,7 @@ unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
-grep -H -m2 '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
 }
 
 case "$stage" in

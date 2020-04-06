@@ -1,7 +1,12 @@
+---
+toc_priority: 70
+toc_title: Third-Party Libraries Used
+---
+
 # Third-Party Libraries Used {#third-party-libraries-used}
 
 | Library             | License                                                                                                                                      |
-|---------------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+|-------------|--------------------------------------------------------------------------------------|
 | base64              | [BSD 2-Clause License](https://github.com/aklomp/base64/blob/a27c565d1b6c676beaf297fe503c4518185666f7/LICENSE)                               |
 | boost               | [Boost Software License 1.0](https://github.com/ClickHouse-Extras/boost-extra/blob/6883b40449f378019aec792f9983ce3afc7ff16e/LICENSE_1_0.txt) |
 | brotli              | [MIT](https://github.com/google/brotli/blob/master/LICENSE)                                                                                  |

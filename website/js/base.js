@@ -62,12 +62,14 @@
             d.addEventListener("DOMContentLoaded", f, false);
         } else { f(); }
     })(document, window, "yandex_metrika_callbacks2");
+
     var beforePrint = function() {
         var details = document.getElementsByTagName("details");
         for (var i = 0; i < details.length; ++i) {
             details[i].open = 1;
         }
     };
+
     if (window.matchMedia) {
         window.matchMedia('print').addListener(function(q) {
             if (q.matches) {

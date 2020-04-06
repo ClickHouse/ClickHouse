@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 11
+toc_title: "Instalaci\xF3n"
 ---
 
 # Instalación {#installation}
@@ -14,21 +17,21 @@ Los binarios oficiales preconstruidos generalmente se compilan para x86\_64 y ap
 $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-Para ejecutar ClickHouse en procesadores que no admiten SSE 4.2 o tienen arquitectura AArch64 o PowerPC64LE, debe [Construir ClickHouse a partir de fuentes](#from-sources) con los ajustes de configuración adecuados.
+Para ejecutar ClickHouse en procesadores que no admiten SSE 4.2 o tienen arquitectura AArch64 o PowerPC64LE, debe [construir ClickHouse a partir de fuentes](#from-sources) con los ajustes de configuración adecuados.
 
 ## Opciones de instalación disponibles {#available-installation-options}
 
 ### De paquetes DEB {#install-from-deb-packages}
 
-Se recomienda utilizar pre-compilado oficial `deb` " resultados de la búsqueda relacionados
+Se recomienda utilizar pre-compilado oficial `deb` Paquetes para Debian o Ubuntu.
 
 Para instalar paquetes oficiales, agregue el repositorio de Yandex en `/etc/apt/sources.list` o en otra `/etc/apt/sources.list.d/clickhouse.list` file:
 
       deb http://repo.clickhouse.tech/deb/stable/ main/
 
-Si desea utilizar la versión más reciente, reemplace `stable` desventaja `testing` (esto se recomienda para sus entornos de prueba).
+Si desea utilizar la versión más reciente, reemplace `stable` con `testing` (esto se recomienda para sus entornos de prueba).
 
-A continuación, ejecute estos comandos para instalar realmente los paquetes:
+A continuación, ejecute estos comandos para instalar paquetes:
 
 ``` bash
 sudo apt-get install dirmngr # optional
@@ -42,13 +45,13 @@ También puede descargar e instalar paquetes manualmente desde aquí: https://re
 #### Paquete {#packages}
 
 -   `clickhouse-common-static` — Installs ClickHouse compiled binary files.
--   `clickhouse-server` — Creates a symbolic link for `clickhouse-server`. Instala la configuración del servidor.
--   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` y otras herramientas relacionadas con el cliente. Instala configuraciones de cliente.
+-   `clickhouse-server` — Creates a symbolic link for `clickhouse-server` e instala la configuración predeterminada del servidor.
+-   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` y otras herramientas relacionadas con el cliente. e instala los archivos de configuración del cliente.
 -   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
 ### De paquetes RPM {#from-rpm-packages}
 
-Se recomienda utilizar pre-compilado oficial `rpm` paquetes para CentOS, RedHat y todas las demás distribuciones de Linux basadas en rpm.
+Se recomienda utilizar pre-compilado oficial `rpm` También puede utilizar los paquetes para CentOS, RedHat y todas las demás distribuciones de Linux basadas en rpm.
 
 Primero, necesitas agregar el repositorio oficial:
 
@@ -58,7 +61,7 @@ sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
 sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
 ```
 
-Si desea utilizar la versión más reciente, reemplace `stable` desventaja `testing` (esto se recomienda para sus entornos de prueba). El `prestable` etiqueta a veces está disponible también.
+Si desea utilizar la versión más reciente, reemplace `stable` con `testing` (esto se recomienda para sus entornos de prueba). El `prestable` etiqueta a veces está disponible también.
 
 A continuación, ejecute estos comandos para instalar paquetes:
 
@@ -98,7 +101,7 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 Para los entornos de producción, se recomienda utilizar las últimas `stable`-versión. Puede encontrar su número en la página de GitHub https://github.com/ClickHouse/ClickHouse/tags con postfix `-stable`.
 
-### Imagen de Desde Docker {#from-docker-image}
+### Desde Docker Image {#from-docker-image}
 
 Para ejecutar ClickHouse dentro de Docker, siga la guía en [Eje de acoplador](https://hub.docker.com/r/yandex/clickhouse-server/). Esas imágenes usan oficial `deb` paquetes dentro.
 
@@ -111,7 +114,7 @@ Puede compilar paquetes e instalarlos o usar programas sin instalar paquetes. Ad
       Client: programs/clickhouse-client
       Server: programs/clickhouse-server
 
-Tendrá que crear carpetas de datos y metadatos y `chown` para el usuario deseado. Sus rutas se pueden cambiar en la configuración del servidor (src/programs/server/config .xml), por defecto son:
+Tendrá que crear carpetas de datos y metadatos y `chown` para el usuario deseado. Sus rutas se pueden cambiar en la configuración del servidor (src/programs/server/config.xml), por defecto son:
 
       /opt/clickhouse/data/default/
       /opt/clickhouse/metadata/default/
@@ -132,7 +135,7 @@ Si no tienes `service` comando ejecutar como
 $ sudo /etc/init.d/clickhouse-server start
 ```
 
-Vea los registros en el `/var/log/clickhouse-server/` Directorio.
+Vea los registros en el `/var/log/clickhouse-server/` directorio.
 
 Si el servidor no se inicia, compruebe las configuraciones en el archivo `/etc/clickhouse-server/config.xml`.
 
@@ -145,7 +148,7 @@ $ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 En este caso, el registro se imprimirá en la consola, lo cual es conveniente durante el desarrollo.
 Si el archivo de configuración está en el directorio actual, no es necesario `--config-file` parámetro. De forma predeterminada, utiliza `./config.xml`.
 
-ClickHouse admite la configuración de restricción de acceso. Están ubicados en el `users.xml` Archivo (junto a `config.xml`).
+ClickHouse admite la configuración de restricción de acceso. Están ubicados en el `users.xml` archivo (junto a `config.xml`).
 De forma predeterminada, se permite el acceso desde cualquier lugar `default` usuario, sin una contraseña. Ver `user/default/networks`.
 Para obtener más información, consulte la sección [“Configuration Files”](../operations/configuration_files.md).
 
@@ -155,7 +158,7 @@ Después de iniciar el servidor, puede usar el cliente de línea de comandos par
 $ clickhouse-client
 ```
 
-Por defecto, se conecta a `localhost:9000` es nombre del usuario `default` sin una contraseña. También se puede usar para conectarse a un servidor remoto usando `--host` argumento.
+Por defecto, se conecta a `localhost:9000` en nombre del usuario `default` sin una contraseña. También se puede usar para conectarse a un servidor remoto usando `--host` argumento.
 
 El terminal debe usar codificación UTF-8.
 Para obtener más información, consulte la sección [“Command-line client”](../interfaces/cli.md).
@@ -185,4 +188,4 @@ SELECT 1
 
 Para continuar experimentando, puede descargar uno de los conjuntos de datos de prueba o pasar por [tutorial](https://clickhouse.tech/tutorial.html).
 
-[Artículo Original](https://clickhouse.tech/docs/es/getting_started/install/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/getting_started/install/) <!--hide-->
