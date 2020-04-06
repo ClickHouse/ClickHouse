@@ -62,15 +62,38 @@ TEST_P(SplitTokenExtractorTest, next)
     {
         SCOPED_TRACE(++i);
         ASSERT_TRUE(token_extractor.next(data->data(), data->size(), &pos, &token_start, &token_len));
-        EXPECT_EQ(expected_token, param.source.substr(token_start, token_len))
+
+        EXPECT_EQ(expected_token, std::string_view(data->data() + token_start, token_len))
                 << " token_start:" << token_start << " token_len: " << token_len;
     }
-
-    ASSERT_FALSE(token_extractor.next(data->data(), data->size(), &pos, &token_start, &token_len));
+    ASSERT_FALSE(token_extractor.next(data->data(), data->size(), &pos, &token_start, &token_len))
+            << "\n\t=> \"" << param.source.substr(token_start, token_len) << "\""
+            << "\n\t" << token_start << ", " << token_len << ", " << pos << ", " << data->size();
 }
 
 // Helper to allow strings with embedded '\0' chars.
 #define BINARY_STRING(str) std::string{str, sizeof(str) - 1}
+
+INSTANTIATE_TEST_SUITE_P(NoTokens,
+    SplitTokenExtractorTest,
+    ::testing::ValuesIn(std::initializer_list<SplitTokenExtractorTestCase>{
+        {
+            "Empty input sequence produces no tokens.",
+            "",
+            {}
+        },
+        {
+            "Whitespace only",
+            " ",
+            {}
+        },
+        {
+            "Whitespace only large string",
+            " \t\v\n\r \t\v\n\r \t\v\n\r \t\v\n\r \t\v\n\r \t\v\n\r \t\v\n\r \t\v\n\r \t\v\n\r \t\v\n\r",
+            {}
+        }
+    })
+);
 
 INSTANTIATE_TEST_SUITE_P(ShortSingleToken,
     SplitTokenExtractorTest,
