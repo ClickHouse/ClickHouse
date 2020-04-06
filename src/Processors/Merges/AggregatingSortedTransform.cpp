@@ -68,6 +68,24 @@ namespace
 
         return def;
     }
+
+    MutableColumns getMergedColumns(const Block & header, const AggregatingSortedTransform::ColumnsDefinition & def)
+    {
+        MutableColumns columns;
+        columns.resize(header.columns());
+
+        for (auto & desc : def.columns_to_simple_aggregate)
+        {
+            auto & type = header.getByPosition(desc.column_number).type;
+            columns[desc.column_number] = recursiveRemoveLowCardinality(type)->createColumn();
+        }
+
+        for (size_t i = 0; i < columns.size(); ++i)
+            if (!columns[i])
+                columns[i] = header.getByPosition(i).type->createColumn();
+
+        return columns;
+    }
 }
 
 AggregatingSortedTransform::AggregatingSortedTransform(
@@ -75,7 +93,7 @@ AggregatingSortedTransform::AggregatingSortedTransform(
     SortDescription description_, size_t max_block_size)
     : IMergingTransform(num_inputs, header, header, true)
     , columns_definition(defineColumns(header, description_))
-    , merged_data(header.cloneEmptyColumns(), false, max_block_size)
+    , merged_data(getMergedColumns(header, columns_definition), false, max_block_size)
     , description(std::move(description_))
     , source_chunks(num_inputs)
     , cursors(num_inputs)
@@ -106,7 +124,7 @@ void AggregatingSortedTransform::updateCursor(Chunk chunk, size_t source_num)
         column = column->convertToFullColumnIfConst();
 
     for (auto & desc : columns_definition.columns_to_simple_aggregate)
-        if (desc.type_to_convert)
+        if (desc.inner_type)
             columns[desc.column_number] = recursiveRemoveLowCardinality(columns[desc.column_number]);
 
     chunk.setColumns(std::move(columns), num_rows);
@@ -145,10 +163,10 @@ void AggregatingSortedTransform::work()
 
         for (auto & desc : columns_definition.columns_to_simple_aggregate)
         {
-            if (desc.type_to_convert)
+            if (desc.inner_type)
             {
-                auto & from_type = header.getByPosition(desc.column_number).type;
-                auto & to_type = desc.type_to_convert;
+                auto & from_type = desc.inner_type;
+                auto & to_type = header.getByPosition(desc.column_number).type;
                 columns[desc.column_number] = recursiveTypeConversion(columns[desc.column_number], from_type, to_type);
             }
         }
