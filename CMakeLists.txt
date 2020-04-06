@@ -45,6 +45,14 @@ else()
     message(STATUS "IPO/LTO not enabled.")
 endif()
 
+option(ENABLE_THIN_LTO "Enable Think LTO feature" ON)
+if (ENABLE_THIN_LTO)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -flto=thin")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -flto=thin")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -flto=thin")
+    set (CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -flto=thin")
+endif()
+
 # Check that submodules are present only if source was downloaded with git
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git" AND NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/boost/boost")
     message (FATAL_ERROR "Submodules are not initialized. Run\n\tgit submodule update --init --recursive")
