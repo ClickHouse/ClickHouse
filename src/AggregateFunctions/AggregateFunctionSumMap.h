@@ -80,6 +80,18 @@ public:
 
     void add(AggregateDataPtr place, const IColumn ** columns, const size_t row_num, Arena *) const override
     {
+        // Check if tuple
+        std::unique_ptr<const IColumn *[]> tuple_columns;
+        auto tuple_col = checkAndGetColumn<ColumnTuple>(columns[0]);
+        if (tuple_col)
+        {
+            tuple_columns.reset(new const IColumn*[tuple_col->tupleSize()]);
+            for (size_t i = 0; i < tuple_col->tupleSize(); i++)
+                tuple_columns.get()[i] = &const_cast<IColumn&>(tuple_col->getColumn(i));
+
+            columns = tuple_columns.get();
+        }
+
         // Column 0 contains array of keys of known type
         Field key_field;
         const ColumnArray & array_column0 = assert_cast<const ColumnArray &>(*columns[0]);
