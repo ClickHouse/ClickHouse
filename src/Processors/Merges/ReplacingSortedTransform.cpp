@@ -19,9 +19,9 @@ ReplacingSortedTransform::ReplacingSortedTransform(
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
     , description(std::move(description_))
     , out_row_sources_buf(out_row_sources_buf_)
+    , chunk_allocator(num_inputs + max_row_refs)
     , source_chunks(num_inputs)
     , cursors(num_inputs)
-    , chunk_allocator(num_inputs + max_row_refs)
 {
     if (!version_column.empty())
         version_column_number = header.getPositionByName(version_column);

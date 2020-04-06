@@ -204,6 +204,9 @@ private:
     GraphiteRollupMergedData merged_data;
     SortDescription description;
 
+    /// Allocator must be destroyed after all RowRefs.
+    detail::SharedChunkAllocator chunk_allocator;
+
     /// Chunks currently being merged.
     using SourceChunks = std::vector<detail::SharedChunkPtr>;
     SourceChunks source_chunks;
@@ -236,9 +239,6 @@ private:
 
     /// Path name of current bucket
     StringRef current_group_path;
-
-    /// Allocator must be destroyed after all RowRefs.
-    detail::SharedChunkAllocator chunk_allocator;
 
     static constexpr size_t max_row_refs = 2; /// current_subgroup_newest_row, current_row.
     /// Last row with maximum version for current primary key (time bucket).

@@ -33,10 +33,10 @@ GraphiteRollupSortedTransform::GraphiteRollupSortedTransform(
     : IMergingTransform(num_inputs, header, header, true)
     , merged_data(header.cloneEmptyColumns(), false, max_block_size)
     , description(std::move(description_))
+    , chunk_allocator(num_inputs + max_row_refs)
     , source_chunks(num_inputs)
     , cursors(num_inputs)
     , params(std::move(params_)), time_of_merge(time_of_merge_)
-    , chunk_allocator(num_inputs + max_row_refs)
 {
     size_t max_size_of_aggregate_state = 0;
     size_t max_alignment_of_aggregate_state = 1;
