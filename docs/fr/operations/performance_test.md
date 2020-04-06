@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 54
+toc_title: "Tester Le Mat\xE9riel"
 ---
 
 # Comment Tester Votre Matériel Avec ClickHouse {#how-to-test-your-hardware-with-clickhouse}
@@ -37,9 +40,9 @@ Avec cette instruction, vous pouvez exécuter le test de performance clickhouse 
 
 <!-- -->
 
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/benchmark/clickhouse/benchmark-new.sh
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/benchmark-new.sh
       chmod a+x benchmark-new.sh
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/benchmark/clickhouse/queries.sql
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 
 1.  Télécharger les données de test selon le [Yandex.Metrica dataset](../getting_started/example_datasets/metrica.md) instruction (“hits” tableau contenant 100 millions de lignes).
 

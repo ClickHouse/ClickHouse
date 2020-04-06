@@ -1,11 +1,15 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 63
+toc_title: "\u0645\u0631\u0648\u0631 \u06A9\u062F \u0645\u0646\u0628\u0639 \u06A9\u0644\
+  \u06CC\u06A9"
 ---
 
-# Browse ClickHouse Source Code {#browse-clickhouse-source-code}
+# فهرست clickhouse کد منبع {#browse-clickhouse-source-code}
 
-You can use **Woboq** online code browser available [here](https://clickhouse-test-reports.s3.yandex.net/codebrowser/html_report///ClickHouse/dbms/index.html). It provides code navigation and semantic highlighting, search and indexing. The code snapshot is updated daily.
+شما می توانید استفاده کنید **ووبوک** آنلاین کد مرورگر موجود [اینجا](https://clickhouse-test-reports.s3.yandex.net/codebrowser/html_report///ClickHouse/dbms/index.html). این فراهم می کند ناوبری کد و برجسته معنایی, جستجو و نمایه سازی. عکس فوری کد روزانه به روز می شود.
 
-Also, you can browse sources on [GitHub](https://github.com/ClickHouse/ClickHouse) as usual.
+همچنین شما می توانید فهرست منابع در [گیتهاب](https://github.com/ClickHouse/ClickHouse) به عنوان معمول است.
 
-If you’re interested what IDE to use, we recommend CLion, QT Creator, VS Code and KDevelop (with caveats). You can use any favourite IDE. Vim and Emacs also count.
+اگر شما علاقه مند هستید چه ide استفاده کنید توصیه می کنیم clion, qt creator, مقابل کد و kdevelop (با هشدارهای). شما می توانید هر محیط برنامه نویسی مورد علاقه استفاده کنید. ویم و ایمکس نیز حساب می کنند.
