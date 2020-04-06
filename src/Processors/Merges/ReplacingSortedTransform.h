@@ -50,14 +50,15 @@ private:
     SortingHeap<SortCursor> queue;
     bool is_queue_initialized = false;
 
+    /// Allocator must be destroyed after all RowRefs.
+    detail::SharedChunkAllocator chunk_allocator;
+
     using RowRef = detail::RowRefWithOwnedChunk;
     static constexpr size_t max_row_refs = 3; /// last, current, selected.
     RowRef last_row;
     /// RowRef next_key; /// Primary key of next row.
     RowRef selected_row; /// Last row with maximum version for current primary key.
     size_t max_pos = 0; /// The position (into current_row_sources) of the row with the highest version.
-
-    detail::SharedChunkAllocator chunk_allocator;
 
     /// Sources of rows with the current primary key.
     PODArray<RowSourcePart> current_row_sources;

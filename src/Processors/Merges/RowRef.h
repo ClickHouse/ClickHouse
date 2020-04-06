@@ -3,6 +3,8 @@
 #include <Processors/Chunk.h>
 #include <Columns/IColumn.h>
 #include <Core/SortCursor.h>
+#include <Common/StackTrace.h>
+#include <common/logger_useful.h>
 
 #include <boost/smart_ptr/intrusive_ptr.hpp>
 
@@ -51,6 +53,9 @@ class SharedChunkAllocator
 public:
     explicit SharedChunkAllocator(size_t max_chunks)
     {
+        if (max_chunks == 0)
+            max_chunks = 1;
+
         chunks.resize(max_chunks);
         free_chunks.reserve(max_chunks);
 
@@ -74,12 +79,36 @@ public:
         return SharedChunkPtr(&chunks[pos]);
     }
 
+    ~SharedChunkAllocator()
+    {
+        if (free_chunks.size() != chunks.size())
+        {
+            LOG_ERROR(&Logger::get("SharedChunkAllocator"),
+                      "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: "
+                              << StackTrace().toString());
+
+            return;
+        }
+    }
+
 private:
     std::vector<SharedChunk> chunks;
     std::vector<size_t> free_chunks;
 
-    void release(SharedChunk * ptr)
+    void release(SharedChunk * ptr) noexcept
     {
+        if (chunks.empty())
+        {
+            /// This may happen if allocator was removed before chunks.
+            /// Log message and exit, because we don't want to throw exception in destructor.
+
+            LOG_ERROR(&Logger::get("SharedChunkAllocator"),
+                    "SharedChunkAllocator was destroyed before RowRef was released. StackTrace: "
+                    << StackTrace().toString());
+
+            return;
+        }
+
         /// Release memory. It is not obligatory.
         ptr->clear();
         ptr->all_columns.clear();

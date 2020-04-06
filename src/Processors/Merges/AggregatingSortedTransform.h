@@ -129,13 +129,13 @@ public:
 
         size_t column_number = 0;
         IColumn * column = nullptr;
-        const DataTypePtr type_to_convert;
+        const DataTypePtr inner_type;
 
         AlignedBuffer state;
         bool created = false;
 
         SimpleAggregateDescription(AggregateFunctionPtr function_, const size_t column_number_, DataTypePtr type)
-                : function(std::move(function_)), column_number(column_number_), type_to_convert(std::move(type))
+                : function(std::move(function_)), column_number(column_number_), inner_type(std::move(type))
         {
             add_function = function->getAddressOfAddFunction();
             state.reset(function->sizeOfData(), function->alignOfData());
