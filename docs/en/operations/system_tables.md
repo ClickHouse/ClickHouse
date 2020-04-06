@@ -856,6 +856,8 @@ Columns:
 
 **Example**
 
+The following example shows how to get information about settings which name contains `min_i`.
+
 ```sql
 SELECT *
 FROM system.settings
@@ -868,6 +870,15 @@ WHERE name LIKE '%min_i%'
 │ min_insert_block_size_bytes                 │ 268435456 │       0 │ Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
 │ read_backoff_min_interval_between_events_ms │ 1000      │       0 │ Settings to reduce the number of threads in case of slow reads. Do not pay attention to the event, if the previous one has passed less than a certain amount of time. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
 └─────────────────────────────────────────────┴───────────┴─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┘
+```
+
+Using of `WHERE changed` can be useful, for example, when you want to check:
+
+- Whether settings in configuration files are loaded correctly and are in use.
+- Settings that changed in the current session.
+
+```sql
+SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 ```
 
 **See also**

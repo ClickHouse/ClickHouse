@@ -900,6 +900,8 @@ WHERE
 
 **Пример**
 
+Пример показывает как получить информацию о настройках, имена которых содержат `min_i`.
+
 ```sql
 SELECT * 
 FROM system.settings 
@@ -913,6 +915,16 @@ WHERE name LIKE '%min_i%'
 │ read_backoff_min_interval_between_events_ms │ 1000      │       0 │ Settings to reduce the number of threads in case of slow reads. Do not pay attention to the event, if the previous one has passed less than a certain amount of time. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
 └─────────────────────────────────────────────┴───────────┴─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┘
 ```
+
+Использование `WHERE changed` может быть полезно, например, если необходимо проверить:
+
+- Что настройки корректно загрузились из конфигурационного файла и используются.
+- Настройки, изменённые в текущей сессии.
+
+```sql
+SELECT * FROM system.settings WHERE changed AND name='load_balancing'
+```
+
 
 **Cм. также**
 
