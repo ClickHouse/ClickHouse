@@ -379,7 +379,7 @@ private:
         const Block & block_with_columns_to_add,
         const Maps & maps) const;
 
-    void joinBlockImplCross(Block & block) const;
+    void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
     template <typename Maps>
     void joinGetImpl(Block & block, const String & column_name, const Maps & maps) const;
