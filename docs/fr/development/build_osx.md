@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 65
+toc_title: Comment Construire ClickHouse sur Mac OS X
 ---
 
 # Comment Construire ClickHouse sur Mac OS X {#how-to-build-clickhouse-on-mac-os-x}

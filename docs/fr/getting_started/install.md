@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 11
+toc_title: Installation
 ---
 
 # Installation {#installation}
@@ -111,7 +114,7 @@ Vous pouvez compiler des paquets et les installer ou utiliser des programmes san
       Client: programs/clickhouse-client
       Server: programs/clickhouse-server
 
-Vous devrez créer un dossier de données et de métadonnées et `chown` pour l'utilisateur souhaité. Leurs chemins peuvent être modifiés dans la configuration du serveur (src / SGBD / programs / server / config.xml), par défaut, ils sont:
+Vous devrez créer un dossier de données et de métadonnées et `chown` pour l'utilisateur souhaité. Leurs chemins peuvent être modifiés dans la configuration du serveur (src / programs / server / config.xml), par défaut, ils sont:
 
       /opt/clickhouse/data/default/
       /opt/clickhouse/metadata/default/
