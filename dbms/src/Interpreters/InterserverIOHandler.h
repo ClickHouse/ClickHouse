@@ -13,6 +13,8 @@
 #include <utility>
 #include <shared_mutex>
 #include <Poco/Net/HTMLForm.h>
+#include <Poco/Logger.h>
+#include <common/logger_useful.h>
 
 namespace Poco { namespace Net { class HTTPServerResponse; } }
 
@@ -51,14 +53,18 @@ public:
     void addEndpoint(const String & name, InterserverIOEndpointPtr endpoint)
     {
         std::lock_guard lock(mutex);
+        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), "anime addEndpoint()  " << name);
+        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), StackTrace().toString());
         bool inserted = endpoint_map.try_emplace(name, std::move(endpoint)).second;
         if (!inserted)
             throw Exception("Duplicate interserver IO endpoint: " + name, ErrorCodes::DUPLICATE_INTERSERVER_IO_ENDPOINT);
     }
 
-    bool removeEndpointIfExists(const String & name)
+    bool removeEndpointIfExists(const String & name)>>
     {
         std::lock_guard lock(mutex);
+        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), "anime removeEndpointIfExists()  " << name);
+        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), StackTrace().toString());
         return endpoint_map.erase(name);
     }
 
@@ -66,6 +72,8 @@ public:
     try
     {
         std::lock_guard lock(mutex);
+        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), "anime getEndpoint()  "  << name);
+        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), StackTrace().toString());
         return endpoint_map.at(name);
     }
     catch (...)

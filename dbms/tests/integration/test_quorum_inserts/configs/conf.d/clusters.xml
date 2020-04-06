@@ -1,0 +1,37 @@
+<yandex>
+<remote_servers>
+
+    <one_shard_two_replicas>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>s0_0_0</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>s0_0_1</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </one_shard_two_replicas>
+
+    <one_shard_three_replicas>
+        <shard>
+            <internal_replication>true</internal_replication>
+            <replica>
+                <host>s0_0_0</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>s0_0_1</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>s0_0_2</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+    </one_shard_three_replicas>
+
+</remote_servers>
+</yandex>
