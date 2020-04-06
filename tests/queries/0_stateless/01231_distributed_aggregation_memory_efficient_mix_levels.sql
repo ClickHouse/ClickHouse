@@ -1,3 +1,5 @@
+set send_logs_level = 'error';
+
 create database if not exists shard_0;
 create database if not exists shard_1;
 
