@@ -44,9 +44,9 @@ struct FieldRef : public Field
 
     bool isExplicit() const { return block == nullptr; }
 
-    Block * block;
-    size_t row_idx;
-    size_t column_idx;
+    Block * block = nullptr;
+    size_t row_idx = 0;
+    size_t column_idx = 0;
 };
 
 /** Range with open or closed ends; possibly unbounded.
