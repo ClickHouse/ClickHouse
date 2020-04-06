@@ -62,7 +62,6 @@ private:
 
     std::vector<InputState> input_states;
 
-    Status prepareSingleInput();
     Status prepareInitializeInputs();
 };
 

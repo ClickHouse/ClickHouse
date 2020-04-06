@@ -60,31 +60,6 @@ void IMergingTransform::prepareOutputChunk(MergedData & merged_data)
         output_chunk = merged_data.pull();
 }
 
-IProcessor::Status IMergingTransform::prepareSingleInput()
-{
-    auto & input = inputs.front();
-    auto & output = outputs.front();
-
-    if (input.isFinished())
-    {
-        output.finish();
-        onFinish();
-        return Status::Finished;
-    }
-
-    input.setNeeded();
-
-    if (input.hasData())
-    {
-        if (output.canPush())
-            output.push(input.pull());
-
-        return Status::PortFull;
-    }
-
-    return Status::NeedData;
-}
-
 IProcessor::Status IMergingTransform::prepareInitializeInputs()
 {
     /// Add information about inputs.
@@ -167,10 +142,6 @@ IProcessor::Status IMergingTransform::prepare()
         onFinish();
         return Status::Finished;
     }
-
-    /// Special case for single input.
-    if (inputs.size() == 1)
-        return prepareSingleInput();
 
     /// Do not disable inputs, so it will work in the same way as with AsynchronousBlockInputStream, like before.
     bool is_port_full = !output.canPush();
