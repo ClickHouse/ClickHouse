@@ -99,7 +99,9 @@ DatabaseReplicated::DatabaseReplicated(
         // TODO is_readonly = true;
         // return;
     }
-    // getObjectDefinitionFromCreateQuery
+
+    current_zookeeper->createIfNotExists(zookeeper_path, String());
+    current_zookeeper->createIfNotExists(replica_path, String());
     // TODO what to do?
     // TODO createDatabaseIfNotExists ?
     // TODO check database structure ?
@@ -115,6 +117,36 @@ void DatabaseReplicated::createTable(
     DatabaseOnDisk::createTable(context, table_name, table, query);
     // replicated stuff
     String statement = getObjectDefinitionFromCreateQuery(query);
+    auto zookeeper = getZooKeeper();
+    // TODO в чем прикол именно так создавать зиноды?
+    Coordination::Requests ops;
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path, "",
+        zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/metadata", metadata,
+        zkutil::CreateMode::Persistent));
+//    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/columns", getColumns().toString(),
+//        zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/log", "",
+        zkutil::CreateMode::Persistent));
+//    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/blocks", "",
+//        zkutil::CreateMode::Persistent));
+//    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/block_numbers", "",
+//        zkutil::CreateMode::Persistent));
+//    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/nonincrement_block_numbers", "",
+//        zkutil::CreateMode::Persistent)); /// /nonincrement_block_numbers dir is unused, but is created nonetheless for backwards compatibility.
+    // TODO do we need a leader here? (probably yes) what is it gonna do?       
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/leader_election", "",
+        zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/temp", "",
+        zkutil::CreateMode::Persistent));
+    ops.emplace_back(zkutil::makeCreateRequest(zookeeper_path + "/replicas", "",
+        zkutil::CreateMode::Persistent));
+
+    Coordination::Responses responses;
+    auto code = zookeeper->tryMulti(ops, responses);
+    if (code && code != Coordination::ZNODEEXISTS)
+        throw Coordination::Exception(code);
+
     // ...
 
 }
@@ -131,7 +163,7 @@ void DatabaseReplicated::renameTable(
     DatabaseOnDisk::renameTable(context, table_name, to_database, to_table_name, lock);
     // replicated stuff
     String statement = getObjectDefinitionFromCreateQuery(query);
-    // ...
+    // this one is fairly more complex
 }
 
 void DatabaseReplicated::removeTable(
@@ -150,7 +182,9 @@ void DatabaseReplicated::drop(const Context & context)
     DatabaseOnDisk::drop(context);
     // replicated stuff
     String statement = getObjectDefinitionFromCreateQuery(query);
-    // ...
+    // should it be possible to recover after a drop. 
+    // if not, we can just delete all the zookeeper nodes starting from
+    // zookeeper path. does it work recursively? hope so...
 }
 
 }
