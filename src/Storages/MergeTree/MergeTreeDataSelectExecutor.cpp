@@ -1203,17 +1203,27 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             */
         std::vector<MarkRange> ranges_stack = { {0, marks_count} };
 
-        auto index_block = std::make_shared<Block>();
-        for (size_t i = 0; i < used_key_size; ++i)
-            index_block->insert({index[i], data.primary_key_data_types[i], data.primary_key_columns[i]});
-
-        std::function<FieldRef(size_t, size_t)> create_field_ref;
+        std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
         /// If there is no monotonic functions, there is no need to save block reference.
-        /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance while reading the field.
+        /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
         if (key_condition.hasMonotonicFunctionsChain())
-            create_field_ref = [&index_block](size_t row, size_t column) -> FieldRef { return {index_block, row, column}; };
+        {
+            auto index_block = std::make_shared<Block>();
+            for (size_t i = 0; i < used_key_size; ++i)
+                index_block->insert({index[i], data.primary_key_data_types[i], data.primary_key_columns[i]});
+
+            create_field_ref = [index_block](size_t row, size_t column, FieldRef & field)
+            {
+                field = {index_block.get(), row, column};
+            };
+        }
         else
-            create_field_ref = [&index](size_t row, size_t column) -> FieldRef { return (*index[column])[row]; };
+        {
+            create_field_ref = [&index](size_t row, size_t column, FieldRef & field)
+            {
+                index[column]->get(row, field);
+            };
+        }
 
         /// NOTE Creating temporary Field objects to pass to KeyCondition.
         std::vector<FieldRef> index_left(used_key_size);
@@ -1228,7 +1238,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             if (range.end == marks_count && !has_final_mark)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
-                    index_left[i] = create_field_ref(range.begin, i);
+                    create_field_ref(range.begin, i, index_left[i]);
 
                 may_be_true = key_condition.mayBeTrueAfter(
                     used_key_size, index_left.data(), data.primary_key_data_types);
@@ -1240,8 +1250,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    index_left[i] = create_field_ref(range.begin, i);
-                    index_right[i] = create_field_ref(range.end, i);
+                    create_field_ref(range.begin, i, index_left[i]);
+                    create_field_ref(range.end, i, index_right[i]);
                 }
 
                 may_be_true = key_condition.mayBeTrueInRange(
