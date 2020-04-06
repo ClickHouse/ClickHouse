@@ -37,6 +37,16 @@ namespace ErrorCodes
     extern const int TYPE_MISMATCH;
 }
 
+namespace
+{
+
+struct NotProcessedCrossJoin : public ExtraBlock
+{
+    size_t left_position;
+    size_t right_block;
+};
+
+}
 
 static ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter = false)
 {
@@ -1055,52 +1065,80 @@ void Join::joinBlockImpl(
     }
 }
 
-
-void Join::joinBlockImplCross(Block & block) const
+void Join::joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const
 {
-    /// Add new columns to the block.
+    size_t max_joined_block_rows = table_join->maxJoinedBlockRows();
+    size_t start_left_row = 0;
+    size_t start_right_block = 0;
+    if (not_processed)
+    {
+        auto & continuation = static_cast<NotProcessedCrossJoin &>(*not_processed);
+        start_left_row = continuation.left_position;
+        start_right_block = continuation.right_block;
+        not_processed.reset();
+    }
+
     size_t num_existing_columns = block.columns();
     size_t num_columns_to_add = sample_block_with_columns_to_add.columns();
 
+    ColumnRawPtrs src_left_columns;
+    MutableColumns dst_columns;
+
+    {
+        src_left_columns.reserve(num_existing_columns);
+        dst_columns.reserve(num_existing_columns + num_columns_to_add);
+
+        for (const ColumnWithTypeAndName & left_column : block)
+        {
+            src_left_columns.push_back(left_column.column.get());
+            dst_columns.emplace_back(src_left_columns.back()->cloneEmpty());
+        }
+
+        for (const ColumnWithTypeAndName & right_column : sample_block_with_columns_to_add)
+            dst_columns.emplace_back(right_column.column->cloneEmpty());
+
+        for (auto & dst : dst_columns)
+            dst->reserve(max_joined_block_rows);
+    }
+
     size_t rows_left = block.rows();
+    size_t rows_added = 0;
 
-    ColumnRawPtrs src_left_columns(num_existing_columns);
-    MutableColumns dst_columns(num_existing_columns + num_columns_to_add);
-
-    for (size_t i = 0; i < num_existing_columns; ++i)
+    for (size_t left_row = start_left_row; left_row < rows_left; ++left_row)
     {
-        src_left_columns[i] = block.getByPosition(i).column.get();
-        dst_columns[i] = src_left_columns[i]->cloneEmpty();
-    }
-
-    for (size_t i = 0; i < num_columns_to_add; ++i)
-    {
-        const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.getByPosition(i);
-        dst_columns[num_existing_columns + i] = src_column.column->cloneEmpty();
-        block.insert(src_column);
-    }
-
-    /// NOTE It would be better to use `reserve`, as well as `replicate` methods to duplicate the values of the left block.
-
-    for (size_t i = 0; i < rows_left; ++i)
-    {
+        size_t block_number = 0;
         for (const Block & block_right : data->blocks)
         {
+            ++block_number;
+            if (block_number < start_right_block)
+                continue;
+
             size_t rows_right = block_right.rows();
+            rows_added += rows_right;
 
             for (size_t col_num = 0; col_num < num_existing_columns; ++col_num)
-                for (size_t j = 0; j < rows_right; ++j)
-                    dst_columns[col_num]->insertFrom(*src_left_columns[col_num], i);
+                dst_columns[col_num]->insertManyFrom(*src_left_columns[col_num], left_row, rows_right);
 
             for (size_t col_num = 0; col_num < num_columns_to_add; ++col_num)
             {
-                const IColumn * column_right = block_right.getByPosition(col_num).column.get();
-
-                for (size_t j = 0; j < rows_right; ++j)
-                    dst_columns[num_existing_columns + col_num]->insertFrom(*column_right, j);
+                const IColumn & column_right = *block_right.getByPosition(col_num).column;
+                dst_columns[num_existing_columns + col_num]->insertRangeFrom(column_right, 0, rows_right);
             }
         }
+
+        start_right_block = 0;
+
+        if (rows_added > max_joined_block_rows)
+        {
+            not_processed = std::make_shared<NotProcessedCrossJoin>(
+                NotProcessedCrossJoin{{block.cloneEmpty()}, left_row, block_number + 1});
+            not_processed->block.swap(block);
+            break;
+        }
     }
+
+    for (const ColumnWithTypeAndName & src_column : sample_block_with_columns_to_add)
+        block.insert(src_column);
 
     block = block.cloneWithColumns(std::move(dst_columns));
 }
@@ -1160,7 +1198,7 @@ void Join::joinGet(Block & block, const String & column_name) const
 }
 
 
-void Join::joinBlock(Block & block, ExtraBlockPtr &)
+void Join::joinBlock(Block & block, ExtraBlockPtr & not_processed)
 {
     std::shared_lock lock(data->rwlock);
 
@@ -1175,7 +1213,7 @@ void Join::joinBlock(Block & block, ExtraBlockPtr &)
         /// Joined
     }
     else if (kind == ASTTableJoin::Kind::Cross)
-        joinBlockImplCross(block);
+        joinBlockImplCross(block, not_processed);
     else
         throw Exception("Logical error: unknown combination of JOIN", ErrorCodes::LOGICAL_ERROR);
 }
