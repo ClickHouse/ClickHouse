@@ -1,3 +1,8 @@
+---
+toc_priority: 58
+toc_title: Usage Recommendations
+---
+
 # Usage Recommendations {#usage-recommendations}
 
 ## CPU Scaling Governor {#cpu-scaling-governor}
