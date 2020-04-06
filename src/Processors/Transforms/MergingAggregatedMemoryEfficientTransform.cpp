@@ -275,15 +275,20 @@ void GroupingAggregatedTransform::work()
 {
     if (!single_level_chunks.empty())
     {
-        auto & header = getOutputs().front().getHeader();
+        auto & header = getInputs().front().getHeader();
         auto block = header.cloneWithColumns(single_level_chunks.back().detachColumns());
         single_level_chunks.pop_back();
         auto blocks = params->aggregator.convertBlockToTwoLevel(block);
 
         for (auto & cur_block : blocks)
         {
+            if (!cur_block)
+                continue;
+
             Int32 bucket = cur_block.info.bucket_num;
-            chunks_map[bucket].emplace_back(Chunk(cur_block.getColumns(), cur_block.rows()));
+            auto chunk_info = std::make_shared<AggregatedChunkInfo>();
+            chunk_info->bucket_num = bucket;
+            chunks_map[bucket].emplace_back(Chunk(cur_block.getColumns(), cur_block.rows(), std::move(chunk_info)));
         }
     }
 }
