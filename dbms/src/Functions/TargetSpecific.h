@@ -58,11 +58,11 @@ namespace DB
 {
 
 enum class TargetArch : int {
-    Default, // Without any additional compiler options.
-    SSE4,
-    AVX,
-    AVX2,
-    AVX512,
+    Default = 0, // Without any additional compiler options.
+    SSE4    = (1 << 0),
+    AVX     = (1 << 1),
+    AVX2    = (1 << 2),
+    AVX512  = (1 << 3),
 };
 
 // Runtime detection.
