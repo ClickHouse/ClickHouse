@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 61
+toc_title: "Le D\xE9butant Clickhouse Developer Instruction"
 ---
 
 La construction de ClickHouse est prise en charge sous Linux, FreeBSD et Mac OS X.
@@ -246,7 +249,7 @@ Le code Style Guide: https://clickhouse.tech/docs/fr/développement/style/
 
 Rédaction de tests: https://clickhouse.tech/docs/fr/développement/tests/
 
-Liste des tâches: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy\_tasks\_sorted\_en.md
+Liste des tâches: https://github.com/ClickHouse/ClickHouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
 
 # Des Données De Test {#test-data}
 
