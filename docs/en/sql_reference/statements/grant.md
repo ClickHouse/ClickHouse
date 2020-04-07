@@ -274,7 +274,7 @@ Allows a user to perform the [SYSTEM](system.md) queries corresponding to the fo
 
 ### INTROSPECTION {#grant-introspection}
 
-Allows using [introspection](../operations/performance/sampling_query_profiler.md) functions.
+Allows using [introspection](../../operations/optimizing_performance/sampling_query_profiler.md) functions.
 
 - `INTROSPECTION`
   - `addressToLine()`
@@ -284,9 +284,9 @@ Allows using [introspection](../operations/performance/sampling_query_profiler.m
 
 ### dictGet {#grant-dictget}
 
-Allows a user to execute the [dictGet](functions/ext_dict_functions.md#dictget) function.
+Allows a user to execute the [dictGet](../functions/ext_dict_functions.md#dictget) function.
 
-Some kinds of ClickHouse [dictionaries](dicts/index.md) are not stored in a database. Use the `'no_database'` placeholder to grant a privilege to use `dictGet()` with such dictionaries.
+Some kinds of ClickHouse [dictionaries](../dictionaries/index.md) are not stored in a database. Use the `'no_database'` placeholder to grant a privilege to use `dictGet()` with such dictionaries.
 
 **Examples**
 
@@ -296,7 +296,7 @@ Some kinds of ClickHouse [dictionaries](dicts/index.md) are not stored in a data
 
 ### Table Functions {#grant-table-functions}
 
-Allows using [table functions](table_functions/index.md).
+Allows using [table functions](../table_functions/index.md).
 
 - `TABLE FUNCTIONS`
   - `file()`

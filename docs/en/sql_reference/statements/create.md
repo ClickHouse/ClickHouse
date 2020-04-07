@@ -306,10 +306,10 @@ For more information, see [External Dictionaries](../../sql_reference/dictionari
 
 ## CREATE USER {#create-user-statement}
 
-Creates a [user account](../operations/access_rights.md#user-account-management).
+Creates a [user account](../../operations/access_rights.md#user-account-management).
 
 !!! info "Note"
-    Some of the access control functionality is available through the [users.xml](settings/settings_users.md) server configuration files, but we don't recommend using this way of user permissions management.
+    Some of the access control functionality is available through the [users.xml](../../operations/settings/settings_users.md) server configuration files, but we don't recommend using this way of user permissions management.
 
 ### Syntax {#create-user-syntax}
 
@@ -341,7 +341,7 @@ User host is a host from which a connection to ClickHouse server could be establ
 - `HOST LOCAL` — User can connect only locally.
 - `HOST NAME 'FQDN'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
 - `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.
-- `HOST LIKE 'te.mp.la.te'` — Allows you use the [LIKE](functions/string_search_functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, or `HOST LIKE '192.168.%.%'` is equivalent to `HOST IP '192.168.0.0/16'`.
+- `HOST LIKE 'te.mp.la.te'` — Allows you use the [LIKE](../functions/string_search_functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, or `HOST LIKE '192.168.%.%'` is equivalent to `HOST IP '192.168.0.0/16'`.
 
 Another way of specifying host is to use `@` syntax with the user name. Examples:
 
@@ -418,7 +418,7 @@ SELECT * FROM db.*;
 
 ## CREATE ROW POLICY {#create-row-policy-statement}
 
-Creates a filter for rows, which a user can read from a table. Also, you can create row filters in the [user settings](../operations/settings/settings_users.md#user-databases-settings).
+Creates a filter for rows, which a user can read from a table. Also, you can create row filters in the [user settings](../../operations/settings/settings_users.md#user-databases-settings).
 
 ### Syntax {#create-row-policy-syntax}
 
