@@ -116,7 +116,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     {
         const String & file_name = it->name();
         auto checksum_it = checksums_data.files.find(file_name);
-        
+
         /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
         if (checksum_it == checksums_data.files.end() && file_name != "checksums.txt" && file_name != "columns.txt")
         {
