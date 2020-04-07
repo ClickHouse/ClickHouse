@@ -717,12 +717,11 @@ void StorageDistributed::flushClusterNodesAllData()
         node.second.flushAllData();
 }
 
-void StorageDistributed::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name,
-                                TableStructureWriteLockHolder &)
+void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
-    renameInMemory(new_database_name, new_table_name);
+    renameInMemory(new_table_id);
 }
 void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {

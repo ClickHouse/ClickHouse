@@ -82,7 +82,7 @@ public:
     /// Removes temporary data in local filesystem.
     void truncate(const ASTPtr &, const Context &, TableStructureWriteLockHolder &) override;
 
-    void rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
     void renameOnDisk(const String & new_path_to_table_data);
 
     void checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */) override;

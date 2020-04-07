@@ -61,11 +61,12 @@ protected:
 class ParserCompoundIdentifier : public IParserBase
 {
 public:
-    ParserCompoundIdentifier(bool allow_uuid_ = false) : allow_uuid(allow_uuid_) {}
+    ParserCompoundIdentifier(bool table_name_with_optional_uuid_ = false)
+    : table_name_with_optional_uuid(table_name_with_optional_uuid_) {}
 protected:
     const char * getName() const override { return "compound identifier"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
-    bool allow_uuid;
+    bool table_name_with_optional_uuid;
 };
 
 /// Just *

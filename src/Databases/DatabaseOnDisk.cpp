@@ -57,7 +57,7 @@ std::pair<String, StoragePtr> createTableFromAST(
         const auto & table_function = ast_create_query.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
         StoragePtr storage = factory.get(table_function.name, context)->execute(ast_create_query.as_table_function, context, ast_create_query.table);
-        storage->resetStorageID({ast_create_query.database, ast_create_query.table, ast_create_query.uuid});
+        storage->renameInMemory(ast_create_query);
         return {ast_create_query.table, storage};
     }
     /// We do not directly use `InterpreterCreateQuery::execute`, because
@@ -285,8 +285,7 @@ void DatabaseOnDisk::renameTable(
             create.uuid = UUIDHelpers::Nil;
 
         /// Notify the table that it is renamed. It will move data to new path (if it stores data on disk) and update StorageID
-        table->rename(to_database.getTableDataPath(create), to_database.getDatabaseName(), to_table_name, table_lock);
-        table->resetStorageID({create.database, create.table, create.uuid});  /// reset UUID
+        table->rename(to_database.getTableDataPath(create), StorageID(create));
     }
     catch (const Exception &)
     {

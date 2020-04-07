@@ -194,7 +194,7 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     ParserKeyword s_uuid("UUID");
     UUID uuid = UUIDHelpers::Nil;
 
-    if (allow_uuid && s_uuid.ignore(pos, expected))
+    if (table_name_with_optional_uuid && parts.size() <= 2 && s_uuid.ignore(pos, expected))
     {
         ParserStringLiteral uuid_p;
         ASTPtr ast_uuid;
