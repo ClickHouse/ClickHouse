@@ -384,8 +384,8 @@ set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNA
 include_directories(${ConfigIncludePath})
 
 add_subdirectory (base)
-add_subdirectory (dbms)
 add_subdirectory (programs)
+add_subdirectory (src)
 add_subdirectory (tests)
 add_subdirectory (utils)
 
