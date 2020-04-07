@@ -839,32 +839,31 @@ If this query doesn’t return anything, it means that everything is fine.
 
 ## system.settings {#system-tables-system-settings}
 
-Contains information about session settings for current user.  
+Contains information about session settings for current user.
 
 Columns:
 
-- `name` ([String](../data_types/string.md)) — Setting name.
-- `value` ([String](../data_types/string.md)) — Setting value.
-- `changed` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Shows whether a setting is changed from its default value.
-- `description` ([String](../data_types/string.md)) — Short setting description. 
-- `min` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — Minimum value of the setting, if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings). If the setting has no minimum value, contains [NULL](../query_language/syntax.md#null-literal). 
-- `max` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — Maximum value of the setting, if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings). If the setting has no maximum value, contains [NULL](../query_language/syntax.md#null-literal). 
-- `readonly` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Shows whether the current user can change the setting:
-     - `0` — Current user can change the setting.
-     - `1` — Current user can't change the setting.
-
+-   `name` ([String](../sql_reference/data_types/string.md)) — Setting name.
+-   `value` ([String](../sql_reference/data_types/string.md)) — Setting value.
+-   `changed` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — Shows whether a setting is changed from its default value.
+-   `description` ([String](../sql_reference/data_types/string.md)) — Short setting description.
+-   `min` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — Minimum value of the setting, if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings). If the setting has no minimum value, contains [NULL](../sql_reference/syntax.md#null-literal).
+-   `max` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — Maximum value of the setting, if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings). If the setting has no maximum value, contains [NULL](../sql_reference/syntax.md#null-literal).
+-   `readonly` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — Shows whether the current user can change the setting:
+    -   `0` — Current user can change the setting.
+    -   `1` — Current user can’t change the setting.
 
 **Example**
 
 The following example shows how to get information about settings which name contains `min_i`.
 
-```sql
+``` sql
 SELECT *
 FROM system.settings
 WHERE name LIKE '%min_i%'
 ```
 
-```text
+``` text
 ┌─name────────────────────────────────────────┬─value─────┬─changed─┬─description───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┐
 │ min_insert_block_size_rows                  │ 1048576   │       0 │ Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.                                                                         │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
 │ min_insert_block_size_bytes                 │ 268435456 │       0 │ Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
@@ -874,20 +873,23 @@ WHERE name LIKE '%min_i%'
 
 Using of `WHERE changed` can be useful, for example, when you want to check:
 
-- Whether settings in configuration files are loaded correctly and are in use.
-- Settings that changed in the current session.
+-   Whether settings in configuration files are loaded correctly and are in use.
+-   Settings that changed in the current session.
 
-```sql
+<!-- -->
+
+``` sql
 SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 ```
 
 **See also**
 
-- [Settings](settings/index.md#settings)
-- [Permissions for Queries](settings/permissions_for_queries.md#settings_readonly)
-- [Constraints on Settings](settings/constraints_on_settings.md)
+-   [Settings](settings/index.md#settings)
+-   [Permissions for Queries](settings/permissions_for_queries.md#settings_readonly)
+-   [Constraints on Settings](settings/constraints_on_settings.md)
 
-## system.table_engines
+## system.table\_engines {#system.table_engines}
+
 ``` text
 ┌─name───────────────────┬─value───────┐
 │ max_threads            │ 8           │
