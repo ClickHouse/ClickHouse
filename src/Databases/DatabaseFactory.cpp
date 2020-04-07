@@ -4,6 +4,7 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -49,6 +50,28 @@ DatabasePtr DatabaseFactory::get(
     }
 }
 
+template <typename ValueType>
+static inline ValueType getLiteralValue(const ASTPtr & ast, const String & engine_name)
+{
+    if (!ast || !ast->as<ASTLiteral>())
+        throw Exception("Database engine " + engine_name + " requested literal argument.", ErrorCodes::BAD_ARGUMENTS);
+
+    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
+}
+
+[[maybe_unused]] static inline String getIdentifierOrStringLiteral(const ASTPtr & ast, const String & engine_name)
+{
+    if (ast)
+    {
+        if (const auto & literal = ast->as<ASTLiteral>())
+            return literal->value.safeGet<String>();
+        else if (const auto & identifier = ast->as<ASTIdentifier>())
+            return identifier->name;
+    }
+
+    throw Exception("Database engine " + engine_name + " requested literal or identifier argument.", ErrorCodes::BAD_ARGUMENTS);
+}
+
 DatabasePtr DatabaseFactory::getImpl(
     const String & database_name, const String & metadata_path, const ASTStorage * engine_define, Context & context)
 {
@@ -79,11 +102,12 @@ DatabasePtr DatabaseFactory::getImpl(
             throw Exception("MySQL Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.",
                             ErrorCodes::BAD_ARGUMENTS);
 
+
         const auto & arguments = engine->arguments->children;
-        const auto & host_name_and_port = arguments[0]->as<ASTLiteral>()->value.safeGet<String>();
-        const auto & database_name_in_mysql = arguments[1]->as<ASTLiteral>()->value.safeGet<String>();
-        const auto & mysql_user_name = arguments[2]->as<ASTLiteral>()->value.safeGet<String>();
-        const auto & mysql_user_password = arguments[3]->as<ASTLiteral>()->value.safeGet<String>();
+        const auto & host_name_and_port = getLiteralValue<String>(arguments[0], "MySQL");
+        const auto & database_name_in_mysql = getIdentifierOrStringLiteral(arguments[1], "MySQL");
+        const auto & mysql_user_name = getLiteralValue<String>(arguments[2], "MySQL");
+        const auto & mysql_user_password = getLiteralValue<String>(arguments[3], "MySQL");
 
         try
         {
@@ -114,7 +138,7 @@ DatabasePtr DatabaseFactory::getImpl(
 
         const auto & arguments = engine->arguments->children;
 
-        const auto cache_expiration_time_seconds = arguments[0]->as<ASTLiteral>()->value.safeGet<UInt64>();
+        const auto cache_expiration_time_seconds = getLiteralValue<UInt64>(arguments[0], "Lazy");
         return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
     }
 

@@ -92,7 +92,7 @@ def test_clickhouse_dml_for_mysql_database(started_cluster):
     with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
         mysql_node.query("CREATE DATABASE test_database DEFAULT CHARACTER SET 'utf8'")
         mysql_node.query('CREATE TABLE `test_database`.`test_table` ( `i``d` int(11) NOT NULL, PRIMARY KEY (`i``d`)) ENGINE=InnoDB;')
-        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', 'test_database', 'root', 'clickhouse')")
+        clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test_database, 'root', 'clickhouse')")
 
         assert clickhouse_node.query("SELECT count() FROM `test_database`.`test_table`").rstrip() == '0'
         clickhouse_node.query("INSERT INTO `test_database`.`test_table`(`i\`d`) select number from numbers(10000)")
@@ -120,3 +120,8 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
                               "LEFT JOIN default.t1_remote_mysql AS s_ref "
                               "ON (s_ref.opco = s.opco AND s_ref.service = s.service)") == ''
         mysql_node.query("DROP DATABASE test")
+
+def test_bad_arguments_for_mysql_database_engine(started_cluster):
+    assert clickhouse_node.query(
+        "CREATE TABLE default.t1_remote_mysql AS mysql('mysql1:3306', 'test', 't1_mysql_local', root, 'clickhouse')").find(
+        'Database engine MySQL requested literal argument.') != -1
