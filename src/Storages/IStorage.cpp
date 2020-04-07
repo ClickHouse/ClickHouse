@@ -322,7 +322,7 @@ RWLockImpl::LockHolder tryLockTimed(const RWLock & rwlock, RWLockImpl::Type type
         throw Exception(
                 "Locking attempt timed out! Possible deadlock avoided. Client should retry.",
                 ErrorCodes::DEADLOCK_AVOIDED);
-    return std::move(lock_holder);
+    return lock_holder;
 }
 
 TableStructureReadLockHolder IStorage::lockStructureForShare(bool will_add_new_data, const String & query_id)
