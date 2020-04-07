@@ -1,3 +1,8 @@
+---
+toc_priority: 3
+toc_title: 概観
+---
+
 # ClickHouseとは? {#clickhousetoha}
 
 ClickHouseは、クエリのオンライン分析処理（OLAP）用の列指向のデータベース管理システム（DBMS）です。
