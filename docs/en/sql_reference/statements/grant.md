@@ -1,3 +1,9 @@
+---
+toc_priority: 39
+toc_title: GRANT
+---
+
+
 # GRANT
 
 Grants [privileges](#grant-privileges) to a ClickHouse user account or a role.

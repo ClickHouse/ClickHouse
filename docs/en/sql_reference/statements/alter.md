@@ -500,4 +500,63 @@ A mutation query returns immediately after the mutation entry is added (in case 
 
 Entries for finished mutations are not deleted right away (the number of preserved entries is determined by the `finished_mutations_to_keep` storage engine parameter). Older mutation entries are deleted.
 
+## ALTER USER {#alter-user-statement}
+
+Changes ClickHouse user accounts.
+
+### Syntax {#alter-user-syntax}
+
+``` sql
+ALTER USER [IF EXISTS] name
+    [RENAME TO new_name]
+    [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
+    [[ADD|DROP] HOST {LOCAL | NAME 'name' | NAME REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```  
+
+### Description {#alter-user-dscr}
+
+To use `ALTER USER` you must have the [CREATE USER](grant.md#grant-create-user) privilege.
+
+### Examples {#alter-user-examples}
+
+Set assigned roles as default:
+
+``` sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+If roles aren't previously granted to a user, ClickHouse throws an exception.
+
+
+## ALTER ROLE {#alter-role-statement}
+
+Changes roles.
+
+### Syntax {#alter-role-syntax}
+
+```sql
+ALTER ROLE [IF EXISTS] name
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+
+## ALTER ROW POLICY {#alter-row-policy-statement}
+
+Changes row policy.
+
+### Syntax {#alter-row-policy-syntax}
+
+``` sql
+ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
+    [RENAME TO new_name]
+    [AS {PERMISSIVE | RESTRICTIVE}]
+    [FOR {SELECT | ALL}]
+    [USING {condition | NONE}][,...]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+
 [Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->
