@@ -276,7 +276,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         {
             /// This replica was created with old clickhouse version, so we have
             /// to take version of global node. If somebody will alter our
-            /// table, than we will fill /metadata_version node in zookeeper.
+            /// table, then we will fill /metadata_version node in zookeeper.
             /// Otherwise on the next restart we can again use version from
             /// shared metadata node because it was not changed.
             Coordination::Stat metadata_stat;
