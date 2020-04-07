@@ -2,10 +2,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int TYPE_MISMATCH;
-}
 
 #define DEFINE(TYPE) \
     void ComplexKeyCacheDictionary::get##TYPE( \
