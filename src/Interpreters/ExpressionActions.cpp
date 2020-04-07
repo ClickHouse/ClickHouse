@@ -4,7 +4,7 @@
 #include <Common/SipHash.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionJIT.h>
-#include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
@@ -147,7 +147,7 @@ ExpressionAction ExpressionAction::arrayJoin(const NameSet & array_joined_column
     return a;
 }
 
-ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<AnalyzedJoin> table_join, JoinPtr join)
+ExpressionAction ExpressionAction::ordinaryJoin(std::shared_ptr<TableJoin> table_join, JoinPtr join)
 {
     ExpressionAction a;
     a.type = JOIN;
@@ -1206,7 +1206,7 @@ bool ExpressionAction::operator==(const ExpressionAction & other) const
         && result_name == other.result_name
         && argument_names == other.argument_names
         && same_array_join
-        && AnalyzedJoin::sameJoin(table_join.get(), other.table_join.get())
+        && TableJoin::sameJoin(table_join.get(), other.table_join.get())
         && projection == other.projection
         && is_function_compiled == other.is_function_compiled;
 }

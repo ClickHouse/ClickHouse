@@ -107,6 +107,7 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     CLANG_PREFIX = "clang"
     DARWIN_SUFFIX = "-darwin"
     ARM_SUFFIX = "-aarch64"
+    FREEBSD_SUFFIX = "-freebsd"
 
     result = []
     cmake_flags = ['$CMAKE_FLAGS', '-DADD_GDB_INDEX_FOR_GOLD=1']
@@ -114,7 +115,8 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     is_clang = compiler.startswith(CLANG_PREFIX)
     is_cross_darwin = compiler.endswith(DARWIN_SUFFIX)
     is_cross_arm = compiler.endswith(ARM_SUFFIX)
-    is_cross_compile = is_cross_darwin or is_cross_arm
+    is_cross_freebsd = compiler.endswith(FREEBSD_SUFFIX)
+    is_cross_compile = is_cross_darwin or is_cross_arm or is_cross_freebsd
 
     # Explicitly use LLD with Clang by default.
     # Don't force linker for cross-compilation.
@@ -131,6 +133,9 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     elif is_cross_arm:
         cc = compiler[:-len(ARM_SUFFIX)]
         cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/linux/toolchain-aarch64.cmake")
+    elif is_cross_freebsd:
+        cc = compiler[:-len(FREEBSD_SUFFIX)]
+        cmake_flags.append("-DCMAKE_TOOLCHAIN_FILE=/build/cmake/freebsd/toolchain-x86_64.cmake")
     else:
         cc = compiler
 
