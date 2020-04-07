@@ -221,7 +221,7 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
 
         if (addEdges(node))
         {
-            std::lock_guard guard(graph[node].status_mutex);
+            std::lock_guard guard(*graph[node].status_mutex);
 
             for (; num_back_edges < graph[node].backEdges.size(); ++num_back_edges)
                 graph[node].updated_input_ports.emplace_back(num_back_edges);
