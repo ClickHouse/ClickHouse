@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 64
+toc_title: "C\xF3mo crear ClickHouse en Linux"
 ---
 
 # Cómo construir ClickHouse para el desarrollo {#how-to-build-clickhouse-for-development}
@@ -70,7 +73,7 @@ Esto creará el `programs/clickhouse` ejecutable, que se puede usar con `client`
 
 La compilación requiere los siguientes componentes:
 
--   Git (se usa solo para pagar las fuentes, no es necesario para la compilación)
+-   Git (se usa solo para verificar las fuentes, no es necesario para la compilación)
 -   CMake 3.10 o más reciente
 -   Ninja (recomendado) o Hacer
 -   Compilador de C ++: gcc 9 o clang 8 o más reciente
@@ -105,7 +108,7 @@ Ejemplo de Fedora Rawhide:
     cmake ../ClickHouse
     make -j $(nproc)
 
-# Usted no tiene que construir ClickHouse {#you-dont-have-to-build-clickhouse}
+# No tienes que construir ClickHouse {#you-dont-have-to-build-clickhouse}
 
 ClickHouse está disponible en binarios y paquetes preconstruidos. Los binarios son portátiles y se pueden ejecutar en cualquier tipo de Linux.
 
@@ -135,4 +138,4 @@ $ cd ClickHouse
 $ ./release
 ```
 
-[Artículo Original](https://clickhouse.tech/docs/es/development/build/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/development/build/) <!--hide-->

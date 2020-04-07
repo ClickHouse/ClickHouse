@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 17
+toc_title: "Cliente de l\xEDnea de comandos"
 ---
 
 # Cliente de línea de comandos {#command-line-client}
@@ -86,7 +89,7 @@ Formatee una consulta como de costumbre, luego coloque los valores que desea pas
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Tipo de datos](../data_types/index.md) del valor del parámetro de la aplicación. Por ejemplo, una estructura de datos como `(integer, ('string', integer))` puede tener el `Tuple(UInt8, Tuple(String, UInt8))` tipo de datos (también puede usar otro [Entero](../data_types/int_uint.md) tipo).
+-   `data type` — [Tipo de datos](../sql_reference/data_types/index.md) del valor del parámetro de la aplicación. Por ejemplo, una estructura de datos como `(integer, ('string', integer))` puede tener el `Tuple(UInt8, Tuple(String, UInt8))` tipo de datos (también puede usar otro [entero](../sql_reference/data_types/int_uint.md) tipo).
 
 #### Ejemplo {#example}
 
@@ -143,4 +146,4 @@ Ejemplo de un archivo de configuración:
 </config>
 ```
 
-[Artículo Original](https://clickhouse.tech/docs/es/interfaces/cli/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/interfaces/cli/) <!--hide-->

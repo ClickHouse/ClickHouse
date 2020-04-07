@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 3
+toc_title: "Aper\xE7u"
 ---
 
 # Qu'est-ce que ClickHouse? {#what-is-clickhouse}
@@ -17,7 +20,7 @@ Dans un “normal” SGBD orienté ligne, les données sont stockées dans cet o
 
 En d'autres termes, toutes les valeurs liées à une ligne sont physiquement stockées l'une à côté de l'autre.
 
-Des exemples d'un SGBD orienté ligne sont MySQL, Postgres et MS SQL Server. {: .gris }
+Des exemples d'un SGBD orienté ligne sont MySQL, Postgres et MS SQL Server.
 
 Dans un SGBD orienté colonne, les données sont stockées comme ceci:
 
@@ -31,7 +34,7 @@ Dans un SGBD orienté colonne, les données sont stockées comme ceci:
 
 Ces exemples montrent l'ordre que les données sont organisées en. Les valeurs de différentes colonnes sont stockés séparément, et les données de la même colonne sont stockées ensemble.
 
-Exemples D'un SGBD orienté colonne: Vertica, Paraccel (matrice Actian et Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise et Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid et kdb+. {: .gris }
+Exemples D'un SGBD orienté colonne: Vertica, Paraccel (matrice Actian et Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise et Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid et kdb+.
 
 Different orders for storing data are better suited to different scenarios. The data access scenario refers to what queries are made, how often, and in what proportion; how much data is read for each type of query – rows, columns, and bytes; the relationship between reading and updating data; the working size of the data and how locally it is used; whether transactions are used, and how isolated they are; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
 
