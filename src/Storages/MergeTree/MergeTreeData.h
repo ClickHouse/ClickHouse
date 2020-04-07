@@ -33,6 +33,7 @@ namespace DB
 class MergeListEntry;
 class AlterCommands;
 class MergeTreePartsMover;
+class MutationCommands;
 
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
@@ -123,6 +124,20 @@ public:
     };
 
     STRONG_TYPEDEF(String, PartitionID)
+
+    /// Alter conversions which should be applied on-fly for part. Build from of
+    /// the most recent mutation commands for part. Now we have only rename_map
+    /// here (from ALTER_RENAME) command, because for all other type of alters
+    /// we can deduce conversions for part from difference between
+    /// part->getColumns() and storage->getColumns().
+    struct AlterConversions
+    {
+        /// Rename map new_name -> old_name
+        std::unordered_map<String, String> rename_map;
+
+        bool isColumnRenamed(const String & new_name) const { return rename_map.count(new_name) > 0; }
+        String getColumnOldName(const String & new_name) const { return rename_map.at(new_name); }
+    };
 
     struct LessDataPart
     {
@@ -535,10 +550,9 @@ public:
         broken_part_callback(name);
     }
 
-    /** Get the key expression AST as an ASTExpressionList.
-      * It can be specified in the tuple: (CounterID, Date),
-      *  or as one column: CounterID.
-      */
+    /** Get the key expression AST as an ASTExpressionList. It can be specified
+     *  in the tuple: (CounterID, Date), or as one column: CounterID.
+     */
     static ASTPtr extractKeyExpressionList(const ASTPtr & node);
 
     bool hasSortingKey() const { return !sorting_key_columns.empty(); }
@@ -646,6 +660,9 @@ public:
     /// Choose disk with max available free space
     /// Reserves 0 bytes
     ReservationPtr makeEmptyReservationOnLargestDisk() { return getStoragePolicy()->makeEmptyReservationOnLargestDisk(); }
+
+    /// Return alter conversions for part which must be applied on fly.
+    AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -856,14 +873,14 @@ protected:
     std::mutex grab_old_parts_mutex;
     /// The same for clearOldTemporaryDirectories.
     std::mutex clear_old_temporary_directories_mutex;
-    /// Mutex for settings usage
 
     void setProperties(const StorageInMemoryMetadata & metadata, bool only_check = false);
 
     void initPartitionKey();
 
-    void setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
-                           const ASTPtr & new_ttl_table_ast, bool only_check = false);
+    void setTTLExpressions(const ColumnsDescription & columns,
+        const ASTPtr & new_ttl_table_ast, bool only_check = false);
+
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy);
 
     void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
@@ -908,6 +925,11 @@ protected:
     /// mechanisms for parts locking
     virtual bool partIsAssignedToBackgroundOperation(const DataPartPtr & part) const = 0;
 
+    /// Return most recent mutations commands for part which weren't applied
+    /// Used to receive AlterConversions for part and apply them on fly. This
+    /// method has different implementations for replicated and non replicated
+    /// MergeTree because they store mutations in different way.
+    virtual MutationCommands getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const = 0;
     /// Moves part to specified space, used in ALTER ... MOVE ... queries
     bool movePartsToSpace(const DataPartsVector & parts, SpacePtr space);
 
