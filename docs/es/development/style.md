@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 68
+toc_title: "C\xF3mo escribir c\xF3digo C ++"
 ---
 
 # Cómo escribir código C ++ {#how-to-write-c-code}
@@ -54,7 +57,7 @@ memcpy(&buf[place_value], &x, sizeof(x));
 for (size_t i = 0; i < rows; i += storage.index_granularity)
 ```
 
-**7.** Agregar espacios alrededor de los operadores binarios (`+`, `-`, `*`, `/`, `%`, …) y el operador ternario `?:`.
+**7.** Agregar espacios alrededor de los operadores binarios (`+`, `-`, `*`, `/`, `%`, …) and the ternary operator `?:`.
 
 ``` cpp
 UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -79,13 +82,13 @@ dst.ClickEventID       = click.EventID;
 dst.ClickGoodEvent     = click.GoodEvent;
 ```
 
-**10.** No utilice espacios alrededor de los operadores `.`, `->`.
+**10.** No use espacios alrededor de los operadores `.`, `->`.
 
 Si es necesario, el operador se puede envolver a la siguiente línea. En este caso, el desplazamiento frente a él aumenta.
 
-**11.** No utilice un espacio para separar los operadores unarios (`--`, `++`, `*`, `&`, …) del argumento.
+**11.** No utilice un espacio para separar los operadores unarios (`--`, `++`, `*`, `&`, …) from the argument.
 
-**12.** Pon un espacio después de una coma, pero no antes. La misma regla se aplica a un punto y coma dentro de un `for` expresión.
+**12.** Pon un espacio después de una coma, pero no antes. La misma regla se aplica a un punto y coma dentro de un `for` expresion.
 
 **13.** No utilice espacios para separar el `[]` operador.
 
@@ -97,7 +100,7 @@ struct AggregatedStatElement
 {}
 ```
 
-**15.** En clases y estructuras, escribe `public`, `private`, y `protected` es el mismo nivel que `class/struct`, y sangrar el resto del código.
+**15.** En clases y estructuras, escribe `public`, `private`, y `protected` en el mismo nivel que `class/struct`, y sangrar el resto del código.
 
 ``` cpp
 template <typename T>
@@ -110,7 +113,7 @@ public:
 }
 ```
 
-**16.** Si el mismo `namespace` se utiliza para todo el archivo, y no hay nada más significativo, un desplazamiento no es necesario dentro `namespace`.
+**16.** Si el mismo `namespace` se usa para todo el archivo, y no hay nada más significativo, no es necesario un desplazamiento dentro `namespace`.
 
 **17.** Si el bloque para un `if`, `for`, `while`, u otra expresión consiste en una sola `statement`, las llaves son opcionales. Coloque el `statement` en una línea separada, en su lugar. Esta regla también es válida para `if`, `for`, `while`, …
 
@@ -194,7 +197,7 @@ std::cerr << static_cast<int>(c) << std::endl;
 
 Lo mismo es cierto para los métodos pequeños en cualquier clase o estructura.
 
-Para las clases y estructuras con plantillas, no separe las declaraciones de métodos de la implementación (porque de lo contrario deben definirse en la misma unidad de traducción).
+Para clases y estructuras con plantillas, no separe las declaraciones de métodos de la implementación (porque de lo contrario deben definirse en la misma unidad de traducción).
 
 **31.** Puede ajustar líneas en 140 caracteres, en lugar de 80.
 
@@ -295,7 +298,7 @@ Nota: Puede usar Doxygen para generar documentación a partir de estos comentari
 /// Why did you do this stuff?
 ```
 
-**16.** No hay necesidad de escribir un comentario al final de un bloque describiendo de qué se trataba.
+**16.** No es necesario escribir un comentario al final de un bloque que describa de qué se trataba.
 
 ``` cpp
 /// for
@@ -445,7 +448,7 @@ Utilice excepciones. En la mayoría de los casos, solo necesita lanzar una excep
 
 En las aplicaciones de procesamiento de datos fuera de línea, a menudo es aceptable no detectar excepciones.
 
-En los servidores que manejan las solicitudes de los usuarios, suele ser suficiente para detectar excepciones en el nivel superior del controlador de conexión.
+En los servidores que manejan las solicitudes de los usuarios, generalmente es suficiente detectar excepciones en el nivel superior del controlador de conexión.
 
 En las funciones de subproceso, debe capturar y mantener todas las excepciones para volver a lanzarlas en el subproceso principal después `join`.
 
@@ -566,7 +569,7 @@ Utilizar `unsigned` si es necesario.
 
 Utilice los tipos `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, y `Int64`, así como `size_t`, `ssize_t`, y `ptrdiff_t`.
 
-No utilice estos tipos para los números: `signed/unsigned long`, `long long`, `short`, `signed/unsigned char`, `char`.
+No use estos tipos para números: `signed/unsigned long`, `long long`, `short`, `signed/unsigned char`, `char`.
 
 **13.** Pasando argumentos.
 
@@ -602,17 +605,17 @@ Las bibliotecas pequeñas tampoco necesitan esto.
 
 Para bibliotecas medianas a grandes, coloque todo en un `namespace`.
 
-En la biblioteca `.h` Archivo, se puede utilizar `namespace detail` para ocultar los detalles de implementación no necesarios para el código de la aplicación.
+En la biblioteca `.h` archivo, se puede utilizar `namespace detail` para ocultar los detalles de implementación no necesarios para el código de la aplicación.
 
 En un `.cpp` archivo, puede usar un `static` o espacio de nombres anónimo para ocultar símbolos.
 
-Además, un `namespace` Puede ser utilizado para un `enum` para evitar que los nombres correspondientes caigan en un `namespace` (pero es mejor usar un `enum class`).
+Además, un `namespace` puede ser utilizado para un `enum` para evitar que los nombres correspondientes caigan en un `namespace` (pero es mejor usar un `enum class`).
 
 **16.** Inicialización diferida.
 
 Si se requieren argumentos para la inicialización, normalmente no debe escribir un constructor predeterminado.
 
-Si más adelante necesitará retrasar la inicialización, puede agregar un constructor predeterminado que creará un objeto no válido. O, para un pequeño número de objetos, puede usar `shared_ptr/unique_ptr`.
+Si más adelante tendrá que retrasar la inicialización, puede agregar un constructor predeterminado que creará un objeto no válido. O, para un pequeño número de objetos, puede usar `shared_ptr/unique_ptr`.
 
 ``` cpp
 Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
@@ -627,7 +630,7 @@ Si la clase no está destinada para uso polimórfico, no necesita hacer que las 
 
 **18.** Codificación.
 
-Usa UTF-8 en todas partes. Utilizar `std::string`y`char *`. No uso `std::wstring`y`wchar_t`.
+Usa UTF-8 en todas partes. Utilizar `std::string`y`char *`. No use `std::wstring`y`wchar_t`.
 
 **19.** Tala.
 
@@ -653,7 +656,7 @@ Utilice la codificación UTF-8 en el registro. En casos excepcionales, puede usa
 
 No utilice `iostreams` en ciclos internos que son críticos para el rendimiento de la aplicación (y nunca usan `stringstream`).
 
-Descripción `DB/IO` biblioteca en su lugar.
+Utilice el `DB/IO` biblioteca en su lugar.
 
 **21.** Fecha y hora.
 
@@ -667,7 +670,7 @@ Utilice siempre `#pragma once` en lugar de incluir guardias.
 
 `using namespace` no se utiliza. Usted puede utilizar `using` con algo específico. Pero hazlo local dentro de una clase o función.
 
-**24.** No uso `trailing return type` para funciones a menos que sea necesario.
+**24.** No use `trailing return type` para funciones a menos que sea necesario.
 
 ``` cpp
 [auto f() -&gt; void;]{.strike}
@@ -684,7 +687,7 @@ std::string s{"Hello"};
 auto s = std::string{"Hello"};
 ```
 
-**26.** Para funciones virtuales, escriba `virtual` es la clase base, pero escribe `override` es lugar de `virtual` en las clases descendientes.
+**26.** Para funciones virtuales, escriba `virtual` en la clase base, pero escribe `override` en lugar de `virtual` en las clases descendientes.
 
 ## Características no utilizadas de C ++ {#unused-features-of-c}
 
@@ -698,7 +701,7 @@ auto s = std::string{"Hello"};
 
 Pero en igualdad de condiciones, se prefiere el código multiplataforma o portátil.
 
-**2.** Idioma: hacer ++ 17.
+**2.** Idioma: C ++ 17.
 
 **3.** Compilación: `gcc`. En este momento (diciembre de 2017), el código se compila utilizando la versión 7.2. (También se puede compilar usando `clang 4`.)
 
@@ -722,7 +725,7 @@ El conjunto de instrucciones de CPU es el conjunto mínimo admitido entre nuestr
 
 **2.** Para la depuración, use `gdb`, `valgrind` (`memcheck`), `strace`, `-fsanitize=...`, o `tcmalloc_minimal_debug`.
 
-**3.** Para crear perfiles, uso `Linux Perf`, `valgrind` (`callgrind`Ciudad `strace -cf`.
+**3.** Para crear perfiles, use `Linux Perf`, `valgrind` (`callgrind`), o `strace -cf`.
 
 **4.** Las fuentes están en Git.
 
@@ -754,7 +757,7 @@ Si ya hay una buena solución disponible, úsela, incluso si eso significa que d
 
 (Pero prepárese para eliminar las bibliotecas incorrectas del código.)
 
-**3.** Puede instalar una biblioteca que no está en los paquetes, si los paquetes no tienen lo que necesita o tienen una versión obsoleta o el tipo incorrecto de compilación.
+**3.** Puede instalar una biblioteca que no esté en los paquetes, si los paquetes no tienen lo que necesita o tienen una versión obsoleta o el tipo de compilación incorrecto.
 
 **4.** Si la biblioteca es pequeña y no tiene su propio sistema de compilación complejo, coloque los archivos `contrib` carpeta.
 
@@ -778,17 +781,17 @@ Si ya hay una buena solución disponible, úsela, incluso si eso significa que d
 
 **1.** Especificar explícitamente `std::` para tipos de `stddef.h`
 
-no se recomienda. En otras palabras, recomendamos escribir `size_t` es su lugar `std::size_t` porque es más corto.
+no se recomienda. En otras palabras, recomendamos escribir `size_t` en su lugar `std::size_t` porque es más corto.
 
 Es aceptable agregar `std::`.
 
 **2.** Especificar explícitamente `std::` para funciones de la biblioteca C estándar
 
-no se recomienda. En otras palabras, escribir `memcpy` es lugar de `std::memcpy`.
+no se recomienda. En otras palabras, escribir `memcpy` en lugar de `std::memcpy`.
 
 La razón es que hay funciones no estándar similares, tales como `memmem`. Utilizamos estas funciones en ocasiones. Estas funciones no existen en `namespace std`.
 
-Si usted escribe `std::memcpy` es lugar de `memcpy` es todas partes, entonces `memmem` pecado `std::` se verá extraño.
+Si usted escribe `std::memcpy` en lugar de `memcpy` en todas partes, entonces `memmem` sin `std::` se verá extraño.
 
 Sin embargo, todavía puedes usar `std::` si lo prefieres.
 
@@ -796,7 +799,7 @@ Sin embargo, todavía puedes usar `std::` si lo prefieres.
 
 Esto es aceptable si es más eficiente.
 
-Por ejemplo, uso `memcpy` es lugar de `std::copy` para copiar grandes trozos de memoria.
+Por ejemplo, use `memcpy` en lugar de `std::copy` para copiar grandes trozos de memoria.
 
 **4.** Argumentos de función multilínea.
 
@@ -835,4 +838,4 @@ function(
       size_t limit)
 ```
 
-[Artículo Original](https://clickhouse.tech/docs/es/development/style/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/development/style/) <!--hide-->

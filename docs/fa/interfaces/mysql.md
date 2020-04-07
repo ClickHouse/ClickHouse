@@ -1,22 +1,25 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 20
+toc_title: "\u0631\u0627\u0628\u0637 MySQL"
 ---
 
-# MySQL interface {#mysql-interface}
+# رابط خروجی زیر {#mysql-interface}
 
-ClickHouse supports MySQL wire protocol. It can be enabled by [mysql\_port](../operations/server_settings/settings.md#server_settings-mysql_port) setting in configuration file:
+کلیک پروتکل سیم خروجی زیر را پشتیبانی می کند. این را می توان با فعال [\_وارد کردن](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-mysql_port) تنظیم در پرونده پیکربندی:
 
 ``` xml
 <mysql_port>9004</mysql_port>
 ```
 
-Example of connecting using command-line tool `mysql`:
+مثال اتصال با استفاده از ابزار خط فرمان `mysql`:
 
 ``` bash
 $ mysql --protocol tcp -u default -P 9004
 ```
 
-Output if a connection succeeded:
+خروجی اگر اتصال موفق شد:
 
 ``` text
 Welcome to the MySQL monitor.  Commands end with ; or \g.
@@ -34,13 +37,13 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings_users.md#password_double_sha1_hex) in configuration file.
-If user password is specified using [SHA256](../operations/settings/settings_users.md#password_sha256_hex), some clients won’t be able to authenticate (mysqljs and old versions of command-line tool mysql).
+برای سازگاری با تمام مشتریان خروجی زیر, توصیه می شود برای مشخص کردن رمز عبور کاربر با [دو شی1](../operations/settings/settings_users.md#password_double_sha1_hex) در فایل پیکربندی.
+اگر رمز عبور کاربر مشخص شده است با استفاده از [SHA256](../operations/settings/settings_users.md#password_sha256_hex) برخی از مشتریان قادر نخواهد بود به تصدیق (رمز و نسخه های قدیمی خط فرمان ابزار خروجی زیر).
 
-Restrictions:
+محدودیت ها:
 
--   prepared queries are not supported
+-   نمایش داده شد تهیه پشتیبانی نمی شوند
 
--   some data types are sent as strings
+-   برخی از انواع داده ها به عنوان رشته ارسال می شود
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/mysql/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/interfaces/mysql/) <!--hide-->

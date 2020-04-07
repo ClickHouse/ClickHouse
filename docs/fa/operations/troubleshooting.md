@@ -1,66 +1,69 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 46
+toc_title: "\u0639\u06CC\u0628 \u06CC\u0627\u0628\u06CC"
 ---
 
-# Troubleshooting {#troubleshooting}
+# عیب یابی {#troubleshooting}
 
--   [Installation](#troubleshooting-installation-errors)
--   [Connecting to the server](#troubleshooting-accepts-no-connections)
--   [Query processing](#troubleshooting-does-not-process-queries)
--   [Efficiency of query processing](#troubleshooting-too-slow)
+-   [نصب و راه اندازی](#troubleshooting-installation-errors)
+-   [اتصال به سرور](#troubleshooting-accepts-no-connections)
+-   [پردازش پرس و جو](#troubleshooting-does-not-process-queries)
+-   [کارایی پردازش پرس و جو](#troubleshooting-too-slow)
 
-## Installation {#troubleshooting-installation-errors}
+## نصب و راه اندازی {#troubleshooting-installation-errors}
 
-### You Cannot Get Deb Packages from ClickHouse Repository With apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+### شما می توانید بسته های دب از مخزن کلیک با مناسب دریافت کنید {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
--   Check firewall settings.
--   If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
+-   بررسی تنظیمات فایروال.
+-   اگر شما می توانید مخزن به هر دلیلی دسترسی پیدا کنید, دانلود بسته همانطور که در توصیف [شروع کار](../getting_started/index.md) مقاله و نصب دستی با استفاده از `sudo dpkg -i <packages>` فرمان. همچنین شما می خواهد نیاز `tzdata` بسته
 
-## Connecting to the Server {#troubleshooting-accepts-no-connections}
+## اتصال به سرور {#troubleshooting-accepts-no-connections}
 
-Possible issues:
+مشکلات احتمالی:
 
--   The server is not running.
--   Unexpected or wrong configuration parameters.
+-   سرور در حال اجرا نیست.
+-   پارامترهای پیکربندی غیر منتظره و یا اشتباه.
 
-### Server Is Not Running {#server-is-not-running}
+### کارساز در حال اجرا نیست {#server-is-not-running}
 
-**Check if server is runnnig**
+**بررسی کنید که کارگزار روننیگ باشد**
 
-Command:
+فرمان:
 
 ``` bash
 $ sudo service clickhouse-server status
 ```
 
-If the server is not running, start it with the command:
+اگر سرور در حال اجرا نیست, شروع با فرمان:
 
 ``` bash
 $ sudo service clickhouse-server start
 ```
 
-**Check logs**
+**بررسی سیاههها**
 
-The main log of `clickhouse-server` is in `/var/log/clickhouse-server/clickhouse-server.log` by default.
+ورود اصلی `clickhouse-server` در `/var/log/clickhouse-server/clickhouse-server.log` به طور پیش فرض.
 
-If the server started successfully, you should see the strings:
+اگر سرور با موفقیت شروع, شما باید رشته ها را ببینید:
 
 -   `<Information> Application: starting up.` — Server started.
 -   `<Information> Application: Ready for connections.` — Server is running and ready for connections.
 
-If `clickhouse-server` start failed with a configuration error, you should see the `<Error>` string with an error description. For example:
+اگر `clickhouse-server` شروع با یک خطای پیکربندی شکست خورده, شما باید ببینید `<Error>` رشته با شرح خطا. به عنوان مثال:
 
 ``` text
 2019.01.11 15:23:25.549505 [ 45 ] {} <Error> ExternalDictionaries: Failed reloading 'event2id' external dictionary: Poco::Exception. Code: 1000, e.code() = 111, e.displayText() = Connection refused, e.what() = Connection refused
 ```
 
-If you don’t see an error at the end of the file, look through the entire file starting from the string:
+اگر شما یک خطا در انتهای فایل را نمی بینم, از طریق تمام فایل با شروع از رشته نگاه:
 
 ``` text
 <Information> Application: starting up.
 ```
 
-If you try to start a second instance of `clickhouse-server` on the server, you see the following log:
+اگر شما سعی می کنید برای شروع یک نمونه دوم از `clickhouse-server` بر روی سرور, شما ورود به سیستم زیر را ببینید:
 
 ``` text
 2019.01.11 15:25:11.151730 [ 1 ] {} <Information> : Starting ClickHouse 19.1.0 with revision 54413
@@ -76,68 +79,68 @@ Revision: 54413
 2019.01.11 15:25:11.156716 [ 2 ] {} <Information> BaseDaemon: Stop SignalListener thread
 ```
 
-**See system.d logs**
+**مشاهده سیستم.د سیاهههای مربوط**
 
-If you don’t find any useful information in `clickhouse-server` logs or there aren’t any logs, you can view `system.d` logs using the command:
+اگر شما هر گونه اطلاعات مفید در پیدا کنید `clickhouse-server` سیاهههای مربوط و یا هر گونه سیاهههای مربوط وجود ندارد, شما می توانید مشاهده `system.d` سیاهههای مربوط با استفاده از دستور:
 
 ``` bash
 $ sudo journalctl -u clickhouse-server
 ```
 
-**Start clickhouse-server in interactive mode**
+**شروع کلیک-سرور در حالت تعاملی**
 
 ``` bash
 $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-server/config.xml
 ```
 
-This command starts the server as an interactive app with standard parameters of the autostart script. In this mode `clickhouse-server` prints all the event messages in the console.
+این دستور سرور را به عنوان یک برنامه تعاملی با پارامترهای استاندارد اسکریپت خودکار شروع می کند. در این حالت `clickhouse-server` چاپ تمام پیام های رویداد در کنسول.
 
-### Configuration Parameters {#configuration-parameters}
+### پارامترهای پیکربندی {#configuration-parameters}
 
-Check:
+بررسی:
 
--   Docker settings.
+-   تنظیمات کارگر بارانداز.
 
-    If you run ClickHouse in Docker in an IPv6 network, make sure that `network=host` is set.
+    اطمینان حاصل کنید که اگر شما اجرا خانه عروسکی در کارگر بارانداز در یک شبکه اینترنتی6 `network=host` قرار است.
 
--   Endpoint settings.
+-   تنظیمات نقطه پایانی.
 
-    Check [listen\_host](server_settings/settings.md#server_settings-listen_host) and [tcp\_port](server_settings/settings.md#server_settings-tcp_port) settings.
+    بررسی [\_نوست فهرست](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) و [\_صادر کردن](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) تنظیمات.
 
-    ClickHouse server accepts localhost connections only by default.
+    سرور کلیک می پذیرد اتصالات مجنون تنها به طور پیش فرض.
 
--   HTTP protocol settings.
+-   تنظیمات پروتکل قام.
 
-    Check protocol settings for the HTTP API.
+    بررسی تنظیمات پروتکل برای صفحه اصلی.
 
--   Secure connection settings.
+-   تنظیمات اتصال امن.
 
-    Check:
+    بررسی:
 
-    -   The [tcp\_port\_secure](server_settings/settings.md#server_settings-tcp_port_secure) setting.
-    -   Settings for [SSL sertificates](server_settings/settings.md#server_settings-openssl).
+    -   این [\_شروع مجدد](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) تنظیمات.
+    -   تنظیمات برای [SSL sertificates](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
 
-    Use proper parameters while connecting. For example, use the `port_secure` parameter with `clickhouse_client`.
+    استفاده از پارامترهای مناسب در حالی که اتصال. برای مثال با استفاده از `port_secure` پارامتر با `clickhouse_client`.
 
--   User settings.
+-   تنظیمات کاربر.
 
-    You might be using the wrong user name or password.
+    شما ممکن است با استفاده از نام کاربری اشتباه و یا رمز عبور.
 
-## Query Processing {#troubleshooting-does-not-process-queries}
+## پردازش پرس و جو {#troubleshooting-does-not-process-queries}
 
-If ClickHouse is not able to process the query, it sends an error description to the client. In the `clickhouse-client` you get a description of the error in the console. If you are using the HTTP interface, ClickHouse sends the error description in the response body. For example:
+اگر فاحشه خانه است که قادر به پردازش پرس و جو نمی, این شرح خطا به مشتری می فرستد. در `clickhouse-client` شما دریافت می کنید شرح خطا در کنسول. اگر شما با استفاده از HTTP رابط ClickHouse می فرستد خطا توضیحات در پاسخ بدن. به عنوان مثال:
 
 ``` bash
 $ curl 'http://localhost:8123/' --data-binary "SELECT a"
 Code: 47, e.displayText() = DB::Exception: Unknown identifier: a. Note that there are no tables (FROM clause) in your query, context: required_names: 'a' source_tables: table_aliases: private_aliases: column_aliases: public_columns: 'a' masked_columns: array_join_columns: source_columns: , e.what() = DB::Exception
 ```
 
-If you start `clickhouse-client` with the `stack-trace` parameter, ClickHouse returns the server stack trace with the description of an error.
+اگر شما شروع `clickhouse-client` با `stack-trace` پارامتر, خانه را برمی گرداند ردیابی پشته سرور با شرح خطا.
 
-You might see a message about a broken connection. In this case, you can repeat the query. If the connection breaks every time you perform the query, check the server logs for errors.
+شما ممکن است یک پیام در مورد یک اتصال شکسته را ببینید. در این مورد می توانید پرس و جو را تکرار کنید. اگر اتصال می شکند هر بار که شما انجام پرس و جو, بررسی سیاهههای مربوط به سرور برای اشتباهات.
 
-## Efficiency of Query Processing {#troubleshooting-too-slow}
+## کارایی پردازش پرس و جو {#troubleshooting-too-slow}
 
-If you see that ClickHouse is working too slowly, you need to profile the load on the server resources and network for your queries.
+اگر شما می بینید که تاتر در حال کار بیش از حد کند, شما نیاز به مشخصات بار بر روی منابع سرور و شبکه برای نمایش داده شد خود را.
 
-You can use the clickhouse-benchmark utility to profile queries. It shows the number of queries processed per second, the number of rows processed per second, and percentiles of query processing times.
+شما می توانید ابزار کلیک معیار به نمایش داده شد مشخصات استفاده کنید. این نشان می دهد تعداد نمایش داده شد پردازش در هر ثانیه, تعداد ردیف پردازش در هر ثانیه, و صدک از زمان پردازش پرس و جو.

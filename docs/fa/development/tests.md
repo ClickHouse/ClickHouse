@@ -1,87 +1,91 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 69
+toc_title: "\u0646\u062D\u0648\u0647 \u0627\u062C\u0631\u0627\u06CC \u062A\u0633\u062A\
+  \ \u0647\u0627\u06CC \u06A9\u0644\u06CC\u06A9 \u062E\u0627\u0646\u0647"
 ---
 
-# ClickHouse Testing {#clickhouse-testing}
+# تست کلیک {#clickhouse-testing}
 
-## Functional Tests {#functional-tests}
+## تست های کاربردی {#functional-tests}
 
-Functional tests are the most simple and convenient to use. Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
+تست های کاربردی ساده ترین و راحت برای استفاده هستند. بسیاری از clickhouse ویژگی ها را می توان مورد آزمایش با استفاده از آزمون های عملکردی و آنها را اجباری به استفاده از برای هر تغییر در clickhouse کد است که می تواند آزمایش می شود که در راه است.
 
-Each functional test sends one or multiple queries to the running ClickHouse server and compares the result with reference.
+هر تست عملکردی یک یا چند نمایش داده شد به سرور در حال اجرا تاتر می فرستد و نتیجه را با مرجع مقایسه می کند.
 
-Tests are located in `testsies` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from Yandex.Metrica and not available to general public. We tend to use only `stateless` tests and avoid adding new `stateful` tests.
+تست ها در واقع `testsies` فهرست راهنما. دو زیرشاخه وجود دارد: `stateless` و `stateful`. تست های بدون تابعیت بدون هیچ گونه داده های تست پیش بارگذاری شده نمایش داده می شوند-اغلب مجموعه داده های مصنوعی کوچک را در پرواز در داخل تست خود ایجاد می کنند. تست های نفرت انگیز نیاز به داده های تست از قبل نصب شده از یاندکس.متریکا و در دسترس عموم نیست. ما تمایل به استفاده از تنها `stateless` تست ها و جلوگیری از اضافه کردن جدید `stateful` تستها
 
-Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery --testmode`. `.sh` test is a script that is run by itself.
+هر تست می تواند یکی از دو نوع باشد: `.sql` و `.sh`. `.sql` تست اسکریپت ساده مربع است که به لوله کشی است `clickhouse-client --multiquery --testmode`. `.sh` تست یک اسکریپت است که به خودی خود اجرا است.
 
-To run all tests, use `testskhouse-test` tool. Look `--help` for the list of possible options. You can simply run all tests or run subset of tests filtered by substring in test name: `./clickhouse-test substring`.
+برای اجرای تمام تست ها استفاده کنید `testskhouse-test` ابزار. نگاه کن `--help` برای لیستی از گزینه های ممکن. شما به سادگی می توانید تمام تست ها را اجرا کنید یا زیر مجموعه ای از تست های فیلتر شده توسط زیر رشته را در نام تست اجرا کنید: `./clickhouse-test substring`.
 
-The most simple way to invoke functional tests is to copy `clickhouse-client` to `/usr/bin/`, run `clickhouse-server` and then run `./clickhouse-test` from its own directory.
+ساده ترین راه برای فراخوانی تست های کاربردی کپی است `clickhouse-client` به `/usr/bin/` فرار کن `clickhouse-server` و سپس اجرا کنید `./clickhouse-test` از دایرکتوری خود را.
 
-To add new test, create a `.sql` or `.sh` file in `testsies/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
+برای اضافه کردن تست جدید, ایجاد یک `.sql` یا `.sh` پرونده در `testsies/0_stateless` فهرست راهنما را به صورت دستی بررسی کنید و سپس تولید کنید `.reference` پرونده به روش زیر: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` یا `./00000_test.sh > ./00000_test.reference`.
 
-Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
+تست باید استفاده کنید (ساختن, قطره, و غیره) تنها جداول در `test` پایگاه داده است که فرض بر این است که از قبل ایجاد می شود; همچنین تست می توانید جداول موقت استفاده.
 
-If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`.
+اگر شما می خواهید به استفاده از نمایش داده شد توزیع شده در تست های کاربردی, شما می توانید اهرم `remote` تابع جدول با `127.0.0.{1..2}` یا شما می توانید خوشه تست از پیش تعریف شده در فایل پیکربندی سرور مانند استفاده کنید `test_shard_localhost`.
 
-Some tests are marked with `zookeeper`, `shard` or `long` in their names.
-`zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that
-requires server to listen `127.0.0.*`; `distributed` or `global` have the same
-meaning. `long` is for tests that run slightly longer that one second. You can
-disable these groups of tests using `--no-zookeeper`, `--no-shard` and
-`--no-long` options, respectively.
+برخی از تست ها با مشخص شده اند `zookeeper`, `shard` یا `long` در نام خود را.
+`zookeeper` برای تست هایی است که از باغ وحش استفاده می کنند. `shard` برای تست هایی است که
+نیاز به سرور برای گوش دادن `127.0.0.*`; `distributed` یا `global` همان
+معنی. `long` برای تست هایی است که کمی طولانی تر اجرا می شوند که یک ثانیه. شما می توانید
+غیر فعال کردن این گروه از تست با استفاده از `--no-zookeeper`, `--no-shard` و
+`--no-long` گزینه, به ترتیب.
 
-## Known bugs {#known-bugs}
+## اشکالات شناخته شده {#known-bugs}
 
-If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `testsies/bugs` directory. These tests will be moved to `teststests_stateless` when bugs are fixed.
+اگر ما می دانیم برخی از اشکالات است که می تواند به راحتی توسط تست های کاربردی تکثیر, ما تست های عملکردی تهیه شده در `testsies/bugs` فهرست راهنما. این تست خواهد شد به نقل مکان کرد `teststests_stateless` هنگامی که اشکالات ثابت هستند.
 
-## Integration Tests {#integration-tests}
+## تست های ادغام {#integration-tests}
 
-Integration tests allow to test ClickHouse in clustered configuration and ClickHouse interaction with other servers like MySQL, Postgres, MongoDB. They are useful to emulate network splits, packet drops, etc. These tests are run under Docker and create multiple containers with various software.
+ادغام آزمون اجازه می دهد برای تست clickhouse در خوشه پیکربندی و clickhouse تعامل با سرور های دیگر مانند mysql, postgres, mongodb. مفید برای تقلید انشعابات شبکه قطره بسته و غیره هستند. این تست ها تحت کارگر بارانداز اجرا و ایجاد ظروف متعدد با نرم افزار های مختلف.
 
-See `testsgration/README.md` on how to run these tests.
+ببینید `testsgration/README.md` در مورد چگونگی اجرای این تست.
 
-Note that integration of ClickHouse with third-party drivers is not tested. Also we currently don’t have integration tests with our JDBC and ODBC drivers.
+توجه داشته باشید که ادغام کلیک با رانندگان شخص ثالث تست نشده است. همچنین ما در حال حاضر تست های یکپارچه سازی با رانندگان جی بی سی و بی سی ما ندارد.
 
-## Unit Tests {#unit-tests}
+## واحد آزمون {#unit-tests}
 
-Unit tests are useful when you want to test not the ClickHouse as a whole, but a single isolated library or class. You can enable or disable build of tests with `ENABLE_TESTS` CMake option. Unit tests (and other test programs) are located in `tests` subdirectories across the code. To run unit tests, type `ninja test`. Some tests use `gtest`, but some are just programs that return non-zero exit code on test failure.
+تست واحد مفید هستند که شما می خواهید برای تست نیست خانه کلیک به عنوان یک کل, اما یک کتابخانه جدا شده و یا کلاس. شما می توانید ساخت تست ها را فعال یا غیر فعال کنید `ENABLE_TESTS` گزینه کیک. تست واحد (و دیگر برنامه های تست) در واقع `tests` زیرشاخه در سراسر کد. برای اجرای تست واحد, نوع `ninja test`. برخی از تست ها استفاده می کنند `gtest`, اما برخی فقط برنامه هایی که بازگشت کد خروج غیر صفر در شکست تست.
 
-It’s not necessarily to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
+این لزوما به واحد آزمون اگر این کد در حال حاضر تحت پوشش تست عملکرد (و آزمون عملکردی معمولا بسیار ساده تر برای استفاده).
 
-## Performance Tests {#performance-tests}
+## تست های عملکرد {#performance-tests}
 
-Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `clickhouse performance-test` tool (that is embedded in `clickhouse` binary). See `--help` for invocation.
+تست های عملکرد اجازه می دهد برای اندازه گیری و مقایسه عملکرد برخی از بخش جدا شده از خانه رعیتی در نمایش داده شد مصنوعی. تست ها در واقع `tests/performance`. هر تست توسط نمایندگی `.xml` فایل با شرح مورد تست. تست ها با اجرا `clickhouse performance-test` ابزار (که در تعبیه شده است `clickhouse` دودویی). ببینید `--help` برای نیایش.
 
-Each test run one or miltiple queries (possibly with combinations of parameters) in a loop with some conditions for stop (like “maximum execution speed is not changing in three seconds”) and measure some metrics about query performance (like “maximum execution speed”). Some tests can contain preconditions on preloaded test dataset.
+هر تست یک یا چند ضلعی نمایش داده شد (احتمالا با ترکیبی از پارامترهای) در یک حلقه با برخی از شرایط برای توقف (مانند “maximum execution speed is not changing in three seconds”) و اندازه گیری برخی از معیارهای مورد عملکرد پرس و جو (مانند “maximum execution speed”). برخی از تست ها می توانند پیش شرط ها را در مجموعه داده های تست پیش بارگذاری شده داشته باشند.
 
-If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
+اگر شما می خواهید برای بهبود عملکرد تاتر در برخی از سناریو, و اگر پیشرفت را می توان در نمایش داده شد ساده مشاهده, بسیار توصیه می شود برای نوشتن یک تست عملکرد. همیشه حس می کند به استفاده از `perf top` و یا دیگر ابزار دقیق در طول تست های خود را.
 
-## Test Tools And Scripts {#test-tools-and-scripts}
+## ابزار تست و اسکریپت {#test-tools-and-scripts}
 
-Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `dbms/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
+برخی از برنامه ها در `tests` دایرکتوری آماده نیست اما در حال تست ابزار. برای مثال برای `Lexer` یک ابزار وجود دارد `dbms/Parsers/tests/lexer` این فقط تقلید از استدین را انجام می دهد و نتیجه رنگی را به انحراف می نویسد. شما می توانید از این نوع ابزار به عنوان نمونه کد و برای اکتشاف و تست دستی استفاده کنید.
 
-You can also place pair of files `.sh` and `.reference` along with the tool to run it on some predefined input - then script result can be compared to `.reference` file. These kind of tests are not automated.
+شما همچنین می توانید جفت فایل قرار دهید `.sh` و `.reference` همراه با ابزار برای اجرا در برخی از ورودی از پیش تعریف شده - سپس نتیجه اسکریپت را می توان به مقایسه `.reference` پرونده. این نوع تست ها خودکار نیستند.
 
-## Miscellanous Tests {#miscellanous-tests}
+## تست های متنوعات {#miscellanous-tests}
 
-There are tests for external dictionaries located at `tests/external_dictionaries` and for machine learned models in `tests/external_models`. These tests are not updated and must be transferred to integration tests.
+تست برای لغت نامه های خارجی واقع در وجود دارد `tests/external_dictionaries` و برای مدل های ماشین یاد گرفته شده در `tests/external_models`. این تست ها به روز نمی شوند و باید به تست های ادغام منتقل شوند.
 
-There is separate test for quorum inserts. This test run ClickHouse cluster on separate servers and emulate various failure cases: network split, packet drop (between ClickHouse nodes, between ClickHouse and ZooKeeper, between ClickHouse server and client, etc.), `kill -9`, `kill -STOP` and `kill -CONT` , like [Jepsen](https://aphyr.com/tags/Jepsen). Then the test checks that all acknowledged inserts was written and all rejected inserts was not.
+تست جداگانه برای درج حد نصاب وجود دارد. این اجرای آزمون clickhouse خوشه در سرورهای جداگانه و شبیه سازی شکست های مختلف در موارد: شبکه تقسیم بسته رها کردن (بین clickhouse گره بین clickhouse و باغ وحش بین clickhouse سرور و کلاینت ، ), `kill -9`, `kill -STOP` و `kill -CONT` مثل [جپسن](https://aphyr.com/tags/Jepsen). سپس چک تست که همه درج اذعان نوشته شده بود و همه درج رد شد.
 
-Quorum test was written by separate team before ClickHouse was open-sourced. This team no longer work with ClickHouse. Test was accidentially written in Java. For these reasons, quorum test must be rewritten and moved to integration tests.
+تست حد نصاب توسط تیم جداگانه نوشته شده بود قبل از کلیک باز منابع بود. این تیم دیگر با کلیکهاوس کار. تست تصادفی در جاوا نوشته شده بود. به این دلایل, تست حد نصاب باید بازنویسی شود و به تست ادغام نقل مکان کرد.
 
-## Manual Testing {#manual-testing}
+## تست دستی {#manual-testing}
 
-When you develop a new feature, it is reasonable to also test it manually. You can do it with the following steps:
+هنگامی که شما توسعه یک ویژگی جدید منطقی است و همچنین تست آن را به صورت دستی. شما می توانید آن را با مراحل زیر:
 
-Build ClickHouse. Run ClickHouse from the terminal: change directory to `programs/clickhouse-server` and run it with `./clickhouse-server`. It will use configuration (`config.xml`, `users.xml` and files within `config.d` and `users.d` directories) from the current directory by default. To connect to ClickHouse server, run `programs/clickhouse-client/clickhouse-client`.
+ساخت خانه کلیک. اجرای کلیک از ترمینال: تغییر دایرکتوری به `programs/clickhouse-server` و با `./clickhouse-server`. این پیکربندی استفاده کنید (`config.xml`, `users.xml` و فایل ها در `config.d` و `users.d` دایرکتوری ها) از دایرکتوری جاری به طور پیش فرض. برای اتصال به سرور کلیک اجرا کنید `programs/clickhouse-client/clickhouse-client`.
 
-Note that all clickhouse tools (server, client, etc) are just symlinks to a single binary named `clickhouse`. You can find this binary at `programs/clickhouse`. All tools can also be invoked as `clickhouse tool` instead of `clickhouse-tool`.
+توجه داشته باشید که تمام clickhouse ابزار (سرور مشتری و غیره) فقط symlinks به یک باینری به نام `clickhouse`. شما می توانید این دودویی در `programs/clickhouse`. همه ابزار همچنین می توانید به عنوان استناد شود `clickhouse tool` به جای `clickhouse-tool`.
 
-Alternatively you can install ClickHouse package: either stable release from Yandex repository or you can build package for yourself with `./release` in ClickHouse sources root. Then start the server with `sudo service clickhouse-server start` (or stop to stop the server). Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
+متناوبا شما می توانید بسته بندی کلیک را نصب کنید: در هر صورت انتشار پایدار از مخزن یاندکس و یا شما می توانید بسته را برای خودتان با ساخت `./release` در منابع کلیک خانه ریشه. سپس سرور را با شروع `sudo service clickhouse-server start` (یا توقف برای متوقف کردن سرور). به دنبال سیاهههای مربوط در `/etc/clickhouse-server/clickhouse-server.log`.
 
-When ClickHouse is already installed on your system, you can build a new `clickhouse` binary and replace the existing binary:
+هنگامی که تاتر در حال حاضر بر روی سیستم شما نصب شده, شما می توانید جدید ساخت `clickhouse` دودویی و جایگزین باینری موجود:
 
 ``` bash
 $ sudo service clickhouse-server stop
@@ -89,161 +93,161 @@ $ sudo cp ./clickhouse /usr/bin/
 $ sudo service clickhouse-server start
 ```
 
-Also you can stop system clickhouse-server and run your own with the same configuration but with logging to terminal:
+همچنین شما می توانید سیستم کلیک سرور را متوقف و اجرا خود را با همان پیکربندی اما با ورود به ترمینال:
 
 ``` bash
 $ sudo service clickhouse-server stop
 $ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-Example with gdb:
+به عنوان مثال با دیابت بارداری:
 
 ``` bash
 $ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-If the system clickhouse-server is already running and you don’t want to stop it, you can change port numbers in your `config.xml` (or override them in a file in `config.d` directory), provide appropriate data path, and run it.
+اگر سیستم کلیک-سرور در حال اجرا است و شما نمی خواهید برای متوقف کردن, شما می توانید شماره پورت در خود تغییر دهید `config.xml` (یا نادیده گرفتن در یک فایل در `config.d` فهرست راهنما) مسیر داده مناسب را فراهم کرده و اجرا کنید.
 
-`clickhouse` binary has almost no dependencies and works across wide range of Linux distributions. To quick and dirty test your changes on a server, you can simply `scp` your fresh built `clickhouse` binary to your server and then run it as in examples above.
+`clickhouse` دودویی تقریبا هیچ وابستگی و کار در سراسر طیف گسترده ای از توزیع های لینوکس. برای تست سریع و کثیف تغییرات خود را بر روی یک سرور, شما به سادگی می توانید `scp` تازه ساخته شده است `clickhouse` باینری به سرور شما و سپس به عنوان مثال بالا اجرا شود.
 
-## Testing Environment {#testing-environment}
+## محیط تست {#testing-environment}
 
-Before publishing release as stable we deploy it on testing environment. Testing environment is a cluster that process 1/39 part of [Yandex.Metrica](https://metrica.yandex.com/) data. We share our testing environment with Yandex.Metrica team. ClickHouse is upgraded without downtime on top of existing data. We look at first that data is processed successfully without lagging from realtime, the replication continue to work and there is no issues visible to Yandex.Metrica team. First check can be done in the following way:
+قبل از انتشار انتشار به عنوان پایدار ما را در محیط تست استقرار. محیط تست یک خوشه است که بخشی از 1/39 را پردازش می کند [یاندکسمتریکا](https://metrica.yandex.com/) داده ها. ما محیط تست خود را با یاندکس به اشتراک می گذاریم.تیم متریکا تاتر بدون خرابی در بالای داده های موجود به روز رسانی. ما در ابتدا نگاه کنید که داده ها با موفقیت و بدون عقب مانده از زمان واقعی پردازش, تکرار ادامه کار و هیچ مشکلی برای یاندکس قابل مشاهده وجود دارد.تیم متریکا اولین چک را می توان در راه زیر انجام داد:
 
 ``` sql
 SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count() FROM remote('example01-01-{1..3}t', merge, hits) WHERE EventDate >= today() - 2 GROUP BY h ORDER BY h;
 ```
 
-In some cases we also deploy to testing environment of our friend teams in Yandex: Market, Cloud, etc. Also we have some hardware servers that are used for development purposes.
+در برخی موارد ما نیز به تست محیط زیست از تیم های دوست ما در یاندکس استقرار: بازار, ابر, و غیره. همچنین در حال حاضر برخی از سرورهای سخت افزاری است که برای اهداف توسعه استفاده می شود.
 
-## Load Testing {#load-testing}
+## تست بار {#load-testing}
 
-After deploying to testing environment we run load testing with queries from production cluster. This is done manually.
+پس از استقرار به محیط تست ما تست بار با نمایش داده شد از خوشه تولید را اجرا کنید. این کار به صورت دستی انجام می شود.
 
-Make sure you have enabled `query_log` on your production cluster.
+اطمینان حاصل کنید که شما را فعال کرده اند `query_log` در خوشه تولید خود را.
 
-Collect query log for a day or more:
+جمع کردن گزارش پرس و جو برای یک روز یا بیشتر:
 
 ``` bash
 $ clickhouse-client --query="SELECT DISTINCT query FROM system.query_log WHERE event_date = today() AND query LIKE '%ym:%' AND query NOT LIKE '%system.query_log%' AND type = 2 AND is_initial_query" > queries.tsv
 ```
 
-This is a way complicated example. `type = 2` will filter queries that are executed successfully. `query LIKE '%ym:%'` is to select relevant queries from Yandex.Metrica. `is_initial_query` is to select only queries that are initiated by client, not by ClickHouse itself (as parts of distributed query processing).
+این یک مثال راه پیچیده است. `type = 2` نمایش داده شد که با موفقیت اجرا فیلتر کنید. `query LIKE '%ym:%'` است برای انتخاب نمایش داده شد مربوطه از یاندکس.متریکا `is_initial_query` است را انتخاب کنید تنها نمایش داده شد که توسط مشتری شروع, نه با کلیک خود (به عنوان بخش هایی از پردازش پرس و جو توزیع).
 
-`scp` this log to your testing cluster and run it as following:
+`scp` این ورود به خوشه تست خود را و اجرا به شرح زیر است:
 
 ``` bash
 $ clickhouse benchmark --concurrency 16 < queries.tsv
 ```
 
-(probably you also want to specify a `--user`)
+(احتمالا شما همچنین می خواهید برای مشخص کردن یک `--user`)
 
-Then leave it for a night or weekend and go take a rest.
+پس یه شب یا هفته ولش کن و برو استراحت کن
 
-You should check that `clickhouse-server` doesn’t crash, memory footprint is bounded and performance not degrading over time.
+شما باید بررسی کنید که `clickhouse-server` سقوط نمی کند, رد پای حافظه محدود است و عملکرد در طول زمان تنزل نمی.
 
-Precise query execution timings are not recorded and not compared due to high variability of queries and environment.
+زمان اجرای پرس و جو دقیق ثبت نشده است و با توجه به تنوع بالا از نمایش داده شد و محیط زیست در مقایسه نیست.
 
-## Build Tests {#build-tests}
+## ساخت تست {#build-tests}
 
-Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. Tests are located at `ci` directory. They run build from source inside Docker, Vagrant, and sometimes with `qemu-user-static` inside Docker. These tests are under development and test runs are not automated.
+تست های ساخت اجازه می دهد تا بررسی کنید که ساخت در تنظیمات مختلف جایگزین و در برخی از سیستم های خارجی شکسته نمی شود. تست ها در واقع `ci` فهرست راهنما. ساخت از منبع داخل کارگر بارانداز ولگرد و گاهی با اجرا می شوند `qemu-user-static` در داخل کارگر بارانداز. این تست ها در حال توسعه هستند و تست اجرا می شود خودکار نیست.
 
-Motivation:
+انگیزه:
 
-Normally we release and run all tests on a single variant of ClickHouse build. But there are alternative build variants that are not thoroughly tested. Examples:
+به طور معمول ما انتشار و اجرای تمام تست بر روی یک نوع واحد از ساخت تاتر. اما انواع ساخت جایگزین است که به طور کامل تست شده وجود دارد. مثالها:
 
--   build on FreeBSD;
--   build on Debian with libraries from system packages;
--   build with shared linking of libraries;
--   build on AArch64 platform;
--   build on PowerPc platform.
+-   ساخت در بورس;
+-   ساخت در دبیان با کتابخانه ها از بسته های سیستم;
+-   ساخت با لینک مشترک از کتابخانه ها;
+-   ساخت پلت فرم AArch64;
+-   ساخت بر روی پلت فرم پاور.
 
-For example, build with system packages is bad practice, because we cannot guarantee what exact version of packages a system will have. But this is really needed by Debian maintainers. For this reason we at least have to support this variant of build. Another example: shared linking is a common source of trouble, but it is needed for some enthusiasts.
+مثلا, ساخت با بسته های سیستم عمل بد است, چرا که ما نمی تواند تضمین کند که چه نسخه دقیق از بسته های یک سیستم باید. اما این واقعا توسط نگهداری دبیان مورد نیاز است. به همین دلیل ما حداقل باید برای حمایت از این نوع ساخت. مثال دیگر: ارتباط مشترک یک منبع مشترک از مشکل است, اما برای برخی از علاقه مندان مورد نیاز است.
 
-Though we cannot run all tests on all variant of builds, we want to check at least that various build variants are not broken. For this purpose we use build tests.
+هر چند ما می توانیم تمام تست در همه نوع از ایجاد اجرا کنید, ما می خواهیم برای بررسی حداقل که انواع ساخت های مختلف شکسته نمی. برای این منظور ما از تست های ساخت استفاده می کنیم.
 
-## Testing For Protocol Compatibility {#testing-for-protocol-compatibility}
+## تست برای سازگاری پروتکل {#testing-for-protocol-compatibility}
 
-When we extend ClickHouse network protocol, we test manually that old clickhouse-client works with new clickhouse-server and new clickhouse-client works with old clickhouse-server (simply by running binaries from corresponding packages).
+هنگامی که ما گسترش clickhouse پروتکل شبکه ما تست دستی که clickhouse-مشتری با این نسخهها کار جدید clickhouse-سرور و جدید clickhouse-مشتری با این نسخهها کار با clickhouse-سرور (به سادگی با در حال اجرا فایل های باینری از مربوطه بسته).
 
-## Help From The Compiler {#help-from-the-compiler}
+## کمک از کامپایلر {#help-from-the-compiler}
 
-Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings. Although these options are not enabled for third-party libraries.
+کد اصلی کلیک (که در واقع `dbms` فهرست راهنما) با ساخته شده است `-Wall -Wextra -Werror` و با برخی از هشدارهای اضافی را فعال کنید. اگر چه این گزینه ها برای کتابخانه های شخص ثالث فعال نیست.
 
-Clang has even more useful warnings - you can look for them with `-Weverything` and pick something to default build.
+کلانگ هشدارهای بیشتری دارد - شما می توانید با `-Weverything` و انتخاب چیزی به طور پیش فرض ساخت.
 
-For production builds, gcc is used (it still generates slightly more efficient code than clang). For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang, `libc++` is used instead of `libstdc++` and when building with debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
+برای تولید ساخت, شورای همکاری خلیج فارس استفاده می شود (هنوز تولید کد کمی موثر تر از صدای جرنگ جرنگ). برای توسعه, صدای جرنگ جرنگ است که معمولا راحت تر به استفاده از. شما می توانید بر روی دستگاه خود را با حالت اشکال زدایی ساخت (برای صرفه جویی در باتری لپ تاپ خود را), اما لطفا توجه داشته باشید که کامپایلر قادر به تولید هشدارهای بیشتر با است `-O3` با توجه به جریان کنترل بهتر و تجزیه و تحلیل بین روش. هنگام ساخت با صدای جرنگ جرنگ, `libc++` به جای استفاده `libstdc++` و هنگامی که ساختمان با حالت اشکال زدایی, نسخه اشکال زدایی از `libc++` استفاده شده است که اجازه می دهد تا برای گرفتن خطاهای بیشتر در زمان اجرا.
 
 ## Sanitizers {#sanitizers}
 
-**Address sanitizer**.
-We run functional and integration tests under ASan on per-commit basis.
+**نشانی ضد عفونی کننده**.
+ما تست های کاربردی و یکپارچه سازی را تحت عنوان بر اساس هر متعهد اجرا می کنیم.
 
 **Valgrind (Memcheck)**.
-We run functional tests under Valgrind overnight. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
+ما یک شبه تست های کاربردی را تحت ارزیابی قرار می دهیم. چند ساعت طول می کشد. در حال حاضر یک مثبت کاذب شناخته شده در وجود دارد `re2` کتابخانه را ببینید [این مقاله](https://research.swtch.com/sparse).
 
-**Undefined behaviour sanitizer.**
-We run functional and integration tests under ASan on per-commit basis.
+**تعریف نشده رفتار ضد عفونی کننده.**
+ما تست های کاربردی و یکپارچه سازی را تحت عنوان بر اساس هر متعهد اجرا می کنیم.
 
-**Thread sanitizer**.
-We run functional tests under TSan on per-commit basis. We still don’t run integration tests under TSan on per-commit basis.
+**ضدعفونی کننده موضوع**.
+ما تست های کاربردی تحت تسان بر اساس هر مرتکب اجرا. ما هنوز تست های ادغام تحت تسان بر اساس هر متعهد اجرا کنید.
 
-**Memory sanitizer**.
-Currently we still don’t use MSan.
+**ضد عفونی کننده حافظه**.
+در حال حاضر ما هنوز از خانم استفاده نمی کنیم.
 
-**Debug allocator.**
-Debug version of `jemalloc` is used for debug build.
+**اشکال زدایی تخصیص.**
+نسخه اشکال زدایی از `jemalloc` برای ساخت اشکال زدایی استفاده می شود.
 
 ## Fuzzing {#fuzzing}
 
-We use simple fuzz test to generate random SQL queries and to check that the server doesn’t die. Fuzz testing is performed with Address sanitizer. You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
+ما با استفاده از تست ریش ریش شدن ساده برای تولید پرس و جو تصادفی گذاشتن و بررسی کنید که سرور نمی میرند. تست ریش شدن با نشانی ضد عفونی کننده انجام می شود. شما می توانید این را در `00746_sql_fuzzy.pl`. این تست باید به طور مداوم اجرا شود (یک شبه و طولانی تر).
 
-As of December 2018, we still don’t use isolated fuzz testing of library code.
+همانطور که از دسامبر 2018, ما هنوز تست ریش شدن جدا شده از کد کتابخانه استفاده نمی.
 
-## Security Audit {#security-audit}
+## ممیزی امنیتی {#security-audit}
 
-People from Yandex Cloud department do some basic overview of ClickHouse capabilities from the security standpoint.
+مردم از یاندکس ابر بخش انجام برخی از بررسی اجمالی اساسی از قابلیت های تاتر از نقطه نظر امنیت.
 
-## Static Analyzers {#static-analyzers}
+## تجزیه و تحلیل استاتیک {#static-analyzers}
 
-We run `PVS-Studio` on per-commit basis. We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`. You will find instructions for usage in `tests/instructions/` directory. Also you can read [the article in russian](https://habr.com/company/yandex/blog/342018/).
+فرار میکنیم `PVS-Studio` بر اساس هر مرتکب. ما ارزیابی کرده ایم `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`. شما دستورالعمل برای استفاده در پیدا `tests/instructions/` فهرست راهنما. همچنین شما می توانید به عنوان خوانده شده [مقاله در روسیه](https://habr.com/company/yandex/blog/342018/).
 
-If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of the box.
+در صورت استفاده `CLion` به عنوان محیط برنامه نویسی, شما می توانید اهرم برخی از `clang-tidy` چک از جعبه.
 
-## Hardening {#hardening}
+## سخت شدن {#hardening}
 
-`FORTIFY_SOURCE` is used by default. It is almost useless, but still makes sense in rare cases and we don’t disable it.
+`FORTIFY_SOURCE` به طور پیش فرض استفاده می شود. این تقریبا بی فایده است, اما هنوز هم حس می کند در موارد نادر و ما این کار را غیر فعال کنید.
 
-## Code Style {#code-style}
+## سبک کد {#code-style}
 
-Code style rules are described [here](https://clickhouse.tech/docs/en/development/style/).
+قوانین سبک کد شرح داده شده است [اینجا](https://clickhouse.tech/docs/en/development/style/).
 
-To check for some common style violations, you can use `utils/check-style` script.
+برای بررسی برخی از نقض سبک مشترک, شما می توانید استفاده کنید `utils/check-style` خط نوشتن.
 
-To force proper style of your code, you can use `clang-format`. File `.clang-format` is located at the sources root. It mostly corresponding with our actual code style. But it’s not recommended to apply `clang-format` to existing files because it makes formatting worse. You can use `clang-format-diff` tool that you can find in clang source repository.
+به زور سبک مناسب از کد خود را, شما می توانید استفاده کنید `clang-format`. پرونده `.clang-format` در منابع ریشه واقع شده است. این بیشتر با سبک کد واقعی ما مطابقت دارد. اما توصیه نمی شود که اعمال شود `clang-format` به فایل های موجود چون باعث می شود قالب بندی بدتر است. شما می توانید استفاده کنید `clang-format-diff` ابزاری است که شما می توانید در مخزن منبع صدای جرنگ جرنگ پیدا.
 
-Alternatively you can try `uncrustify` tool to reformat your code. Configuration is in `uncrustify.cfg` in the sources root. It is less tested than `clang-format`.
+متناوبا شما می توانید سعی کنید `uncrustify` ابزار مجدد کد خود را. پیکربندی در `uncrustify.cfg` در منابع ریشه. این کمتر از تست شده است `clang-format`.
 
-`CLion` has its own code formatter that has to be tuned for our code style.
+`CLion` فرمت کد خود را دارد که باید برای سبک کد ما تنظیم شود.
 
-## Metrica B2B Tests {#metrica-b2b-tests}
+## تست های متریکا ب2 {#metrica-b2b-tests}
 
-Each ClickHouse release is tested with Yandex Metrica and AppMetrica engines. Testing and stable versions of ClickHouse are deployed on VMs and run with a small copy of Metrica engine that is processing fixed sample of input data. Then results of two instances of Metrica engine are compared together.
+هر clickhouse نسخه تست شده با yandex metrica و appmetrica موتورهای. تست و نسخه های پایدار از تاتر در ماشین های مجازی مستقر و اجرا با یک کپی کوچک از موتور متریکا است که پردازش نمونه ثابت از داده های ورودی. سپس نتایج حاصل از دو نمونه از موتور متریکا با هم مقایسه می شوند.
 
-These tests are automated by separate team. Due to high number of moving parts, tests are fail most of the time by completely unrelated reasons, that are very difficult to figure out. Most likely these tests have negative value for us. Nevertheless these tests was proved to be useful in about one or two times out of hundreds.
+این تست ها توسط تیم جداگانه خودکار می شوند. با توجه به تعداد زیادی از قطعات متحرک, تست شکست بیشتر از زمان به دلایل کاملا نامربوط, که بسیار دشوار است برای کشف کردن. به احتمال زیاد این تست ها ارزش منفی برای ما دارند. با این وجود این تست در حدود یک یا دو بار از صدها مفید ثابت شد.
 
-## Test Coverage {#test-coverage}
+## پوشش تست {#test-coverage}
 
-As of July 2018 we don’t track test coverage.
+تا جولای 2018 ما پوشش تست را پیگیری نمی کنیم.
 
-## Test Automation {#test-automation}
+## اتوماسیون تست {#test-automation}
 
-We run tests with Yandex internal CI and job automation system named “Sandbox”.
+ما تست ها را با سیستم اتوماسیون داخلی یاندکس اجرا می کنیم “Sandbox”.
 
-Build jobs and tests are run in Sandbox on per commit basis. Resulting packages and test results are published in GitHub and can be downloaded by direct links. Artifacts are stored eternally. When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
+ساخت شغل و تست ها در گودال ماسهبازی در هر مرتکب اساس اجرا شود. نتیجه بسته ها و نتایج تست در گیتهاب منتشر شده و می تواند توسط لینک مستقیم دانلود. مصنوعات ابد ذخیره می شود. هنگامی که شما یک درخواست کشش ارسال در گیتهاب, ما برچسب به عنوان “can be tested” و ما CI سیستم خواهد ساخت ClickHouse بسته (نسخه debug با آدرس ضد عفونی کننده و غیره) را برای شما.
 
-We don’t use Travis CI due to the limit on time and computational power.
-We don’t use Jenkins. It was used before and now we are happy we are not using Jenkins.
+ما از تراویس سی به دلیل محدودیت در زمان و قدرت محاسباتی استفاده نمی کنیم.
+ما از جنکینز استفاده نمیکنیم. این قبل از استفاده شد و در حال حاضر ما خوشحال ما با استفاده از جنکینز نیست.
 
-[Original article](https://clickhouse.tech/docs/en/development/tests/) <!--hide-->
-velopment/tests/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/development/tests/) <!--hide-->
+velopment/آزمون/) <!--hide-->

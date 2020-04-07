@@ -1,25 +1,28 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 52
+toc_title: "\u062C\u062F\u0627\u0648\u0644 \u0633\u06CC\u0633\u062A\u0645"
 ---
 
-# System tables {#system-tables}
+# جداول سیستم {#system-tables}
 
-System tables are used for implementing part of the system’s functionality, and for providing access to information about how the system is working.
-You can’t delete a system table (but you can perform DETACH).
-System tables don’t have files with data on the disk or files with metadata. The server creates all the system tables when it starts.
-System tables are read-only.
-They are located in the ‘system’ database.
+جداول سیستم برای اجرای بخشی از قابلیت های سیستم استفاده می شود و برای دسترسی به اطلاعات در مورد چگونگی کار سیستم.
+شما می توانید یک جدول سیستم را حذف کنید (اما شما می توانید جدا انجام).
+جداول سیستم فایل های با داده ها بر روی دیسک و یا فایل های با ابرداده ندارد. سرور ایجاد تمام جداول سیستم زمانی که شروع می شود.
+جداول سیستم فقط خواندنی.
+این در واقع ‘system’ پایگاه داده است.
 
-## system.asynchronous\_metrics {#system_tables-asynchronous_metrics}
+## سیستم.\_نامهنویسی ناهمزمان {#system_tables-asynchronous_metrics}
 
-Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
+شامل معیارهای که به صورت دوره ای در پس زمینه محاسبه می شود. مثلا, مقدار رم در حال استفاده.
 
-Columns:
+ستونها:
 
--   `metric` ([String](../data_types/string.md)) — Metric name.
--   `value` ([Float64](../data_types/float.md)) — Metric value.
+-   `metric` ([رشته](../sql_reference/data_types/string.md)) — Metric name.
+-   `value` ([جسم شناور64](../sql_reference/data_types/float.md)) — Metric value.
 
-**Example**
+**مثال**
 
 ``` sql
 SELECT * FROM system.asynchronous_metrics LIMIT 10
@@ -40,18 +43,18 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 └─────────────────────────────────────────┴────────────┘
 ```
 
-**See Also**
+**همچنین نگاه کنید به**
 
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
--   [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
--   [system.events](#system_tables-events) — Contains a number of events that have occurred.
--   [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [نظارت](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [سیستم.متریک](#system_tables-metrics) — Contains instantly calculated metrics.
+-   [سیستم.رویدادها](#system_tables-events) — Contains a number of events that have occurred.
+-   [سیستم.\_اشکالزدایی](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 
-## system.clusters {#system-clusters}
+## سیستم.خوشه {#system-clusters}
 
-Contains information about clusters available in the config file and the servers in them.
+حاوی اطلاعاتی در مورد خوشه های موجود در فایل پیکربندی و سرورهای موجود در ان.
 
-Columns:
+ستونها:
 
 -   `cluster` (String) — The cluster name.
 -   `shard_num` (UInt32) — The shard number in the cluster, starting from 1.
@@ -61,30 +64,30 @@ Columns:
 -   `host_address` (String) — The host IP address obtained from DNS.
 -   `port` (UInt16) — The port to use for connecting to the server.
 -   `user` (String) — The name of the user for connecting to the server.
--   `errors_count` (UInt32) - number of times this host failed to reach replica.
--   `estimated_recovery_time` (UInt32) - seconds left until replica error count is zeroed and it is considered to be back to normal.
+-   `errors_count` (اوینت32) - تعداد دفعاتی که این میزبان موفق به رسیدن به ماکت.
+-   `estimated_recovery_time` (اوینت32) - ثانیه به سمت چپ تا زمانی که تعداد خطا ماکت صفر است و در نظر گرفته می شود به حالت عادی.
 
-Please note that `errors_count` is updated once per query to the cluster, but `estimated_recovery_time` is recalculated on-demand. So there could be a case of non-zero `errors_count` and zero `estimated_recovery_time`, that next query will zero `errors_count` and try to use replica as if it has no errors.
+لطفا توجه داشته باشید که `errors_count` یک بار در هر پرس و جو به خوشه به روز, ولی `estimated_recovery_time` بر روی تقاضا محاسبه شده است. بنابراین می تواند یک مورد غیر صفر باشد `errors_count` و صفر `estimated_recovery_time`, که پرس و جو بعدی صفر خواهد شد `errors_count` و سعی کنید به استفاده از ماکت به عنوان اگر هیچ خطا.
 
-**See also**
+**همچنین نگاه کنید به**
 
--   [Table engine Distributed](table_engines/distributed.md)
--   [distributed\_replica\_error\_cap setting](settings/settings.md#settings-distributed_replica_error_cap)
--   [distributed\_replica\_error\_half\_life setting](settings/settings.md#settings-distributed_replica_error_half_life)
+-   [موتور جدول توزیع شده است](../engines/table_engines/special/distributed.md)
+-   [تنظیمات \_فرهنگ توزیع میشود](settings/settings.md#settings-distributed_replica_error_cap)
+-   [پخش \_راپیشا\_را\_را\_را\_حالف\_لایف تنظیم](settings/settings.md#settings-distributed_replica_error_half_life)
 
-## system.columns {#system-columns}
+## سیستم.ستونها {#system-columns}
 
-Contains information about columns in all the tables.
+حاوی اطلاعات در مورد ستون در تمام جداول.
 
-You can use this table to get information similar to the [DESCRIBE TABLE](../query_language/misc.md#misc-describe-table) query, but for multiple tables at once.
+شما می توانید با استفاده از این جدول برای دریافت اطلاعات مشابه به [DESCRIBE TABLE](../sql_reference/statements/misc.md#misc-describe-table) پرس و جو, اما برای جداول متعدد در یک بار.
 
-The `system.columns` table contains the following columns (the column type is shown in brackets):
+این `system.columns` جدول شامل ستون های زیر (نوع ستون در براکت نشان داده شده است):
 
 -   `database` (String) — Database name.
 -   `table` (String) — Table name.
 -   `name` (String) — Column name.
 -   `type` (String) — Column type.
--   `default_kind` (String) — Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`) for the default value, or an empty string if it is not defined.
+-   `default_kind` (String) — Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`) برای مقدار پیش فرض, و یا یک رشته خالی اگر تعریف نشده است.
 -   `default_expression` (String) — Expression for the default value, or an empty string if it is not defined.
 -   `data_compressed_bytes` (UInt64) — The size of compressed data, in bytes.
 -   `data_uncompressed_bytes` (UInt64) — The size of decompressed data, in bytes.
@@ -95,15 +98,15 @@ The `system.columns` table contains the following columns (the column type is sh
 -   `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
 -   `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
-## system.contributors {#system-contributors}
+## سیستم.یاریدهندکان {#system-contributors}
 
-Contains information about contributors. All constributors in random order. The order is random at query execution time.
+حاوی اطلاعات در مورد همکاران. همه مربیان به صورت تصادفی. سفارش تصادفی در زمان اجرای پرس و جو است.
 
-Columns:
+ستونها:
 
 -   `name` (String) — Contributor (author) name from git log.
 
-**Example**
+**مثال**
 
 ``` sql
 SELECT * FROM system.contributors LIMIT 10
@@ -124,7 +127,7 @@ SELECT * FROM system.contributors LIMIT 10
 └──────────────────┘
 ```
 
-To find out yourself in the table, use a query:
+برای پیدا کردن خود را در جدول, استفاده از یک پرس و جو:
 
 ``` sql
 SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
@@ -136,21 +139,21 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 └──────────────────┘
 ```
 
-## system.databases {#system-databases}
+## سیستم.پایگاههای داده {#system-databases}
 
-This table contains a single String column called ‘name’ – the name of a database.
-Each database that the server knows about has a corresponding entry in the table.
-This system table is used for implementing the `SHOW DATABASES` query.
+این جدول شامل یک ستون رشته ای به نام ‘name’ – the name of a database.
+هر پایگاه داده که سرور می داند در مورد یک ورودی مربوطه را در جدول.
+این جدول سیستم برای اجرای استفاده می شود `SHOW DATABASES` پرس و جو.
 
-## system.detached\_parts {#system_tables-detached_parts}
+## سیستم.قطعات مجزا {#system_tables-detached_parts}
 
-Contains information about detached parts of [MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies why the part was detached. For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION\|PART](../query_language/query_language/alter/#alter_attach-partition) command. For the description of other columns, see [system.parts](#system_tables-parts). If part name is invalid, values of some columns may be `NULL`. Such parts can be deleted with [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
+حاوی اطلاعات در مورد قطعات جدا شده از [ادغام](../engines/table_engines/mergetree_family/mergetree.md) میز این `reason` ستون مشخص می کند که چرا بخش جدا شد. برای قطعات کاربر جدا, دلیل خالی است. چنین قطعات را می توان با [ALTER TABLE ATTACH PARTITION\|PART](../query_language/query_language/alter/#alter_attach-partition) فرمان. برای توضیحات ستون های دیگر را ببینید [سیستم.قطعات](#system_tables-parts). اگر نام قسمت نامعتبر است, ارزش برخی از ستون ممکن است `NULL`. این قطعات را می توان با حذف [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
 
-## system.dictionaries {#system-dictionaries}
+## سیستم.واژهنامهها {#system-dictionaries}
 
-Contains information about external dictionaries.
+شامل اطلاعات در مورد لغت نامه های خارجی.
 
-Columns:
+ستونها:
 
 -   `name` (String) — Dictionary name.
 -   `type` (String) — Dictionary type: Flat, Hashed, Cache.
@@ -163,22 +166,22 @@ Columns:
 -   `element_count` (UInt64) — The number of items stored in the dictionary.
 -   `load_factor` (Float64) — The percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
 -   `creation_time` (DateTime) — The time when the dictionary was created or last successfully reloaded.
--   `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created.
+-   `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
 -   `source` (String) — Text describing the data source for the dictionary.
 
-Note that the amount of memory used by the dictionary is not proportional to the number of items stored in it. So for flat and cached dictionaries, all the memory cells are pre-assigned, regardless of how full the dictionary actually is.
+توجه داشته باشید که مقدار حافظه مورد استفاده توسط فرهنگ لغت متناسب با تعداد اقلام ذخیره شده در این نیست. بنابراین برای لغت نامه تخت و کش, تمام سلول های حافظه از پیش تعیین شده, صرف نظر از چگونه کامل فرهنگ لغت در واقع.
 
-## system.events {#system_tables-events}
+## سیستم.رویدادها {#system_tables-events}
 
-Contains information about the number of events that have occurred in the system. For example, in the table, you can find how many `SELECT` queries were processed since the ClickHouse server started.
+حاوی اطلاعات در مورد تعدادی از حوادث که در سیستم رخ داده است. مثلا, در جدول, شما می توانید پیدا کنید که چگونه بسیاری از `SELECT` نمایش داده شد از سرور کلیک شروع پردازش شد.
 
-Columns:
+ستونها:
 
--   `event` ([String](../data_types/string.md)) — Event name.
--   `value` ([UInt64](../data_types/int_uint.md)) — Number of events occurred.
--   `description` ([String](../data_types/string.md)) — Event description.
+-   `event` ([رشته](../sql_reference/data_types/string.md)) — Event name.
+-   `value` ([UInt64](../sql_reference/data_types/int_uint.md)) — Number of events occurred.
+-   `description` ([رشته](../sql_reference/data_types/string.md)) — Event description.
 
-**Example**
+**مثال**
 
 ``` sql
 SELECT * FROM system.events LIMIT 5
@@ -194,43 +197,43 @@ SELECT * FROM system.events LIMIT 5
 └───────────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**See Also**
+**همچنین نگاه کنید به**
 
--   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
--   [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
--   [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [سیستم.\_نامهنویسی ناهمزمان](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [سیستم.متریک](#system_tables-metrics) — Contains instantly calculated metrics.
+-   [سیستم.\_اشکالزدایی](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [نظارت](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## system.functions {#system-functions}
+## سیستم.توابع {#system-functions}
 
-Contains information about normal and aggregate functions.
+حاوی اطلاعات در مورد توابع عادی و جمع.
 
-Columns:
+ستونها:
 
 -   `name`(`String`) – The name of the function.
 -   `is_aggregate`(`UInt8`) — Whether the function is aggregate.
 
-## system.graphite\_retentions {#system-graphite-retentions}
+## سیستم.بازداشت گرافیت {#system-graphite-retentions}
 
-Contains information about parameters [graphite\_rollup](server_settings/settings.md#server_settings-graphite_rollup) which are used in tables with [\*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
+حاوی اطلاعات در مورد پارامترها [لغزش \_ نمودار](server_configuration_parameters/settings.md#server_configuration_parameters-graphite_rollup) که در جداول با استفاده [اطلاعات دقیق](../engines/table_engines/mergetree_family/graphitemergetree.md) موتورها.
 
-Columns:
+ستونها:
 
--   `config_name` (String) - `graphite_rollup` parameter name.
--   `regexp` (String) - A pattern for the metric name.
--   `function` (String) - The name of the aggregating function.
--   `age` (UInt64) - The minimum age of the data in seconds.
--   `precision` (UInt64) - How precisely to define the age of the data in seconds.
--   `priority` (UInt16) - Pattern priority.
--   `is_default` (UInt8) - Whether the pattern is the default.
--   `Tables.database` (Array(String)) - Array of names of database tables that use the `config_name` parameter.
--   `Tables.table` (Array(String)) - Array of table names that use the `config_name` parameter.
+-   `config_name` ) رشته) - `graphite_rollup` نام پارامتر.
+-   `regexp` (رشته) - یک الگوی برای نام متریک.
+-   `function` (رشته) - نام تابع جمع.
+-   `age` (UInt64) - حداقل سن دیتا در ثانیه.
+-   `precision` (اوینت64) - چگونه دقیقا به تعریف سن داده ها در ثانیه.
+-   `priority` (UInt16) - الگوی اولویت است.
+-   `is_default` (UInt8) - آیا الگوی پیش فرض است.
+-   `Tables.database` (مجموعه (رشته)) - مجموعه ای از نام جداول پایگاه داده که از `config_name` پارامتر.
+-   `Tables.table` (صف (رشته)) - مجموعه ای از نام جدول که با استفاده از `config_name` پارامتر.
 
-## system.merges {#system-merges}
+## سیستم.ادغام {#system-merges}
 
-Contains information about merges and part mutations currently in process for tables in the MergeTree family.
+حاوی اطلاعات در مورد ادغام و جهش بخشی در حال حاضر در روند برای جداول در خانواده ادغام.
 
-Columns:
+ستونها:
 
 -   `database` (String) — The name of the database the table is in.
 -   `table` (String) — Table name.
@@ -238,7 +241,7 @@ Columns:
 -   `progress` (Float64) — The percentage of completed work from 0 to 1.
 -   `num_parts` (UInt64) — The number of pieces to be merged.
 -   `result_part_name` (String) — The name of the part that will be formed as the result of merging.
--   `is_mutation` (UInt8) - 1 if this process is a part mutation.
+-   `is_mutation` (اوینت8) - 1 اگر این فرایند جهش بخشی است.
 -   `total_size_bytes_compressed` (UInt64) — The total size of the compressed data in the merged chunks.
 -   `total_size_marks` (UInt64) — The total number of marks in the merged parts.
 -   `bytes_read_uncompressed` (UInt64) — Number of bytes read, uncompressed.
@@ -246,19 +249,19 @@ Columns:
 -   `bytes_written_uncompressed` (UInt64) — Number of bytes written, uncompressed.
 -   `rows_written` (UInt64) — Number of rows written.
 
-## system.metrics {#system_tables-metrics}
+## سیستم.متریک {#system_tables-metrics}
 
-Contains metrics which can be calculated instantly, or have a current value. For example, the number of simultaneously processed queries or the current replica delay. This table is always up to date.
+شامل معیارهای است که می تواند فورا محاسبه, و یا یک مقدار فعلی. مثلا, تعداد نمایش داده شد به طور همزمان پردازش و یا تاخیر ماکت فعلی. این جدول همیشه به روز.
 
-Columns:
+ستونها:
 
--   `metric` ([String](../data_types/string.md)) — Metric name.
--   `value` ([Int64](../data_types/int_uint.md)) — Metric value.
--   `description` ([String](../data_types/string.md)) — Metric description.
+-   `metric` ([رشته](../sql_reference/data_types/string.md)) — Metric name.
+-   `value` ([Int64](../sql_reference/data_types/int_uint.md)) — Metric value.
+-   `description` ([رشته](../sql_reference/data_types/string.md)) — Metric description.
 
-The list of supported metrics you can find in the [dbms/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Common/CurrentMetrics.cpp) source file of ClickHouse.
+لیستی از معیارهای پشتیبانی شده شما می توانید در [افراد زیر در این افزونه مشارکت کردهاندپردازنده](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Common/CurrentMetrics.cpp) فایل منبع از خانه کلیک.
 
-**Example**
+**مثال**
 
 ``` sql
 SELECT * FROM system.metrics LIMIT 10
@@ -279,17 +282,17 @@ SELECT * FROM system.metrics LIMIT 10
 └────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**See Also**
+**همچنین نگاه کنید به**
 
--   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
--   [system.events](#system_tables-events) — Contains a number of events that occurred.
--   [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [سیستم.\_نامهنویسی ناهمزمان](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [سیستم.رویدادها](#system_tables-events) — Contains a number of events that occurred.
+-   [سیستم.\_اشکالزدایی](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [نظارت](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## system.metric\_log {#system_tables-metric_log}
+## سیستم.\_اشکالزدایی {#system_tables-metric_log}
 
-Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
-To turn on metrics history collection on `system.metric_log`, create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
+دارای تاریخچه معیارهای ارزش از جداول `system.metrics` و `system.events`, دوره ای به دیسک سرخ.
+برای روشن کردن مجموعه تاریخچه معیارهای در `system.metric_log` ایجاد `/etc/clickhouse-server/config.d/metric_log.xml` با محتوای زیر:
 
 ``` xml
 <yandex>
@@ -302,7 +305,7 @@ To turn on metrics history collection on `system.metric_log`, create `/etc/click
 </yandex>
 ```
 
-**Example**
+**مثال**
 
 ``` sql
 SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
@@ -335,50 +338,50 @@ CurrentMetric_ReplicatedChecks:                             0
 ...
 ```
 
-**See also**
+**همچنین نگاه کنید به**
 
--   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
--   [system.events](#system_tables-events) — Contains a number of events that occurred.
--   [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [سیستم.\_نامهنویسی ناهمزمان](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [سیستم.رویدادها](#system_tables-events) — Contains a number of events that occurred.
+-   [سیستم.متریک](#system_tables-metrics) — Contains instantly calculated metrics.
+-   [نظارت](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## system.numbers {#system-numbers}
+## سیستم.اعداد {#system-numbers}
 
-This table contains a single UInt64 column named ‘number’ that contains almost all the natural numbers starting from zero.
-You can use this table for tests, or if you need to do a brute force search.
-Reads from this table are not parallelized.
+این جدول شامل یک uint64 ستون به نام ‘number’ که شامل تقریبا تمام اعداد طبیعی با شروع از صفر.
+شما می توانید این جدول برای تست استفاده, و یا اگر شما نیاز به انجام یک جستجو نیروی بی رحم.
+بار خوانده شده از این جدول موازی نیست.
 
-## system.numbers\_mt {#system-numbers-mt}
+## سیستم.\_شماره حساب {#system-numbers-mt}
 
-The same as ‘system.numbers’ but reads are parallelized. The numbers can be returned in any order.
-Used for tests.
+همان ‘system.numbers’ اما بار خوانده شده موازی هستند. اعداد را می توان در هر سفارش بازگشت.
+مورد استفاده برای تست.
 
-## system.one {#system-one}
+## سیستم.یک {#system-one}
 
-This table contains a single row with a single ‘dummy’ UInt8 column containing the value 0.
-This table is used if a SELECT query doesn’t specify the FROM clause.
-This is similar to the DUAL table found in other DBMSs.
+این جدول شامل یک ردیف با یک ‘dummy’ در زیر8 ستون حاوی مقدار 0.
+این جدول استفاده می شود اگر پرس و جو را انتخاب کنید از بند مشخص نیست.
+این شبیه میز دوگانه است که در سایر موارد یافت می شود.
 
-## system.parts {#system_tables-parts}
+## سیستم.قطعات {#system_tables-parts}
 
-Contains information about parts of [MergeTree](table_engines/mergetree.md) tables.
+حاوی اطلاعات در مورد بخش هایی از [ادغام](../engines/table_engines/mergetree_family/mergetree.md) میز
 
-Each row describes one data part.
+هر سطر توصیف یک بخش داده.
 
-Columns:
+ستونها:
 
--   `partition` (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../query_language/alter.md#query_language_queries_alter) query.
+-   `partition` (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../sql_reference/statements/alter.md#query_language_queries_alter) پرس و جو.
 
-    Formats:
+    فرشها:
 
-    -   `YYYYMM` for automatic partitioning by month.
-    -   `any_string` when partitioning manually.
+    -   `YYYYMM` برای پارتیشن بندی خودکار در ماه.
+    -   `any_string` هنگامی که پارتیشن بندی دستی.
 
 -   `name` (`String`) – Name of the data part.
 
--   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
+-   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
 
--   `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint doesn’t work for adaptive granularity).
+-   `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` با دانه دانه دانه شاخص (معمولا 8192) (این اشاره برای دانه دانه تطبیقی کار نمی کند).
 
 -   `rows` (`UInt64`) – The number of rows.
 
@@ -418,7 +421,7 @@ Columns:
 
 -   `primary_key_bytes_in_memory_allocated` (`UInt64`) – The amount of memory (in bytes) reserved for primary key values.
 
--   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn’t exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
+-   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../sql_reference/statements/alter.md#alter_freeze-partition)
 
 -   `database` (`String`) – Name of the database.
 
@@ -430,29 +433,29 @@ Columns:
 
 -   `disk` (`String`) – Name of a disk that stores the data part.
 
--   `hash_of_all_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of compressed files.
+-   `hash_of_all_files` (`String`) – [سیفون128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) از فایل های فشرده.
 
--   `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed files (files with marks, index file etc.).
+-   `hash_of_uncompressed_files` (`String`) – [سیفون128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) از فایل های غیر فشرده (فایل های با علامت, فایل شاخص و غیره.).
 
--   `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of data in the compressed files as if they were uncompressed.
+-   `uncompressed_hash_of_compressed_files` (`String`) – [سیفون128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) از داده ها در فایل های فشرده به عنوان اگر غیر فشرده شد.
 
 -   `bytes` (`UInt64`) – Alias for `bytes_on_disk`.
 
 -   `marks_size` (`UInt64`) – Alias for `marks_bytes`.
 
-## system.part\_log {#system_tables-part-log}
+## سیستم.\_خروج {#system_tables-part-log}
 
-The `system.part_log` table is created only if the [part\_log](server_settings/settings.md#server_settings-part-log) server setting is specified.
+این `system.part_log` جدول تنها در صورتی ایجاد می شود [\_خروج](server_configuration_parameters/settings.md#server_configuration_parameters-part-log) تنظیم سرور مشخص شده است.
 
-This table contains information about events that occurred with [data parts](table_engines/custom_partitioning_key.md) in the [MergeTree](table_engines/mergetree.md) family tables, such as adding or merging data.
+این جدول حاوی اطلاعات در مورد اتفاقاتی که با رخ داده است [قطعات داده](../engines/table_engines/mergetree_family/custom_partitioning_key.md) در [ادغام](../engines/table_engines/mergetree_family/mergetree.md) جداول خانواده, مانند اضافه کردن و یا ادغام داده ها.
 
-The `system.part_log` table contains the following columns:
+این `system.part_log` جدول شامل ستون های زیر است:
 
 -   `event_type` (Enum) — Type of the event that occurred with the data part. Can have one of the following values:
     -   `NEW_PART` — Inserting of a new data part.
     -   `MERGE_PARTS` — Merging of data parts.
     -   `DOWNLOAD_PART` — Downloading a data part.
-    -   `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
+    -   `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../sql_reference/statements/alter.md#alter_detach-partition).
     -   `MUTATE_PART` — Mutating of a data part.
     -   `MOVE_PART` — Moving the data part from the one disk to another one.
 -   `event_date` (Date) — Event date.
@@ -461,7 +464,7 @@ The `system.part_log` table contains the following columns:
 -   `database` (String) — Name of the database the data part is in.
 -   `table` (String) — Name of the table the data part is in.
 -   `part_name` (String) — Name of the data part.
--   `partition_id` (String) — ID of the partition that the data part was inserted to. The column takes the ‘all’ value if the partitioning is by `tuple()`.
+-   `partition_id` (String) — ID of the partition that the data part was inserted to. The column takes the ‘all’ ارزش اگر پارتیشن بندی توسط `tuple()`.
 -   `rows` (UInt64) — The number of rows in the data part.
 -   `size_in_bytes` (UInt64) — Size of the data part in bytes.
 -   `merged_from` (Array(String)) — An array of names of the parts which the current part was made up from (after the merge).
@@ -471,36 +474,36 @@ The `system.part_log` table contains the following columns:
 -   `error` (UInt16) — The code number of the occurred error.
 -   `exception` (String) — Text message of the occurred error.
 
-The `system.part_log` table is created after the first inserting data to the `MergeTree` table.
+این `system.part_log` جدول پس از اولین قرار دادن داده ها به ایجاد `MergeTree` جدول
 
-## system.processes {#system_tables-processes}
+## سیستم.فرایندها {#system_tables-processes}
 
-This system table is used for implementing the `SHOW PROCESSLIST` query.
+این جدول سیستم برای اجرای استفاده می شود `SHOW PROCESSLIST` پرس و جو.
 
-Columns:
+ستونها:
 
--   `user` (String) – The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the `default` user. The field contains the username for a specific query, not for a query that this query initiated.
--   `address` (String) – The IP address the request was made from. The same for distributed processing. To track where a distributed query was originally made from, look at `system.processes` on the query requestor server.
+-   `user` (String) – The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the `default` کاربر. زمینه شامل نام کاربری برای یک پرس و جو خاص, نه برای پرس و جو که این پرس و جو شروع.
+-   `address` (String) – The IP address the request was made from. The same for distributed processing. To track where a distributed query was originally made from, look at `system.processes` در سرور درخواست پرس و جو.
 -   `elapsed` (Float64) – The time in seconds since request execution started.
 -   `rows_read` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 -   `bytes_read` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 -   `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
--   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max\_memory\_usage](../operations/settings/query_complexity.md#settings_max_memory_usage) setting.
--   `query` (String) – The query text. For `INSERT`, it doesn’t include the data to insert.
+-   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [\_کاساژ بیشینه](../operations/settings/query_complexity.md#settings_max_memory_usage) تنظیمات.
+-   `query` (String) – The query text. For `INSERT` این شامل داده ها برای وارد کردن نیست.
 -   `query_id` (String) – Query ID, if defined.
 
-## system.text\_log {#system-tables-text-log}
+## سیستم.\_خروج {#system-tables-text-log}
 
-Contains logging entries. Logging level which goes to this table can be limited with `text_log.level` server setting.
+شامل ورودی ورود به سیستم. سطح ورود به سیستم که می رود به این جدول را می توان با محدود `text_log.level` تنظیم سرور.
 
-Columns:
+ستونها:
 
--   `event_date` (`Date`) - Date of the entry.
--   `event_time` (`DateTime`) - Time of the entry.
--   `microseconds` (`UInt32`) - Microseconds of the entry.
+-   `event_date` (`Date`)- تاریخ ورود.
+-   `event_time` (`DateTime`)- زمان ورود .
+-   `microseconds` (`UInt32`)- میکروثانیه از ورود.
 -   `thread_name` (String) — Name of the thread from which the logging was done.
 -   `thread_id` (UInt64) — OS thread ID.
--   `level` (`Enum8`) - Entry level.
+-   `level` (`Enum8`)- ورود به سطح .
     -   `'Fatal' = 1`
     -   `'Critical' = 2`
     -   `'Error' = 3`
@@ -509,30 +512,30 @@ Columns:
     -   `'Information' = 6`
     -   `'Debug' = 7`
     -   `'Trace' = 8`
--   `query_id` (`String`) - ID of the query.
+-   `query_id` (`String`)- شناسه پرس و جو .
 -   `logger_name` (`LowCardinality(String)`) - Name of the logger (i.e. `DDLWorker`)
--   `message` (`String`) - The message itself.
--   `revision` (`UInt32`) - ClickHouse revision.
--   `source_file` (`LowCardinality(String)`) - Source file from which the logging was done.
--   `source_line` (`UInt64`) - Source line from which the logging was done.
+-   `message` (`String`)- پیام خود را.
+-   `revision` (`UInt32`)- تجدید نظر کلیک کنیدهاوس .
+-   `source_file` (`LowCardinality(String)`)- فایل منبع که از ورود به سیستم انجام شد .
+-   `source_line` (`UInt64`)- خط منبع که از ورود به سیستم انجام شد.
 
-## system.query\_log {#system_tables-query_log}
+## سیستم.\_خروج {#system_tables-query_log}
 
-Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
+حاوی اطلاعات در مورد اجرای نمایش داده شد. برای هر پرس و جو, شما می توانید زمان شروع پردازش را ببینید, مدت زمان پردازش, پیام های خطا و اطلاعات دیگر.
 
-!!! note "Note"
-    The table doesn’t contain input data for `INSERT` queries.
+!!! note "یادداشت"
+    جدول حاوی اطلاعات ورودی برای `INSERT` نمایش داده شد.
 
-ClickHouse creates this table only if the [query\_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+تاتر این جدول را فقط در صورتی ایجاد می کند [\_خروج](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) پارامتر سرور مشخص شده است. این پارامتر مجموعه قوانین ورود به سیستم, مانند فاصله ورود به سیستم و یا نام جدول نمایش داده شد خواهد شد وارد سایت شوید.
 
-To enable query logging, set the [log\_queries](settings/settings.md#settings-log-queries) parameter to 1. For details, see the [Settings](settings/settings.md) section.
+برای فعال کردن ورود به سیستم پرس و جو, تنظیم [\_خروج](settings/settings.md#settings-log-queries) پارامتر به 1. برای اطلاعات بیشتر [تنظیمات](settings/settings.md) بخش.
 
-The `system.query_log` table registers two kinds of queries:
+این `system.query_log` جدول ثبت دو نوع نمایش داده شد:
 
-1.  Initial queries that were run directly by the client.
-2.  Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
+1.  نمایش داده شد اولیه که به طور مستقیم توسط مشتری اجرا شد.
+2.  کودک نمایش داده شد که توسط دیگر نمایش داده شد (برای اجرای پرس و جو توزیع). برای این نوع از نمایش داده شد, اطلاعات در مورد پدر و مادر نمایش داده شد در نشان داده شده است `initial_*` ستون ها
 
-Columns:
+ستونها:
 
 -   `type` (`Enum8`) — Type of event that occurred when executing the query. Values:
     -   `'QueryStart' = 1` — Successful start of query execution.
@@ -545,8 +548,8 @@ Columns:
 -   `query_duration_ms` (UInt64) — Duration of query execution.
 -   `read_rows` (UInt64) — Number of read rows.
 -   `read_bytes` (UInt64) — Number of read bytes.
--   `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
--   `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
+-   `written_rows` (UInt64) — For `INSERT` نمایش داده شد, تعداد ردیف نوشته شده. برای نمایش داده شد دیگر مقدار ستون 0 است.
+-   `written_bytes` (UInt64) — For `INSERT` نمایش داده شد, تعداد بایت نوشته شده. برای نمایش داده شد دیگر مقدار ستون 0 است.
 -   `result_rows` (UInt64) — Number of rows in the result.
 -   `result_bytes` (UInt64) — Number of bytes in the result.
 -   `memory_usage` (UInt64) — Memory consumption by the query.
@@ -567,50 +570,50 @@ Columns:
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
--   `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
--   `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
--   `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
+-   `os_user` (String) — OS's username who runs [کلیک مشتری](../interfaces/cli.md).
+-   `client_hostname` (String) — Hostname of the client machine where the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی اجرا می شود.
+-   `client_name` (String) — The [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از نام مشتری تی پی.
+-   `client_revision` (UInt32) — Revision of the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی.
+-   `client_version_major` (UInt32) — Major version of the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی.
+-   `client_version_minor` (UInt32) — Minor version of the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی.
+-   `client_version_patch` (UInt32) — Patch component of the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از نسخه مشتری تی سی پی.
 -   `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     -   0 — The query was launched from the TCP interface.
-    -   1 — `GET` method was used.
-    -   2 — `POST` method was used.
--   `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
--   `quota_key` (String) — The “quota key” specified in the [quotas](quotas.md) setting (see `keyed`).
+    -   1 — `GET` روش مورد استفاده قرار گرفت.
+    -   2 — `POST` روش مورد استفاده قرار گرفت.
+-   `http_user_agent` (String) — The `UserAgent` هدر در درخواست قام منتقل می شود.
+-   `quota_key` (String) — The “quota key” مشخص شده در [سهمیه](quotas.md) تنظیم (دیدن `keyed`).
 -   `revision` (UInt32) — ClickHouse revision.
 -   `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
--   `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
--   `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
+-   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [سیستم.رویدادها](#system_tables-events)
+-   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` ستون.
+-   `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` پارامتر به 1.
+-   `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` ستون.
 
-Each query creates one or two rows in the `query_log` table, depending on the status of the query:
+هر پرس و جو ایجاد یک یا دو ردیف در `query_log` جدول بسته به وضعیت پرس و جو:
 
-1.  If the query execution is successful, two events with types 1 and 2 are created (see the `type` column).
-2.  If an error occurred during query processing, two events with types 1 and 4 are created.
-3.  If an error occurred before launching the query, a single event with type 3 is created.
+1.  اگر اجرای پرس و جو موفق است, دو رویداد با انواع 1 و 2 ایجاد می شوند (دیدن `type` ستون).
+2.  اگر یک خطا در طول پردازش پرس و جو رخ داده است, دو رویداد با انواع 1 و 4 ایجاد می شوند.
+3.  اگر یک خطا قبل از راه اندازی پرس و جو رخ داده است, یک رویداد واحد با نوع 3 ایجاد شده است.
 
-By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_log](server_settings/settings.md#server_settings-query-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+به طور پیش فرض, سیاهههای مربوط به جدول در فواصل 7.5 ثانیه اضافه. شما می توانید این فاصله در مجموعه [\_خروج](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) تنظیم سرور (نگاه کنید به `flush_interval_milliseconds` پارامتر). به خیط و پیت کردن سیاهههای مربوط به زور از بافر حافظه را به جدول, استفاده از `SYSTEM FLUSH LOGS` پرس و جو.
 
-When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
+هنگامی که جدول به صورت دستی حذف, به طور خودکار در پرواز ایجاد. توجه داشته باشید که تمام سیاهههای مربوط قبلی حذف خواهد شد.
 
-!!! note "Note"
-    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+!!! note "یادداشت"
+    دوره ذخیره سازی برای سیاهههای مربوط نامحدود است. سیاهههای مربوط به طور خودکار از جدول حذف نمی شود. شما نیاز به سازماندهی حذف سیاهههای مربوط منسوخ شده خود را.
 
-You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server_settings/settings.md#server_settings-query-log) server setting (see the `partition_by` parameter).
+شما می توانید یک کلید پارتیشن بندی دلخواه برای مشخص `system.query_log` جدول در [\_خروج](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) تنظیم سرور (نگاه کنید به `partition_by` پارامتر).
 
-## system.query\_thread\_log {#system_tables-query-thread-log}
+## سیستم.\_ر\_خروج {#system_tables-query-thread-log}
 
-The table contains information about each query execution thread.
+جدول شامل اطلاعات در مورد هر موضوع اجرای پرس و جو.
 
-ClickHouse creates this table only if the [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+تاتر این جدول را فقط در صورتی ایجاد می کند [\_ر\_خروج](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) پارامتر سرور مشخص شده است. این پارامتر مجموعه قوانین ورود به سیستم, مانند فاصله ورود به سیستم و یا نام جدول نمایش داده شد خواهد شد وارد سایت شوید.
 
-To enable query logging, set the [log\_query\_threads](settings/settings.md#settings-log-query-threads) parameter to 1. For details, see the [Settings](settings/settings.md) section.
+برای فعال کردن ورود به سیستم پرس و جو, تنظیم [باز کردن](settings/settings.md#settings-log-query-threads) پارامتر به 1. برای اطلاعات بیشتر [تنظیمات](settings/settings.md) بخش.
 
-Columns:
+ستونها:
 
 -   `event_date` (Date) — the date when the thread has finished execution of the query.
 -   `event_time` (DateTime) — the date and time when the thread has finished execution of the query.
@@ -618,8 +621,8 @@ Columns:
 -   `query_duration_ms` (UInt64) — Duration of query execution.
 -   `read_rows` (UInt64) — Number of read rows.
 -   `read_bytes` (UInt64) — Number of read bytes.
--   `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
--   `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
+-   `written_rows` (UInt64) — For `INSERT` نمایش داده شد, تعداد ردیف نوشته شده. برای نمایش داده شد دیگر مقدار ستون 0 است.
+-   `written_bytes` (UInt64) — For `INSERT` نمایش داده شد, تعداد بایت نوشته شده. برای نمایش داده شد دیگر مقدار ستون 0 است.
 -   `memory_usage` (Int64) — The difference between the amount of allocated and freed memory in context of this thread.
 -   `peak_memory_usage` (Int64) — The maximum difference between the amount of allocated and freed memory in context of this thread.
 -   `thread_name` (String) — Name of the thread.
@@ -641,62 +644,62 @@ Columns:
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
--   `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
--   `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
--   `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
+-   `os_user` (String) — OS's username who runs [کلیک مشتری](../interfaces/cli.md).
+-   `client_hostname` (String) — Hostname of the client machine where the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی اجرا می شود.
+-   `client_name` (String) — The [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از نام مشتری تی پی.
+-   `client_revision` (UInt32) — Revision of the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی.
+-   `client_version_major` (UInt32) — Major version of the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی.
+-   `client_version_minor` (UInt32) — Minor version of the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از مشتری تی پی.
+-   `client_version_patch` (UInt32) — Patch component of the [کلیک مشتری](../interfaces/cli.md) یا یکی دیگر از نسخه مشتری تی سی پی.
 -   `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     -   0 — The query was launched from the TCP interface.
-    -   1 — `GET` method was used.
-    -   2 — `POST` method was used.
--   `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
--   `quota_key` (String) — The “quota key” specified in the [quotas](quotas.md) setting (see `keyed`).
+    -   1 — `GET` روش مورد استفاده قرار گرفت.
+    -   2 — `POST` روش مورد استفاده قرار گرفت.
+-   `http_user_agent` (String) — The `UserAgent` هدر در درخواست قام منتقل می شود.
+-   `quota_key` (String) — The “quota key” مشخص شده در [سهمیه](quotas.md) تنظیم (دیدن `keyed`).
 -   `revision` (UInt32) — ClickHouse revision.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
+-   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [سیستم.رویدادها](#system_tables-events)
+-   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` ستون.
 
-By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+به طور پیش فرض, سیاهههای مربوط به جدول در فواصل 7.5 ثانیه اضافه. شما می توانید این فاصله در مجموعه [\_ر\_خروج](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) تنظیم سرور (نگاه کنید به `flush_interval_milliseconds` پارامتر). به خیط و پیت کردن سیاهههای مربوط به زور از بافر حافظه را به جدول, استفاده از `SYSTEM FLUSH LOGS` پرس و جو.
 
-When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
+هنگامی که جدول به صورت دستی حذف, به طور خودکار در پرواز ایجاد. توجه داشته باشید که تمام سیاهههای مربوط قبلی حذف خواهد شد.
 
-!!! note "Note"
-    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+!!! note "یادداشت"
+    دوره ذخیره سازی برای سیاهههای مربوط نامحدود است. سیاهههای مربوط به طور خودکار از جدول حذف نمی شود. شما نیاز به سازماندهی حذف سیاهههای مربوط منسوخ شده خود را.
 
-You can specify an arbitrary partitioning key for the `system.query_thread_log` table in the [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `partition_by` parameter).
+شما می توانید یک کلید پارتیشن بندی دلخواه برای مشخص `system.query_thread_log` جدول در [\_ر\_خروج](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) تنظیم سرور (نگاه کنید به `partition_by` پارامتر).
 
-## system.trace\_log {#system_tables-trace_log}
+## سیستم.\_قطع {#system_tables-trace_log}
 
-Contains stack traces collected by the sampling query profiler.
+حاوی ردیاب های پشته ای است که توسط پروفایل پرس و جو نمونه گیری می شود.
 
-ClickHouse creates this table when the [trace\_log](server_settings/settings.md#server_settings-trace_log) server configuration section is set. Also the [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
+تاتر این جدول زمانی ایجاد می کند [\_قطع](server_configuration_parameters/settings.md#server_configuration_parameters-trace_log) بخش پیکربندی سرور تنظیم شده است. همچنین [جستجو](settings/settings.md#query_profiler_real_time_period_ns) و [ایران در تهران](settings/settings.md#query_profiler_cpu_time_period_ns) تنظیمات باید تنظیم شود.
 
-To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` introspection functions.
+برای تجزیه و تحلیل سیاهههای مربوط, استفاده از `addressToLine`, `addressToSymbol` و `demangle` توابع درون گرایی.
 
-Columns:
+ستونها:
 
--   `event_date`([Date](../data_types/date.md)) — Date of sampling moment.
+-   `event_date`([تاریخ](../sql_reference/data_types/date.md)) — Date of sampling moment.
 
--   `event_time`([DateTime](../data_types/datetime.md)) — Timestamp of sampling moment.
+-   `event_time`([DateTime](../sql_reference/data_types/datetime.md)) — Timestamp of sampling moment.
 
--   `revision`([UInt32](../data_types/int_uint.md)) — ClickHouse server build revision.
+-   `revision`([UInt32](../sql_reference/data_types/int_uint.md)) — ClickHouse server build revision.
 
-    When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
+    هنگام اتصال به سرور توسط `clickhouse-client`, شما رشته شبیه به دیدن `Connected to ClickHouse server version 19.18.1 revision 54429.`. این فیلد شامل `revision` اما نه `version` از یک سرور.
 
--   `timer_type`([Enum8](../data_types/enum.md)) — Timer type:
+-   `timer_type`([شمار8](../sql_reference/data_types/enum.md)) — Timer type:
 
-    -   `Real` represents wall-clock time.
-    -   `CPU` represents CPU time.
+    -   `Real` نشان دهنده زمان دیوار ساعت.
+    -   `CPU` نشان دهنده زمان پردازنده.
 
--   `thread_number`([UInt32](../data_types/int_uint.md)) — Thread identifier.
+-   `thread_number`([UInt32](../sql_reference/data_types/int_uint.md)) — Thread identifier.
 
--   `query_id`([String](../data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
+-   `query_id`([رشته](../sql_reference/data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [\_خروج](#system_tables-query_log) جدول سیستم.
 
--   `trace`([Array(UInt64)](../data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace`([Array(UInt64)](../sql_reference/data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
-**Example**
+**مثال**
 
 ``` sql
 SELECT * FROM system.trace_log LIMIT 1 \G
@@ -714,12 +717,12 @@ query_id:      acc4d61f-5bd1-4a3e-bc91-2180be37c915
 trace:         [94222141367858,94222152240175,94222152325351,94222152329944,94222152330796,94222151449980,94222144088167,94222151682763,94222144088167,94222151682763,94222144088167,94222144058283,94222144059248,94222091840750,94222091842302,94222091831228,94222189631488,140509950166747,140509942945935]
 ```
 
-## system.replicas {#system_tables-replicas}
+## سیستم.تکرار {#system_tables-replicas}
 
-Contains information and status for replicated tables residing on the local server.
-This table can be used for monitoring. The table contains a row for every Replicated\* table.
+شامل اطلاعات و وضعیت برای جداول تکرار ساکن بر روی سرور محلی.
+این جدول را می توان برای نظارت استفاده می شود. جدول شامل یک ردیف برای هر تکرار \* جدول.
 
-Example:
+مثال:
 
 ``` sql
 SELECT *
@@ -763,46 +766,46 @@ total_replicas:             2
 active_replicas:            2
 ```
 
-Columns:
+ستونها:
 
--   `database` (`String`) - Database name
--   `table` (`String`) - Table name
--   `engine` (`String`) - Table engine name
--   `is_leader` (`UInt8`) - Whether the replica is the leader.
-    Only one replica at a time can be the leader. The leader is responsible for selecting background merges to perform.
-    Note that writes can be performed to any replica that is available and has a session in ZK, regardless of whether it is a leader.
--   `can_become_leader` (`UInt8`) - Whether the replica can be elected as a leader.
--   `is_readonly` (`UInt8`) - Whether the replica is in read-only mode.
-    This mode is turned on if the config doesn’t have sections with ZooKeeper, if an unknown error occurred when reinitializing sessions in ZooKeeper, and during session reinitialization in ZooKeeper.
--   `is_session_expired` (`UInt8`) - the session with ZooKeeper has expired. Basically the same as `is_readonly`.
--   `future_parts` (`UInt32`) - The number of data parts that will appear as the result of INSERTs or merges that haven’t been done yet.
--   `parts_to_check` (`UInt32`) - The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged.
--   `zookeeper_path` (`String`) - Path to table data in ZooKeeper.
--   `replica_name` (`String`) - Replica name in ZooKeeper. Different replicas of the same table have different names.
--   `replica_path` (`String`) - Path to replica data in ZooKeeper. The same as concatenating ‘zookeeper\_path/replicas/replica\_path’.
--   `columns_version` (`Int32`) - Version number of the table structure. Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven’t made all of the ALTERs yet.
--   `queue_size` (`UInt32`) - Size of the queue for operations waiting to be performed. Operations include inserting blocks of data, merges, and certain other actions. It usually coincides with `future_parts`.
--   `inserts_in_queue` (`UInt32`) - Number of inserts of blocks of data that need to be made. Insertions are usually replicated fairly quickly. If this number is large, it means something is wrong.
--   `merges_in_queue` (`UInt32`) - The number of merges waiting to be made. Sometimes merges are lengthy, so this value may be greater than zero for a long time.
--   `part_mutations_in_queue` (`UInt32`) - The number of mutations waiting to be made.
--   `queue_oldest_time` (`DateTime`) - If `queue_size` greater than 0, shows when the oldest operation was added to the queue.
--   `inserts_oldest_time` (`DateTime`) - See `queue_oldest_time`
--   `merges_oldest_time` (`DateTime`) - See `queue_oldest_time`
--   `part_mutations_oldest_time` (`DateTime`) - See `queue_oldest_time`
+-   `database` (`String`)- نام پایگاه داده
+-   `table` (`String`)- نام جدول
+-   `engine` (`String`)- نام موتور جدول
+-   `is_leader` (`UInt8`)- چه ماکت رهبر است.
+    فقط یک ماکت در یک زمان می تواند رهبر باشد. رهبر برای انتخاب پس زمینه ادغام به انجام است.
+    توجه داشته باشید که می نویسد را می توان به هر ماکت است که در دسترس است و یک جلسه در زک انجام, صرف نظر از اینکه این یک رهبر است.
+-   `can_become_leader` (`UInt8`)- چه ماکت می تواند به عنوان یک رهبر انتخاب می شوند.
+-   `is_readonly` (`UInt8`)- چه ماکت در حالت فقط خواندنی است.
+    در این حالت روشن است اگر پیکربندی ندارد بخش با باغ وحش اگر یک خطای ناشناخته رخ داده است که reinitializing جلسات در باغ وحش و در طول جلسه reinitialization در باغ وحش.
+-   `is_session_expired` (`UInt8`)- جلسه با باغ وحش منقضی شده است. در واقع همان `is_readonly`.
+-   `future_parts` (`UInt32`)- تعداد قطعات داده است که به عنوان نتیجه درج و یا ادغام که هنوز انجام نشده است ظاهر می شود.
+-   `parts_to_check` (`UInt32`)- تعداد قطعات داده در صف برای تایید. اگر شک وجود دارد که ممکن است صدمه دیده است بخشی در صف تایید قرار داده است.
+-   `zookeeper_path` (`String`)- مسیر به داده های جدول در باغ وحش.
+-   `replica_name` (`String`)- نام ماکت در باغ وحش. کپی های مختلف از همان جدول نام های مختلف.
+-   `replica_path` (`String`)- مسیر به داده های ماکت در باغ وحش. همان الحاق ‘zookeeper\_path/replicas/replica\_path’.
+-   `columns_version` (`Int32`)- تعداد نسخه از ساختار جدول . نشان می دهد که چند بار تغییر انجام شد. اگر کپی نسخه های مختلف, به این معنی برخی از کپی ساخته شده است همه از تغییر نکرده است.
+-   `queue_size` (`UInt32`)- اندازه صف برای عملیات در حال انتظار برای انجام شود . عملیات شامل قرار دادن بلوک های داده ادغام و برخی اقدامات دیگر. معمولا همزمان با `future_parts`.
+-   `inserts_in_queue` (`UInt32`)- تعداد درج بلوک از داده ها که نیاز به ساخته شده است . درج معمولا نسبتا به سرعت تکرار. اگر این تعداد بزرگ است, به این معنی چیزی اشتباه است.
+-   `merges_in_queue` (`UInt32`)- تعداد ادغام انتظار ساخته شود. گاهی اوقات ادغام طولانی هستند, بنابراین این مقدار ممکن است بیشتر از صفر برای یک مدت طولانی.
+-   `part_mutations_in_queue` (`UInt32`)- تعداد جهش در انتظار ساخته شده است.
+-   `queue_oldest_time` (`DateTime`)- اگر `queue_size` بیشتر از 0, نشان می دهد که قدیمی ترین عملیات به صف اضافه شد.
+-   `inserts_oldest_time` (`DateTime` دیدن وضعیت شبکه `queue_oldest_time`
+-   `merges_oldest_time` (`DateTime` دیدن وضعیت شبکه `queue_oldest_time`
+-   `part_mutations_oldest_time` (`DateTime` دیدن وضعیت شبکه `queue_oldest_time`
 
-The next 4 columns have a non-zero value only where there is an active session with ZK.
+4 ستون بعدی یک مقدار غیر صفر تنها جایی که یک جلسه فعال با زک وجود دارد.
 
--   `log_max_index` (`UInt64`) - Maximum entry number in the log of general activity.
--   `log_pointer` (`UInt64`) - Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one. If `log_pointer` is much smaller than `log_max_index`, something is wrong.
--   `last_queue_update` (`DateTime`) - When the queue was updated last time.
--   `absolute_delay` (`UInt64`) - How big lag in seconds the current replica has.
--   `total_replicas` (`UInt8`) - The total number of known replicas of this table.
--   `active_replicas` (`UInt8`) - The number of replicas of this table that have a session in ZooKeeper (i.e., the number of functioning replicas).
+-   `log_max_index` (`UInt64`)- حداکثر تعداد ورودی در ورود به سیستم از فعالیت های عمومی.
+-   `log_pointer` (`UInt64`) - حداکثر تعداد ورودی در ورود به سیستم از فعالیت های عمومی که ماکت کپی شده به صف اعدام خود را, به علاوه یک. اگر `log_pointer` بسیار کوچکتر از `log_max_index`, چیزی اشتباه است.
+-   `last_queue_update` (`DateTime`)- هنگامی که صف در زمان گذشته به روز شد.
+-   `absolute_delay` (`UInt64`)- تاخیر چقدر بزرگ در ثانیه ماکت فعلی است.
+-   `total_replicas` (`UInt8`)- تعداد کل کپی شناخته شده از این جدول.
+-   `active_replicas` (`UInt8`)- تعداد کپی از این جدول که یک جلسه در باغ وحش (یعنی تعداد تکرار عملکرد).
 
-If you request all the columns, the table may work a bit slowly, since several reads from ZooKeeper are made for each row.
-If you don’t request the last 4 columns (log\_max\_index, log\_pointer, total\_replicas, active\_replicas), the table works quickly.
+اگر شما درخواست تمام ستون, جدول ممکن است کمی کند کار, از چند بار خوانده شده از باغ وحش برای هر سطر ساخته شده.
+اگر شما درخواست آخرین 4 ستون (log\_max\_index, log\_pointer, total\_replicas, active\_replicas) جدول با این نسخهها کار به سرعت.
 
-For example, you can check that everything is working correctly like this:
+مثلا, شما می توانید بررسی کنید که همه چیز به درستی کار مثل این:
 
 ``` sql
 SELECT
@@ -834,25 +837,25 @@ WHERE
     OR active_replicas < total_replicas
 ```
 
-If this query doesn’t return anything, it means that everything is fine.
+اگر این پرس و جو چیزی نمی گرداند, به این معنی که همه چیز خوب است.
 
-## system.settings {#system-settings}
+## سیستم.تنظیمات {#system-settings}
 
-Contains information about settings that are currently in use.
-I.e. used for executing the query you are using to read from the system.settings table.
+حاوی اطلاعات در مورد تنظیمات که در حال حاضر در حال استفاده.
+به عنوان مثال مورد استفاده برای اجرای پرس و جو شما با استفاده از به خواندن از سیستم. جدول تنظیمات.
 
-Columns:
+ستونها:
 
 -   `name` (String) — Setting name.
 -   `value` (String) — Setting value.
 -   `description` (String) — Setting description.
 -   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
--   `min` (Nullable(String)) — Get minimum allowed value (if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
--   `max` (Nullable(String)) — Get maximum allowed value (if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
--   `readonly` (UInt8) — Can user change this setting (for more info, look into [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `min` (Nullable(String)) — Get minimum allowed value (if any is set via [قیدها](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `max` (Nullable(String)) — Get maximum allowed value (if any is set via [قیدها](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `readonly` (UInt8) — Can user change this setting (for more info, look into [قیدها](settings/constraints_on_settings.md#constraints-on-settings)).
 
-Example:
+مثال:
 
 ``` sql
 SELECT name, value
@@ -869,11 +872,11 @@ WHERE changed
 └────────────────────────┴─────────────┘
 ```
 
-## system.merge\_tree\_settings {#system-merge_tree_settings}
+## سیستم.خرابی در حذف گواهینامهها {#system-merge_tree_settings}
 
-Contains information about settings for `MergeTree` tables.
+حاوی اطلاعات در مورد تنظیمات برای `MergeTree` میز
 
-Columns:
+ستونها:
 
 -   `name` (String) — Setting name.
 -   `value` (String) — Setting value.
@@ -881,21 +884,21 @@ Columns:
 -   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
-## system.table\_engines {#system-table-engines}
+## سیستم.\_زبانهها {#system-table-engines}
 
-Contains description of table engines supported by server and their feature support information.
+شامل شرح موتورهای جدول پشتیبانی شده توسط سرور و اطلاعات پشتیبانی از ویژگی های خود را.
 
-This table contains the following columns (the column type is shown in brackets):
+این جدول شامل ستون های زیر (نوع ستون در براکت نشان داده شده است):
 
 -   `name` (String) — The name of table engine.
--   `supports_settings` (UInt8) — Flag that indicates if table engine supports `SETTINGS` clause.
--   `supports_skipping_indices` (UInt8) — Flag that indicates if table engine supports [skipping indices](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
--   `supports_ttl` (UInt8) — Flag that indicates if table engine supports [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
--   `supports_sort_order` (UInt8) — Flag that indicates if table engine supports clauses `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` and `SAMPLE_BY`.
--   `supports_replication` (UInt8) — Flag that indicates if table engine supports [data replication](table_engines/replication/).
+-   `supports_settings` (UInt8) — Flag that indicates if table engine supports `SETTINGS` بند بند.
+-   `supports_skipping_indices` (UInt8) — Flag that indicates if table engine supports [پرش شاخص](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-data_skipping-indexes).
+-   `supports_ttl` (UInt8) — Flag that indicates if table engine supports [TTL](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-ttl).
+-   `supports_sort_order` (UInt8) — Flag that indicates if table engine supports clauses `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` و `SAMPLE_BY`.
+-   `supports_replication` (UInt8) — Flag that indicates if table engine supports [تکرار داده ها](../engines/table_engines/mergetree_family/replication.md).
 -   `supports_duduplication` (UInt8) — Flag that indicates if table engine supports data deduplication.
 
-Example:
+مثال:
 
 ``` sql
 SELECT *
@@ -911,56 +914,72 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 └───────────────────────────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┘
 ```
 
-**See also**
+**همچنین نگاه کنید به**
 
--   MergeTree family [query clauses](table_engines/mergetree.md#mergetree-query-clauses)
--   Kafka [settings](table_engines/kafka.md#table_engine-kafka-creating-a-table)
--   Join [settings](table_engines/join.md#join-limitations-and-settings)
+-   ادغام خانواده [بندهای پرسوجو](../engines/table_engines/mergetree_family/mergetree.md#mergetree-query-clauses)
+-   کافکا [تنظیمات](../engines/table_engines/integrations/kafka.md#table_engine-kafka-creating-a-table)
+-   پیوستن [تنظیمات](../engines/table_engines/special/join.md#join-limitations-and-settings)
 
-## system.tables {#system-tables}
+## سیستم.جداول {#system-tables}
 
-Contains metadata of each table that the server knows about. Detached tables are not shown in `system.tables`.
+حاوی ابرداده از هر جدول که سرور می داند در مورد. جداول جداگانه در نشان داده نمی شود `system.tables`.
 
-This table contains the following columns (the column type is shown in brackets):
+این جدول شامل ستون های زیر (نوع ستون در براکت نشان داده شده است):
 
 -   `database` (String) — The name of the database the table is in.
+
 -   `name` (String) — Table name.
+
 -   `engine` (String) — Table engine name (without parameters).
--   `is_temporary` (UInt8) - Flag that indicates whether the table is temporary.
--   `data_path` (String) - Path to the table data in the file system.
--   `metadata_path` (String) - Path to the table metadata in the file system.
--   `metadata_modification_time` (DateTime) - Time of latest modification of the table metadata.
--   `dependencies_database` (Array(String)) - Database dependencies.
--   `dependencies_table` (Array(String)) - Table dependencies ([MaterializedView](table_engines/materializedview.md) tables based on the current table).
--   `create_table_query` (String) - The query that was used to create the table.
--   `engine_full` (String) - Parameters of the table engine.
--   `partition_key` (String) - The partition key expression specified in the table.
--   `sorting_key` (String) - The sorting key expression specified in the table.
--   `primary_key` (String) - The primary key expression specified in the table.
--   `sampling_key` (String) - The sampling key expression specified in the table.
--   `storage_policy` (String) - The storage policy:
 
-      - [MergeTree](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes)
-      - [Distributed](table_engines/distributed.md#distributed)
+-   `is_temporary` (زیر8) - پرچم که نشان می دهد که جدول موقت است.
 
--   `total_rows` (Nullable(UInt64)) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `Null` (including underying `Buffer` table).
--   `total_bytes` (Nullable(UInt64)) - Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `Null` (**does not** includes any underlying storage).
+-   `data_path` (رشته) - مسیر به داده های جدول در سیستم فایل.
 
-      - If the table stores data on disk, returns used space on disk (i.e. compressed).
-      - If the table stores data in memory, returns approximated number of used bytes in memory.
+-   `metadata_path` (رشته) - مسیر به ابرداده جدول در سیستم فایل.
 
-The `system.tables` table is used in `SHOW TABLES` query implementation.
+-   `metadata_modification_time` (تاریخ ساعت) - زمان شدن اصلاح ابرداده جدول.
 
-## system.zookeeper {#system-zookeeper}
+-   `dependencies_database` - وابستگی پایگاه داده .
 
-The table does not exist if ZooKeeper is not configured. Allows reading data from the ZooKeeper cluster defined in the config.
-The query must have a ‘path’ equality condition in the WHERE clause. This is the path in ZooKeeper for the children that you want to get data for.
+-   `dependencies_table` (رشته)) - وابستگی های جدول ([ماده بینی](../engines/table_engines/special/materializedview.md) جداول بر اساس جدول فعلی).
 
-The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
-To output data for all root nodes, write path = ‘/’.
-If the path specified in ‘path’ doesn’t exist, an exception will be thrown.
+-   `create_table_query` (رشته) - پرس و جو که برای ایجاد جدول مورد استفاده قرار گرفت.
 
-Columns:
+-   `engine_full` (رشته) - پارامترهای موتور جدول.
+
+-   `partition_key` (رشته) - بیان کلید پارتیشن مشخص شده در جدول.
+
+-   `sorting_key` (رشته) - عبارت کلیدی مرتب سازی مشخص شده در جدول.
+
+-   `primary_key` (رشته) - عبارت کلیدی اولیه مشخص شده در جدول.
+
+-   `sampling_key` (رشته) - نمونه عبارت کلیدی مشخص شده در جدول.
+
+-   `storage_policy` (رشته) - سیاست ذخیره سازی:
+
+    -   [ادغام](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes)
+    -   [توزیع شده](../engines/table_engines/special/distributed.md#distributed)
+
+-   `total_rows` (Nullable(UInt64)) - تعداد کل ردیف آن است که اگر ممکن است به سرعت تعیین دقیق تعداد ردیف در جدول در غیر این صورت `Null` (از جمله زیرینگ `Buffer` جدول).
+
+-   `total_bytes` (Nullable(UInt64)) - مجموع تعداد بایت, اگر آن را ممکن است به سرعت تعیین دقیق تعداد بایت به صورت جدول ذخیره در غیر این صورت `Null` (**نه** شامل هر ذخیره سازی زمینه ای).
+
+    -   If the table stores data on disk, returns used space on disk (i.e. compressed).
+    -   اگر جدول ذخیره داده ها در حافظه, بازده تعداد تقریبی بایت مورد استفاده در حافظه.
+
+این `system.tables` جدول در استفاده می شود `SHOW TABLES` اجرای پرس و جو.
+
+## سیستم.باغ وحش {#system-zookeeper}
+
+جدول وجود ندارد اگر باغ وحش پیکربندی نشده است. اجازه می دهد تا خواندن داده ها از خوشه باغ وحش تعریف شده در پیکربندی.
+پرس و جو باید یک ‘path’ شرایط برابری در بند جایی که. این مسیر در باغ وحش برای کودکان که شما می خواهید برای دریافت اطلاعات برای است.
+
+پرسوجو `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` خروجی داده ها برای همه کودکان در `/clickhouse` گره.
+به داده های خروجی برای تمام گره های ریشه, نوشتن مسیر = ‘/’.
+اگر مسیر مشخص شده در ‘path’ وجود ندارد, یک استثنا پرتاب خواهد شد.
+
+ستونها:
 
 -   `name` (String) — The name of the node.
 -   `path` (String) — The path to the node.
@@ -977,7 +996,7 @@ Columns:
 -   `aversion` (Int32) — Number of changes to the ACL.
 -   `ephemeralOwner` (Int64) — For ephemeral nodes, the ID of the session that owns this node.
 
-Example:
+مثال:
 
 ``` sql
 SELECT *
@@ -1022,57 +1041,57 @@ pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
 
-## system.mutations {#system_tables-mutations}
+## سیستم.جهشها {#system_tables-mutations}
 
-The table contains information about [mutations](../query_language/alter.md#alter-mutations) of MergeTree tables and their progress. Each mutation command is represented by a single row. The table has the following columns:
+جدول حاوی اطلاعات در مورد [جهشها](../sql_reference/statements/alter.md#alter-mutations) از جداول ادغام و پیشرفت خود را. هر دستور جهش توسط یک ردیف نشان داده شده است. جدول دارای ستون های زیر است:
 
-**database**, **table** - The name of the database and table to which the mutation was applied.
+**دادگان**, **جدول** - نام پایگاه داده و جدول که جهش استفاده شد .
 
-**mutation\_id** - The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_zookeeper>/mutations/` directory in ZooKeeper. For unreplicated tables the IDs correspond to file names in the data directory of the table.
+**قطع عضو** - شناسه جهش. برای جداول تکرار این شناسه به نام زنود در مطابقت `<table_path_in_zookeeper>/mutations/` راهنمای در باغ وحش. برای جداول سه برابر شناسه مربوط به فایل نام در دایرکتوری داده ها از جدول.
 
-**command** - The mutation command string (the part of the query after `ALTER TABLE [db.]table`).
+**فرمان** - رشته فرمان جهش (بخشی از پرس و جو پس از `ALTER TABLE [db.]table`).
 
-**create\_time** - When this mutation command was submitted for execution.
+**\_بروزرسانی** - هنگامی که این دستور جهش برای اجرای ارسال شد .
 
-**block\_numbers.partition\_id**, **block\_numbers.number** - A nested column. For mutations of replicated tables, it contains one record for each partition: the partition ID and the block number that was acquired by the mutation (in each partition, only parts that contain blocks with numbers less than the block number acquired by the mutation in that partition will be mutated). In non-replicated tables, block numbers in all partitions form a single sequence. This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation.
+**\_شمارهی بلوک.ا\_ضافه کردن**, **\_شمارهی بلوک.شماره** - ستون تو در تو . برای جهش از جداول تکرار, این شامل یک رکورد برای هر پارتیشن: شناسه پارتیشن و شماره بلوک که توسط جهش خریداری شد (در هر پارتیشن, تنها بخش هایی که حاوی بلوک با اعداد کمتر از تعداد بلوک های خریداری شده توسط جهش در پارتیشن که جهش خواهد شد). در جداول غیر تکرار, تعداد بلوک در تمام پارتیشن به صورت یک توالی واحد. این به این معنی است که برای جهش از جداول غیر تکرار, ستون یک رکورد با یک عدد بلوک واحد خریداری شده توسط جهش شامل.
 
-**parts\_to\_do** - The number of data parts that need to be mutated for the mutation to finish.
+**\_کوچکنمایی** - تعدادی از قطعات داده است که نیاز به جهش را به پایان برساند جهش یافته است .
 
-**is\_done** - Is the mutation done? Note that even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not done yet because of a long-running INSERT that will create a new data part that will need to be mutated.
+**\_مخفی کردن** - توجه داشته باشید که حتی اگر `parts_to_do = 0` ممکن است که جهش جدول تکرار هنوز به دلیل درج طولانی در حال اجرا است که ایجاد بخش داده های جدید است که نیاز به جهش انجام می شود است.
 
-If there were problems with mutating some parts, the following columns contain additional information:
+اگر مشکلی با جهش برخی از قطعات وجود دارد, ستون های زیر حاوی اطلاعات اضافی:
 
-**latest\_failed\_part** - The name of the most recent part that could not be mutated.
+**\_شروع مجدد** - نام جدید ترین بخش است که نمی تواند جهش یافته است.
 
-**latest\_fail\_time** - The time of the most recent part mutation failure.
+**زمان \_رشته** - زمان جدید ترین شکست جهش بخشی .
 
-**latest\_fail\_reason** - The exception message that caused the most recent part mutation failure.
+**\_شروع مجدد** - پیام استثنا که باعث شکست جهش بخشی اخیر.
 
-## system.disks {#system_tables-disks}
+## سیستم.دیسکها {#system_tables-disks}
 
-Contains information about disks defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+حاوی اطلاعات در مورد دیسک های تعریف شده در [پیکربندی کارساز](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
-Columns:
+ستونها:
 
--   `name` ([String](../data_types/string.md)) — Name of a disk in the server configuration.
--   `path` ([String](../data_types/string.md)) — Path to the mount point in the file system.
--   `free_space` ([UInt64](../data_types/int_uint.md)) — Free space on disk in bytes.
--   `total_space` ([UInt64](../data_types/int_uint.md)) — Disk volume in bytes.
--   `keep_free_space` ([UInt64](../data_types/int_uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` parameter of disk configuration.
+-   `name` ([رشته](../sql_reference/data_types/string.md)) — Name of a disk in the server configuration.
+-   `path` ([رشته](../sql_reference/data_types/string.md)) — Path to the mount point in the file system.
+-   `free_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Free space on disk in bytes.
+-   `total_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Disk volume in bytes.
+-   `keep_free_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` پارامتر پیکربندی دیسک.
 
-## system.storage\_policies {#system_tables-storage_policies}
+## سیستم.داستان\_یابی {#system_tables-storage_policies}
 
-Contains information about storage policies and volumes defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+حاوی اطلاعات در مورد سیاست های ذخیره سازی و حجم تعریف شده در [پیکربندی کارساز](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
-Columns:
+ستونها:
 
--   `policy_name` ([String](../data_types/string.md)) — Name of the storage policy.
--   `volume_name` ([String](../data_types/string.md)) — Volume name defined in the storage policy.
--   `volume_priority` ([UInt64](../data_types/int_uint.md)) — Volume order number in the configuration.
--   `disks` ([Array(String)](../data_types/array.md)) — Disk names, defined in the storage policy.
--   `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
--   `move_factor` ([Float64](../data_types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
+-   `policy_name` ([رشته](../sql_reference/data_types/string.md)) — Name of the storage policy.
+-   `volume_name` ([رشته](../sql_reference/data_types/string.md)) — Volume name defined in the storage policy.
+-   `volume_priority` ([UInt64](../sql_reference/data_types/int_uint.md)) — Volume order number in the configuration.
+-   `disks` ([رشته)](../sql_reference/data_types/array.md)) — Disk names, defined in the storage policy.
+-   `max_data_part_size` ([UInt64](../sql_reference/data_types/int_uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
+-   `move_factor` ([جسم شناور64](../sql_reference/data_types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
 
-If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
+اگر سیاست ذخیره سازی شامل بیش از یک حجم, سپس اطلاعات برای هر حجم در ردیف فرد از جدول ذخیره می شود.
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/system_tables/) <!--hide-->
