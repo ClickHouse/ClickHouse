@@ -195,6 +195,9 @@ private:
     IndicesDescription indices;
     ConstraintsDescription constraints;
 
+private:
+    RWLockImpl::LockHolder tryLockTimed(const RWLock & rwlock, RWLockImpl::Type type, const String & query_id);
+
 public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of
     /// the query. If will_add_new_data is true, this means that the query will add new data to the table
