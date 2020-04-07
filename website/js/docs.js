@@ -39,6 +39,7 @@ function onResize() {
         });
     }
 }
+
 $(document).ready(function () {
     onResize();
     $('#sidebar .nav-link.active').parents('.collapse').each(function() {
