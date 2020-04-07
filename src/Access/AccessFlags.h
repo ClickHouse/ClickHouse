@@ -274,7 +274,17 @@ private:
         comment_column->aliases.push_back("ALTER COMMENT COLUMN");
         auto clear_column = std::make_unique<Node>("CLEAR COLUMN", next_flag++, COLUMN);
         clear_column->aliases.push_back("ALTER CLEAR COLUMN");
-        auto alter_column = std::make_unique<Node>("ALTER COLUMN", std::move(add_column), std::move(modify_column), std::move(drop_column), std::move(comment_column), std::move(clear_column));
+        auto rename_column = std::make_unique<Node>("RENAME COLUMN", next_flag++, COLUMN);
+        rename_column->aliases.push_back("ALTER RENAME COLUMN");
+
+        auto alter_column = std::make_unique<Node>(
+            "ALTER COLUMN",
+            std::move(add_column),
+            std::move(modify_column),
+            std::move(drop_column),
+            std::move(comment_column),
+            std::move(clear_column),
+            std::move(rename_column));
 
         auto alter_order_by = std::make_unique<Node>("ALTER ORDER BY", next_flag++, TABLE);
         alter_order_by->aliases.push_back("MODIFY ORDER BY");
