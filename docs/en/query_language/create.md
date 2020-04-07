@@ -322,7 +322,7 @@ There are multiple ways of user identification:
 
 - `IDENTIFIED WITH no_password`
 - `IDENTIFIED WITH plaintext_password BY 'qwerty'`
-- `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password`
+- `IDENTIFIED WITH sha256_password BY 'qwerty'` or `IDENTIFIED BY 'password'`
 - `IDENTIFIED WITH sha256_hash BY 'hash'`
 - `IDENTIFIED WITH double_sha1_password BY 'qwerty'`
 - `IDENTIFIED WITH double_sha1_hash BY 'hash'`

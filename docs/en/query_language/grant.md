@@ -57,7 +57,7 @@ You can grant multiple privileges to multiple accounts in one query. The query `
 
 Privilege is a permission to perform specific kind of queries.
 
-Privileges have an hiehierarchic structure. A set of permitted queries depends on the privilege scope.
+Privileges have an hierarchic structure. A set of permitted queries depends on the privilege scope.
 
 Top scope privileges:
 
