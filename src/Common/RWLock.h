@@ -82,6 +82,6 @@ private:
 private:
     RWLockImpl() = default;
     void unlock(GroupsContainer::iterator group_it, const String & query_id) noexcept;
-    void erase_group(GroupsContainer::iterator group_it) noexcept;
+    void eraseGroup(GroupsContainer::iterator group_it) noexcept;
 };
 }
