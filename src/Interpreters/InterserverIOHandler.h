@@ -60,7 +60,7 @@ public:
             throw Exception("Duplicate interserver IO endpoint: " + name, ErrorCodes::DUPLICATE_INTERSERVER_IO_ENDPOINT);
     }
 
-    bool removeEndpointIfExists(const String & name)>>
+    bool removeEndpointIfExists(const String & name)
     {
         std::lock_guard lock(mutex);
         LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), "anime removeEndpointIfExists()  " << name);
