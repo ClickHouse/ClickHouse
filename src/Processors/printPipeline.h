@@ -40,15 +40,20 @@ void printPipeline(const Processors & processors, const Statuses & statuses, Wri
     /// Edges
     for (const auto & processor : processors)
     {
-        for (const auto & port : processor->getOutputs())
+        for (const auto & output : processor->getOutputs())
         {
-            if (!port.isConnected())
+            if (!output.isConnected())
                 continue;
 
-            const IProcessor & curr = *processor;
-            const IProcessor & next = port.getInputPort().getProcessor();
+            const auto & input = output.getInputPort();
 
-            out << "n" << get_proc_id(curr) << " -> " << "n" << get_proc_id(next) << ";\n";
+            const IProcessor & curr = *processor;
+            const IProcessor & next = input.getProcessor();
+
+            out << "n" << get_proc_id(curr) << " -> " << "n" << get_proc_id(next) << "[label=\""
+                << "pushed " << output.totalPushedChunks() << " chunks, " << output.totalPushedRows() << " rows\n"
+                << "pulled " << input.totalPulledChunks() << " chunks, " << input.totalPulledRows() << " rows"
+                << "\"];\n";
         }
     }
     out << "}\n";

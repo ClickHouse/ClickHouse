@@ -267,6 +267,9 @@ private:
 
     mutable bool is_finished = false;
 
+    size_t total_pulled_chunks = 0;
+    size_t total_pulled_rows = 0;
+
 public:
     using Port::Port;
 
@@ -295,6 +298,9 @@ public:
             throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
         }
 
+        ++total_pulled_rows;
+        total_pulled_chunks += data->chunk.getNumRows();
+
         return std::move(*data);
     }
 
@@ -307,6 +313,9 @@ public:
 
         return std::move(data_.chunk);
     }
+
+    size_t totalPulledRows() const { return total_pulled_rows; }
+    size_t totalPulledChunks() const { return total_pulled_chunks; }
 
     bool ALWAYS_INLINE isFinished() const
     {
@@ -383,6 +392,9 @@ class OutputPort : public Port
 private:
     InputPort * input_port = nullptr;
 
+    size_t total_pushed_chunks = 0;
+    size_t total_pushed_rows = 0;
+
 public:
     using Port::Port;
 
@@ -414,10 +426,16 @@ public:
 
         assumeConnected();
 
+        ++total_pushed_chunks;
+        total_pushed_rows += data_.chunk.getNumRows();
+
         std::uintptr_t flags = 0;
         *data = std::move(data_);
         state->push(data, flags);
     }
+
+    size_t totalPushedRows() const { return total_pushed_rows; }
+    size_t totalPushedChunks() const { return total_pushed_chunks; }
 
     void ALWAYS_INLINE finish()
     {
