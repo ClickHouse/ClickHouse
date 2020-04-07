@@ -893,7 +893,13 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                         default_totals = true;
                     }
 
-                    bool inflating_join = join && !typeid_cast<Join *>(join.get());
+                    bool inflating_join = false;
+                    if (join)
+                    {
+                        inflating_join = true;
+                        if (auto * hash_join = typeid_cast<Join *>(join.get()))
+                            inflating_join = isCross(hash_join->getKind());
+                    }
 
                     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType type)
                     {
