@@ -332,4 +332,8 @@ namespace DB
     template <> bool decimalEqual(Decimal128 x, Decimal128 y, UInt32 xs, UInt32 ys) { return decEqual(x, y, xs, ys); }
     template <> bool decimalLess(Decimal128 x, Decimal128 y, UInt32 xs, UInt32 ys) { return decLess(x, y, xs, ys); }
     template <> bool decimalLessOrEqual(Decimal128 x, Decimal128 y, UInt32 xs, UInt32 ys) { return decLessOrEqual(x, y, xs, ys); }
+
+    template <> bool decimalEqual(Decimal256 x, Decimal256 y, UInt32 xs, UInt32 ys) { return decEqual(x, y, xs, ys); }
+    template <> bool decimalLess(Decimal256 x, Decimal256 y, UInt32 xs, UInt32 ys) { return decLess(x, y, xs, ys); }
+    template <> bool decimalLessOrEqual(Decimal256 x, Decimal256 y, UInt32 xs, UInt32 ys) { return decLessOrEqual(x, y, xs, ys); }
 }

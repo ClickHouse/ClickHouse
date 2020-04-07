@@ -42,6 +42,10 @@ inline UInt32 leastDecimalPrecisionFor(TypeIndex int_type)
             return 19;
         case TypeIndex::UInt64:
             return 20;
+        case TypeIndex::bInt256:
+            return 39; // FIXME: adjust
+        case TypeIndex::bUInt256:
+            return 40; // FIXME: adjust
         default:
             break;
     }
@@ -197,7 +201,7 @@ const DecimalType<U> decimalResultType(const DataTypeNumber<T> &, const DecimalT
 template <template <typename> typename DecimalType>
 DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value, const String & type_name = "Decimal", bool only_scale = false)
 {
-    if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal128>())
+    if (precision_value < DecimalUtils::minPrecision() || precision_value > DecimalUtils::maxPrecision<Decimal256>())
         throw Exception("Wrong precision", ErrorCodes::ARGUMENT_OUT_OF_BOUND);
 
     if (static_cast<UInt64>(scale_value) > precision_value)
@@ -207,7 +211,9 @@ DataTypePtr createDecimal(UInt64 precision_value, UInt64 scale_value, const Stri
         return std::make_shared<DecimalType<Decimal32>>(precision_value, scale_value, type_name, only_scale);
     else if (precision_value <= DecimalUtils::maxPrecision<Decimal64>())
         return std::make_shared<DecimalType<Decimal64>>(precision_value, scale_value, type_name, only_scale);
-    return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value, type_name, only_scale);
+    else if (precision_value <= DecimalUtils::maxPrecision<Decimal128>())
+        return std::make_shared<DecimalType<Decimal128>>(precision_value, scale_value, type_name, only_scale);
+    return std::make_shared<DecimalType<Decimal256>>(precision_value, scale_value, type_name, only_scale);
 }
 
 }

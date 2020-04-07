@@ -36,7 +36,7 @@ inline bool allowDecimalComparison(const DataTypePtr & left_type, const DataType
 template <size_t > struct ConstructDecInt { using Type = Int32; };
 template <> struct ConstructDecInt<8> { using Type = Int64; };
 template <> struct ConstructDecInt<16> { using Type = Int128; };
-template <> struct ConstructDecInt<32> { using Type = bInt256; };
+template <> struct ConstructDecInt<48> { using Type = bInt256; }; // sizeof(int256_t)
 
 template <typename T, typename U>
 struct DecCompareInt
