@@ -9,7 +9,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
 
 1.  Go to “commits” page: https://github.com/ClickHouse/ClickHouse/commits/master
 
-2.  Click on the first green check mark or red cross with green “ClickHouse Build Check” and click on the “Details” link near “ClickHouse Build Check”.  There is no such link in some commits, for example commits with documentation. In this case, choose the nearest commit having this link. 
+2.  Click on the first green check mark or red cross with green “ClickHouse Build Check” and click on the “Details” link near “ClickHouse Build Check”. There is no such link in some commits, for example commits with documentation. In this case, choose the nearest commit having this link.
 
 3.  Copy the link to “clickhouse” binary for amd64 or aarch64.
 
