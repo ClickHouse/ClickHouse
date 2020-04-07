@@ -1,4 +1,4 @@
-#include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/TableJoin.h>
 
 #include <Parsers/ASTExpressionList.h>
 
@@ -15,7 +15,7 @@ namespace ErrorCodes
 {
 }
 
-AnalyzedJoin::AnalyzedJoin(const Settings & settings, VolumePtr tmp_volume_)
+TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , default_max_bytes(settings.default_max_bytes_in_join)
     , join_use_nulls(settings.join_use_nulls)
@@ -29,7 +29,7 @@ AnalyzedJoin::AnalyzedJoin(const Settings & settings, VolumePtr tmp_volume_)
         join_algorithm = JoinAlgorithm::PREFER_PARTIAL_MERGE;
 }
 
-void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
+void TableJoin::addUsingKey(const ASTPtr & ast)
 {
     key_names_left.push_back(ast->getColumnName());
     key_names_right.push_back(ast->getAliasOrColumnName());
@@ -42,7 +42,7 @@ void AnalyzedJoin::addUsingKey(const ASTPtr & ast)
         right_key = renames[right_key];
 }
 
-void AnalyzedJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
+void TableJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
 {
     key_names_left.push_back(left_table_ast->getColumnName());
     key_names_right.push_back(right_table_ast->getAliasOrColumnName());
@@ -52,7 +52,7 @@ void AnalyzedJoin::addOnKeys(ASTPtr & left_table_ast, ASTPtr & right_table_ast)
 }
 
 /// @return how many times right key appears in ON section.
-size_t AnalyzedJoin::rightKeyInclusion(const String & name) const
+size_t TableJoin::rightKeyInclusion(const String & name) const
 {
     if (hasUsing())
         return 0;
@@ -64,7 +64,7 @@ size_t AnalyzedJoin::rightKeyInclusion(const String & name) const
     return count;
 }
 
-void AnalyzedJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix)
+void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_columns, const String & right_table_prefix)
 {
     NameSet joined_columns;
     NamesAndTypesList dedup_columns;
@@ -90,7 +90,7 @@ void AnalyzedJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_c
     columns_from_joined_table.swap(dedup_columns);
 }
 
-NameSet AnalyzedJoin::getQualifiedColumnsSet() const
+NameSet TableJoin::getQualifiedColumnsSet() const
 {
     NameSet out;
     for (const auto & names : original_names)
@@ -98,7 +98,7 @@ NameSet AnalyzedJoin::getQualifiedColumnsSet() const
     return out;
 }
 
-NamesWithAliases AnalyzedJoin::getNamesWithAliases(const NameSet & required_columns) const
+NamesWithAliases TableJoin::getNamesWithAliases(const NameSet & required_columns) const
 {
     NamesWithAliases out;
     for (const auto & column : required_columns)
@@ -110,14 +110,14 @@ NamesWithAliases AnalyzedJoin::getNamesWithAliases(const NameSet & required_colu
     return out;
 }
 
-ASTPtr AnalyzedJoin::leftKeysList() const
+ASTPtr TableJoin::leftKeysList() const
 {
     ASTPtr keys_list = std::make_shared<ASTExpressionList>();
     keys_list->children = key_asts_left;
     return keys_list;
 }
 
-ASTPtr AnalyzedJoin::rightKeysList() const
+ASTPtr TableJoin::rightKeysList() const
 {
     ASTPtr keys_list = std::make_shared<ASTExpressionList>();
     if (hasOn())
@@ -125,7 +125,7 @@ ASTPtr AnalyzedJoin::rightKeysList() const
     return keys_list;
 }
 
-Names AnalyzedJoin::requiredJoinedNames() const
+Names TableJoin::requiredJoinedNames() const
 {
     NameSet required_columns_set(key_names_right.begin(), key_names_right.end());
     for (const auto & joined_column : columns_added_by_join)
@@ -134,7 +134,7 @@ Names AnalyzedJoin::requiredJoinedNames() const
     return Names(required_columns_set.begin(), required_columns_set.end());
 }
 
-NameSet AnalyzedJoin::requiredRightKeys() const
+NameSet TableJoin::requiredRightKeys() const
 {
     NameSet required;
     for (const auto & name : key_names_right)
@@ -144,7 +144,7 @@ NameSet AnalyzedJoin::requiredRightKeys() const
     return required;
 }
 
-NamesWithAliases AnalyzedJoin::getRequiredColumns(const Block & sample, const Names & action_required_columns) const
+NamesWithAliases TableJoin::getRequiredColumns(const Block & sample, const Names & action_required_columns) const
 {
     NameSet required_columns(action_required_columns.begin(), action_required_columns.end());
 
@@ -155,7 +155,7 @@ NamesWithAliases AnalyzedJoin::getRequiredColumns(const Block & sample, const Na
     return getNamesWithAliases(required_columns);
 }
 
-void AnalyzedJoin::addJoinedColumn(const NameAndTypePair & joined_column)
+void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
     if (join_use_nulls && isLeftOrFull(table_join.kind))
     {
@@ -166,7 +166,7 @@ void AnalyzedJoin::addJoinedColumn(const NameAndTypePair & joined_column)
         columns_added_by_join.push_back(joined_column);
 }
 
-void AnalyzedJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) const
+void TableJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) const
 {
     bool right_or_full_join = isRightOrFull(table_join.kind);
     bool left_or_full_join = isLeftOrFull(table_join.kind);
@@ -198,7 +198,7 @@ void AnalyzedJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) c
     }
 }
 
-bool AnalyzedJoin::sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y)
+bool TableJoin::sameJoin(const TableJoin * x, const TableJoin * y)
 {
     if (!x && !y)
         return true;
@@ -212,7 +212,7 @@ bool AnalyzedJoin::sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y)
         && x->columns_added_by_join == y->columns_added_by_join;
 }
 
-bool AnalyzedJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
+bool TableJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, ASTTableJoin::Kind kind_) const
 {
     if (strictness_ == strictness() && kind_ == kind())
         return true;
@@ -228,7 +228,7 @@ bool AnalyzedJoin::sameStrictnessAndKind(ASTTableJoin::Strictness strictness_, A
     return false;
 }
 
-bool AnalyzedJoin::allowMergeJoin() const
+bool TableJoin::allowMergeJoin() const
 {
     bool is_any = (strictness() == ASTTableJoin::Strictness::Any);
     bool is_all = (strictness() == ASTTableJoin::Strictness::All);
