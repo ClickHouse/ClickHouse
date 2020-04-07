@@ -1,55 +1,60 @@
-<div markdown="1" markdown="1" markdown="1" dir="rtl">
+---
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 26
+toc_title: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u0647\u0627\u06CC \u0645\
+  \u0634\u062A\u0631\u06CC"
+---
 
-# کتابخانه های مشتری شخص ثالث {#khtbkhnh-hy-mshtry-shkhs-thlth}
+# کتابخانه های مشتری از توسعه دهندگان شخص ثالث {#client-libraries-from-third-party-developers}
 
-!!! warning "سلب مسئولیت"
-    Yandex نه حفظ کتابخانه ها در زیر ذکر شده و نشده انجام هر آزمایش های گسترده ای برای اطمینان از کیفیت آنها.
+!!! warning "تکذیبنامهها"
+    یاندکس می کند **نه** حفظ کتابخانه های ذکر شده در زیر و هر تست گسترده برای اطمینان از کیفیت خود را انجام نداده اند.
 
--   Python
-    -   [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm)
-    -   [clickhouse-driver](https://github.com/mymarilyn/clickhouse-driver)
-    -   [clickhouse-client](https://github.com/yurial/clickhouse-client)
+-   پایتون
+    -   [اطالعات.کلیک \_شورم](https://github.com/Infinidat/infi.clickhouse_orm)
+    -   [کلیک راننده](https://github.com/mymarilyn/clickhouse-driver)
+    -   [کلیک مشتری](https://github.com/yurial/clickhouse-client)
+    -   [اطلاعات دقیق](https://github.com/maximdanilchenko/aiochclient)
 -   PHP
-    -   [smi2/phpclickhouse](https://packagist.org/packages/smi2/phpClickHouse)
-    -   [8bitov/clickhouse-php-client](https://packagist.org/packages/8bitov/clickhouse-php-client)
-    -   [bozerkins/clickhouse-client](https://packagist.org/packages/bozerkins/clickhouse-client)
-    -   [simpod/clickhouse-client](https://packagist.org/packages/simpod/clickhouse-client)
-    -   [seva-code/php-click-house-client](https://packagist.org/packages/seva-code/php-click-house-client)
-    -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
--   Go
-    -   [clickhouse](https://github.com/kshvakov/clickhouse/)
-    -   [go-clickhouse](https://github.com/roistat/go-clickhouse)
-    -   [mailrugo-clickhouse](https://github.com/mailru/go-clickhouse)
-    -   [golang-clickhouse](https://github.com/leprosus/golang-clickhouse)
--   NodeJs
-    -   [clickhouse (NodeJs)](https://github.com/TimonKK/clickhouse)
-    -   [node-clickhouse](https://github.com/apla/node-clickhouse)
--   Perl
+    -   [اسمی2 / تلفن هوشمند](https://packagist.org/packages/smi2/phpClickHouse)
+    -   [8bitov/clickhouse-php-مشتری](https://packagist.org/packages/8bitov/clickhouse-php-client)
+    -   [برزرکینس / ناحیه کاربری](https://packagist.org/packages/bozerkins/clickhouse-client)
+    -   [ساده / کلیک-کارفرما](https://packagist.org/packages/simpod/clickhouse-client)
+    -   [سوا کد / پی اچ پی-کلیک-خانه مشتری](https://packagist.org/packages/seva-code/php-click-house-client)
+    -   [دریازده ج++ مشتری](https://github.com/SeasX/SeasClick)
+-   برو
+    -   [فاحشه خانه](https://github.com/kshvakov/clickhouse/)
+    -   [برو کلیک هاوس](https://github.com/roistat/go-clickhouse)
+    -   [میلروگو-کلیک هاوس](https://github.com/mailru/go-clickhouse)
+    -   [گلنگ-خانه کلیک](https://github.com/leprosus/golang-clickhouse)
+-   نوکس
+    -   [فاحشه خانه)](https://github.com/TimonKK/clickhouse)
+    -   [گره کلیک هاوس](https://github.com/apla/node-clickhouse)
+-   پرل
     -   [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
-    -   [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)
-    -   [AnyEvent-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
--   Ruby
-    -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
+    -   [صفحه اصلی](https://metacpan.org/release/HTTP-ClickHouse)
+    -   [هرفنت-کلیکهاوس](https://metacpan.org/release/AnyEvent-ClickHouse)
+-   روبی
+    -   [تاتر (روبی)](https://github.com/shlima/click_house)
+    -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   R
-    -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
-    -   [RClickhouse](https://github.com/IMSMWU/RClickhouse)
--   Java
-    -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
--   Scala
-    -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
--   Kotlin
+    -   [کلیک تحقیق](https://github.com/hannesmuehleisen/clickhouse-r)
+    -   [خانه روستایی](https://github.com/IMSMWU/RClickhouse)
+-   جاوا
+    -   [فاحشه خانه-مشتری-جاوا](https://github.com/VirtusAI/clickhouse-client-java)
+    -   [کلیک مشتری](https://github.com/Ecwid/clickhouse-client)
+-   اسکالا
+    -   [تاتر-اسکالا-کارفرما](https://github.com/crobox/clickhouse-scala-client)
+-   کوتلین
     -   [AORM](https://github.com/TanVD/AORM)
 -   C\#
-    -   [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
+    -   [فاحشه خانه.ادو](https://github.com/killwort/ClickHouse-Net)
+    -   [فاحشه خانه.کارگیر](https://github.com/DarkWanderer/ClickHouse.Client)
     -   [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
-    -   [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
--   Elixir
-    -   [clickhousex](https://github.com/appodeal/clickhousex/)
--   Nim
-    -   [nim-clickhouse](https://github.com/leonardoce/nim-clickhouse)
+-   اکسیر
+    -   [کلیک](https://github.com/appodeal/clickhousex/)
+-   نیم
+    -   [نیم کلیک خانه](https://github.com/leonardoce/nim-clickhouse)
 
-ما این کتابخانه ها را تست نکردیم. آنها به صورت تصادفی انتخاب شده اند.
-
-</div>
-
-[مقاله اصلی](https://clickhouse.tech/docs/fa/interfaces/third-party/client_libraries/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/interfaces/third-party/client_libraries/) <!--hide-->

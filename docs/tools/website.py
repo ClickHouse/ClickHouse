@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 
+import closure
 import cssmin
 import htmlmin
 import jinja2
@@ -79,11 +80,30 @@ def build_website(args):
                 f.write(content.encode('utf-8'))
 
 
-def minify_website(args):
-    css_in = f"'{args.website_dir}/css/bootstrap.css' " \
-        f"'{args.website_dir}/css/docsearch.css' " \
-        f"'{args.website_dir}/css/base.css' '{args.website_dir}/css/docs.css' " \
+def get_css_in(args):
+    return [
+        f"'{args.website_dir}/css/bootstrap.css'",
+        f"'{args.website_dir}/css/docsearch.css'",
+        f"'{args.website_dir}/css/base.css'",
+        f"'{args.website_dir}/css/docs.css'",
         f"'{args.website_dir}/css/highlight.css'"
+    ]
+
+
+def get_js_in(args):
+    return [
+        f"'{args.website_dir}/js/jquery-3.4.1.js'",
+        f"'{args.website_dir}/js/popper.js'",
+        f"'{args.website_dir}/js/bootstrap.js'",
+        f"'{args.website_dir}/js/base.js'",
+        f"'{args.website_dir}/js/index.js'",
+        f"'{args.website_dir}/js/docsearch.js'",
+        f"'{args.website_dir}/js/docs.js'"
+    ]
+
+
+def minify_website(args):
+    css_in = ' '.join(get_css_in(args))
     css_out = f'{args.output_dir}/css/base.css'
     if args.minify:
         command = f"purifycss -w '*algolia*' --min {css_in} '{args.output_dir}/*.html' " \
@@ -96,26 +116,16 @@ def minify_website(args):
     with open(css_out, 'rb') as f:
         css_digest = hashlib.sha3_224(f.read()).hexdigest()[0:8]
 
-    js_in = [
-        f"'{args.website_dir}/js/jquery-3.4.1.js'",
-        f"'{args.website_dir}/js/popper.js'",
-        f"'{args.website_dir}/js/bootstrap.js'",
-        f"'{args.website_dir}/js/base.js'",
-        f"'{args.website_dir}/js/index.js'",
-        f"'{args.website_dir}/js/docsearch.js'",
-        f"'{args.website_dir}/js/docs.js'"
-    ]
+    js_in = get_js_in(args)
     js_out = f'{args.output_dir}/js/base.js'
     if args.minify:
-        import closure
         js_in = [js[1:-1] for js in js_in]
         closure_args = [
             '--js', *js_in, '--js_output_file', js_out,
             '--compilation_level', 'SIMPLE',
             '--dependency_mode', 'NONE',
             '--third_party', '--use_types_for_optimization',
-            '--isolation_mode', 'IIFE',
-            '--create_source_map', '%outname%.map'
+            '--isolation_mode', 'IIFE'
         ]
         logging.info(closure_args)
         if closure.run(*closure_args):

@@ -1,3 +1,8 @@
+---
+toc_priority: 4
+toc_title: 特徴的な機能
+---
+
 # ClickHouseの特徴 {#clickhousenote-zheng}
 
 ## 真の列指向DBMS {#zhen-nolie-zhi-xiang-dbms}
@@ -56,6 +61,6 @@ ClickHouseには、精度を犠牲にしてパフォーマンスを得るため�
 
 非同期マルチマスターレプリケーションを使用します。使用可能なレプリカに書き込まれた後、データはバックグラウンドで残りのすべてのレプリカに配布されます。システムは、異なるレプリカで同一のデータを維持します。ほとんどの障害後の回復は、自動的に、複雑な場合には半自動的に実行されます。
 
-詳細については、[データ複製](../operations/table_engines/replication.md) セクションを参照してください。
+詳細については、[データ複製](../engines/table_engines/mergetree_family/replication.md) セクションを参照してください。
 
 [Original article](https://clickhouse.yandex/docs/en/introduction/distinctive_features/) <!--hide-->

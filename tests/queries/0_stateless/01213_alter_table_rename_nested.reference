@@ -1,0 +1,6 @@
+[8,9,10]
+['a','b','c']
+CREATE TABLE default.table_for_rename_nested (`date` Date, `key` UInt64, `n.x` Array(UInt32), `n.y` Array(String), `value1` String) ENGINE = MergeTree() PARTITION BY date ORDER BY key SETTINGS index_granularity = 8192
+CREATE TABLE default.table_for_rename_nested (`date` Date, `key` UInt64, `n.renamed_x` Array(UInt32), `n.renamed_y` Array(String), `value1` String) ENGINE = MergeTree() PARTITION BY date ORDER BY key SETTINGS index_granularity = 8192
+7	[8,9,10]
+7	['a','b','c']

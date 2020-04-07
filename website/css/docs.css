@@ -141,10 +141,11 @@
 }
 
 @media print {
-    #content-wrapper {
-        -ms-flex: 0 0 100%;
-        flex: 0 0 100%;
-        max-width: 100%;
+    body {
+        min-width: 0!important;
+    }
+    h1, h2, h3, h4, h5, h6, p, li, thead, tr, th, td, img, code, pre {
+        page-break-inside: avoid !important;
     }
 }
 

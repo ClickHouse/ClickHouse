@@ -35,7 +35,7 @@
 -   [StripeLog](stripelog.md)
 -   [Log](log.md)
 
-### Движки для интергации {#dvizhki-dlia-intergatsii}
+### Движки для интеграции {#dvizhki-dlia-integratsii}
 
 Движки для связи с другими системами хранения и обработки данных.
 

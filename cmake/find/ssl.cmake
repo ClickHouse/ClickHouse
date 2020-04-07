@@ -2,9 +2,7 @@ option(ENABLE_SSL "Enable ssl" ${ENABLE_LIBRARIES})
 
 if(ENABLE_SSL)
 
-if(NOT ARCH_32)
-    option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
-endif()
+option(USE_INTERNAL_SSL_LIBRARY "Set to FALSE to use system *ssl library instead of bundled" ${NOT_UNBUNDLED})
 
 if(NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/openssl/README")
     if(USE_INTERNAL_SSL_LIBRARY)
