@@ -1,5 +1,11 @@
 #pragma once
 
+#include <boost/multiprecision/integer.hpp>
+
+namespace {
+using boost::multiprecision::int256_t;
+}
+
 namespace common
 {
     template <typename T>
@@ -35,6 +41,14 @@ namespace common
         return (y > 0 && x > max_int128 - y) || (y < 0 && x < min_int128 - y);
     }
 
+    template <>
+    inline bool addOverflow(int256_t x, int256_t y, int256_t & res)
+    {
+        // FIXME: mock
+        res = x + y;
+        return false;
+    }
+
     template <typename T>
     inline bool subOverflow(T x, T y, T & res)
     {
@@ -66,6 +80,14 @@ namespace common
         static constexpr __int128 max_int128 = (__int128(0x7fffffffffffffffll) << 64) + 0xffffffffffffffffll;
         res = x - y;
         return (y < 0 && x > max_int128 + y) || (y > 0 && x < min_int128 + y);
+    }
+
+    template <>
+    inline bool subOverflow(int256_t x, int256_t y, int256_t & res)
+    {
+        // FIXME: mock
+        res = x - y;
+        return false;
     }
 
     template <typename T>
@@ -102,5 +124,13 @@ namespace common
         unsigned __int128 a = (x > 0) ? x : -x;
         unsigned __int128 b = (y > 0) ? y : -y;
         return (a * b) / b != a;
+    }
+
+    template <>
+    inline bool mulOverflow(int256_t x, int256_t y, int256_t & res)
+    {
+        // FIXME: mock
+        res = x * y;
+        return false;
     }
 }

@@ -42,6 +42,10 @@ inline uint64_t intExp10(int x)
     return table[x];
 }
 
+namespace {
+using boost::multiprecision::int256_t;
+}
+
 namespace common
 {
 
@@ -134,67 +138,66 @@ inline __int128 exp10_i128(int x)
     return values[x];
 }
 
-using int256 = boost::multiprecision::int256_t;
 
-inline int256 exp10_i256(int x)
+inline int256_t exp10_i256(int x)
 {
-    static const int256 values[] = {
-        static_cast<int256>(1ll),
-        static_cast<int256>(10ll),
-        static_cast<int256>(100ll),
-        static_cast<int256>(1000ll),
-        static_cast<int256>(10000ll),
-        static_cast<int256>(100000ll),
-        static_cast<int256>(1000000ll),
-        static_cast<int256>(10000000ll),
-        static_cast<int256>(100000000ll),
-        static_cast<int256>(1000000000ll),
-        static_cast<int256>(10000000000ll),
-        static_cast<int256>(100000000000ll),
-        static_cast<int256>(1000000000000ll),
-        static_cast<int256>(10000000000000ll),
-        static_cast<int256>(100000000000000ll),
-        static_cast<int256>(1000000000000000ll),
-        static_cast<int256>(10000000000000000ll),
-        static_cast<int256>(100000000000000000ll),
-        static_cast<int256>(1000000000000000000ll),
-        static_cast<int256>(1000000000000000000ll) * 10ll,
-        static_cast<int256>(1000000000000000000ll) * 100ll,
-        static_cast<int256>(1000000000000000000ll) * 1000ll,
-        static_cast<int256>(1000000000000000000ll) * 10000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000ll,
-        static_cast<int256>(1000000000000000000ll) * 1000000ll,
-        static_cast<int256>(1000000000000000000ll) * 10000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000ll,
-        static_cast<int256>(1000000000000000000ll) * 1000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 10000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 1000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 10000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 1000000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 10000000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 10ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 100ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 1000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 10000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 100000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 1000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 10000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 100000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 1000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 10000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 100000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 1000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 10000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 100000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 1000000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 10000000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 100000000000000000ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 100000000000000000ll * 10ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 100000000000000000ll * 100ll,
-        static_cast<int256>(1000000000000000000ll) * 100000000000000000ll * 100000000000000000ll * 1000ll
+    static const int256_t values[] = {
+        static_cast<int256_t>(1ll),
+        static_cast<int256_t>(10ll),
+        static_cast<int256_t>(100ll),
+        static_cast<int256_t>(1000ll),
+        static_cast<int256_t>(10000ll),
+        static_cast<int256_t>(100000ll),
+        static_cast<int256_t>(1000000ll),
+        static_cast<int256_t>(10000000ll),
+        static_cast<int256_t>(100000000ll),
+        static_cast<int256_t>(1000000000ll),
+        static_cast<int256_t>(10000000000ll),
+        static_cast<int256_t>(100000000000ll),
+        static_cast<int256_t>(1000000000000ll),
+        static_cast<int256_t>(10000000000000ll),
+        static_cast<int256_t>(100000000000000ll),
+        static_cast<int256_t>(1000000000000000ll),
+        static_cast<int256_t>(10000000000000000ll),
+        static_cast<int256_t>(100000000000000000ll),
+        static_cast<int256_t>(1000000000000000000ll),
+        static_cast<int256_t>(1000000000000000000ll) * 10ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100ll,
+        static_cast<int256_t>(1000000000000000000ll) * 1000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 10000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 1000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 10000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 1000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 10000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 1000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 10000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 1000000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 10000000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 10ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 100ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 1000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 10000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 100000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 1000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 10000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 100000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 1000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 10000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 100000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 1000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 10000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 100000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 1000000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 10000000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 100000000000000000ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 100000000000000000ll * 10ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 100000000000000000ll * 100ll,
+        static_cast<int256_t>(1000000000000000000ll) * 100000000000000000ll * 100000000000000000ll * 1000ll
     };
     return values[x];
 }

@@ -214,6 +214,8 @@ public:
     bool operator() (const UInt64 &, const Null &)          const { return false; }
     bool operator() (const UInt64 & l, const UInt64 & r)    const { return l == r; }
     bool operator() (const UInt64 & l, const UInt128 & r)   const { return cantCompare(l, r); }
+    bool operator() (const UInt64 & l, const bUInt256 & r)   const { return cantCompare(l, r); }
+    bool operator() (const UInt64 & l, const bInt256 & r)   const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Int64 & r)     const { return accurate::equalsOp(l, r); }
     bool operator() (const UInt64 & l, const Float64 & r)   const { return accurate::equalsOp(l, r); }
     bool operator() (const UInt64 & l, const String & r)    const { return cantCompare(l, r); }
@@ -224,6 +226,8 @@ public:
     bool operator() (const Int64 &, const Null &)           const { return false; }
     bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::equalsOp(l, r); }
     bool operator() (const Int64 & l, const UInt128 & r)    const { return cantCompare(l, r); }
+    bool operator() (const Int64 & l, const bUInt256 & r)    const { return cantCompare(l, r); }
+    bool operator() (const Int64 & l, const bInt256 & r)    const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Int64 & r)      const { return l == r; }
     bool operator() (const Int64 & l, const Float64 & r)    const { return accurate::equalsOp(l, r); }
     bool operator() (const Int64 & l, const String & r)     const { return cantCompare(l, r); }
@@ -234,6 +238,8 @@ public:
     bool operator() (const Float64 &, const Null &)         const { return false; }
     bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::equalsOp(l, r); }
     bool operator() (const Float64 & l, const UInt128 & r)  const { return cantCompare(l, r); }
+    bool operator() (const Float64 & l, const bUInt256 & r)  const { return cantCompare(l, r); }
+    bool operator() (const Float64 & l, const bInt256 & r)  const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Int64 & r)    const { return accurate::equalsOp(l, r); }
     bool operator() (const Float64 & l, const Float64 & r)  const { return l == r; }
     bool operator() (const Float64 & l, const String & r)   const { return cantCompare(l, r); }
@@ -352,6 +358,8 @@ public:
     bool operator() (const UInt64 &, const Null &)          const { return false; }
     bool operator() (const UInt64 & l, const UInt64 & r)    const { return l < r; }
     bool operator() (const UInt64 & l, const UInt128 & r)   const { return cantCompare(l, r); }
+    bool operator() (const UInt64 & l, const bUInt256 & r)   const { return cantCompare(l, r); }
+    bool operator() (const UInt64 & l, const bInt256 & r)   const { return cantCompare(l, r); }
     bool operator() (const UInt64 & l, const Int64 & r)     const { return accurate::lessOp(l, r); }
     bool operator() (const UInt64 & l, const Float64 & r)   const { return accurate::lessOp(l, r); }
     bool operator() (const UInt64 & l, const String & r)    const { return cantCompare(l, r); }
@@ -362,6 +370,8 @@ public:
     bool operator() (const Int64 &, const Null &)           const { return false; }
     bool operator() (const Int64 & l, const UInt64 & r)     const { return accurate::lessOp(l, r); }
     bool operator() (const Int64 & l, const UInt128 & r)    const { return cantCompare(l, r); }
+    bool operator() (const Int64 & l, const bUInt256 & r)    const { return cantCompare(l, r); }
+    bool operator() (const Int64 & l, const bInt256 & r)    const { return cantCompare(l, r); }
     bool operator() (const Int64 & l, const Int64 & r)      const { return l < r; }
     bool operator() (const Int64 & l, const Float64 & r)    const { return accurate::lessOp(l, r); }
     bool operator() (const Int64 & l, const String & r)     const { return cantCompare(l, r); }
@@ -372,6 +382,8 @@ public:
     bool operator() (const Float64 &, const Null &)         const { return false; }
     bool operator() (const Float64 & l, const UInt64 & r)   const { return accurate::lessOp(l, r); }
     bool operator() (const Float64 & l, const UInt128 & r)  const { return cantCompare(l, r); }
+    bool operator() (const Float64 & l, const bUInt256 & r) const { return cantCompare(l, r); }
+    bool operator() (const Float64 & l, const bInt256 & r)  const { return cantCompare(l, r); }
     bool operator() (const Float64 & l, const Int64 & r)    const { return accurate::lessOp(l, r); }
     bool operator() (const Float64 & l, const Float64 & r)  const { return l < r; }
     bool operator() (const Float64 & l, const String & r)   const { return cantCompare(l, r); }
@@ -412,20 +424,20 @@ public:
     template <typename T>
     bool operator() (const bUInt256 & l, const T & r) const
     {
-        if constexpr (std::is_same_v<T, bUInt256>)
-            return l < r;
-        if constexpr (std::is_same_v<T, Null>)
-            return false;
+//        if constexpr (std::is_same_v<T, bUInt256>)
+//            return l < r;
+//        if constexpr (std::is_same_v<T, Null>)
+//            return false;
         return cantCompare(l, r);
     }
 
     template <typename T>
     bool operator() (const bInt256 & l, const T & r) const
     {
-        if constexpr (std::is_same_v<T, bInt256>)
-            return l < r;
-        if constexpr (std::is_same_v<T, Null>)
-            return false;
+//        if constexpr (std::is_same_v<T, bInt256>)
+//            return l < r;
+//        if constexpr (std::is_same_v<T, Null>)
+//            return false;
         return cantCompare(l, r);
     }
 
