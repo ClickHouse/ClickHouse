@@ -256,7 +256,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
     else
     {
-        /// In old tables this node may missing
+        /// In old tables this node may missing or be empty
         String replica_metadata;
         bool replica_metadata_exists = current_zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
         if (!replica_metadata_exists || replica_metadata.empty())
