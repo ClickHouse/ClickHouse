@@ -510,9 +510,19 @@ ALTER USER [IF EXISTS] name
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```  
 
-### Description
+### Description {#alter-user-dscr}
 
 To use `ALTER USER` you must have the [CREATE USER](grant.md#grant-create-user) privilege.
+
+### Examples {#alter-user-examples}
+
+Set assigned roles as default:
+
+``` sql
+ALTER USER user DEFAULT ROLE role1, role2
+```
+
+If roles aren't previously granted to a user, ClickHouse throws an exception.
 
 
 ## ALTER ROLE {#alter-role-statement}

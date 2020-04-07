@@ -331,10 +331,10 @@ There are multiple ways of user identification:
 
 User host is a host from which a connection to ClickHouse server could be established. Host can be specified in the `HOST` section of query by the following ways:
 
-- `HOST IP 'IP_ADDRESS_OR_SUBNETWORK'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). For example, `HOST IP '192.168.0.0/16'`.
-- `HOST ANY` — No limits.
+- `HOST IP 'ip_address_or_subnetwork'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). Examples: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`.
+- `HOST ANY` — User can connect from any location.
 - `HOST LOCAL` — User can connect only locally.
-- `HOST NAME 'FQDN'` —  The user host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
+- `HOST NAME 'FQDN'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
 - `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.
 - `HOST LIKE 'te.mp.la.te'` — Allows you use the [LIKE](functions/string_search_functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, or `HOST LIKE '192.168.%.%'` is equivalent to `HOST IP '192.168.0.0/16'`.
 
@@ -348,14 +348,23 @@ Another way of specifying host is to use `@` syntax with the user name. Examples
     ClickHouse treats `user_name@'address'` as a user name as a whole. Thus, technically you can create multiple users with `user_name` and different constructions after `@`. We don't recommend to do so.
 
 
-### Example
+### Examples {#create-user-examples}
+
+
+Create the user account `mira` protected by the password `qwerty`:
 
 ```sql
 CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
 ```
 
-This query creates the user account `mira` protected by the password `qwerty`. Also user should start client app at the host where the ClickHouse server runs.
+`mira` should start client app at the host where the ClickHouse server runs.
 
+
+Create the user account `john`, assign roles to it and make this roles default:
+
+``` sql
+CREATE USER user DEFAULT ROLE role1, role2
+```
 
 ## CREATE ROLE {#create-role-statement}
 
@@ -374,7 +383,7 @@ Role is a set of [privileges](grant.md#grant-privileges). A user assigned with a
 
 A user can be assigned with multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges assigned directly to it's user account, they are also combined with the privileges granted by roles.
 
-User can have a default role which applies at user login. To set the default role, use the [SET DEFAULT ROLE](misc.md#set-default-role-statement) statement or the [ALTER USER](alter.md#alter-user-statement) statement.
+User can have default roles which apply at user login. To set default roles, use the [SET DEFAULT ROLE](misc.md#set-default-role-statement) statement or the [ALTER USER](alter.md#alter-user-statement) statement.
 
 To revoke a role, use the [REVOKE](revoke.md) statement.
 
@@ -413,7 +422,6 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [db.]table
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR SELECT]
     [USING condition]
-    [WITH CHECK condition] [,...]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 

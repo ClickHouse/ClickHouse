@@ -184,7 +184,7 @@ The response contains the `kill_status` column, which can take the following val
 
 A test query (`TEST`) only checks the user’s rights and displays a list of queries to stop.
 
-## KILL MUTATION {#kill-mutation}
+## KILL MUTATION {#kill-mutation-statement}
 
 ``` sql
 KILL MUTATION [ON CLUSTER cluster]
@@ -269,15 +269,42 @@ SET ROLE {DEFAULT | NONE | role [,...] | ALL | ALL EXCEPT role [,...]}
 
 ## SET DEFAULT ROLE {#set-default-role-statement}
 
-Assigns the default roles for a user.
+Sets default roles to a user.
 
-Default roles are automatically activated at user login.
+Default roles are automatically activated at user login. You can set as default only the previously granted roles. If the role isn't granted to a user, ClickHouse throws an exception.
 
 
 ### Syntax {#set-default-role-syntax}
 
 ``` sql
 SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CURRENT_USER} [,...]
+```
+
+
+### Examples {#set-default-role-examples}
+
+Assign multiple default roles to a user:
+
+``` sql
+SET DEFAULT ROLE role1, role2, ... TO user
+```
+
+Assign all the granted roles to a user:
+
+``` sql
+SET DEFAULT ROLE ALL TO user
+```
+
+Purge default roles from a user:
+
+``` sql
+SET DEFAULT ROLE NONE TO user
+```
+
+Assign all the granted roles excepting some of them:
+
+```sql
+SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
 ```
 
 ## TRUNCATE {#truncate-statement}

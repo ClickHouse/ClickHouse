@@ -26,7 +26,7 @@ GRANT role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPT
 - `role` — ClickHouse user role.
 - `user` — ClickHouse user account.
 
-The `WITH ADMIN OPTION` clause sets `ADMIN OPTION` privilege for `user` or `role`.
+The `WITH ADMIN OPTION` clause sets [ADMIN OPTION](#admin-option-privilege) privilege for `user` or `role`.
 
 ## Usage {#grant-usage}
 
@@ -158,6 +158,7 @@ Examples of how this hierarchy is treated:
 - The `MODIFY SETTING` privilege allows to modify table engine settings. In doesn't affect settings or server configuration parameters.
 - The `ATTACH` operation needs the [CREATE](#grant-create) privilege.
 - The `DETACH` operation needs the [DROP](#grant-drop) privilege.
+- To stop mutation by the [KILL MUTATION](misc.md#kill-mutation-statement) query, you need to have a privilege to start this mutation. For example, if you want to stop
 
 ### CREATE {#grant-create}
 
@@ -215,8 +216,6 @@ Allows to perform the [KILL](misc.md#kill-query-statement) queries corresponding
 
 - `KILL`
   - `KILL QUERY`
-  - `KILL MUTATION`
-
 
 **Notes**
 
