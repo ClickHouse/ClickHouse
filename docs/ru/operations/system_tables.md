@@ -245,7 +245,7 @@ SELECT * FROM system.events LIMIT 5
 -   `value` ([Int64](../data_types/int_uint.md)) — значение метрики.
 -   `description` ([String](../data_types/string.md)) — описание метрики.
 
-Список поддержанных метрик смотрите в файле [dbms/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Common/CurrentMetrics.cpp).
+Список поддержанных метрик смотрите в файле [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp).
 
 **Пример**
 
@@ -882,27 +882,57 @@ WHERE
 
 Если этот запрос ничего не возвращает - значит всё хорошо.
 
-## system.settings {#system-settings}
+## system.settings  {#system-tables-system-settings}
 
-Содержит информацию о настройках, используемых в данный момент.
-То есть, используемых для выполнения запроса, с помощью которого вы читаете из таблицы system.settings.
+Содержит информацию о сессионных настройках для текущего пользователя.
 
 Столбцы:
 
-``` text
-name String   - имя настройки
-value String  - значение настройки
-changed UInt8 - была ли настройка явно задана в конфиге или изменена явным образом
+- `name` ([String](../data_types/string.md)) — имя настройки.
+- `value` ([String](../data_types/string.md)) — значение настройки.
+- `changed` ([UInt8](../data_types/int_uint.md#uint-ranges)) — показывает, изменена ли настройка по отношению к значению по умолчанию.
+- `description` ([String](../data_types/string.md)) — краткое описание настройки. 
+- `min` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — минимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../query_language/syntax.md#null-literal). 
+- `max` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — максимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../query_language/syntax.md#null-literal). 
+- `readonly` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Показывает, может ли пользователь изменять настройку:
+     - `0` — Текущий пользователь может изменять настройку.
+     - `1` — Текущий пользователь не может изменять настройку.
+
+**Пример**
+
+Пример показывает как получить информацию о настройках, имена которых содержат `min_i`.
+
+```sql
+SELECT * 
+FROM system.settings 
+WHERE name LIKE '%min_i%'
 ```
 
-Пример:
-
-``` sql
-SELECT *
-FROM system.settings
-WHERE changed
+```text
+┌─name────────────────────────────────────────┬─value─────┬─changed─┬─description───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┐
+│ min_insert_block_size_rows                  │ 1048576   │       0 │ Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.                                                                         │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ min_insert_block_size_bytes                 │ 268435456 │       0 │ Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ read_backoff_min_interval_between_events_ms │ 1000      │       0 │ Settings to reduce the number of threads in case of slow reads. Do not pay attention to the event, if the previous one has passed less than a certain amount of time. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+└─────────────────────────────────────────────┴───────────┴─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┘
 ```
 
+Использование `WHERE changed` может быть полезно, например, если необходимо проверить:
+
+- Что настройки корректно загрузились из конфигурационного файла и используются.
+- Настройки, изменённые в текущей сессии.
+
+```sql
+SELECT * FROM system.settings WHERE changed AND name='load_balancing'
+```
+
+
+**Cм. также**
+
+- [Настройки](settings/index.md#settings)
+- [Разрешения для запросов](settings/permissions_for_queries.md#settings_readonly)
+- [Ограничения для значений настроек](settings/constraints_on_settings.md)
+
+## system.table_engines
 ``` text
 ┌─name───────────────────┬─value───────┬─changed─┐
 │ max_threads            │ 8           │       1 │
