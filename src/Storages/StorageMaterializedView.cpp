@@ -327,13 +327,16 @@ void StorageMaterializedView::mutate(const MutationCommands & commands, const Co
     getTargetTable()->mutate(commands, context);
 }
 
-void StorageMaterializedView::renameInMemory(const String & new_database_name, const String & new_table_name)
+void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 {
     auto old_table_id = getStorageID();
-    ///FIXME case when moving between DBs
-    if (has_inner_table && tryGetTargetTable() && !old_table_id.hasUUID())
+    auto old_target_table_name = generateInnerTableName(old_table_id);
+    auto new_target_table_name = generateInnerTableName(new_table_id);
+    bool inner_same_name = old_table_id.database_name == new_table_id.database_name &&
+                           old_target_table_name == new_target_table_name;
+
+    if (has_inner_table && tryGetTargetTable() && !inner_same_name)
     {
-        auto new_target_table_name = generateInnerTableName({new_database_name, new_table_name});
         auto rename = std::make_shared<ASTRenameQuery>();
 
         ASTRenameQuery::Table from;
@@ -353,7 +356,7 @@ void StorageMaterializedView::renameInMemory(const String & new_database_name, c
         target_table_id.table_name = new_target_table_name;
     }
 
-    IStorage::renameInMemory(new_database_name, new_table_name);
+    IStorage::renameInMemory(new_table_id);
     // TODO Actually we don't need to update dependency if MV has UUID, but then db and table name will be outdated
     DatabaseCatalog::instance().updateDependency(select_table_id, old_table_id, select_table_id, getStorageID());
 }

@@ -237,7 +237,7 @@ StorageStripeLog::StorageStripeLog(
 }
 
 
-void StorageStripeLog::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageStripeLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -245,7 +245,7 @@ void StorageStripeLog::rename(const String & new_path_to_table_data, const Strin
 
     table_path = new_path_to_table_data;
     file_checker.setPath(table_path + "sizes.json");
-    renameInMemory(new_database_name, new_table_name);
+    renameInMemory(new_table_id);
 }
 
 

@@ -95,11 +95,6 @@ public:
     /// The name of the table.
     StorageID getStorageID() const;
 
-    /// This method is required to set actual storage id for storage created by table function.
-    /// Also it's required for moving table between Ordinary and Atomic databases. Do not use it for other purposes.
-    /// TODO refactor table names in table functions
-    void resetStorageID(const StorageID & actual_table_id);
-
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
@@ -328,18 +323,18 @@ public:
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
       * In this function, you need to rename the directory with the data, if any.
       * Called when the table structure is locked for write.
+      * Table UUID must remain unchanged, unless table moved between Ordinary and Atomic databases.
       */
-    virtual void rename(const String & /*new_path_to_table_data*/, const String & new_database_name, const String & new_table_name,
-                        TableStructureWriteLockHolder &)
+    virtual void rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id)
     {
-        renameInMemory(new_database_name, new_table_name);
+        renameInMemory(new_table_id);
     }
 
     /**
      * Just updates names of database and table without moving any data on disk
      * Can be called directly only from DatabaseAtomic.
      */
-    virtual void renameInMemory(const String & new_database_name, const String & new_table_name);
+    virtual void renameInMemory(const StorageID & new_table_id);
 
     /** ALTER tables in the form of column changes that do not affect the change to Storage or its parameters.
       * This method must fully execute the ALTER query, taking care of the locks itself.

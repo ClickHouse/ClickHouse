@@ -391,7 +391,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
             return false;
     }
 
-    StorageID table_id{table};
+    StorageID table_id = getTableIdentifier(table);
 
     // Shortcut for ATTACH a previously detached table
     if (attach && (!pos.isValid() || pos.get().type == TokenType::Semicolon))
@@ -571,13 +571,14 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     query->if_not_exists = if_not_exists;
     query->is_live_view = true;
 
-    StorageID table_id{table};
+    StorageID table_id = getTableIdentifier(table);
     query->database = table_id.database_name;
     query->table = table_id.table_name;
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
-    query->to_table_id = StorageID(to_table);
+    if (to_table)
+        query->to_table_id = getTableIdentifier(to_table);
 
     query->set(query->columns_list, columns_list);
 
@@ -764,13 +765,14 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->is_populate = is_populate;
     query->replace_view = replace_view;
 
-    StorageID table_id{table};
+    StorageID table_id = getTableIdentifier(table);
     query->database = table_id.database_name;
     query->table = table_id.table_name;
     query->uuid = table_id.uuid;
     query->cluster = cluster_str;
 
-    query->to_table_id = StorageID(to_table);
+    if (to_table)
+        query->to_table_id = getTableIdentifier(to_table);
 
     query->set(query->columns_list, columns_list);
     query->set(query->storage, storage);

@@ -647,7 +647,7 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         const auto & table_function = create.as_table_function->as<ASTFunction &>();
         const auto & factory = TableFunctionFactory::instance();
         res = factory.get(table_function.name, context)->execute(create.as_table_function, context, create.table);
-        res->resetStorageID({create.database, create.table, create.uuid});
+        res->renameInMemory({create.database, create.table, create.uuid});
     }
     else
     {

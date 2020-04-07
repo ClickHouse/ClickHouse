@@ -121,10 +121,10 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
 
     auto detach = [](DatabaseAtomic & db, const String & table_name_)
     {
-        auto table_data_path_ = db.table_name_to_path.find(table_name_)->second;
+        auto table_data_path_saved = db.table_name_to_path.find(table_name_)->second;
         db.tables.erase(table_name_);
         db.table_name_to_path.erase(table_name_);
-        return table_data_path_;
+        return table_data_path_saved;
     };
 
     auto attach = [](DatabaseAtomic & db, const String & table_name_, const String & table_data_path_, const StoragePtr & table_)
@@ -164,9 +164,9 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     if (exchange)
         other_table_data_path = detach(other_db, to_table_name);
 
-    table->renameInMemory(other_db.getDatabaseName(), to_table_name);
+    table->renameInMemory({other_db.getDatabaseName(), to_table_name, table->getStorageID().uuid});
     if (exchange)
-        other_table->renameInMemory(getDatabaseName(), table_name);
+        other_table->renameInMemory({getDatabaseName(), table_name, other_table->getStorageID().uuid});
 
     if (!inside_database)
     {

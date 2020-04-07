@@ -52,7 +52,7 @@ public:
 
     void mutate(const MutationCommands & commands, const Context & context) override;
 
-    void renameInMemory(const String & new_database_name, const String & new_table_name) override;
+    void renameInMemory(const StorageID & new_table_id) override;
 
     void shutdown() override;
 

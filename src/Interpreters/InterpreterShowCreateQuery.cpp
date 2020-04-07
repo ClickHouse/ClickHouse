@@ -14,6 +14,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterShowCreateQuery.h>
 
+#include <Parsers/ASTCreateQuery.h>
 
 namespace DB
 {
@@ -71,6 +72,10 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
 
     if (!create_query && show_query && show_query->temporary)
         throw Exception("Unable to show the create query of " + show_query->table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
+
+    //FIXME temporary print create query without UUID for tests (remove it)
+    auto & create = create_query->as<ASTCreateQuery &>();
+    create.uuid = UUIDHelpers::Nil;
 
     std::stringstream stream;
     formatAST(*create_query, stream, false, true);

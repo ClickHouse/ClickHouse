@@ -33,9 +33,7 @@ StorageID::StorageID(const ASTIdentifier & table_identifier_node)
 
 StorageID::StorageID(const ASTPtr & node)
 {
-    if (!node)
-        *this = StorageID();
-    else if (auto identifier = dynamic_cast<const ASTIdentifier *>(node.get()))
+    if (auto identifier = dynamic_cast<const ASTIdentifier *>(node.get()))
         *this = StorageID(*identifier);
     else if (auto simple_query = dynamic_cast<const ASTQueryWithTableAndOutput *>(node.get()))
         *this = StorageID(*simple_query);
