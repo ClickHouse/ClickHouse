@@ -1,3 +1,8 @@
+---
+toc_priority: 3
+toc_title: Overview
+---
+
 # What is ClickHouse? {#what-is-clickhouse}
 
 ClickHouse is a column-oriented database management system (DBMS) for online analytical processing of queries (OLAP).
@@ -5,7 +10,7 @@ ClickHouse is a column-oriented database management system (DBMS) for online ana
 In a “normal” row-oriented DBMS, data is stored in this order:
 
 | Row | WatchID     | JavaEnable | Title              | GoodEvent | EventTime           |
-|-----|-------------|------------|--------------------|-----------|---------------------|
+|---|---------|--------|------------|-------|-------------|
 | \#0 | 89354350662 | 1          | Investor Relations | 1         | 2016-05-18 05:19:20 |
 | \#1 | 90329509958 | 0          | Contact us         | 1         | 2016-05-18 08:10:20 |
 | \#2 | 89953706054 | 1          | Mission            | 1         | 2016-05-18 07:38:00 |
@@ -13,12 +18,12 @@ In a “normal” row-oriented DBMS, data is stored in this order:
 
 In other words, all the values related to a row are physically stored next to each other.
 
-Examples of a row-oriented DBMS are MySQL, Postgres, and MS SQL Server. {: .grey }
+Examples of a row-oriented DBMS are MySQL, Postgres, and MS SQL Server.
 
 In a column-oriented DBMS, data is stored like this:
 
 | Row:        | \#0                 | \#1                 | \#2                 | \#N |
-|-------------|---------------------|---------------------|---------------------|-----|
+|---------|-------------|-------------|-------------|---|
 | WatchID:    | 89354350662         | 90329509958         | 89953706054         | …   |
 | JavaEnable: | 1                   | 0                   | 1                   | …   |
 | Title:      | Investor Relations  | Contact us          | Mission             | …   |
@@ -27,7 +32,7 @@ In a column-oriented DBMS, data is stored like this:
 
 These examples only show the order that data is arranged in. The values from different columns are stored separately, and data from the same column is stored together.
 
-Examples of a column-oriented DBMS: Vertica, Paraccel (Actian Matrix and Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise and Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, and kdb+. {: .grey }
+Examples of a column-oriented DBMS: Vertica, Paraccel (Actian Matrix and Amazon Redshift), Sybase IQ, Exasol, Infobright, InfiniDB, MonetDB (VectorWise and Actian Vector), LucidDB, SAP HANA, Google Dremel, Google PowerDrill, Druid, and kdb+.
 
 Different orders for storing data are better suited to different scenarios. The data access scenario refers to what queries are made, how often, and in what proportion; how much data is read for each type of query – rows, columns, and bytes; the relationship between reading and updating data; the working size of the data and how locally it is used; whether transactions are used, and how isolated they are; requirements for data replication and logical integrity; requirements for latency and throughput for each type of query, and so on.
 

@@ -1,3 +1,8 @@
+---
+toc_priority: 63
+toc_title: User Settings
+---
+
 # User Settings {#user-settings}
 
 The `users` section of the `user.xml` configuration file contains user settings.
@@ -136,6 +141,6 @@ The following configuration forces that user `user1` can only see the rows of `t
 </user1>
 ```
 
-The `filter` can be any expression resulting in a [UInt8](../../data_types/int_uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
+The `filter` can be any expression resulting in a [UInt8](../../sql_reference/data_types/int_uint.md)-type value. It usually contains comparisons and logical operators. Rows from `database_name.table1` where filter results to 0 are not returned for this user. The filtering is incompatible with `PREWHERE` operations and disables `WHERE→PREWHERE` optimization.
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings_users/) <!--hide-->
