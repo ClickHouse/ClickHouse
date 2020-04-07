@@ -315,13 +315,18 @@ bool IStorage::isVirtualColumn(const String & column_name) const
     return getColumns().get(column_name).is_virtual;
 }
 
-RWLockImpl::LockHolder tryLockTimed(const RWLock & rwlock, RWLockImpl::Type type, const String & query_id)
+RWLockImpl::LockHolder IStorage::tryLockTimed(const RWLock & rwlock, RWLockImpl::Type type, const String & query_id)
 {
-    auto lock_holder = rwlock->getLock(type, query_id, RWLockImpl::default_locking_timeout);
+    auto lock_holder = rwlock->getLock(type, query_id, RWLockImpl::default_locking_timeout_ms);
     if (!lock_holder)
+    {
+        const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
         throw Exception(
-                "Locking attempt timed out! Possible deadlock avoided. Client should retry.",
+                type_str + " locking attempt on \"" + getStorageID().getFullTableName() +
+                "\" has timed out! (" + toString(RWLockImpl::default_locking_timeout_ms.count()) + "ms) "
+                "Possible deadlock avoided. Client should retry.",
                 ErrorCodes::DEADLOCK_AVOIDED);
+    }
     return lock_holder;
 }
 

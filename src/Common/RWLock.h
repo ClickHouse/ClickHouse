@@ -50,7 +50,7 @@ public:
 
     /// Use as query_id to acquire a lock outside the query context.
     inline static const String NO_QUERY = String();
-    inline static const auto default_locking_timeout = std::chrono::milliseconds(120000);
+    inline static const auto default_locking_timeout_ms = std::chrono::milliseconds(120000);
 
 private:
     /// Group of locking requests that should be granted simultaneously
