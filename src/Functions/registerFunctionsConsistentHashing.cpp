@@ -12,7 +12,10 @@ void registerFunctionsConsistentHashing(FunctionFactory & factory)
 {
     registerFunctionYandexConsistentHash(factory);
     registerFunctionJumpConsistentHash(factory);
+
+#if !defined(ARCADIA_BUILD)
     registerFunctionSumburConsistentHash(factory);
+#endif
 }
 
 }

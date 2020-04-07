@@ -3,7 +3,6 @@ LIBRARY()
 NO_COMPILER_WARNINGS()
 
 PEERDIR(
-    clickhouse/contrib/btrie
     clickhouse/src/Common
     contrib/libs/poco/Data
     contrib/libs/poco/Data/ODBC
@@ -48,7 +47,6 @@ SRCS(
     readInvalidateQuery.cpp
     RedisDictionarySource.cpp
     registerDictionaries.cpp
-    TrieDictionary.cpp
     writeParenthesisedString.cpp
     XDBCDictionarySource.cpp
     Embedded/GeoDictionariesLoader.cpp

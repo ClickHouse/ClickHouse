@@ -1,11 +1,11 @@
 LIBRARY()
 
+ADDINCL(
+    library/consistent_hashing
+)
+
 PEERDIR(
-    clickhouse/contrib/consistent-hashing
-    clickhouse/contrib/consistent-hashing-sumbur
-    clickhouse/contrib/croaring
     clickhouse/contrib/libdivide
-    clickhouse/contrib/murmurhash
     clickhouse/src/Common
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
@@ -14,6 +14,7 @@ PEERDIR(
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash
+    library/consistent_hashing
 )
 
 SRCS(
@@ -138,7 +139,6 @@ SRCS(
     FunctionFQDN.cpp
     FunctionHelpers.cpp
     FunctionJoinGet.cpp
-    FunctionsBitmap.cpp
     FunctionsCoding.cpp
     FunctionsConversion.cpp
     FunctionsEmbeddedDictionaries.cpp
@@ -307,7 +307,6 @@ SRCS(
     subtractSeconds.cpp
     subtractWeeks.cpp
     subtractYears.cpp
-    sumburConsistentHash.cpp
     tan.cpp
     tanh.cpp
     tgamma.cpp

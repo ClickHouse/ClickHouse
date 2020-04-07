@@ -1,7 +1,6 @@
 LIBRARY()
 
 PEERDIR(
-    clickhouse/contrib/croaring
     clickhouse/contrib/pcg-random
     clickhouse/src/Common
 )
@@ -22,7 +21,6 @@ SRCS(
     AggregateFunctionGroupArray.cpp
     AggregateFunctionGroupArrayInsertAt.cpp
     AggregateFunctionGroupArrayMoving.cpp
-    AggregateFunctionGroupBitmap.cpp
     AggregateFunctionGroupUniqArray.cpp
     AggregateFunctionHistogram.cpp
     AggregateFunctionIf.cpp

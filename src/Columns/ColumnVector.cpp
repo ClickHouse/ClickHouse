@@ -18,8 +18,8 @@
 #include <ext/bit_cast.h>
 #include <pdqsort.h>
 
-#ifdef __SSE2__
-    #include <emmintrin.h>
+#if defined(__SSE2__)
+#    include <emmintrin.h>
 #endif
 
 namespace DB

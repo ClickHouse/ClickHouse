@@ -32,7 +32,11 @@
 #include <Dictionaries/ComplexKeyHashedDictionary.h>
 #include <Dictionaries/ComplexKeyCacheDictionary.h>
 #include <Dictionaries/RangeHashedDictionary.h>
-#include <Dictionaries/TrieDictionary.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Dictionaries/TrieDictionary.h>  // No btrie in Arcadia for now
+#endif
+
 #include <Dictionaries/PolygonDictionary.h>
 
 #include <ext/range.h>
@@ -135,7 +139,9 @@ private:
             !executeDispatchSimple<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+#if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
@@ -306,7 +312,9 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+#if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
@@ -488,8 +496,10 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
+#if !defined(ARCADIA_BUILD)
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -826,7 +836,9 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+#if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
@@ -1086,8 +1098,10 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
+#if !defined(ARCADIA_BUILD)
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 

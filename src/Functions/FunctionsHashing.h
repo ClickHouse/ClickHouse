@@ -3,8 +3,11 @@
 #include <city.h>
 #include <farmhash.h>
 #include <metrohash.h>
-#include <murmurhash2.h>
-#include <murmurhash3.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <murmurhash2.h>
+#    include <murmurhash3.h>
+#endif
 
 #include <Common/SipHash.h>
 #include <Common/typeid_cast.h>
@@ -225,7 +228,7 @@ struct SipHash128Impl
     }
 };
 
-
+#if !defined(ARCADIA_BUILD)
 /** Why we need MurmurHash2?
   * MurmurHash2 is an outdated hash function, superseded by MurmurHash3 and subsequently by CityHash, xxHash, HighwayHash.
   * Usually there is no reason to use MurmurHash.
@@ -336,6 +339,7 @@ struct MurmurHash3Impl64
 
     static constexpr bool use_int_hash_for_pods = false;
 };
+#endif
 
 /// http://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/String.java#l1452
 /// Care should be taken to do all calculation in unsigned integers (to avoid undefined behaviour on overflow)
@@ -417,6 +421,7 @@ struct HiveHashImpl
     static constexpr bool use_int_hash_for_pods = false;
 };
 
+#if !defined(ARCADIA_BUILD)
 struct MurmurHash3Impl128
 {
     static constexpr auto name = "murmurHash3_128";
@@ -427,6 +432,7 @@ struct MurmurHash3Impl128
         MurmurHash3_x64_128(begin, size, 0, out_char_data);
     }
 };
+#endif
 
 struct ImplCityHash64
 {
@@ -1151,12 +1157,14 @@ using FunctionSipHash128 = FunctionStringHashFixedString<SipHash128Impl>;
 using FunctionCityHash64 = FunctionAnyHash<ImplCityHash64>;
 using FunctionFarmHash64 = FunctionAnyHash<ImplFarmHash64>;
 using FunctionMetroHash64 = FunctionAnyHash<ImplMetroHash64>;
+#if !defined(ARCADIA_BUILD)
 using FunctionMurmurHash2_32 = FunctionAnyHash<MurmurHash2Impl32>;
 using FunctionMurmurHash2_64 = FunctionAnyHash<MurmurHash2Impl64>;
 using FunctionGccMurmurHash = FunctionAnyHash<GccMurmurHashImpl>;
 using FunctionMurmurHash3_32 = FunctionAnyHash<MurmurHash3Impl32>;
 using FunctionMurmurHash3_64 = FunctionAnyHash<MurmurHash3Impl64>;
 using FunctionMurmurHash3_128 = FunctionStringHashFixedString<MurmurHash3Impl128>;
+#endif
 using FunctionJavaHash = FunctionAnyHash<JavaHashImpl>;
 using FunctionJavaHashUTF16LE = FunctionAnyHash<JavaHashUTF16LEImpl>;
 using FunctionHiveHash = FunctionAnyHash<HiveHashImpl>;
