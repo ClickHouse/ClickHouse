@@ -298,8 +298,8 @@ public:
             throw Exception(msg, ErrorCodes::LOGICAL_ERROR);
         }
 
-        ++total_pulled_rows;
-        total_pulled_chunks += data->chunk.getNumRows();
+        ++total_pulled_chunks;
+        total_pulled_rows += data->chunk.getNumRows();
 
         return std::move(*data);
     }
