@@ -7,6 +7,7 @@
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -101,6 +102,8 @@ namespace
                 query->settings = profile.elements.toAST();
             else
                 query->settings = profile.elements.toASTWithNames(*manager);
+            if (query->settings)
+                query->settings->setUseInheritKeyword(true);
         }
 
         if (!profile.to_roles.empty())
