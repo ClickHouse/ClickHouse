@@ -11,7 +11,7 @@ namespace DB
 {
 
 class ASTIdentifier;
-class AnalyzedJoin;
+class TableJoin;
 
 namespace ASOF
 {
@@ -25,7 +25,7 @@ public:
 
     struct Data
     {
-        AnalyzedJoin & analyzed_join;
+        TableJoin & analyzed_join;
         const TableWithColumnNames & left_table;
         const TableWithColumnNames & right_table;
         const Aliases & aliases;
