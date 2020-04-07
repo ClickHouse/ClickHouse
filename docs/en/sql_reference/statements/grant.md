@@ -128,31 +128,31 @@ This privilege allows `john` to perform any `SELECT` query that involves data fr
 Allows to perform [ALTER](alter.md) queries corresponding to the following hierarchy of privileges:
 
 - `ALTER`
-  - `ALTER TABLE`
-    - `UPDATE`
-    - `DELETE`
-    - `ALTER COLUMN`
-      - `ADD COLUMN`
-      - `DROP COLUMN`
-      - `MODIFY COLUMN`
-      - `COMMENT COLUMN`
-    - `INDEX`
-      - `ALTER ORDER BY`
-      - `ADD INDEX`
-      - `DROP INDEX`
-      - `MATERIALIZE INDEX`
-      - `CLEAR INDEX`
-    - `ALTER CONSTRAINT`
-      - `ADD CONSTRAINT`
-      - `DROP CONSTRAINT`
-    - `MODIFY TTL`
-    - `MODIFY SETTING`
-    - `MOVE PARTITION`
-    - `FETCH PARTITION`
-    - `FREEZE PARTITION`
-    - `ALTER VIEW`
-      - `REFRESH VIEW`
-      - `MODIFY VIEW QUERY`
+    - `ALTER TABLE`
+        - `UPDATE`
+        - `DELETE`
+        - `ALTER COLUMN`
+            - `ADD COLUMN`
+            - `DROP COLUMN`
+            - `MODIFY COLUMN`
+            - `COMMENT COLUMN`
+        - `INDEX`
+            - `ALTER ORDER BY`
+            - `ADD INDEX`
+            - `DROP INDEX`
+            - `MATERIALIZE INDEX`
+            - `CLEAR INDEX`
+        - `ALTER CONSTRAINT`
+            - `ADD CONSTRAINT`
+            - `DROP CONSTRAINT`
+        - `MODIFY TTL`
+        - `MODIFY SETTING`
+        - `MOVE PARTITION`
+        - `FETCH PARTITION`
+        - `FREEZE PARTITION`
+        - `ALTER VIEW`
+            - `REFRESH VIEW`
+            - `MODIFY VIEW QUERY`
 
 Examples of how this hierarchy is treated:
 
@@ -173,7 +173,7 @@ Allows to perform [CREATE](create.md) DDL-queries corresponding to the following
 - `CREATE`
     - `CREATE DATABASE`
     - `CREATE TABLE`
-      - `CREATE VIEW`
+        - `CREATE VIEW`
     - `CREATE TEMPORARY TABLE`
     - `CREATE DICTIONARY`
 
@@ -186,18 +186,18 @@ Allows to perform [CREATE](create.md) DDL-queries corresponding to the following
 Allows to perform [DROP](misc.md#drop-statement) queries corresponding to the following hierarchy of privileges:
 
 - `DROP`
-  - `DROP DATABASE`
-  - `DROP TABLE`
-    - `DROP VIEW`
-  - `DROP DICTIONARY`
+    - `DROP DATABASE`
+    - `DROP TABLE`
+        - `DROP VIEW`
+    - `DROP DICTIONARY`
 
 ### TRUNCATE {#grant-truncate}
 
 Allows to perform [TRUNCATE](misc.md#truncate-statement) queries corresponding to the following hierarchy of privileges:
 
 - `TRUNCATE`
-  - `TRUNCATE TABLE`
-    - `TRUNCATE VIEW`
+    - `TRUNCATE TABLE`
+        - `TRUNCATE VIEW`
 
 ### OPTIMIZE {#grant-optimize}
 
@@ -221,7 +221,7 @@ Allows to perform the [EXISTS](misc.md#exists-statement) queries.
 Allows to perform the [KILL](misc.md#kill-query-statement) queries corresponding to the following hierarchy of privileges:
 
 - `KILL`
-  - `KILL QUERY`
+    - `KILL QUERY`
 
 **Notes**
 
@@ -233,13 +233,13 @@ Allows to perform the [KILL](misc.md#kill-query-statement) queries corresponding
 Allows to manage user accounts, roles and row policy by `CREATE` and `DROP` queries corresponding to the following hierarchy of privileges:
 
 - `CREATE USER`
-  - `DROP USER`
-  - `CREATE ROLE`
-    - `DROP ROLE`
-  - `CREATE ROW POLICY`
-    - `DROP ROW POLICY`
-  - `CREATE QUOTA`
-    - `DROP QUOTA`
+    - `DROP USER`
+    - `CREATE ROLE`
+        - `DROP ROLE`
+    - `CREATE ROW POLICY`
+        - `DROP ROW POLICY`
+    - `CREATE QUOTA`
+        - `DROP QUOTA`
 
 ### ROLE ADMIN {#grant-role-admin}
 
@@ -256,20 +256,20 @@ ROLE ADMIN
 Allows a user to perform the [SYSTEM](system.md) queries corresponding to the following hierarchy of privileges.
 
 - `SYSTEM`
-  - `SHUTDOWN`
-  - `DROP CACHE`
-  - `RELOAD CONFIG`
-  - `RELOAD DICTIONARY`
-  - `STOP MERGES`
-  - `STOP TTL MERGES`
-  - `STOP FETCHES`
-  - `STOP MOVES`
-  - `STOP DISTRIBUTED_SENDS`
-  - `STOP REPLICATED_SENDS`
-  - `SYNC REPLICA`
-  - `RESTART REPLICA`
-  - `FLUSH DISTRIBUTED`
-  - `FLUSH LOGS`
+    - `SHUTDOWN`
+    - `DROP CACHE`
+    - `RELOAD CONFIG`
+    - `RELOAD DICTIONARY`
+    - `STOP MERGES`
+    - `STOP TTL MERGES`
+    - `STOP FETCHES`
+    - `STOP MOVES`
+    - `STOP DISTRIBUTED_SENDS`
+    - `STOP REPLICATED_SENDS`
+    - `SYNC REPLICA`
+    - `RESTART REPLICA`
+    - `FLUSH DISTRIBUTED`
+    - `FLUSH LOGS`
 
 
 ### INTROSPECTION {#grant-introspection}
@@ -277,9 +277,9 @@ Allows a user to perform the [SYSTEM](system.md) queries corresponding to the fo
 Allows using [introspection](../../operations/optimizing_performance/sampling_query_profiler.md) functions.
 
 - `INTROSPECTION`
-  - `addressToLine()`
-  - `addressToSymbol()`
-  - `demangle()`
+    - `addressToLine()`
+    - `addressToSymbol()`
+    - `demangle()`
 
 
 ### dictGet {#grant-dictget}
@@ -299,18 +299,18 @@ Some kinds of ClickHouse [dictionaries](../dictionaries/index.md) are not stored
 Allows using [table functions](../table_functions/index.md).
 
 - `TABLE FUNCTIONS`
-  - `file()`
-  - `url()`
-  - `input()`
-  - `values()`
-  - `numbers()`
-  - `merge()`
-  - `remote()`
-  - `mysql()`
-  - `odbc()`
-  - `jdbc()`
-  - `jdfs()`
-  - `s3()`
+    - `file()`
+    - `url()`
+    - `input()`
+    - `values()`
+    - `numbers()`
+    - `merge()`
+    - `remote()`
+    - `mysql()`
+    - `odbc()`
+    - `jdbc()`
+    - `jdfs()`
+    - `s3()`
 
 The `TABLE FUNCTIONS` privilege enables use of all the table functions. Also you can grant a privilege for each function individually.
 
