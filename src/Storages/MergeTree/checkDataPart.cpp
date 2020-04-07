@@ -63,6 +63,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
     /// Real checksums based on contents of data. Must correspond to checksums.txt. If not - it means the data is broken.
     IMergeTreeDataPart::Checksums checksums_data;
 
+    /// This function calculates checksum for both compressed and decompressed contents of compressed file.
     auto checksum_compressed_file = [](const DiskPtr & disk_, const String & file_path)
     {
         auto file_buf = disk_->readFile(file_path);
@@ -78,6 +79,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         };
     };
 
+    /// First calculate checksums for columns data
     if (part_type == MergeTreeDataPartType::COMPACT)
     {
         const auto & file_name = MergeTreeDataPartCompact::DATA_FILE_NAME_WITH_EXTENSION;
@@ -99,7 +101,7 @@ IMergeTreeDataPart::Checksums checkDataPart(
         throw Exception("Unknown type in part " + path, ErrorCodes::UNKNOWN_PART_TYPE);
     }
 
-    /// Checksums from file checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.
+    /// Checksums from the rest files listed in checksums.txt. May be absent. If present, they are subsequently compared with the actual data checksums.
     IMergeTreeDataPart::Checksums checksums_txt;
 
     if (require_checksums || disk->exists(path + "checksums.txt"))
@@ -114,11 +116,14 @@ IMergeTreeDataPart::Checksums checkDataPart(
     {
         const String & file_name = it->name();
         auto checksum_it = checksums_data.files.find(file_name);
+        
+        /// Skip files that we already calculated. Also skip metadata files that are not checksummed.
         if (checksum_it == checksums_data.files.end() && file_name != "checksums.txt" && file_name != "columns.txt")
         {
             auto txt_checksum_it = checksum_files_txt.find(file_name);
             if (txt_checksum_it == checksum_files_txt.end() || txt_checksum_it->second.uncompressed_size == 0)
             {
+                /// The file is not compressed.
                 auto file_buf = disk->readFile(it->path());
                 HashingReadBuffer hashing_buf(*file_buf);
                 hashing_buf.tryIgnore(std::numeric_limits<size_t>::max());
