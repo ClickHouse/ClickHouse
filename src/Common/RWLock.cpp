@@ -224,7 +224,7 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
             /// Methods std::list<>::emplace_back() and std::unordered_map<>::emplace() provide strong exception safety
             /// We only need to roll back the changes to these objects: owner_queries and the readers/writers queue
             if (it_group->requests == 0)
-                erase_group(it_group);  /// Rollback(SM1): nothrow
+                eraseGroup(it_group);  /// Rollback(SM1): nothrow
 
             throw;
         }
@@ -247,16 +247,16 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
   *
   * We do not employ try-catch: if something bad happens, there is nothing we can do =(
   */
-void RWLockImpl::unlock(GroupsContainer::iterator owner_group, const String & query_id) noexcept
+void RWLockImpl::unlock(GroupsContainer::iterator group_it, const String & query_id) noexcept
 {
     std::lock_guard state_lock(internal_state_mtx);
 
     /// All of theses are Undefined behavior and nothing we can do!
     if (rdlock_owner == readers_queue.end() && wrlock_owner == writers_queue.end())
         return;
-    if (rdlock_owner != readers_queue.end() && owner_group != rdlock_owner)
+    if (rdlock_owner != readers_queue.end() && group_it != rdlock_owner)
         return;
-    if (wrlock_owner != writers_queue.end() && owner_group != wrlock_owner)
+    if (wrlock_owner != writers_queue.end() && group_it != wrlock_owner)
         return;
 
     /// If query_id is not empty it must be listed in parent->owner_queries
@@ -271,12 +271,12 @@ void RWLockImpl::unlock(GroupsContainer::iterator owner_group, const String & qu
     }
 
     /// If we are the last remaining referrer, remove this QNode and notify the next one
-    if (--owner_group->requests == 0)               /// SM: nothrow
-        erase_group(owner_group);
+    if (--group_it->requests == 0)               /// SM: nothrow
+        eraseGroup(group_it);
 }
 
 
-void RWLockImpl::erase_group(GroupsContainer::iterator group_it) noexcept
+void RWLockImpl::eraseGroup(GroupsContainer::iterator group_it) noexcept
 {
     rdlock_owner = readers_queue.end();
     wrlock_owner = writers_queue.end();
