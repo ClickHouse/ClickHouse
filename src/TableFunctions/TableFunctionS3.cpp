@@ -4,7 +4,6 @@
 
 #include <IO/S3Common.h>
 #include <Storages/StorageS3.h>
-#include <Access/AccessFlags.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -63,8 +62,6 @@ StoragePtr TableFunctionS3::executeImpl(const ASTPtr & ast_function, const Conte
         compression_method = args.back()->as<ASTLiteral &>().value.safeGet<String>();
     else
         compression_method = "auto";
-
-    context.checkAccess(AccessType::s3);
 
     ColumnsDescription columns = parseColumnsListFromString(structure, context);
 

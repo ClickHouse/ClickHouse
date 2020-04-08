@@ -135,6 +135,8 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
 
     settings.ostr << " " << backQuoteIfNeed(name);
 
+    formatOnCluster(settings);
+
     if (!new_name.empty())
         formatRenameTo(new_name, settings);
 
@@ -146,4 +148,12 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
     if (roles && (!roles->empty() || alter))
         formatToRoles(*roles, settings);
 }
+
+
+void ASTCreateQuotaQuery::replaceCurrentUserTagWithName(const String & current_user_name)
+{
+    if (roles)
+        roles->replaceCurrentUserTagWithName(current_user_name);
+}
+
 }

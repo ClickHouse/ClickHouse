@@ -305,7 +305,9 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 job.local_context = std::make_unique<Context>(context);
 
                 InterpreterInsertQuery interp(query_ast, *job.local_context);
-                job.stream = interp.execute().out;
+                auto block_io = interp.execute();
+                assertBlocksHaveEqualStructure(block_io.out->getHeader(), shard_block, "flushing shard block for " + storage.getStorageID().getNameForLogs());
+                job.stream = block_io.out;
                 job.stream->writePrefix();
             }
 
@@ -544,6 +546,9 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
     InterpreterInsertQuery interp(query_ast, context);
 
     auto block_io = interp.execute();
+
+    assertBlocksHaveEqualStructure(block_io.out->getHeader(), block, "flushing " + storage.getStorageID().getNameForLogs());
+
     block_io.out->writePrefix();
 
     for (size_t i = 0; i < repeats; ++i)

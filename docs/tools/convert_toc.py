@@ -125,9 +125,9 @@ def sync_translation():
                 lang_meta, lang_content = util.read_md_file(lang_src)
                 en_meta.update(lang_meta)
 
-                for src, dst in redirects.items():
-                    lang_content = lang_content.replace('(' + src, '(' + dst)
-                    lang_content = lang_content.replace('../' + src, '../' + dst)
+                for src_link, dst_link in redirects.items():
+                    lang_content = lang_content.replace('(' + src_link, '(' + dst)
+                    lang_content = lang_content.replace('../' + src_link, '../' + dst)
                     
                 util.write_md_file(lang_dst, en_meta, lang_content)
                 subprocess.check_call(f'git add {lang_dst}', shell=True)

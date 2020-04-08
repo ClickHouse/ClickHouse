@@ -136,7 +136,7 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
 }
 
 
-QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
@@ -150,7 +150,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
         if (table.get() != this)
         {
             ++selected_table_size;
-            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context, query_ptr));
+            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context, to_stage, query_ptr));
         }
 
         iterator->next();
@@ -287,7 +287,8 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
         return pipes;
     }
 
-    if (processed_stage <= storage->getQueryProcessingStage(*modified_context, query_info.query))
+    auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, query_info.query);
+    if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
@@ -295,7 +296,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 
         pipes = storage->read(real_column_names, modified_query_info, *modified_context, processed_stage, max_block_size, UInt32(streams_num));
     }
-    else if (processed_stage > storage->getQueryProcessingStage(*modified_context, query_info.query))
+    else if (processed_stage > storage_stage)
     {
         modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, table_name);
 

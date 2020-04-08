@@ -189,4 +189,13 @@ StorageFactory & StorageFactory::instance()
     return ret;
 }
 
+
+AccessType StorageFactory::getSourceAccessType(const String & table_engine) const
+{
+    auto it = storages.find(table_engine);
+    if (it == storages.end())
+        return AccessType::NONE;
+    return it->second.features.source_access_type;
+}
+
 }
