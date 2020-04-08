@@ -1,3 +1,4 @@
+
 # 在 Mac OS X 中编译 ClickHouse {#zai-mac-os-x-zhong-bian-yi-clickhouse}
 
 ClickHouse 支持在 Mac OS X 10.12 版本中编译。若您在用更早的操作系统版本，可以尝试在指令中使用 `Gentoo Prefix` 和 `clang sl`.
@@ -43,7 +44,7 @@ cd ..
 
 为此，请创建以下文件：
 
-/Library/LaunchDaemons/limit.maxfiles.plist:
+/图书馆/LaunchDaemons/限制.maxfilesplist:
 
 ``` xml
 <?xml version="1.0" encoding="UTF-8"?>

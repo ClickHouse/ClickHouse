@@ -36,6 +36,7 @@ toc_title: Bibliotecas de clientes
     -   [Cualquier evento-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
 -   Rubí
     -   [Haga clic en Casa (Ruby)](https://github.com/shlima/click_house)
+    -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   R
     -   [Sistema abierto.](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/IMSMWU/RClickhouse)

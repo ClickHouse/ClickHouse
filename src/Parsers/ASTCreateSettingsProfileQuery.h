@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
@@ -16,7 +17,7 @@ class ASTExtendedRoleSet;
   *     [RENAME TO new_name]
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
   */
-class ASTCreateSettingsProfileQuery : public IAST
+class ASTCreateSettingsProfileQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     bool alter = false;
@@ -36,5 +37,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & format, FormatState &, FormatStateStacked) const override;
+    void replaceCurrentUserTagWithName(const String & current_user_name);
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateSettingsProfileQuery>(clone()); }
 };
 }

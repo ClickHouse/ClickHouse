@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class AnalyzedJoin;
+class TableJoin;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
@@ -101,7 +101,7 @@ public:
     std::shared_ptr<ArrayJoinAction> array_join;
 
     /// For JOIN
-    std::shared_ptr<const AnalyzedJoin> table_join;
+    std::shared_ptr<const TableJoin> table_join;
     JoinPtr join;
 
     /// For PROJECT.
@@ -118,7 +118,7 @@ public:
     static ExpressionAction project(const Names & projected_columns_);
     static ExpressionAction addAliases(const NamesWithAliases & aliased_columns_);
     static ExpressionAction arrayJoin(const NameSet & array_joined_columns, bool array_join_is_left, const Context & context);
-    static ExpressionAction ordinaryJoin(std::shared_ptr<AnalyzedJoin> table_join, JoinPtr join);
+    static ExpressionAction ordinaryJoin(std::shared_ptr<TableJoin> table_join, JoinPtr join);
 
     /// Which columns necessary to perform this action.
     Names getNeededColumns() const;
