@@ -1,200 +1,204 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 62
+toc_title: "\u0628\u0631\u0631\u0633\u06CC \u0627\u062C\u0645\u0627\u0644\u06CC \u0627\
+  \u0632 \u0645\u0639\u0645\u0627\u0631\u06CC \u06A9\u0644\u06CC\u06A9"
 ---
 
-# Overview of ClickHouse Architecture {#overview-of-clickhouse-architecture}
+# بررسی اجمالی از معماری کلیک {#overview-of-clickhouse-architecture}
 
-ClickHouse is a true column-oriented DBMS. Data is stored by columns and during the execution of arrays (vectors or chunks of columns). Whenever possible, operations are dispatched on arrays, rather than on individual values. It is called “vectorized query execution,” and it helps lower the cost of actual data processing.
+تاتر سندرم قبل از قاعدگی ستون گرا درست است. داده ها توسط ستون ها و در طول اجرای ارریس ذخیره می شود (بردارها و یا تکه های ستون). هر زمان ممکن, عملیات در ارریس اعزام, به جای در ارزش های فردی. این است که به نام “vectorized query execution,” و این کمک می کند کاهش هزینه پردازش داده های واقعی.
 
-> This idea is nothing new. It dates back to the `APL` programming language and its descendants: `A +`, `J`, `K`, and `Q`. Array programming is used in scientific data processing. Neither is this idea something new in relational databases: for example, it is used in the `Vectorwise` system.
+> این ایده چیز جدیدی نیست. این قدمت به `APL` زبان برنامه نویسی و فرزندان خود را: `A +`, `J`, `K` و `Q`. برنامه نویسی مجموعه در پردازش داده های علمی استفاده می شود. نه این ایده چیزی جدید در پایگاه داده های رابطه ای است: مثلا در `Vectorwise` سیستم.
 
-There are two different approaches for speeding up query processing: vectorized query execution and runtime code generation. The latter removes all indirection and dynamic dispatch. Neither of these approaches is strictly better than the other. Runtime code generation can be better when it fuses many operations, thus fully utilizing CPU execution units and the pipeline. Vectorized query execution can be less practical because it involves temporary vectors that must be written to the cache and read back. If the temporary data does not fit in the L2 cache, this becomes an issue. But vectorized query execution more easily utilizes the SIMD capabilities of the CPU. A [research paper](http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf) written by our friends shows that it is better to combine both approaches. ClickHouse uses vectorized query execution and has limited initial support for runtime code generation.
+دو روش مختلف برای سرعت بخشیدن به پردازش پرس و جو وجود دارد: اجرای پرس و جو و تولید کد زمان اجرا. در حالت دوم حذف تمام تغییر ناپذیر و اعزام پویا. هیچ کدام از این روش ها به شدت بهتر از دیگری نیست. تولید کد زمان اجرا می تواند بهتر باشد زمانی که فیوز بسیاری از عملیات, در نتیجه به طور کامل با استفاده از واحد اعدام پردازنده و خط لوله. اجرای پرس و جو بردار می تواند کمتر عملی باشد زیرا شامل بردار موقت است که باید به حافظه پنهان نوشته شود و به عقب برگردد. اگر داده های موقت در کش ال 2 مناسب نیست, این موضوع می شود. اما اجرای پرس و جو بردار به راحتی با بهره گیری از قابلیت سیم کارت از پردازنده. یک [مقاله پژوهشی](http://15721.courses.cs.cmu.edu/spring2016/papers/p5-sompolski.pdf) نوشته شده توسط دوستان ما نشان می دهد که بهتر است به ترکیب هر دو روش. تاتر با استفاده از اجرای پرس و جو بردار و حمایت اولیه برای تولید کد زمان اجرا محدود کرده است.
 
-## Columns {#columns}
+## ستونها {#columns}
 
-`IColumn` interface is used to represent columns in memory (actually, chunks of columns). This interface provides helper methods for the implementation of various relational operators. Almost all operations are immutable: they do not modify the original column, but create a new modified one. For example, the `IColumn :: filter` method accepts a filter byte mask. It is used for the `WHERE` and `HAVING` relational operators. Additional examples: the `IColumn :: permute` method to support `ORDER BY`, the `IColumn :: cut` method to support `LIMIT`.
+`IColumn` رابط برای نشان دادن ستون ها در حافظه (در واقع تکه های ستون) استفاده می شود. این رابط فراهم می کند روش های کمکی برای اجرای اپراتورهای مختلف رابطه ای. تقریبا تمام عملیات تغییر ناپذیر است: ستون اصلی را تغییر نمی دهند اما یک تغییر جدید ایجاد می کنند. برای مثال `IColumn :: filter` روش یک ماسک بایت فیلتر می پذیرد. این برای استفاده می شود `WHERE` و `HAVING` اپراتورهای رابطه. نمونه های اضافی: `IColumn :: permute` روش پشتیبانی `ORDER BY` این `IColumn :: cut` روش پشتیبانی `LIMIT`.
 
-Various `IColumn` implementations (`ColumnUInt8`, `ColumnString`, and so on) are responsible for the memory layout of columns. The memory layout is usually a contiguous array. For the integer type of columns, it is just one contiguous array, like `std :: vector`. For `String` and `Array` columns, it is two vectors: one for all array elements, placed contiguously, and a second one for offsets to the beginning of each array. There is also `ColumnConst` that stores just one value in memory, but looks like a column.
+مختلف `IColumn` پیاده سازی (`ColumnUInt8`, `ColumnString` و به همین ترتیب) برای طرح حافظه ستون ها به عهده دارند. طرح حافظه معمولا یک مجموعه پیوسته است. برای نوع عدد صحیح ستون, این فقط یک مجموعه به هم پیوسته است, پسندیدن `std :: vector`. برای `String` و `Array` ستون ها, این دو بردار است: یکی برای همه عناصر مجموعه, به طور متناوب قرار داده شده, و یک ثانیه برای شیپور خاموشی به ابتدای هر مجموعه. همچنین وجود دارد `ColumnConst` که فروشگاه فقط یک ارزش در حافظه, اما به نظر می رسد مانند یک ستون.
 
-## Field {#field}
+## زمینه {#field}
 
-Nevertheless, it is possible to work with individual values as well. To represent an individual value, the `Field` is used. `Field` is just a discriminated union of `UInt64`, `Int64`, `Float64`, `String` and `Array`. `IColumn` has the `operator[]` method to get the n-th value as a `Field` and the `insert` method to append a `Field` to the end of a column. These methods are not very efficient, because they require dealing with temporary `Field` objects representing an individual value. There are more efficient methods, such as `insertFrom`, `insertRangeFrom`, and so on.
+با این اوصاف, ممکن است برای کار با ارزش های فردی و همچنین. برای نشان دادن ارزش فردی `Field` استفاده شده است. `Field` فقط یک اتحادیه تبعیض `UInt64`, `Int64`, `Float64`, `String` و `Array`. `IColumn` دارد `operator[]` روش برای دریافت ارزش ازت به عنوان یک `Field` و `insert` روش برای اضافه کردن یک `Field` به پایان یک ستون. این روش ها بسیار موثر نیستند زیرا نیاز به برخورد موقت دارند `Field` اشیا به نمایندگی از ارزش فردی. روش های موثر تر مانند `insertFrom`, `insertRangeFrom` و به همین ترتیب.
 
-`Field` doesn’t have enough information about a specific data type for a table. For example, `UInt8`, `UInt16`, `UInt32`, and `UInt64` are all represented as `UInt64` in a `Field`.
+`Field` اطلاعات کافی در مورد یک نوع داده خاص برای یک جدول ندارد. به عنوان مثال, `UInt8`, `UInt16`, `UInt32` و `UInt64` همه به عنوان نمایندگی `UInt64` در یک `Field`.
 
-## Leaky Abstractions {#leaky-abstractions}
+## انتزاعی نشتی {#leaky-abstractions}
 
-`IColumn` has methods for common relational transformations of data, but they don’t meet all needs. For example, `ColumnUInt64` doesn’t have a method to calculate the sum of two columns, and `ColumnString` doesn’t have a method to run a substring search. These countless routines are implemented outside of `IColumn`.
+`IColumn` روش هایی برای تحولات رابطه ای مشترک داده ها دارد اما همه نیازها را نمی بینند. به عنوان مثال, `ColumnUInt64` یک روش برای محاسبه مجموع دو ستون ندارد و `ColumnString` یک روش برای اجرای یک جستجو زیر رشته ندارد. این روال بی شماری در خارج از اجرا `IColumn`.
 
-Various functions on columns can be implemented in a generic, non-efficient way using `IColumn` methods to extract `Field` values, or in a specialized way using knowledge of inner memory layout of data in a specific `IColumn` implementation. It is implemented by casting functions to a specific `IColumn` type and deal with internal representation directly. For example, `ColumnUInt64` has the `getData` method that returns a reference to an internal array, then a separate routine reads or fills that array directly. We have “leaky abstractions” to allow efficient specializations of various routines.
+توابع مختلف در ستون ها را می توان در یک روش عمومی و غیر موثر استفاده کرد `IColumn` مواد و روش ها برای استخراج `Field` ارزش, و یا در یک راه تخصصی با استفاده از دانش طرح حافظه داخلی از داده ها در یک خاص `IColumn` اجرا کردن. این است که توسط توابع ریخته گری به خاص اجرا شده است `IColumn` نوع و مقابله با نمایندگی داخلی به طور مستقیم. به عنوان مثال, `ColumnUInt64` دارد `getData` روشی که اشاره به مجموعه داخلی را برمی گرداند, سپس یک روال جداگانه می خواند و یا که مجموعه را پر می کند به طور مستقیم. ما “leaky abstractions” برای اجازه دادن به تخصص های موثر روال های مختلف.
 
-## Data Types {#data_types}
+## انواع داده ها {#data_types}
 
-`IDataType` is responsible for serialization and deserialization: for reading and writing chunks of columns or individual values in binary or text form. `IDataType` directly corresponds to data types in tables. For example, there are `DataTypeUInt32`, `DataTypeDateTime`, `DataTypeString` and so on.
+`IDataType` مسئول سریالسازی و deserialization: برای خواندن و نوشتن تکه های ستون یا فردی مقادیر دودویی یا به صورت متن. `IDataType` به طور مستقیم به انواع داده ها در جداول مربوط. مثلا, وجود دارد `DataTypeUInt32`, `DataTypeDateTime`, `DataTypeString` و به همین ترتیب.
 
-`IDataType` and `IColumn` are only loosely related to each other. Different data types can be represented in memory by the same `IColumn` implementations. For example, `DataTypeUInt32` and `DataTypeDateTime` are both represented by `ColumnUInt32` or `ColumnConstUInt32`. In addition, the same data type can be represented by different `IColumn` implementations. For example, `DataTypeUInt8` can be represented by `ColumnUInt8` or `ColumnConstUInt8`.
+`IDataType` و `IColumn` فقط شل به یکدیگر مربوط. انواع داده های مختلف را می توان در حافظه توسط همان نشان داده شده است `IColumn` پیاده سازی. به عنوان مثال, `DataTypeUInt32` و `DataTypeDateTime` هر دو توسط نمایندگی `ColumnUInt32` یا `ColumnConstUInt32`. علاوه بر این, همان نوع داده را می توان با مختلف نشان `IColumn` پیاده سازی. به عنوان مثال, `DataTypeUInt8` می توان با نمایندگی `ColumnUInt8` یا `ColumnConstUInt8`.
 
-`IDataType` only stores metadata. For instance, `DataTypeUInt8` doesn’t store anything at all (except vptr) and `DataTypeFixedString` stores just `N` (the size of fixed-size strings).
+`IDataType` فقط فروشگاه ابرداده. به عنوان مثال, `DataTypeUInt8` هیچ چیزی را ذخیره نمی کند (به جز ویپر) و `DataTypeFixedString` فروشگاه ها فقط `N` (اندازه رشته های ثابت).
 
-`IDataType` has helper methods for various data formats. Examples are methods to serialize a value with possible quoting, to serialize a value for JSON, and to serialize a value as part of the XML format. There is no direct correspondence to data formats. For example, the different data formats `Pretty` and `TabSeparated` can use the same `serializeTextEscaped` helper method from the `IDataType` interface.
+`IDataType` دارای روش های کمکی برای فرمت های داده های مختلف. نمونه روش برای مرتب کردن یک مقدار با امکان نقل قول, برای مرتب کردن یک مقدار برای جانسون, و برای مرتب کردن یک مقدار به عنوان بخشی از فرمت میلی لیتر. هیچ مکاتبات مستقیم به فرمت های داده وجود دارد. برای مثال فرمت های داده های مختلف `Pretty` و `TabSeparated` می توانید همان استفاده کنید `serializeTextEscaped` روش کمکی از `IDataType` واسط.
 
-## Block {#block}
+## بلوک {#block}
 
-A `Block` is a container that represents a subset (chunk) of a table in memory. It is just a set of triples: `(IColumn, IDataType, column name)`. During query execution, data is processed by `Block`s. If we have a `Block`, we have data (in the `IColumn` object), we have information about its type (in `IDataType`) that tells us how to deal with that column, and we have the column name.  It could be either the original column name from the table or some artificial name assigned for getting temporary results of calculations.
+A `Block` یک ظرف است که نشان دهنده یک زیر مجموعه است (تکه) از یک جدول در حافظه. این فقط مجموعه ای از سه برابر است: `(IColumn, IDataType, column name)`. در طول اجرای پرس و جو, داده ها توسط پردازش `Block`اگر ما یک `Block`, ما داده (در `IColumn` هدف), ما باید اطلاعات در مورد نوع خود (به `IDataType`) که به ما می گوید که چگونه به مقابله با این ستون, و ما باید نام ستون. این می تواند یا نام ستون اصلی از جدول و یا برخی از نام مصنوعی اختصاص داده شده برای گرفتن نتایج موقت از محاسبات.
 
-When we calculate some function over columns in a block, we add another column with its result to the block, and we don’t touch columns for arguments of the function because operations are immutable. Later, unneeded columns can be removed from the block, but not modified. It is convenient for the elimination of common subexpressions.
+هنگامی که ما برخی از تابع محاسبه بیش از ستون در یک بلوک, ما اضافه کردن ستون دیگر با نتیجه خود را به بلوک, و ما ستون برای استدلال از تابع را لمس کنید چرا که عملیات تغییر ناپذیر هستند. بعد, ستون غیر ضروری را می توان از بلوک حذف, اما اصلاح نشده. مناسب برای از بین بردن اکسپرس مشترک است.
 
-Blocks are created for every processed chunk of data. Note that for the same type of calculation, the column names and types remain the same for different blocks, and only column data changes. It is better to split block data from the block header because small block sizes have a high overhead of temporary strings for copying shared\_ptrs and column names.
+بلوک برای هر تکه پردازش داده ها ایجاد شده است. توجه داشته باشید که برای همان نوع از محاسبه, نام ستون و انواع یکسان باقی می ماند برای بلوک های مختلف, و تنها ستون تغییرات داده. بهتر است داده های بلوک را از هدر بلوک تقسیم کنید زیرا اندازه های بلوک کوچک دارای سربار بالایی از رشته های موقت برای کپی کردن نام های شکسته و ستون هستند.
 
-## Block Streams {#block-streams}
+## بلوک جریان {#block-streams}
 
-Block streams are for processing data. We use streams of blocks to read data from somewhere, perform data transformations, or write data to somewhere. `IBlockInputStream` has the `read` method to fetch the next block while available. `IBlockOutputStream` has the `write` method to push the block somewhere.
+جریان بلوک برای پردازش داده ها می باشد. ما با استفاده از جریان بلوک به خواندن داده ها از جایی انجام داده تحولات و یا نوشتن داده ها به جایی. `IBlockInputStream` دارد `read` روش به بهانه بلوک بعدی در حالی که در دسترس. `IBlockOutputStream` دارد `write` روش به فشار بلوک جایی.
 
-Streams are responsible for:
+جریان ها برای:
 
-1.  Reading or writing to a table. The table just returns a stream for reading or writing blocks.
-2.  Implementing data formats. For example, if you want to output data to a terminal in `Pretty` format, you create a block output stream where you push blocks, and it formats them.
-3.  Performing data transformations. Let’s say you have `IBlockInputStream` and want to create a filtered stream. You create `FilterBlockInputStream` and initialize it with your stream. Then when you pull a block from `FilterBlockInputStream`, it pulls a block from your stream, filters it, and returns the filtered block to you. Query execution pipelines are represented this way.
+1.  خواندن و یا نوشتن به یک جدول. جدول فقط می گرداند یک جریان برای خواندن و یا نوشتن بلوک.
+2.  اجرای فرمت های داده. مثلا, اگر شما می خواهید به خروجی داده ها به یک ترمینال در `Pretty` شما یک جریان خروجی بلوک ایجاد می کنید که بلوک ها را فشار می دهید و فرمت می کند.
+3.  انجام تحولات داده ها. بیایید می گویند شما `IBlockInputStream` و می خواهید برای ایجاد یک جریان فیلتر شده است. شما ایجاد `FilterBlockInputStream` و با جریان خود را مقداردهی اولیه. سپس هنگامی که شما جلو و یک بلوک از `FilterBlockInputStream`, این نیش ترمزی میزند یک بلوک از جریان خود را, فیلتر, و گرداند بلوک فیلتر به شما. خطوط لوله اجرای پرس و جو در این راه نشان داده شده است.
 
-There are more sophisticated transformations. For example, when you pull from `AggregatingBlockInputStream`, it reads all data from its source, aggregates it, and then returns a stream of aggregated data for you. Another example: `UnionBlockInputStream` accepts many input sources in the constructor and also a number of threads. It launches multiple threads and reads from multiple sources in parallel.
+تحولات پیچیده تر وجود دارد. مثلا, زمانی که شما از جلو `AggregatingBlockInputStream` تمام داده ها را از منبع خود می خواند و جمع می کند و سپس جریان داده های جمع شده را برای شما باز می گرداند. مثال دیگر: `UnionBlockInputStream` می پذیرد بسیاری از منابع ورودی در سازنده و همچنین تعدادی از موضوعات. این راه اندازی موضوعات متعدد و بار خوانده شده از منابع مختلف به صورت موازی.
 
-> Block streams use the “pull” approach to control flow: when you pull a block from the first stream, it consequently pulls the required blocks from nested streams, and the entire execution pipeline will work. Neither “pull” nor “push” is the best solution, because control flow is implicit, and that limits the implementation of various features like simultaneous execution of multiple queries (merging many pipelines together). This limitation could be overcome with coroutines or just running extra threads that wait for each other. We may have more possibilities if we make control flow explicit: if we locate the logic for passing data from one calculation unit to another outside of those calculation units. Read this [article](http://journal.stuffwithstuff.com/2013/01/13/iteration-inside-and-out/) for more thoughts.
+> بلوک جریان استفاده از “pull” رویکرد به کنترل جریان: هنگامی که شما یک بلوک جلو و از جریان اول, در نتیجه می کشد بلوک های مورد نیاز از جریان تو در تو, و کل خط لوله اعدام کار خواهد کرد. نه “pull” نه “push” بهترین راه حل است زیرا جریان کنترل ضمنی است و محدودیت اجرای ویژگی های مختلف مانند اجرای همزمان چندین نمایش داده شد (ادغام بسیاری از خطوط لوله با هم). این محدودیت می تواند با کروتین ها و یا فقط در حال اجرا موضوعات اضافی که برای یکدیگر صبر غلبه بر. ما ممکن است امکانات بیشتری داشته باشیم اگر جریان کنترل را صریح کنیم: اگر منطق را برای عبور داده ها از یک واحد محاسبه به خارج دیگری از این واحدهای محاسبه قرار دهیم. خواندن این [مقاله](http://journal.stuffwithstuff.com/2013/01/13/iteration-inside-and-out/) برای افکار بیشتر.
 
-We should note that the query execution pipeline creates temporary data at each step. We try to keep block size small enough so that temporary data fits in the CPU cache. With that assumption, writing and reading temporary data is almost free in comparison with other calculations. We could consider an alternative, which is to fuse many operations in the pipeline together. It could make the pipeline as short as possible and remove much of the temporary data, which could be an advantage, but it also has drawbacks. For example, a split pipeline makes it easy to implement caching intermediate data, stealing intermediate data from similar queries running at the same time, and merging pipelines for similar queries.
+ما باید توجه داشته باشید که خط لوله اجرای پرس و جو ایجاد داده های موقت در هر مرحله. ما سعی می کنیم برای حفظ اندازه بلوک به اندازه کافی کوچک به طوری که داده های موقت متناسب در کش پردازنده. با این فرض, نوشتن و خواندن داده های موقت تقریبا رایگان در مقایسه با محاسبات دیگر است. ما می توانیم یک جایگزین در نظر, است که به فیوز بسیاری از عملیات در خط لوله با هم. این می تواند خط لوله به عنوان کوتاه که ممکن است و حذف بسیاری از اطلاعات موقت, که می تواند یک مزیت, اما همچنین دارای اشکالاتی. مثلا, یک خط لوله تقسیم باعث می شود به راحتی پیاده سازی ذخیره داده متوسط, سرقت اطلاعات متوسط از نمایش داده شد مشابه در حال اجرا در همان زمان, و ادغام خطوط لوله برای نمایش داده شد مشابه.
 
-## Formats {#formats}
+## فرشها {#formats}
 
-Data formats are implemented with block streams. There are “presentational” formats only suitable for the output of data to the client, such as `Pretty` format, which provides only `IBlockOutputStream`. And there are input/output formats, such as `TabSeparated` or `JSONEachRow`.
+فرمت های داده ها با جریان بلوک اجرا شده است. وجود دارد “presentational” فرمت تنها مناسب برای خروجی داده ها به مشتری مانند `Pretty` قالب, فراهم می کند که تنها `IBlockOutputStream`. و فرمت های ورودی / خروجی مانند `TabSeparated` یا `JSONEachRow`.
 
-There are also row streams: `IRowInputStream` and `IRowOutputStream`. They allow you to pull/push data by individual rows, not by blocks. And they are only needed to simplify the implementation of row-oriented formats. The wrappers `BlockInputStreamFromRowInputStream` and `BlockOutputStreamFromRowOutputStream` allow you to convert row-oriented streams to regular block-oriented streams.
+همچنین جریان ردیف وجود دارد: `IRowInputStream` و `IRowOutputStream`. اجازه می دهد شما را به جلو و/فشار داده های ردیف های فردی, نه با بلوک. و فقط برای ساده سازی اجرای فرمت های ردیف گرا نیاز دارند. لفافه `BlockInputStreamFromRowInputStream` و `BlockOutputStreamFromRowOutputStream` به شما اجازه تبدیل جریان ردیف گرا به جریان بلوک گرا به طور منظم.
 
 ## I/O {#io}
 
-For byte-oriented input/output, there are `ReadBuffer` and `WriteBuffer` abstract classes. They are used instead of C++ `iostream`s. Don’t worry: every mature C++ project is using something other than `iostream`s for good reasons.
+برای ورودی بایت گرا / خروجی, وجود دارد `ReadBuffer` و `WriteBuffer` کلاس های انتزاعی. به جای ج++استفاده می شود `iostream`نگران نباشید: هر پروژه سی++ بالغ با استفاده از چیزی غیر از `iostream`به دلایل خوب.
 
-`ReadBuffer` and `WriteBuffer` are just a contiguous buffer and a cursor pointing to the position in that buffer. Implementations may own or not own the memory for the buffer. There is a virtual method to fill the buffer with the following data (for `ReadBuffer`) or to flush the buffer somewhere (for `WriteBuffer`). The virtual methods are rarely called.
+`ReadBuffer` و `WriteBuffer` فقط یک بافر پیوسته و مکان نما با اشاره به موقعیت در بافر که. پیاده سازی ممکن است خود و یا حافظه برای بافر خود را ندارد. یک روش مجازی برای پر کردن بافر با داده های زیر وجود دارد (برای `ReadBuffer`) و یا به خیط و پیت کردن بافر جایی (برای `WriteBuffer`). روش های مجازی به ندرت نامیده می شود.
 
-Implementations of `ReadBuffer`/`WriteBuffer` are used for working with files and file descriptors and network sockets, for implementing compression (`CompressedWriteBuffer` is initialized with another WriteBuffer and performs compression before writing data to it), and for other purposes – the names `ConcatReadBuffer`, `LimitReadBuffer`, and `HashingWriteBuffer` speak for themselves.
+پیاده سازی از `ReadBuffer`/`WriteBuffer` برای کار با فایل ها و توصیفگر فایل ها و سوکت های شبکه برای اجرای فشرده سازی استفاده می شود (`CompressedWriteBuffer` is initialized with another WriteBuffer and performs compression before writing data to it), and for other purposes – the names `ConcatReadBuffer`, `LimitReadBuffer` و `HashingWriteBuffer` صحبت برای خود.
 
-Read/WriteBuffers only deal with bytes. There are functions from `ReadHelpers` and `WriteHelpers` header files to help with formatting input/output.  For example, there are helpers to write a number in decimal format.
+خواندن / نویسنده تنها با بایت برخورد. توابع از وجود دارد `ReadHelpers` و `WriteHelpers` فایل های هدر برای کمک به قالب بندی ورودی / خروجی. برای مثال یاران به نوشتن یک شماره در قالب دهدهی وجود دارد.
 
-Let’s look at what happens when you want to write a result set in `JSON` format to stdout. You have a result set ready to be fetched from `IBlockInputStream`. You create `WriteBufferFromFileDescriptor(STDOUT_FILENO)` to write bytes to stdout. You create `JSONRowOutputStream`, initialized with that `WriteBuffer`, to write rows in `JSON` to stdout. You create `BlockOutputStreamFromRowOutputStream` on top of it, to represent it as `IBlockOutputStream`. Then you call `copyData` to transfer data from `IBlockInputStream` to `IBlockOutputStream`, and everything works. Internally, `JSONRowOutputStream` will write various JSON delimiters and call the `IDataType::serializeTextJSON` method with a reference to `IColumn` and the row number as arguments. Consequently, `IDataType::serializeTextJSON` will call a method from `WriteHelpers.h`: for example, `writeText` for numeric types and `writeJSONString` for `DataTypeString`.
+بیایید نگاه کنیم که چه اتفاقی می افتد زمانی که می خواهید نتیجه را بنویسید `JSON` قالب به چاق و چله. شما باید یک نتیجه مجموعه ای از ذهن می شود `IBlockInputStream`. شما ایجاد `WriteBufferFromFileDescriptor(STDOUT_FILENO)` برای نوشتن بایت به چاق و چله. شما ایجاد `JSONRowOutputStream`, مقداردهی اولیه با که `WriteBuffer` برای نوشتن ردیف در `JSON` به چاق و چله. شما ایجاد `BlockOutputStreamFromRowOutputStream` در بالای این, برای نشان دادن به عنوان `IBlockOutputStream`. سپس با شما تماس `copyData` برای انتقال داده ها از `IBlockInputStream` به `IBlockOutputStream`, و همه چیز کار می کند. داخلی, `JSONRowOutputStream` خواهد شمارشگر های مختلف جانسون ارسال و پاسخ `IDataType::serializeTextJSON` روش با اشاره به `IColumn` و شماره ردیف به عنوان استدلال. در نتیجه, `IDataType::serializeTextJSON` یک روش از پاسخ `WriteHelpers.h`: به عنوان مثال, `writeText` برای انواع عددی و `writeJSONString` برای `DataTypeString`.
 
-## Tables {#tables}
+## جداول {#tables}
 
-The `IStorage` interface represents tables. Different implementations of that interface are different table engines. Examples are `StorageMergeTree`, `StorageMemory`, and so on. Instances of these classes are just tables.
+این `IStorage` رابط نشان دهنده جداول. پیاده سازی های مختلف که رابط موتورهای جدول متفاوت است. مثالها عبارتند از `StorageMergeTree`, `StorageMemory` و به همین ترتیب. نمونه هایی از این کلاس ها فقط جداول.
 
-The key `IStorage` methods are `read` and `write`. There are also `alter`, `rename`, `drop`, and so on. The `read` method accepts the following arguments: the set of columns to read from a table, the `AST` query to consider, and the desired number of streams to return. It returns one or multiple `IBlockInputStream` objects and information about the stage of data processing that was completed inside a table engine during query execution.
+کلید `IStorage` روش `read` و `write`. همچنین وجود دارد `alter`, `rename`, `drop` و به همین ترتیب. این `read` روش استدلال های زیر را می پذیرد: مجموعه ای از ستون ها برای خواندن از یک جدول `AST` پرس و جو را در نظر بگیرید, و تعداد مورد نظر از جریان به بازگشت. این گرداند یک یا چند `IBlockInputStream` اشیا و اطلاعات در مورد مرحله پردازش داده ها که در داخل یک موتور جدول در طول اجرای پرس و جو تکمیل شد.
 
-In most cases, the read method is only responsible for reading the specified columns from a table, not for any further data processing. All further data processing is done by the query interpreter and is outside the responsibility of `IStorage`.
+در بیشتر موارد, روش خواندن تنها برای خواندن ستون مشخص شده از یک جدول است, نه برای هر پردازش داده ها بیشتر. تمام پردازش داده های بیشتر توسط مترجم پرس و جو انجام می شود و خارج از وظیفه است `IStorage`.
 
-But there are notable exceptions:
+اما استثنا قابل توجه وجود دارد:
 
--   The AST query is passed to the `read` method, and the table engine can use it to derive index usage and to read fewer data from a table.
--   Sometimes the table engine can process data itself to a specific stage. For example, `StorageDistributed` can send a query to remote servers, ask them to process data to a stage where data from different remote servers can be merged, and return that preprocessed data. The query interpreter then finishes processing the data.
+-   پرس و جو اس تی به تصویب رسید `read` روش, و موتور جدول می توانید استفاده کنید به استفاده از شاخص و به خواندن اطلاعات کمتر از یک جدول.
+-   گاهی موتور جدول می تواند داده های خود را به یک مرحله خاص پردازش. به عنوان مثال, `StorageDistributed` می توانید یک پرس و جو به سرور از راه دور ارسال, از او بخواهید برای پردازش داده ها به مرحله ای که داده ها را از سرور های مختلف از راه دور را می توان با هم ادغام شدند, و بازگشت که داده های پیش پردازش. مترجم پرس و جو سپس پس از اتمام پردازش داده ها.
 
-The table’s `read` method can return multiple `IBlockInputStream` objects to allow parallel data processing. These multiple block input streams can read from a table in parallel. Then you can wrap these streams with various transformations (such as expression evaluation or filtering) that can be calculated independently and create a `UnionBlockInputStream` on top of them, to read from multiple streams in parallel.
+جدول `read` روش می تواند چندین بازگشت `IBlockInputStream` اشیا اجازه می دهد تا پردازش داده های موازی. این جریان ورودی بلوک های متعدد می توانید از یک جدول به صورت موازی به عنوان خوانده شده. سپس شما می توانید این جریان با تحولات مختلف قرار دادن (مانند ارزیابی بیان و یا فیلتر) است که می تواند به طور مستقل محاسبه و ایجاد یک `UnionBlockInputStream` برای خواندن از جریانهای چندگانه به صورت موازی.
 
-There are also `TableFunction`s. These are functions that return a temporary `IStorage` object to use in the `FROM` clause of a query.
+همچنین وجود دارد `TableFunction`این توابع که بازگشت موقت هستند `IStorage` شی برای استفاده در `FROM` بند یک پرس و جو.
 
-To get a quick idea of how to implement your table engine, look at something simple, like `StorageMemory` or `StorageTinyLog`.
+برای دریافت یک ایده سریع از نحوه پیاده سازی موتور جدول خود را در چیزی ساده مانند نگاه `StorageMemory` یا `StorageTinyLog`.
 
-> As the result of the `read` method, `IStorage` returns `QueryProcessingStage` – information about what parts of the query were already calculated inside storage.
+> به عنوان نتیجه `read` روش, `IStorage` بازگشت `QueryProcessingStage` – information about what parts of the query were already calculated inside storage.
 
 ## Parsers {#parsers}
 
-A hand-written recursive descent parser parses a query. For example, `ParserSelectQuery` just recursively calls the underlying parsers for various parts of the query. Parsers create an `AST`. The `AST` is represented by nodes, which are instances of `IAST`.
+تجزیه کننده تبار بازگشتی دست نوشته تجزیه کننده تجزیه پرس و جو تجزیه. به عنوان مثال, `ParserSelectQuery` فقط به صورت بازگشتی تماس تجزیه کننده زمینه ای برای بخش های مختلف از پرس و جو. تجزیه کننده ایجاد یک `AST`. این `AST` توسط گره هایی که نمونه هایی از `IAST`.
 
-> Parser generators are not used for historical reasons.
+> ژنراتور تجزیه کننده به دلایل تاریخی استفاده نمی شود.
 
-## Interpreters {#interpreters}
+## مترجمین {#interpreters}
 
-Interpreters are responsible for creating the query execution pipeline from an `AST`. There are simple interpreters, such as `InterpreterExistsQuery` and `InterpreterDropQuery`, or the more sophisticated `InterpreterSelectQuery`. The query execution pipeline is a combination of block input or output streams. For example, the result of interpreting the `SELECT` query is the `IBlockInputStream` to read the result set from; the result of the INSERT query is the `IBlockOutputStream` to write data for insertion to, and the result of interpreting the `INSERT SELECT` query is the `IBlockInputStream` that returns an empty result set on the first read, but that copies data from `SELECT` to `INSERT` at the same time.
+مترجمین برای ایجاد خط لوله اجرای پرس و جو از `AST`. می مفسران ساده وجود دارد, مانند `InterpreterExistsQuery` و `InterpreterDropQuery` یا پیچیده تر `InterpreterSelectQuery`. خط لوله اجرای پرس و جو ترکیبی از ورودی بلوک یا جریان خروجی است. برای مثال نتیجه تفسیر `SELECT` پرس و جو است `IBlockInputStream` برای خواندن نتیجه مجموعه ای از; نتیجه پرس و جو درج است `IBlockOutputStream` برای نوشتن داده ها برای درج به, و در نتیجه تفسیر `INSERT SELECT` پرس و جو است `IBlockInputStream` که نتیجه خالی را برمی گرداند مجموعه ای در خواندن برای اولین بار, اما نسخه داده ها از `SELECT` به `INSERT` در همان زمان.
 
-`InterpreterSelectQuery` uses `ExpressionAnalyzer` and `ExpressionActions` machinery for query analysis and transformations. This is where most rule-based query optimizations are done. `ExpressionAnalyzer` is quite messy and should be rewritten: various query transformations and optimizations should be extracted to separate classes to allow modular transformations or query.
+`InterpreterSelectQuery` استفاده `ExpressionAnalyzer` و `ExpressionActions` ماشین برای تجزیه و تحلیل پرس و جو و تحولات. این جایی است که اکثر بهینه سازی پرس و جو مبتنی بر قانون انجام می شود. `ExpressionAnalyzer` کاملا کثیف است و باید بازنویسی شود: تحولات پرس و جو های مختلف و بهینه سازی باید استخراج به کلاس های جداگانه اجازه می دهد تا تحولات مدولار و یا پرس و جو.
 
-## Functions {#functions}
+## توابع {#functions}
 
-There are ordinary functions and aggregate functions. For aggregate functions, see the next section.
+توابع عادی و توابع کل وجود دارد. برای توابع کل, بخش بعدی را ببینید.
 
-Ordinary functions don’t change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`’s of data to implement vectorized query execution.
+Ordinary functions don't change the number of rows – they work as if they are processing each row independently. In fact, functions are not called for individual rows, but for `Block`'ثانیه از داده ها برای پیاده سازی اجرای پرس و جو بردار.
 
-There are some miscellaneous functions, like [blockSize](../query_language/functions/other_functions.md#function-blocksize), [rowNumberInBlock](../query_language/functions/other_functions.md#function-rownumberinblock), and [runningAccumulate](../query_language/functions/other_functions.md#function-runningaccumulate), that exploit block processing and violate the independence of rows.
+برخی از توابع متفرقه مانند وجود دارد [blockSize](../sql_reference/functions/other_functions.md#function-blocksize), [رفع موانع](../sql_reference/functions/other_functions.md#function-rownumberinblock) و [خرابی اجرا](../sql_reference/functions/other_functions.md#function-runningaccumulate), که بهره برداری از پردازش بلوک و نقض استقلال ردیف.
 
-ClickHouse has strong typing, so there’s no implicit type conversion. If a function doesn’t support a specific combination of types, it throws an exception. But functions can work (be overloaded) for many different combinations of types. For example, the `plus` function (to implement the `+` operator) works for any combination of numeric types: `UInt8` + `Float32`, `UInt16` + `Int8`, and so on. Also, some variadic functions can accept any number of arguments, such as the `concat` function.
+تاتر تایپ قوی, بنابراین هیچ تبدیل نوع ضمنی وجود دارد. اگر یک تابع یک ترکیب خاص از انواع پشتیبانی نمی کند, این می اندازد یک استثنا. اما توابع می توانند کار کنند (غیرمنتظره) برای بسیاری از ترکیبات مختلف از انواع. برای مثال `plus` تابع (برای پیاده سازی `+` اپراتور) برای هر ترکیبی از انواع عددی کار می کند: `UInt8` + `Float32`, `UInt16` + `Int8` و به همین ترتیب. همچنین, برخی از توابع مختلف می توانید هر تعداد از استدلال قبول, مانند `concat` تابع.
 
-Implementing a function may be slightly inconvenient because a function explicitly dispatches supported data types and supported `IColumns`. For example, the `plus` function has code generated by instantiation of a C++ template for each combination of numeric types, and constant or non-constant left and right arguments.
+اجرای یک تابع ممکن است کمی ناخوشایند به دلیل یک تابع به صراحت اعزام انواع داده ها پشتیبانی و پشتیبانی `IColumns`. برای مثال `plus` تابع دارای کد تولید شده توسط نمونه از یک ج++ قالب برای هر ترکیبی از انواع عددی, و استدلال چپ و راست ثابت یا غیر ثابت.
 
-It is an excellent place to implement runtime code generation to avoid template code bloat. Also, it makes it possible to add fused functions like fused multiply-add or to make multiple comparisons in one loop iteration.
+این یک محل عالی برای اجرای تولید کد زمان اجرا برای جلوگیری از نفخ کد الگو است. همچنین, این امکان را برای اضافه کردن توابع ذوب مانند ذوب ضرب-اضافه کردن و یا به مقایسه های متعدد در یک تکرار حلقه.
 
-Due to vectorized query execution, functions are not short-circuited. For example, if you write `WHERE f(x) AND g(y)`, both sides are calculated, even for rows, when `f(x)` is zero (except when `f(x)` is a zero constant expression). But if the selectivity of the `f(x)` condition is high, and calculation of `f(x)` is much cheaper than `g(y)`, it’s better to implement multi-pass calculation. It would first calculate `f(x)`, then filter columns by the result, and then calculate `g(y)` only for smaller, filtered chunks of data.
+با توجه به اجرای پرس و جو بردار, توابع کوتاه دور نیست. مثلا, اگر شما ارسال `WHERE f(x) AND g(y)`, هر دو طرف محاسبه می شود, حتی برای ردیف, وقتی که `f(x)` صفر است (به جز زمانی که `f(x)` بیان ثابت صفر است). اما اگر انتخاب از `f(x)` شرایط بالا و محاسبه است `f(x)` بسیار ارزان تر از `g(y)` بهتر است محاسبات چند گذر را اجرا کنید. این برای اولین بار محاسبه `f(x)` سپس ستون ها را با نتیجه فیلتر کنید و سپس محاسبه کنید `g(y)` فقط برای کوچکتر, تکه های فیلتر شده از داده ها.
 
-## Aggregate Functions {#aggregate-functions}
+## توابع مجموع {#aggregate-functions}
 
-Aggregate functions are stateful functions. They accumulate passed values into some state and allow you to get results from that state. They are managed with the `IAggregateFunction` interface. States can be rather simple (the state for `AggregateFunctionCount` is just a single `UInt64` value) or quite complex (the state of `AggregateFunctionUniqCombined` is a combination of a linear array, a hash table, and a `HyperLogLog` probabilistic data structure).
+توابع مجموع توابع نفرت انگیز هستند. جمع ارزش به برخی از دولت منتقل می شود و به شما اجازه دریافت نتایج از دولت. با مدیریت `IAggregateFunction` واسط. ایالات می تواند نسبتا ساده (دولت برای `AggregateFunctionCount` تنها یک `UInt64` ارزش) و یا کاملا پیچیده (دولت از `AggregateFunctionUniqCombined` ترکیبی از یک مجموعه خطی است, یک جدول هش, و یک `HyperLogLog` ساختار داده احتمالاتی).
 
-States are allocated in `Arena` (a memory pool) to deal with multiple states while executing a high-cardinality `GROUP BY` query. States can have a non-trivial constructor and destructor: for example, complicated aggregation states can allocate additional memory themselves. It requires some attention to creating and destroying states and properly passing their ownership and destruction order.
+ایالات در اختصاص داده `Arena` (یک استخر حافظه) برای مقابله با کشورهای مختلف در حالی که اجرای یک کارتیت بالا `GROUP BY` پرس و جو. ایالات می تواند یک سازنده غیر بدیهی و مخرب دارند: مثلا, کشورهای تجمع پیچیده می توانید حافظه اضافی خود اختصاص. این نیاز به توجه به ایجاد و از بین بردن ایالات و به درستی عبور مالکیت و تخریب سفارش خود را.
 
-Aggregation states can be serialized and deserialized to pass over the network during distributed query execution or to write them on the disk where there is not enough RAM. They can even be stored in a table with the `DataTypeAggregateFunction` to allow incremental aggregation of data.
+تجمع متحده می تواند سرهمی و deserialized به تصویب بیش از این شبکه در توزیع پرس و جو اعدام و یا ارسال آنها را بر روی دیسک که در آن وجود دارد به اندازه کافی نمی رم. حتی می توانند در یک جدول با `DataTypeAggregateFunction` اجازه می دهد تا تجمع افزایشی از داده ها.
 
-> The serialized data format for aggregate function states is not versioned right now. It is ok if aggregate states are only stored temporarily. But we have the `AggregatingMergeTree` table engine for incremental aggregation, and people are already using it in production. It is the reason why backward compatibility is required when changing the serialized format for any aggregate function in the future.
+> فرمت داده سریال برای عملکرد کل ایالات در حال حاضر نسخه نیست. این خوب است اگر کشورهای کل تنها به طور موقت ذخیره می شود. اما ما `AggregatingMergeTree` جدول موتور به صورت افزایشی تجمع و مردم در حال حاضر استفاده از آن در تولید. این است دلیل که چرا سازگاری مورد نیاز است زمانی که تغییر سریال با فرمت برای هر aggregate function در آینده است.
 
-## Server {#server}
+## کارگزار {#server}
 
-The server implements several different interfaces:
+سرور پیاده سازی چندین رابط های مختلف:
 
--   An HTTP interface for any foreign clients.
--   A TCP interface for the native ClickHouse client and for cross-server communication during distributed query execution.
--   An interface for transferring data for replication.
+-   رابط قام برای هر مشتریان خارجی.
+-   یک رابط واحد کنترل گیربکس اتوماتیک برای مشتری خانه رعیتی بومی و برای ارتباط متقابل سرور در طول اجرای پرس و جو توزیع شده است.
+-   رابط کاربری برای انتقال داده ها برای تکرار.
 
-Internally, it is just a primitive multithreaded server without coroutines or fibers. Since the server is not designed to process a high rate of simple queries but to process a relatively low rate of complex queries, each of them can process a vast amount of data for analytics.
+داخلی, این فقط یک سرور چند رشته ای بدوی بدون کروتین یا الیاف است. از زمانی که سرور طراحی نشده است برای پردازش نرخ بالای ساده نمایش داده شد اما برای پردازش نسبتا پایین نرخ پیچیده نمایش داده شد هر یک می تواند روند مقدار زیادی از داده ها برای تجزیه و تحلیل ترافیک.
 
-The server initializes the `Context` class with the necessary environment for query execution: the list of available databases, users and access rights, settings, clusters, the process list, the query log, and so on. Interpreters use this environment.
+سرور مقدار دهی اولیه `Context` کلاس با محیط لازم برای اجرای پرس و جو: لیستی از پایگاه داده های موجود, کاربران و حقوق دسترسی, تنظیمات, خوشه, لیست فرایند, ورود به سیستم پرس و جو, و غیره. مفسران استفاده از این محیط.
 
-We maintain full backward and forward compatibility for the server TCP protocol: old clients can talk to new servers, and new clients can talk to old servers. But we don’t want to maintain it eternally, and we are removing support for old versions after about one year.
+ما سازگاری کامل رو به عقب و رو به جلو را برای پروتکل سرور تی سی پی حفظ می کنیم: مشتریان قدیمی می توانند با سرورهای جدید صحبت کنند و مشتریان جدید می توانند با سرورهای قدیمی صحبت کنند. اما ما نمی خواهیم تا ابد حفظ کنیم و پس از حدود یک سال پشتیبانی از نسخه های قدیمی را از بین می بریم.
 
-!!! note "Note"
-	For most external applications, we recommend using the HTTP interface because it is simple and easy to use. The TCP protocol is more tightly linked to internal data structures: it uses an internal format for passing blocks of data, and it uses custom framing for compressed data. We haven’t released a C library for that protocol because it requires linking most of the ClickHouse codebase, which is not practical.
+!!! note "یادداشت"
+    برای اکثر برنامه های کاربردی خارجی, توصیه می کنیم با استفاده از رابط اچ تی پی به دلیل ساده و ساده برای استفاده است. پروتکل تی سی پی به شدت با ساختارهای داده داخلی ارتباط دارد: از فرمت داخلی برای عبور بلوک های داده استفاده می کند و از فریم های سفارشی برای داده های فشرده استفاده می کند. ما یک کتابخانه سی که برای پروتکل منتشر نشده است چرا که نیاز به ارتباط بسیاری از کدهای کلیکهاوس, که عملی نیست.
 
-## Distributed Query Execution {#distributed-query-execution}
+## اجرای پرس و جو توزیع شده {#distributed-query-execution}
 
-Servers in a cluster setup are mostly independent. You can create a `Distributed` table on one or all servers in a cluster. The `Distributed` table does not store data itself – it only provides a “view” to all local tables on multiple nodes of a cluster. When you SELECT from a `Distributed` table, it rewrites that query, chooses remote nodes according to load balancing settings, and sends the query to them. The `Distributed` table requests remote servers to process a query just up to a stage where intermediate results from different servers can be merged. Then it receives the intermediate results and merges them. The distributed table tries to distribute as much work as possible to remote servers and does not send much intermediate data over the network.
+سرور در راه اندازی خوشه عمدتا مستقل هستند. شما می توانید یک `Distributed` جدول در یک یا تمام سرور در یک خوشه. این `Distributed` table does not store data itself – it only provides a “view” به تمام جداول محلی در گره های متعدد از یک خوشه. هنگامی که شما از یک انتخاب `Distributed` جدول, بازنویسی است که پرس و جو, را گره از راه دور با توجه به بار تنظیمات متعادل, و پرس و جو را به او می فرستد. این `Distributed` درخواست جدول سرور از راه دور برای پردازش یک پرس و جو فقط تا مرحله ای که نتایج متوسط از سرور های مختلف را می توان با هم ادغام شدند. سپس نتایج متوسط را دریافت می کند و ادغام می کند. جدول توزیع تلاش می کند برای توزیع کار به همان اندازه که ممکن است به سرور از راه دور می کند و داده های متوسط بسیار بیش از شبکه ارسال کنید.
 
-Things become more complicated when you have subqueries in IN or JOIN clauses, and each of them uses a `Distributed` table. We have different strategies for the execution of these queries.
+همه چیز پیچیده تر می شود زمانی که شما زیر کشتیها در و یا پیوستن به بند, و هر یک از استفاده از یک `Distributed` جدول ما استراتژی های مختلف برای اجرای این نمایش داده شد.
 
-There is no global query plan for distributed query execution. Each node has its local query plan for its part of the job. We only have simple one-pass distributed query execution: we send queries for remote nodes and then merge the results. But this is not feasible for complicated queries with high cardinality GROUP BYs or with a large amount of temporary data for JOIN. In such cases, we need to “reshuffle” data between servers, which requires additional coordination. ClickHouse does not support that kind of query execution, and we need to work on it.
+هیچ برنامه پرس و جو جهانی برای اجرای پرس و جو توزیع وجود دارد. هر گره دارای برنامه پرس و جو محلی خود را برای بخشی خود را از کار. ما فقط ساده یک پاس اجرای پرس و جو توزیع شده: ما ارسال نمایش داده شد برای گره های از راه دور و سپس ادغام نتایج. اما این امکان پذیر نیست برای نمایش داده شد پیچیده با بالا کار افتادگی گروه بورس و یا با مقدار زیادی از داده های موقت برای پیوستن به. در چنین مواردی ما نیاز به “reshuffle” داده ها بین سرور, که نیاز به هماهنگی اضافی. کلیک هاوس از این نوع اجرای پرس و جو پشتیبانی نمی کند و ما باید روش کار کنیم.
 
-## Merge Tree {#merge-tree}
+## ادغام درخت {#merge-tree}
 
-`MergeTree` is a family of storage engines that supports indexing by primary key. The primary key can be an arbitrary tuple of columns or expressions. Data in a `MergeTree` table is stored in “parts”. Each part stores data in the primary key order, so data is ordered lexicographically by the primary key tuple. All the table columns are stored in separate `column.bin` files in these parts. The files consist of compressed blocks. Each block is usually from 64 KB to 1 MB of uncompressed data, depending on the average value size. The blocks consist of column values placed contiguously one after the other. Column values are in the same order for each column (the primary key defines the order), so when you iterate by many columns, you get values for the corresponding rows.
+`MergeTree` یک خانواده از موتورهای ذخیره سازی است که پشتیبانی از نمایه سازی توسط کلید اصلی است. کلید اصلی می تواند یک تاپل دلخواه از ستون ها و یا عبارات. داده ها در یک `MergeTree` جدول در ذخیره می شود “parts”. هر بخش ذخیره داده ها در جهت کلید اولیه, بنابراین داده ها از لحاظ واژگان توسط تاپل کلید اولیه دستور داد. تمام ستون های جدول به صورت جداگانه ذخیره می شوند `column.bin` فایل ها در این بخش. فایل ها از بلوک های فشرده تشکیل شده است. هر بلوک است که معمولا از 64 کیلوبایت به 1 مگابایت از داده های غیر فشرده, بسته به اندازه مقدار متوسط. بلوک از مقادیر ستون بعد از دیگری قرار داده شده به طور یکنواخت تشکیل شده است. مقادیر ستون در همان جهت برای هر ستون هستند (کلید اصلی سفارش را تعریف می کند), تا زمانی که شما توسط بسیاری از ستون تکرار, شما ارزش برای ردیف مربوطه.
 
-The primary key itself is “sparse”. It doesn’t address every single row, but only some ranges of data. A separate `primary.idx` file has the value of the primary key for each N-th row, where N is called `index_granularity` (usually, N = 8192). Also, for each column, we have `column.mrk` files with “marks,” which are offsets to each N-th row in the data file. Each mark is a pair: the offset in the file to the beginning of the compressed block, and the offset in the decompressed block to the beginning of data. Usually, compressed blocks are aligned by marks, and the offset in the decompressed block is zero. Data for `primary.idx` always resides in memory, and data for `column.mrk` files is cached.
+کلید اصلی خود است “sparse”. این کار هر سطر رسیدگی نمی, اما تنها برخی از محدوده داده. جدا `primary.idx` فایل دارای ارزش کلید اصلی برای هر سطر نفر که نفر نامیده می شود `index_granularity` (معمولا, نفر = 8192). همچنین, برای هر ستون, ما داریم `column.mrk` پروندهها با “marks,” که ناراحتی به هر سطر نفر هفتم در فایل داده ها. هر علامت یک جفت است: افست در فایل به ابتدای بلوک فشرده و افست در بلوک فشرده به ابتدای داده ها. معمولا, بلوک های فشرده توسط علامت تراز وسط قرار دارد, و افست در بلوک فشرده صفر است. داده ها برای `primary.idx` همیشه در حافظه ساکن, و داده ها را برای `column.mrk` فایل های ذخیره شده است.
 
-When we are going to read something from a part in `MergeTree`, we look at `primary.idx` data and locate ranges that could contain requested data, then look at `column.mrk` data and calculate offsets for where to start reading those ranges. Because of sparseness, excess data may be read. ClickHouse is not suitable for a high load of simple point queries, because the entire range with `index_granularity` rows must be read for each key, and the entire compressed block must be decompressed for each column. We made the index sparse because we must be able to maintain trillions of rows per single server without noticeable memory consumption for the index. Also, because the primary key is sparse, it is not unique: it cannot check the existence of the key in the table at INSERT time. You could have many rows with the same key in a table.
+هنگامی که ما می رویم به خواندن چیزی از یک شرکت در `MergeTree` ما نگاه می کنیم `primary.idx` داده ها و تعیین محل محدوده است که می تواند حاوی اطلاعات درخواست شده و سپس نگاه `column.mrk` داده ها و محاسبه شیپور خاموشی برای جایی که شروع به خواندن این محدوده. به دلیل نرمی, اطلاعات اضافی ممکن است به عنوان خوانده شده. تاتر مناسب برای یک بار بالا از نمایش داده شد نقطه ساده نیست, چرا که کل محدوده با `index_granularity` ردیف باید برای هر کلید به عنوان خوانده شده, و کل بلوک فشرده باید برای هر ستون از حالت فشرده خارج. ما جرقه شاخص ساخته شده چرا که ما باید قادر به حفظ تریلیون ردیف در هر سرور بدون مصرف حافظه قابل توجه برای شاخص باشد. همچنین, به دلیل کلید اصلی پراکنده است, منحصر به فرد نیست: این می تواند وجود کلید در جدول در زمان درج بررسی نمی. شما می توانید ردیف های بسیاری را با همان کلید در یک جدول داشته باشید.
 
-When you `INSERT` a bunch of data into `MergeTree`, that bunch is sorted by primary key order and forms a new part. There are background threads that periodically select some parts and merge them into a single sorted part to keep the number of parts relatively low. That’s why it is called `MergeTree`. Of course, merging leads to “write amplification”. All parts are immutable: they are only created and deleted, but not modified. When SELECT is executed, it holds a snapshot of the table (a set of parts). After merging, we also keep old parts for some time to make a recovery after failure easier, so if we see that some merged part is probably broken, we can replace it with its source parts.
+هنگامی که شما `INSERT` یک دسته از داده ها به `MergeTree`, که دسته مرتب شده بر اساس کلید اصلی سفارش و به شکل یک بخش جدید. موضوعات پس زمینه وجود دارد که به صورت دوره ای برخی از قطعات را انتخاب می کنند و به یک بخش مرتب شده اند تا تعداد قطعات نسبتا کم باشد. به همین دلیل است که نامیده می شود `MergeTree`. البته ادغام منجر به “write amplification”. تمام قطعات تغییر ناپذیر هستند: تنها ایجاد و حذف, اما اصلاح نشده. هنگامی که انتخاب اجرا شده است, دارای یک تصویر لحظهای از جدول (مجموعه ای از قطعات). پس از ادغام, ما همچنین قطعات قدیمی برای برخی از زمان به بهبود پس از شکست ساده تر نگه, بنابراین اگر ما می بینیم که برخی از بخش ادغام شده است که احتمالا شکسته, ما می توانیم با قطعات منبع خود را جایگزین.
 
-`MergeTree` is not an LSM tree because it doesn’t contain “memtable” and “log”: inserted data is written directly to the filesystem. This makes it suitable only to INSERT data in batches, not by individual row and not very frequently – about once per second is ok, but a thousand times a second is not. We did it this way for simplicity’s sake, and because we are already inserting data in batches in our applications.
+`MergeTree` یک درخت ل اس ام نیست زیرا حاوی نیست “memtable” و “log”: inserted data is written directly to the filesystem. This makes it suitable only to INSERT data in batches, not by individual row and not very frequently – about once per second is ok, but a thousand times a second is not. We did it this way for simplicity's sake, and because we are already inserting data in batches in our applications.
 
-> MergeTree tables can only have one (primary) index: there aren’t any secondary indices. It would be nice to allow multiple physical representations under one logical table, for example, to store data in more than one physical order or even to allow representations with pre-aggregated data along with original data.
+> جداول ادغام تنها می توانید یک دارند (اولیه) شاخص: هیچ شاخص ثانویه وجود ندارد. این امر می تواند خوب اجازه می دهد تا بازنمایی فیزیکی متعدد تحت یک جدول منطقی, مثلا, برای ذخیره داده ها در بیش از یک نظم فیزیکی و یا حتی اجازه می دهد تا بازنمایی با داده های از پیش جمع همراه با داده های اصلی.
 
-There are MergeTree engines that are doing additional work during background merges. Examples are `CollapsingMergeTree` and `AggregatingMergeTree`. This could be treated as special support for updates. Keep in mind that these are not real updates because users usually have no control over the time when background merges are executed, and data in a `MergeTree` table is almost always stored in more than one part, not in completely merged form.
+موتورهای ادغام است که کار اضافی در طول پس زمینه ادغام انجام می دهند وجود دارد. مثالها عبارتند از `CollapsingMergeTree` و `AggregatingMergeTree`. این می تواند به عنوان پشتیبانی ویژه ای برای به روز رسانی درمان می شود. به خاطر داشته باشید که این به روز رسانی واقعی نیست چرا که کاربران معمولا هیچ کنترلی بر زمان هنگامی که پس زمینه ادغام اجرا می شوند, و داده ها در یک `MergeTree` جدول تقریبا همیشه در بیش از یک بخش ذخیره می شود, نه در فرم به طور کامل با هم ادغام شدند.
 
-## Replication {#replication}
+## تکرار {#replication}
 
-Replication in ClickHouse can be configured on a per-table basis. You could have some replicated and some non-replicated tables on the same server. You could also have tables replicated in different ways, such as one table with two-factor replication and another with three-factor.
+تکرار در کلیک خانه را می توان بر اساس هر جدول پیکربندی شده است. شما می توانید برخی از تکرار و برخی از جداول غیر تکرار بر روی همان سرور. شما همچنین می تواند جداول تکرار در راه های مختلف, مانند یک جدول با تکرار دو عامل و دیگری با سه عامل.
 
-Replication is implemented in the `ReplicatedMergeTree` storage engine. The path in `ZooKeeper` is specified as a parameter for the storage engine. All tables with the same path in `ZooKeeper` become replicas of each other: they synchronize their data and maintain consistency. Replicas can be added and removed dynamically simply by creating or dropping a table.
+تکرار در اجرا `ReplicatedMergeTree` موتور ذخیره سازی. مسیر در `ZooKeeper` به عنوان یک پارامتر برای موتور ذخیره سازی مشخص شده است. تمام جداول با همان مسیر در `ZooKeeper` تبدیل کپی از یکدیگر: همگام سازی داده های خود و حفظ ثبات. کپی می تواند اضافه شود و به صورت پویا به سادگی با ایجاد و یا حذف یک جدول حذف شده است.
 
-Replication uses an asynchronous multi-master scheme. You can insert data into any replica that has a session with `ZooKeeper`, and data is replicated to all other replicas asynchronously. Because ClickHouse doesn’t support UPDATEs, replication is conflict-free. As there is no quorum acknowledgment of inserts, just-inserted data might be lost if one node fails.
+تکرار با استفاده از یک طرح چند استاد ناهمزمان. شما می توانید داده ها را به هر ماکت است که یک جلسه با وارد `ZooKeeper`, و داده ها به تمام کپی های دیگر غیر همزمان تکرار. چون کلیک هاوس به روز رسانی را پشتیبانی نمی کند, تکرار بدون درگیری است. همانطور که هیچ اذعان حد نصاب درج وجود دارد, داده فقط قرار داده ممکن است از دست داده اگر یک گره نتواند.
 
-Metadata for replication is stored in ZooKeeper. There is a replication log that lists what actions to do. Actions are: get part; merge parts; drop a partition, and so on. Each replica copies the replication log to its queue and then executes the actions from the queue. For example, on insertion, the “get the part” action is created in the log, and every replica downloads that part. Merges are coordinated between replicas to get byte-identical results. All parts are merged in the same way on all replicas. It is achieved by electing one replica as the leader, and that replica initiates merges and writes “merge parts” actions to the log.
+فراداده برای تکرار در باغ وحش ذخیره می شود. ورود به سیستم تکرار است که لیست چه اقداماتی را انجام دهید وجود دارد. اقدامات عبارتند از: دریافت بخشی; ادغام قطعات; رها کردن یک پارتیشن, و غیره. هر ماکت کپی ورود تکرار به صف خود و سپس اجرا اقدامات از صف. برای مثال در درج “get the part” عمل در ورود به سیستم ایجاد, و هر دانلود ماکت که بخشی. ادغام بین کپی هماهنگ برای دریافت بایت - نتایج یکسان. تمام قطعات در همان راه در تمام کپی با هم ادغام شدند. این است که با انتخاب یک ماکت به عنوان رهبر دست, و این ماکت شروع ادغام و می نویسد “merge parts” عملیات به ورود به سیستم.
 
-Replication is physical: only compressed parts are transferred between nodes, not queries. Merges are processed on each replica independently in most cases to lower the network costs by avoiding network amplification. Large merged parts are sent over the network only in cases of significant replication lag.
+تکرار فیزیکی است: تنها قطعات فشرده بین گره منتقل, نمایش داده شد نیست. ادغام در هر ماکت پردازش به طور مستقل در اکثر موارد به کاهش هزینه های شبکه با اجتناب از تقویت شبکه. قطعات با هم ادغام شدند بزرگ بر روی شبکه تنها در موارد تاخیر تکرار قابل توجهی ارسال.
 
-Besides, each replica stores its state in ZooKeeper as the set of parts and its checksums. When the state on the local filesystem diverges from the reference state in ZooKeeper, the replica restores its consistency by downloading missing and broken parts from other replicas. When there is some unexpected or broken data in the local filesystem, ClickHouse does not remove it, but moves it to a separate directory and forgets it.
+بعلاوه, هر ماکت ذخیره دولت خود را در باغ وحش به عنوان مجموعه ای از قطعات و چک سام خود. هنگامی که دولت در فایل سیستم محلی واگرا از دولت مرجع در باغ وحش, ماکت بازیابی سازگاری خود را با دانلود قطعات گم شده و شکسته از دیگر کپی. هنگامی که برخی از داده های غیر منتظره و یا شکسته در فایل سیستم محلی وجود دارد, خانه را حذف کنید, اما حرکت می کند به یک دایرکتوری جداگانه و فراموش.
 
-!!! note "Note"
-    The ClickHouse cluster consists of independent shards, and each shard consists of replicas. The cluster is **not elastic**, so after adding a new shard, data is not rebalanced between shards automatically. Instead, the cluster load is supposed to be adjusted to be uneven. This implementation gives you more control, and it is ok for relatively small clusters, such as tens of nodes. But for clusters with hundreds of nodes that we are using in production, this approach becomes a significant drawback. We should implement a table engine that spans across the cluster with dynamically replicated regions that could be split and balanced between clusters automatically.
+!!! note "یادداشت"
+    خوشه محل کلیک متشکل از خرده ریز مستقل, و هر سفال شامل کپی. خوشه است **الاستیک نیست**, بنابراین پس از اضافه کردن یک سفال جدید, داده ها بین خرده ریز به طور خودکار توازن نیست. بجای, بار خوشه قرار است تنظیم شود ناهموار. این پیاده سازی به شما کنترل بیشتری می دهد و برای خوشه های نسبتا کوچک مانند ده ها گره مناسب است. اما برای خوشه با صدها گره که ما با استفاده از در تولید, این رویکرد یک نقطه ضعف قابل توجهی می شود. ما باید یک موتور جدول است که دهانه در سراسر خوشه با مناطق به صورت پویا تکرار است که می تواند تقسیم و متعادل کننده شده بین خوشه به طور خودکار پیاده سازی.
 
-{## [Original article](https://clickhouse.tech/docs/en/development/architecture/) ##}
+{## [مقاله اصلی](https://clickhouse.tech/docs/en/development/architecture/) ##}

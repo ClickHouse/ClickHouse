@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 
+import translate
 import util
 
 
@@ -19,6 +20,11 @@ if __name__ == '__main__':
         ).decode('utf-8').strip()
         meta['machine_translated'] = True
         meta['machine_translated_rev'] = rev
+        title = meta.get('toc_title')
+        if title:
+            meta['toc_title'] = translate.translate(title, target_language)
+        if 'en_copy' in meta:
+            del meta['en_copy']
     
     with open(content_path, 'w') as f:
         print(content, file=f)

@@ -1,26 +1,30 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 68
+toc_title: "\u0686\u06AF\u0648\u0646\u0647 \u0628\u0631\u0627\u06CC \u0646\u0648\u0634\
+  \u062A\u0646 \u062C++ \u06A9\u062F"
 ---
 
-# How to Write C++ Code {#how-to-write-c-code}
+# چگونه برای نوشتن ج++ کد {#how-to-write-c-code}
 
-## General Recommendations {#general-recommendations}
+## توصیه های عمومی {#general-recommendations}
 
-**1.** The following are recommendations, not requirements.
+**1.** در زیر توصیه, مورد نیاز نیست.
 
-**2.** If you are editing code, it makes sense to follow the formatting of the existing code.
+**2.** اگر شما در حال ویرایش کد آن را حس می کند به دنبال این قالب از کد های موجود.
 
-**3.** Code style is needed for consistency. Consistency makes it easier to read the code, and it also makes it easier to search the code.
+**3.** سبک کد برای سازگاری مورد نیاز است. سازگاری خواندن کد را ساده تر می کند و همچنین باعث می شود که کد را جستجو کنید.
 
-**4.** Many of the rules do not have logical reasons; they are dictated by established practices.
+**4.** بسیاری از قوانین دلایل منطقی ندارند; دیکته شده توسط شیوه های تاسیس شده است.
 
-## Formatting {#formatting}
+## قالببندی {#formatting}
 
-**1.** Most of the formatting will be done automatically by `clang-format`.
+**1.** بسیاری از قالب بندی به صورت خودکار انجام می شود `clang-format`.
 
-**2.** Indents are 4 spaces. Configure your development environment so that a tab adds four spaces.
+**2.** فرورفتگی فضاهای 4 هستند. پیکربندی محیط توسعه خود را به طوری که یک تب اضافه می کند چهار فضا.
 
-**3.** Opening and closing curly brackets must be on a separate line.
+**3.** باز و بسته شدن براکت فرفری باید در یک خط جداگانه باشد.
 
 ``` cpp
 inline void readBoolText(bool & x, ReadBuffer & buf)
@@ -31,14 +35,14 @@ inline void readBoolText(bool & x, ReadBuffer & buf)
 }
 ```
 
-**4.** If the entire function body is a single `statement`, it can be placed on a single line. Place spaces around curly braces (besides the space at the end of the line).
+**4.** اگر کل بدن تابع یک است `statement`, این را می توان در یک خط قرار داده شده. فضاهای محل در اطراف پرانتز فرفری (علاوه بر فضای در پایان خط).
 
 ``` cpp
 inline size_t mask() const                { return buf_size() - 1; }
 inline size_t place(HashValue x) const    { return x & mask(); }
 ```
 
-**5.** For functions. Don’t put spaces around brackets.
+**5.** برای توابع. فضاهای اطراف براکت قرار ندهید.
 
 ``` cpp
 void reinsert(const Value & x)
@@ -48,13 +52,13 @@ void reinsert(const Value & x)
 memcpy(&buf[place_value], &x, sizeof(x));
 ```
 
-**6.** In `if`, `for`, `while` and other expressions, a space is inserted in front of the opening bracket (as opposed to function calls).
+**6.** داخل `if`, `for`, `while` و عبارت دیگر, یک فضای در مقابل براکت باز قرار داده(به عنوان مخالف به عملکرد تماس).
 
 ``` cpp
 for (size_t i = 0; i < rows; i += storage.index_granularity)
 ```
 
-**7.** Add spaces around binary operators (`+`, `-`, `*`, `/`, `%`, …) and the ternary operator `?:`.
+**7.** اضافه کردن فضاهای اطراف اپراتورهای دودویی (`+`, `-`, `*`, `/`, `%`, …) and the ternary operator `?:`.
 
 ``` cpp
 UInt16 year = (s[0] - '0') * 1000 + (s[1] - '0') * 100 + (s[2] - '0') * 10 + (s[3] - '0');
@@ -62,7 +66,7 @@ UInt8 month = (s[5] - '0') * 10 + (s[6] - '0');
 UInt8 day = (s[8] - '0') * 10 + (s[9] - '0');
 ```
 
-**8.** If a line feed is entered, put the operator on a new line and increase the indent before it.
+**8.** اگر یک خوراک خط وارد شده است, قرار دادن اپراتور در یک خط جدید و افزایش تورفتگی قبل از.
 
 ``` cpp
 if (elapsed_ns)
@@ -71,7 +75,7 @@ if (elapsed_ns)
         << bytes_read_on_server * 1000.0 / elapsed_ns << " MB/s.) ";
 ```
 
-**9.** You can use spaces for alignment within a line, if desired.
+**9.** شما می توانید فضاهای برای هم ترازی در یک خط استفاده, در صورت دلخواه.
 
 ``` cpp
 dst.ClickLogID         = click.LogID;
@@ -79,17 +83,17 @@ dst.ClickEventID       = click.EventID;
 dst.ClickGoodEvent     = click.GoodEvent;
 ```
 
-**10.** Don’t use spaces around the operators `.`, `->`.
+**10.** از فضاهای اطراف اپراتورها استفاده نکنید `.`, `->`.
 
-If necessary, the operator can be wrapped to the next line. In this case, the offset in front of it is increased.
+در صورت لزوم اپراتور می تواند به خط بعدی پیچیده شود. در این مورد جبران در مقابل افزایش می یابد.
 
-**11.** Do not use a space to separate unary operators (`--`, `++`, `*`, `&`, …) from the argument.
+**11.** از فضا برای جدا کردن اپراتورهای غیر ضروری استفاده نکنید (`--`, `++`, `*`, `&`, …) from the argument.
 
-**12.** Put a space after a comma, but not before it. The same rule goes for a semicolon inside a `for` expression.
+**12.** بعد از ویرگول فاصله بگیر ولی نه قبل از اون همین قاعده برای یک نقطه و ویرگول در داخل یک `for` اصطلاح.
 
-**13.** Do not use spaces to separate the `[]` operator.
+**13.** از فضاها برای جدا کردن استفاده نکنید `[]` اپراتور
 
-**14.** In a `template <...>` expression, use a space between `template` and `<`; no spaces after `<` or before `>`.
+**14.** در یک `template <...>` عبارت, استفاده از یک فضای بین `template` و `<`; بدون فاصله پس از `<` یا قبل از `>`.
 
 ``` cpp
 template <typename TKey, typename TValue>
@@ -97,7 +101,7 @@ struct AggregatedStatElement
 {}
 ```
 
-**15.** In classes and structures, write `public`, `private`, and `protected` on the same level as `class/struct`, and indent the rest of the code.
+**15.** در کلاس ها و سازه, نوشتن `public`, `private` و `protected` در همان سطح به عنوان `class/struct`, و تورفتگی بقیه کد.
 
 ``` cpp
 template <typename T>
@@ -110,11 +114,11 @@ public:
 }
 ```
 
-**16.** If the same `namespace` is used for the entire file, and there isn’t anything else significant, an offset is not necessary inside `namespace`.
+**16.** اگر همان `namespace` برای کل فایل استفاده می شود, و هر چیز دیگری قابل توجهی وجود ندارد, افست در داخل لازم نیست `namespace`.
 
-**17.** If the block for an `if`, `for`, `while`, or other expression consists of a single `statement`, the curly brackets are optional. Place the `statement` on a separate line, instead. This rule is also valid for nested `if`, `for`, `while`, …
+**17.** اگر بلوک برای `if`, `for`, `while`, یا عبارت دیگر متشکل از یک `statement`, براکت فرفری اختیاری هستند. محل `statement` در یک خط جداگانه, در عوض. این قانون نیز برای تو در تو معتبر `if`, `for`, `while`, …
 
-But if the inner `statement` contains curly brackets or `else`, the external block should be written in curly brackets.
+اما اگر درونی `statement` شامل براکت های فرفری یا `else` بلوک خارجی باید در براکت های فرفری نوشته شود.
 
 ``` cpp
 /// Finish write.
@@ -122,23 +126,23 @@ for (auto & stream : streams)
     stream.second->finalize();
 ```
 
-**18.** There shouldn’t be any spaces at the ends of lines.
+**18.** نباید در انتهای خطوط هیچ فضایی وجود داشته باشد.
 
-**19.** Source files are UTF-8 encoded.
+**19.** فایل های منبع هستند وزارت مخابرات 8 کد گذاری.
 
-**20.** Non-ASCII characters can be used in string literals.
+**20.** شخصیت های غیر ASCII استفاده می شود string literals.
 
 ``` cpp
 << ", " << (timer.elapsed() / chunks_stats.hits) << " μsec/hit.";
 ```
 
-**21.** Do not write multiple expressions in a single line.
+**21.** هنوز عبارات متعدد در یک خط ارسال نمی.
 
-**22.** Group sections of code inside functions and separate them with no more than one empty line.
+**22.** بخش های گروهی کد در داخل توابع و با بیش از یک خط خالی جدا می شوند.
 
-**23.** Separate functions, classes, and so on with one or two empty lines.
+**23.** توابع جداگانه, کلاس, و به همین ترتیب با یک یا دو خط خالی.
 
-**24.** `A const` (related to a value) must be written before the type name.
+**24.** `A const` (مربوط به ارزش) باید قبل از نام نوع نوشته شده است.
 
 ``` cpp
 //correct
@@ -148,7 +152,7 @@ const std::string & s
 char const * pos
 ```
 
-**25.** When declaring a pointer or reference, the `*` and `&` symbols should be separated by spaces on both sides.
+**25.** هنگام اعلام اشاره گر یا مرجع `*` و `&` نمادها باید با فاصله در هر دو طرف از هم جدا.
 
 ``` cpp
 //correct
@@ -158,11 +162,11 @@ const char* pos
 const char *pos
 ```
 
-**26.** When using template types, alias them with the `using` keyword (except in the simplest cases).
+**26.** هنگام استفاده از انواع قالب ها با نام مستعار `using` کلمه کلیدی (به جز در ساده ترین موارد).
 
-In other words, the template parameters are specified only in `using` and aren’t repeated in the code.
+به عبارت دیگر پارامترهای قالب فقط در `using` و در کد تکرار نمی شود.
 
-`using` can be declared locally, such as inside a function.
+`using` می توان به صورت محلی اعلام کرد, مانند داخل یک تابع.
 
 ``` cpp
 //correct
@@ -172,14 +176,14 @@ FileStreams streams;
 std::map<std::string, std::shared_ptr<Stream>> streams;
 ```
 
-**27.** Do not declare several variables of different types in one statement.
+**27.** هنوز متغیرهای مختلفی از انواع مختلف در یک بیانیه اعلام نمی.
 
 ``` cpp
 //incorrect
 int x, *y;
 ```
 
-**28.** Do not use C-style casts.
+**28.** هنوز کست ج سبک استفاده نمی.
 
 ``` cpp
 //incorrect
@@ -188,27 +192,27 @@ std::cerr << (int)c <<; std::endl;
 std::cerr << static_cast<int>(c) << std::endl;
 ```
 
-**29.** In classes and structs, group members and functions separately inside each visibility scope.
+**29.** در کلاس ها و ساختار, اعضای گروه و توابع به طور جداگانه در داخل هر دامنه دید.
 
-**30.** For small classes and structs, it is not necessary to separate the method declaration from the implementation.
+**30.** برای کلاس های کوچک و structs آن است که لازم نیست برای جدا کردن روش بیانیه از اجرای.
 
-The same is true for small methods in any classes or structs.
+همان درست است برای روش های کوچک در هر کلاس و یا ساختار است.
 
-For templated classes and structs, don’t separate the method declarations from the implementation (because otherwise they must be defined in the same translation unit).
+برای templated کلاس و structs نیست جداگانه روش اعلامیه از اجرای (زیرا در غیر این صورت آنها باید تعریف شده در ترجمه همان واحد).
 
-**31.** You can wrap lines at 140 characters, instead of 80.
+**31.** شما می توانید خطوط در بسته بندی 140 شخصیت, بجای 80.
 
-**32.** Always use the prefix increment/decrement operators if postfix is not required.
+**32.** همیشه پیشوند اپراتورهای افزایش/کاهش استفاده کنید اگر پسوند مورد نیاز نمی باشد.
 
 ``` cpp
 for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 ```
 
-## Comments {#comments}
+## توضیحات {#comments}
 
-**1.** Be sure to add comments for all non-trivial parts of code.
+**1.** حتما برای اضافه کردن نظر برای تمام بخش های غیر بدیهی از کد.
 
-This is very important. Writing the comment might help you realize that the code isn’t necessary, or that it is designed wrong.
+این بسیار مهم است. نوشتن نظر ممکن است به شما کمک کند متوجه شوید که کد لازم نیست یا اشتباه طراحی شده است.
 
 ``` cpp
 /** Part of piece of memory, that can be used.
@@ -218,9 +222,9 @@ This is very important. Writing the comment might help you realize that the code
   */
 ```
 
-**2.** Comments can be as detailed as necessary.
+**2.** نظرات می تواند به عنوان دقیق که لازم است.
 
-**3.** Place comments before the code they describe. In rare cases, comments can come after the code, on the same line.
+**3.** محل نظرات قبل از کد توصیف می کنند. در موارد نادر, نظرات می تواند پس از کد است, در همان خط.
 
 ``` cpp
 /** Parses and executes the query.
@@ -234,11 +238,11 @@ void executeQuery(
     )
 ```
 
-**4.** Comments should be written in English only.
+**4.** نظرات فقط باید به زبان انگلیسی نوشته شود.
 
-**5.** If you are writing a library, include detailed comments explaining it in the main header file.
+**5.** اگر شما در حال نوشتن یک کتابخانه, شامل نظرات دقیق توضیح در فایل هدر اصلی.
 
-**6.** Do not add comments that do not provide additional information. In particular, do not leave empty comments like this:
+**6.** هنوز نظر که اطلاعات اضافی را فراهم نمی کند اضافه کنید. به خصوص, نظرات خالی مثل این را ترک کنید:
 
 ``` cpp
 /*
@@ -261,116 +265,116 @@ void executeQuery(
 */
 ```
 
-The example is borrowed from the resource http://home.tamk.fi/~jaalto/course/coding-style/doc/unmaintainable-code/.
+به عنوان مثال با اقتباس از منابع http://home.tamk.fi/~jaalto/دوره آموزشی/برنامه نویسی به سبک/doc/قابل نگهداشت-کد/.
 
-**7.** Do not write garbage comments (author, creation date ..) at the beginning of each file.
+**7.** هنوز نظرات زباله ارسال کنید (نویسنده, تاریخ ایجاد ..) در ابتدای هر فایل.
 
-**8.** Single-line comments begin with three slashes: `///` and multi-line comments begin with `/**`. These comments are considered “documentation”.
+**8.** نظرات تک خط با سه اسلش شروع می شود: `///` و نظرات چند خط با شروع `/**`. این نظرات در نظر گرفته شده است “documentation”.
 
-Note: You can use Doxygen to generate documentation from these comments. But Doxygen is not generally used because it is more convenient to navigate the code in the IDE.
+توجه: شما می توانید داکسیژن برای تولید اسناد از این نظرات استفاده کنید. اما داکسیگن به طور کلی استفاده نمی شود زیرا راحت تر است که کد را در محیط برنامه نویسی حرکت دهید.
 
-**9.** Multi-line comments must not have empty lines at the beginning and end (except the line that closes a multi-line comment).
+**9.** نظرات چند خط باید خطوط خالی در ابتدا و پایان ندارد (به جز خط که بسته یک نظر چند خط).
 
-**10.** For commenting out code, use basic comments, not “documenting” comments.
+**10.** برای اظهار نظر از کد, استفاده از نظرات اساسی, نه “documenting” نظر.
 
-**11.** Delete the commented out parts of the code before committing.
+**11.** حذف بخش هایی از کد اظهار نظر قبل از ارتکاب.
 
-**12.** Do not use profanity in comments or code.
+**12.** هنوز ناسزا در نظرات و یا کد استفاده کنید.
 
-**13.** Do not use uppercase letters. Do not use excessive punctuation.
+**13.** از حروف بزرگ استفاده نکنید. هنوز نقطه گذاری بیش از حد استفاده کنید.
 
 ``` cpp
 /// WHAT THE FAIL???
 ```
 
-**14.** Do not use comments to make delimeters.
+**14.** هنوز نظر را به محیطی استفاده نمی.
 
 ``` cpp
 ///******************************************************
 ```
 
-**15.** Do not start discussions in comments.
+**15.** هنوز بحث در نظرات شروع نشد.
 
 ``` cpp
 /// Why did you do this stuff?
 ```
 
-**16.** There’s no need to write a comment at the end of a block describing what it was about.
+**16.** بدون نیاز به نوشتن نظر در پایان یک بلوک توصیف چه بود وجود دارد.
 
 ``` cpp
 /// for
 ```
 
-## Names {#names}
+## نامها {#names}
 
-**1.** Use lowercase letters with underscores in the names of variables and class members.
+**1.** استفاده از حروف کوچک با رکورد در نام متغیرها و اعضای کلاس.
 
 ``` cpp
 size_t max_block_size;
 ```
 
-**2.** For the names of functions (methods), use camelCase beginning with a lowercase letter.
+**2.** نام توابع (روش) استفاده از camelCase آغاز با حروف کوچک نامه.
 
 ``` cpp
 std::string getName() const override { return "Memory"; }
 ```
 
-**3.** For the names of classes (structs), use CamelCase beginning with an uppercase letter. Prefixes other than I are not used for interfaces.
+**3.** برای نام کلاس ها (structs) استفاده از CamelCase آغاز با حروف بزرگ نامه. پیشوند دیگر از من برای رابط استفاده نمی شود.
 
 ``` cpp
 class StorageMemory : public IStorage
 ```
 
-**4.** `using` are named the same way as classes, or with `_t` on the end.
+**4.** `using` به همان شیوه به عنوان کلاس به نام, و یا با `_t` در پایان.
 
-**5.** Names of template type arguments: in simple cases, use `T`; `T`, `U`; `T1`, `T2`.
+**5.** نام استدلال نوع الگو: در موارد ساده, استفاده `T`; `T`, `U`; `T1`, `T2`.
 
-For more complex cases, either follow the rules for class names, or add the prefix `T`.
+برای موارد پیچیده تر, هم پیروی از قوانین برای نام کلاس, و یا اضافه کردن پیشوند `T`.
 
 ``` cpp
 template <typename TKey, typename TValue>
 struct AggregatedStatElement
 ```
 
-**6.** Names of template constant arguments: either follow the rules for variable names, or use `N` in simple cases.
+**6.** نام استدلال ثابت الگو: هم پیروی از قوانین برای نام متغیر, و یا استفاده `N` در موارد ساده.
 
 ``` cpp
 template <bool without_www>
 struct ExtractDomain
 ```
 
-**7.** For abstract classes (interfaces) you can add the `I` prefix.
+**7.** برای کلاس های انتزاعی (رابط) شما می توانید اضافه کنید `I` پیشوند.
 
 ``` cpp
 class IBlockInputStream
 ```
 
-**8.** If you use a variable locally, you can use the short name.
+**8.** اگر شما استفاده از یک متغیر به صورت محلی, شما می توانید نام کوتاه استفاده.
 
-In all other cases, use a name that describes the meaning.
+در تمام موارد دیگر, استفاده از یک نام است که معنای توصیف.
 
 ``` cpp
 bool info_successfully_loaded = false;
 ```
 
-**9.** Names of `define`s and global constants use ALL\_CAPS with underscores.
+**9.** اسامی `define`بازدید کنندگان و ثابت جهانی استفاده از همه\_کاپ با زیرخط.
 
 ``` cpp
 #define MAX_SRC_TABLE_NAMES_TO_STORE 1000
 ```
 
-**10.** File names should use the same style as their contents.
+**10.** نام فایل باید همان سبک به عنوان مطالب خود استفاده کنید.
 
-If a file contains a single class, name the file the same way as the class (CamelCase).
+اگر یک فایل شامل یک کلاس, نام فایل به همان شیوه به عنوان کلاس (بالش).
 
-If the file contains a single function, name the file the same way as the function (camelCase).
+اگر فایل شامل یک تابع واحد, نام فایل به همان شیوه به عنوان تابع (بالش).
 
-**11.** If the name contains an abbreviation, then:
+**11.** اگر نام شامل مخفف, سپس:
 
--   For variable names, the abbreviation should use lowercase letters `mysql_connection` (not `mySQL_connection`).
--   For names of classes and functions, keep the uppercase letters in the abbreviation`MySQLConnection` (not `MySqlConnection`).
+-   برای نام متغیر مخفف حروف کوچک استفاده کنید `mysql_connection` ) نه `mySQL_connection`).
+-   برای نام کلاس ها و توابع, نگه داشتن حروف بزرگ در مخفف`MySQLConnection` ) نه `MySqlConnection`).
 
-**12.** Constructor arguments that are used just to initialize the class members should be named the same way as the class members, but with an underscore at the end.
+**12.** استدلال سازنده استفاده می شود که فقط به مقداردهی اولیه اعضای کلاس باید به همان شیوه به عنوان اعضای کلاس به نام, اما با تاکید در پایان.
 
 ``` cpp
 FileQueueProcessor(
@@ -385,15 +389,15 @@ FileQueueProcessor(
 }
 ```
 
-The underscore suffix can be omitted if the argument is not used in the constructor body.
+پسوند تاکید می توان حذف اگر استدلال در بدن سازنده استفاده نمی شود.
 
-**13.** There is no difference in the names of local variables and class members (no prefixes required).
+**13.** هیچ تفاوتی در نام متغیرهای محلی و اعضای کلاس وجود دارد (هیچ پیشوندهای مورد نیاز).
 
 ``` cpp
 timer (not m_timer)
 ```
 
-**14.** For the constants in an `enum`, use CamelCase with a capital letter. ALL\_CAPS is also acceptable. If the `enum` is non-local, use an `enum class`.
+**14.** برای ثابت در یک `enum` استفاده از CamelCase با حرف بزرگ. ت\_کاپها نیز قابل قبول است. اگر `enum` غیر محلی است, استفاده از یک `enum class`.
 
 ``` cpp
 enum class CompressionMethod
@@ -403,51 +407,51 @@ enum class CompressionMethod
 };
 ```
 
-**15.** All names must be in English. Transliteration of Russian words is not allowed.
+**15.** همه نامها باید به زبان انگلیسی باشد. ترجمه کلمات روسی مجاز نیست.
 
     not Stroka
 
-**16.** Abbreviations are acceptable if they are well known (when you can easily find the meaning of the abbreviation in Wikipedia or in a search engine).
+**16.** اختصارات قابل قبول هستند در صورتی که به خوبی شناخته شده است (زمانی که شما به راحتی می توانید معنای مخفف در ویکیپدیا و یا در یک موتور جستجو پیدا کنید).
 
     `AST`, `SQL`.
 
     Not `NVDH` (some random letters)
 
-Incomplete words are acceptable if the shortened version is common use.
+کلمات ناقص قابل قبول است اگر نسخه کوتاه استفاده مشترک است.
 
-You can also use an abbreviation if the full name is included next to it in the comments.
+شما همچنین می توانید مخفف استفاده کنید اگر نام کامل در کنار در نظرات گنجانده شده است.
 
-**17.** File names with C++ source code must have the `.cpp` extension. Header files must have the `.h` extension.
+**17.** نام فایل با ج++ کد منبع باید `.cpp` گسترش. فایل های هدر باید داشته باشند `.h` گسترش.
 
-## How to Write Code {#how-to-write-code}
+## نحوه نوشتن کد {#how-to-write-code}
 
-**1.** Memory management.
+**1.** مدیریت حافظه.
 
-Manual memory deallocation (`delete`) can only be used in library code.
+تخصیص حافظه دستی (`delete`) تنها می تواند در کد کتابخانه استفاده می شود.
 
-In library code, the `delete` operator can only be used in destructors.
+در کد کتابخانه `delete` اپراتور تنها می تواند در مخرب استفاده می شود.
 
-In application code, memory must be freed by the object that owns it.
+در کد برنامه, حافظه باید توسط شی که صاحب رهایی.
 
-Examples:
+مثالها:
 
--   The easiest way is to place an object on the stack, or make it a member of another class.
--   For a large number of small objects, use containers.
--   For automatic deallocation of a small number of objects that reside in the heap, use `shared_ptr/unique_ptr`.
+-   ساده ترین راه این است که یک شی را روی پشته قرار دهید یا عضو یک کلاس دیگر شوید.
+-   برای تعداد زیادی از اشیای کوچک از ظروف استفاده کنید.
+-   برای تخصیص خودکار تعداد کمی از اشیا که در پشته قرار دارند استفاده کنید `shared_ptr/unique_ptr`.
 
-**2.** Resource management.
+**2.** مدیریت منابع.
 
-Use `RAII` and see above.
+استفاده `RAII` و بالا را ببینید.
 
-**3.** Error handling.
+**3.** رفع خطا.
 
-Use exceptions. In most cases, you only need to throw an exception, and don’t need to catch it (because of `RAII`).
+استفاده از استثنا. در بیشتر موارد, شما فقط نیاز به پرتاب یک استثنا, و لازم نیست برای گرفتن (به دلیل `RAII`).
 
-In offline data processing applications, it’s often acceptable to not catch exceptions.
+در برنامه های پردازش داده ها نیست, اغلب قابل قبول برای گرفتن استثنا نیست.
 
-In servers that handle user requests, it’s usually enough to catch exceptions at the top level of the connection handler.
+در سرور هایی که رسیدگی به درخواست کاربر, این معمولا به اندازه کافی برای گرفتن استثنا در سطح بالای کنترل اتصال.
 
-In thread functions, you should catch and keep all exceptions to rethrow them in the main thread after `join`.
+در توابع موضوع, شما باید گرفتن و نگه داشتن همه استثنا به تجدید نظر در موضوع اصلی پس از `join`.
 
 ``` cpp
 /// If there weren't any calculations yet, calculate the first block synchronously
@@ -463,14 +467,14 @@ if (exception)
     exception->rethrow();
 ```
 
-Never hide exceptions without handling. Never just blindly put all exceptions to log.
+هرگز پنهان استثنا و بدون دست زدن به. هرگز فقط کورکورانه قرار داده و همه استثنا برای ورود به سیستم.
 
 ``` cpp
 //Not correct
 catch (...) {}
 ```
 
-If you need to ignore some exceptions, do so only for specific ones and rethrow the rest.
+اگر شما نیاز به چشم پوشی از چند استثنا, انجام این کار تنها برای افراد خاص و تجدید نظر بقیه.
 
 ``` cpp
 catch (const DB::Exception & e)
@@ -482,7 +486,7 @@ catch (const DB::Exception & e)
 }
 ```
 
-When using functions with response codes or `errno`, always check the result and throw an exception in case of error.
+هنگام استفاده از توابع با کدهای پاسخ یا `errno`, همیشه نتیجه را بررسی کنید و پرتاب یک استثنا در صورت خطا.
 
 ``` cpp
 if (0 != close(fd))
@@ -491,24 +495,24 @@ if (0 != close(fd))
 
 `Do not use assert`.
 
-**4.** Exception types.
+**4.** انواع استثنا.
 
-There is no need to use complex exception hierarchy in application code. The exception text should be understandable to a system administrator.
+بدون نیاز به استفاده از سلسله مراتب استثنا پیچیده در کد نرم افزار وجود دارد. متن استثنا باید قابل فهم برای یک مدیر سیستم.
 
-**5.** Throwing exceptions from destructors.
+**5.** پرتاب استثنا از destructors.
 
-This is not recommended, but it is allowed.
+این توصیه نمی شود, اما مجاز است.
 
-Use the following options:
+از گزینه های زیر استفاده کنید:
 
--   Create a function (`done()` or `finalize()`) that will do all the work in advance that might lead to an exception. If that function was called, there should be no exceptions in the destructor later.
--   Tasks that are too complex (such as sending messages over the network) can be put in separate method that the class user will have to call before destruction.
--   If there is an exception in the destructor, it’s better to log it than to hide it (if the logger is available).
--   In simple applications, it is acceptable to rely on `std::terminate` (for cases of `noexcept` by default in C++11) to handle exceptions.
+-   ایجاد یک تابع (`done()` یا `finalize()`) که همه کار در پیش است که ممکن است منجر به یک استثنا انجام دهد. در صورتی که تابع نامیده می شد, باید بدون استثنا در مخرب بعد وجود داشته باشد.
+-   کارهایی که بیش از حد پیچیده هستند (مانند ارسال پیام بر روی شبکه) را می توان در روش جداگانه قرار داده است که کاربر کلاس باید قبل از تخریب تماس بگیرید.
+-   اگر یک استثنا در مخرب وجود دارد, بهتر است به سیستم وارد شوید از برای مخفی کردن (اگر چوب در دسترس است).
+-   در برنامه های ساده, قابل قبول است به تکیه بر `std::terminate` (برای موارد `noexcept` به طور پیش فرض در ج++11) برای رسیدگی به استثنا.
 
-**6.** Anonymous code blocks.
+**6.** بلوک کد ناشناس.
 
-You can create a separate code block inside a single function in order to make certain variables local, so that the destructors are called when exiting the block.
+شما می توانید یک بلوک کد جداگانه در داخل یک تابع واحد به منظور ایجاد متغیرهای خاص محلی ایجاد, به طوری که مخرب نامیده می شوند در هنگام خروج از بلوک.
 
 ``` cpp
 Block block = data.in->read();
@@ -522,65 +526,65 @@ Block block = data.in->read();
 ready_any.set();
 ```
 
-**7.** Multithreading.
+**7.** چند رشته.
 
-In offline data processing programs:
+در برنامههای پردازش داده برونخط:
 
--   Try to get the best possible performance on a single CPU core. You can then parallelize your code if necessary.
+-   سعی کنید بهترین عملکرد ممکن را در یک هسته پردازنده تک دریافت کنید. سپس می توانید کد خود را در صورت لزوم موازی کنید.
 
-In server applications:
+در برنامه های سرور:
 
--   Use the thread pool to process requests. At this point, we haven’t had any tasks that required userspace context switching.
+-   استفاده از استخر موضوع برای پردازش درخواست. در این مرحله, ما هیچ وظایفی که مورد نیاز تعویض زمینه فضای کاربری نداشته اند.
 
-Fork is not used for parallelization.
+چنگال برای موازی سازی استفاده نمی شود.
 
-**8.** Syncing threads.
+**8.** همگام سازی موضوعات.
 
-Often it is possible to make different threads use different memory cells (even better: different cache lines,) and to not use any thread synchronization (except `joinAll`).
+اغلب ممکن است موضوعات مختلف از سلول های حافظه مختلف (حتی بهتر: خطوط کش مختلف) استفاده کنند و از هماهنگ سازی موضوع (به جز `joinAll`).
 
-If synchronization is required, in most cases, it is sufficient to use mutex under `lock_guard`.
+اگر هماهنگ سازی مورد نیاز است, در بیشتر موارد, کافی است به استفاده از امکانپذیر تحت `lock_guard`.
 
-In other cases use system synchronization primitives. Do not use busy wait.
+در موارد دیگر استفاده از شکلهای هندسی اولیه هماهنگ سازی سیستم. هنوز انتظار مشغول استفاده کنید.
 
-Atomic operations should be used only in the simplest cases.
+عملیات اتمی باید تنها در ساده ترین موارد استفاده می شود.
 
-Do not try to implement lock-free data structures unless it is your primary area of expertise.
+سعی نکنید ساختارهای داده ای بدون قفل را اجرا کنید مگر اینکه منطقه اصلی تخصص شما باشد.
 
-**9.** Pointers vs references.
+**9.** اشاره گر در مقابل مراجع.
 
-In most cases, prefer references.
+در بیشتر موارد, ترجیح می دهند مراجع.
 
-**10.** const.
+**10.** توایع.
 
-Use constant references, pointers to constants, `const_iterator`, and const methods.
+استفاده از منابع ثابت اشاره گر به ثابت, `const_iterator`, و روش توایع.
 
-Consider `const` to be default and use non-`const` only when necessary.
+در نظر بگیرید `const` به طور پیش فرض و استفاده غیر-`const` فقط در صورت لزوم.
 
-When passing variables by value, using `const` usually does not make sense.
+هنگام عبور متغیرها بر اساس ارزش, با استفاده از `const` معمولا معنی ندارد.
 
-**11.** unsigned.
+**11.** امضا نشده.
 
-Use `unsigned` if necessary.
+استفاده `unsigned` در صورت لزوم
 
-**12.** Numeric types.
+**12.** انواع عددی.
 
-Use the types `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32`, and `Int64`, as well as `size_t`, `ssize_t`, and `ptrdiff_t`.
+استفاده از انواع `UInt8`, `UInt16`, `UInt32`, `UInt64`, `Int8`, `Int16`, `Int32` و `Int64`, و همچنین `size_t`, `ssize_t` و `ptrdiff_t`.
 
-Don’t use these types for numbers: `signed/unsigned long`, `long long`, `short`, `signed/unsigned char`, `char`.
+از این نوع برای اعداد استفاده نکنید: `signed/unsigned long`, `long long`, `short`, `signed/unsigned char`, `char`.
 
-**13.** Passing arguments.
+**13.** عبور استدلال.
 
-Pass complex values by reference (including `std::string`).
+رمز عبور مقادیر پیچیده توسط مرجع (محتوی `std::string`).
 
-If a function captures ownership of an object created in the heap, make the argument type `shared_ptr` or `unique_ptr`.
+اگر یک تابع قطاری مالکیت یک شی ایجاد شده در پشته, را از نوع استدلال `shared_ptr` یا `unique_ptr`.
 
-**14.** Return values.
+**14.** ارزش بازگشت.
 
-In most cases, just use `return`. Do not write `[return std::move(res)]{.strike}`.
+در اکثر موارد فقط استفاده کنید `return`. ننویس `[return std::move(res)]{.strike}`.
 
-If the function allocates an object on heap and returns it, use `shared_ptr` or `unique_ptr`.
+اگر تابع یک شی در پشته اختصاص و بازده, استفاده `shared_ptr` یا `unique_ptr`.
 
-In rare cases you might need to return the value via an argument. In this case, the argument should be a reference.
+در موارد نادر شما ممکن است نیاز به بازگشت به ارزش از طریق بحث و جدل. در این مورد استدلال باید مرجع باشد.
 
 ``` cpp
 using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
@@ -594,25 +598,25 @@ public:
     AggregateFunctionPtr get(const String & name, const DataTypes & argument_types) const;
 ```
 
-**15.** namespace.
+**15.** فضای نام.
 
-There is no need to use a separate `namespace` for application code.
+بدون نیاز به استفاده از یک جداگانه وجود دارد `namespace` برای کد برنامه.
 
-Small libraries don’t need this, either.
+کتابخانه های کوچک هم به این نیاز ندارند.
 
-For medium to large libraries, put everything in a `namespace`.
+برای کتابخانه های متوسط تا بزرگ, همه چیز را در یک `namespace`.
 
-In the library’s `.h` file, you can use `namespace detail` to hide implementation details not needed for the application code.
+در کتابخانه `.h` پرونده, شما می توانید استفاده کنید `namespace detail` برای مخفی کردن اطلاعات پیاده سازی برای کد برنامه مورد نیاز نیست.
 
-In a `.cpp` file, you can use a `static` or anonymous namespace to hide symbols.
+در یک `.cpp` پرونده, شما می توانید یک استفاده `static` یا فضای نام ناشناس برای مخفی کردن نمادها.
 
-Also, a `namespace` can be used for an `enum` to prevent the corresponding names from falling into an external `namespace` (but it’s better to use an `enum class`).
+همچنین یک `namespace` می توان برای یک `enum` برای جلوگیری از نام های مربوطه را از افتادن به یک خارجی `namespace` (اما بهتر است از یک `enum class`).
 
-**16.** Deferred initialization.
+**16.** مقدار دهی اولیه معوق.
 
-If arguments are required for initialization, then you normally shouldn’t write a default constructor.
+اگر استدلال برای مقدار دهی اولیه مورد نیاز, سپس شما به طور معمول باید یک سازنده به طور پیش فرض ارسال کنید.
 
-If later you’ll need to delay initialization, you can add a default constructor that will create an invalid object. Or, for a small number of objects, you can use `shared_ptr/unique_ptr`.
+اگر بعد شما نیاز به تاخیر دهی اولیه, شما می توانید یک سازنده به طور پیش فرض است که یک شی نامعتبر ایجاد اضافه. یا برای تعداد کمی از اشیا می توانید استفاده کنید `shared_ptr/unique_ptr`.
 
 ``` cpp
 Loader(DB::Connection * connection_, const std::string & query, size_t max_block_size_);
@@ -621,59 +625,59 @@ Loader(DB::Connection * connection_, const std::string & query, size_t max_block
 Loader() {}
 ```
 
-**17.** Virtual functions.
+**17.** توابع مجازی.
 
-If the class is not intended for polymorphic use, you do not need to make functions virtual. This also applies to the destructor.
+اگر کلاس برای استفاده چند شکل در نظر گرفته شده, شما لازم نیست که به توابع مجازی. این نیز به مخرب اعمال می شود.
 
-**18.** Encodings.
+**18.** کدگذاریها.
 
-Use UTF-8 everywhere. Use `std::string`and`char *`. Do not use `std::wstring`and`wchar_t`.
+استفاده از اوتیف - 8 در همه جا. استفاده `std::string`و`char *`. استفاده نشود `std::wstring`و`wchar_t`.
 
-**19.** Logging.
+**19.** ثبت.
 
-See the examples everywhere in the code.
+نمونه در همه جا در کد را ببینید.
 
-Before committing, delete all meaningless and debug logging, and any other types of debug output.
+قبل از ارتکاب, حذف همه بی معنی و اشکال زدایی ورود به سیستم, و هر نوع دیگری از خروجی اشکال زدایی.
 
-Logging in cycles should be avoided, even on the Trace level.
+ورود به چرخه باید حتی در سطح ردیابی اجتناب شود.
 
-Logs must be readable at any logging level.
+سیاهههای مربوط باید در هر سطح ورود به سیستم قابل خواندن باشد.
 
-Logging should only be used in application code, for the most part.
+ورود به سیستم تنها باید در کد نرم افزار مورد استفاده قرار, در بیشتر قسمت ها.
 
-Log messages must be written in English.
+ورود پیام باید به زبان انگلیسی نوشته شده است.
 
-The log should preferably be understandable for the system administrator.
+ورود ترجیحا باید برای مدیر سیستم قابل فهم باشد.
 
-Do not use profanity in the log.
+هنوز ناسزا در ورود به سیستم استفاده کنید.
 
-Use UTF-8 encoding in the log. In rare cases you can use non-ASCII characters in the log.
+استفاده از جی تی اف 8 را پشتیبانی می کند در ورود به سیستم. در موارد نادر شما می توانید شخصیت های غیر اسکی در ورود به سیستم استفاده کنید.
 
-**20.** Input-output.
+**20.** ورودی-خروجی.
 
-Don’t use `iostreams` in internal cycles that are critical for application performance (and never use `stringstream`).
+استفاده نکنید `iostreams` در چرخه های داخلی که برای عملکرد برنامه حیاتی هستند (و هرگز استفاده نکنید `stringstream`).
 
-Use the `DB/IO` library instead.
+استفاده از `DB/IO` کتابخانه به جای.
 
-**21.** Date and time.
+**21.** تاریخ و زمان.
 
-See the `DateLUT` library.
+دیدن `DateLUT` کتابخونه.
 
-**22.** include.
+**22.** شامل شدن.
 
-Always use `#pragma once` instead of include guards.
+همیشه استفاده کنید `#pragma once` به جای شامل نگهبانان.
 
-**23.** using.
+**23.** با استفاده از.
 
-`using namespace` is not used. You can use `using` with something specific. But make it local inside a class or function.
+`using namespace` استفاده نمی شود. شما می توانید استفاده کنید `using` با چیزی خاص. اما محلی در داخل یک کلاس و یا تابع را.
 
-**24.** Do not use `trailing return type` for functions unless necessary.
+**24.** استفاده نشود `trailing return type` برای توابع مگر اینکه لازم باشد.
 
 ``` cpp
 [auto f() -&gt; void;]{.strike}
 ```
 
-**25.** Declaration and initialization of variables.
+**25.** اعلامیه و مقدار دهی اولیه از متغیرهای.
 
 ``` cpp
 //right way
@@ -684,123 +688,123 @@ std::string s{"Hello"};
 auto s = std::string{"Hello"};
 ```
 
-**26.** For virtual functions, write `virtual` in the base class, but write `override` instead of `virtual` in descendent classes.
+**26.** برای توابع مجازی, نوشتن `virtual` در کلاس پایه, اما ارسال `override` به جای `virtual` در کلاس های نسل نو.
 
-## Unused Features of C++ {#unused-features-of-c}
+## ویژگی های استفاده نشده از سی++ {#unused-features-of-c}
 
-**1.** Virtual inheritance is not used.
+**1.** ارث مجازی استفاده نمی شود.
 
-**2.** Exception specifiers from C++03 are not used.
+**2.** ویژگی استثنا از ج++03 استفاده نمی شود.
 
-## Platform {#platform}
+## سکو {#platform}
 
-**1.** We write code for a specific platform.
+**1.** ما نوشتن کد برای یک پلت فرم خاص.
 
-But other things being equal, cross-platform or portable code is preferred.
+اما چیزهای دیگر برابر بودن, کراس پلت فرم و یا کد قابل حمل ترجیح داده می شود.
 
-**2.** Language: C++17.
+**2.** زبان: ج++17.
 
-**3.** Compiler: `gcc`. At this time (December 2017), the code is compiled using version 7.2. (It can also be compiled using `clang 4`.)
+**3.** کامپایلر: `gcc`. در این زمان (دسامبر 2017), کد با استفاده از نسخه وارد شده 7.2. (همچنین می تواند با استفاده از وارد شود `clang 4`.)
 
-The standard library is used (`libstdc++` or `libc++`).
+کتابخانه استاندارد استفاده شده است (`libstdc++` یا `libc++`).
 
-**4.**OS: Linux Ubuntu, not older than Precise.
+**4.**سیستم عامل: لینوکس اوبونتو, مسن تر از دقیق نیست.
 
-**5.**Code is written for x86\_64 CPU architecture.
+**5.**کد برای معماری پردازنده ایکس86\_64 نوشته شده است.
 
-The CPU instruction set is the minimum supported set among our servers. Currently, it is SSE 4.2.
+مجموعه دستورالعمل پردازنده حداقل مجموعه پشتیبانی در میان سرورهای ما است. در حال حاضر, این سوس است 4.2.
 
-**6.** Use `-Wall -Wextra -Werror` compilation flags.
+**6.** استفاده `-Wall -Wextra -Werror` پرچم تلفیقی.
 
-**7.** Use static linking with all libraries except those that are difficult to connect to statically (see the output of the `ldd` command).
+**7.** استفاده از لینک کردن استاتیک با تمام کتابخانه ها به جز کسانی که به سختی برای اتصال به استاتیک (خروجی را ببینید `ldd` فرمان).
 
-**8.** Code is developed and debugged with release settings.
+**8.** کد توسعه یافته است و با تنظیمات انتشار دیباگ.
 
-## Tools {#tools}
+## ابزارها {#tools}
 
-**1.** KDevelop is a good IDE.
+**1.** KDevelop خوب است IDE.
 
-**2.** For debugging, use `gdb`, `valgrind` (`memcheck`), `strace`, `-fsanitize=...`, or `tcmalloc_minimal_debug`.
+**2.** برای اشکالزدایی, استفاده `gdb`, `valgrind` (`memcheck`), `strace`, `-fsanitize=...` یا `tcmalloc_minimal_debug`.
 
-**3.** For profiling, use `Linux Perf`, `valgrind` (`callgrind`), or `strace -cf`.
+**3.** برای پروفایل استفاده کنید `Linux Perf`, `valgrind` (`callgrind`), یا `strace -cf`.
 
-**4.** Sources are in Git.
+**4.** منابع در دستگاه گوارش هستند.
 
-**5.** Assembly uses `CMake`.
+**5.** استفاده مجمع `CMake`.
 
-**6.** Programs are released using `deb` packages.
+**6.** برنامه ها با استفاده از منتشر `deb` بسته.
 
-**7.** Commits to master must not break the build.
+**7.** مرتکب به استاد باید ساخت شکستن نیست.
 
-Though only selected revisions are considered workable.
+هر چند تجدید نظر تنها انتخاب شده قابل اجرا در نظر گرفته.
 
-**8.** Make commits as often as possible, even if the code is only partially ready.
+**8.** مرتکب به عنوان اغلب به عنوان امکان پذیر است, حتی اگر کد تنها تا حدی اماده.
 
-Use branches for this purpose.
+استفاده از شاخه برای این منظور.
 
-If your code in the `master` branch is not buildable yet, exclude it from the build before the `push`. You’ll need to finish it or remove it within a few days.
+اگر کد شما در `master` شاخه هنوز قابل ساختن نیست و از قبل از ساخت حذف می شود `push`. باید تمومش کنی یا ظرف چند روز حذفش کنی
 
-**9.** For non-trivial changes, use branches and publish them on the server.
+**9.** برای تغییرات غیر بدیهی از شاخه ها استفاده کنید و بر روی سرور منتشر کنید.
 
-**10.** Unused code is removed from the repository.
+**10.** کد استفاده نشده است از مخزن حذف شده است.
 
-## Libraries {#libraries}
+## کتابخانهها {#libraries}
 
-**1.** The C++14 standard library is used (experimental extensions are allowed), as well as `boost` and `Poco` frameworks.
+**1.** ج++14 کتابخانه استاندارد استفاده شده است (پسوند تجربی مجاز), و همچنین `boost` و `Poco` چارچوب.
 
-**2.** If necessary, you can use any well-known libraries available in the OS package.
+**2.** در صورت لزوم, شما می توانید هر کتابخانه شناخته شده موجود در بسته سیستم عامل استفاده.
 
-If there is a good solution already available, then use it, even if it means you have to install another library.
+اگر یک راه حل خوب در حال حاضر در دسترس وجود دارد, سپس استفاده کنید, حتی اگر به این معنی شما باید برای نصب کتابخانه دیگر.
 
-(But be prepared to remove bad libraries from code.)
+(اما برای حذف کتابخانه های بد از کد تهیه می شود.)
 
-**3.** You can install a library that isn’t in the packages, if the packages don’t have what you need or have an outdated version or the wrong type of compilation.
+**3.** شما می توانید یک کتابخانه است که در بسته نیست نصب, اگر بسته لازم نیست که چه شما نیاز دارید و یا یک نسخه منسوخ شده و یا نوع اشتباه از تلفیقی.
 
-**4.** If the library is small and doesn’t have its own complex build system, put the source files in the `contrib` folder.
+**4.** اگر کتابخانه کوچک است و سیستم ساخت پیچیده خود را ندارد, قرار دادن فایل های منبع در `contrib` پوشه
 
-**5.** Preference is always given to libraries that are already in use.
+**5.** اولویت همیشه به کتابخانه هایی که در حال حاضر در حال استفاده هستند داده می شود.
 
-## General Recommendations {#general-recommendations-1}
+## توصیه های عمومی {#general-recommendations-1}
 
-**1.** Write as little code as possible.
+**1.** ارسال کد به عنوان کوچک که ممکن است.
 
-**2.** Try the simplest solution.
+**2.** ساده ترین راه حل را امتحان کنید.
 
-**3.** Don’t write code until you know how it’s going to work and how the inner loop will function.
+**3.** کد را بنویسید تا بدانید چگونه کار می کند و چگونه حلقه داخلی عمل می کند.
 
-**4.** In the simplest cases, use `using` instead of classes or structs.
+**4.** در ساده ترین موارد استفاده کنید `using` به جای کلاس و یا ساختار.
 
-**5.** If possible, do not write copy constructors, assignment operators, destructors (other than a virtual one, if the class contains at least one virtual function), move constructors or move assignment operators. In other words, the compiler-generated functions must work correctly. You can use `default`.
+**5.** در صورت امکان, انجام سازنده کپی ارسال کنید, اپراتورهای انتساب, مخرب (به غیر از یک مجازی, اگر کلاس شامل حداقل یک تابع مجازی), حرکت سازنده و یا اپراتورهای انتساب حرکت. به عبارت دیگر, توابع کامپایلر تولید باید به درستی کار. شما می توانید استفاده کنید `default`.
 
-**6.** Code simplification is encouraged. Reduce the size of your code where possible.
+**6.** ساده سازی کد تشویق می شود. کاهش اندازه کد خود را در صورت امکان.
 
-## Additional Recommendations {#additional-recommendations}
+## توصیه های اضافی {#additional-recommendations}
 
-**1.** Explicitly specifying `std::` for types from `stddef.h`
+**1.** به صراحت مشخص `std::` برای انواع از `stddef.h`
 
-is not recommended. In other words, we recommend writing `size_t` instead `std::size_t`, because it’s shorter.
+توصیه نمی شود. به عبارت دیگر توصیه می کنیم نوشتن کنید `size_t` در عوض `std::size_t` چون کوتاهتر است .
 
-It is acceptable to add `std::`.
+این قابل قبول است برای اضافه کردن `std::`.
 
-**2.** Explicitly specifying `std::` for functions from the standard C library
+**2.** به صراحت مشخص `std::` برای توابع از کتابخانه استاندارد ج
 
-is not recommended. In other words, write `memcpy` instead of `std::memcpy`.
+توصیه نمی شود. به عبارت دیگر نوشتن `memcpy` به جای `std::memcpy`.
 
-The reason is that there are similar non-standard functions, such as `memmem`. We do use these functions on occasion. These functions do not exist in `namespace std`.
+دلیل این است که توابع غیر استاندارد مشابه وجود دارد, مانند `memmem`. ما با استفاده از این توابع در مناسبت. این توابع وجود ندارد در `namespace std`.
 
-If you write `std::memcpy` instead of `memcpy` everywhere, then `memmem` without `std::` will look strange.
+اگر شما ارسال `std::memcpy` به جای `memcpy` پس همه جا `memmem` بدون `std::` نگاه عجیب و غریب.
 
-Nevertheless, you can still use `std::` if you prefer it.
+با این اوصاف, شما هنوز هم می توانید استفاده کنید `std::` اگر شما ترجیح می دهند.
 
-**3.** Using functions from C when the same ones are available in the standard C++ library.
+**3.** با استفاده از توابع از ج زمانی که همان در استاندارد ج++ کتابخانه در دسترس هستند.
 
-This is acceptable if it is more efficient.
+این قابل قبول است اگر کارایی بیشتری داشته باشد.
 
-For example, use `memcpy` instead of `std::copy` for copying large chunks of memory.
+برای مثال استفاده کنید `memcpy` به جای `std::copy` برای کپی کردن تکه های زیادی از حافظه است.
 
-**4.** Multiline function arguments.
+**4.** استدلال تابع چند خطی.
 
-Any of the following wrapping styles are allowed:
+هر یک از سبک های بسته بندی زیر مجاز است:
 
 ``` cpp
 function(
@@ -835,4 +839,4 @@ function(
       size_t limit)
 ```
 
-[Original article](https://clickhouse.tech/docs/en/development/style/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/development/style/) <!--hide-->

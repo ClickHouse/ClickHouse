@@ -1,38 +1,42 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 49
+toc_title: "\u067E\u0634\u062A\u06CC\u0628\u0627\u0646 \u06AF\u06CC\u0631\u06CC \u062F\
+  \u0627\u062F\u0647 \u0647\u0627"
 ---
 
-# Data Backup {#data-backup}
+# پشتیبان گیری داده ها {#data-backup}
 
-While [replication](table_engines/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [you can’t just drop tables with a MergeTree-like engine containing more than 50 Gb of data](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). However, these safeguards don’t cover all possible cases and can be circumvented.
+در حالی که [تکرار](../engines/table_engines/mergetree_family/replication.md) provides protection from hardware failures, it does not protect against human errors: accidental deletion of data, deletion of the wrong table or a table on the wrong cluster, and software bugs that result in incorrect data processing or data corruption. In many cases mistakes like these will affect all replicas. ClickHouse has built-in safeguards to prevent some types of mistakes — for example, by default [شما نمی توانید فقط جداول را با یک موتور ادغام مانند حاوی بیش از 50 گیگابایت داده رها کنید](https://github.com/ClickHouse/ClickHouse/blob/v18.14.18-stable/programs/server/config.xml#L322-L330). با این حال, این پادمان تمام موارد ممکن را پوشش نمی دهد و می تواند دور.
 
-In order to effectively mitigate possible human errors, you should carefully prepare a strategy for backing up and restoring your data **in advance**.
+به منظور به طور موثر کاهش خطاهای انسانی ممکن است, شما باید با دقت تهیه یک استراتژی برای پشتیبان گیری و بازیابی اطلاعات خود را **در پیش**.
 
-Each company has different resources available and business requirements, so there’s no universal solution for ClickHouse backups and restores that will fit every situation. What works for one gigabyte of data likely won’t work for tens of petabytes. There are a variety of possible approaches with their own pros and cons, which will be discussed below. It is a good idea to use several approaches instead of just one in order to compensate for their various shortcomings.
+هر شرکت دارای منابع مختلف در دسترس و کسب و کار مورد نیاز, بنابراین هیچ راه حل جهانی برای پشتیبان گیری تاتر و بازیابی است که هر وضعیت مناسب وجود دارد. چه کار می کند برای یک گیگابایت از داده ها به احتمال زیاد برای ده ها پتابایت کار نمی کند. انواع روش های ممکن با جوانب مثبت و منفی خود را که در زیر مورد بحث وجود دارد. این یک ایده خوب برای استفاده از روش های مختلف به جای فقط یک به منظور جبران کاستی های مختلف خود است.
 
-!!! note "Note"
-    Keep in mind that if you backed something up and never tried to restore it, chances are that restore will not work properly when you actually need it (or at least it will take longer than business can tolerate). So whatever backup approach you choose, make sure to automate the restore process as well, and practice it on a spare ClickHouse cluster regularly.
+!!! note "یادداشت"
+    به خاطر داشته باشید که اگر شما چیزی حمایت کردن و هرگز سعی در بازگرداندن, شانس هستند که بازگرداندن به درستی کار نمی کند زمانی که شما در واقع نیاز (یا حداقل طول خواهد کشید از کسب و کار می تواند تحمل). بنابراین هر روش پشتیبان گیری شما را انتخاب کنید, اطمینان حاصل کنید که به طور خودکار روند بازگرداندن و همچنین, و تمرین در یک خوشه محل انتخابی یدکی به طور منظم.
 
-## Duplicating Source Data Somewhere Else {#duplicating-source-data-somewhere-else}
+## تکثیر اطلاعات منبع در جایی دیگر {#duplicating-source-data-somewhere-else}
 
-Often data that is ingested into ClickHouse is delivered through some sort of persistent queue, such as [Apache Kafka](https://kafka.apache.org). In this case it is possible to configure an additional set of subscribers that will read the same data stream while it is being written to ClickHouse and store it in cold storage somewhere. Most companies already have some default recommended cold storage, which could be an object store or a distributed filesystem like [HDFS](https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html).
+اغلب داده هایی که به خانه کلیک مصرف از طریق نوعی از صف مداوم تحویل داده, مانند [نمایی کافکا](https://kafka.apache.org). در این مورد ممکن است یک مجموعه اضافی از مشترکین را پیکربندی کنید که جریان داده های مشابه را می خواند در حالی که نوشته شده است کلیک کنید و جایی در ذخیره سازی سرد ذخیره کنید. اکثر شرکت ها در حال حاضر برخی از پیش فرض توصیه می شود ذخیره سازی سرد, که می تواند یک فروشگاه شی و یا یک فایل سیستم توزیع مانند [HDFS](https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html).
 
-## Filesystem Snapshots {#filesystem-snapshots}
+## گزارشهای ویژه سیستم پرونده {#filesystem-snapshots}
 
-Some local filesystems provide snapshot functionality (for example, [ZFS](https://en.wikipedia.org/wiki/ZFS)), but they might not be the best choice for serving live queries. A possible solution is to create additional replicas with this kind of filesystem and exclude them from the [Distributed](table_engines/distributed.md) tables that are used for `SELECT` queries. Snapshots on such replicas will be out of reach of any queries that modify data. As a bonus, these replicas might have special hardware configurations with more disks attached per server, which would be cost-effective.
+برخی از سیستم های فایل های محلی قابلیت عکس فوری (به عنوان مثال, [ZFS](https://en.wikipedia.org/wiki/ZFS)), اما ممکن است بهترین انتخاب برای خدمت نمایش داده شد زندگی می کنند. یک راه حل ممکن است برای ایجاد کپی های اضافی با این نوع از سیستم فایل و حذف از [توزیع شده](../engines/table_engines/special/distributed.md) جداول که برای استفاده `SELECT` نمایش داده شد. عکس های فوری در چنین کپی خواهد شد در دسترس از هر گونه نمایش داده شد که تغییر داده ها باشد. به عنوان یک جایزه, این کپی ممکن است تنظیمات سخت افزار خاص با دیسک های بیشتر متصل در هر سرور, خواهد بود که مقرون به صرفه.
 
-## clickhouse-copier {#clickhouse-copier}
+## تاتر-کپی {#clickhouse-copier}
 
-[clickhouse-copier](utils/clickhouse-copier.md) is a versatile tool that was initially created to re-shard petabyte-sized tables. It can also be used for backup and restore purposes because it reliably copies data between ClickHouse tables and clusters.
+[تاتر-کپی](utilities/clickhouse-copier.md) یک ابزار همه کاره است که در ابتدا به جداول پتابایت به اندازه دوباره سفال ساخته شده است. همچنین می تواند برای تهیه پشتیبان و بازیابی اهداف استفاده شود زیرا به طور قابل اعتماد داده ها را بین جداول کلیک و خوشه ها کپی می کند.
 
-For smaller volumes of data, a simple `INSERT INTO ... SELECT ...` to remote tables might work as well.
+برای حجم کمتری از داده ها, ساده `INSERT INTO ... SELECT ...` به جداول از راه دور نیز ممکن است کار کند.
 
-## Manipulations with Parts {#manipulations-with-parts}
+## دستکاری با قطعات {#manipulations-with-parts}
 
-ClickHouse allows using the `ALTER TABLE ... FREEZE PARTITION ...` query to create a local copy of table partitions. This is implemented using hardlinks to the `/var/lib/clickhouse/shadow/` folder, so it usually does not consume extra disk space for old data. The created copies of files are not handled by ClickHouse server, so you can just leave them there: you will have a simple backup that doesn’t require any additional external system, but it will still be prone to hardware issues. For this reason, it’s better to remotely copy them to another location and then remove the local copies. Distributed filesystems and object stores are still a good options for this, but normal attached file servers with a large enough capacity might work as well (in this case the transfer will occur via the network filesystem or maybe [rsync](https://en.wikipedia.org/wiki/Rsync)).
+کلیک اجازه می دهد تا با استفاده از `ALTER TABLE ... FREEZE PARTITION ...` پرس و جو برای ایجاد یک کپی محلی از پارتیشن های جدول. این اجرا با استفاده از hardlinks به `/var/lib/clickhouse/shadow/` پوشه, بنابراین معمولا فضای دیسک اضافی برای داده های قدیمی مصرف نمی. نسخه های ایجاد شده از فایل ها توسط سرور کلیک هاوس انجام نمی شود, بنابراین شما فقط می توانید ترک وجود دارد: شما یک نسخه پشتیبان تهیه ساده است که هیچ سیستم خارجی اضافی نیاز ندارد, اما هنوز هم مستعد ابتلا به مشکلات سخت افزاری خواهد بود. به همین دلیل بهتر است از راه دور به مکان دیگری کپی کنید و سپس نسخه های محلی را حذف کنید. توزیع فایل سیستم ها و فروشگاه های شی هنوز هم یک گزینه خوب برای این, اما عادی فایل های پیوست شده سرور با ظرفیت به اندازه کافی بزرگ ممکن است کار و همچنین (در این مورد انتقال از طریق فایل سیستم شبکه و یا شاید رخ می دهد [درباره ما](https://en.wikipedia.org/wiki/Rsync)).
 
-For more information about queries related to partition manipulations, see the [ALTER documentation](../query_language/alter.md#alter_manipulations-with-partitions).
+برای کسب اطلاعات بیشتر در مورد نمایش داده شد مربوط به دستکاری پارتیشن, دیدن [تغییر مستندات](../sql_reference/statements/alter.md#alter_manipulations-with-partitions).
 
-A third-party tool is available to automate this approach: [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup).
+یک ابزار شخص ثالث در دسترس است به طور خودکار این روش: [کلیک-پشتیبان گیری](https://github.com/AlexAkulov/clickhouse-backup).
 
-[Original article](https://clickhouse.tech/docs/en/operations/backup/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/backup/) <!--hide-->

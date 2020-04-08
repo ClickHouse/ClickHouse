@@ -1,116 +1,120 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 58
+toc_title: "\u062A\u0648\u0635\u06CC\u0647 \u0647\u0627\u06CC \u0627\u0633\u062A\u0641\
+  \u0627\u062F\u0647"
 ---
 
-# Usage Recommendations {#usage-recommendations}
+# توصیه های استفاده {#usage-recommendations}
 
-## CPU Scaling Governor {#cpu-scaling-governor}
+## فرماندار پوسته پوسته شدن پردازنده {#cpu-scaling-governor}
 
-Always use the `performance` scaling governor. The `on-demand` scaling governor works much worse with constantly high demand.
+همیشه استفاده از `performance` پوسته پوسته شدن فرماندار. این `on-demand` پوسته پوسته شدن فرماندار کار می کند بسیار بدتر با تقاضای به طور مداوم بالا.
 
 ``` bash
 $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 ```
 
-## CPU Limitations {#cpu-limitations}
+## محدودیت های پردازنده {#cpu-limitations}
 
-Processors can overheat. Use `dmesg` to see if the CPU’s clock rate was limited due to overheating.
-The restriction can also be set externally at the datacenter level. You can use `turbostat` to monitor it under a load.
+پردازنده می تواند بیش از حد گرم. استفاده `dmesg` برای دیدن اگر نرخ ساعت پردازنده به دلیل گرمای بیش از حد محدود بود.
+محدودیت همچنین می توانید خارجی در سطح مرکز داده تنظیم شود. شما می توانید استفاده کنید `turbostat` تحت نظر داشته باشمش
 
 ## RAM {#ram}
 
-For small amounts of data (up to ~200 GB compressed), it is best to use as much memory as the volume of data.
-For large amounts of data and when processing interactive (online) queries, you should use a reasonable amount of RAM (128 GB or more) so the hot data subset will fit in the cache of pages.
-Even for data volumes of ~50 TB per server, using 128 GB of RAM significantly improves query performance compared to 64 GB.
+برای مقدار کمی از داده ها (تا ~ 200 گیگابایت فشرده), بهتر است به استفاده از حافظه به همان اندازه که حجم داده ها.
+برای مقادیر زیادی از داده ها و در هنگام پردازش تعاملی (اینترنتی) نمایش داده شد, شما باید یک مقدار مناسب از رم استفاده (128 گیگابایت یا بیشتر) بنابراین زیر مجموعه داده های داغ در کش صفحات مناسب خواهد شد.
+حتی برای حجم داده ها از ~50 سل در هر سرور, با استفاده از 128 گیگابایت رم به طور قابل توجهی بهبود می بخشد عملکرد پرس و جو در مقایسه با 64 گیگابایت.
 
-Do not disable overcommit. The value `cat /proc/sys/vm/overcommit_memory` should be 0 or 1. Run
+هنوز بیش از حد غیر فعال کردن نیست. مقدار `cat /proc/sys/vm/overcommit_memory` باید 0 یا 1. بدو
 
 ``` bash
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
-## Huge Pages {#huge-pages}
+## صفحات بزرگ {#huge-pages}
 
-Always disable transparent huge pages. It interferes with memory allocators, which leads to significant performance degradation.
+همیشه صفحات بزرگ شفاف غیر فعال کنید. این با تخصیص حافظه تداخل, که منجر به تخریب عملکرد قابل توجهی.
 
 ``` bash
 $ echo 'never' | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
 ```
 
-Use `perf top` to watch the time spent in the kernel for memory management.
-Permanent huge pages also do not need to be allocated.
+استفاده `perf top` برای تماشای زمان صرف شده در هسته برای مدیریت حافظه.
+صفحات بزرگ ثابت نیز لازم نیست اختصاص داده شود.
 
-## Storage Subsystem {#storage-subsystem}
+## زیرسیستم ذخیره سازی {#storage-subsystem}
 
-If your budget allows you to use SSD, use SSD.
-If not, use HDD. SATA HDDs 7200 RPM will do.
+اگر بودجه شما اجازه می دهد تا شما را به استفاده از اس اس دی, استفاده از اس اس دی.
+اگر نه, استفاده از هارد. ساعت 7200 دور در دقیقه انجام خواهد شد.
 
-Give preference to a lot of servers with local hard drives over a smaller number of servers with attached disk shelves.
-But for storing archives with rare queries, shelves will work.
+دادن اولویت به بسیاری از سرور با دیسک های سخت محلی بیش از تعداد کمتری از سرور با قفسه های دیسک متصل.
+اما برای ذخیره سازی بایگانی با نمایش داده شد نادر, قفسه کار خواهد کرد.
 
 ## RAID {#raid}
 
-When using HDD, you can combine their RAID-10, RAID-5, RAID-6 or RAID-50.
-For Linux, software RAID is better (with `mdadm`). We don’t recommend using LVM.
-When creating RAID-10, select the `far` layout.
-If your budget allows, choose RAID-10.
+هنگام استفاده از هارد, شما می توانید حمله خود را ترکیب-10, حمله-5, حمله-6 و یا حمله-50.
+برای لینوکس, حمله نرم افزار بهتر است (با `mdadm`). ما توصیه نمی کنیم با استفاده از سطح.
+هنگام ایجاد حمله-10, را انتخاب کنید `far` طرح بندی.
+اگر بودجه شما اجازه می دهد تا, را انتخاب کنید حمله-10.
 
-If you have more than 4 disks, use RAID-6 (preferred) or RAID-50, instead of RAID-5.
-When using RAID-5, RAID-6 or RAID-50, always increase stripe\_cache\_size, since the default value is usually not the best choice.
+اگر شما بیش از 4 دیسک, استفاده از حمله-6 (ترجیحا) و یا حمله-50, به جای حمله-5.
+هنگام استفاده از حمله-5, حمله-6 و یا حمله-50, همیشه افزایش نزاع, از مقدار پیش فرض است که معمولا بهترین انتخاب نیست.
 
 ``` bash
 $ echo 4096 | sudo tee /sys/block/md2/md/stripe_cache_size
 ```
 
-Calculate the exact number from the number of devices and the block size, using the formula: `2 * num_devices * chunk_size_in_bytes / 4096`.
+محاسبه تعداد دقیق از تعداد دستگاه ها و اندازه بلوک با استفاده از فرمول: `2 * num_devices * chunk_size_in_bytes / 4096`.
 
-A block size of 1024 KB is sufficient for all RAID configurations.
-Never set the block size too small or too large.
+اندازه بلوک 1024 کیلوبایت برای تمام تنظیمات حمله کافی است.
+هرگز اندازه بلوک بیش از حد کوچک یا بیش از حد بزرگ تنظیم شده است.
 
-You can use RAID-0 on SSD.
-Regardless of RAID use, always use replication for data security.
+شما می توانید حمله استفاده-0 در اس اس دی.
+صرف نظر از استفاده از حمله, همیشه تکرار برای امنیت داده ها استفاده.
 
-Enable NCQ with a long queue. For HDD, choose the CFQ scheduler, and for SSD, choose noop. Don’t reduce the ‘readahead’ setting.
-For HDD, enable the write cache.
+فعال کردن دفتر مرکزی اروپا با یک صف طولانی. برای hdd را انتخاب کنید cfq زمانبندی و برای ssd را انتخاب کنید noop. کاهش نمی دهد ‘readahead’ تنظیمات.
+برای هارد, فعال کردن کش نوشتن.
 
-## File System {#file-system}
+## سیستم پرونده {#file-system}
 
-Ext4 is the most reliable option. Set the mount options `noatime, nobarrier`.
-XFS is also suitable, but it hasn’t been as thoroughly tested with ClickHouse.
-Most other file systems should also work fine. File systems with delayed allocation work better.
+موجود 4 قابل اطمینان ترین گزینه است. تنظیم گزینههای سوارکردن `noatime, nobarrier`.
+XFS نیز مناسب است اما از آن شده است به طور کامل تست شده با ClickHouse.
+اکثر سیستم های فایل های دیگر نیز باید خوب کار می کنند. سیستم های فایل با تاخیر تخصیص کار بهتر است.
 
-## Linux Kernel {#linux-kernel}
+## هسته لینوکس {#linux-kernel}
 
-Don’t use an outdated Linux kernel.
+هنوز یک هسته لینوکس منسوخ شده استفاده کنید.
 
-## Network {#network}
+## شبکه {#network}
 
-If you are using IPv6, increase the size of the route cache.
-The Linux kernel prior to 3.2 had a multitude of problems with IPv6 implementation.
+اگر شما با استفاده از ایپو6, افزایش اندازه کش مسیر.
+هسته لینوکس قبل از 3.2 بسیاری از مشکلات با اجرای قانون مجازات اسلامی بود.
 
-Use at least a 10 GB network, if possible. 1 Gb will also work, but it will be much worse for patching replicas with tens of terabytes of data, or for processing distributed queries with a large amount of intermediate data.
+استفاده از حداقل یک 10 شبکه گیگابایت, در صورت امکان. 1 گیگابایت نیز کار خواهد کرد, اما برای وصله کپی با ده ها ترابایت داده بسیار بدتر خواهد بود, و یا برای پردازش نمایش داده شد توزیع با مقدار زیادی از داده های متوسط.
 
-## ZooKeeper {#zookeeper}
+## باغ وحش {#zookeeper}
 
-You are probably already using ZooKeeper for other purposes. You can use the same installation of ZooKeeper, if it isn’t already overloaded.
+شما احتمالا در حال حاضر با استفاده از باغ وحش برای مقاصد دیگر. شما می توانید نصب و راه اندازی همان باغ وحش استفاده, اگر در حال حاضر بیش از حد نیست.
 
-It’s best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
+It's best to use a fresh version of ZooKeeper – 3.4.9 or later. The version in stable Linux distributions may be outdated.
 
-You should never use manually written scripts to transfer data between different ZooKeeper clusters, because the result will be incorrect for sequential nodes. Never use the “zkcopy” utility for the same reason: https://github.com/ksprojects/zkcopy/issues/15
+شما هرگز نباید از اسکریپت های دستی نوشته شده برای انتقال داده ها بین خوشه های مختلف باغ وحش استفاده کنید زیرا نتیجه برای گره های متوالی نادرست خواهد بود. هرگز استفاده از “zkcopy” ابزار به همین دلیل: https://github.com/ksprojects/zkcopy/issues/15
 
-If you want to divide an existing ZooKeeper cluster into two, the correct way is to increase the number of its replicas and then reconfigure it as two independent clusters.
+اگر میخواهید یک خوشه باغ وحش موجود را به دو قسمت تقسیم کنید راه درست این است که تعداد تکرار های خود را افزایش دهید و سپس به عنوان دو خوشه مستقل پیکربندی کنید.
 
-Do not run ZooKeeper on the same servers as ClickHouse. Because ZooKeeper is very sensitive for latency and ClickHouse may utilize all available system resources.
+باغ وحش را بر روی سرورهای مشابه کلیک کنید. چرا که باغ وحش برای تاخیر بسیار حساس است و خانه رعیتی ممکن است تمام منابع سیستم در دسترس استفاده کنند.
 
-With the default settings, ZooKeeper is a time bomb:
+با تنظیمات پیش فرض, باغ وحش یک بمب زمان است:
 
-> The ZooKeeper server won’t delete files from old snapshots and logs when using the default configuration (see autopurge), and this is the responsibility of the operator.
+> سرور باغ وحش فایل ها را از عکس های فوری و سیاهههای مربوط قدیمی هنگام استفاده از پیکربندی پیش فرض حذف نمی کند (نگاه کنید به کالبد شکافی), و این به عهده اپراتور است.
 
-This bomb must be defused.
+این بمب باید خنثی شود.
 
-The ZooKeeper (3.5.1) configuration below is used in the Yandex.Metrica production environment as of May 20, 2017:
+باغ وحش (3.5.1) پیکربندی زیر در یاندکس استفاده می شود.محیط تولید متریکا تا 20 مه 2017:
 
-zoo.cfg:
+باغ وحش.cfg:
 
 ``` bash
 # http://hadoop.apache.org/zookeeper/docs/current/zookeeperAdmin.html
@@ -166,14 +170,14 @@ standaloneEnabled=false
 dynamicConfigFile=/etc/zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}/conf/zoo.cfg.dynamic
 ```
 
-Java version:
+نسخه جاوا:
 
 ``` text
 Java(TM) SE Runtime Environment (build 1.8.0_25-b17)
 Java HotSpot(TM) 64-Bit Server VM (build 25.25-b02, mixed mode)
 ```
 
-JVM parameters:
+پارامترهای جی ام:
 
 ``` bash
 NAME=zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }}
@@ -214,7 +218,7 @@ JAVA_OPTS="-Xms{{ '{{' }} cluster.get('xms','128M') {{ '}}' }} \
 -XX:+CMSParallelRemarkEnabled"
 ```
 
-Salt init:
+نمک درون:
 
 ``` text
 description "zookeeper-{{ '{{' }} cluster['name'] {{ '}}' }} centralized coordination service"
@@ -245,4 +249,4 @@ script
 end script
 ```
 
-{## [Original article](https://clickhouse.tech/docs/en/operations/tips/) ##}
+{## [مقاله اصلی](https://clickhouse.tech/docs/en/operations/tips/) ##}

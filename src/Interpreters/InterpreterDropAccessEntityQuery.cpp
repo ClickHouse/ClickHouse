@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterDropAccessEntityQuery.h>
 #include <Parsers/ASTDropAccessEntityQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
 #include <Access/User.h>
@@ -37,7 +38,7 @@ namespace
             case Kind::USER: return AccessType::DROP_USER;
             case Kind::ROLE: return AccessType::DROP_ROLE;
             case Kind::QUOTA: return AccessType::DROP_QUOTA;
-            case Kind::ROW_POLICY: return AccessType::DROP_POLICY;
+            case Kind::ROW_POLICY: return AccessType::DROP_ROW_POLICY;
             case Kind::SETTINGS_PROFILE: return AccessType::DROP_SETTINGS_PROFILE;
         }
         __builtin_unreachable();
@@ -51,6 +52,9 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
 
     std::type_index type = getType(query.kind);
     context.checkAccess(getRequiredAccessType(query.kind));
+
+    if (!query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
 
     if (query.kind == Kind::ROW_POLICY)
     {

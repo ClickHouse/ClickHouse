@@ -1309,6 +1309,21 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 }
 
 
+MutationCommands ReplicatedMergeTreeQueue::getFirstAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
+{
+    std::lock_guard lock(state_mutex);
+    auto in_partition = mutations_by_partition.find(part->info.partition_id);
+    if (in_partition == mutations_by_partition.end())
+        return MutationCommands{};
+
+    Int64 part_version = part->info.getDataVersion();
+    for (auto [mutation_version, mutation_status] : in_partition->second)
+        if (mutation_version > part_version && mutation_status->entry->alter_version != -1)
+            return mutation_status->entry->commands;
+
+    return MutationCommands{};
+}
+
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const
 {
