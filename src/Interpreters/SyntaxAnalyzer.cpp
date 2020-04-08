@@ -385,7 +385,8 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     }
 
     auto & group_keys = select_query->groupBy()->children;
-    auto tmp_ans = select_query->groupBy();
+    auto grp_by = select_query->groupBy();
+
 
     ///check if optimization is not needed
     int opt = 0;
@@ -423,6 +424,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
             }
         }
     }
+
     modified.reserve(modified_size);
     ///filling the result
     for (auto & group_key : group_keys)
@@ -434,7 +436,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     }
 
     ///modifying the input
-    tmp_ans->children = modified;
+    grp_by->children = modified;
 }
 
 /// Remove duplicate items from ORDER BY.
