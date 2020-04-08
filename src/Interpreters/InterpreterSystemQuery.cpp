@@ -102,19 +102,19 @@ void executeCommandsAndThrowIfError(Callables && ... commands)
 AccessType getRequiredAccessType(StorageActionBlockType action_type)
 {
     if (action_type == ActionLocks::PartsMerge)
-        return AccessType::STOP_MERGES;
+        return AccessType::SYSTEM_MERGES;
     else if (action_type == ActionLocks::PartsFetch)
-        return AccessType::STOP_FETCHES;
+        return AccessType::SYSTEM_FETCHES;
     else if (action_type == ActionLocks::PartsSend)
-        return AccessType::STOP_REPLICATED_SENDS;
+        return AccessType::SYSTEM_REPLICATED_SENDS;
     else if (action_type == ActionLocks::ReplicationQueue)
-        return AccessType::STOP_REPLICATION_QUEUES;
+        return AccessType::SYSTEM_REPLICATION_QUEUES;
     else if (action_type == ActionLocks::DistributedSend)
-        return AccessType::STOP_DISTRIBUTED_SENDS;
+        return AccessType::SYSTEM_DISTRIBUTED_SENDS;
     else if (action_type == ActionLocks::PartsTTLMerge)
-        return AccessType::STOP_TTL_MERGES;
+        return AccessType::SYSTEM_TTL_MERGES;
     else if (action_type == ActionLocks::PartsMove)
-        return AccessType::STOP_MOVES;
+        return AccessType::SYSTEM_MOVES;
     else
         throw Exception("Unknown action type: " + std::to_string(action_type), ErrorCodes::LOGICAL_ERROR);
 }
@@ -183,42 +183,42 @@ BlockIO InterpreterSystemQuery::execute()
     switch (query.type)
     {
         case Type::SHUTDOWN:
-            context.checkAccess(AccessType::SHUTDOWN);
+            context.checkAccess(AccessType::SYSTEM_SHUTDOWN);
             if (kill(0, SIGTERM))
                 throwFromErrno("System call kill(0, SIGTERM) failed", ErrorCodes::CANNOT_KILL);
             break;
         case Type::KILL:
-            context.checkAccess(AccessType::SHUTDOWN);
+            context.checkAccess(AccessType::SYSTEM_SHUTDOWN);
             if (kill(0, SIGKILL))
                 throwFromErrno("System call kill(0, SIGKILL) failed", ErrorCodes::CANNOT_KILL);
             break;
         case Type::DROP_DNS_CACHE:
-            context.checkAccess(AccessType::DROP_CACHE);
+            context.checkAccess(AccessType::SYSTEM_DROP_DNS_CACHE);
             DNSResolver::instance().dropCache();
             /// Reinitialize clusters to update their resolved_addresses
             system_context.reloadClusterConfig();
             break;
         case Type::DROP_MARK_CACHE:
-            context.checkAccess(AccessType::DROP_CACHE);
+            context.checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
             system_context.dropMarkCache();
             break;
         case Type::DROP_UNCOMPRESSED_CACHE:
-            context.checkAccess(AccessType::DROP_CACHE);
+            context.checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
             system_context.dropUncompressedCache();
             break;
 #if USE_EMBEDDED_COMPILER
         case Type::DROP_COMPILED_EXPRESSION_CACHE:
-            context.checkAccess(AccessType::DROP_CACHE);
+            context.checkAccess(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
             system_context.dropCompiledExpressionCache();
             break;
 #endif
         case Type::RELOAD_DICTIONARY:
-            context.checkAccess(AccessType::RELOAD_DICTIONARY);
+            context.checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
             system_context.getExternalDictionariesLoader().loadOrReload(query.target_dictionary);
             ExternalDictionariesLoader::resetAll();
             break;
         case Type::RELOAD_DICTIONARIES:
-            context.checkAccess(AccessType::RELOAD_DICTIONARY);
+            context.checkAccess(AccessType::SYSTEM_RELOAD_DICTIONARY);
             executeCommandsAndThrowIfError(
                     [&] () { system_context.getExternalDictionariesLoader().reloadAllTriedToLoad(); },
                     [&] () { system_context.getEmbeddedDictionaries().reload(); }
@@ -226,11 +226,11 @@ BlockIO InterpreterSystemQuery::execute()
             ExternalDictionariesLoader::resetAll();
             break;
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
-            context.checkAccess(AccessType::RELOAD_DICTIONARY);
+            context.checkAccess(AccessType::SYSTEM_RELOAD_EMBEDDED_DICTIONARIES);
             system_context.getEmbeddedDictionaries().reload();
             break;
         case Type::RELOAD_CONFIG:
-            context.checkAccess(AccessType::RELOAD_CONFIG);
+            context.checkAccess(AccessType::SYSTEM_RELOAD_CONFIG);
             system_context.reloadConfig();
             break;
         case Type::STOP_MERGES:
@@ -290,7 +290,7 @@ BlockIO InterpreterSystemQuery::execute()
                                 ErrorCodes::BAD_ARGUMENTS);
             break;
         case Type::FLUSH_LOGS:
-            context.checkAccess(AccessType::FLUSH_LOGS);
+            context.checkAccess(AccessType::SYSTEM_FLUSH_LOGS);
             executeCommandsAndThrowIfError(
                     [&] () { if (auto query_log = context.getQueryLog()) query_log->flush(); },
                     [&] () { if (auto part_log = context.getPartLog("")) part_log->flush(); },
@@ -313,7 +313,7 @@ BlockIO InterpreterSystemQuery::execute()
 
 StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, Context & system_context, bool need_ddl_guard)
 {
-    context.checkAccess(AccessType::RESTART_REPLICA, replica);
+    context.checkAccess(AccessType::SYSTEM_RESTART_REPLICA, replica);
 
     auto table_ddl_guard = need_ddl_guard ? DatabaseCatalog::instance().getDDLGuard(replica.getDatabaseName(), replica.getTableName()) : nullptr;
     auto [database, table] = DatabaseCatalog::instance().tryGetDatabaseAndTable(replica);
@@ -388,7 +388,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
 
 void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
 {
-    context.checkAccess(AccessType::SYNC_REPLICA, table_id);
+    context.checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
 
     if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
@@ -409,7 +409,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
 
 void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
-    context.checkAccess(AccessType::FLUSH_DISTRIBUTED, table_id);
+    context.checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
     if (auto storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id).get()))
         storage_distributed->flushClusterNodesAllData();
@@ -428,7 +428,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::SHUTDOWN: [[fallthrough]];
         case Type::KILL:
         {
-            required_access.emplace_back(AccessType::SHUTDOWN);
+            required_access.emplace_back(AccessType::SYSTEM_SHUTDOWN);
             break;
         }
         case Type::DROP_DNS_CACHE: [[fallthrough]];
@@ -438,107 +438,107 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
 #endif
         case Type::DROP_UNCOMPRESSED_CACHE:
         {
-            required_access.emplace_back(AccessType::DROP_CACHE);
+            required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
         }
         case Type::RELOAD_DICTIONARY: [[fallthrough]];
         case Type::RELOAD_DICTIONARIES: [[fallthrough]];
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
         {
-            required_access.emplace_back(AccessType::RELOAD_DICTIONARY);
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_DICTIONARY);
             break;
         }
         case Type::RELOAD_CONFIG:
         {
-            required_access.emplace_back(AccessType::RELOAD_CONFIG);
+            required_access.emplace_back(AccessType::SYSTEM_RELOAD_CONFIG);
             break;
         }
         case Type::STOP_MERGES: [[fallthrough]];
         case Type::START_MERGES:
         {
             if (query.table.empty())
-                required_access.emplace_back(AccessType::STOP_MERGES);
+                required_access.emplace_back(AccessType::SYSTEM_MERGES);
             else
-                required_access.emplace_back(AccessType::STOP_MERGES, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_MERGES, query.database, query.table);
             break;
         }
         case Type::STOP_TTL_MERGES: [[fallthrough]];
         case Type::START_TTL_MERGES:
         {
             if (query.table.empty())
-                required_access.emplace_back(AccessType::STOP_TTL_MERGES);
+                required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES);
             else
-                required_access.emplace_back(AccessType::STOP_TTL_MERGES, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_TTL_MERGES, query.database, query.table);
             break;
         }
         case Type::STOP_MOVES: [[fallthrough]];
         case Type::START_MOVES:
         {
             if (query.table.empty())
-                required_access.emplace_back(AccessType::STOP_MOVES);
+                required_access.emplace_back(AccessType::SYSTEM_MOVES);
             else
-                required_access.emplace_back(AccessType::STOP_MOVES, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_MOVES, query.database, query.table);
             break;
         }
         case Type::STOP_FETCHES: [[fallthrough]];
         case Type::START_FETCHES:
         {
             if (query.table.empty())
-                required_access.emplace_back(AccessType::STOP_FETCHES);
+                required_access.emplace_back(AccessType::SYSTEM_FETCHES);
             else
-                required_access.emplace_back(AccessType::STOP_FETCHES, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_FETCHES, query.database, query.table);
             break;
         }
         case Type::STOP_DISTRIBUTED_SENDS: [[fallthrough]];
         case Type::START_DISTRIBUTED_SENDS:
         {
             if (query.table.empty())
-                required_access.emplace_back(AccessType::STOP_DISTRIBUTED_SENDS);
+                required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS);
             else
-                required_access.emplace_back(AccessType::STOP_DISTRIBUTED_SENDS, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_DISTRIBUTED_SENDS, query.database, query.table);
             break;
         }
         case Type::STOP_REPLICATED_SENDS: [[fallthrough]];
         case Type::START_REPLICATED_SENDS:
         {
             if (query.table.empty())
-                required_access.emplace_back(AccessType::STOP_REPLICATED_SENDS);
+                required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS);
             else
-                required_access.emplace_back(AccessType::STOP_REPLICATED_SENDS, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_REPLICATED_SENDS, query.database, query.table);
             break;
         }
         case Type::STOP_REPLICATION_QUEUES: [[fallthrough]];
         case Type::START_REPLICATION_QUEUES:
         {
             if (query.table.empty())
-                required_access.emplace_back(AccessType::STOP_REPLICATION_QUEUES);
+                required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES);
             else
-                required_access.emplace_back(AccessType::STOP_REPLICATION_QUEUES, query.database, query.table);
+                required_access.emplace_back(AccessType::SYSTEM_REPLICATION_QUEUES, query.database, query.table);
             break;
         }
         case Type::SYNC_REPLICA:
         {
-            required_access.emplace_back(AccessType::SYNC_REPLICA, query.database, query.table);
+            required_access.emplace_back(AccessType::SYSTEM_SYNC_REPLICA, query.database, query.table);
             break;
         }
         case Type::RESTART_REPLICA:
         {
-            required_access.emplace_back(AccessType::RESTART_REPLICA, query.database, query.table);
+            required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA, query.database, query.table);
             break;
         }
         case Type::RESTART_REPLICAS:
         {
-            required_access.emplace_back(AccessType::RESTART_REPLICA);
+            required_access.emplace_back(AccessType::SYSTEM_RESTART_REPLICA);
             break;
         }
         case Type::FLUSH_DISTRIBUTED:
         {
-            required_access.emplace_back(AccessType::FLUSH_DISTRIBUTED, query.database, query.table);
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_DISTRIBUTED, query.database, query.table);
             break;
         }
         case Type::FLUSH_LOGS:
         {
-            required_access.emplace_back(AccessType::FLUSH_LOGS);
+            required_access.emplace_back(AccessType::SYSTEM_FLUSH_LOGS);
             break;
         }
         case Type::STOP_LISTEN_QUERIES: break;

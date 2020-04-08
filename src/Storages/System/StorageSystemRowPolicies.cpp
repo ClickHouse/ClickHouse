@@ -7,6 +7,7 @@
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
 #include <Access/RowPolicy.h>
+#include <Access/AccessFlags.h>
 #include <ext/range.h>
 
 
@@ -33,6 +34,7 @@ NamesAndTypesList StorageSystemRowPolicies::getNamesAndTypes()
 
 void StorageSystemRowPolicies::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
+    context.checkAccess(AccessType::SHOW_ROW_POLICIES);
     const auto & access_control = context.getAccessControlManager();
     std::vector<UUID> ids = access_control.findAll<RowPolicy>();
 

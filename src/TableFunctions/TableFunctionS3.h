@@ -38,6 +38,8 @@ private:
         Context & global_context,
         const std::string & table_name,
         const String & compression_method);
+
+    const char * getStorageTypeName() const override { return "S3"; }
 };
 
 }

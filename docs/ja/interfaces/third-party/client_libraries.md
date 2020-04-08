@@ -36,6 +36,7 @@ toc_title: "\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8"
     -   [AnyEvent-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
 -   Ruby
     -   [クリックハウス(ruby)](https://github.com/shlima/click_house)
+    -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   R
     -   [クリックハウス-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [Rクリックハウス](https://github.com/IMSMWU/RClickhouse)

@@ -192,7 +192,7 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
+    setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
 
     /// format_file always contained on any data path
     PathWithDisk version_file;
@@ -610,14 +610,17 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 }
 
 
-void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
+void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
         const ASTPtr & new_ttl_table_ast, bool only_check)
 {
-    auto create_ttl_entry = [this](ASTPtr ttl_ast)
+
+    auto new_column_ttls = new_columns.getColumnTTLs();
+
+    auto create_ttl_entry = [this, &new_columns](ASTPtr ttl_ast)
     {
         TTLEntry result;
 
-        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, getColumns().getAllPhysical());
+        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, new_columns.getAllPhysical());
         result.expression = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
         result.destination_type = PartDestinationType::DELETE;
         result.result_column = ttl_ast->getColumnName();
@@ -1455,6 +1458,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     for (const auto & column : getColumns().getAllPhysical())
         old_types.emplace(column.name, column.type.get());
 
+
     for (const AlterCommand & command : commands)
     {
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
@@ -1468,6 +1472,15 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
             throw Exception(
                 "ALTER ADD INDEX is not supported for tables with the old syntax",
                 ErrorCodes::BAD_ARGUMENTS);
+        }
+        if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            if (columns_alter_type_forbidden.count(command.column_name) || columns_alter_type_metadata_only.count(command.column_name))
+            {
+                throw Exception(
+                    "Trying to ALTER RENAME key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
+                    ErrorCodes::ILLEGAL_COLUMN);
+            }
         }
         else if (command.isModifyingData())
         {
@@ -1488,7 +1501,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
     setProperties(metadata, /* only_check = */ true);
 
-    setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast, /* only_check = */ true);
+    setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast, /* only_check = */ true);
 
     if (settings_ast)
     {
@@ -3587,4 +3600,18 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     return true;
 }
 
+MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
+{
+    MutationCommands commands = getFirtsAlterMutationCommandsForPart(part);
+
+    AlterConversions result{};
+    for (const auto & command : commands)
+        /// Currently we need explicit conversions only for RENAME alter
+        /// all other conversions can be deduced from diff between part columns
+        /// and columns in storage.
+        if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            result.rename_map[command.rename_to] = command.column_name;
+
+    return result;
+}
 }
