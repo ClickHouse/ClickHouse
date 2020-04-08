@@ -8,6 +8,7 @@
 
 #include <random>
 
+#include <common/defines.h>
 #include <common/sleep.h>
 #include <common/getThreadId.h>
 
@@ -18,8 +19,15 @@
 
 #include <Common/ThreadFuzzer.h>
 
+
 /// We will also wrap some thread synchronization functions to inject sleep/migration before or after.
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
+    #define THREAD_FUZZER_WRAP_PTHREAD 1
+#else
+    #define THREAD_FUZZER_WRAP_PTHREAD 0
+#endif
+
+#if THREAD_FUZZER_WRAP_PTHREAD
 #    define FOR_EACH_WRAPPED_FUNCTION(M) \
         M(int, pthread_mutex_lock, pthread_mutex_t * arg) \
         M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
@@ -66,7 +74,7 @@ static void initFromEnv(std::atomic<T> & what, const char * name)
 
 static std::atomic<int> num_cpus = 0;
 
-#if defined(OS_LINUX)
+#if THREAD_FUZZER_WRAP_PTHREAD
 #    define DEFINE_WRAPPER_PARAMS(RET, NAME, ...) \
         static std::atomic<double> NAME##_before_yield_probability = 0; \
         static std::atomic<double> NAME##_before_migrate_probability = 0; \
@@ -97,7 +105,7 @@ void ThreadFuzzer::initConfiguration()
     initFromEnv(sleep_probability, "THREAD_FUZZER_SLEEP_PROBABILITY");
     initFromEnv(sleep_time_us, "THREAD_FUZZER_SLEEP_TIME_US");
 
-#if defined(OS_LINUX)
+#if THREAD_FUZZER_WRAP_PTHREAD
 #    define INIT_WRAPPER_PARAMS(RET, NAME, ...) \
         initFromEnv(NAME##_before_yield_probability, "THREAD_FUZZER_" #NAME "_BEFORE_YIELD_PROBABILITY"); \
         initFromEnv(NAME##_before_migrate_probability, "THREAD_FUZZER_" #NAME "_BEFORE_MIGRATE_PROBABILITY"); \
@@ -118,7 +126,7 @@ void ThreadFuzzer::initConfiguration()
 
 bool ThreadFuzzer::isEffective() const
 {
-#if defined(OS_LINUX)
+#if THREAD_FUZZER_WRAP_PTHREAD
 #    define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
         if (NAME##_before_yield_probability.load(std::memory_order_relaxed)) \
             return true; \
@@ -236,7 +244,7 @@ void ThreadFuzzer::setup()
 /// We expect that for every function like pthread_mutex_lock there is the same function with two underscores prefix.
 /// NOTE We cannot use dlsym(... RTLD_NEXT), because it will call pthread_mutex_lock and it will lead to infinite recursion.
 
-#if defined(OS_LINUX)
+#if THREAD_FUZZER_WRAP_PTHREAD
 #    define MAKE_WRAPPER(RET, NAME, ...) \
         extern "C" RET __##NAME(__VA_ARGS__); /* NOLINT */ \
         extern "C" RET NAME(__VA_ARGS__) /* NOLINT */ \
