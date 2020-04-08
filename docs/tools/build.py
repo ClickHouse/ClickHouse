@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import collections
 import datetime
 import logging
 import os
@@ -22,6 +21,7 @@ from mkdocs.commands import build as mkdocs_build
 from concatenate import concatenate
 
 import mdx_clickhouse
+import nav
 import test
 import util
 import website
@@ -39,39 +39,6 @@ class ClickHouseMarkdown(markdown.extensions.Extension):
 
 
 markdown.extensions.ClickHouseMarkdown = ClickHouseMarkdown
-
-
-def build_nav_entry(root):
-    if root.endswith('images'):
-        return None, None, None
-    result_items = []
-    index_meta, _ = util.read_md_file(os.path.join(root, 'index.md'))
-    current_title = index_meta.get('toc_folder_title', index_meta.get('toc_title', 'hidden'))
-    for filename in os.listdir(root):
-        path = os.path.join(root, filename)
-        if os.path.isdir(path):
-            prio, title, payload = build_nav_entry(path)
-            if title and payload:
-                result_items.append((prio, title, payload))
-        elif filename.endswith('.md'):
-            path = os.path.join(root, filename)
-            meta, _ = util.read_md_file(path)
-            path = path.split('/', 2)[-1]
-            title = meta.get('toc_title', 'hidden')
-            prio = meta.get('toc_priority', 9999)
-            result_items.append((prio, title, path))
-    result_items = sorted(result_items, key=lambda x: (x[0], x[1]))
-    result = collections.OrderedDict([(item[1], item[2]) for item in result_items])
-    return index_meta.get('toc_priority', 10000), current_title, result
-
-
-def build_nav(lang, args):
-    docs_dir = os.path.join(args.docs_dir, lang)
-    _, _, nav = build_nav_entry(docs_dir)
-    result = []
-    for key, value in nav.items():
-        result.append({key: value})
-    return result
 
 
 def build_for_lang(lang, args):
@@ -120,10 +87,10 @@ def build_for_lang(lang, args):
 
         site_names = {
             'en': 'ClickHouse %s Documentation',
+            'zh': 'ClickHouse文档 %s',
             'es': 'Documentación de ClickHouse %s',
             'fr': 'Documentation ClickHouse %s',
             'ru': 'Документация ClickHouse %s',
-            'zh': 'ClickHouse文档 %s',
             'ja': 'ClickHouseドキュメント %s',
             'fa': 'مستندات %sClickHouse'
         }
@@ -185,11 +152,9 @@ def build_for_lang(lang, args):
         )
 
         if os.path.exists(config_path):
-            nav = None
             raw_config['config_file'] = config_path
         else:
-            nav = build_nav(lang, args)
-            raw_config['nav'] = nav
+            raw_config['nav'] = nav.build_nav(lang, args)
 
         cfg = config.load_config(**raw_config)
 
@@ -202,7 +167,7 @@ def build_for_lang(lang, args):
             mkdocs_build.build(cfg)
 
         if not args.skip_single_page:
-            build_single_page_version(lang, args, nav, cfg)
+            build_single_page_version(lang, args, raw_config.get('nav'), cfg)
 
         mdx_clickhouse.PatchedMacrosPlugin.disabled = False
 
