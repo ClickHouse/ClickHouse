@@ -122,19 +122,22 @@ ASTPtr ASTGrantQuery::clone() const
 void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const
 {
     settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (attach ? "ATTACH " : "") << ((kind == Kind::GRANT) ? "GRANT" : "REVOKE")
-                  << (settings.hilite ? IAST::hilite_none : "") << " ";
+                  << (settings.hilite ? IAST::hilite_none : "");
+
+    formatOnCluster(settings);
 
     if (kind == Kind::REVOKE)
     {
         if (grant_option)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << "GRANT OPTION FOR " << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " GRANT OPTION FOR" << (settings.hilite ? hilite_none : "");
         else if (admin_option)
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << "ADMIN OPTION FOR " << (settings.hilite ? hilite_none : "");
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " ADMIN OPTION FOR" << (settings.hilite ? hilite_none : "");
     }
 
     if ((!!roles + !access_rights_elements.empty()) != 1)
         throw Exception("Either roles or access rights elements should be set", ErrorCodes::LOGICAL_ERROR);
 
+    settings.ostr << " ";
     if (roles)
         roles->format(settings);
     else
@@ -149,5 +152,12 @@ void ASTGrantQuery::formatImpl(const FormatSettings & settings, FormatState &, F
         else if (admin_option)
             settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH ADMIN OPTION" << (settings.hilite ? hilite_none : "");
     }
+}
+
+
+void ASTGrantQuery::replaceCurrentUserTagWithName(const String & current_user_name)
+{
+    if (to_roles)
+        to_roles->replaceCurrentUserTagWithName(current_user_name);
 }
 }

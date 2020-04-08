@@ -128,7 +128,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictHas, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatchSimple<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchSimple<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -1652,7 +1652,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictGetHierarchy, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -1816,7 +1816,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictIsIn, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr)
             && !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr)

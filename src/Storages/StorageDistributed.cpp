@@ -810,6 +810,9 @@ void registerStorageDistributed(StorageFactory & factory)
             storage_policy,
             args.relative_data_path,
             args.attach);
+    },
+    {
+        .source_access_type = AccessType::REMOTE,
     });
 }
 
