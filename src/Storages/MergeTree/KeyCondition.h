@@ -27,7 +27,7 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
   * - A field with reference to its position in block.
   *   It's needed for execution functions on ranges during
   *   index analysis. If function was executed once for field,
-  *   it's result would be cached for all block for which field's reference points to.
+  *   its result would be cached for all block for which field's reference points to.
   */
 struct FieldRef : public Field
 {
