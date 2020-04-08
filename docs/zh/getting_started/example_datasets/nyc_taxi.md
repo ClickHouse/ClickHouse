@@ -1,3 +1,4 @@
+
 # 纽约市出租车数据 {#niu-yue-shi-chu-zu-che-shu-ju}
 
 纽约市出租车数据有以下两个方式获取：
@@ -259,7 +260,7 @@ FROM trips
 ```
 
 这需要3030秒，速度约为每秒428,000行。
-要加快速度，可以使用`Log`引擎替换’MergeTree\`引擎来创建表。 在这种情况下，下载速度超过200秒。
+要加快速度，可以使用`Log`引擎替换'MergeTree\`引擎来创建表。 在这种情况下，下载速度超过200秒。
 
 这个表需要使用126GB的磁盘空间。
 
@@ -285,7 +286,7 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
 ```
 
-!!! info "Info"
+!!! info "信息"
     如果要运行下面的SQL查询，必须使用完整的表名，
 `datasets.trips_mergetree`。
 
@@ -297,7 +298,7 @@ Q1:
 SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type
 ```
 
-0.490 seconds.
+0.490秒
 
 Q2:
 
@@ -305,7 +306,7 @@ Q2:
 SELECT passenger_count, avg(total_amount) FROM trips_mergetree GROUP BY passenger_count
 ```
 
-1.224 seconds.
+1.224秒
 
 Q3:
 
@@ -313,7 +314,7 @@ Q3:
 SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetree GROUP BY passenger_count, year
 ```
 
-2.104 seconds.
+2.104秒
 
 Q4:
 
@@ -324,11 +325,11 @@ GROUP BY passenger_count, year, distance
 ORDER BY year, count(*) DESC
 ```
 
-3.593 seconds.
+3.593秒
 
 我们使用的是如下配置的服务器：
 
-Two Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz, 16 physical kernels total,128 GiB RAM,8x6 TB HD on hardware RAID-5
+两个英特尔（R）至强（R）CPU E5-2650v2@2.60GHz，总共有16个物理内核，128GiB RAM，硬件RAID-5上的8X6TB HD
 
 执行时间是取三次运行中最好的值，但是从第二次查询开始，查询就讲从文件系统的缓存中读取数据。同时在每次读取和处理后不在进行缓存。
 
@@ -356,29 +357,29 @@ INSERT INTO trips_mergetree_x3 SELECT * FROM trips_mergetree
 
 在三台服务器集群中运行的结果：
 
-Q1: 0.212 seconds.
-Q2: 0.438 seconds.
-Q3: 0.733 seconds.
-Q4: 1.241 seconds.
+Q1:0.212秒.
+Q2：0.438秒。
+Q3：0.733秒。
+Q4:1.241秒.
 
 不出意料，查询是线性扩展的。
 
 我们同时在140台服务器的集群中运行的结果：
 
-Q1: 0.028 sec.
-Q2: 0.043 sec.
-Q3: 0.051 sec.
-Q4: 0.072 sec.
+Q1：0.028秒。
+Q2：0.043秒。
+Q3：0.051秒。
+Q4：0.072秒。
 
 在这种情况下，查询处理时间首先由网络延迟确定。
 我们使用位于芬兰的Yandex数据中心中的客户端去位于俄罗斯的集群上运行查询，这增加了大约20毫秒的延迟。
 
 ## 总结 {#zong-jie}
 
-| servers | Q1    | Q2    | Q3    | Q4    |
-|---------|-------|-------|-------|-------|
-| 1       | 0.490 | 1.224 | 2.104 | 3.593 |
-| 3       | 0.212 | 0.438 | 0.733 | 1.241 |
-| 140     | 0.028 | 0.043 | 0.051 | 0.072 |
+| 服务器 | Q1    | Q2    | Q3    | Q4    |
+|--------|-------|-------|-------|-------|
+| 1      | 0.490 | 1.224 | 2.104 | 3.593 |
+| 3      | 0.212 | 0.438 | 0.733 | 1.241 |
+| 140    | 0.028 | 0.043 | 0.051 | 0.072 |
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->

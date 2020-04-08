@@ -32,7 +32,7 @@ meaning. `long` is for tests that run slightly longer that one second. You can
 disable these groups of tests using `--no-zookeeper`, `--no-shard` and
 `--no-long` options, respectively.
 
-## Known bugs {#known-bugs}
+## Known Bugs {#known-bugs}
 
 If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `queries/bugs` directory. These tests will be moved to `teststests_stateless` when bugs are fixed.
 
@@ -58,7 +58,7 @@ Each test run one or miltiple queries (possibly with combinations of parameters)
 
 If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
 
-## Test Tools And Scripts {#test-tools-and-scripts}
+## Test Tools and Scripts {#test-tools-and-scripts}
 
 Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `src/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
 
@@ -163,11 +163,11 @@ For example, build with system packages is bad practice, because we cannot guara
 
 Though we cannot run all tests on all variant of builds, we want to check at least that various build variants are not broken. For this purpose we use build tests.
 
-## Testing For Protocol Compatibility {#testing-for-protocol-compatibility}
+## Testing for Protocol Compatibility {#testing-for-protocol-compatibility}
 
 When we extend ClickHouse network protocol, we test manually that old clickhouse-client works with new clickhouse-server and new clickhouse-client works with old clickhouse-server (simply by running binaries from corresponding packages).
 
-## Help From The Compiler {#help-from-the-compiler}
+## Help from the Compiler {#help-from-the-compiler}
 
 Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings. Although these options are not enabled for third-party libraries.
 
