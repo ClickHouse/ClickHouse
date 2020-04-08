@@ -153,5 +153,25 @@ SHOW CREATE [ROW] POLICY name ON [database.]table
 ```
 
 
+## SHOW CREATE QUOTA {#show-create-quota-statement}
+
+Shows parameters that were used at a [quota creation](create.md#create-quota-statement)
+
+### Syntax {#show-create-row-policy-syntax}
+
+```sql
+SHOW CREATE QUOTA [name | CURRENT]
+```
+
+
+## SHOW CREATE SETTINGS PROFILE {#show-create-settings-profile-statement}
+
+Shows parameters that were used at a [settings profile creation](create.md#create-settings-profile-statement)
+
+### Syntax {#show-create-row-policy-syntax}
+
+```sql
+SHOW CREATE [SETTINGS] PROFILE name
+```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

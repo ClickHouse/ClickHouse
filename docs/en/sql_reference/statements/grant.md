@@ -84,9 +84,11 @@ Top scope privileges:
 - [SOURCES](#grant-SOURCES)
 - [dictGet](#grant-dictget)
 
-The special privilege [ALL](#grant-all) grants all the privileges to a user account or a role. The opposite [NONE](#grant-none) privilege revokes all the privileges from a user account or a role.
+The special privilege [ALL](#grant-all) grants all the privileges to a user account or a role.
 
 By default, a user account or a role has no privileges.
+
+If a user or role have no privileges it displayed as [NONE](#grant-none) privilege.
 
 Some queries by their implementation require a set of privileges. For example, to perform the [RENAME](misc.md#misc_operations-rename) query you need the following privileges: `SELECT`, `CREATE TABLE`, `INSERT` and `DROP TABLE`.
 
@@ -323,7 +325,7 @@ Allows using [introspection](../../operations/optimizing_performance/sampling_qu
 
 ### SOURCES {#grant-sources}
 
-Allows using [table functions](../table_functions/index.md).
+Allows using external data sources. Applies to [table engines](../../engines/table_engines/index.md) and [table functions](../table_functions/index.md).
 
 - `SOURCES`
     - `FILE`
@@ -335,7 +337,7 @@ Allows using [table functions](../table_functions/index.md).
     - `HDFS`
     - `S3`
 
-The `TABLE FUNCTIONS` privilege enables use of all the table functions. Also you can grant a privilege for each function individually.
+The `SOURCES` privilege enables use of all the sources. Also you can grant a privilege for each source individually.
 
 Table functions create temporary tables. Another way of creating a temporary table is the [CREATE TEMPORARY TABLE](create.md#temporary-tables) statement. Privileges for these ways of creating a table are granted independently and don't affect each other.
 
@@ -344,7 +346,7 @@ Table functions create temporary tables. Another way of creating a temporary tab
 
 - `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
 
-Allows a user to execute [dictGet](../functions/ext_dict_functions.md#dictget), [dictHas](..functions/ext_dict_functions.md#dicthas), [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy), [dictIsIn](../functions/ext_dict_functions.md#dictisin) functions.
+Allows a user to execute [dictGet](../functions/ext_dict_functions.md#dictget), [dictHas](../functions/ext_dict_functions.md#dicthas), [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy), [dictIsIn](../functions/ext_dict_functions.md#dictisin) functions.
 
 Some kinds of ClickHouse [dictionaries](../dictionaries/index.md) are not stored in a database. Use the `'no_database'` placeholder to grant a privilege to use `dictGet` with such dictionaries.
 
@@ -360,7 +362,7 @@ Grants all the privileges on regulated entity to a user account or a role._
 
 ### NONE {#grant-none}
 
-Revokes all the privileges.
+Doesn't grant any privileges.
 
 
 ### GRANT OPTION {#grant-option-privilege}

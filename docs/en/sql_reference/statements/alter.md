@@ -559,4 +559,34 @@ ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
 ```
 
 
+## ALTER QUOTA {#alter-quota-statement}
+
+Changes quotas.
+
+### Syntax {#alter-quota-syntax}
+
+``` sql
+ALTER QUOTA [IF EXISTS] name
+    [RENAME TO new_name]
+    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+        {[SET] MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] |
+         [SET] TRACKING | UNSET TRACKING} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+
+## ALTER SETTINGS PROFILE {#alter-settings-profile-statement}
+
+Changes quotas.
+
+### Syntax {#alter-quota-syntax}
+
+``` sql
+ALTER SETTINGS PROFILE [IF EXISTS] name
+    [RENAME TO new_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+
 [Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->

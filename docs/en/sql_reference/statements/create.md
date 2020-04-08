@@ -453,4 +453,31 @@ Keyword `ALL` means all the ClickHouse users including current user. Keywords `A
 - `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira`
 
 
+## CREATE QUOTA {#create-quota-statement}
+
+Creates a [quota](../../operations/quotas.md) that can be assigned to a user of role.
+
+### Syntax {create-quota-syntax}
+
+``` sql
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name
+    [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
+    [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
+        {[SET] MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] | [SET] TRACKING} [,...]]
+    [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+
+## CREATE SETTINGS PROFILE {#create-settings-profile-statement}
+
+Creates a [settings profile](../../operations/settings/settings_profiles.md) that can be assigned to a user of role.
+
+### Syntax {create-quota-syntax}
+
+``` sql
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+```
+
+
 [Original article](https://clickhouse.tech/docs/en/query_language/create/) <!--hide-->

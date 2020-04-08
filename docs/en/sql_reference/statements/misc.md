@@ -146,6 +146,33 @@ Deleted row policy is revoked from all the entities where it was assigned.
 DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
 ```
 
+
+## DROP QUOTA {#drop-quota-statement}
+
+Deletes a quota.
+
+Deleted quota is revoked from all the entities where it was assigned.
+
+### Syntax {#drop-quota-syntax}
+
+``` sql
+DROP QUOTA [IF EXISTS] name [,...]
+```
+
+
+## DROP SETTINGS PROFILE {#drop-settings-profile-statement}
+
+Deletes a quota.
+
+Deleted quota is revoked from all the entities where it was assigned.
+
+### Syntax {#drop-settings-profile-syntax}
+
+``` sql
+DROP [SETTINGS] PROFILE [IF EXISTS] name [,...]
+```
+
+
 ## EXISTS {#exists-statement}
 
 ``` sql
@@ -311,6 +338,7 @@ Assign all the granted roles excepting some of them:
 ```sql
 SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user
 ```
+
 
 ## TRUNCATE {#truncate-statement}
 
