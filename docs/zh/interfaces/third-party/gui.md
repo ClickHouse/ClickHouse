@@ -1,3 +1,4 @@
+
 # 第三方开发的可视化界面 {#di-san-fang-kai-fa-de-ke-shi-hua-jie-mian}
 
 ## 开源 {#kai-yuan}
@@ -37,9 +38,9 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 - 集群管理
 - 监控副本情况以及 Kafka 引擎表
 
-### LightHouse {#lighthouse}
+### 灯塔 {#lighthouse}
 
-[LightHouse](https://github.com/VKCOM/lighthouse) 是ClickHouse的轻量级Web界面。
+[灯塔](https://github.com/VKCOM/lighthouse) 是ClickHouse的轻量级Web界面。
 
 特征：
 
@@ -57,9 +58,9 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   表格预览。
 -   自动完成。
 
-### clickhouse-cli {#clickhouse-cli}
+### ﾂ环板-ｮﾂ嘉ｯﾂ偲 {#clickhouse-cli}
 
-[clickhouse-cli](https://github.com/hatarist/clickhouse-cli) 是ClickHouse的替代命令行客户端，用Python 3编写。
+[ﾂ环板-ｮﾂ嘉ｯﾂ偲](https://github.com/hatarist/clickhouse-cli) 是ClickHouse的替代命令行客户端，用Python 3编写。
 
 特征：
 
@@ -68,15 +69,15 @@ ClickHouse Web 界面 [Tabix](https://github.com/tabixio/tabix).
 -   寻呼机支持数据输出。
 -   自定义PostgreSQL类命令。
 
-### clickhouse-flamegraph {#clickhouse-flamegraph}
+### ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人 {#clickhouse-flamegraph}
 
     [clickhouse-flamegraph](https://github.com/Slach/clickhouse-flamegraph) 是一个可视化的专业工具`system.trace_log`如[flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
 ## 商业 {#shang-ye}
 
-### Holistics Software {#holistics-software}
+### ﾂ环板Softwareｮﾂ嘉ｯ {#holistics-software}
 
-[Holistics](https://www.holistics.io/) 在2019年被Gartner FrontRunners列为可用性最高排名第二的商业智能工具之一。 Holistics是一个基于SQL的全栈数据平台和商业智能工具，用于设置您的分析流程。
+[整体学](https://www.holistics.io/) 在2019年被Gartner FrontRunners列为可用性最高排名第二的商业智能工具之一。 Holistics是一个基于SQL的全栈数据平台和商业智能工具，用于设置您的分析流程。
 
 特征：
 

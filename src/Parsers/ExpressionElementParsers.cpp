@@ -1414,18 +1414,30 @@ bool ParserFunctionWithKeyValueArguments::parseImpl(Pos & pos, ASTPtr & node, Ex
     if (!id_parser.parse(pos, identifier, expected))
         return false;
 
-    if (pos.get().type != TokenType::OpeningRoundBracket)
-        return false;
 
-    ++pos;
+    bool left_bracket_found = false;
+    if (pos.get().type != TokenType::OpeningRoundBracket)
+    {
+        if (!brackets_can_be_omitted)
+             return false;
+    }
+    else
+    {
+        ++pos;
+        left_bracket_found = true;
+    }
+
     if (!pairs_list_parser.parse(pos, expr_list_args, expected))
         return false;
 
-    if (pos.get().type != TokenType::ClosingRoundBracket)
-        return false;
+    if (left_bracket_found)
+    {
+        if (pos.get().type != TokenType::ClosingRoundBracket)
+            return false;
+        ++pos;
+    }
 
-    ++pos;
-    auto function = std::make_shared<ASTFunctionWithKeyValueArguments>();
+    auto function = std::make_shared<ASTFunctionWithKeyValueArguments>(left_bracket_found);
     function->name = Poco::toLower(typeid_cast<ASTIdentifier &>(*identifier.get()).name);
     function->elements = expr_list_args;
     function->children.push_back(function->elements);

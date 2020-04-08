@@ -12,6 +12,7 @@
 #include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
+#include <Interpreters/RenameColumnVisitor.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <Parsers/ASTConstraintDeclaration.h>
@@ -39,6 +40,7 @@ namespace ErrorCodes
     extern const int NOT_FOUND_COLUMN_IN_BLOCK;
     extern const int LOGICAL_ERROR;
     extern const int DUPLICATE_COLUMN;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -231,8 +233,19 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
     else if (command_ast->type == ASTAlterCommand::MODIFY_QUERY)
     {
         AlterCommand command;
+        command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_QUERY;
         command.select = command_ast->select;
+        return command;
+    }
+    else if (command_ast->type == ASTAlterCommand::RENAME_COLUMN)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::RENAME_COLUMN;
+        command.column_name = command_ast->column->as<ASTIdentifier &>().name;
+        command.rename_to = command_ast->rename_to->as<ASTIdentifier &>().name;
+        command.if_exists = command_ast->if_exists;
         return command;
     }
     else
@@ -437,6 +450,24 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
                 settings_from_storage.push_back(change);
         }
     }
+    else if (type == RENAME_COLUMN)
+    {
+        metadata.columns.rename(column_name, rename_to);
+        RenameColumnData rename_data{column_name, rename_to};
+        RenameColumnVisitor rename_visitor(rename_data);
+        for (auto & column : metadata.columns)
+        {
+            metadata.columns.modify(column.name, [&](ColumnDescription & column_to_modify)
+            {
+                if (column_to_modify.default_desc.expression)
+                    rename_visitor.visit(column_to_modify.default_desc.expression);
+                if (column_to_modify.ttl)
+                    rename_visitor.visit(column_to_modify.ttl);
+            });
+        }
+        if (metadata.ttl_for_table_ast)
+            rename_visitor.visit(metadata.ttl_for_table_ast);
+    }
     else
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
@@ -519,7 +550,7 @@ bool AlterCommand::isRequireMutationStage(const StorageInMemoryMetadata & metada
     if (ignore)
         return false;
 
-    if (type == DROP_COLUMN || type == DROP_INDEX)
+    if (type == DROP_COLUMN || type == DROP_INDEX || type == RENAME_COLUMN)
         return true;
 
     if (type != MODIFY_COLUMN || data_type == nullptr)
@@ -585,6 +616,12 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(const S
 
         result.predicate = nullptr;
     }
+    else if (type == RENAME_COLUMN)
+    {
+        result.type = MutationCommand::Type::RENAME_COLUMN;
+        result.column_name = column_name;
+        result.rename_to = rename_to;
+    }
 
     result.ast = ast->clone();
     return result;
@@ -619,6 +656,8 @@ String alterTypeToString(const AlterCommand::Type type)
         return "MODIFY SETTING";
     case AlterCommand::Type::MODIFY_QUERY:
         return "MODIFY QUERY";
+    case AlterCommand::Type::RENAME_COLUMN:
+        return "RENAME COLUMN";
     }
     __builtin_unreachable();
 }
@@ -666,7 +705,8 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata)
                 command.ignore = true;
         }
         else if (command.type == AlterCommand::DROP_COLUMN
-                || command.type == AlterCommand::COMMENT_COLUMN)
+                || command.type == AlterCommand::COMMENT_COLUMN
+                || command.type == AlterCommand::RENAME_COLUMN)
         {
             if (!has_column && command.if_exists)
                 command.ignore = true;
@@ -680,6 +720,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     auto all_columns = metadata.columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
+    NameToNameMap renames_map;
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
@@ -752,6 +793,52 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
         {
             if (metadata.settings_ast == nullptr)
                 throw Exception{"Cannot alter settings, because table engine doesn't support settings changes", ErrorCodes::BAD_ARGUMENTS};
+        }
+        else if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            /// TODO Implement nested rename
+            if (metadata.columns.hasNested(command.column_name))
+            {
+                throw Exception{"Cannot rename whole Nested struct", ErrorCodes::NOT_IMPLEMENTED};
+            }
+
+            if (!metadata.columns.has(command.column_name))
+            {
+                if (!command.if_exists)
+                    throw Exception{"Wrong column name. Cannot find column " + backQuote(command.column_name) + " to rename",
+                                    ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK};
+            }
+
+            if (metadata.columns.has(command.rename_to))
+                throw Exception{"Cannot rename to " + backQuote(command.rename_to) + ": column with this name already exists",
+                                ErrorCodes::DUPLICATE_COLUMN};
+
+
+            if (renames_map.count(command.column_name))
+                throw Exception{"Cannot rename column '" + backQuote(command.column_name) + "' to two different names in a single ALTER query", ErrorCodes::BAD_ARGUMENTS};
+
+            if (renames_map.count(command.rename_to))
+                throw Exception{"Rename loop detected in ALTER query",
+                                ErrorCodes::BAD_ARGUMENTS};
+
+            String from_nested_table_name = Nested::extractTableName(command.column_name);
+            String to_nested_table_name = Nested::extractTableName(command.rename_to);
+            bool from_nested = from_nested_table_name != command.column_name;
+            bool to_nested = to_nested_table_name != command.rename_to;
+
+            if (from_nested && to_nested)
+            {
+                if (from_nested_table_name != to_nested_table_name)
+                    throw Exception{"Cannot rename column from one nested name to another", ErrorCodes::BAD_ARGUMENTS};
+            }
+            else if (!from_nested && !to_nested)
+            {
+                renames_map[command.column_name] = command.rename_to;
+            }
+            else
+            {
+                throw Exception{"Cannot rename column from nested struct to normal column and vice versa", ErrorCodes::BAD_ARGUMENTS};
+            }
         }
 
         /// Collect default expressions for MODIFY and ADD comands

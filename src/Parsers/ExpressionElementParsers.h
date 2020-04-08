@@ -351,9 +351,16 @@ protected:
   */
 class ParserFunctionWithKeyValueArguments : public IParserBase
 {
+public:
+    ParserFunctionWithKeyValueArguments(bool brackets_can_be_omitted_ = false)
+        : brackets_can_be_omitted(brackets_can_be_omitted_) {}
 protected:
+
     const char * getName() const override { return "function with key-value arguments"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
+
+    /// brackets for function arguments can be omitted
+    bool brackets_can_be_omitted;
 };
 
 /** Data type or table engine, possibly with parameters. For example, UInt8 or see examples from ParserIdentifierWithParameters

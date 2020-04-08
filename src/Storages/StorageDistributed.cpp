@@ -242,6 +242,24 @@ void replaceConstantExpressions(ASTPtr & node, const Context & context, const Na
     visitor.visit(node);
 }
 
+QueryProcessingStage::Enum getQueryProcessingStageImpl(const Context & context, QueryProcessingStage::Enum to_stage, const ClusterPtr & cluster)
+{
+    const Settings & settings = context.getSettingsRef();
+
+    size_t num_local_shards = cluster->getLocalShardCount();
+    size_t num_remote_shards = cluster->getRemoteShardCount();
+    size_t result_size = (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
+
+    if (settings.distributed_group_by_no_merge)
+        return QueryProcessingStage::Complete;
+    /// Nested distributed query cannot return Complete stage,
+    /// since the parent query need to aggregate the results after.
+    if (to_stage == QueryProcessingStage::WithMergeableState)
+        return QueryProcessingStage::WithMergeableState;
+    return result_size == 1 ? QueryProcessingStage::Complete
+                            : QueryProcessingStage::WithMergeableState;
+}
+
 }
 
 
@@ -360,25 +378,10 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 }
 
 
-static QueryProcessingStage::Enum getQueryProcessingStageImpl(const Context & context, const ClusterPtr & cluster)
-{
-    const Settings & settings = context.getSettingsRef();
-
-    size_t num_local_shards = cluster->getLocalShardCount();
-    size_t num_remote_shards = cluster->getRemoteShardCount();
-    size_t result_size = (num_remote_shards * settings.max_parallel_replicas) + num_local_shards;
-
-    if (settings.distributed_group_by_no_merge)
-        return QueryProcessingStage::Complete;
-    else    /// Normal mode.
-        return result_size == 1 ? QueryProcessingStage::Complete
-                                : QueryProcessingStage::WithMergeableState;
-}
-
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context & context, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr &query_ptr) const
 {
     auto cluster = getOptimizedCluster(context, query_ptr);
-    return getQueryProcessingStageImpl(context, cluster);
+    return getQueryProcessingStageImpl(context, to_stage, cluster);
 }
 
 Pipes StorageDistributed::read(
@@ -806,6 +809,9 @@ void registerStorageDistributed(StorageFactory & factory)
             storage_policy,
             args.relative_data_path,
             args.attach);
+    },
+    {
+        .source_access_type = AccessType::REMOTE,
     });
 }
 
