@@ -1,3 +1,8 @@
-# Special Data Types {#special-data-types}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# 特殊数据类型 {#special-data-types}
 
 特殊数据类型的值既不能存在表中也不能在结果中输出，但可用于查询的中间结果。

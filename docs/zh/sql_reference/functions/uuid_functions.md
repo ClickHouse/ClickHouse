@@ -1,8 +1,13 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # UUID函数 {#uuidhan-shu}
 
 下面列出了所有UUID的相关函数
 
-## generateUUIDv4 {#uuid-function-generate}
+## generateuidv4 {#uuid-function-generate}
 
 生成一个UUID（[版本4](https://tools.ietf.org/html/rfc4122#section-4.4)）。
 
@@ -30,7 +35,7 @@ UUID类型的值。
 └──────────────────────────────────────┘
 ```
 
-## toUUID (x) {#touuid-x}
+## toUUID(x) {#touuid-x}
 
 将String类型的值转换为UUID类型的值。
 
@@ -54,7 +59,7 @@ UUID类型的值
 
 ## UUIDStringToNum {#uuidstringtonum}
 
-接受一个String类型的值，其中包含36个字符且格式为`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`，将其转换为UUID的数值并以[FixedString(16)](../../sql_reference/functions/uuid_functions.md)将其返回。
+接受一个String类型的值，其中包含36个字符且格式为`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`，将其转换为UUID的数值并以[固定字符串(16)](../../sql_reference/functions/uuid_functions.md)将其返回。
 
 ``` sql
 UUIDStringToNum(String)
@@ -62,7 +67,7 @@ UUIDStringToNum(String)
 
 **返回值**
 
-FixedString(16)
+固定字符串(16)
 
 **使用示例**
 
@@ -78,7 +83,7 @@ FixedString(16)
 
 ## UUIDNumToString {#uuidnumtostring}
 
-接受一个[FixedString(16)](../../sql_reference/functions/uuid_functions.md)类型的值，返回其对应的String表现形式。
+接受一个[固定字符串(16)](../../sql_reference/functions/uuid_functions.md)类型的值，返回其对应的String表现形式。
 
 ``` sql
 UUIDNumToString(FixedString(16))
@@ -86,7 +91,7 @@ UUIDNumToString(FixedString(16))
 
 **返回值**
 
-String.
+字符串。
 
 **使用示例**
 
@@ -102,6 +107,6 @@ SELECT
 
 ## 另请参阅 {#ling-qing-can-yue}
 
--   [dictGetUUID](ext_dict_functions.md)
+-   [dictgetuid](ext_dict_functions.md)
 
 [来源文章](https://clickhouse.tech/docs/en/query_language/functions/uuid_function/) <!--hide-->

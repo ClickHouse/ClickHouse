@@ -1,4 +1,9 @@
-# Merge {#merge}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# 合并 {#merge}
 
 `Merge` 引擎 (不要跟 `MergeTree` 引擎混淆) 本身不存储数据，但可用于同时从任意多个其他的表中读取数据。
 读是自动并行的，不支持写入。读取时，那些被真正读取到数据的表的索引（如果有的话）会被使用。

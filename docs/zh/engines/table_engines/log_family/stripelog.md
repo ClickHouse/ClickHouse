@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # StripeLog {#table_engines-stripelog}
 
 该引擎属于日志引擎系列。请在[日志引擎系列](log_family.md)文章中查看引擎的共同属性和差异。

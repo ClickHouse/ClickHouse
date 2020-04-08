@@ -1,4 +1,9 @@
-# Enum8, Enum16 {#enum8-enum16}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# Enum8,Enum16 {#enum8-enum16}
 
 包括 `Enum8` 和 `Enum16` 类型。`Enum` 保存 `'string'= integer` 的对应关系。在 ClickHouse 中，尽管用户使用的是字符串常量，但所有含有 `Enum` 数据类型的操作都是按照包含整数的值来执行。这在性能方面比使用 `String` 数据类型更有效。
 
@@ -67,7 +72,7 @@
 
 `Enum` 中的字符串和数值都不能是 [NULL](../../sql_reference/data_types/enum.md)。
 
-`Enum` 包含在 [Nullable](nullable.md) 类型中。因此，如果您使用此查询创建一个表
+`Enum` 包含在 [可为空](nullable.md) 类型中。因此，如果您使用此查询创建一个表
 
     CREATE TABLE t_enum_nullable
     (

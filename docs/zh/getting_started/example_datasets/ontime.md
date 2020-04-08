@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 航班飞行数据 {#hang-ban-fei-xing-shu-ju}
 
 航班飞行数据有以下两个方式获取：
@@ -156,7 +161,7 @@ $ sudo service clickhouse-server restart
 $ clickhouse-client --query "select count(*) from datasets.ontime"
 ```
 
-!!! info "Info"
+!!! info "信息"
     如果要运行下面的SQL查询，必须使用完整的表名，
 `datasets.ontime`。
 
@@ -356,7 +361,7 @@ ORDER by rate DESC
 LIMIT 1000;
 ```
 
-Bonus:
+奖金:
 
 ``` sql
 SELECT avg(cnt)

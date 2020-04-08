@@ -1,13 +1,15 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 44
-toc_title: Dictionary Key and Fields
+toc_title: "\u5B57\u5178\u952E\u548C\u5B57\u6BB5"
 ---
 
-# Dictionary Key and Fields {#dictionary-key-and-fields}
+# 字典键和字段 {#dictionary-key-and-fields}
 
-The `<structure>` clause describes the dictionary key and fields available for queries.
+该 `<structure>` 子句描述可用于查询的字典键和字段。
 
-XML description:
+XML描述:
 
 ``` xml
 <dictionary>
@@ -26,12 +28,12 @@ XML description:
 </dictionary>
 ```
 
-Attributes are described in the elements:
+属性在元素中描述:
 
--   `<id>` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key).
--   `<attribute>` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
+-   `<id>` — [键列](external_dicts_dict_structure.md#ext_dict_structure-key).
+-   `<attribute>` — [数据列](external_dicts_dict_structure.md#ext_dict_structure-attributes). 可以有多个属性。
 
-DDL query:
+DDL查询:
 
 ``` sql
 CREATE DICTIONARY dict_name (
@@ -42,28 +44,28 @@ PRIMARY KEY Id
 ...
 ```
 
-Attributes are described in the query body:
+查询正文中描述了属性:
 
--   `PRIMARY KEY` — [Key column](external_dicts_dict_structure.md#ext_dict_structure-key)
--   `AttrName AttrType` — [Data column](external_dicts_dict_structure.md#ext_dict_structure-attributes). There can be a multiple number of attributes.
+-   `PRIMARY KEY` — [键列](external_dicts_dict_structure.md#ext_dict_structure-key)
+-   `AttrName AttrType` — [数据列](external_dicts_dict_structure.md#ext_dict_structure-attributes). 可以有多个属性。
 
-## Key {#ext_dict_structure-key}
+## 键 {#ext_dict_structure-key}
 
-ClickHouse supports the following types of keys:
+ClickHouse支持以下类型的键:
 
--   Numeric key. `UInt64`. Defined in the `<id>` tag or using `PRIMARY KEY` keyword.
--   Composite key. Set of values of different types. Defined in the tag `<key>` or `PRIMARY KEY` keyword.
+-   数字键。 `UInt64`. 在定义 `<id>` 标记或使用 `PRIMARY KEY` 关键字。
+-   复合密钥。 组不同类型的值。 在标签中定义 `<key>` 或 `PRIMARY KEY` 关键字。
 
-An xml structure can contain either `<id>` or `<key>`. DDL-query must contain single `PRIMARY KEY`.
+Xml结构可以包含 `<id>` 或 `<key>`. DDL-查询必须包含单个 `PRIMARY KEY`.
 
-!!! warning "Warning"
-    You must not describe key as an attribute.
+!!! warning "警告"
+    不能将键描述为属性。
 
-### Numeric Key {#ext_dict-numeric-key}
+### 数字键 {#ext_dict-numeric-key}
 
-Type: `UInt64`.
+类型: `UInt64`.
 
-Configuration example:
+配置示例:
 
 ``` xml
 <id>
@@ -71,11 +73,11 @@ Configuration example:
 </id>
 ```
 
-Configuration fields:
+配置字段:
 
 -   `name` – The name of the column with keys.
 
-For DDL-query:
+对于DDL-查询:
 
 ``` sql
 CREATE DICTIONARY (
@@ -88,14 +90,14 @@ PRIMARY KEY Id
 
 -   `PRIMARY KEY` – The name of the column with keys.
 
-### Composite Key {#composite-key}
+### 复合密钥 {#composite-key}
 
-The key can be a `tuple` from any types of fields. The [layout](external_dicts_dict_layout.md) in this case must be `complex_key_hashed` or `complex_key_cache`.
+关键可以是一个 `tuple` 从任何类型的字段。 该 [布局](external_dicts_dict_layout.md) 在这种情况下，必须是 `complex_key_hashed` 或 `complex_key_cache`.
 
-!!! tip "Tip"
-    A composite key can consist of a single element. This makes it possible to use a string as the key, for instance.
+!!! tip "提示"
+    复合键可以由单个元素组成。 例如，这使得可以使用字符串作为键。
 
-The key structure is set in the element `<key>`. Key fields are specified in the same format as the dictionary [attributes](external_dicts_dict_structure.md). Example:
+键结构在元素中设置 `<key>`. 键字段的格式与字典的格式相同 [属性](external_dicts_dict_structure.md). 示例:
 
 ``` xml
 <structure>
@@ -113,7 +115,7 @@ The key structure is set in the element `<key>`. Key fields are specified in the
 ...
 ```
 
-or
+或
 
 ``` sql
 CREATE DICTIONARY (
@@ -125,11 +127,11 @@ PRIMARY KEY field1, field2
 ...
 ```
 
-For a query to the `dictGet*` function, a tuple is passed as the key. Example: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
+对于查询 `dictGet*` 函数中，一个元组作为键传递。 示例: `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
-## Attributes {#ext_dict_structure-attributes}
+## 属性 {#ext_dict_structure-attributes}
 
-Configuration example:
+配置示例:
 
 ``` xml
 <structure>
@@ -146,7 +148,7 @@ Configuration example:
 </structure>
 ```
 
-or
+或
 
 ``` sql
 CREATE DICTIONARY somename (
@@ -154,20 +156,20 @@ CREATE DICTIONARY somename (
 )
 ```
 
-Configuration fields:
+配置字段:
 
-| Tag                                                  | Description                                                                                                                                                                                                                                                                                                                                     | Required |
-|----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------|
-| `name`                                               | Column name.                                                                                                                                                                                                                                                                                                                                    | Yes      |
-| `type`                                               | ClickHouse data type.<br/>ClickHouse tries to cast value from dictionary to the specified data type. For example, for MySQL, the field might be `TEXT`, `VARCHAR`, or `BLOB` in the MySQL source table, but it can be uploaded as `String` in ClickHouse.<br/>[Nullable](../../../sql_reference/data_types/nullable.md) is not supported.       | Yes      |
-| `null_value`                                         | Default value for a non-existing element.<br/>In the example, it is an empty string. You cannot use `NULL` in this field.                                                                                                                                                                                                                       | Yes      |
-| `expression`                                         | [Expression](../../syntax.md#syntax-expressions) that ClickHouse executes on the value.<br/>The expression can be a column name in the remote SQL database. Thus, you can use it to create an alias for the remote column.<br/><br/>Default value: no expression.                                                                               | No       |
-| <a name="hierarchical-dict-attr"></a> `hierarchical` | If `true`, the attribute contains the value of a parent key for the current key. See [Hierarchical Dictionaries](external_dicts_dict_hierarchical.md).<br/><br/>Default value: `false`.                                                                                                                                                         | No       |
-| `injective`                                          | Flag that shows whether the `id -> attribute` image is [injective](https://en.wikipedia.org/wiki/Injective_function).<br/>If `true`, ClickHouse can automatically place after the `GROUP BY` clause the requests to dictionaries with injection. Usually it significantly reduces the amount of such requests.<br/><br/>Default value: `false`. | No       |
-| `is_object_id`                                       | Flag that shows whether the query is executed for a MongoDB document by `ObjectID`.<br/><br/>Default value: `false`.                                                                                                                                                                                                                            | No       |
+| 标签                                                 | 产品描述                                                                                                                                                                                                                                                      | 必填项 |
+|------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
+| `name`                                               | 列名称。                                                                                                                                                                                                                                                      | 是     |
+| `type`                                               | ClickHouse数据类型。<br/>ClickHouse尝试将字典中的值转换为指定的数据类型。 例如，对于MySQL，该字段可能是 `TEXT`, `VARCHAR`，或 `BLOB` 在MySQL源表中，但它可以上传为 `String` 在克里克豪斯<br/>[可为空](../../../sql_reference/data_types/nullable.md) 不支持。 | 是     |
+| `null_value`                                         | 非现有元素的默认值。<br/>在示例中，它是一个空字符串。 你不能使用 `NULL` 在这个领域。                                                                                                                                                                          | 是     |
+| `expression`                                         | [表达式](../../syntax.md#syntax-expressions) ClickHouse对该值执行。<br/>表达式可以是远程SQL数据库中的列名。 因此，您可以使用它为远程列创建别名。<br/><br/>默认值：无表达式。                                                                                  | 非也。 |
+| <a name="hierarchical-dict-attr"></a> `hierarchical` | 如果 `true`，该属性包含当前键的父键值。 看 [分层字典](external_dicts_dict_hierarchical.md).<br/><br/>默认值: `false`.                                                                                                                                         | 非也。 |
+| `injective`                                          | 标志，显示是否 `id -> attribute` 图像是 [注射](https://en.wikipedia.org/wiki/Injective_function).<br/>如果 `true`，ClickHouse可以自动放置后 `GROUP BY` 子句注入字典的请求。 通常它显着减少了这种请求的数量。<br/><br/>默认值: `false`.                        | 非也。 |
+| `is_object_id`                                       | 显示是否通过以下方式对MongoDB文档执行查询的标志 `ObjectID`.<br/><br/>默认值: `false`.                                                                                                                                                                         | 非也。 |
 
-## See Also {#see-also}
+## 另请参阅 {#see-also}
 
--   [Functions for working with external dictionaries](../../../sql_reference/functions/ext_dict_functions.md).
+-   [使用外部字典的函数](../../../sql_reference/functions/ext_dict_functions.md).
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_structure/) <!--hide-->

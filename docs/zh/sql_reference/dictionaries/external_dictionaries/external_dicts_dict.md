@@ -1,11 +1,13 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 40
-toc_title: Configuring an External Dictionary
+toc_title: "\u914D\u7F6E\u5916\u90E8\u5B57\u5178"
 ---
 
-# Configuring an External Dictionary {#dicts-external-dicts-dict}
+# 配置外部字典 {#dicts-external-dicts-dict}
 
-If dictionary is configured using xml file, than dictionary configuration has the following structure:
+如果使用xml文件配置字典，则比字典配置具有以下结构:
 
 ``` xml
 <dictionary>
@@ -29,7 +31,7 @@ If dictionary is configured using xml file, than dictionary configuration has th
 </dictionary>
 ```
 
-Corresponding [DDL-query](../../statements/create.md#create-dictionary-query) has the following structure:
+相应的 [DDL-查询](../../statements/create.md#create-dictionary-query) 具有以下结构:
 
 ``` sql
 CREATE DICTIONARY dict_name
@@ -43,9 +45,9 @@ LIFETIME(...) -- Lifetime of dictionary in memory
 ```
 
 -   `name` – The identifier that can be used to access the dictionary. Use the characters `[a-zA-Z0-9_\-]`.
--   [source](external_dicts_dict_sources.md) — Source of the dictionary.
--   [layout](external_dicts_dict_layout.md) — Dictionary layout in memory.
--   [structure](external_dicts_dict_structure.md) — Structure of the dictionary . A key and attributes that can be retrieved by this key.
--   [lifetime](external_dicts_dict_lifetime.md) — Frequency of dictionary updates.
+-   [来源](external_dicts_dict_sources.md) — Source of the dictionary.
+-   [布局](external_dicts_dict_layout.md) — Dictionary layout in memory.
+-   [结构](external_dicts_dict_structure.md) — Structure of the dictionary . A key and attributes that can be retrieved by this key.
+-   [使用寿命](external_dicts_dict_lifetime.md) — Frequency of dictionary updates.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict/) <!--hide-->

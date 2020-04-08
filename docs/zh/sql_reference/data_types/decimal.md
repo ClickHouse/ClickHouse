@@ -1,4 +1,9 @@
-# Decimal(P, S), Decimal32(S), Decimal64(S), Decimal128(S) {#decimalp-s-decimal32s-decimal64s-decimal128s}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# Decimal(P,S),Decimal32(S),Decimal64(S),Decimal128(S) {#decimalp-s-decimal32s-decimal64s-decimal128s}
 
 有符号的定点数，可在加、减和乘法运算过程中保持精度。对于除法，最低有效数字会被丢弃（不舍入）。
 
@@ -8,15 +13,15 @@
 -   S - 规模。有效范围：\[0：P\]，决定数字的小数部分中包含的小数位数。
 
 对于不同的 P 参数值 Decimal 表示，以下例子都是同义的：
-- P from \[ 1 : 9 \] - for Decimal32(S)
-- P from \[ 10 : 18 \] - for Decimal64(S)
-- P from \[ 19 : 38 \] - for Decimal128(S)
+-P从\[1:9\]-对于Decimal32(S)
+-P从\[10:18\]-对于Decimal64(小号)
+-P从\[19:38\]-对于Decimal128（S)
 
 ## 十进制值范围 {#shi-jin-zhi-zhi-fan-wei}
 
--   Decimal32(S) - ( -1 \* 10^(9 - S), 1 \* 10^(9 - S) )
--   Decimal64(S) - ( -1 \* 10^(18 - S), 1 \* 10^(18 - S) )
--   Decimal128(S) - ( -1 \* 10^(38 - S), 1 \* 10^(38 - S) )
+-   Decimal32(S) - ( -1 \* 10^(9 - S),1\*10^(9-S) )
+-   Decimal64(S) - ( -1 \* 10^(18 - S),1\*10^(18-S) )
+-   Decimal128(S) - ( -1 \* 10^(38 - S),1\*10^(38-S) )
 
 例如，Decimal32(4) 可以表示 -99999.9999 至 99999.9999 的数值，步长为0.0001。
 
@@ -30,9 +35,9 @@
 
 对Decimal的二进制运算导致更宽的结果类型（无论参数的顺序如何）。
 
--   Decimal64(S1) <op> Decimal32(S2) -\> Decimal64(S)
--   Decimal128(S1) <op> Decimal32(S2) -\> Decimal128(S)
--   Decimal128(S1) <op> Decimal64(S2) -\> Decimal128(S)
+-   Decimal64(S1) <op> Decimal32(S2)-\>Decimal64(S)
+-   Decimal128(S1) <op> Decimal32(S2)-\>Decimal128(S)
+-   Decimal128(S1) <op> Decimal64(S2)-\>Decimal128(S)
 
 精度变化的规则：
 

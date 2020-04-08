@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 规划 {#gui-hua}
 
 ## Q1 2020 {#q1-2020}

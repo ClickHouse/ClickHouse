@@ -1,20 +1,25 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 字符串替换函数 {#zi-fu-chuan-ti-huan-han-shu}
 
-## replaceOne(haystack, pattern, replacement) {#replaceonehaystack-pattern-replacement}
+## replaceOne（大海捞针，模式，更换) {#replaceonehaystack-pattern-replacement}
 
-用‘replacement’子串替换‘haystack’中与‘pattern’子串第一个匹配的匹配项（如果存在）。
-‘pattern’和‘replacement’必须是常量。
+用'replacement'子串替换'haystack'中与'pattern'子串第一个匹配的匹配项（如果存在）。
+'pattern'和'replacement'必须是常量。
 
-## replaceAll(haystack, pattern, replacement), replace(haystack, pattern, replacement) {#replaceallhaystack-pattern-replacement-replacehaystack-pattern-replacement}
+## replaceAll（大海捞针，模式，替换），替换（大海捞针，模式，替换) {#replaceallhaystack-pattern-replacement-replacehaystack-pattern-replacement}
 
-用‘replacement’子串替换‘haystack’中出现的所有‘pattern’子串。
+用'replacement'子串替换'haystack'中出现的所有'pattern'子串。
 
-## replaceRegexpOne(haystack, pattern, replacement) {#replaceregexponehaystack-pattern-replacement}
+## replaceRegexpOne（大海捞针，模式，更换) {#replaceregexponehaystack-pattern-replacement}
 
-使用‘pattern’正则表达式替换。 ‘pattern’可以是任意一个有效的re2正则表达式。
+使用'pattern'正则表达式替换。 ‘pattern’可以是任意一个有效的re2正则表达式。
 如果存在与正则表达式匹配的匹配项，仅替换第一个匹配项。
 同时‘replacement’可以指定为正则表达式中的捕获组。可以包含`\0-\9`。
-在这种情况下，函数将使用正则表达式的整个匹配项替换‘\\0’。使用其他与之对应的子模式替换对应的‘\\1-\\9’。要在模版中使用‘’字符，请使用‘’将其转义。
+在这种情况下，函数将使用正则表达式的整个匹配项替换‘\\0’。使用其他与之对应的子模式替换对应的'\\1-\\9'。要在模版中使用''字符，请使用''将其转义。
 另外还请记住，字符串文字需要额外的转义。
 
 示例1.将日期转换为美国格式：
@@ -46,7 +51,7 @@ SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0')
     │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │
     └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
-## replaceRegexpAll(haystack, pattern, replacement) {#replaceregexpallhaystack-pattern-replacement}
+## replaceRegexpAll（大海捞针，模式，替换) {#replaceregexpallhaystack-pattern-replacement}
 
 与replaceRegexpOne相同，但会替换所有出现的匹配项。例如：
 
@@ -72,7 +77,7 @@ SELECT replaceRegexpAll('Hello, World!', '^', 'here: ') AS res
 ## regexpQuoteMeta(s) {#regexpquotemetas}
 
 该函数用于在字符串中的某些预定义字符之前添加反斜杠。
-预定义字符：‘0’，‘\\’，‘\|’，‘(’，‘)’，‘^’，‘$’，‘。’，‘\[’，’\]’，‘？’，‘\*’，‘+’，‘{’，‘：’，’ - ’。
+预定义字符：‘0’，‘\\’，‘\|’，‘(’，‘)’，‘^’，‘$’，‘。’，‘\[’，'\]'，‘？’，‘\*’，‘+’，‘{’，‘：’，' - '。
 这个实现与re2 :: RE2 :: QuoteMeta略有不同。它以\\0而不是00转义零字节，它只转义所需的字符。
 有关详细信息，请参阅链接：\[RE2\]（https://github.com/google/re2/blob/master/re2/re2.cc\#L473）
 

@@ -1,30 +1,32 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 38
-toc_title: Parametric aggregate functions
+toc_title: "\u53C2\u6570\u805A\u5408\u51FD\u6570"
 ---
 
-# Parametric Aggregate Functions {#aggregate_functions_parametric}
+# 参数聚合函数 {#aggregate_functions_parametric}
 
 Some aggregate functions can accept not only argument columns (used for compression), but a set of parameters – constants for initialization. The syntax is two pairs of brackets instead of one. The first is for parameters, and the second is for arguments.
 
-## histogram {#histogram}
+## 直方图 {#histogram}
 
-Calculates an adaptive histogram. It doesn’t guarantee precise results.
+计算自适应直方图。 它不能保证精确的结果。
 
 ``` sql
 histogram(number_of_bins)(values)
 ```
 
-The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). The borders of histogram bins are adjusted as new data enters a function. In common case, the widths of bins are not equal.
+该函数使用 [流式并行决策树算法](http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf). 当新数据输入函数时，hist图分区的边界将被调整。 在通常情况下，箱的宽度不相等。
 
-**Parameters**
+**参数**
 
 `number_of_bins` — Upper limit for the number of bins in the histogram. The function automatically calculates the number of bins. It tries to reach the specified number of bins, but if it fails, it uses fewer bins.
-`values` — [Expression](../syntax.md#syntax-expressions) resulting in input values.
+`values` — [表达式](../syntax.md#syntax-expressions) 导致输入值。
 
-**Returned values**
+**返回值**
 
--   [Array](../../sql_reference/data_types/array.md) of [Tuples](../../sql_reference/data_types/tuple.md) of the following format:
+-   [阵列](../../sql_reference/data_types/array.md) 的 [元组](../../sql_reference/data_types/tuple.md) 下面的格式:
 
         ```
         [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
@@ -34,7 +36,7 @@ The functions uses [A Streaming Parallel Decision Tree Algorithm](http://jmlr.or
         - `upper` — Upper bound of the bin.
         - `height` — Calculated height of the bin.
 
-**Example**
+**示例**
 
 ``` sql
 SELECT histogram(5)(number + 1)
@@ -51,7 +53,7 @@ FROM (
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-You can visualize a histogram with the [bar](../../sql_reference/functions/other_functions.md#function-bar) function, for example:
+您可以使用 [酒吧](../../sql_reference/functions/other_functions.md#function-bar) 功能，例如:
 
 ``` sql
 WITH histogram(5)(rand() % 100) AS hist
@@ -76,46 +78,46 @@ FROM
 └────────┴───────┘
 ```
 
-In this case, you should remember that you don’t know the histogram bin borders.
+在这种情况下，您应该记住您不知道直方图bin边界。
 
 ## sequenceMatch(pattern)(timestamp, cond1, cond2, …) {#function-sequencematch}
 
-Checks whether the sequence contains an event chain that matches the pattern.
+检查序列是否包含与模式匹配的事件链。
 
 ``` sql
 sequenceMatch(pattern)(timestamp, cond1, cond2, ...)
 ```
 
-!!! warning "Warning"
-    Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+!!! warning "警告"
+    在同一秒钟发生的事件可能以未定义的顺序排列在序列中，影响结果。
 
-**Parameters**
+**参数**
 
--   `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
+-   `pattern` — Pattern string. See [模式语法](#sequence-function-pattern-syntax).
 
--   `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../sql_reference/data_types/int_uint.md) data types.
+-   `timestamp` — Column considered to contain time data. Typical data types are `Date` 和 `DateTime`. 您还可以使用任何支持的 [UInt](../../sql_reference/data_types/int_uint.md) 数据类型。
 
--   `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn’t described in a condition, the function skips them.
+-   `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. 最多可以传递32个条件参数。 该函数只考虑这些条件中描述的事件。 如果序列包含未在条件中描述的数据，则函数将跳过这些数据。
 
-**Returned values**
+**返回值**
 
--   1, if the pattern is matched.
--   0, if the pattern isn’t matched.
+-   1，如果模式匹配。
+-   0，如果模式不匹配。
 
-Type: `UInt8`.
+类型: `UInt8`.
 
 <a name="sequence-function-pattern-syntax"></a>
-**Pattern syntax**
+**模式语法**
 
--   `(?N)` — Matches the condition argument at position `N`. Conditions are numbered in the `[1, 32]` range. For example, `(?1)` matches the argument passed to the `cond1` parameter.
+-   `(?N)` — Matches the condition argument at position `N`. 条件在编号 `[1, 32]` 范围。 例如, `(?1)` 匹配传递给 `cond1` 参数。
 
--   `.*` — Matches any number of events. You don’t need conditional arguments to match this element of the pattern.
+-   `.*` — Matches any number of events. You don't need conditional arguments to match this element of the pattern.
 
--   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=` operators.
+-   `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` 匹配彼此发生超过1800秒的事件。 这些事件之间可以存在任意数量的任何事件。 您可以使用 `>=`, `>`, `<`, `<=` 运营商。
 
-**Examples**
+**例**
 
-Consider data in the `t` table:
+考虑在数据 `t` 表:
 
 ``` text
 ┌─time─┬─number─┐
@@ -125,7 +127,7 @@ Consider data in the `t` table:
 └──────┴────────┘
 ```
 
-Perform the query:
+执行查询:
 
 ``` sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2) FROM t
@@ -137,7 +139,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2) FROM t
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
-The function found the event chain where number 2 follows number 1. It skipped number 3 between them, because the number is not described as an event. If we want to take this number into account when searching for the event chain given in the example, we should make a condition for it.
+该函数找到了数字2跟随数字1的事件链。 它跳过了它们之间的数字3，因为该数字没有被描述为事件。 如果我们想在搜索示例中给出的事件链时考虑这个数字，我们应该为它创建一个条件。
 
 ``` sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM t
@@ -149,7 +151,7 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 3) FROM 
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-In this case, the function couldn’t find the event chain matching the pattern, because the event for number 3 occured between 1 and 2. If in the same case we checked the condition for number 4, the sequence would match the pattern.
+在这种情况下，函数找不到与模式匹配的事件链，因为数字3的事件发生在1和2之间。 如果在相同的情况下，我们检查了数字4的条件，则序列将与模式匹配。
 
 ``` sql
 SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM t
@@ -161,38 +163,38 @@ SELECT sequenceMatch('(?1)(?2)')(time, number = 1, number = 2, number = 4) FROM 
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
 -   [sequenceCount](#function-sequencecount)
 
 ## sequenceCount(pattern)(time, cond1, cond2, …) {#function-sequencecount}
 
-Counts the number of event chains that matched the pattern. The function searches event chains that don’t overlap. It starts to search for the next chain after the current chain is matched.
+计数与模式匹配的事件链的数量。 该函数搜索不重叠的事件链。 当前链匹配后，它开始搜索下一个链。
 
-!!! warning "Warning"
-    Events that occur at the same second may lay in the sequence in an undefined order affecting the result.
+!!! warning "警告"
+    在同一秒钟发生的事件可能以未定义的顺序排列在序列中，影响结果。
 
 ``` sql
 sequenceCount(pattern)(timestamp, cond1, cond2, ...)
 ```
 
-**Parameters**
+**参数**
 
--   `pattern` — Pattern string. See [Pattern syntax](#sequence-function-pattern-syntax).
+-   `pattern` — Pattern string. See [模式语法](#sequence-function-pattern-syntax).
 
--   `timestamp` — Column considered to contain time data. Typical data types are `Date` and `DateTime`. You can also use any of the supported [UInt](../../sql_reference/data_types/int_uint.md) data types.
+-   `timestamp` — Column considered to contain time data. Typical data types are `Date` 和 `DateTime`. 您还可以使用任何支持的 [UInt](../../sql_reference/data_types/int_uint.md) 数据类型。
 
--   `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. You can pass up to 32 condition arguments. The function takes only the events described in these conditions into account. If the sequence contains data that isn’t described in a condition, the function skips them.
+-   `cond1`, `cond2` — Conditions that describe the chain of events. Data type: `UInt8`. 最多可以传递32个条件参数。 该函数只考虑这些条件中描述的事件。 如果序列包含未在条件中描述的数据，则函数将跳过这些数据。
 
-**Returned values**
+**返回值**
 
--   Number of non-overlapping event chains that are matched.
+-   匹配的非重叠事件链数。
 
-Type: `UInt64`.
+类型: `UInt64`.
 
-**Example**
+**示例**
 
-Consider data in the `t` table:
+考虑在数据 `t` 表:
 
 ``` text
 ┌─time─┬─number─┐
@@ -205,7 +207,7 @@ Consider data in the `t` table:
 └──────┴────────┘
 ```
 
-Count how many times the number 2 occurs after the number 1 with any amount of other numbers between them:
+计算数字2在数字1之后出现的次数以及它们之间的任何其他数字:
 
 ``` sql
 SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
@@ -217,55 +219,55 @@ SELECT sequenceCount('(?1).*(?2)')(time, number = 1, number = 2) FROM t
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
 -   [sequenceMatch](#function-sequencematch)
 
 ## windowFunnel {#windowfunnel}
 
-Searches for event chains in a sliding time window and calculates the maximum number of events that occurred from the chain.
+搜索滑动时间窗中的事件链，并计算从链中发生的最大事件数。
 
-The function works according to the algorithm:
+该函数根据算法工作:
 
--   The function searches for data that triggers the first condition in the chain and sets the event counter to 1. This is the moment when the sliding window starts.
+-   该函数搜索触发链中的第一个条件并将事件计数器设置为1的数据。 这是滑动窗口启动的时刻。
 
--   If events from the chain occur sequentially within the window, the counter is incremented. If the sequence of events is disrupted, the counter isn’t incremented.
+-   如果来自链的事件在窗口内顺序发生，则计数器将递增。 如果事件序列中断，则计数器不会增加。
 
--   If the data has multiple event chains at varying points of completion, the function will only output the size of the longest chain.
+-   如果数据在不同的完成点具有多个事件链，则该函数将仅输出最长链的大小。
 
-**Syntax**
+**语法**
 
 ``` sql
 windowFunnel(window, [mode])(timestamp, cond1, cond2, ..., condN)
 ```
 
-**Parameters**
+**参数**
 
 -   `window` — Length of the sliding window in seconds.
--   `mode` - It is an optional argument.
-    -   `'strict'` - When the `'strict'` is set, the windowFunnel() applies conditions only for the unique values.
--   `timestamp` — Name of the column containing the timestamp. Data types supported: [Date](../../sql_reference/data_types/date.md), [DateTime](../../sql_reference/data_types/datetime.md#data_type-datetime) and other unsigned integer types (note that even though timestamp supports the `UInt64` type, it’s value can’t exceed the Int64 maximum, which is 2^63 - 1).
+-   `mode` -这是一个可选的参数。
+    -   `'strict'` -当 `'strict'` 设置时，windowFunnel()仅对唯一值应用条件。
+-   `timestamp` — Name of the column containing the timestamp. Data types supported: [日期](../../sql_reference/data_types/date.md), [日期时间](../../sql_reference/data_types/datetime.md#data_type-datetime) 和其他无符号整数类型（请注意，即使时间戳支持 `UInt64` 类型，它的值不能超过Int64最大值，即2^63-1）。
 -   `cond` — Conditions or data describing the chain of events. [UInt8](../../sql_reference/data_types/int_uint.md).
 
-**Returned value**
+**返回值**
 
-The maximum number of consecutive triggered conditions from the chain within the sliding time window.
-All the chains in the selection are analyzed.
+滑动时间窗口内连续触发条件链的最大数目。
+对选择中的所有链进行了分析。
 
-Type: `Integer`.
+类型: `Integer`.
 
-**Example**
+**示例**
 
-Determine if a set period of time is enough for the user to select a phone and purchase it twice in the online store.
+确定设定的时间段是否足以让用户选择手机并在在线商店中购买两次。
 
-Set the following chain of events:
+设置以下事件链:
 
-1.  The user logged in to their account on the store (`eventID = 1003`).
-2.  The user searches for a phone (`eventID = 1007, product = 'phone'`).
-3.  The user placed an order (`eventID = 1009`).
-4.  The user made the order again (`eventID = 1010`).
+1.  用户登录到其在应用商店中的帐户 (`eventID = 1003`).
+2.  用户搜索手机 (`eventID = 1007, product = 'phone'`).
+3.  用户下了订单 (`eventID = 1009`).
+4.  用户再次下订单 (`eventID = 1010`).
 
-Input table:
+输入表:
 
 ``` text
 ┌─event_date─┬─user_id─┬───────────timestamp─┬─eventID─┬─product─┐
@@ -282,9 +284,9 @@ Input table:
 └────────────┴─────────┴─────────────────────┴─────────┴─────────┘
 ```
 
-Find out how far the user `user_id` could get through the chain in a period in January-February of 2019.
+了解用户有多远 `user_id` 可以在2019的1-2月期间通过链条。
 
-Query:
+查询:
 
 ``` sql
 SELECT
@@ -303,7 +305,7 @@ GROUP BY level
 ORDER BY level ASC
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─level─┬─c─┐
@@ -311,35 +313,35 @@ Result:
 └───────┴───┘
 ```
 
-## retention {#retention}
+## 保留 {#retention}
 
-The function takes as arguments a set of conditions from 1 to 32 arguments of type `UInt8` that indicate whether a certain condition was met for the event.
-Any condition can be specified as an argument (as in [WHERE](../../sql_reference/statements/select.md#select-where)).
+该函数将一组条件作为参数，类型为1到32个参数 `UInt8` 表示事件是否满足特定条件。
+任何条件都可以指定为参数（如 [WHERE](../../sql_reference/statements/select.md#select-where)).
 
-The conditions, except the first, apply in pairs: the result of the second will be true if the first and second are true, of the third if the first and fird are true, etc.
+除了第一个以外，条件成对适用：如果第一个和第二个是真的，第二个结果将是真的，如果第一个和fird是真的，第三个结果将是真的，等等。
 
-**Syntax**
+**语法**
 
 ``` sql
 retention(cond1, cond2, ..., cond32);
 ```
 
-**Parameters**
+**参数**
 
--   `cond` — an expression that returns a `UInt8` result (1 or 0).
+-   `cond` — an expression that returns a `UInt8` 结果（1或0）。
 
-**Returned value**
+**返回值**
 
-The array of 1 or 0.
+数组为1或0。
 
 -   1 — condition was met for the event.
--   0 — condition wasn’t met for the event.
+-   0 — condition wasn't met for the event.
 
-Type: `UInt8`.
+类型: `UInt8`.
 
-**Example**
+**示例**
 
-Let’s consider an example of calculating the `retention` function to determine site traffic.
+让我们考虑计算的一个例子 `retention` 功能，以确定网站流量。
 
 **1.** Сreate a table to illustrate an example.
 
@@ -351,15 +353,15 @@ INSERT INTO retention_test SELECT '2020-01-02', number FROM numbers(10);
 INSERT INTO retention_test SELECT '2020-01-03', number FROM numbers(15);
 ```
 
-Input table:
+输入表:
 
-Query:
+查询:
 
 ``` sql
 SELECT * FROM retention_test
 ```
 
-Result:
+结果:
 
 ``` text
 ┌───────date─┬─uid─┐
@@ -400,9 +402,9 @@ Result:
 └────────────┴─────┘
 ```
 
-**2.** Group users by unique ID `uid` using the `retention` function.
+**2.** 按唯一ID对用户进行分组 `uid` 使用 `retention` 功能。
 
-Query:
+查询:
 
 ``` sql
 SELECT
@@ -414,7 +416,7 @@ GROUP BY uid
 ORDER BY uid ASC
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─uid─┬─r───────┐
@@ -436,9 +438,9 @@ Result:
 └─────┴─────────┘
 ```
 
-**3.** Calculate the total number of site visits per day.
+**3.** 计算每天的现场访问总数。
 
-Query:
+查询:
 
 ``` sql
 SELECT
@@ -456,7 +458,7 @@ FROM
 )
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─r1─┬─r2─┬─r3─┐
@@ -464,34 +466,34 @@ Result:
 └────┴────┴────┘
 ```
 
-Where:
+哪里:
 
--   `r1`- the number of unique visitors who visited the site during 2020-01-01 (the `cond1` condition).
--   `r2`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-02 (`cond1` and `cond2` conditions).
--   `r3`- the number of unique visitors who visited the site during a specific time period between 2020-01-01 and 2020-01-03 (`cond1` and `cond3` conditions).
+-   `r1`-2020-01-01期间访问该网站的独立访问者数量（ `cond1` 条件）。
+-   `r2`-在2020-01-01和2020-01-02之间的特定时间段内访问该网站的唯一访问者的数量 (`cond1` 和 `cond2` 条件）。
+-   `r3`-在2020-01-01和2020-01-03之间的特定时间段内访问该网站的唯一访问者的数量 (`cond1` 和 `cond3` 条件）。
 
 ## uniqUpTo(N)(x) {#uniquptonx}
 
 Calculates the number of different argument values ​​if it is less than or equal to N. If the number of different argument values is greater than N, it returns N + 1.
 
-Recommended for use with small Ns, up to 10. The maximum value of N is 100.
+建议使用小Ns，高达10。 N的最大值为100。
 
-For the state of an aggregate function, it uses the amount of memory equal to 1 + N \* the size of one value of bytes.
-For strings, it stores a non-cryptographic hash of 8 bytes. That is, the calculation is approximated for strings.
+对于聚合函数的状态，它使用的内存量等于1+N\*一个字节值的大小。
+对于字符串，它存储8个字节的非加密哈希。 也就是说，计算是近似的字符串。
 
-The function also works for several arguments.
+该函数也适用于多个参数。
 
-It works as fast as possible, except for cases when a large N value is used and the number of unique values is slightly less than N.
+它的工作速度尽可能快，除了使用较大的N值并且唯一值的数量略小于N的情况。
 
-Usage example:
+用法示例:
 
 ``` text
 Problem: Generate a report that shows only keywords that produced at least 5 unique users.
 Solution: Write in the GROUP BY query SearchPhrase HAVING uniqUpTo(4)(UserID) >= 5
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/agg_functions/parametric_functions/) <!--hide-->
 
-## sumMapFiltered(keys\_to\_keep)(keys, values) {#summapfilteredkeys-to-keepkeys-values}
+## sumMapFiltered(keys\_to\_keep)(键值) {#summapfilteredkeys-to-keepkeys-values}
 
-Same behavior as [sumMap](reference.md#agg_functions-summap) except that an array of keys is passed as a parameter. This can be especially useful when working with a high cardinality of keys.
+同样的行为 [sumMap](reference.md#agg_functions-summap) 除了一个键数组作为参数传递。 这在使用高基数密钥时尤其有用。

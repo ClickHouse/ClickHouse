@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # IP函数 {#iphan-shu}
 
 ## IPv4NumToString(num) {#ipv4numtostringnum}
@@ -37,7 +42,7 @@ LIMIT 10
     │ 83.149.48.xxx  │ 17406 │
     └────────────────┴───────┘
 
-由于使用’xxx’是不规范的，因此将来可能会更改。我们建议您不要依赖此格式。
+由于使用'xxx'是不规范的，因此将来可能会更改。我们建议您不要依赖此格式。
 
 ### IPv6NumToString(x) {#ipv6numtostringx}
 
@@ -117,7 +122,7 @@ SELECT IPv6NumToString(IPv4ToIPv6(IPv4StringToNum('192.168.0.1'))) AS addr
     │ ::ffff:192.168.0.1 │
     └────────────────────┘
 
-## cutIPv6(x, bitsToCutForIPv6, bitsToCutForIPv4) {#cutipv6x-bitstocutforipv6-bitstocutforipv4}
+## cutIPv6(x,bitsToCutForIPv6,bitsToCutForIPv4) {#cutipv6x-bitstocutforipv6-bitstocutforipv4}
 
 接受一个FixedString(16)类型的IPv6地址，返回一个String，这个String中包含了删除指定位之后的地址的文本格式。例如：
 
@@ -134,7 +139,7 @@ SELECT
     │ 2001:db8:ac10:fe01:feed:babe:cafe:0 │ ::ffff:192.168.0.0  │
     └─────────────────────────────────────┴─────────────────────┘
 
-## IPv4CIDRToRange(ipv4, cidr), {#ipv4cidrtorangeipv4-cidr}
+## ﾂ古ｶﾂ益ﾂ催ﾂ団ﾂ法ﾂ人), {#ipv4cidrtorangeipv4-cidr}
 
 接受一个IPv4地址以及一个UInt8类型的CIDR。返回包含子网最低范围以及最高范围的元组。
 
@@ -146,7 +151,7 @@ SELECT IPv4CIDRToRange(toIPv4('192.168.5.2'), 16)
     │ ('192.168.0.0','192.168.255.255')          │
     └────────────────────────────────────────────┘
 
-## IPv6CIDRToRange(ipv6, cidr), {#ipv6cidrtorangeipv6-cidr}
+## ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人), {#ipv6cidrtorangeipv6-cidr}
 
 接受一个IPv6地址以及一个UInt8类型的CIDR。返回包含子网最低范围以及最高范围的元组。
 
@@ -158,7 +163,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
     │ ('2001:db8::','2001:db8:ffff:ffff:ffff:ffff:ffff:ffff')                │
     └────────────────────────────────────────────────────────────────────────┘
 
-## toIPv4(string) {#toipv4string}
+## toIPv4(字符串) {#toipv4string}
 
 `IPv4StringToNum()`的别名，它采用字符串形式的IPv4地址并返回[IPv4](../../sql_reference/functions/ip_address_functions.md)类型的值，该二进制值等于`IPv4StringToNum()`返回的值。
 
@@ -186,7 +191,7 @@ SELECT
     │ ABE1822D                          │ ABE1822D                 │
     └───────────────────────────────────┴──────────────────────────┘
 
-## toIPv6(string) {#toipv6string}
+## toIPv6(字符串) {#toipv6string}
 
 `IPv6StringToNum()`的别名，它采用字符串形式的IPv6地址并返回[IPv6](../../sql_reference/functions/ip_address_functions.md)类型的值，该二进制值等于`IPv6StringToNum()`返回的值。
 

@@ -1,41 +1,43 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 36
-toc_title: Reference
+toc_title: "\u53C2\u8003\u8D44\u6599"
 ---
 
-# Function Reference {#function-reference}
+# 函数参考 {#function-reference}
 
-## count {#agg_function-count}
+## 计数 {#agg_function-count}
 
-Counts the number of rows or not-NULL values.
+计数行数或非空值。
 
-ClickHouse supports the following syntaxes for `count`:
-- `count(expr)` or `COUNT(DISTINCT expr)`.
-- `count()` or `COUNT(*)`. The `count()` syntax is ClickHouse-specific.
+ClickHouse支持以下语法 `count`:
+- `count(expr)` 或 `COUNT(DISTINCT expr)`.
+- `count()` 或 `COUNT(*)`. 该 `count()` 语法是ClickHouse特定的。
 
-**Parameters**
+**参数**
 
-The function can take:
+该功能可以采取:
 
--   Zero parameters.
--   One [expression](../syntax.md#syntax-expressions).
+-   零参数。
+-   一 [表达式](../syntax.md#syntax-expressions).
 
-**Returned value**
+**返回值**
 
--   If the function is called without parameters it counts the number of rows.
--   If the [expression](../syntax.md#syntax-expressions) is passed, then the function counts how many times this expression returned not null. If the expression returns a [Nullable](../../sql_reference/data_types/nullable.md)-type value, then the result of `count` stays not `Nullable`. The function returns 0 if the expression returned `NULL` for all the rows.
+-   如果没有参数调用函数，它会计算行数。
+-   如果 [表达式](../syntax.md#syntax-expressions) 被传递，则该函数计数此表达式返回的次数非null。 如果表达式返回 [可为空](../../sql_reference/data_types/nullable.md)-键入值，然后结果 `count` 保持不 `Nullable`. 如果返回表达式，则该函数返回0 `NULL` 对于所有的行。
 
-In both cases the type of the returned value is [UInt64](../../sql_reference/data_types/int_uint.md).
+在这两种情况下，返回值的类型为 [UInt64](../../sql_reference/data_types/int_uint.md).
 
-**Details**
+**详细信息**
 
-ClickHouse supports the `COUNT(DISTINCT ...)` syntax. The behavior of this construction depends on the [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) setting. It defines which of the [uniq\*](#agg_function-uniq) functions is used to perform the operation. The default is the [uniqExact](#agg_function-uniqexact) function.
+ClickHouse支持 `COUNT(DISTINCT ...)` 语法 这种结构的行为取决于 [count\_distinct\_implementation](../../operations/settings/settings.md#settings-count_distinct_implementation) 设置。 它定义了其中的 [uniq\*](#agg_function-uniq) 函数用于执行操作。 默认值为 [uniqExact](#agg_function-uniqexact) 功能。
 
-The `SELECT count() FROM table` query is not optimized, because the number of entries in the table is not stored separately. It chooses a small column from the table and counts the number of values in it.
+该 `SELECT count() FROM table` 查询未被优化，因为表中的条目数没有单独存储。 它从表中选择一个小列并计算其中的值数。
 
-**Examples**
+**例**
 
-Example 1:
+示例1:
 
 ``` sql
 SELECT count() FROM t
@@ -47,7 +49,7 @@ SELECT count() FROM t
 └─────────┘
 ```
 
-Example 2:
+示例2:
 
 ``` sql
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation'
@@ -69,33 +71,33 @@ SELECT count(DISTINCT num) FROM t
 └────────────────┘
 ```
 
-This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
+这个例子表明 `count(DISTINCT num)` 由执行 `uniqExact` 根据功能 `count_distinct_implementation` 设定值。
 
-## any(x) {#agg_function-any}
+## 任何(x) {#agg_function-any}
 
-Selects the first encountered value.
-The query can be executed in any order and even in a different order each time, so the result of this function is indeterminate.
-To get a determinate result, you can use the ‘min’ or ‘max’ function instead of ‘any’.
+选择第一个遇到的值。
+查询可以以任何顺序执行，甚至每次都以不同的顺序执行，因此此函数的结果是不确定的。
+要获得确定的结果，您可以使用 ‘min’ 或 ‘max’ 功能，而不是 ‘any’.
 
-In some cases, you can rely on the order of execution. This applies to cases when SELECT comes from a subquery that uses ORDER BY.
+在某些情况下，可以依靠执行的顺序。 这适用于SELECT来自使用ORDER BY的子查询的情况。
 
-When a `SELECT` query has the `GROUP BY` clause or at least one aggregate function, ClickHouse (in contrast to MySQL) requires that all expressions in the `SELECT`, `HAVING`, and `ORDER BY` clauses be calculated from keys or from aggregate functions. In other words, each column selected from the table must be used either in keys or inside aggregate functions. To get behavior like in MySQL, you can put the other columns in the `any` aggregate function.
+当一个 `SELECT` 查询具有 `GROUP BY` 子句或至少一个聚合函数，ClickHouse（相对于MySQL）要求在所有表达式 `SELECT`, `HAVING`，和 `ORDER BY` 子句可以从键或聚合函数计算。 换句话说，从表中选择的每个列必须在键或聚合函数内使用。 要获得像MySQL这样的行为，您可以将其他列放在 `any` 聚合函数。
 
 ## anyHeavy(x) {#anyheavyx}
 
-Selects a frequently occurring value using the [heavy hitters](http://www.cs.umd.edu/~samir/498/karp.pdf) algorithm. If there is a value that occurs more than in half the cases in each of the query’s execution threads, this value is returned. Normally, the result is nondeterministic.
+使用选择一个频繁出现的值 [重打者](http://www.cs.umd.edu/~samir/498/karp.pdf) 算法。 如果某个值在查询的每个执行线程中出现的情况超过一半，则返回此值。 通常情况下，结果是不确定的。
 
 ``` sql
 anyHeavy(column)
 ```
 
-**Arguments**
+**参数**
 
 -   `column` – The column name.
 
-**Example**
+**示例**
 
-Take the [OnTime](../../getting_started/example_datasets/ontime.md) data set and select any frequently occurring value in the `AirlineID` column.
+就拿 [时间](../../getting_started/example_datasets/ontime.md) 数据集，并选择在任何频繁出现的值 `AirlineID` 列。
 
 ``` sql
 SELECT anyHeavy(AirlineID) AS res
@@ -110,28 +112,28 @@ FROM ontime
 
 ## anyLast(x) {#anylastx}
 
-Selects the last value encountered.
-The result is just as indeterminate as for the `any` function.
+选择遇到的最后一个值。
+其结果是一样不确定的 `any` 功能。
 
-## groupBitAnd {#groupbitand}
+## 集团比特 {#groupbitand}
 
-Applies bitwise `AND` for series of numbers.
+按位应用 `AND` 对于一系列的数字。
 
 ``` sql
 groupBitAnd(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` – An expression that results in `UInt*` type.
+`expr` – An expression that results in `UInt*` 类型。
 
-**Return value**
+**返回值**
 
-Value of the `UInt*` type.
+的价值 `UInt*` 类型。
 
-**Example**
+**示例**
 
-Test data:
+测试数据:
 
 ``` text
 binary     decimal
@@ -141,15 +143,15 @@ binary     decimal
 01010101 = 85
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT groupBitAnd(num) FROM t
 ```
 
-Where `num` is the column with the test data.
+哪里 `num` 是包含测试数据的列。
 
-Result:
+结果:
 
 ``` text
 binary     decimal
@@ -158,23 +160,23 @@ binary     decimal
 
 ## groupBitOr {#groupbitor}
 
-Applies bitwise `OR` for series of numbers.
+按位应用 `OR` 对于一系列的数字。
 
 ``` sql
 groupBitOr(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` – An expression that results in `UInt*` type.
+`expr` – An expression that results in `UInt*` 类型。
 
-**Return value**
+**返回值**
 
-Value of the `UInt*` type.
+的价值 `UInt*` 类型。
 
-**Example**
+**示例**
 
-Test data:
+测试数据:
 
 ``` text
 binary     decimal
@@ -184,15 +186,15 @@ binary     decimal
 01010101 = 85
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT groupBitOr(num) FROM t
 ```
 
-Where `num` is the column with the test data.
+哪里 `num` 是包含测试数据的列。
 
-Result:
+结果:
 
 ``` text
 binary     decimal
@@ -201,23 +203,23 @@ binary     decimal
 
 ## groupBitXor {#groupbitxor}
 
-Applies bitwise `XOR` for series of numbers.
+按位应用 `XOR` 对于一系列的数字。
 
 ``` sql
 groupBitXor(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` – An expression that results in `UInt*` type.
+`expr` – An expression that results in `UInt*` 类型。
 
-**Return value**
+**返回值**
 
-Value of the `UInt*` type.
+的价值 `UInt*` 类型。
 
-**Example**
+**示例**
 
-Test data:
+测试数据:
 
 ``` text
 binary     decimal
@@ -227,15 +229,15 @@ binary     decimal
 01010101 = 85
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT groupBitXor(num) FROM t
 ```
 
-Where `num` is the column with the test data.
+哪里 `num` 是包含测试数据的列。
 
-Result:
+结果:
 
 ``` text
 binary     decimal
@@ -244,23 +246,23 @@ binary     decimal
 
 ## groupBitmap {#groupbitmap}
 
-Bitmap or Aggregate calculations from a unsigned integer column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../sql_reference/functions/bitmap_functions.md).
+从无符号整数列的位图或聚合计算，返回UInt64类型的基数，如果添加后缀状态，则返回 [位图对象](../../sql_reference/functions/bitmap_functions.md).
 
 ``` sql
 groupBitmap(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` – An expression that results in `UInt*` type.
+`expr` – An expression that results in `UInt*` 类型。
 
-**Return value**
+**返回值**
 
-Value of the `UInt64` type.
+的价值 `UInt64` 类型。
 
-**Example**
+**示例**
 
-Test data:
+测试数据:
 
 ``` text
 UserID
@@ -270,13 +272,13 @@ UserID
 3
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT groupBitmap(UserID) as num FROM t
 ```
 
-Result:
+结果:
 
 ``` text
 num
@@ -285,17 +287,17 @@ num
 
 ## min(x) {#agg_function-min}
 
-Calculates the minimum.
+计算最小值。
 
 ## max(x) {#agg_function-max}
 
-Calculates the maximum.
+计算最大值。
 
-## argMin(arg, val) {#agg-function-argmin}
+## argMin(arg,val) {#agg-function-argmin}
 
-Calculates the ‘arg’ value for a minimal ‘val’ value. If there are several different values of ‘arg’ for minimal values of ‘val’, the first of these values encountered is output.
+计算 ‘arg’ 最小值的值 ‘val’ 价值。 如果有几个不同的值 ‘arg’ 对于最小值 ‘val’，遇到的第一个值是输出。
 
-**Example:**
+**示例:**
 
 ``` text
 ┌─user─────┬─salary─┐
@@ -315,28 +317,28 @@ SELECT argMin(user, salary) FROM salary
 └──────────────────────┘
 ```
 
-## argMax(arg, val) {#agg-function-argmax}
+## argMax(arg,val) {#agg-function-argmax}
 
-Calculates the ‘arg’ value for a maximum ‘val’ value. If there are several different values of ‘arg’ for maximum values of ‘val’, the first of these values encountered is output.
+计算 ‘arg’ 最大值 ‘val’ 价值。 如果有几个不同的值 ‘arg’ 对于最大值 ‘val’，遇到的第一个值是输出。
 
 ## sum(x) {#agg_function-sum}
 
-Calculates the sum.
-Only works for numbers.
+计算总和。
+只适用于数字。
 
 ## sumWithOverflow(x) {#sumwithoverflowx}
 
-Computes the sum of the numbers, using the same data type for the result as for the input parameters. If the sum exceeds the maximum value for this data type, the function returns an error.
+使用与输入参数相同的数据类型计算数字的总和。 如果总和超过此数据类型的最大值，则函数返回错误。
 
-Only works for numbers.
+只适用于数字。
 
-## sumMap(key, value) {#agg_functions-summap}
+## sumMap(key,value) {#agg_functions-summap}
 
-Totals the ‘value’ array according to the keys specified in the ‘key’ array.
-The number of elements in ‘key’ and ‘value’ must be the same for each row that is totaled.
+总计 ‘value’ 数组根据在指定的键 ‘key’ 阵列。
+元素的数量 ‘key’ 和 ‘value’ 总计的每一行必须相同。
 Returns a tuple of two arrays: keys in sorted order, and values ​​summed for the corresponding keys.
 
-Example:
+示例:
 
 ``` sql
 CREATE TABLE sum_map(
@@ -368,21 +370,21 @@ GROUP BY timeslot
 
 ## skewPop {#skewpop}
 
-Computes the [skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
+计算 [歪斜](https://en.wikipedia.org/wiki/Skewness) 的序列。
 
 ``` sql
 skewPop(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+`expr` — [表达式](../syntax.md#syntax-expressions) 返回一个数字。
 
-**Returned value**
+**返回值**
 
 The skewness of the given distribution. Type — [Float64](../../sql_reference/data_types/float.md)
 
-**Example**
+**示例**
 
 ``` sql
 SELECT skewPop(value) FROM series_with_value_column
@@ -390,23 +392,23 @@ SELECT skewPop(value) FROM series_with_value_column
 
 ## skewSamp {#skewsamp}
 
-Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
+计算 [样品偏度](https://en.wikipedia.org/wiki/Skewness) 的序列。
 
-It represents an unbiased estimate of the skewness of a random variable if passed values form its sample.
+它表示随机变量的偏度的无偏估计，如果传递的值形成其样本。
 
 ``` sql
 skewSamp(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+`expr` — [表达式](../syntax.md#syntax-expressions) 返回一个数字。
 
-**Returned value**
+**返回值**
 
-The skewness of the given distribution. Type — [Float64](../../sql_reference/data_types/float.md). If `n <= 1` (`n` is the size of the sample), then the function returns `nan`.
+The skewness of the given distribution. Type — [Float64](../../sql_reference/data_types/float.md). 如果 `n <= 1` (`n` 是样本的大小），则该函数返回 `nan`.
 
-**Example**
+**示例**
 
 ``` sql
 SELECT skewSamp(value) FROM series_with_value_column
@@ -414,21 +416,21 @@ SELECT skewSamp(value) FROM series_with_value_column
 
 ## kurtPop {#kurtpop}
 
-Computes the [kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
+计算 [峰度](https://en.wikipedia.org/wiki/Kurtosis) 的序列。
 
 ``` sql
 kurtPop(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+`expr` — [表达式](../syntax.md#syntax-expressions) 返回一个数字。
 
-**Returned value**
+**返回值**
 
 The kurtosis of the given distribution. Type — [Float64](../../sql_reference/data_types/float.md)
 
-**Example**
+**示例**
 
 ``` sql
 SELECT kurtPop(value) FROM series_with_value_column
@@ -436,42 +438,42 @@ SELECT kurtPop(value) FROM series_with_value_column
 
 ## kurtSamp {#kurtsamp}
 
-Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
+计算 [峰度样本](https://en.wikipedia.org/wiki/Kurtosis) 的序列。
 
-It represents an unbiased estimate of the kurtosis of a random variable if passed values form its sample.
+它表示随机变量峰度的无偏估计，如果传递的值形成其样本。
 
 ``` sql
 kurtSamp(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` — [Expression](../syntax.md#syntax-expressions) returning a number.
+`expr` — [表达式](../syntax.md#syntax-expressions) 返回一个数字。
 
-**Returned value**
+**返回值**
 
-The kurtosis of the given distribution. Type — [Float64](../../sql_reference/data_types/float.md). If `n <= 1` (`n` is a size of the sample), then the function returns `nan`.
+The kurtosis of the given distribution. Type — [Float64](../../sql_reference/data_types/float.md). 如果 `n <= 1` (`n` 是样本的大小），则该函数返回 `nan`.
 
-**Example**
+**示例**
 
 ``` sql
 SELECT kurtSamp(value) FROM series_with_value_column
 ```
 
-## timeSeriesGroupSum(uid, timestamp, value) {#agg-function-timeseriesgroupsum}
+## timeSeriesGroupSum(uid,timestamp,value) {#agg-function-timeseriesgroupsum}
 
-`timeSeriesGroupSum` can aggregate different time series that sample timestamp not alignment.
-It will use linear interpolation between two sample timestamp and then sum time-series together.
+`timeSeriesGroupSum` 可以聚合不同的时间序列，即采样时间戳不对齐。
+它将在两个采样时间戳之间使用线性插值，然后将时间序列和在一起。
 
--   `uid` is the time series unique id, `UInt64`.
--   `timestamp` is Int64 type in order to support millisecond or microsecond.
--   `value` is the metric.
+-   `uid` 是时间序列唯一id, `UInt64`.
+-   `timestamp` 是Int64型，以支持毫秒或微秒。
+-   `value` 是指标。
 
-The function returns array of tuples with `(timestamp, aggregated_value)` pairs.
+函数返回元组数组 `(timestamp, aggregated_value)` 对。
 
-Before using this function make sure `timestamp` is in ascending order.
+在使用此功能之前，请确保 `timestamp` 按升序排列
 
-Example:
+示例:
 
 ``` text
 ┌─uid─┬─timestamp─┬─value─┐
@@ -504,18 +506,18 @@ FROM (
 );
 ```
 
-And the result will be:
+其结果将是:
 
 ``` text
 [(2,0.2),(3,0.9),(7,2.1),(8,2.4),(12,3.6),(17,5.1),(18,5.4),(24,7.2),(25,2.5)]
 ```
 
-## timeSeriesGroupRateSum(uid, ts, val) {#agg-function-timeseriesgroupratesum}
+## timeSeriesGroupRateSum(uid,ts,val) {#agg-function-timeseriesgroupratesum}
 
-Similarly timeSeriesGroupRateSum, timeSeriesGroupRateSum will Calculate the rate of time-series and then sum rates together.
-Also, timestamp should be in ascend order before use this function.
+同样，timeSeriesGroupRateSum，timeSeriesGroupRateSum将计算时间序列的速率，然后将速率总和在一起。
+此外，使用此函数之前，时间戳应该是上升顺序。
 
-Use this function, the result above case will be:
+使用此函数，上述情况下的结果将是:
 
 ``` text
 [(2,0),(3,0.1),(7,0.3),(8,0.3),(12,0.3),(17,0.3),(18,0.3),(24,0.3),(25,0.1)]
@@ -523,84 +525,82 @@ Use this function, the result above case will be:
 
 ## avg(x) {#agg_function-avg}
 
-Calculates the average.
-Only works for numbers.
-The result is always Float64.
+计算平均值。
+只适用于数字。
+结果总是Float64。
 
+## 平均加权 {#avgweighted}
 
-## avgWeighted {#avgweighted}
+计算 [加权算术平均值](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
 
-Calculates the [weighted arithmetic mean](https://en.wikipedia.org/wiki/Weighted_arithmetic_mean).
+**语法**
 
-**Syntax** 
-
-```sql
+``` sql
 avgWeighted(x, weight)
 ```
 
-**Parameters** 
+**参数**
 
-- `x` — Values. [Integer](../data_types/int_uint.md) or [floating-point](../data_types/float.md).
-- `weight` — Weights of the values. [Integer](../data_types/int_uint.md) or [floating-point](../data_types/float.md).
+-   `x` — Values. [整数](../data_types/int_uint.md) 或 [浮点](../data_types/float.md).
+-   `weight` — Weights of the values. [整数](../data_types/int_uint.md) 或 [浮点](../data_types/float.md).
 
-Type of `x` and `weight` must be the same.
+类型 `x` 和 `weight` 一定是一样的
 
-**Returned value**
+**返回值**
 
-- Weighted mean.
-- `NaN`. If all the weights are equal to 0.
+-   加权平均值。
+-   `NaN`. 如果所有的权重都等于0。
 
-Type: [Float64](../data_types/float.md).
+类型: [Float64](../data_types/float.md).
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ``` sql
 SELECT avgWeighted(x, w)
 FROM values('x Int8, w Int8', (4, 1), (1, 0), (10, 2))
 ```
 
-Result:
+结果:
 
-```text
+``` text
 ┌─avgWeighted(x, weight)─┐
 │                      8 │
 └────────────────────────┘
 ```
 
-
 ## uniq {#agg_function-uniq}
 
-Calculates the approximate number of different values of the argument.
+计算参数的不同值的近似数量。
 
 ``` sql
 uniq(x[, ...])
 ```
 
-**Parameters**
+**参数**
 
-The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
+该函数采用可变数量的参数。 参数可以是 `Tuple`, `Array`, `Date`, `DateTime`, `String`，或数字类型。
 
-**Returned value**
+**返回值**
 
--   A [UInt64](../../sql_reference/data_types/int_uint.md)-type number.
+-   A [UInt64](../../sql_reference/data_types/int_uint.md)-键入号码。
 
-**Implementation details**
+**实施细节**
 
-Function:
+功能:
 
--   Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+-   计算聚合中所有参数的哈希值，然后在计算中使用它。
 
--   Uses an adaptive sampling algorithm. For the calculation state, the function uses a sample of element hash values up to 65536.
+-   使用自适应采样算法。 对于计算状态，该函数使用最多65536个元素哈希值的样本。
 
         This algorithm is very accurate and very efficient on the CPU. When the query contains several of these functions, using `uniq` is almost as fast as using other aggregate functions.
 
--   Provides the result deterministically (it doesn’t depend on the query processing order).
+-   确定性地提供结果（它不依赖于查询处理顺序）。
 
-We recommend using this function in almost all scenarios.
+我们建议在几乎所有情况下使用此功能。
 
-**See Also**
+**另请参阅**
 
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqCombined64](#agg_function-uniqcombined64)
@@ -609,46 +609,46 @@ We recommend using this function in almost all scenarios.
 
 ## uniqCombined {#agg_function-uniqcombined}
 
-Calculates the approximate number of different argument values.
+计算不同参数值的近似数量。
 
 ``` sql
 uniqCombined(HLL_precision)(x[, ...])
 ```
 
-The `uniqCombined` function is a good choice for calculating the number of different values.
+该 `uniqCombined` 函数是计算不同数值数量的不错选择。
 
-**Parameters**
+**参数**
 
-The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
+该函数采用可变数量的参数。 参数可以是 `Tuple`, `Array`, `Date`, `DateTime`, `String`，或数字类型。
 
-`HLL_precision` is the base-2 logarithm of the number of cells in [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). Optional, you can use the function as `uniqCombined(x[, ...])`. The default value for `HLL_precision` is 17, which is effectively 96 KiB of space (2^17 cells, 6 bits each).
+`HLL_precision` 是以2为底的单元格数的对数 [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog). 可选，您可以将该函数用作 `uniqCombined(x[, ...])`. 默认值 `HLL_precision` 是17，这是有效的96KiB的空间（2^17个单元，每个6比特）。
 
-**Returned value**
+**返回值**
 
--   A number [UInt64](../../sql_reference/data_types/int_uint.md)-type number.
+-   一个数字 [UInt64](../../sql_reference/data_types/int_uint.md)-键入号码。
 
-**Implementation details**
+**实施细节**
 
-Function:
+功能:
 
--   Calculates a hash (64-bit hash for `String` and 32-bit otherwise) for all parameters in the aggregate, then uses it in calculations.
+-   计算散列（64位散列 `String` 否则32位）对于聚合中的所有参数，然后在计算中使用它。
 
--   Uses a combination of three algorithms: array, hash table, and HyperLogLog with an error correction table.
+-   使用三种算法的组合：数组、哈希表和HyperLogLog与error错表。
 
         For a small number of distinct elements, an array is used. When the set size is larger, a hash table is used. For a larger number of elements, HyperLogLog is used, which will occupy a fixed amount of memory.
 
--   Provides the result deterministically (it doesn’t depend on the query processing order).
+-   确定性地提供结果（它不依赖于查询处理顺序）。
 
-!!! note "Note"
-    Since it uses 32-bit hash for non-`String` type, the result will have very high error for cardinalities significantly larger than `UINT_MAX` (error will raise quickly after a few tens of billions of distinct values), hence in this case you should use [uniqCombined64](#agg_function-uniqcombined64)
+!!! note "注"
+    因为它使用32位散列非-`String` 类型，结果将有非常高的误差基数显着大于 `UINT_MAX` （错误将在几百亿不同值之后迅速提高），因此在这种情况下，您应该使用 [uniqCombined64](#agg_function-uniqcombined64)
 
-Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
+相比于 [uniq](#agg_function-uniq) 功能，该 `uniqCombined`:
 
--   Consumes several times less memory.
--   Calculates with several times higher accuracy.
--   Usually has slightly lower performance. In some scenarios, `uniqCombined` can perform better than `uniq`, for example, with distributed queries that transmit a large number of aggregation states over the network.
+-   消耗少几倍的内存。
+-   计算精度高出几倍。
+-   通常具有略低的性能。 在某些情况下, `uniqCombined` 可以表现得比 `uniq`，例如，使用通过网络传输大量聚合状态的分布式查询。
 
-**See Also**
+**另请参阅**
 
 -   [uniq](#agg_function-uniq)
 -   [uniqCombined64](#agg_function-uniqcombined64)
@@ -657,39 +657,39 @@ Compared to the [uniq](#agg_function-uniq) function, the `uniqCombined`:
 
 ## uniqCombined64 {#agg_function-uniqcombined64}
 
-Same as [uniqCombined](#agg_function-uniqcombined), but uses 64-bit hash for all data types.
+和 [uniqCombined](#agg_function-uniqcombined)，但对所有数据类型使用64位哈希。
 
 ## uniqHLL12 {#agg_function-uniqhll12}
 
-Calculates the approximate number of different argument values, using the [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) algorithm.
+计算不同参数值的近似数量，使用 [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) 算法。
 
 ``` sql
 uniqHLL12(x[, ...])
 ```
 
-**Parameters**
+**参数**
 
-The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
+该函数采用可变数量的参数。 参数可以是 `Tuple`, `Array`, `Date`, `DateTime`, `String`，或数字类型。
 
-**Returned value**
+**返回值**
 
--   A [UInt64](../../sql_reference/data_types/int_uint.md)-type number.
+-   A [UInt64](../../sql_reference/data_types/int_uint.md)-键入号码。
 
-**Implementation details**
+**实施细节**
 
-Function:
+功能:
 
--   Calculates a hash for all parameters in the aggregate, then uses it in calculations.
+-   计算聚合中所有参数的哈希值，然后在计算中使用它。
 
--   Uses the HyperLogLog algorithm to approximate the number of different argument values.
+-   使用HyperLogLog算法来近似不同参数值的数量。
 
         212 5-bit cells are used. The size of the state is slightly more than 2.5 KB. The result is not very accurate (up to ~10% error) for small data sets (<10K elements). However, the result is fairly accurate for high-cardinality data sets (10K-100M), with a maximum error of ~1.6%. Starting from 100M, the estimation error increases, and the function will return very inaccurate results for data sets with extremely high cardinality (1B+ elements).
 
--   Provides the determinate result (it doesn’t depend on the query processing order).
+-   提供确定结果（它不依赖于查询处理顺序）。
 
-We don’t recommend using this function. In most cases, use the [uniq](#agg_function-uniq) or [uniqCombined](#agg_function-uniqcombined) function.
+我们不建议使用此功能。 在大多数情况下，使用 [uniq](#agg_function-uniq) 或 [uniqCombined](#agg_function-uniqcombined) 功能。
 
-**See Also**
+**另请参阅**
 
 -   [uniq](#agg_function-uniq)
 -   [uniqCombined](#agg_function-uniqcombined)
@@ -697,73 +697,73 @@ We don’t recommend using this function. In most cases, use the [uniq](#agg_fun
 
 ## uniqExact {#agg_function-uniqexact}
 
-Calculates the exact number of different argument values.
+计算不同参数值的准确数目。
 
 ``` sql
 uniqExact(x[, ...])
 ```
 
-Use the `uniqExact` function if you absolutely need an exact result. Otherwise use the [uniq](#agg_function-uniq) function.
+使用 `uniqExact` 功能，如果你绝对需要一个确切的结果。 否则使用 [uniq](#agg_function-uniq) 功能。
 
-The `uniqExact` function uses more memory than `uniq`, because the size of the state has unbounded growth as the number of different values increases.
+该 `uniqExact` 功能使用更多的内存比 `uniq`，因为状态的大小随着不同值的数量的增加而无界增长。
 
-**Parameters**
+**参数**
 
-The function takes a variable number of parameters. Parameters can be `Tuple`, `Array`, `Date`, `DateTime`, `String`, or numeric types.
+该函数采用可变数量的参数。 参数可以是 `Tuple`, `Array`, `Date`, `DateTime`, `String`，或数字类型。
 
-**See Also**
+**另请参阅**
 
 -   [uniq](#agg_function-uniq)
 -   [uniqCombined](#agg_function-uniqcombined)
 -   [uniqHLL12](#agg_function-uniqhll12)
 
-## groupArray(x), groupArray(max\_size)(x) {#agg_function-grouparray}
+## 群交(x),群交(max\_size)(x) {#agg_function-grouparray}
 
-Creates an array of argument values.
-Values can be added to the array in any (indeterminate) order.
+创建参数值的数组。
+值可以按任何（不确定）顺序添加到数组中。
 
-The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements.
-For example, `groupArray (1) (x)` is equivalent to `[any (x)]`.
+第二个版本（与 `max_size` 参数）将结果数组的大小限制为 `max_size` 元素。
+例如, `groupArray (1) (x)` 相当于 `[any (x)]`.
 
-In some cases, you can still rely on the order of execution. This applies to cases when `SELECT` comes from a subquery that uses `ORDER BY`.
+在某些情况下，您仍然可以依靠执行的顺序。 这适用于以下情况 `SELECT` 来自使用 `ORDER BY`.
 
-## groupArrayInsertAt(value, position) {#grouparrayinsertatvalue-position}
+## groupArrayInsertAt(值，位置) {#grouparrayinsertatvalue-position}
 
-Inserts a value into the array in the specified position.
+将值插入到数组中的指定位置中。
 
-!!! note "Note"
-    This function uses zero-based positions, contrary to the conventional one-based positions for SQL arrays.
+!!! note "注"
+    此函数使用从零开始的位置，与传统SQL数组的从一开始的位置相反。
 
 Accepts the value and position as input. If several values ​​are inserted into the same position, any of them might end up in the resulting array (the first one will be used in the case of single-threaded execution). If no value is inserted into a position, the position is assigned the default value.
 
-Optional parameters:
+可选参数:
 
--   The default value for substituting in empty positions.
--   The length of the resulting array. This allows you to receive arrays of the same size for all the aggregate keys. When using this parameter, the default value must be specified.
+-   在空位置替换的默认值。
+-   生成数组的长度。 这允许您接收所有聚合键的相同大小的数组。 使用此参数时，必须指定默认值。
 
 ## groupArrayMovingSum {#agg_function-grouparraymovingsum}
 
-Calculates the moving sum of input values.
+计算输入值的移动和。
 
 ``` sql
 groupArrayMovingSum(numbers_for_summing)
 groupArrayMovingSum(window_size)(numbers_for_summing)
 ```
 
-The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
+该函数可以将窗口大小作为参数。 如果未指定，则该函数的窗口大小等于列中的行数。
 
-**Parameters**
+**参数**
 
--   `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
+-   `numbers_for_summing` — [表达式](../syntax.md#syntax-expressions) 生成数值数据类型值。
 -   `window_size` — Size of the calculation window.
 
-**Returned values**
+**返回值**
 
--   Array of the same size and type as the input data.
+-   与输入数据大小和类型相同的数组。
 
-**Example**
+**示例**
 
-The sample table:
+样品表:
 
 ``` sql
 CREATE TABLE t
@@ -784,7 +784,7 @@ ENGINE = TinyLog
 └─────┴───────┴──────┘
 ```
 
-The queries:
+查询:
 
 ``` sql
 SELECT
@@ -816,29 +816,29 @@ FROM t
 
 ## groupArrayMovingAvg {#agg_function-grouparraymovingavg}
 
-Calculates the moving average of input values.
+计算输入值的移动平均值。
 
 ``` sql
 groupArrayMovingAvg(numbers_for_summing)
 groupArrayMovingAvg(window_size)(numbers_for_summing)
 ```
 
-The function can take the window size as a parameter. If left unspecified, the function takes the window size equal to the number of rows in the column.
+该函数可以将窗口大小作为参数。 如果未指定，则该函数的窗口大小等于列中的行数。
 
-**Parameters**
+**参数**
 
--   `numbers_for_summing` — [Expression](../syntax.md#syntax-expressions) resulting in a numeric data type value.
+-   `numbers_for_summing` — [表达式](../syntax.md#syntax-expressions) 生成数值数据类型值。
 -   `window_size` — Size of the calculation window.
 
-**Returned values**
+**返回值**
 
--   Array of the same size and type as the input data.
+-   与输入数据大小和类型相同的数组。
 
-The function uses [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). It truncates the decimal places insignificant for the resulting data type.
+该函数使用 [四舍五入到零](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero). 它截断结果数据类型的小数位数。
 
-**Example**
+**示例**
 
-The sample table `b`:
+样品表 `b`:
 
 ``` sql
 CREATE TABLE t
@@ -859,7 +859,7 @@ ENGINE = TinyLog
 └─────┴───────┴──────┘
 ```
 
-The queries:
+查询:
 
 ``` sql
 SELECT
@@ -889,47 +889,47 @@ FROM t
 └───────────┴──────────────────────────────────┴───────────────────────┘
 ```
 
-## groupUniqArray(x), groupUniqArray(max\_size)(x) {#groupuniqarrayx-groupuniqarraymax-sizex}
+## 禄,赂麓ta脌麓,):脡,,拢脢,group媒group)galaxy s8碌胫脢)禄煤)酶脱脩) {#groupuniqarrayx-groupuniqarraymax-sizex}
 
-Creates an array from different argument values. Memory consumption is the same as for the `uniqExact` function.
+从不同的参数值创建一个数组。 内存消耗是一样的 `uniqExact` 功能。
 
-The second version (with the `max_size` parameter) limits the size of the resulting array to `max_size` elements.
-For example, `groupUniqArray(1)(x)` is equivalent to `[any(x)]`.
+第二个版本（与 `max_size` 参数）将结果数组的大小限制为 `max_size` 元素。
+例如, `groupUniqArray(1)(x)` 相当于 `[any(x)]`.
 
-## quantile {#quantile}
+## 分位数 {#quantile}
 
-Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+计算近似值 [分位数](https://en.wikipedia.org/wiki/Quantile) 的数字数据序列。
 
-This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and a random number generator for sampling. The result is non-deterministic. To get an exact quantile, use the [quantileExact](#quantileexact) function.
+此功能适用 [油藏采样](https://en.wikipedia.org/wiki/Reservoir_sampling) 随着储存器大小高达8192和随机数发生器进行采样。 结果是非确定性的。 要获得精确的分位数，请使用 [quantileExact](#quantileexact) 功能。
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
-**Syntax**
+**语法**
 
 ``` sql
 quantile(level)(expr)
 ```
 
-Alias: `median`.
+别名: `median`.
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
--   `expr` — Expression over the column values resulting in numeric [data types](../../sql_reference/data_types/index.md#data_types), [Date](../../sql_reference/data_types/date.md) or [DateTime](../../sql_reference/data_types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql_reference/data_types/index.md#data_types), [日期](../../sql_reference/data_types/date.md) 或 [日期时间](../../sql_reference/data_types/datetime.md).
 
-**Returned value**
+**返回值**
 
--   Approximate quantile of the specified level.
+-   指定电平的近似分位数。
 
-Type:
+类型:
 
--   [Float64](../../sql_reference/data_types/float.md) for numeric data type input.
--   [Date](../../sql_reference/data_types/date.md) if input values have the `Date` type.
--   [DateTime](../../sql_reference/data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../sql_reference/data_types/float.md) 对于数字数据类型输入。
+-   [日期](../../sql_reference/data_types/date.md) 如果输入值具有 `Date` 类型。
+-   [日期时间](../../sql_reference/data_types/datetime.md) 如果输入值具有 `DateTime` 类型。
 
-**Example**
+**示例**
 
-Input table:
+输入表:
 
 ``` text
 ┌─val─┐
@@ -940,13 +940,13 @@ Input table:
 └─────┘
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT quantile(val) FROM t
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantile(val)─┐
@@ -954,46 +954,46 @@ Result:
 └───────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [median](#median)
--   [quantiles](#quantiles)
+-   [中位数](#median)
+-   [分位数](#quantiles)
 
-## quantileDeterministic {#quantiledeterministic}
+## 量化确定 {#quantiledeterministic}
 
-Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+计算近似值 [分位数](https://en.wikipedia.org/wiki/Quantile) 的数字数据序列。
 
-This function applies [reservoir sampling](https://en.wikipedia.org/wiki/Reservoir_sampling) with a reservoir size up to 8192 and deterministic algorithm of sampling. The result is deterministic. To get an exact quantile, use the [quantileExact](#quantileexact) function.
+此功能适用 [油藏采样](https://en.wikipedia.org/wiki/Reservoir_sampling) 与储层大小高达8192和采样的确定性算法。 结果是确定性的。 要获得精确的分位数，请使用 [quantileExact](#quantileexact) 功能。
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
-**Syntax**
+**语法**
 
 ``` sql
 quantileDeterministic(level)(expr, determinator)
 ```
 
-Alias: `medianDeterministic`.
+别名: `medianDeterministic`.
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
--   `expr` — Expression over the column values resulting in numeric [data types](../../sql_reference/data_types/index.md#data_types), [Date](../../sql_reference/data_types/date.md) or [DateTime](../../sql_reference/data_types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql_reference/data_types/index.md#data_types), [日期](../../sql_reference/data_types/date.md) 或 [日期时间](../../sql_reference/data_types/datetime.md).
 -   `determinator` — Number whose hash is used instead of a random number generator in the reservoir sampling algorithm to make the result of sampling deterministic. As a determinator you can use any deterministic positive number, for example, a user id or an event id. If the same determinator value occures too often, the function works incorrectly.
 
-**Returned value**
+**返回值**
 
--   Approximate quantile of the specified level.
+-   指定电平的近似分位数。
 
-Type:
+类型:
 
--   [Float64](../../sql_reference/data_types/float.md) for numeric data type input.
--   [Date](../../sql_reference/data_types/date.md) if input values have the `Date` type.
--   [DateTime](../../sql_reference/data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../sql_reference/data_types/float.md) 对于数字数据类型输入。
+-   [日期](../../sql_reference/data_types/date.md) 如果输入值具有 `Date` 类型。
+-   [日期时间](../../sql_reference/data_types/datetime.md) 如果输入值具有 `DateTime` 类型。
 
-**Example**
+**示例**
 
-Input table:
+输入表:
 
 ``` text
 ┌─val─┐
@@ -1004,13 +1004,13 @@ Input table:
 └─────┘
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT quantileDeterministic(val, 1) FROM t
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantileDeterministic(val, 1)─┐
@@ -1018,51 +1018,51 @@ Result:
 └───────────────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [median](#median)
--   [quantiles](#quantiles)
+-   [中位数](#median)
+-   [分位数](#quantiles)
 
 ## quantileExact {#quantileexact}
 
-Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+正是计算 [分位数](https://en.wikipedia.org/wiki/Quantile) 的数字数据序列。
 
-To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` memory, where `n` is a number of values that were passed. However, for a small number of values, the function is very effective.
+To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Therefore, the function consumes `O(n)` 内存，其中 `n` 是传递的多个值。 然而，对于少量的值，该函数是非常有效的。
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
-**Syntax**
+**语法**
 
 ``` sql
 quantileExact(level)(expr)
 ```
 
-Alias: `medianExact`.
+别名: `medianExact`.
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
--   `expr` — Expression over the column values resulting in numeric [data types](../../sql_reference/data_types/index.md#data_types), [Date](../../sql_reference/data_types/date.md) or [DateTime](../../sql_reference/data_types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql_reference/data_types/index.md#data_types), [日期](../../sql_reference/data_types/date.md) 或 [日期时间](../../sql_reference/data_types/datetime.md).
 
-**Returned value**
+**返回值**
 
--   Quantile of the specified level.
+-   指定电平的分位数。
 
-Type:
+类型:
 
--   [Float64](../../sql_reference/data_types/float.md) for numeric data type input.
--   [Date](../../sql_reference/data_types/date.md) if input values have the `Date` type.
--   [DateTime](../../sql_reference/data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../sql_reference/data_types/float.md) 对于数字数据类型输入。
+-   [日期](../../sql_reference/data_types/date.md) 如果输入值具有 `Date` 类型。
+-   [日期时间](../../sql_reference/data_types/datetime.md) 如果输入值具有 `DateTime` 类型。
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ``` sql
 SELECT quantileExact(number) FROM numbers(10)
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantileExact(number)─┐
@@ -1070,46 +1070,46 @@ Result:
 └───────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [median](#median)
--   [quantiles](#quantiles)
+-   [中位数](#median)
+-   [分位数](#quantiles)
 
-## quantileExactWeighted {#quantileexactweighted}
+## 分位数加权 {#quantileexactweighted}
 
-Exactly computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence, taking into account the weight of each element.
+正是计算 [分位数](https://en.wikipedia.org/wiki/Quantile) 数值数据序列，考虑到每个元素的权重。
 
-To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Each value is counted with its weight, as if it is present `weight` times. A hash table is used in the algorithm. Because of this, if the passed values ​​are frequently repeated, the function consumes less RAM than [quantileExact](#quantileexact). You can use this function instead of `quantileExact` and specify the weight 1.
+To get exact value, all the passed values ​​are combined into an array, which is then partially sorted. Each value is counted with its weight, as if it is present `weight` times. A hash table is used in the algorithm. Because of this, if the passed values ​​are frequently repeated, the function consumes less RAM than [quantileExact](#quantileexact). 您可以使用此功能，而不是 `quantileExact` 并指定重量1。
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
-**Syntax**
+**语法**
 
 ``` sql
 quantileExactWeighted(level)(expr, weight)
 ```
 
-Alias: `medianExactWeighted`.
+别名: `medianExactWeighted`.
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
--   `expr` — Expression over the column values resulting in numeric [data types](../../sql_reference/data_types/index.md#data_types), [Date](../../sql_reference/data_types/date.md) or [DateTime](../../sql_reference/data_types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql_reference/data_types/index.md#data_types), [日期](../../sql_reference/data_types/date.md) 或 [日期时间](../../sql_reference/data_types/datetime.md).
 -   `weight` — Column with weights of sequence members. Weight is a number of value occurrences.
 
-**Returned value**
+**返回值**
 
--   Quantile of the specified level.
+-   指定电平的分位数。
 
-Type:
+类型:
 
--   [Float64](../../sql_reference/data_types/float.md) for numeric data type input.
--   [Date](../../sql_reference/data_types/date.md) if input values have the `Date` type.
--   [DateTime](../../sql_reference/data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../sql_reference/data_types/float.md) 对于数字数据类型输入。
+-   [日期](../../sql_reference/data_types/date.md) 如果输入值具有 `Date` 类型。
+-   [日期时间](../../sql_reference/data_types/datetime.md) 如果输入值具有 `DateTime` 类型。
 
-**Example**
+**示例**
 
-Input table:
+输入表:
 
 ``` text
 ┌─n─┬─val─┐
@@ -1120,13 +1120,13 @@ Input table:
 └───┴─────┘
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT quantileExactWeighted(n, val) FROM t
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantileExactWeighted(n, val)─┐
@@ -1134,60 +1134,60 @@ Result:
 └───────────────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [median](#median)
--   [quantiles](#quantiles)
+-   [中位数](#median)
+-   [分位数](#quantiles)
 
-## quantileTiming {#quantiletiming}
+## 分位定时 {#quantiletiming}
 
-With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence.
+随着确定的精度计算 [分位数](https://en.wikipedia.org/wiki/Quantile) 的数字数据序列。
 
-The result is deterministic (it doesn’t depend on the query processing order). The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
+结果是确定性的（它不依赖于查询处理顺序）。 该函数针对描述加载网页时间或后端响应时间等分布的序列进行了优化。
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
-**Syntax**
+**语法**
 
 ``` sql
 quantileTiming(level)(expr)
 ```
 
-Alias: `medianTiming`.
+别名: `medianTiming`.
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
 
--   `expr` — [Expression](../syntax.md#syntax-expressions) over a column values returning a [Float\*](../../sql_reference/data_types/float.md)-type number.
+-   `expr` — [表达式](../syntax.md#syntax-expressions) 在一个列值返回 [浮动\*](../../sql_reference/data_types/float.md)-键入号码。
 
         - If negative values are passed to the function, the behavior is undefined.
         - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
-**Accuracy**
+**精度**
 
-The calculation is accurate if:
+计算是准确的，如果:
 
--   Total number of values doesn’t exceed 5670.
--   Total number of values exceeds 5670, but the page loading time is less than 1024ms.
+-   值的总数不超过5670。
+-   总数值超过5670，但页面加载时间小于1024ms。
 
-Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
+否则，计算结果将四舍五入到16毫秒的最接近倍数。
 
-!!! note "Note"
-    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](#quantile).
+!!! note "注"
+    对于计算页面加载时间分位数，此函数比 [分位数](#quantile).
 
-**Returned value**
+**返回值**
 
--   Quantile of the specified level.
+-   指定电平的分位数。
 
-Type: `Float32`.
+类型: `Float32`.
 
-!!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql_reference/data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select.md#select-order-by) for notes on sorting `NaN` values.
+!!! note "注"
+    如果没有值传递给函数（当使用 `quantileTimingIf`), [阿南](../../sql_reference/data_types/float.md#data_type-float-nan-inf) 被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 看 [按条款订购](../statements/select.md#select-order-by) 对于排序注意事项 `NaN` 值。
 
-**Example**
+**示例**
 
-Input table:
+输入表:
 
 ``` text
 ┌─response_time─┐
@@ -1203,13 +1203,13 @@ Input table:
 └───────────────┘
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT quantileTiming(response_time) FROM t
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantileTiming(response_time)─┐
@@ -1217,62 +1217,62 @@ Result:
 └───────────────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [median](#median)
--   [quantiles](#quantiles)
+-   [中位数](#median)
+-   [分位数](#quantiles)
 
-## quantileTimingWeighted {#quantiletimingweighted}
+## 分位时间加权 {#quantiletimingweighted}
 
-With the determined precision computes the [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence according to the weight of each sequence member.
+随着确定的精度计算 [分位数](https://en.wikipedia.org/wiki/Quantile) 根据每个序列成员的权重对数字数据序列进行处理。
 
-The result is deterministic (it doesn’t depend on the query processing order). The function is optimized for working with sequences which describe distributions like loading web pages times or backend response times.
+结果是确定性的（它不依赖于查询处理顺序）。 该函数针对描述加载网页时间或后端响应时间等分布的序列进行了优化。
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
-**Syntax**
+**语法**
 
 ``` sql
 quantileTimingWeighted(level)(expr, weight)
 ```
 
-Alias: `medianTimingWeighted`.
+别名: `medianTimingWeighted`.
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
 
--   `expr` — [Expression](../syntax.md#syntax-expressions) over a column values returning a [Float\*](../../sql_reference/data_types/float.md)-type number.
+-   `expr` — [表达式](../syntax.md#syntax-expressions) 在一个列值返回 [浮动\*](../../sql_reference/data_types/float.md)-键入号码。
 
         - If negative values are passed to the function, the behavior is undefined.
         - If the value is greater than 30,000 (a page loading time of more than 30 seconds), it is assumed to be 30,000.
 
 -   `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
 
-**Accuracy**
+**精度**
 
-The calculation is accurate if:
+计算是准确的，如果:
 
--   Total number of values doesn’t exceed 5670.
--   Total number of values exceeds 5670, but the page loading time is less than 1024ms.
+-   值的总数不超过5670。
+-   总数值超过5670，但页面加载时间小于1024ms。
 
-Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
+否则，计算结果将四舍五入到16毫秒的最接近倍数。
 
-!!! note "Note"
-    For calculating page loading time quantiles, this function is more effective and accurate than [quantile](#quantile).
+!!! note "注"
+    对于计算页面加载时间分位数，此函数比 [分位数](#quantile).
 
-**Returned value**
+**返回值**
 
--   Quantile of the specified level.
+-   指定电平的分位数。
 
-Type: `Float32`.
+类型: `Float32`.
 
-!!! note "Note"
-    If no values are passed to the function (when using `quantileTimingIf`), [NaN](../../sql_reference/data_types/float.md#data_type-float-nan-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](../statements/select.md#select-order-by) for notes on sorting `NaN` values.
+!!! note "注"
+    如果没有值传递给函数（当使用 `quantileTimingIf`), [阿南](../../sql_reference/data_types/float.md#data_type-float-nan-inf) 被返回。 这样做的目的是将这些案例与导致零的案例区分开来。 看 [按条款订购](../statements/select.md#select-order-by) 对于排序注意事项 `NaN` 值。
 
-**Example**
+**示例**
 
-Input table:
+输入表:
 
 ``` text
 ┌─response_time─┬─weight─┐
@@ -1285,13 +1285,13 @@ Input table:
 └───────────────┴────────┘
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT quantileTimingWeighted(response_time, weight) FROM t
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantileTimingWeighted(response_time, weight)─┐
@@ -1299,53 +1299,53 @@ Result:
 └───────────────────────────────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [median](#median)
--   [quantiles](#quantiles)
+-   [中位数](#median)
+-   [分位数](#quantiles)
 
 ## quantileTDigest {#quantiletdigest}
 
-Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm.
+计算近似值 [分位数](https://en.wikipedia.org/wiki/Quantile) 使用的数字数据序列 [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) 算法。
 
-The maximum error is 1%. Memory consumption is `log(n)`, where `n` is a number of values. The result depends on the order of running the query, and is nondeterministic.
+最大误差为1%。 内存消耗 `log(n)`，哪里 `n` 是多个值。 结果取决于运行查询的顺序，并且是不确定的。
 
-The performance of the function is lower than performance of [quantile](#quantile) or [quantileTiming](#quantiletiming). In terms of the ratio of State size to precision, this function is much better than `quantile`.
+该功能的性能低于性能 [分位数](#quantile) 或 [分位定时](#quantiletiming). 在状态大小与精度的比率方面，这个函数比 `quantile`.
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
-**Syntax**
+**语法**
 
 ``` sql
 quantileTDigest(level)(expr)
 ```
 
-Alias: `medianTDigest`.
+别名: `medianTDigest`.
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
--   `expr` — Expression over the column values resulting in numeric [data types](../../sql_reference/data_types/index.md#data_types), [Date](../../sql_reference/data_types/date.md) or [DateTime](../../sql_reference/data_types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql_reference/data_types/index.md#data_types), [日期](../../sql_reference/data_types/date.md) 或 [日期时间](../../sql_reference/data_types/datetime.md).
 
-**Returned value**
+**返回值**
 
--   Approximate quantile of the specified level.
+-   指定电平的近似分位数。
 
-Type:
+类型:
 
--   [Float64](../../sql_reference/data_types/float.md) for numeric data type input.
--   [Date](../../sql_reference/data_types/date.md) if input values have the `Date` type.
--   [DateTime](../../sql_reference/data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../sql_reference/data_types/float.md) 对于数字数据类型输入。
+-   [日期](../../sql_reference/data_types/date.md) 如果输入值具有 `Date` 类型。
+-   [日期时间](../../sql_reference/data_types/datetime.md) 如果输入值具有 `DateTime` 类型。
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ``` sql
 SELECT quantileTDigest(number) FROM numbers(10)
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantileTDigest(number)─┐
@@ -1353,54 +1353,54 @@ Result:
 └─────────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [median](#median)
--   [quantiles](#quantiles)
+-   [中位数](#median)
+-   [分位数](#quantiles)
 
 ## quantileTDigestWeighted {#quantiletdigestweighted}
 
-Computes an approximate [quantile](https://en.wikipedia.org/wiki/Quantile) of a numeric data sequence using the [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) algorithm. The function takes into account the weight of each sequence member. The maximum error is 1%. Memory consumption is `log(n)`, where `n` is a number of values.
+计算近似值 [分位数](https://en.wikipedia.org/wiki/Quantile) 使用的数字数据序列 [t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) 算法。 该函数考虑了每个序列成员的权重。 最大误差为1%。 内存消耗 `log(n)`，哪里 `n` 是多个值。
 
-The performance of the function is lower than performance of [quantile](#quantile) or [quantileTiming](#quantiletiming). In terms of the ratio of State size to precision, this function is much better than `quantile`.
+该功能的性能低于性能 [分位数](#quantile) 或 [分位定时](#quantiletiming). 在状态大小与精度的比率方面，这个函数比 `quantile`.
 
-The result depends on the order of running the query, and is nondeterministic.
+结果取决于运行查询的顺序，并且是不确定的。
 
-When using multiple `quantile*` functions with different levels in a query, the internal states are not combined (that is, the query works less efficiently than it could). In this case, use the [quantiles](#quantiles) function.
+当使用多个 `quantile*` 在查询中具有不同级别的函数，内部状态不会被组合（即查询的工作效率低于它可以）。 在这种情况下，使用 [分位数](#quantiles) 功能。
 
-**Syntax**
+**语法**
 
 ``` sql
 quantileTDigest(level)(expr)
 ```
 
-Alias: `medianTDigest`.
+别名: `medianTDigest`.
 
-**Parameters**
+**参数**
 
--   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` value in the range of `[0.01, 0.99]`. Default value: 0.5. At `level=0.5` the function calculates [median](https://en.wikipedia.org/wiki/Median).
--   `expr` — Expression over the column values resulting in numeric [data types](../../sql_reference/data_types/index.md#data_types), [Date](../../sql_reference/data_types/date.md) or [DateTime](../../sql_reference/data_types/datetime.md).
+-   `level` — Level of quantile. Optional parameter. Constant floating-point number from 0 to 1. We recommend using a `level` 值的范围 `[0.01, 0.99]`. 默认值：0.5。 在 `level=0.5` 该函数计算 [中位数](https://en.wikipedia.org/wiki/Median).
+-   `expr` — Expression over the column values resulting in numeric [数据类型](../../sql_reference/data_types/index.md#data_types), [日期](../../sql_reference/data_types/date.md) 或 [日期时间](../../sql_reference/data_types/datetime.md).
 -   `weight` — Column with weights of sequence elements. Weight is a number of value occurrences.
 
-**Returned value**
+**返回值**
 
--   Approximate quantile of the specified level.
+-   指定电平的近似分位数。
 
-Type:
+类型:
 
--   [Float64](../../sql_reference/data_types/float.md) for numeric data type input.
--   [Date](../../sql_reference/data_types/date.md) if input values have the `Date` type.
--   [DateTime](../../sql_reference/data_types/datetime.md) if input values have the `DateTime` type.
+-   [Float64](../../sql_reference/data_types/float.md) 对于数字数据类型输入。
+-   [日期](../../sql_reference/data_types/date.md) 如果输入值具有 `Date` 类型。
+-   [日期时间](../../sql_reference/data_types/datetime.md) 如果输入值具有 `DateTime` 类型。
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ``` sql
 SELECT quantileTDigestWeighted(number, 1) FROM numbers(10)
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─quantileTDigestWeighted(number, 1)─┐
@@ -1408,29 +1408,29 @@ Result:
 └────────────────────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [median](#median)
--   [quantiles](#quantiles)
+-   [中位数](#median)
+-   [分位数](#quantiles)
 
-## median {#median}
+## 中位数 {#median}
 
-The `median*` functions are the aliases for the corresponding `quantile*` functions. They calculate median of a numeric data sample.
+该 `median*` 函数是相应的别名 `quantile*` 功能。 它们计算数字数据样本的中位数。
 
-Functions:
+功能:
 
--   `median` — Alias for [quantile](#quantile).
--   `medianDeterministic` — Alias for [quantileDeterministic](#quantiledeterministic).
+-   `median` — Alias for [分位数](#quantile).
+-   `medianDeterministic` — Alias for [量化确定](#quantiledeterministic).
 -   `medianExact` — Alias for [quantileExact](#quantileexact).
--   `medianExactWeighted` — Alias for [quantileExactWeighted](#quantileexactweighted).
--   `medianTiming` — Alias for [quantileTiming](#quantiletiming).
--   `medianTimingWeighted` — Alias for [quantileTimingWeighted](#quantiletimingweighted).
+-   `medianExactWeighted` — Alias for [分位数加权](#quantileexactweighted).
+-   `medianTiming` — Alias for [分位定时](#quantiletiming).
+-   `medianTimingWeighted` — Alias for [分位时间加权](#quantiletimingweighted).
 -   `medianTDigest` — Alias for [quantileTDigest](#quantiletdigest).
 -   `medianTDigestWeighted` — Alias for [quantileTDigestWeighted](#quantiletdigestweighted).
 
-**Example**
+**示例**
 
-Input table:
+输入表:
 
 ``` text
 ┌─val─┐
@@ -1441,13 +1441,13 @@ Input table:
 └─────┘
 ```
 
-Query:
+查询:
 
 ``` sql
 SELECT medianDeterministic(val, 1) FROM t
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─medianDeterministic(val, 1)─┐
@@ -1457,57 +1457,57 @@ Result:
 
 ## quantiles(level1, level2, …)(x) {#quantiles}
 
-All the quantile functions also have corresponding quantiles functions: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`. These functions calculate all the quantiles of the listed levels in one pass, and return an array of the resulting values.
+所有分位数函数也具有相应的分位数函数: `quantiles`, `quantilesDeterministic`, `quantilesTiming`, `quantilesTimingWeighted`, `quantilesExact`, `quantilesExactWeighted`, `quantilesTDigest`. 这些函数在一遍中计算所列电平的所有分位数，并返回结果值的数组。
 
 ## varSamp(x) {#varsampx}
 
-Calculates the amount `Σ((x - x̅)^2) / (n - 1)`, where `n` is the sample size and `x̅`is the average value of `x`.
+计算金额 `Σ((x - x̅)^2) / (n - 1)`，哪里 `n` 是样本大小和 `x̅`是平均值 `x`.
 
-It represents an unbiased estimate of the variance of a random variable if passed values form its sample.
+它表示随机变量的方差的无偏估计，如果传递的值形成其样本。
 
-Returns `Float64`. When `n <= 1`, returns `+∞`.
+返回 `Float64`. 当 `n <= 1`，返回 `+∞`.
 
 ## varPop(x) {#varpopx}
 
-Calculates the amount `Σ((x - x̅)^2) / n`, where `n` is the sample size and `x̅`is the average value of `x`.
+计算金额 `Σ((x - x̅)^2) / n`，哪里 `n` 是样本大小和 `x̅`是平均值 `x`.
 
-In other words, dispersion for a set of values. Returns `Float64`.
+换句话说，分散为一组值。 返回 `Float64`.
 
 ## stddevSamp(x) {#stddevsampx}
 
-The result is equal to the square root of `varSamp(x)`.
+结果等于平方根 `varSamp(x)`.
 
 ## stddevPop(x) {#stddevpopx}
 
-The result is equal to the square root of `varPop(x)`.
+结果等于平方根 `varPop(x)`.
 
 ## topK(N)(x) {#topknx}
 
-Returns an array of the approximately most frequent values in the specified column. The resulting array is sorted in descending order of approximate frequency of values (not by the values themselves).
+返回指定列中近似最常见值的数组。 生成的数组按值的近似频率降序排序（而不是值本身）。
 
-Implements the [Filtered Space-Saving](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) algorithm for analyzing TopK, based on the reduce-and-combine algorithm from [Parallel Space Saving](https://arxiv.org/pdf/1401.0702.pdf).
+实现了 [过滤节省空间](http://www.l2f.inesc-id.pt/~fmmb/wiki/uploads/Work/misnis.ref0a.pdf) 基于reduce-and-combine算法的TopK分析算法 [并行节省空间](https://arxiv.org/pdf/1401.0702.pdf).
 
 ``` sql
 topK(N)(column)
 ```
 
-This function doesn’t provide a guaranteed result. In certain situations, errors might occur and it might return frequent values that aren’t the most frequent values.
+此函数不提供保证的结果。 在某些情况下，可能会发生错误，并且可能会返回不是最常见值的常见值。
 
-We recommend using the `N < 10` value; performance is reduced with large `N` values. Maximum value of `N = 65536`.
+我们建议使用 `N < 10` 值;性能降低了大 `N` 值。 的最大值 `N = 65536`.
 
-**Parameters**
+**参数**
 
--   ‘N’ is the number of elements to return.
+-   ‘N’ 是要返回的元素数。
 
-If the parameter is omitted, default value 10 is used.
+如果省略该参数，则使用默认值10。
 
-**Arguments**
+**参数**
 
--   ’ x ’ – The value to calculate frequency.
+-   ' x ' – The value to calculate frequency.
 
-**Example**
+**示例**
 
-Take the [OnTime](../../getting_started/example_datasets/ontime.md) data set and select the three most frequently occurring values in the `AirlineID` column.
+就拿 [时间](../../getting_started/example_datasets/ontime.md) 数据集，并选择在三个最频繁出现的值 `AirlineID` 列。
 
 ``` sql
 SELECT topK(3)(AirlineID) AS res
@@ -1522,36 +1522,36 @@ FROM ontime
 
 ## topKWeighted {#topkweighted}
 
-Similar to `topK` but takes one additional argument of integer type - `weight`. Every value is accounted `weight` times for frequency calculation.
+类似于 `topK` 但需要一个整数类型的附加参数 - `weight`. 每一价值是占 `weight` 次频率计算。
 
-**Syntax**
+**语法**
 
 ``` sql
 topKWeighted(N)(x, weight)
 ```
 
-**Parameters**
+**参数**
 
 -   `N` — The number of elements to return.
 
-**Arguments**
+**参数**
 
 -   `x` – The value.
 -   `weight` — The weight. [UInt8](../../sql_reference/data_types/int_uint.md).
 
-**Returned value**
+**返回值**
 
-Returns an array of the values with maximum approximate sum of weights.
+返回具有最大近似权重总和的值数组。
 
-**Example**
+**示例**
 
-Query:
+查询:
 
 ``` sql
 SELECT topKWeighted(10)(number, number) FROM numbers(1000)
 ```
 
-Result:
+结果:
 
 ``` text
 ┌─topKWeighted(10)(number, number)──────────┐
@@ -1559,48 +1559,48 @@ Result:
 └───────────────────────────────────────────┘
 ```
 
-## covarSamp(x, y) {#covarsampx-y}
+## covarSamp(x,y) {#covarsampx-y}
 
-Calculates the value of `Σ((x - x̅)(y - y̅)) / (n - 1)`.
+计算的值 `Σ((x - x̅)(y - y̅)) / (n - 1)`.
 
-Returns Float64. When `n <= 1`, returns +∞.
+返回Float64。 当 `n <= 1`, returns +∞.
 
-## covarPop(x, y) {#covarpopx-y}
+## covarPop(x,y) {#covarpopx-y}
 
-Calculates the value of `Σ((x - x̅)(y - y̅)) / n`.
+计算的值 `Σ((x - x̅)(y - y̅)) / n`.
 
-## corr(x, y) {#corrx-y}
+## corr(x,y) {#corrx-y}
 
-Calculates the Pearson correlation coefficient: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
+计算Pearson相关系数: `Σ((x - x̅)(y - y̅)) / sqrt(Σ((x - x̅)^2) * Σ((y - y̅)^2))`.
 
 ## categoricalInformationValue {#categoricalinformationvalue}
 
-Calculates the value of `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` for each category.
+计算的值 `(P(tag = 1) - P(tag = 0))(log(P(tag = 1)) - log(P(tag = 0)))` 对于每个类别。
 
 ``` sql
 categoricalInformationValue(category1, category2, ..., tag)
 ```
 
-The result indicates how a discrete (categorical) feature `[category1, category2, ...]` contribute to a learning model which predicting the value of `tag`.
+结果指示离散（分类）要素如何使用 `[category1, category2, ...]` 有助于预测的价值的学习模型 `tag`.
 
 ## simpleLinearRegression {#simplelinearregression}
 
-Performs simple (unidimensional) linear regression.
+执行简单（一维）线性回归。
 
 ``` sql
 simpleLinearRegression(x, y)
 ```
 
-Parameters:
+参数:
 
 -   `x` — Column with dependent variable values.
 -   `y` — Column with explanatory variable values.
 
-Returned values:
+返回值:
 
-Constants `(a, b)` of the resulting line `y = a*x + b`.
+常量 `(a, b)` 结果行的 `y = a*x + b`.
 
-**Examples**
+**例**
 
 ``` sql
 SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [0, 1, 2, 3])
@@ -1622,33 +1622,33 @@ SELECT arrayReduce('simpleLinearRegression', [0, 1, 2, 3], [3, 4, 5, 6])
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## stochasticLinearRegression {#agg_functions-stochasticlinearregression}
+## 随机指标线上回归 {#agg_functions-stochasticlinearregression}
 
-This function implements stochastic linear regression. It supports custom parameters for learning rate, L2 regularization coefficient, mini-batch size and has few methods for updating weights ([Adam](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) (used by default), [simple SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [Momentum](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
+该函数实现随机线性回归。 它支持自定义参数的学习率，L2正则化系数，迷你批量大小，并具有更新权重的方法很少 ([亚当](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Adam) （默认使用), [简单SGD](https://en.wikipedia.org/wiki/Stochastic_gradient_descent), [动量](https://en.wikipedia.org/wiki/Stochastic_gradient_descent#Momentum), [Nesterov](https://mipt.ru/upload/medialibrary/d7e/41-91.pdf)).
 
-### Parameters {#agg_functions-stochasticlinearregression-parameters}
+### 参数 {#agg_functions-stochasticlinearregression-parameters}
 
-There are 4 customizable parameters. They are passed to the function sequentially, but there is no need to pass all four - default values will be used, however good model required some parameter tuning.
+有4个可自定义的参数。 它们按顺序传递给函数，但是没有必要传递所有四个默认值将被使用，但是好的模型需要一些参数调整。
 
 ``` text
 stochasticLinearRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1.  `learning rate` is the coefficient on step length, when gradient descent step is performed. Too big learning rate may cause infinite weights of the model. Default is `0.00001`.
-2.  `l2 regularization coefficient` which may help to prevent overfitting. Default is `0.1`.
-3.  `mini-batch size` sets the number of elements, which gradients will be computed and summed to perform one step of gradient descent. Pure stochastic descent uses one element, however having small batches(about 10 elements) make gradient steps more stable. Default is `15`.
-4.  `method for updating weights`, they are: `Adam` (by default), `SGD`, `Momentum`, `Nesterov`. `Momentum` and `Nesterov` require little bit more computations and memory, however they happen to be useful in terms of speed of convergance and stability of stochastic gradient methods.
+1.  `learning rate` 当执行梯度下降步骤时，步长上的系数。 过大的学习率可能会导致模型的权重无限大。 默认值为 `0.00001`.
+2.  `l2 regularization coefficient` 这可能有助于防止过度拟合。 默认值为 `0.1`.
+3.  `mini-batch size` 设置元素的数量，这些元素将被计算和求和以执行梯度下降的一个步骤。 纯随机下降使用一个元素，但是具有小批量（约10个元素）使梯度步骤更稳定。 默认值为 `15`.
+4.  `method for updating weights` 他们是: `Adam` （默认情况下), `SGD`, `Momentum`, `Nesterov`. `Momentum` 和 `Nesterov` 需要更多的计算和内存，但是它们恰好在收敛速度和随机梯度方法的稳定性方面是有用的。
 
-### Usage {#agg_functions-stochasticlinearregression-usage}
+### 用途 {#agg_functions-stochasticlinearregression-usage}
 
-`stochasticLinearRegression` is used in two steps: fitting the model and predicting on new data. In order to fit the model and save its state for later usage we use `-State` combinator, which basically saves the state (model weights, etc).
-To predict we use function [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod), which takes a state as an argument as well as features to predict on.
+`stochasticLinearRegression` 用于两个步骤：拟合模型和预测新数据。 为了拟合模型并保存其状态以供以后使用，我们使用 `-State` combinator，它基本上保存了状态（模型权重等）。
+为了预测我们使用函数 [evalMLMethod](../functions/machine_learning_functions.md#machine_learning_methods-evalmlmethod)，这需要一个状态作为参数以及特征来预测。
 
 <a name="stochasticlinearregression-usage-fitting"></a>
 
-**1.** Fitting
+**1.** 适合
 
-Such query may be used.
+可以使用这种查询。
 
 ``` sql
 CREATE TABLE IF NOT EXISTS train_data
@@ -1663,52 +1663,52 @@ stochasticLinearRegressionState(0.1, 0.0, 5, 'SGD')(target, param1, param2)
 AS state FROM train_data;
 ```
 
-Here we also need to insert data into `train_data` table. The number of parameters is not fixed, it depends only on number of arguments, passed into `linearRegressionState`. They all must be numeric values.
-Note that the column with target value(which we would like to learn to predict) is inserted as the first argument.
+在这里，我们还需要将数据插入到 `train_data` 桌子 参数的数量不是固定的，它只取决于参数的数量，传递到 `linearRegressionState`. 它们都必须是数值。
+请注意，带有目标值的列（我们想要学习预测）被插入作为第一个参数。
 
-**2.** Predicting
+**2.** 预测
 
-After saving a state into the table, we may use it multiple times for prediction, or even merge with other states and create new even better models.
+在将状态保存到表中之后，我们可以多次使用它进行预测，甚至与其他状态合并并创建新的更好的模型。
 
 ``` sql
 WITH (SELECT state FROM your_model) AS model SELECT
 evalMLMethod(model, param1, param2) FROM test_data
 ```
 
-The query will return a column of predicted values. Note that first argument of `evalMLMethod` is `AggregateFunctionState` object, next are columns of features.
+查询将返回一列预测值。 请注意，第一个参数 `evalMLMethod` 是 `AggregateFunctionState` 对象，接下来是要素列。
 
-`test_data` is a table like `train_data` but may not contain target value.
+`test_data` 是一个像表 `train_data` 但可能不包含目标值。
 
-### Notes {#agg_functions-stochasticlinearregression-notes}
+### 注 {#agg_functions-stochasticlinearregression-notes}
 
-1.  To merge two models user may create such query:
+1.  要合并两个模型，用户可以创建这样的查询:
     `sql  SELECT state1 + state2 FROM your_models`
-    where `your_models` table contains both models. This query will return new `AggregateFunctionState` object.
+    哪里 `your_models` 表包含这两个模型。 此查询将返回new `AggregateFunctionState` 对象。
 
-2.  User may fetch weights of the created model for its own purposes without saving the model if no `-State` combinator is used.
+2.  如果没有，用户可以获取创建的模型的权重用于自己的目的，而不保存模型 `-State` 使用combinator。
     `sql  SELECT stochasticLinearRegression(0.01)(target, param1, param2) FROM train_data`
-    Such query will fit the model and return its weights - first are weights, which correspond to the parameters of the model, the last one is bias. So in the example above the query will return a column with 3 values.
+    这种查询将拟合模型并返回其权重-首先是权重，它对应于模型的参数，最后一个是偏差。 所以在上面的例子中，查询将返回一个具有3个值的列。
 
-**See Also**
+**另请参阅**
 
 -   [stochasticLogisticRegression](#agg_functions-stochasticlogisticregression)
--   [Difference between linear and logistic regressions](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+-   [线性回归和逻辑回归之间的区别](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 ## stochasticLogisticRegression {#agg_functions-stochasticlogisticregression}
 
-This function implements stochastic logistic regression. It can be used for binary classification problem, supports the same custom parameters as stochasticLinearRegression and works the same way.
+该函数实现随机逻辑回归。 它可以用于二进制分类问题，支持与stochasticLinearRegression相同的自定义参数，并以相同的方式工作。
 
-### Parameters {#agg_functions-stochasticlogisticregression-parameters}
+### 参数 {#agg_functions-stochasticlogisticregression-parameters}
 
-Parameters are exactly the same as in stochasticLinearRegression:
+参数与stochasticLinearRegression中的参数完全相同:
 `learning rate`, `l2 regularization coefficient`, `mini-batch size`, `method for updating weights`.
-For more information see [parameters](#agg_functions-stochasticlinearregression-parameters).
+欲了解更多信息，请参阅 [参数](#agg_functions-stochasticlinearregression-parameters).
 
 ``` text
 stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 ```
 
-1.  Fitting
+1.  适合
 
 <!-- -->
 
@@ -1716,7 +1716,7 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
     Predicted labels have to be in \[-1, 1\].
 
-1.  Predicting
+1.  预测
 
 <!-- -->
 
@@ -1741,28 +1741,28 @@ stochasticLogisticRegression(1.0, 1.0, 10, 'SGD')
 
     `test_data` is a table like `train_data` but may not contain target value.
 
-**See Also**
+**另请参阅**
 
--   [stochasticLinearRegression](#agg_functions-stochasticlinearregression)
--   [Difference between linear and logistic regressions.](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
+-   [随机指标线上回归](#agg_functions-stochasticlinearregression)
+-   [线性回归和逻辑回归之间的差异。](https://stackoverflow.com/questions/12146914/what-is-the-difference-between-linear-regression-and-logistic-regression)
 
 ## groupBitmapAnd {#groupbitmapand}
 
-Calculations the AND of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../sql_reference/functions/bitmap_functions.md).
+计算位图列的AND，返回UInt64类型的基数，如果添加后缀状态，则返回 [位图对象](../../sql_reference/functions/bitmap_functions.md).
 
 ``` sql
 groupBitmapAnd(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` 类型。
 
-**Return value**
+**返回值**
 
-Value of the `UInt64` type.
+的价值 `UInt64` 类型。
 
-**Example**
+**示例**
 
 ``` sql
 DROP TABLE IF EXISTS bitmap_column_expr_test2;
@@ -1791,21 +1791,21 @@ SELECT arraySort(bitmapToArray(groupBitmapAndState(z))) FROM bitmap_column_expr_
 
 ## groupBitmapOr {#groupbitmapor}
 
-Calculations the OR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../sql_reference/functions/bitmap_functions.md). This is equivalent to `groupBitmapMerge`.
+计算位图列的OR，返回UInt64类型的基数，如果添加后缀状态，则返回 [位图对象](../../sql_reference/functions/bitmap_functions.md). 这相当于 `groupBitmapMerge`.
 
 ``` sql
 groupBitmapOr(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` 类型。
 
-**Return value**
+**返回值**
 
-Value of the `UInt64` type.
+的价值 `UInt64` 类型。
 
-**Example**
+**示例**
 
 ``` sql
 DROP TABLE IF EXISTS bitmap_column_expr_test2;
@@ -1834,21 +1834,21 @@ SELECT arraySort(bitmapToArray(groupBitmapOrState(z))) FROM bitmap_column_expr_t
 
 ## groupBitmapXor {#groupbitmapxor}
 
-Calculations the XOR of a bitmap column, return cardinality of type UInt64, if add suffix -State, then return [bitmap object](../../sql_reference/functions/bitmap_functions.md).
+计算位图列的XOR，返回UInt64类型的基数，如果添加后缀状态，则返回 [位图对象](../../sql_reference/functions/bitmap_functions.md).
 
 ``` sql
 groupBitmapOr(expr)
 ```
 
-**Parameters**
+**参数**
 
-`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` type.
+`expr` – An expression that results in `AggregateFunction(groupBitmap, UInt*)` 类型。
 
-**Return value**
+**返回值**
 
-Value of the `UInt64` type.
+的价值 `UInt64` 类型。
 
-**Example**
+**示例**
 
 ``` sql
 DROP TABLE IF EXISTS bitmap_column_expr_test2;
@@ -1875,4 +1875,4 @@ SELECT arraySort(bitmapToArray(groupBitmapXorState(z))) FROM bitmap_column_expr_
 └──────────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/reference/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/agg_functions/reference/) <!--hide-->

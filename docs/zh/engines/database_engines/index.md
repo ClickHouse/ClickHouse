@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 数据库引擎 {#shu-ju-ku-yin-qing}
 
 您使用的所有表都是由数据库引擎所提供的

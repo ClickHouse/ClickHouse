@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # MySQL {#mysql}
 
 MySQL 引擎可以对存储在远程 MySQL 服务器上的数据执行 `SELECT` 查询。
@@ -20,6 +25,6 @@ MySQL 引擎可以对存储在远程 MySQL 服务器上的数据执行 `SELECT` 
 
 其余条件以及 `LIMIT` 采样约束语句仅在对MySQL的查询完成后才在ClickHouse中执行。
 
-`MySQL` 引擎不支持 [Nullable](../../../engines/table_engines/integrations/mysql.md) 数据类型，因此，当从MySQL表中读取数据时，`NULL` 将转换为指定列类型的默认值（通常为0或空字符串）。
+`MySQL` 引擎不支持 [可为空](../../../engines/table_engines/integrations/mysql.md) 数据类型，因此，当从MySQL表中读取数据时，`NULL` 将转换为指定列类型的默认值（通常为0或空字符串）。
 
-[Original article](https://clickhouse.tech/docs/zh/operations/table_engines/mysql/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/zh/operations/table_engines/mysql/) <!--hide-->

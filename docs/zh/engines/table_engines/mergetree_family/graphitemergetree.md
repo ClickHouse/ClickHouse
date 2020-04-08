@@ -1,17 +1,19 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 38
 toc_title: GraphiteMergeTree
 ---
 
 # GraphiteMergeTree {#graphitemergetree}
 
-This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
+此引擎专为细化和聚合/平均（rollup) [石墨](http://graphite.readthedocs.io/en/latest/index.html) 戴达 对于想要使用ClickHouse作为Graphite的数据存储的开发人员来说，这可能会有所帮助。
 
-You can use any ClickHouse table engine to store the Graphite data if you don’t need rollup, but if you need a rollup use `GraphiteMergeTree`. The engine reduces the volume of storage and increases the efficiency of queries from Graphite.
+您可以使用任何ClickHouse表引擎来存储石墨数据，如果你不需要汇总，但如果你需要一个汇总使用 `GraphiteMergeTree`. 该引擎减少了存储量，并提高了Graphite查询的效率。
 
-The engine inherits properties from [MergeTree](mergetree.md).
+引擎继承从属性 [MergeTree](mergetree.md).
 
-## Creating a Table {#creating-table}
+## 创建表 {#creating-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -28,36 +30,36 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-See a detailed description of the [CREATE TABLE](../../../sql_reference/statements/create.md#create-table-query) query.
+请参阅的详细说明 [CREATE TABLE](../../../sql_reference/statements/create.md#create-table-query) 查询。
 
-A table for the Graphite data should have the following columns for the following data:
+Graphite数据的表应具有以下数据的列:
 
--   Metric name (Graphite sensor). Data type: `String`.
+-   公制名称（石墨传感器）。 数据类型: `String`.
 
--   Time of measuring the metric. Data type: `DateTime`.
+-   测量度量的时间。 数据类型: `DateTime`.
 
--   Value of the metric. Data type: any numeric.
+-   度量值。 数据类型：任何数字。
 
--   Version of the metric. Data type: any numeric.
+-   指标的版本。 数据类型：任何数字。
 
-    ClickHouse saves the rows with the highest version or the last written if versions are the same. Other rows are deleted during the merge of data parts.
+    如果版本相同，ClickHouse会保存版本最高或最后写入的行。 其他行在数据部分合并期间被删除。
 
-The names of these columns should be set in the rollup configuration.
+应在汇总配置中设置这些列的名称。
 
-**GraphiteMergeTree parameters**
+**GraphiteMergeTree参数**
 
 -   `config_section` — Name of the section in the configuration file, where are the rules of rollup set.
 
-**Query clauses**
+**查询子句**
 
-When creating a `GraphiteMergeTree` table, the same [clauses](mergetree.md#table_engine-mergetree-creating-a-table) are required, as when creating a `MergeTree` table.
+当创建一个 `GraphiteMergeTree` 表，相同 [条款](mergetree.md#table_engine-mergetree-creating-a-table) 是必需的，因为当创建 `MergeTree` 桌子
 
 <details markdown="1">
 
-<summary>Deprecated Method for Creating a Table</summary>
+<summary>不推荐使用的创建表的方法</summary>
 
-!!! attention "Attention"
-    Do not use this method in new projects and, if possible, switch the old projects to the method described above.
+!!! attention "注意"
+    不要在新项目中使用此方法，如果可能的话，请将旧项目切换到上述方法。
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -71,31 +73,31 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] GraphiteMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, config_section)
 ```
 
-All of the parameters excepting `config_section` have the same meaning as in `MergeTree`.
+所有参数除外 `config_section` 具有相同的含义 `MergeTree`.
 
 -   `config_section` — Name of the section in the configuration file, where are the rules of rollup set.
 
 </details>
 
-## Rollup Configuration {#rollup-configuration}
+## 汇总配置 {#rollup-configuration}
 
-The settings for rollup are defined by the [graphite\_rollup](../../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-graphite_rollup) parameter in the server configuration. The name of the parameter could be any. You can create several configurations and use them for different tables.
+汇总的设置由 [graphite\_rollup](../../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-graphite_rollup) 服务器配置中的参数。 参数的名称可以是any。 您可以创建多个配置并将它们用于不同的表。
 
-Rollup configuration structure:
+汇总配置结构:
 
       required-columns
       patterns
 
-### Required Columns {#required-columns}
+### 必填列 {#required-columns}
 
 -   `path_column_name` — The name of the column storing the metric name (Graphite sensor). Default value: `Path`.
 -   `time_column_name` — The name of the column storing the time of measuring the metric. Default value: `Time`.
--   `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. Default value: `Value`.
+-   `value_column_name` — The name of the column storing the value of the metric at the time set in `time_column_name`. 默认值: `Value`.
 -   `version_column_name` — The name of the column storing the version of the metric. Default value: `Timestamp`.
 
-### Patterns {#patterns}
+### 模式 {#patterns}
 
-Structure of the `patterns` section:
+的结构 `patterns` 科:
 
 ``` text
 pattern
@@ -118,23 +120,23 @@ default
     ...
 ```
 
-!!! warning "Attention"
-    Patterns must be strictly ordered:
+!!! warning "注意"
+    模式必须严格排序:
 
       1. Patterns without `function` or `retention`.
       1. Patterns with both `function` and `retention`.
       1. Pattern `default`.
 
-When processing a row, ClickHouse checks the rules in the `pattern` sections. Each of `pattern` (including `default`) sections can contain `function` parameter for aggregation, `retention` parameters or both. If the metric name matches the `regexp`, the rules from the `pattern` section (or sections) are applied; otherwise, the rules from the `default` section are used.
+在处理行时，ClickHouse会检查以下内容中的规则 `pattern` 部分。 每个 `pattern` （包括 `default`）部分可以包含 `function` 聚合参数, `retention` 参数或两者兼而有之。 如果指标名称匹配 `regexp`，从规则 `pattern` 部分（sections节）的应用;否则，从规则 `default` 部分被使用。
 
-Fields for `pattern` and `default` sections:
+字段为 `pattern` 和 `default` 科:
 
 -   `regexp`– A pattern for the metric name.
 -   `age` – The minimum age of the data in seconds.
 -   `precision`– How precisely to define the age of the data in seconds. Should be a divisor for 86400 (seconds in a day).
 -   `function` – The name of the aggregating function to apply to data whose age falls within the range `[age, age + precision]`.
 
-### Configuration Example {#configuration-example}
+### 配置示例 {#configuration-example}
 
 ``` xml
 <graphite_rollup>
@@ -169,4 +171,4 @@ Fields for `pattern` and `default` sections:
 </graphite_rollup>
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/graphitemergetree/) <!--hide-->

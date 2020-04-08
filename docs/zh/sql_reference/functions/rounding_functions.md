@@ -1,22 +1,27 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 取整函数 {#qu-zheng-han-shu}
 
-## floor(x\[, N\]) {#floorx-n}
+## 楼(x\[,N\]) {#floorx-n}
 
 返回小于或等于x的最大舍入数。该函数使用参数乘1/10N，如果1/10N不精确，则选择最接近的精确的适当数据类型的数。
-‘N’是一个整数常量，可选参数。默认为0，这意味着不对其进行舍入。
-‘N’可以是负数。
+'N'是一个整数常量，可选参数。默认为0，这意味着不对其进行舍入。
+'N'可以是负数。
 
 示例: `floor(123.45, 1) = 123.4, floor(123.45, -1) = 120.`
 
 `x`是任何数字类型。结果与其为相同类型。
-对于整数参数，使用负‘N’值进行舍入是有意义的（对于非负«N»，该函数不执行任何操作）。
+对于整数参数，使用负'N'值进行舍入是有意义的（对于非负«N»，该函数不执行任何操作）。
 如果取整导致溢出（例如，floor(-128，-1)），则返回特定于实现的结果。
 
-## ceil(x\[, N\]), ceiling(x\[, N\]) {#ceilx-n-ceilingx-n}
+## ceil(x\[,N\]),天花板(x\[,N\]) {#ceilx-n-ceilingx-n}
 
-返回大于或等于’x’的最小舍入数。在其他方面，它与’floor’功能相同（见上文）。
+返回大于或等于'x'的最小舍入数。在其他方面，它与'floor'功能相同（见上文）。
 
-## round(x\[, N\]) {#rounding_functions-round}
+## 圆形(x\[,N\]) {#rounding_functions-round}
 
 将值取整到指定的小数位数。
 
@@ -71,15 +76,15 @@ SELECT number / 2 AS x, round(x) FROM system.numbers LIMIT 3
 
 接受一个数字。如果数字小于1，则返回0。否则，它将数字向下舍入到最接近的（整个非负）2的x次幂。
 
-## roundDuration(num) {#rounddurationnum}
+## 圆形饱和度(num) {#rounddurationnum}
 
 接受一个数字。如果数字小于1，则返回0。否则，它将数字向下舍入为集合中的数字：1，10，30，60，120，180，240，300，600，1200，1800，3600，7200，18000，36000。此函数用于Yandex.Metrica报表中计算会话的持续时长。
 
-## roundAge(num) {#roundagenum}
+## 圆数(num) {#roundagenum}
 
 接受一个数字。如果数字小于18，则返回0。否则，它将数字向下舍入为集合中的数字：18，25，35，45，55。此函数用于Yandex.Metrica报表中用户年龄的计算。
 
-## roundDown(num, arr) {#rounddownnum-arr}
+## roundDown(num,arr) {#rounddownnum-arr}
 
 接受一个数字，将其向下舍入到指定数组中的元素。如果该值小于数组中的最低边界，则返回最低边界。
 

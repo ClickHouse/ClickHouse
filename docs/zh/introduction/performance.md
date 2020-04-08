@@ -1,4 +1,9 @@
-# Performance {#performance}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# 性能 {#performance}
 
 根据Yandex的内部测试结果，ClickHouse表现出了比同类可比较产品更优的性能。你可以在 [这里](https://clickhouse.tech/benchmark.html) 查看具体的测试结果。
 

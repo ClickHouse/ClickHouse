@@ -1,4 +1,9 @@
-# FixedString {#fixedstring}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# 固定字符串 {#fixedstring}
 
 固定长度 N 的字符串（N 必须是严格的正自然数）。
 
@@ -23,7 +28,7 @@
 
 当向ClickHouse中插入数据时,
 
--   如果字符串包含的字节数少于\`N’,将对字符串末尾进行空字节填充。
+-   如果字符串包含的字节数少于\`N',将对字符串末尾进行空字节填充。
 -   如果字符串包含的字节数大于`N`,将抛出`Too large value for FixedString(N)`异常。
 
 当做数据查询时，ClickHouse不会删除字符串末尾的空字节。 如果使用`WHERE`子句，则须要手动添加空字节以匹配`FixedString`的值。 以下示例阐明了如何将`WHERE`子句与`FixedString`一起使用。
@@ -51,6 +56,6 @@ WHERE a = 'b\0'
 
 这种方式与MySQL的`CHAR`类型的方式不同（MySQL中使用空格填充字符串，并在输出时删除空格）。
 
-请注意，`FixedString(N)`的长度是个常量。仅由空字符组成的字符串，函数[length](../../sql_reference/data_types/fixedstring.md#array_functions-length)返回值为`N`,而函数[empty](../../sql_reference/data_types/fixedstring.md#string_functions-empty)的返回值为`1`。
+请注意，`FixedString(N)`的长度是个常量。仅由空字符组成的字符串，函数[长度](../../sql_reference/data_types/fixedstring.md#array_functions-length)返回值为`N`,而函数[空](../../sql_reference/data_types/fixedstring.md#string_functions-empty)的返回值为`1`。
 
 [来源文章](https://clickhouse.tech/docs/en/data_types/fixedstring/) <!--hide-->

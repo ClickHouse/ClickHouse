@@ -1,39 +1,41 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 46
 toc_title: GenerateRandom
 ---
 
 # Generaterandom {#table_engines-generate}
 
-The GenerateRandom table engine produces random data for given table schema.
+GenerateRandom表引擎为给定的表架构生成随机数据。
 
-Usage examples:
+使用示例:
 
--   Use in test to populate reproducible large table.
--   Generate random input for fuzzing tests.
+-   在测试中使用填充可重复的大表。
+-   为模糊测试生成随机输入。
 
-## Usage In ClickHouse Server {#usage-in-clickhouse-server}
+## 在ClickHouse服务器中的使用 {#usage-in-clickhouse-server}
 
 ``` sql
 ENGINE = GenerateRandom(random_seed, max_string_length, max_array_length)
 ```
 
-The `max_array_length` and `max_string_length` parameters specify maximum length of all
-array columns and strings correspondingly in generated data.
+该 `max_array_length` 和 `max_string_length` 参数指定所有的最大长度
+数组列和字符串相应地在生成的数据中。
 
-Generate table engine supports only `SELECT` queries.
+生成表引擎仅支持 `SELECT` 查询。
 
-It supports all [DataTypes](../../../sql_reference/data_types/index.md) that can be stored in a table except `LowCardinality` and `AggregateFunction`.
+它支持所有 [数据类型](../../../sql_reference/data_types/index.md) 可以存储在一个表中，除了 `LowCardinality` 和 `AggregateFunction`.
 
-**Example:**
+**示例:**
 
-**1.** Set up the `generate_engine_table` table:
+**1.** 设置 `generate_engine_table` 表:
 
 ``` sql
 CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
 ```
 
-**2.** Query the data:
+**2.** 查询数据:
 
 ``` sql
 SELECT * FROM generate_engine_table LIMIT 3
@@ -47,13 +49,13 @@ SELECT * FROM generate_engine_table LIMIT 3
 └──────┴────────────┘
 ```
 
-## Details Of Implementation {#details-of-implementation}
+## 实施细节 {#details-of-implementation}
 
--   Not supported:
+-   不支持:
     -   `ALTER`
     -   `SELECT ... SAMPLE`
     -   `INSERT`
-    -   Indices
-    -   Replication
+    -   指数
+    -   复制
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/generate/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/generate/) <!--hide-->

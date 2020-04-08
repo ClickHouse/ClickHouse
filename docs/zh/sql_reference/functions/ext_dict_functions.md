@@ -1,22 +1,27 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 字典函数 {#zi-dian-han-shu}
 
 有关连接和配置外部词典的信息，请参阅[外部词典](../../sql_reference/functions/ext_dict_functions.md)。
 
-## dictGetUInt8, dictGetUInt16, dictGetUInt32, dictGetUInt64 {#dictgetuint8-dictgetuint16-dictgetuint32-dictgetuint64}
+## dictGetUInt8,dictGetUInt16,dictGetUInt32,dictGetUInt64 {#dictgetuint8-dictgetuint16-dictgetuint32-dictgetuint64}
 
-## dictGetInt8, dictGetInt16, dictGetInt32, dictGetInt64 {#dictgetint8-dictgetint16-dictgetint32-dictgetint64}
+## dictGetInt8,dictGetInt16,dictGetInt32,dictGetInt64 {#dictgetint8-dictgetint16-dictgetint32-dictgetint64}
 
-## dictGetFloat32, dictGetFloat64 {#dictgetfloat32-dictgetfloat64}
+## dictGetFloat32,dictGetFloat64 {#dictgetfloat32-dictgetfloat64}
 
-## dictGetDate, dictGetDateTime {#dictgetdate-dictgetdatetime}
+## dictGetDate,dictGetDateTime {#dictgetdate-dictgetdatetime}
 
-## dictGetUUID {#dictgetuuid}
+## dictgetuid {#dictgetuuid}
 
 ## dictGetString {#dictgetstring}
 
 `dictGetT('dict_name', 'attr_name', id)`
 
--   使用’id’键获取dict\_name字典中attr\_name属性的值。`dict_name`和`attr_name`是常量字符串。`id`必须是UInt64。
+-   使用'id'键获取dict\_name字典中attr\_name属性的值。`dict_name`和`attr_name`是常量字符串。`id`必须是UInt64。
     如果字典中没有`id`键，则返回字典描述中指定的默认值。
 
 ## dictGetTOrDefault {#ext_dict_functions-dictgettordefault}
@@ -29,13 +34,13 @@
 
 `dictIsIn ('dict_name', child_id, ancestor_id)`
 
--   对于’dict\_name’分层字典，查找’child\_id’键是否位于’ancestor\_id’内（或匹配’ancestor\_id’）。返回UInt8。
+-   对于'dict\_name'分层字典，查找'child\_id'键是否位于'ancestor\_id'内（或匹配'ancestor\_id'）。返回UInt8。
 
-## dictGetHierarchy {#dictgethierarchy}
+## 独裁主义 {#dictgethierarchy}
 
 `dictGetHierarchy('dict_name', id)`
 
--   对于’dict\_name’分层字典，返回从’id’开始并沿父元素链继续的字典键数组。返回Array（UInt64）
+-   对于'dict\_name'分层字典，返回从'id'开始并沿父元素链继续的字典键数组。返回Array（UInt64）
 
 ## dictHas {#dicthas}
 

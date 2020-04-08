@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 数据副本 {#table_engines-replication}
 
 只有 MergeTree 系列里的表可支持副本：
@@ -7,7 +12,7 @@
 -   ReplicatedReplacingMergeTree
 -   ReplicatedAggregatingMergeTree
 -   ReplicatedCollapsingMergeTree
--   ReplicatedVersionedCollapsingMergeTree
+-   ReplicatedVersionedCollapsingMergetree
 -   ReplicatedGraphiteMergeTree
 
 副本是表级别的，不是整个服务器级的。所以，服务器里可以同时有复制表和非复制表。
@@ -119,7 +124,7 @@ CREATE TABLE table_name
 `{layer}-{shard}` 是分片标识部分。在此示例中，由于 Yandex.Metrica 集群使用了两级分片，所以它是由两部分组成的。但对于大多数情况来说，你只需保留 {shard} 占位符即可，它会替换展开为分片标识。
 
 `table_name` 是该表在 ZooKeeper 中的名称。使其与 ClickHouse 中的表名相同比较好。 这里它被明确定义，跟 ClickHouse 表名不一样，它并不会被 RENAME 语句修改。
-*HINT*: you could add a database name in front of `table_name` as well. E.g. `db_name.table_name`
+*HINT*：你可以在前面添加一个数据库名称 `table_name` 也是 例如。 `db_name.table_name`
 
 副本名称用于标识同一个表分片的不同副本。你可以使用服务器名称，如上例所示。同个分片中不同副本的副本名称要唯一。
 

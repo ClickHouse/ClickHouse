@@ -1,48 +1,50 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 54
-toc_title: Query Profiling
+toc_title: "\u67E5\u8BE2\u5206\u6790"
 ---
 
-# Sampling Query Profiler {#sampling-query-profiler}
+# 采样查询探查器 {#sampling-query-profiler}
 
-ClickHouse runs sampling profiler that allows analyzing query execution. Using profiler you can find source code routines that used the most frequently during query execution. You can trace CPU time and wall-clock time spent including idle time.
+ClickHouse运行允许分析查询执行的采样探查器。 使用探查器，您可以找到在查询执行期间使用最频繁的源代码例程。 您可以跟踪CPU时间和挂钟花费的时间，包括空闲时间。
 
-To use profiler:
+使用概要分析器:
 
--   Setup the [trace\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-trace_log) section of the server configuration.
+-   设置 [trace\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-trace_log) 服务器配置部分。
 
-    This section configures the [trace\_log](../../operations/system_tables.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for a running server. After the server restart, ClickHouse doesn’t clean up the table and all the stored virtual memory address may become invalid.
+    本节配置 [trace\_log](../../operations/system_tables.md#system_tables-trace_log) 系统表包含探查器运行的结果。 它是默认配置的。 请记住，此表中的数据仅对正在运行的服务器有效。 服务器重新启动后，ClickHouse不会清理表，所有存储的虚拟内存地址都可能无效。
 
--   Setup the [query\_profiler\_cpu\_time\_period\_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) or [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) settings. Both settings can be used simultaneously.
+-   设置 [query\_profiler\_cpu\_time\_period\_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) 或 [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) 设置。 这两种设置可以同时使用。
 
-    These settings allow you to configure profiler timers. As these are the session settings, you can get different sampling frequency for the whole server, individual users or user profiles, for your interactive session, and for each individual query.
+    这些设置允许您配置探查器计时器。 由于这些是会话设置，您可以为整个服务器、单个用户或用户配置文件、交互式会话以及每个单个查询获取不同的采样频率。
 
-The default sampling frequency is one sample per second and both CPU and real timers are enabled. This frequency allows collecting enough information about ClickHouse cluster. At the same time, working with this frequency, profiler doesn’t affect ClickHouse server’s performance. If you need to profile each individual query try to use higher sampling frequency.
+默认采样频率为每秒一个采样，CPU和实时定时器都启用。 该频率允许收集有关ClickHouse集群的足够信息。 同时，使用此频率，profiler不会影响ClickHouse服务器的性能。 如果您需要分析每个单独的查询，请尝试使用更高的采样频率。
 
-To analyze the `trace_log` system table:
+分析 `trace_log` 系统表:
 
--   Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting_started/install.md#install-from-deb-packages).
+-   安装 `clickhouse-common-static-dbg` 包。 看 [从DEB软件包安装](../../getting_started/install.md#install-from-deb-packages).
 
--   Allow introspection functions by the [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) setting.
+-   允许由内省功能 [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) 设置。
 
-    For security reasons, introspection functions are disabled by default.
+    出于安全原因，默认情况下禁用内省功能。
 
--   Use the `addressToLine`, `addressToSymbol` and `demangle` [introspection functions](../../sql_reference/functions/introspection.md) to get function names and their positions in ClickHouse code. To get a profile for some query, you need to aggregate data from the `trace_log` table. You can aggregate data by individual functions or by the whole stack traces.
+-   使用 `addressToLine`, `addressToSymbol` 和 `demangle` [内省功能](../../sql_reference/functions/introspection.md) 获取函数名称及其在ClickHouse代码中的位置。 要获取某些查询的配置文件，您需要从以下内容汇总数据 `trace_log` 桌子 您可以通过单个函数或整个堆栈跟踪聚合数据。
 
-If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
+如果你需要想象 `trace_log` 信息，尝试 [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph) 和 [测速镜](https://github.com/laplab/clickhouse-speedscope).
 
-## Example {#example}
+## 示例 {#example}
 
-In this example we:
+在这个例子中，我们:
 
--   Filtering `trace_log` data by a query identifier and the current date.
+-   过滤 `trace_log` 数据由查询标识符和当前日期组成。
 
--   Aggregating by stack trace.
+-   通过堆栈跟踪聚合。
 
--   Using introspection functions, we will get a report of:
+-   使用内省功能，我们将得到一个报告:
 
-    -   Names of symbols and corresponding source code functions.
-    -   Source code locations of these functions.
+    -   符号名称和相应的源代码函数。
+    -   这些函数的源代码位置。
 
 <!-- -->
 

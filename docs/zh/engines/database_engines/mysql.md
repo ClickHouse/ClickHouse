@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # MySQL {#mysql}
 
 MySQL引擎用于将远程的MySQL服务器中的表映射到ClickHouse中，并允许您对表进行`INSERT`和`SELECT`查询，以方便您在ClickHouse与MySQL之间进行数据交换。
@@ -28,25 +33,25 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 
 ## 支持的类型对应 {#zhi-chi-de-lei-xing-dui-ying}
 
-| MySQL                            | ClickHouse                                  |
-|----------------------------------|---------------------------------------------|
-| UNSIGNED TINYINT                 | [UInt8](../../sql_reference/data_types/int_uint.md)          |
-| TINYINT                          | [Int8](../../sql_reference/data_types/int_uint.md)           |
-| UNSIGNED SMALLINT                | [UInt16](../../sql_reference/data_types/int_uint.md)         |
-| SMALLINT                         | [Int16](../../sql_reference/data_types/int_uint.md)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../../sql_reference/data_types/int_uint.md)         |
-| INT, MEDIUMINT                   | [Int32](../../sql_reference/data_types/int_uint.md)          |
-| UNSIGNED BIGINT                  | [UInt64](../../sql_reference/data_types/int_uint.md)         |
-| BIGINT                           | [Int64](../../sql_reference/data_types/int_uint.md)          |
-| FLOAT                            | [Float32](../../sql_reference/data_types/float.md)           |
-| DOUBLE                           | [Float64](../../sql_reference/data_types/float.md)           |
-| DATE                             | [Date](../../sql_reference/data_types/date.md)               |
-| DATETIME, TIMESTAMP              | [DateTime](../../sql_reference/data_types/datetime.md)       |
-| BINARY                           | [FixedString](../../sql_reference/data_types/fixedstring.md) |
+| MySQL                            | ClickHouse                                                  |
+|----------------------------------|-------------------------------------------------------------|
+| UNSIGNED TINYINT                 | [UInt8](../../sql_reference/data_types/int_uint.md)         |
+| TINYINT                          | [Int8](../../sql_reference/data_types/int_uint.md)          |
+| UNSIGNED SMALLINT                | [UInt16](../../sql_reference/data_types/int_uint.md)        |
+| SMALLINT                         | [Int16](../../sql_reference/data_types/int_uint.md)         |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../../sql_reference/data_types/int_uint.md)        |
+| INT, MEDIUMINT                   | [Int32](../../sql_reference/data_types/int_uint.md)         |
+| UNSIGNED BIGINT                  | [UInt64](../../sql_reference/data_types/int_uint.md)        |
+| BIGINT                           | [Int64](../../sql_reference/data_types/int_uint.md)         |
+| FLOAT                            | [Float32](../../sql_reference/data_types/float.md)          |
+| DOUBLE                           | [Float64](../../sql_reference/data_types/float.md)          |
+| DATE                             | [日期](../../sql_reference/data_types/date.md)              |
+| DATETIME, TIMESTAMP              | [日期时间](../../sql_reference/data_types/datetime.md)      |
+| BINARY                           | [固定字符串](../../sql_reference/data_types/fixedstring.md) |
 
-其他的MySQL数据类型将全部都转换为[String](../../sql_reference/data_types/string.md)。
+其他的MySQL数据类型将全部都转换为[字符串](../../sql_reference/data_types/string.md)。
 
-同时以上的所有类型都支持[Nullable](../../sql_reference/data_types/nullable.md)。
+同时以上的所有类型都支持[可为空](../../sql_reference/data_types/nullable.md)。
 
 ## 使用示例 {#shi-yong-shi-li}
 

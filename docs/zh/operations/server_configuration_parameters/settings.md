@@ -1,32 +1,34 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 57
-toc_title: Server Settings
+toc_title: "\u670D\u52A1\u5668\u8BBE\u7F6E"
 ---
 
-# Server Settings {#server-settings}
+# 服务器设置 {#server-settings}
 
 ## builtin\_dictionaries\_reload\_interval {#builtin-dictionaries-reload-interval}
 
-The interval in seconds before reloading built-in dictionaries.
+重新加载内置字典之前的时间间隔（以秒为单位）。
 
-ClickHouse reloads built-in dictionaries every x seconds. This makes it possible to edit dictionaries “on the fly” without restarting the server.
+ClickHouse每x秒重新加载内置字典。 这使得编辑字典成为可能 “on the fly” 无需重新启动服务器。
 
-Default value: 3600.
+默认值:3600.
 
-**Example**
+**示例**
 
 ``` xml
 <builtin_dictionaries_reload_interval>3600</builtin_dictionaries_reload_interval>
 ```
 
-## compression {#server-settings-compression}
+## 压缩 {#server-settings-compression}
 
-Data compression settings for [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)-engine tables.
+数据压缩设置 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)-发动机表。
 
-!!! warning "Warning"
-    Don’t use it if you have just started using ClickHouse.
+!!! warning "警告"
+    如果您刚开始使用ClickHouse，请不要使用它。
 
-Configuration template:
+配置模板:
 
 ``` xml
 <compression>
@@ -39,22 +41,22 @@ Configuration template:
 </compression>
 ```
 
-`<case>` fields:
+`<case>` 字段:
 
 -   `min_part_size` – The minimum size of a data part.
 -   `min_part_size_ratio` – The ratio of the data part size to the table size.
--   `method` – Compression method. Acceptable values: `lz4` or `zstd`.
+-   `method` – Compression method. Acceptable values: `lz4` 或 `zstd`.
 
-You can configure multiple `<case>` sections.
+您可以配置多个 `<case>` 部分。
 
-Actions when conditions are met:
+满足条件时的操作:
 
--   If a data part matches a condition set, ClickHouse uses the specified compression method.
--   If a data part matches multiple condition sets, ClickHouse uses the first matched condition set.
+-   如果数据部分与条件集匹配，ClickHouse将使用指定的压缩方法。
+-   如果数据部分匹配多个条件集，ClickHouse将使用第一个匹配的条件集。
 
-If no conditions met for a data part, ClickHouse uses the `lz4` compression.
+如果没有满足数据部分的条件，ClickHouse使用 `lz4` 压缩。
 
-**Example**
+**示例**
 
 ``` xml
 <compression incl="clickhouse_compression">
@@ -68,11 +70,11 @@ If no conditions met for a data part, ClickHouse uses the `lz4` compression.
 
 ## default\_database {#default-database}
 
-The default database.
+默认数据库。
 
-To get a list of databases, use the [SHOW DATABASES](../../sql_reference/statements/show.md#show-databases) query.
+要获取数据库列表，请使用 [SHOW DATABASES](../../sql_reference/statements/show.md#show-databases) 查询。
 
-**Example**
+**示例**
 
 ``` xml
 <default_database>default</default_database>
@@ -80,11 +82,11 @@ To get a list of databases, use the [SHOW DATABASES](../../sql_reference/stateme
 
 ## default\_profile {#default-profile}
 
-Default settings profile.
+默认设置配置文件。
 
-Settings profiles are located in the file specified in the parameter `user_config`.
+设置配置文件位于参数中指定的文件中 `user_config`.
 
-**Example**
+**示例**
 
 ``` xml
 <default_profile>default</default_profile>
@@ -92,16 +94,16 @@ Settings profiles are located in the file specified in the parameter `user_confi
 
 ## dictionaries\_config {#server_configuration_parameters-dictionaries_config}
 
-The path to the config file for external dictionaries.
+外部字典的配置文件的路径。
 
-Path:
+路径:
 
--   Specify the absolute path or the path relative to the server config file.
--   The path can contain wildcards \* and ?.
+-   指定相对于服务器配置文件的绝对路径或路径。
+-   路径可以包含通配符\*和?.
 
-See also “[External dictionaries](../../sql_reference/dictionaries/external_dictionaries/external_dicts.md)”.
+另请参阅 “[外部字典](../../sql_reference/dictionaries/external_dictionaries/external_dicts.md)”.
 
-**Example**
+**示例**
 
 ``` xml
 <dictionaries_config>*_dictionary.xml</dictionaries_config>
@@ -109,15 +111,15 @@ See also “[External dictionaries](../../sql_reference/dictionaries/external_di
 
 ## dictionaries\_lazy\_load {#server_configuration_parameters-dictionaries_lazy_load}
 
-Lazy loading of dictionaries.
+延迟加载字典。
 
-If `true`, then each dictionary is created on first use. If dictionary creation failed, the function that was using the dictionary throws an exception.
+如果 `true`，然后在第一次使用时创建每个字典。 如果字典创建失败，则使用该字典的函数将引发异常。
 
-If `false`, all dictionaries are created when the server starts, and if there is an error, the server shuts down.
+如果 `false`，服务器启动时创建所有字典，如果出现错误，服务器将关闭。
 
-The default is `true`.
+默认值为 `true`.
 
-**Example**
+**示例**
 
 ``` xml
 <dictionaries_lazy_load>true</dictionaries_lazy_load>
@@ -125,34 +127,34 @@ The default is `true`.
 
 ## format\_schema\_path {#server_configuration_parameters-format_schema_path}
 
-The path to the directory with the schemes for the input data, such as schemas for the [CapnProto](../../interfaces/formats.md#capnproto) format.
+包含输入数据方案的目录路径，例如输入数据的方案 [CapnProto](../../interfaces/formats.md#capnproto) 格式。
 
-**Example**
+**示例**
 
 ``` xml
   <!-- Directory containing schema files for various input formats. -->
   <format_schema_path>format_schemas/</format_schema_path>
 ```
 
-## graphite {#server_configuration_parameters-graphite}
+## 石墨 {#server_configuration_parameters-graphite}
 
-Sending data to [Graphite](https://github.com/graphite-project).
+将数据发送到 [石墨](https://github.com/graphite-project).
 
-Settings:
+设置:
 
 -   host – The Graphite server.
 -   port – The port on the Graphite server.
 -   interval – The interval for sending, in seconds.
 -   timeout – The timeout for sending data, in seconds.
 -   root\_path – Prefix for keys.
--   metrics – Sending data from the [system.metrics](../../operations/system_tables.md#system_tables-metrics) table.
--   events – Sending deltas data accumulated for the time period from the [system.events](../../operations/system_tables.md#system_tables-events) table.
--   events\_cumulative – Sending cumulative data from the [system.events](../../operations/system_tables.md#system_tables-events) table.
--   asynchronous\_metrics – Sending data from the [system.asynchronous\_metrics](../../operations/system_tables.md#system_tables-asynchronous_metrics) table.
+-   metrics – Sending data from the [系统。指标](../../operations/system_tables.md#system_tables-metrics) 桌子
+-   events – Sending deltas data accumulated for the time period from the [系统。活动](../../operations/system_tables.md#system_tables-events) 桌子
+-   events\_cumulative – Sending cumulative data from the [系统。活动](../../operations/system_tables.md#system_tables-events) 桌子
+-   asynchronous\_metrics – Sending data from the [系统。asynchronous\_metrics](../../operations/system_tables.md#system_tables-asynchronous_metrics) 桌子
 
-You can configure multiple `<graphite>` clauses. For instance, you can use this for sending different data at different intervals.
+您可以配置多个 `<graphite>` 条款 例如，您可以使用它以不同的时间间隔发送不同的数据。
 
-**Example**
+**示例**
 
 ``` xml
 <graphite>
@@ -170,11 +172,11 @@ You can configure multiple `<graphite>` clauses. For instance, you can use this 
 
 ## graphite\_rollup {#server_configuration_parameters-graphite-rollup}
 
-Settings for thinning data for Graphite.
+石墨细化数据的设置。
 
-For more details, see [GraphiteMergeTree](../../engines/table_engines/mergetree_family/graphitemergetree.md).
+有关详细信息，请参阅 [GraphiteMergeTree](../../engines/table_engines/mergetree_family/graphitemergetree.md).
 
-**Example**
+**示例**
 
 ``` xml
 <graphite_rollup_example>
@@ -198,13 +200,13 @@ For more details, see [GraphiteMergeTree](../../engines/table_engines/mergetree_
 
 ## http\_port/https\_port {#http-porthttps-port}
 
-The port for connecting to the server over HTTP(s).
+通过HTTP连接到服务器的端口。
 
-If `https_port` is specified, [openSSL](#server_configuration_parameters-openssl) must be configured.
+如果 `https_port` 被指定, [openSSL](#server_configuration_parameters-openssl) 必须配置。
 
-If `http_port` is specified, the OpenSSL configuration is ignored even if it is set.
+如果 `http_port` 指定时，即使设置了OpenSSL配置，也会忽略该配置。
 
-**Example**
+**示例**
 
 ``` xml
 <https>0000</https>
@@ -212,12 +214,12 @@ If `http_port` is specified, the OpenSSL configuration is ignored even if it is 
 
 ## http\_server\_default\_response {#server_configuration_parameters-http_server_default_response}
 
-The page that is shown by default when you access the ClickHouse HTTP(s) server.
-The default value is “Ok.” (with a line feed at the end)
+访问ClickHouse HTTP(s)服务器时默认显示的页面。
+默认值为 “Ok.” （最后有换行符)
 
-**Example**
+**示例**
 
-Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
+打开 `https://tabix.io/` 访问时 `http://localhost: http_port`.
 
 ``` xml
 <http_server_default_response>
@@ -225,13 +227,13 @@ Opens `https://tabix.io/` when accessing `http://localhost: http_port`.
 </http_server_default_response>
 ```
 
-## include\_from {#server_configuration_parameters-include_from}
+## 包括\_从 {#server_configuration_parameters-include_from}
 
-The path to the file with substitutions.
+带替换的文件的路径。
 
-For more information, see the section “[Configuration files](../configuration_files.md#configuration_files)”.
+有关详细信息，请参阅部分 “[配置文件](../configuration_files.md#configuration_files)”.
 
-**Example**
+**示例**
 
 ``` xml
 <include_from>/etc/metrica.xml</include_from>
@@ -239,9 +241,9 @@ For more information, see the section “[Configuration files](../configuration_
 
 ## interserver\_http\_port {#interserver-http-port}
 
-Port for exchanging data between ClickHouse servers.
+用于在ClickHouse服务器之间交换数据的端口。
 
-**Example**
+**示例**
 
 ``` xml
 <interserver_http_port>9009</interserver_http_port>
@@ -249,13 +251,13 @@ Port for exchanging data between ClickHouse servers.
 
 ## interserver\_http\_host {#interserver-http-host}
 
-The hostname that can be used by other servers to access this server.
+其他服务器可用于访问此服务器的主机名。
 
-If omitted, it is defined in the same way as the `hostname-f` command.
+如果省略，它以相同的方式作为定义 `hostname-f` 指挥部
 
-Useful for breaking away from a specific network interface.
+用于脱离特定的网络接口。
 
-**Example**
+**示例**
 
 ``` xml
 <interserver_http_host>example.yandex.ru</interserver_http_host>
@@ -263,15 +265,15 @@ Useful for breaking away from a specific network interface.
 
 ## interserver\_http\_credentials {#server-settings-interserver-http-credentials}
 
-The username and password used to authenticate during [replication](../../engines/table_engines/mergetree_family/replication.md) with the Replicated\* engines. These credentials are used only for communication between replicas and are unrelated to credentials for ClickHouse clients. The server is checking these credentials for connecting replicas and use the same credentials when connecting to other replicas. So, these credentials should be set the same for all replicas in a cluster.
-By default, the authentication is not used.
+用户名和密码用于在以下期间进行身份验证 [复制](../../engines/table_engines/mergetree_family/replication.md) 与复制\*引擎。 这些凭据仅用于副本之间的通信，与ClickHouse客户端的凭据无关。 服务器正在检查这些凭据以连接副本，并在连接到其他副本时使用相同的凭据。 因此，这些凭据应该为集群中的所有副本设置相同。
+默认情况下，不使用身份验证。
 
-This section contains the following parameters:
+本节包含以下参数:
 
 -   `user` — username.
 -   `password` — password.
 
-**Example**
+**示例**
 
 ``` xml
 <interserver_http_credentials>
@@ -282,9 +284,9 @@ This section contains the following parameters:
 
 ## keep\_alive\_timeout {#keep-alive-timeout}
 
-The number of seconds that ClickHouse waits for incoming requests before closing the connection. Defaults to 3 seconds.
+ClickHouse在关闭连接之前等待传入请求的秒数。 默认为3秒。
 
-**Example**
+**示例**
 
 ``` xml
 <keep_alive_timeout>3</keep_alive_timeout>
@@ -292,28 +294,28 @@ The number of seconds that ClickHouse waits for incoming requests before closing
 
 ## listen\_host {#server_configuration_parameters-listen_host}
 
-Restriction on hosts that requests can come from. If you want the server to answer all of them, specify `::`.
+对请求可能来自的主机的限制。 如果您希望服务器回答所有这些问题，请指定 `::`.
 
-Examples:
+例:
 
 ``` xml
 <listen_host>::1</listen_host>
 <listen_host>127.0.0.1</listen_host>
 ```
 
-## logger {#server_configuration_parameters-logger}
+## 记录器 {#server_configuration_parameters-logger}
 
-Logging settings.
+日志记录设置。
 
-Keys:
+键:
 
 -   level – Logging level. Acceptable values: `trace`, `debug`, `information`, `warning`, `error`.
 -   log – The log file. Contains all the entries according to `level`.
 -   errorlog – Error log file.
--   size – Size of the file. Applies to `log`and`errorlog`. Once the file reaches `size`, ClickHouse archives and renames it, and creates a new log file in its place.
+-   size – Size of the file. Applies to `log`和`errorlog`. 一旦文件到达 `size`，ClickHouse存档并重命名它，并在其位置创建一个新的日志文件。
 -   count – The number of archived log files that ClickHouse stores.
 
-**Example**
+**示例**
 
 ``` xml
 <logger>
@@ -325,7 +327,7 @@ Keys:
 </logger>
 ```
 
-Writing to the syslog is also supported. Config example:
+还支持写入系统日志。 配置示例:
 
 ``` xml
 <logger>
@@ -339,24 +341,24 @@ Writing to the syslog is also supported. Config example:
 </logger>
 ```
 
-Keys:
+键:
 
 -   use\_syslog — Required setting if you want to write to the syslog.
 -   address — The host\[:port\] of syslogd. If omitted, the local daemon is used.
 -   hostname — Optional. The name of the host that logs are sent from.
--   facility — [The syslog facility keyword](https://en.wikipedia.org/wiki/Syslog#Facility) in uppercase letters with the “LOG\_” prefix: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`, and so on).
-    Default value: `LOG_USER` if `address` is specified, `LOG_DAEMON otherwise.`
--   format – Message format. Possible values: `bsd` and `syslog.`
+-   facility — [系统日志工具关键字](https://en.wikipedia.org/wiki/Syslog#Facility) 在大写字母与 “LOG\_” 前缀: (`LOG_USER`, `LOG_DAEMON`, `LOG_LOCAL3`，等等）。
+    默认值: `LOG_USER` 如果 `address` 被指定, `LOG_DAEMON otherwise.`
+-   format – Message format. Possible values: `bsd` 和 `syslog.`
 
-## macros {#macros}
+## 宏 {#macros}
 
-Parameter substitutions for replicated tables.
+复制表的参数替换。
 
-Can be omitted if replicated tables are not used.
+如果不使用复制的表，则可以省略。
 
-For more information, see the section “[Creating replicated tables](../../engines/table_engines/mergetree_family/replication.md)”.
+有关详细信息，请参阅部分 “[创建复制的表](../../engines/table_engines/mergetree_family/replication.md)”.
 
-**Example**
+**示例**
 
 ``` xml
 <macros incl="macros" optional="true" />
@@ -364,11 +366,11 @@ For more information, see the section “[Creating replicated tables](../../engi
 
 ## mark\_cache\_size {#server-mark-cache-size}
 
-Approximate size (in bytes) of the cache of marks used by table engines of the [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) family.
+表引擎使用的标记缓存的近似大小（以字节为单位） [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) 家人
 
-The cache is shared for the server and memory is allocated as needed. The cache size must be at least 5368709120.
+缓存为服务器共享，并根据需要分配内存。 缓存大小必须至少为5368709120。
 
-**Example**
+**示例**
 
 ``` xml
 <mark_cache_size>5368709120</mark_cache_size>
@@ -376,9 +378,9 @@ The cache is shared for the server and memory is allocated as needed. The cache 
 
 ## max\_concurrent\_queries {#max-concurrent-queries}
 
-The maximum number of simultaneously processed requests.
+同时处理的请求的最大数量。
 
-**Example**
+**示例**
 
 ``` xml
 <max_concurrent_queries>100</max_concurrent_queries>
@@ -386,9 +388,9 @@ The maximum number of simultaneously processed requests.
 
 ## max\_connections {#max-connections}
 
-The maximum number of inbound connections.
+入站连接的最大数量。
 
-**Example**
+**示例**
 
 ``` xml
 <max_connections>4096</max_connections>
@@ -396,13 +398,13 @@ The maximum number of inbound connections.
 
 ## max\_open\_files {#max-open-files}
 
-The maximum number of open files.
+打开文件的最大数量。
 
-By default: `maximum`.
+默认情况下: `maximum`.
 
-We recommend using this option in Mac OS X since the `getrlimit()` function returns an incorrect value.
+我们建议在Mac OS X中使用此选项，因为 `getrlimit()` 函数返回一个不正确的值。
 
-**Example**
+**示例**
 
 ``` xml
 <max_open_files>262144</max_open_files>
@@ -410,17 +412,17 @@ We recommend using this option in Mac OS X since the `getrlimit()` function retu
 
 ## max\_table\_size\_to\_drop {#max-table-size-to-drop}
 
-Restriction on deleting tables.
+限制删除表。
 
-If the size of a [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) table exceeds `max_table_size_to_drop` (in bytes), you can’t delete it using a DROP query.
+如果一个大小 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) 表超过 `max_table_size_to_drop` （以字节为单位），您无法使用删除查询将其删除。
 
-If you still need to delete the table without restarting the ClickHouse server, create the `<clickhouse-path>/flags/force_drop_table` file and run the DROP query.
+如果仍然需要在不重新启动ClickHouse服务器的情况下删除表，请创建 `<clickhouse-path>/flags/force_drop_table` 文件并运行DROP查询。
 
-Default value: 50 GB.
+默认值：50GB。
 
-The value 0 means that you can delete all tables without any restrictions.
+值0表示您可以删除所有表而不受任何限制。
 
-**Example**
+**示例**
 
 ``` xml
 <max_table_size_to_drop>0</max_table_size_to_drop>
@@ -428,11 +430,11 @@ The value 0 means that you can delete all tables without any restrictions.
 
 ## merge\_tree {#server_configuration_parameters-merge_tree}
 
-Fine tuning for tables in the [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+微调中的表 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
 
-For more information, see the MergeTreeSettings.h header file.
+有关详细信息，请参阅MergeTreeSettings。h头文件。
 
-**Example**
+**示例**
 
 ``` xml
 <merge_tree>
@@ -442,34 +444,34 @@ For more information, see the MergeTreeSettings.h header file.
 
 ## openSSL {#server_configuration_parameters-openssl}
 
-SSL client/server configuration.
+SSL客户端/服务器配置。
 
-Support for SSL is provided by the `libpoco` library. The interface is described in the file [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
+对SSL的支持由 `libpoco` 图书馆. 该接口在文件中描述 [SSLManager.h](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/SSLManager.h)
 
-Keys for server/client settings:
+服务器/客户端设置的密钥:
 
 -   privateKeyFile – The path to the file with the secret key of the PEM certificate. The file may contain a key and certificate at the same time.
--   certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` contains the certificate.
+-   certificateFile – The path to the client/server certificate file in PEM format. You can omit it if `privateKeyFile` 包含证书。
 -   caConfig – The path to the file or directory that contains trusted root certificates.
--   verificationMode – The method for checking the node’s certificates. Details are in the description of the [Context](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) class. Possible values: `none`, `relaxed`, `strict`, `once`.
+-   verificationMode – The method for checking the node's certificates. Details are in the description of the [A.背景](https://github.com/ClickHouse-Extras/poco/blob/master/NetSSL_OpenSSL/include/Poco/Net/Context.h) 同学们 可能的值: `none`, `relaxed`, `strict`, `once`.
 -   verificationDepth – The maximum length of the verification chain. Verification will fail if the certificate chain length exceeds the set value.
 -   loadDefaultCAFile – Indicates that built-in CA certificates for OpenSSL will be used. Acceptable values: `true`, `false`. \|
 -   cipherList – Supported OpenSSL encryptions. For example: `ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH`.
--   cacheSessions – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. Acceptable values: `true`, `false`.
--   sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. This parameter is always recommended since it helps avoid problems both if the server caches the session and if the client requested caching. Default value: `${application.name}`.
+-   cacheSessions – Enables or disables caching sessions. Must be used in combination with `sessionIdContext`. 可接受的值: `true`, `false`.
+-   sessionIdContext – A unique set of random characters that the server appends to each generated identifier. The length of the string must not exceed `SSL_MAX_SSL_SESSION_ID_LENGTH`. 始终建议使用此参数，因为如果服务器缓存会话，以及客户端请求缓存，它有助于避免出现问题。 默认值: `${application.name}`.
 -   sessionCacheSize – The maximum number of sessions that the server caches. Default value: 1024\*20. 0 – Unlimited sessions.
 -   sessionTimeout – Time for caching the session on the server.
 -   extendedVerification – Automatically extended verification of certificates after the session ends. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1\_1 – Require a TLSv1.1 connection. Acceptable values: `true`, `false`.
 -   requireTLSv1 – Require a TLSv1.2 connection. Acceptable values: `true`, `false`.
--   fips – Activates OpenSSL FIPS mode. Supported if the library’s OpenSSL version supports FIPS.
+-   fips – Activates OpenSSL FIPS mode. Supported if the library's OpenSSL version supports FIPS.
 -   privateKeyPassphraseHandler – Class (PrivateKeyPassphraseHandler subclass) that requests the passphrase for accessing the private key. For example: `<privateKeyPassphraseHandler>`, `<name>KeyFileHandler</name>`, `<options><password>test</password></options>`, `</privateKeyPassphraseHandler>`.
 -   invalidCertificateHandler – Class (a subclass of CertificateHandler) for verifying invalid certificates. For example: `<invalidCertificateHandler> <name>ConsoleCertificateHandler</name> </invalidCertificateHandler>` .
 -   disableProtocols – Protocols that are not allowed to use.
 -   preferServerCiphers – Preferred server ciphers on the client.
 
-**Example of settings:**
+**设置示例:**
 
 ``` xml
 <openSSL>
@@ -501,18 +503,18 @@ Keys for server/client settings:
 
 ## part\_log {#server_configuration_parameters-part-log}
 
-Logging events that are associated with [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md). For instance, adding or merging data. You can use the log to simulate merge algorithms and compare their characteristics. You can visualize the merge process.
+记录与之关联的事件 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md). 例如，添加或合并数据。 您可以使用日志来模拟合并算法并比较它们的特征。 您可以可视化合并过程。
 
-Queries are logged in the [system.part\_log](../../operations/system_tables.md#system_tables-part-log) table, not in a separate file. You can configure the name of this table in the `table` parameter (see below).
+查询记录在 [系统。part\_log](../../operations/system_tables.md#system_tables-part-log) 表，而不是在一个单独的文件。 您可以在以下命令中配置此表的名称 `table` 参数（见下文）。
 
-Use the following parameters to configure logging:
+使用以下参数配置日志记录:
 
 -   `database` – Name of the database.
 -   `table` – Name of the system table.
--   `partition_by` – Sets a [custom partitioning key](../../engines/table_engines/mergetree_family/custom_partitioning_key.md).
+-   `partition_by` – Sets a [自定义分区键](../../engines/table_engines/mergetree_family/custom_partitioning_key.md).
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
-**Example**
+**示例**
 
 ``` xml
 <part_log>
@@ -523,14 +525,14 @@ Use the following parameters to configure logging:
 </part_log>
 ```
 
-## path {#server_configuration_parameters-path}
+## 路径 {#server_configuration_parameters-path}
 
-The path to the directory containing data.
+包含数据的目录的路径。
 
-!!! note "Note"
-    The trailing slash is mandatory.
+!!! note "注"
+    尾部斜杠是强制性的。
 
-**Example**
+**示例**
 
 ``` xml
 <path>/var/lib/clickhouse/</path>
@@ -538,20 +540,20 @@ The path to the directory containing data.
 
 ## query\_log {#server_configuration_parameters-query-log}
 
-Setting for logging queries received with the [log\_queries=1](../settings/settings.md) setting.
+用于记录接收到的查询的设置 [log\_queries=1](../settings/settings.md) 设置。
 
-Queries are logged in the [system.query\_log](../../operations/system_tables.md#system_tables-query_log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+查询记录在 [系统。query\_log](../../operations/system_tables.md#system_tables-query_log) 表，而不是在一个单独的文件。 您可以更改表的名称 `table` 参数（见下文）。
 
-Use the following parameters to configure logging:
+使用以下参数配置日志记录:
 
 -   `database` – Name of the database.
 -   `table` – Name of the system table the queries will be logged in.
--   `partition_by` – Sets a [custom partitioning key](../../engines/table_engines/mergetree_family/custom_partitioning_key.md) for a table.
+-   `partition_by` – Sets a [自定义分区键](../../engines/table_engines/mergetree_family/custom_partitioning_key.md) 为了一张桌子
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
-If the table doesn’t exist, ClickHouse will create it. If the structure of the query log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
+如果该表不存在，ClickHouse将创建它。 如果在ClickHouse服务器更新时查询日志的结构发生了更改，则会重命名具有旧结构的表，并自动创建新表。
 
-**Example**
+**示例**
 
 ``` xml
 <query_log>
@@ -564,20 +566,20 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 
 ## query\_thread\_log {#server_configuration_parameters-query-thread-log}
 
-Setting for logging threads of queries received with the [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads) setting.
+设置用于记录接收到的查询的线程 [log\_query\_threads=1](../settings/settings.md#settings-log-query-threads) 设置。
 
-Queries are logged in the [system.query\_thread\_log](../../operations/system_tables.md#system_tables-query-thread-log) table, not in a separate file. You can change the name of the table in the `table` parameter (see below).
+查询记录在 [系统。query\_thread\_log](../../operations/system_tables.md#system_tables-query-thread-log) 表，而不是在一个单独的文件。 您可以更改表的名称 `table` 参数（见下文）。
 
-Use the following parameters to configure logging:
+使用以下参数配置日志记录:
 
 -   `database` – Name of the database.
 -   `table` – Name of the system table the queries will be logged in.
--   `partition_by` – Sets a [custom partitioning key](../../engines/table_engines/mergetree_family/custom_partitioning_key.md) for a system table.
+-   `partition_by` – Sets a [自定义分区键](../../engines/table_engines/mergetree_family/custom_partitioning_key.md) 对于一个系统表。
 -   `flush_interval_milliseconds` – Interval for flushing data from the buffer in memory to the table.
 
-If the table doesn’t exist, ClickHouse will create it. If the structure of the query thread log changed when the ClickHouse server was updated, the table with the old structure is renamed, and a new table is created automatically.
+如果该表不存在，ClickHouse将创建它。 如果更新ClickHouse服务器时查询线程日志的结构发生了更改，则会重命名具有旧结构的表，并自动创建新表。
 
-**Example**
+**示例**
 
 ``` xml
 <query_thread_log>
@@ -590,16 +592,16 @@ If the table doesn’t exist, ClickHouse will create it. If the structure of the
 
 ## trace\_log {#server_configuration_parameters-trace_log}
 
-Settings for the [trace\_log](../../operations/system_tables.md#system_tables-trace_log) system table operation.
+设置为 [trace\_log](../../operations/system_tables.md#system_tables-trace_log) 系统表操作。
 
-Parameters:
+参数:
 
 -   `database` — Database for storing a table.
 -   `table` — Table name.
--   `partition_by` — [Custom partitioning key](../../engines/table_engines/mergetree_family/custom_partitioning_key.md) for a system table.
+-   `partition_by` — [自定义分区键](../../engines/table_engines/mergetree_family/custom_partitioning_key.md) 对于一个系统表。
 -   `flush_interval_milliseconds` — Interval for flushing data from the buffer in memory to the table.
 
-The default server configuration file `config.xml` contains the following settings section:
+默认服务器配置文件 `config.xml` 包含以下设置部分:
 
 ``` xml
 <trace_log>
@@ -612,12 +614,12 @@ The default server configuration file `config.xml` contains the following settin
 
 ## query\_masking\_rules {#query-masking-rules}
 
-Regexp-based rules, which will be applied to queries as well as all log messages before storing them in server logs,
-`system.query_log`, `system.text_log`, `system.processes` table, and in logs sent to the client. That allows preventing
-sensitive data leakage from SQL queries (like names, emails, personal
-identifiers or credit card numbers) to logs.
+基于正则表达式的规则，在将查询以及所有日志消息存储在服务器日志中之前，这些规则将应用于查询以及所有日志消息,
+`system.query_log`, `system.text_log`, `system.processes` 表，并在日志中发送给客户端。 这允许防止
+从SQL查询敏感数据泄漏（如姓名，电子邮件，个人
+标识符或信用卡号码）记录。
 
-**Example**
+**示例**
 
 ``` xml
 <query_masking_rules>
@@ -629,43 +631,43 @@ identifiers or credit card numbers) to logs.
 </query_masking_rules>
 ```
 
-Config fields:
-- `name` - name for the rule (optional)
-- `regexp` - RE2 compatible regular expression (mandatory)
-- `replace` - substitution string for sensitive data (optional, by default - six asterisks)
+配置字段:
+- `name` -规则的名称（可选)
+- `regexp` -RE2兼容正则表达式（强制性)
+- `replace` -敏感数据的替换字符串（可选，默认情况下-六个星号)
 
-The masking rules are applied to the whole query (to prevent leaks of sensitive data from malformed / non-parsable queries).
+屏蔽规则应用于整个查询（以防止敏感数据从格式错误/不可解析的查询泄漏）。
 
-`system.events` table have counter `QueryMaskingRulesMatch` which have an overall number of query masking rules matches.
+`system.events` 表有计数器 `QueryMaskingRulesMatch` 其中具有匹配的查询屏蔽规则的总数。
 
-For distributed queries each server have to be configured separately, otherwise, subqueries passed to other
-nodes will be stored without masking.
+对于分布式查询，每个服务器必须单独配置，否则，子查询传递给其他
+节点将被存储而不屏蔽。
 
 ## remote\_servers {#server-settings-remote-servers}
 
-Configuration of clusters used by the [Distributed](../../engines/table_engines/special/distributed.md) table engine and by the `cluster` table function.
+所使用的集群的配置 [分布](../../engines/table_engines/special/distributed.md) 表引擎和由 `cluster` 表功能。
 
-**Example**
+**示例**
 
 ``` xml
 <remote_servers incl="clickhouse_remote_servers" />
 ```
 
-For the value of the `incl` attribute, see the section “[Configuration files](../configuration_files.md#configuration_files)”.
+对于该值 `incl` 属性，请参阅部分 “[配置文件](../configuration_files.md#configuration_files)”.
 
-**See Also**
+**另请参阅**
 
 -   [skip\_unavailable\_shards](../settings/settings.md#settings-skip_unavailable_shards)
 
-## timezone {#server_configuration_parameters-timezone}
+## 时区 {#server_configuration_parameters-timezone}
 
-The server’s time zone.
+服务器的时区。
 
-Specified as an IANA identifier for the UTC timezone or geographic location (for example, Africa/Abidjan).
+指定为UTC时区或地理位置（例如，非洲/阿比让）的IANA标识符。
 
-The time zone is necessary for conversions between String and DateTime formats when DateTime fields are output to text format (printed on the screen or in a file), and when getting DateTime from a string. Besides, the time zone is used in functions that work with the time and date if they didn’t receive the time zone in the input parameters.
+当DateTime字段输出为文本格式（打印在屏幕上或文件中）时，以及从字符串获取DateTime时，时区对于字符串和DateTime格式之间的转换是必需的。 此外，如果在输入参数中没有收到时区，则时区用于处理时间和日期的函数。
 
-**Example**
+**示例**
 
 ``` xml
 <timezone>Europe/Moscow</timezone>
@@ -673,9 +675,9 @@ The time zone is necessary for conversions between String and DateTime formats w
 
 ## tcp\_port {#server_configuration_parameters-tcp_port}
 
-Port for communicating with clients over the TCP protocol.
+通过TCP协议与客户端通信的端口。
 
-**Example**
+**示例**
 
 ``` xml
 <tcp_port>9000</tcp_port>
@@ -683,13 +685,13 @@ Port for communicating with clients over the TCP protocol.
 
 ## tcp\_port\_secure {#server_configuration_parameters-tcp_port-secure}
 
-TCP port for secure communication with clients. Use it with [OpenSSL](#server_configuration_parameters-openssl) settings.
+TCP端口，用于与客户端进行安全通信。 使用它与 [OpenSSL](#server_configuration_parameters-openssl) 设置。
 
-**Possible values**
+**可能的值**
 
-Positive integer.
+整数。
 
-**Default value**
+**默认值**
 
 ``` xml
 <tcp_port_secure>9440</tcp_port_secure>
@@ -697,13 +699,13 @@ Positive integer.
 
 ## mysql\_port {#server_configuration_parameters-mysql_port}
 
-Port for communicating with clients over MySQL protocol.
+通过MySQL协议与客户端通信的端口。
 
-**Possible values**
+**可能的值**
 
-Positive integer.
+整数。
 
-Example
+示例
 
 ``` xml
 <mysql_port>9004</mysql_port>
@@ -711,12 +713,12 @@ Example
 
 ## tmp\_path {#server-settings-tmp_path}
 
-Path to temporary data for processing large queries.
+用于处理大型查询的临时数据的路径。
 
-!!! note "Note"
-    The trailing slash is mandatory.
+!!! note "注"
+    尾部斜杠是强制性的。
 
-**Example**
+**示例**
 
 ``` xml
 <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
@@ -724,24 +726,24 @@ Path to temporary data for processing large queries.
 
 ## tmp\_policy {#server-settings-tmp-policy}
 
-Policy from [`storage_configuration`](../../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes) to store temporary files.
-If not set [`tmp_path`](#server-settings-tmp_path) is used, otherwise it is ignored.
+从政策 [`storage_configuration`](../../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes) 存储临时文件。
+如果没有设置 [`tmp_path`](#server-settings-tmp_path) 被使用，否则被忽略。
 
-!!! note "Note"
-    - `move_factor` is ignored
-- `keep_free_space_bytes` is ignored
-- `max_data_part_size_bytes` is ignored
-- you must have exactly one volume in that policy
+!!! note "注"
+    - `move_factor` 被忽略
+- `keep_free_space_bytes` 被忽略
+- `max_data_part_size_bytes` 被忽略
+-您必须在该政策中只有一个卷
 
 ## uncompressed\_cache\_size {#server-settings-uncompressed_cache_size}
 
-Cache size (in bytes) for uncompressed data used by table engines from the [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
+表引擎使用的未压缩数据的缓存大小（以字节为单位） [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
 
-There is one shared cache for the server. Memory is allocated on demand. The cache is used if the option [use\_uncompressed\_cache](../settings/settings.md#setting-use_uncompressed_cache) is enabled.
+服务器有一个共享缓存。 内存按需分配。 如果选项使用缓存 [use\_uncompressed\_cache](../settings/settings.md#setting-use_uncompressed_cache) 被启用。
 
-The uncompressed cache is advantageous for very short queries in individual cases.
+在个别情况下，未压缩的缓存对于非常短的查询是有利的。
 
-**Example**
+**示例**
 
 ``` xml
 <uncompressed_cache_size>8589934592</uncompressed_cache_size>
@@ -749,9 +751,9 @@ The uncompressed cache is advantageous for very short queries in individual case
 
 ## user\_files\_path {#server_configuration_parameters-user_files_path}
 
-The directory with user files. Used in the table function [file()](../../sql_reference/table_functions/file.md).
+包含用户文件的目录。 在表函数中使用 [文件()](../../sql_reference/table_functions/file.md).
 
-**Example**
+**示例**
 
 ``` xml
 <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
@@ -759,30 +761,30 @@ The directory with user files. Used in the table function [file()](../../sql_ref
 
 ## users\_config {#users-config}
 
-Path to the file that contains:
+包含文件的路径:
 
--   User configurations.
--   Access rights.
--   Settings profiles.
--   Quota settings.
+-   用户配置。
+-   访问权限。
+-   设置配置文件。
+-   配额设置。
 
-**Example**
+**示例**
 
 ``` xml
 <users_config>users.xml</users_config>
 ```
 
-## zookeeper {#server-settings_zookeeper}
+## 动物园管理员 {#server-settings_zookeeper}
 
-Contains settings that allow ClickHouse to interact with a [ZooKeeper](http://zookeeper.apache.org/) cluster.
+包含允许ClickHouse与 [动物园管理员](http://zookeeper.apache.org/) 集群。
 
-ClickHouse uses ZooKeeper for storing metadata of replicas when using replicated tables. If replicated tables are not used, this section of parameters can be omitted.
+ClickHouse使用ZooKeeper在使用复制表时存储副本的元数据。 如果未使用复制的表，则可以省略此部分参数。
 
-This section contains the following parameters:
+本节包含以下参数:
 
 -   `node` — ZooKeeper endpoint. You can set multiple endpoints.
 
-    For example:
+    例如:
 
 <!-- -->
 
@@ -796,10 +798,10 @@ This section contains the following parameters:
       The `index` attribute specifies the node order when trying to connect to the ZooKeeper cluster.
 
 -   `session_timeout` — Maximum timeout for the client session in milliseconds.
--   `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) that is used as the root for znodes used by the ClickHouse server. Optional.
+-   `root` — The [znode](http://zookeeper.apache.org/doc/r3.5.5/zookeeperOver.html#Nodes+and+ephemeral+nodes) 隆隆隆隆路虏脢..陇.貌.垄拢卢虏禄.陇.貌路.隆拢脳枚脢虏.麓脢for脱 可选。
 -   `identity` — User and password, that can be required by ZooKeeper to give access to requested znodes. Optional.
 
-**Example configuration**
+**配置示例**
 
 ``` xml
 <zookeeper>
@@ -820,51 +822,51 @@ This section contains the following parameters:
 </zookeeper>
 ```
 
-**See Also**
+**另请参阅**
 
--   [Replication](../../engines/table_engines/mergetree_family/replication.md)
--   [ZooKeeper Programmer’s Guide](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
+-   [复制](../../engines/table_engines/mergetree_family/replication.md)
+-   [动物园管理员程序员指南](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)
 
 ## use\_minimalistic\_part\_header\_in\_zookeeper {#server-settings-use_minimalistic_part_header_in_zookeeper}
 
-Storage method for data part headers in ZooKeeper.
+ZooKeeper中数据部分头的存储方法。
 
-This setting only applies to the `MergeTree` family. It can be specified:
+此设置仅适用于 `MergeTree` 家人 它可以指定:
 
--   Globally in the [merge\_tree](#server_configuration_parameters-merge_tree) section of the `config.xml` file.
+-   在全球范围内 [merge\_tree](#server_configuration_parameters-merge_tree) 一节 `config.xml` 文件
 
-    ClickHouse uses the setting for all the tables on the server. You can change the setting at any time. Existing tables change their behaviour when the setting changes.
+    ClickHouse使用服务器上所有表的设置。 您可以随时更改设置。 当设置更改时，现有表会更改其行为。
 
--   For each table.
+-   对于每个表。
 
-    When creating a table, specify the corresponding [engine setting](../../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-creating-a-table). The behaviour of an existing table with this setting does not change, even if the global setting changes.
+    创建表时，指定相应的 [发动机设置](../../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-creating-a-table). 即使全局设置更改，具有此设置的现有表的行为也不会更改。
 
-**Possible values**
+**可能的值**
 
 -   0 — Functionality is turned off.
 -   1 — Functionality is turned on.
 
-If `use_minimalistic_part_header_in_zookeeper = 1`, then [replicated](../../engines/table_engines/mergetree_family/replication.md) tables store the headers of the data parts compactly using a single `znode`. If the table contains many columns, this storage method significantly reduces the volume of the data stored in Zookeeper.
+如果 `use_minimalistic_part_header_in_zookeeper = 1`，然后 [复制](../../engines/table_engines/mergetree_family/replication.md) 表存储的数据部分的头紧凑使用一个单一的 `znode`. 如果表包含许多列，则此存储方法显着减少了Zookeeper中存储的数据量。
 
-!!! attention "Attention"
-    After applying `use_minimalistic_part_header_in_zookeeper = 1`, you can’t downgrade the ClickHouse server to a version that doesn’t support this setting. Be careful when upgrading ClickHouse on servers in a cluster. Don’t upgrade all the servers at once. It is safer to test new versions of ClickHouse in a test environment, or on just a few servers of a cluster.
+!!! attention "注意"
+    申请后 `use_minimalistic_part_header_in_zookeeper = 1`，您不能将ClickHouse服务器降级到不支持此设置的版本。 在集群中的服务器上升级ClickHouse时要小心。 不要一次升级所有服务器。 在测试环境中或在集群的几台服务器上测试ClickHouse的新版本更安全。
 
       Data part headers already stored with this setting can't be restored to their previous (non-compact) representation.
 
-**Default value:** 0.
+**默认值:** 0.
 
 ## disable\_internal\_dns\_cache {#server-settings-disable-internal-dns-cache}
 
-Disables the internal DNS cache. Recommended for operating ClickHouse in systems
-with frequently changing infrastructure such as Kubernetes.
+禁用内部DNS缓存。 推荐用于在系统中运行ClickHouse
+随着频繁变化的基础设施，如Kubernetes。
 
-**Default value:** 0.
+**默认值:** 0.
 
 ## dns\_cache\_update\_period {#server-settings-dns-cache-update-period}
 
-The period of updating IP addresses stored in the ClickHouse internal DNS cache (in seconds).
-The update is performed asynchronously, in a separate system thread.
+更新存储在ClickHouse内部DNS缓存中的IP地址的周期（以秒为单位）。
+更新是在一个单独的系统线程中异步执行的。
 
-**Default value**: 15.
+**默认值**: 15.
 
-[Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 自定义分区键 {#zi-ding-yi-fen-qu-jian}
 
 [MergeTree](mergetree.md) 系列的表（包括 [可复制表](replication.md) ）可以使用分区。基于 MergeTree 表的 [物化视图](../special/materializedview.md) 也支持分区。
@@ -33,7 +38,7 @@ ORDER BY (CounterID, StartDate, intHash32(UserID));
 !!! attention "注意"
     那些有相同分区表达式值的数据片段才会合并。这意味着 **你不应该用太精细的分区方案**（超过一千个分区）。否则，会因为文件系统中的文件数量和需要找开的文件描述符过多，导致 `SELECT` 查询效率不佳。
 
-可以通过 [system.parts](../../../engines/table_engines/mergetree_family/custom_partitioning_key.md#system_tables-parts) 表查看表片段和分区信息。例如，假设我们有一个 `visits` 表，按月分区。对 `system.parts` 表执行 `SELECT`：
+可以通过 [系统。零件](../../../engines/table_engines/mergetree_family/custom_partitioning_key.md#system_tables-parts) 表查看表片段和分区信息。例如，假设我们有一个 `visits` 表，按月分区。对 `system.parts` 表执行 `SELECT`：
 
 ``` sql
 SELECT

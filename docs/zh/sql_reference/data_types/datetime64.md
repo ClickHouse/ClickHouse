@@ -1,25 +1,27 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 49
 toc_title: DateTime64
 ---
 
 # Datetime64 {#data_type-datetime64}
 
-Allows to store an instant in time, that can be expressed as a calendar date and a time of a day, with defined sub-second precision
+允许存储时间instant间，可以表示为日历日期和一天中的时间，具有定义的亚秒精度
 
-Tick size (precision): 10<sup>-precision</sup> seconds
+刻度尺寸（精度）：10<sup>-精度</sup> 秒
 
-Syntax:
+语法:
 
 ``` sql
 DateTime64(precision, [timezone])
 ```
 
-Internally, stores data as a number of ‘ticks’ since epoch start (1970-01-01 00:00:00 UTC) as Int64. The tick resolution is determined by the precision parameter. Additionally, the `DateTime64` type can store time zone that is the same for the entire column, that affects how the values of the `DateTime64` type values are displayed in text format and how the values specified as strings are parsed (‘2020-01-01 05:00:01.000’). The time zone is not stored in the rows of the table (or in resultset), but is stored in the column metadata. See details in [DateTime](datetime.md).
+在内部，存储数据作为一些 ‘ticks’ 自纪元开始(1970-01-01 00:00:00UTC)作为Int64. 刻度分辨率由precision参数确定。 此外，该 `DateTime64` 类型可以存储时区是相同的整个列，影响如何的值 `DateTime64` 类型值以文本格式显示，以及如何解析指定为字符串的值 (‘2020-01-01 05:00:01.000’). 时区不存储在表的行中（或resultset中），而是存储在列元数据中。 查看详细信息 [日期时间](datetime.md).
 
-## Examples {#examples}
+## 例 {#examples}
 
-**1.** Creating a table with `DateTime64`-type column and inserting data into it:
+**1.** 创建一个表 `DateTime64`-输入列并将数据插入其中:
 
 ``` sql
 CREATE TABLE dt
@@ -45,10 +47,10 @@ SELECT * FROM dt
 └─────────────────────────┴──────────┘
 ```
 
--   When inserting datetime as an integer, it is treated as an appropriately scaled Unix Timestamp (UTC). `1546300800000` (with precision 3) represents `'2019-01-01 00:00:00'` UTC. However, as `timestamp` column has `Europe/Moscow` (UTC+3) timezone specified, when outputting as a string the value will be shown as `'2019-01-01 03:00:00'`
--   When inserting string value as datetime, it is treated as being in column timezone. `'2019-01-01 00:00:00'` will be treated as being in `Europe/Moscow` timezone and stored as `1546290000000`.
+-   将日期时间作为整数插入时，将其视为适当缩放的Unix时间戳(UTC)。 `1546300800000` （精度为3）表示 `'2019-01-01 00:00:00'` UTC. 然而，作为 `timestamp` 列有 `Europe/Moscow` （UTC+3）指定的时区，当输出为字符串时，该值将显示为 `'2019-01-01 03:00:00'`
+-   当插入字符串值作为日期时间时，它被视为处于列时区。 `'2019-01-01 00:00:00'` 将被视为 `Europe/Moscow` 时区并存储为 `1546290000000`.
 
-**2.** Filtering on `DateTime64` values
+**2.** 过滤 `DateTime64` 值
 
 ``` sql
 SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europe/Moscow')
@@ -60,9 +62,9 @@ SELECT * FROM dt WHERE timestamp = toDateTime64('2019-01-01 00:00:00', 3, 'Europ
 └─────────────────────────┴──────────┘
 ```
 
-Unlike `DateTime`, `DateTime64` values are not converted from `String` automatically
+不像 `DateTime`, `DateTime64` 值不转换为 `String` 自动
 
-**3.** Getting a time zone for a `DateTime64`-type value:
+**3.** 获取一个时区 `DateTime64`-类型值:
 
 ``` sql
 SELECT toDateTime64(now(), 3, 'Europe/Moscow') AS column, toTypeName(column) AS x
@@ -74,7 +76,7 @@ SELECT toDateTime64(now(), 3, 'Europe/Moscow') AS column, toTypeName(column) AS 
 └─────────────────────────┴────────────────────────────────┘
 ```
 
-**4.** Timezone conversion
+**4.** 时区转换
 
 ``` sql
 SELECT
@@ -90,13 +92,13 @@ FROM dt
 └─────────────────────────┴─────────────────────────┘
 ```
 
-## See Also {#see-also}
+## 另请参阅 {#see-also}
 
--   [Type conversion functions](../../sql_reference/functions/type_conversion_functions.md)
--   [Functions for working with dates and times](../../sql_reference/functions/date_time_functions.md)
--   [Functions for working with arrays](../../sql_reference/functions/array_functions.md)
--   [The `date_time_input_format` setting](../../operations/settings/settings.md#settings-date_time_input_format)
--   [The `timezone` server configuration parameter](../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-timezone)
--   [Operators for working with dates and times](../../sql_reference/operators.md#operators-datetime)
--   [`Date` data type](date.md)
--   [`DateTime` data type](datetime.md)
+-   [类型转换函数](../../sql_reference/functions/type_conversion_functions.md)
+-   [用于处理日期和时间的函数](../../sql_reference/functions/date_time_functions.md)
+-   [用于处理数组的函数](../../sql_reference/functions/array_functions.md)
+-   [该 `date_time_input_format` 设置](../../operations/settings/settings.md#settings-date_time_input_format)
+-   [该 `timezone` 服务器配置参数](../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-timezone)
+-   [使用日期和时间的操作员](../../sql_reference/operators.md#operators-datetime)
+-   [`Date` 数据类型](date.md)
+-   [`DateTime` 数据类型](datetime.md)

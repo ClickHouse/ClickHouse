@@ -1,25 +1,27 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 40
-toc_title: remote
+toc_title: "\u8FDC\u7A0B"
 ---
 
-# remote, remoteSecure {#remote-remotesecure}
+# 远程，远程安全 {#remote-remotesecure}
 
-Allows you to access remote servers without creating a `Distributed` table.
+允许您访问远程服务器，而无需创建 `Distributed` 桌子
 
-Signatures:
+签名:
 
 ``` sql
 remote('addresses_expr', db, table[, 'user'[, 'password']])
 remote('addresses_expr', db.table[, 'user'[, 'password']])
 ```
 
-`addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`, or just `host`. The host can be specified as the server name, or as the IPv4 or IPv6 address. An IPv6 address is specified in square brackets. The port is the TCP port on the remote server. If the port is omitted, it uses `tcp_port` from the server’s config file (by default, 9000).
+`addresses_expr` – An expression that generates addresses of remote servers. This may be just one server address. The server address is `host:port`，或者只是 `host`. 主机可以指定为服务器名称，也可以指定为IPv4或IPv6地址。 IPv6地址在方括号中指定。 端口是远程服务器上的TCP端口。 如果省略端口，它使用 `tcp_port` 从服务器的配置文件（默认情况下，9000）。
 
-!!! important "Important"
-    The port is required for an IPv6 address.
+!!! important "重要事项"
+    IPv6地址需要该端口。
 
-Examples:
+例:
 
 ``` text
 example01-01-1
@@ -30,52 +32,52 @@ localhost
 [2a02:6b8:0:1111::11]:9000
 ```
 
-Multiple addresses can be comma-separated. In this case, ClickHouse will use distributed processing, so it will send the query to all specified addresses (like to shards with different data).
+多个地址可以用逗号分隔。 在这种情况下，ClickHouse将使用分布式处理，因此它将将查询发送到所有指定的地址（如具有不同数据的分片）。
 
-Example:
+示例:
 
 ``` text
 example01-01-1,example01-02-1
 ```
 
-Part of the expression can be specified in curly brackets. The previous example can be written as follows:
+表达式的一部分可以用大括号指定。 前面的示例可以写成如下:
 
 ``` text
 example01-0{1,2}-1
 ```
 
-Curly brackets can contain a range of numbers separated by two dots (non-negative integers). In this case, the range is expanded to a set of values that generate shard addresses. If the first number starts with zero, the values are formed with the same zero alignment. The previous example can be written as follows:
+大括号可以包含由两个点（非负整数）分隔的数字范围。 在这种情况下，范围将扩展为生成分片地址的一组值。 如果第一个数字以零开头，则使用相同的零对齐形成值。 前面的示例可以写成如下:
 
 ``` text
 example01-{01..02}-1
 ```
 
-If you have multiple pairs of curly brackets, it generates the direct product of the corresponding sets.
+如果您有多对大括号，它会生成相应集合的直接乘积。
 
-Addresses and parts of addresses in curly brackets can be separated by the pipe symbol (\|). In this case, the corresponding sets of addresses are interpreted as replicas, and the query will be sent to the first healthy replica. However, the replicas are iterated in the order currently set in the [load\_balancing](../../operations/settings/settings.md) setting.
+大括号中的地址和部分地址可以用管道符号(\|)分隔。 在这种情况下，相应的地址集被解释为副本，并且查询将被发送到第一个正常副本。 但是，副本将按照当前设置的顺序进行迭代 [load\_balancing](../../operations/settings/settings.md) 设置。
 
-Example:
+示例:
 
 ``` text
 example01-{01..02}-{1|2}
 ```
 
-This example specifies two shards that each have two replicas.
+此示例指定两个分片，每个分片都有两个副本。
 
-The number of addresses generated is limited by a constant. Right now this is 1000 addresses.
+生成的地址数由常量限制。 现在这是1000个地址。
 
-Using the `remote` table function is less optimal than creating a `Distributed` table, because in this case, the server connection is re-established for every request. In addition, if host names are set, the names are resolved, and errors are not counted when working with various replicas. When processing a large number of queries, always create the `Distributed` table ahead of time, and don’t use the `remote` table function.
+使用 `remote` 表函数比创建一个不太优化 `Distributed` 表，因为在这种情况下，服务器连接被重新建立为每个请求。 此外，如果设置了主机名，则会解析这些名称，并且在使用各种副本时不会计算错误。 在处理大量查询时，始终创建 `Distributed` 表的时间提前，不要使用 `remote` 表功能。
 
-The `remote` table function can be useful in the following cases:
+该 `remote` 表函数可以在以下情况下是有用的:
 
--   Accessing a specific server for data comparison, debugging, and testing.
--   Queries between various ClickHouse clusters for research purposes.
--   Infrequent distributed requests that are made manually.
--   Distributed requests where the set of servers is re-defined each time.
+-   访问特定服务器进行数据比较、调试和测试。
+-   查询之间的各种ClickHouse群集用于研究目的。
+-   手动发出的罕见分布式请求。
+-   每次重新定义服务器集的分布式请求。
 
-If the user is not specified, `default` is used.
-If the password is not specified, an empty password is used.
+如果未指定用户, `default` 被使用。
+如果未指定密码，则使用空密码。
 
-`remoteSecure` - same as `remote` but with secured connection. Default port — [tcp\_port\_secure](../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) from config or 9440.
+`remoteSecure` -相同 `remote` but with secured connection. Default port — [tcp\_port\_secure](../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) 从配置或9440.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/remote/) <!--hide-->

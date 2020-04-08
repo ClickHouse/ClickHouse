@@ -1,9 +1,11 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 38
 toc_title: SHOW
 ---
 
-# SHOW Queries {#show-queries}
+# 显示查询 {#show-queries}
 
 ## SHOW CREATE TABLE {#show-create-table}
 
@@ -11,7 +13,7 @@ toc_title: SHOW
 SHOW CREATE [TEMPORARY] [TABLE|DICTIONARY] [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns a single `String`-type ‘statement’ column, which contains a single value – the `CREATE` query used for creating the specified object.
+返回单 `String`-类型 ‘statement’ column, which contains a single value – the `CREATE` 用于创建指定对象的查询。
 
 ## SHOW DATABASES {#show-databases}
 
@@ -19,8 +21,8 @@ Returns a single `String`-type ‘statement’ column, which contains a single v
 SHOW DATABASES [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Prints a list of all databases.
-This query is identical to `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
+打印所有数据库的列表。
+这个查询是相同的 `SELECT name FROM system.databases [INTO OUTFILE filename] [FORMAT format]`.
 
 ## SHOW PROCESSLIST {#show-processlist}
 
@@ -28,11 +30,11 @@ This query is identical to `SELECT name FROM system.databases [INTO OUTFILE file
 SHOW PROCESSLIST [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Outputs the content of the [system.processes](../../operations/system_tables.md#system_tables-processes) table, that contains a list of queries that is being processed at the moment, excepting `SHOW PROCESSLIST` queries.
+输出的内容 [系统。流程](../../operations/system_tables.md#system_tables-processes) 表，包含目前正在处理的查询列表，除了 `SHOW PROCESSLIST` 查询。
 
-The `SELECT * FROM system.processes` query returns data about all the current queries.
+该 `SELECT * FROM system.processes` 查询返回有关所有当前查询的数据。
 
-Tip (execute in the console):
+提示（在控制台中执行):
 
 ``` bash
 $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
@@ -40,23 +42,23 @@ $ watch -n1 "clickhouse-client --query='SHOW PROCESSLIST'"
 
 ## SHOW TABLES {#show-tables}
 
-Displays a list of tables.
+显示表的列表。
 
 ``` sql
 SHOW [TEMPORARY] TABLES [{FROM | IN} <db>] [LIKE '<pattern>' | WHERE expr] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-If the `FROM` clause is not specified, the query returns the list of tables from the current database.
+如果 `FROM` 如果未指定子句，则查询返回当前数据库中的表列表。
 
-You can get the same results as the `SHOW TABLES` query in the following way:
+你可以得到相同的结果 `SHOW TABLES` 通过以下方式进行查询:
 
 ``` sql
 SELECT name FROM system.tables WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-**Example**
+**示例**
 
-The following query selects the first two rows from the list of tables in the `system` database, whose names contain `co`.
+下面的查询从表的列表中选择前两行 `system` 数据库，其名称包含 `co`.
 
 ``` sql
 SHOW TABLES FROM system LIKE '%co%' LIMIT 2
@@ -71,23 +73,23 @@ SHOW TABLES FROM system LIKE '%co%' LIMIT 2
 
 ## SHOW DICTIONARIES {#show-dictionaries}
 
-Displays a list of [external dictionaries](../../sql_reference/dictionaries/external_dictionaries/external_dicts.md).
+显示列表 [外部字典](../../sql_reference/dictionaries/external_dictionaries/external_dicts.md).
 
 ``` sql
 SHOW DICTIONARIES [FROM <db>] [LIKE '<pattern>'] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-If the `FROM` clause is not specified, the query returns the list of dictionaries from the current database.
+如果 `FROM` 如果未指定子句，则查询从当前数据库返回字典列表。
 
-You can get the same results as the `SHOW DICTIONARIES` query in the following way:
+你可以得到相同的结果 `SHOW DICTIONARIES` 通过以下方式进行查询:
 
 ``` sql
 SELECT name FROM system.dictionaries WHERE database = <db> [AND name LIKE <pattern>] [LIMIT <N>] [INTO OUTFILE <filename>] [FORMAT <format>]
 ```
 
-**Example**
+**示例**
 
-The following query selects the first two rows from the list of tables in the `system` database, whose names contain `reg`.
+下面的查询从表的列表中选择前两行 `system` 数据库，其名称包含 `reg`.
 
 ``` sql
 SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
@@ -100,4 +102,4 @@ SHOW DICTIONARIES FROM db LIKE '%reg%' LIMIT 2
 └──────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/show/) <!--hide-->

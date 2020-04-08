@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 入门 {#ru-men}
 
 如果您是ClickHouse的新手，并希望亲身体验它的性能，首先您需要通过 [安装过程](install.md).

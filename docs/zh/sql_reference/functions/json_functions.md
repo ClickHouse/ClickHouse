@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # JSON函数 {#jsonhan-shu}
 
 在Yandex.Metrica中，用户使用JSON作为访问参数。为了处理这些JSON，实现了一些函数。（尽管在大多数情况下，JSON是预先进行额外处理的，并将结果值放在单独的列中。）所有的这些函数都进行了尽可能的假设。以使函数能够尽快的完成工作。
@@ -9,27 +14,27 @@
 3.  函数可以随意的在多层嵌套结构下查找字段。如果存在多个匹配字段，则返回第一个匹配字段。
 4.  JSON除字符串文本外不存在空格字符。
 
-## visitParamHas(params, name) {#visitparamhasparams-name}
+## ﾂ环板(ｮﾂ嘉ｯﾂ偲青visｬﾂ静ｬﾂ青ｻﾂ催ｬﾂ渉) {#visitparamhasparams-name}
 
 检查是否存在«name»名称的字段
 
-## visitParamExtractUInt(params, name) {#visitparamextractuintparams-name}
+## 访问paramextractuint(参数，名称) {#visitparamextractuintparams-name}
 
 将名为«name»的字段的值解析成UInt64。如果这是一个字符串字段，函数将尝试从字符串的开头解析一个数字。如果该字段不存在，或无法从它中解析到数字，则返回0。
 
-## visitParamExtractInt(params, name) {#visitparamextractintparams-name}
+## visitParamExtractInt(参数，名称) {#visitparamextractintparams-name}
 
 与visitParamExtractUInt相同，但返回Int64。
 
-## visitParamExtractFloat(params, name) {#visitparamextractfloatparams-name}
+## 访问paramextractfloat(参数，名称) {#visitparamextractfloatparams-name}
 
 与visitParamExtractUInt相同，但返回Float64。
 
-## visitParamExtractBool(params, name) {#visitparamextractboolparams-name}
+## ﾂ环板(ｮﾂ嘉ｯﾂ偲青妥-ﾂ姪(不ﾂ督ｮﾂ産) {#visitparamextractboolparams-name}
 
 解析true/false值。其结果是UInt8类型的。
 
-## visitParamExtractRaw(params, name) {#visitparamextractrawparams-name}
+## 掳胫((禄脢鹿脷露胫鲁隆鹿((酶-11-16""\[脪陆(,,,) {#visitparamextractrawparams-name}
 
 返回字段的值，包含空格符。
 
@@ -38,7 +43,7 @@
     visitParamExtractRaw('{"abc":"\\n\\u0000"}', 'abc') = '"\\n\\u0000"'
     visitParamExtractRaw('{"abc":{"def":[1,2,3]}}', 'abc') = '{"def":[1,2,3]}'
 
-## visitParamExtractString(params, name) {#visitparamextractstringparams-name}
+## visitParamExtractString(参数，名称) {#visitparamextractstringparams-name}
 
 使用双引号解析字符串。这个值没有进行转义。如果转义失败，它将返回一个空白字符串。
 

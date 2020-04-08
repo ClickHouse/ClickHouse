@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 ## 修复于 ClickHouse Release 18.12.13, 2018-09-10 {#xiu-fu-yu-clickhouse-release-18-12-13-2018-09-10}
 
 ### CVE-2018-14672 {#cve-2018-14672}

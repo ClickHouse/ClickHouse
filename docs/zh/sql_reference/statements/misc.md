@@ -1,63 +1,65 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 39
-toc_title: Other
+toc_title: "\u5176\u4ED6"
 ---
 
-# Miscellaneous Queries {#miscellaneous-queries}
+# 杂项查询 {#miscellaneous-queries}
 
 ## ATTACH {#attach}
 
-This query is exactly the same as `CREATE`, but
+这个查询是完全一样的 `CREATE`，但是
 
--   Instead of the word `CREATE` it uses the word `ATTACH`.
--   The query does not create data on the disk, but assumes that data is already in the appropriate places, and just adds information about the table to the server.
-    After executing an ATTACH query, the server will know about the existence of the table.
+-   而不是这个词 `CREATE` 它使用这个词 `ATTACH`.
+-   查询不会在磁盘上创建数据，但假定数据已经在适当的位置，只是将有关表的信息添加到服务器。
+    执行附加查询后，服务器将知道表的存在。
 
-If the table was previously detached (`DETACH`), meaning that its structure is known, you can use shorthand without defining the structure.
+如果表之前已分离 (`DETACH`），意味着其结构是已知的，可以使用速记而不限定该结构。
 
 ``` sql
 ATTACH TABLE [IF NOT EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-This query is used when starting the server. The server stores table metadata as files with `ATTACH` queries, which it simply runs at launch (with the exception of system tables, which are explicitly created on the server).
+启动服务器时使用此查询。 服务器将表元数据作为文件存储 `ATTACH` 查询，它只是在启动时运行（除了在服务器上显式创建的系统表）。
 
 ## CHECK TABLE {#check-table}
 
-Checks if the data in the table is corrupted.
+检查表中的数据是否已损坏。
 
 ``` sql
 CHECK TABLE [db.]name
 ```
 
-The `CHECK TABLE` query compares actual file sizes with the expected values which are stored on the server. If the file sizes do not match the stored values, it means the data is corrupted. This can be caused, for example, by a system crash during query execution.
+该 `CHECK TABLE` 查询将实际文件大小与存储在服务器上的预期值进行比较。 如果文件大小与存储的值不匹配，则表示数据已损坏。 例如，这可能是由查询执行期间的系统崩溃引起的。
 
-The query response contains the `result` column with a single row. The row has a value of
-[Boolean](../../sql_reference/data_types/boolean.md) type:
+查询响应包含 `result` 具有单行的列。 该行的值为
+[布尔值](../../sql_reference/data_types/boolean.md) 类型:
 
--   0 - The data in the table is corrupted.
--   1 - The data maintains integrity.
+-   0-表中的数据已损坏。
+-   1-数据保持完整性。
 
-The `CHECK TABLE` query supports the following table engines:
+该 `CHECK TABLE` 查询支持下表引擎:
 
--   [Log](../../engines/table_engines/log_family/log.md)
+-   [日志](../../engines/table_engines/log_family/log.md)
 -   [TinyLog](../../engines/table_engines/log_family/tinylog.md)
 -   [StripeLog](../../engines/table_engines/log_family/stripelog.md)
--   [MergeTree family](../../engines/table_engines/mergetree_family/mergetree.md)
+-   [梅树家族](../../engines/table_engines/mergetree_family/mergetree.md)
 
-Performed over the tables with another table engines causes an exception.
+使用另一个表引擎对表执行会导致异常。
 
-Engines from the `*Log` family don’t provide automatic data recovery on failure. Use the `CHECK TABLE` query to track data loss in a timely manner.
+从发动机 `*Log` 家庭不提供故障自动数据恢复。 使用 `CHECK TABLE` 查询以及时跟踪数据丢失。
 
-For `MergeTree` family engines, the `CHECK TABLE` query shows a check status for every individual data part of a table on the local server.
+为 `MergeTree` 家庭发动机， `CHECK TABLE` 查询显示本地服务器上表的每个单独数据部分的检查状态。
 
-**If the data is corrupted**
+**如果数据已损坏**
 
-If the table is corrupted, you can copy the non-corrupted data to another table. To do this:
+如果表已损坏，则可以将未损坏的数据复制到另一个表。 要做到这一点:
 
-1.  Create a new table with the same structure as damaged table. To do this execute the query `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2.  Set the [max\_threads](../../operations/settings/settings.md#settings-max_threads) value to 1 to process the next query in a single thread. To do this run the query `SET max_threads = 1`.
-3.  Execute the query `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. This request copies the non-corrupted data from the damaged table to another table. Only the data before the corrupted part will be copied.
-4.  Restart the `clickhouse-client` to reset the `max_threads` value.
+1.  创建具有与损坏的表相同结构的新表。 要执行此操作，请执行查询 `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
+2.  设置 [max\_threads](../../operations/settings/settings.md#settings-max_threads) 值为1以在单个线程中处理下一个查询。 要执行此操作，请运行查询 `SET max_threads = 1`.
+3.  执行查询 `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. 此请求将未损坏的数据从损坏的表复制到另一个表。 只有损坏部分之前的数据才会被复制。
+4.  重新启动 `clickhouse-client` 要重置 `max_threads` 价值。
 
 ## DESCRIBE TABLE {#misc-describe-table}
 
@@ -65,51 +67,51 @@ If the table is corrupted, you can copy the non-corrupted data to another table.
 DESC|DESCRIBE TABLE [db.]table [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns the following `String` type columns:
+返回以下内容 `String` 类型列:
 
 -   `name` — Column name.
 -   `type`— Column type.
--   `default_type` — Clause that is used in [default expression](create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` or `ALIAS`). Column contains an empty string, if the default expression isn’t specified.
--   `default_expression` — Value specified in the `DEFAULT` clause.
+-   `default_type` — Clause that is used in [默认表达式](create.md#create-default-values) (`DEFAULT`, `MATERIALIZED` 或 `ALIAS`). 如果未指定默认表达式，则Column包含一个空字符串。
+-   `default_expression` — Value specified in the `DEFAULT` 条款
 -   `comment_expression` — Comment text.
 
-Nested data structures are output in “expanded” format. Each column is shown separately, with the name after a dot.
+嵌套的数据结构输出 “expanded” 格式。 每列分别显示，名称后面有一个点。
 
 ## DETACH {#detach}
 
-Deletes information about the ‘name’ table from the server. The server stops knowing about the table’s existence.
+删除有关 ‘name’ 表从服务器。 服务器停止了解表的存在。
 
 ``` sql
 DETACH TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-This does not delete the table’s data or metadata. On the next server launch, the server will read the metadata and find out about the table again.
-Similarly, a “detached” table can be re-attached using the `ATTACH` query (with the exception of system tables, which do not have metadata stored for them).
+这不会删除表的数据或元数据。 在下一次服务器启动时，服务器将读取元数据并再次查找有关表的信息。
+同样，一个 “detached” 表可以使用重新连接 `ATTACH` 查询（系统表除外，它们没有为它们存储元数据）。
 
-There is no `DETACH DATABASE` query.
+没有 `DETACH DATABASE` 查询。
 
 ## DROP {#drop}
 
-This query has two types: `DROP DATABASE` and `DROP TABLE`.
+此查询有两种类型: `DROP DATABASE` 和 `DROP TABLE`.
 
 ``` sql
 DROP DATABASE [IF EXISTS] db [ON CLUSTER cluster]
 ```
 
-Deletes all tables inside the ‘db’ database, then deletes the ‘db’ database itself.
-If `IF EXISTS` is specified, it doesn’t return an error if the database doesn’t exist.
+删除内部的所有表 ‘db’ 数据库，然后删除 ‘db’ 数据库本身。
+如果 `IF EXISTS` 如果数据库不存在，则不会返回错误。
 
 ``` sql
 DROP [TEMPORARY] TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-Deletes the table.
-If `IF EXISTS` is specified, it doesn’t return an error if the table doesn’t exist or the database doesn’t exist.
+删除表。
+如果 `IF EXISTS` 如果表不存在或数据库不存在，则不会返回错误。
 
     DROP DICTIONARY [IF EXISTS] [db.]name
 
-Delets the dictionary.
-If `IF EXISTS` is specified, it doesn’t return an error if the table doesn’t exist or the database doesn’t exist.
+删除字典。
+如果 `IF EXISTS` 如果表不存在或数据库不存在，则不会返回错误。
 
 ## EXISTS {#exists}
 
@@ -117,7 +119,7 @@ If `IF EXISTS` is specified, it doesn’t return an error if the table doesn’t
 EXISTS [TEMPORARY] [TABLE|DICTIONARY] [db.]name [INTO OUTFILE filename] [FORMAT format]
 ```
 
-Returns a single `UInt8`-type column, which contains the single value `0` if the table or database doesn’t exist, or `1` if the table exists in the specified database.
+返回单 `UInt8`-type column，其中包含单个值 `0` 如果表或数据库不存在，或 `1` 如果该表存在于指定的数据库中。
 
 ## KILL QUERY {#kill-query}
 
@@ -128,10 +130,10 @@ KILL QUERY [ON CLUSTER cluster]
   [FORMAT format]
 ```
 
-Attempts to forcibly terminate the currently running queries.
-The queries to terminate are selected from the system.processes table using the criteria defined in the `WHERE` clause of the `KILL` query.
+尝试强制终止当前正在运行的查询。
+要终止的查询是从系统中选择的。使用在定义的标准进程表 `WHERE` 《公约》条款 `KILL` 查询。
 
-Examples:
+例:
 
 ``` sql
 -- Forcibly terminates all queries with the specified query_id:
@@ -141,18 +143,18 @@ KILL QUERY WHERE query_id='2-857d-4a57-9ee0-327da5d60a90'
 KILL QUERY WHERE user='username' SYNC
 ```
 
-Read-only users can only stop their own queries.
+只读用户只能停止自己的查询。
 
-By default, the asynchronous version of queries is used (`ASYNC`), which doesn’t wait for confirmation that queries have stopped.
+默认情况下，使用异步版本的查询 (`ASYNC`），不等待确认查询已停止。
 
-The synchronous version (`SYNC`) waits for all queries to stop and displays information about each process as it stops.
-The response contains the `kill_status` column, which can take the following values:
+同步版本 (`SYNC`）等待所有查询停止，并在停止时显示有关每个进程的信息。
+响应包含 `kill_status` 列，它可以采用以下值:
 
 1.  ‘finished’ – The query was terminated successfully.
 2.  ‘waiting’ – Waiting for the query to end after sending it a signal to terminate.
-3.  The other values ​​explain why the query can’t be stopped.
+3.  The other values ​​explain why the query can't be stopped.
 
-A test query (`TEST`) only checks the user’s rights and displays a list of queries to stop.
+测试查询 (`TEST`）仅检查用户的权限并显示要停止的查询列表。
 
 ## KILL MUTATION {#kill-mutation}
 
@@ -163,11 +165,11 @@ KILL MUTATION [ON CLUSTER cluster]
   [FORMAT format]
 ```
 
-Tries to cancel and remove [mutations](alter.md#alter-mutations) that are currently executing. Mutations to cancel are selected from the [`system.mutations`](../../operations/system_tables.md#system_tables-mutations) table using the filter specified by the `WHERE` clause of the `KILL` query.
+尝试取消和删除 [突变](alter.md#alter-mutations) 当前正在执行。 要取消的突变选自 [`system.mutations`](../../operations/system_tables.md#system_tables-mutations) 表使用由指定的过滤器 `WHERE` 《公约》条款 `KILL` 查询。
 
-A test query (`TEST`) only checks the user’s rights and displays a list of queries to stop.
+测试查询 (`TEST`）仅检查用户的权限并显示要停止的查询列表。
 
-Examples:
+例:
 
 ``` sql
 -- Cancel and remove all mutations of the single table:
@@ -179,7 +181,7 @@ KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = '
 
 The query is useful when a mutation is stuck and cannot finish (e.g. if some function in the mutation query throws an exception when applied to the data contained in the table).
 
-Changes already made by the mutation are not rolled back.
+已经由突变所做的更改不会回滚。
 
 ## OPTIMIZE {#misc_operations-optimize}
 
@@ -187,29 +189,29 @@ Changes already made by the mutation are not rolled back.
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE]
 ```
 
-This query tries to initialize an unscheduled merge of data parts for tables with a table engine from the [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) family.
+此查询尝试使用来自表引擎的表初始化表的数据部分的非计划合并 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) 家人
 
-The `OPTMIZE` query is also supported for the [MaterializedView](../../engines/table_engines/special/materializedview.md) and the [Buffer](../../engines/table_engines/special/buffer.md) engines. Other table engines aren’t supported.
+该 `OPTMIZE` 查询也支持 [MaterializedView](../../engines/table_engines/special/materializedview.md) 和 [缓冲区](../../engines/table_engines/special/buffer.md) 引擎 不支持其他表引擎。
 
-When `OPTIMIZE` is used with the [ReplicatedMergeTree](../../engines/table_engines/mergetree_family/replication.md) family of table engines, ClickHouse creates a task for merging and waits for execution on all nodes (if the `replication_alter_partitions_sync` setting is enabled).
+当 `OPTIMIZE` 与使用 [ReplicatedMergeTree](../../engines/table_engines/mergetree_family/replication.md) 表引擎的家族，ClickHouse创建合并任务，并等待在所有节点上执行（如果 `replication_alter_partitions_sync` 设置已启用）。
 
--   If `OPTIMIZE` doesn’t perform a merge for any reason, it doesn’t notify the client. To enable notifications, use the [optimize\_throw\_if\_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) setting.
--   If you specify a `PARTITION`, only the specified partition is optimized. [How to set partition expression](alter.md#alter-how-to-specify-part-expr).
--   If you specify `FINAL`, optimization is performed even when all the data is already in one part.
--   If you specify `DEDUPLICATE`, then completely identical rows will be deduplicated (all columns are compared), it makes sense only for the MergeTree engine.
+-   如果 `OPTIMIZE` 出于任何原因不执行合并，它不通知客户端。 要启用通知，请使用 [optimize\_throw\_if\_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop) 设置。
+-   如果您指定 `PARTITION`，仅优化指定的分区。 [如何设置分区表达式](alter.md#alter-how-to-specify-part-expr).
+-   如果您指定 `FINAL`，即使所有数据已经在一个部分中，也会执行优化。
+-   如果您指定 `DEDUPLICATE`，然后完全相同的行将被重复数据删除（所有列进行比较），这仅适用于MergeTree引擎。
 
-!!! warning "Warning"
-    `OPTIMIZE` can’t fix the “Too many parts” error.
+!!! warning "警告"
+    `OPTIMIZE` 无法修复 “Too many parts” 错误
 
 ## RENAME {#misc_operations-rename}
 
-Renames one or more tables.
+重命名一个或多个表。
 
 ``` sql
 RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ... [ON CLUSTER cluster]
 ```
 
-All tables are renamed under global locking. Renaming tables is a light operation. If you indicated another database after TO, the table will be moved to this database. However, the directories with databases must reside in the same file system (otherwise, an error is returned).
+所有表都在全局锁定下重命名。 重命名表是一个轻型操作。 如果您在TO之后指定了另一个数据库，则表将被移动到此数据库。 但是，包含数据库的目录必须位于同一文件系统中（否则，将返回错误）。
 
 ## SET {#query-set}
 
@@ -217,15 +219,15 @@ All tables are renamed under global locking. Renaming tables is a light operatio
 SET param = value
 ```
 
-Assigns `value` to the `param` [setting](../../operations/settings/index.md) for the current session. You cannot change [server settings](../../operations/server_configuration_parameters/index.md) this way.
+分配 `value` 到 `param` [设置](../../operations/settings/index.md) 对于当前会话。 你不能改变 [服务器设置](../../operations/server_configuration_parameters/index.md) 这边
 
-You can also set all the values from the specified settings profile in a single query.
+您还可以在单个查询中设置指定设置配置文件中的所有值。
 
 ``` sql
 SET profile = 'profile-name-from-the-settings-file'
 ```
 
-For more information, see [Settings](../../operations/settings/settings.md).
+有关详细信息，请参阅 [设置](../../operations/settings/settings.md).
 
 ## TRUNCATE {#truncate}
 
@@ -233,9 +235,9 @@ For more information, see [Settings](../../operations/settings/settings.md).
 TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 ```
 
-Removes all data from a table. When the clause `IF EXISTS` is omitted, the query returns an error if the table does not exist.
+从表中删除所有数据。 当条款 `IF EXISTS` 如果该表不存在，则查询返回错误。
 
-The `TRUNCATE` query is not supported for [View](../../engines/table_engines/special/view.md), [File](../../engines/table_engines/special/file.md), [URL](../../engines/table_engines/special/url.md) and [Null](../../engines/table_engines/special/null.md) table engines.
+该 `TRUNCATE` 查询不支持 [查看](../../engines/table_engines/special/view.md), [文件](../../engines/table_engines/special/file.md), [URL](../../engines/table_engines/special/url.md) 和 [Null](../../engines/table_engines/special/null.md) 表引擎.
 
 ## USE {#use}
 
@@ -243,8 +245,8 @@ The `TRUNCATE` query is not supported for [View](../../engines/table_engines/spe
 USE db
 ```
 
-Lets you set the current database for the session.
-The current database is used for searching for tables if the database is not explicitly defined in the query with a dot before the table name.
-This query can’t be made when using the HTTP protocol, since there is no concept of a session.
+用于设置会话的当前数据库。
+当前数据库用于搜索表，如果数据库没有在查询中明确定义与表名之前的点。
+使用HTTP协议时无法进行此查询，因为没有会话的概念。
 
-[Original article](https://clickhouse.tech/docs/en/query_language/misc/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/misc/) <!--hide-->

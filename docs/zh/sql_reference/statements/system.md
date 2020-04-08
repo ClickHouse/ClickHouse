@@ -1,9 +1,11 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 37
 toc_title: SYSTEM
 ---
 
-# SYSTEM Queries {#query-language-system}
+# 系统查询 {#query-language-system}
 
 -   [RELOAD DICTIONARIES](#query_language-system-reload-dictionaries)
 -   [RELOAD DICTIONARY](#query_language-system-reload-dictionary)
@@ -21,15 +23,15 @@ toc_title: SYSTEM
 
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
-Reloads all dictionaries that have been successfully loaded before.
-By default, dictionaries are loaded lazily (see [dictionaries\_lazy\_load](../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)), so instead of being loaded automatically at startup, they are initialized on first access through dictGet function or SELECT from tables with ENGINE = Dictionary. The `SYSTEM RELOAD DICTIONARIES` query reloads such dictionaries (LOADED).
-Always returns `Ok.` regardless of the result of the dictionary update.
+重新加载之前已成功加载的所有字典。
+默认情况下，字典是懒惰加载的（请参阅 [dictionaries\_lazy\_load](../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load)），所以不是在启动时自动加载，而是通过dictGet函数在第一次访问时初始化，或者从ENGINE=Dictionary的表中选择。 该 `SYSTEM RELOAD DICTIONARIES` 查询重新加载这样的字典（加载）。
+总是返回 `Ok.` 无论字典更新的结果如何。
 
-## RELOAD DICTIONARY Dictionary\_name {#query_language-system-reload-dictionary}
+## 重新加载字典Dictionary\_name {#query_language-system-reload-dictionary}
 
-Completely reloads a dictionary `dictionary_name`, regardless of the state of the dictionary (LOADED / NOT\_LOADED / FAILED).
-Always returns `Ok.` regardless of the result of updating the dictionary.
-The status of the dictionary can be checked by querying the `system.dictionaries` table.
+完全重新加载字典 `dictionary_name`，与字典的状态无关（LOADED/NOT\_LOADED/FAILED）。
+总是返回 `Ok.` 无论更新字典的结果如何。
+字典的状态可以通过查询 `system.dictionaries` 桌子
 
 ``` sql
 SELECT name, status FROM system.dictionaries;
@@ -37,13 +39,13 @@ SELECT name, status FROM system.dictionaries;
 
 ## DROP DNS CACHE {#query_language-system-drop-dns-cache}
 
-Resets ClickHouse’s internal DNS cache. Sometimes (for old ClickHouse versions) it is necessary to use this command when changing the infrastructure (changing the IP address of another ClickHouse server or the server used by dictionaries).
+重置ClickHouse的内部DNS缓存。 有时（对于旧的ClickHouse版本）在更改基础架构（更改另一个ClickHouse服务器或字典使用的服务器的IP地址）时需要使用此命令。
 
-For more convenient (automatic) cache management, see disable\_internal\_dns\_cache, dns\_cache\_update\_period parameters.
+有关更方便（自动）缓存管理，请参阅disable\_internal\_dns\_cache、dns\_cache\_update\_period参数。
 
 ## DROP MARK CACHE {#query_language-system-drop-mark-cache}
 
-Resets the mark cache. Used in development of ClickHouse and performance tests.
+重置标记缓存。 用于开发ClickHouse和性能测试。
 
 ## FLUSH LOGS {#query_language-system-flush_logs}
 
@@ -51,23 +53,23 @@ Flushes buffers of log messages to system tables (e.g. system.query\_log). Allo
 
 ## RELOAD CONFIG {#query_language-system-reload-config}
 
-Reloads ClickHouse configuration. Used when configuration is stored in ZooKeeeper.
+重新加载ClickHouse配置。 当配置存储在ZooKeeeper中时使用。
 
 ## SHUTDOWN {#query_language-system-shutdown}
 
-Normally shuts down ClickHouse (like `service clickhouse-server stop` / `kill {$pid_clickhouse-server}`)
+通常关闭ClickHouse（如 `service clickhouse-server stop` / `kill {$pid_clickhouse-server}`)
 
 ## KILL {#query_language-system-kill}
 
-Aborts ClickHouse process (like `kill -9 {$ pid_clickhouse-server}`)
+中止ClickHouse进程（如 `kill -9 {$ pid_clickhouse-server}`)
 
-## Managing Distributed Tables {#query-language-system-distributed}
+## 管理分布式表 {#query-language-system-distributed}
 
-ClickHouse can manage [distributed](../../engines/table_engines/special/distributed.md) tables. When a user inserts data into these tables, ClickHouse first creates a queue of the data that should be sent to cluster nodes, then asynchronously sends it. You can manage queue processing with the [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed), and [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) queries. You can also synchronously insert distributed data with the `insert_distributed_sync` setting.
+ClickHouse可以管理 [分布](../../engines/table_engines/special/distributed.md) 桌子 当用户将数据插入到这些表中时，ClickHouse首先创建应发送到群集节点的数据队列，然后异步发送它。 您可以使用 [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [FLUSH DISTRIBUTED](#query_language-system-flush-distributed)，和 [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) 查询。 您也可以同步插入分布式数据与 `insert_distributed_sync` 设置。
 
 ### STOP DISTRIBUTED SENDS {#query_language-system-stop-distributed-sends}
 
-Disables background data distribution when inserting data into distributed tables.
+将数据插入分布式表时禁用后台数据分发。
 
 ``` sql
 SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name>
@@ -75,7 +77,7 @@ SYSTEM STOP DISTRIBUTED SENDS [db.]<distributed_table_name>
 
 ### FLUSH DISTRIBUTED {#query_language-system-flush-distributed}
 
-Forces ClickHouse to send data to cluster nodes synchronously. If any nodes are unavailable, ClickHouse throws an exception and stops query execution. You can retry the query until it succeeds, which will happen when all nodes are back online.
+强制ClickHouse将数据同步发送到群集节点。 如果任何节点不可用，ClickHouse将引发异常并停止查询执行。 您可以重试查询，直到查询成功，这将在所有节点恢复联机时发生。
 
 ``` sql
 SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name>
@@ -83,7 +85,7 @@ SYSTEM FLUSH DISTRIBUTED [db.]<distributed_table_name>
 
 ### START DISTRIBUTED SENDS {#query_language-system-start-distributed-sends}
 
-Enables background data distribution when inserting data into distributed tables.
+将数据插入分布式表时启用后台数据分发。
 
 ``` sql
 SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
@@ -91,21 +93,21 @@ SYSTEM START DISTRIBUTED SENDS [db.]<distributed_table_name>
 
 ### STOP MERGES {#query_language-system-stop-merges}
 
-Provides possibility to stop background merges for tables in the MergeTree family:
+提供停止MergeTree系列中表的后台合并的可能性:
 
 ``` sql
 SYSTEM STOP MERGES [[db.]merge_tree_family_table_name]
 ```
 
-!!! note "Note"
-    `DETACH / ATTACH` table will start background merges for the table even in case when merges have been stopped for all MergeTree tables before.
+!!! note "注"
+    `DETACH / ATTACH` 即使在之前所有MergeTree表的合并已停止的情况下，table也会为表启动后台合并。
 
 ### START MERGES {#query_language-system-start-merges}
 
-Provides possibility to start background merges for tables in the MergeTree family:
+为MergeTree系列中的表提供启动后台合并的可能性:
 
 ``` sql
 SYSTEM START MERGES [[db.]merge_tree_family_table_name]
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/system/) <!--hide-->

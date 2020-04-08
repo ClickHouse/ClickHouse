@@ -1,4 +1,9 @@
-# CollapsingMergeTree {#table_engine-collapsingmergetree}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# 折叠树 {#table_engine-collapsingmergetree}
 
 该引擎继承于 [MergeTree](mergetree.md)，并在数据块合并算法中添加了折叠行的逻辑。
 

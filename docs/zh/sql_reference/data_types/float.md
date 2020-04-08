@@ -1,4 +1,9 @@
-# Float32, Float64 {#float32-float64}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# Float32,Float64 {#float32-float64}
 
 [浮点数](https://en.wikipedia.org/wiki/IEEE_754)。
 
@@ -29,7 +34,7 @@ SELECT 1 - 0.9
 
 -   当一行行阅读浮点数的时候，浮点数的结果可能不是机器最近显示的数值。
 
-## NaN and Inf {#data_type-float-nan-inf}
+## 南和Inf {#data_type-float-nan-inf}
 
 与标准SQL相比，ClickHouse 支持以下类别的浮点数：
 

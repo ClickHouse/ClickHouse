@@ -1,17 +1,19 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 34
 toc_title: JDBC
 ---
 
 # JDBC {#table-engine-jdbc}
 
-Allows ClickHouse to connect to external databases via [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
+允许ClickHouse通过以下方式连接到外部数据库 [JDBC](https://en.wikipedia.org/wiki/Java_Database_Connectivity).
 
-To implement the JDBC connection, ClickHouse uses the separate program [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge) that should run as a daemon.
+要实现JDBC连接，ClickHouse使用单独的程序 [ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人](https://github.com/alex-krash/clickhouse-jdbc-bridge) 这应该作为守护进程运行。
 
-This engine supports the [Nullable](../../../sql_reference/data_types/nullable.md) data type.
+该引擎支持 [可为空](../../../sql_reference/data_types/nullable.md) 数据类型。
 
-## Creating a Table {#creating-a-table}
+## 创建表 {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -21,20 +23,20 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 ENGINE = JDBC(dbms_uri, external_database, external_table)
 ```
 
-**Engine Parameters**
+**发动机参数**
 
 -   `dbms_uri` — URI of an external DBMS.
 
-    Format: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
-    Example for MySQL: `jdbc:mysql://localhost:3306/?user=root&password=root`.
+    格式: `jdbc:<driver_name>://<host_name>:<port>/?user=<username>&password=<password>`.
+    Mysql的示例: `jdbc:mysql://localhost:3306/?user=root&password=root`.
 
 -   `external_database` — Database in an external DBMS.
 
 -   `external_table` — Name of the table in `external_database`.
 
-## Usage Example {#usage-example}
+## 用法示例 {#usage-example}
 
-Creating a table in MySQL server by connecting directly with it’s console client:
+通过直接与它的控制台客户端连接在MySQL服务器中创建一个表:
 
 ``` text
 mysql> CREATE TABLE `test`.`test` (
@@ -57,7 +59,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Creating a table in ClickHouse server and selecting data from it:
+在ClickHouse服务器中创建表并从中选择数据:
 
 ``` sql
 CREATE TABLE jdbc_table
@@ -81,8 +83,8 @@ FROM jdbc_table
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## See Also {#see-also}
+## 另请参阅 {#see-also}
 
--   [JDBC table function](../../../sql_reference/table_functions/jdbc.md).
+-   [JDBC表函数](../../../sql_reference/table_functions/jdbc.md).
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/jdbc/) <!--hide-->

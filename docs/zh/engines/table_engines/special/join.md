@@ -1,4 +1,9 @@
-# Join {#join}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# 加入我们 {#join}
 
 加载好的 JOIN 表数据会常驻内存中。
 
@@ -13,9 +18,9 @@
 
 跟 Set 引擎类似，Join 引擎把数据存储在磁盘中。
 
-### Limitations and Settings {#join-limitations-and-settings}
+### 限制和设置 {#join-limitations-and-settings}
 
-When creating a table, the following settings are applied:
+创建表时，将应用以下设置:
 
 -   join\_use\_nulls
 -   max\_rows\_in\_join
@@ -23,6 +28,6 @@ When creating a table, the following settings are applied:
 -   join\_overflow\_mode
 -   join\_any\_take\_last\_row
 
-The `Join`-engine tables can’t be used in `GLOBAL JOIN` operations.
+该 `Join`-发动机表不能用于 `GLOBAL JOIN` 操作。
 
 [来源文章](https://clickhouse.tech/docs/en/operations/table_engines/join/) <!--hide-->

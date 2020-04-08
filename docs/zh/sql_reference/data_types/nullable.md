@@ -1,8 +1,13 @@
-# Nullable(TypeName) {#data_type-nullable}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# 可为空（类型名称) {#data_type-nullable}
 
 允许用特殊标记 ([NULL](../../sql_reference/data_types/nullable.md)) 表示«缺失值»，可以与 `TypeName` 的正常值存放一起。例如，`Nullable(Int8)` 类型的列可以存储 `Int8` 类型值，而没有值的行将存储 `NULL`。
 
-对于 `TypeName`，不能使用复合数据类型 [Array](array.md) 和 [Tuple](tuple.md)。复合数据类型可以包含 `Nullable` 类型值，例如`Array(Nullable(Int8))`。
+对于 `TypeName`，不能使用复合数据类型 [阵列](array.md) 和 [元组](tuple.md)。复合数据类型可以包含 `Nullable` 类型值，例如`Array(Nullable(Int8))`。
 
 `Nullable` 类型字段不能包含在表索引中。
 

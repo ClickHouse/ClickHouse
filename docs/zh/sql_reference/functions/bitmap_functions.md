@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 位图函数 {#wei-tu-han-shu}
 
 位图函数用于对两个位图对象进行计算，对于任何一个位图函数，它都将返回一个位图对象，例如and，or，xor，not等等。
@@ -6,7 +11,7 @@
 
 我们使用RoaringBitmap实际存储位图对象，当基数小于或等于32时，它使用Set保存。当基数大于32时，它使用RoaringBitmap保存。这也是为什么低基数集的存储更快的原因。
 
-有关RoaringBitmap的更多信息，请参阅：[CRoaring](https://github.com/RoaringBitmap/CRoaring)。
+有关RoaringBitmap的更多信息，请参阅：[呻吟声](https://github.com/RoaringBitmap/CRoaring)。
 
 ## bitmapBuild {#bitmapbuild}
 
@@ -153,7 +158,7 @@ SELECT bitmapHasAll(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res
     │  0  │
     └─────┘
 
-## bitmapAnd {#bitmapand}
+## 位图和 {#bitmapand}
 
 为两个位图对象进行与操作，返回一个新的位图对象。
 
@@ -174,13 +179,13 @@ SELECT bitmapToArray(bitmapAnd(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS re
     │ [3] │
     └─────┘
 
-## bitmapOr {#bitmapor}
+## 位图 {#bitmapor}
 
 为两个位图对象进行或操作，返回一个新的位图对象。
 
     bitmapOr(bitmap1,bitmap2)
 
-**Parameters**
+**参数**
 
 -   `bitmap1` – 位图对象。
 -   `bitmap2` – 位图对象。
@@ -243,7 +248,7 @@ SELECT bitmapToArray(bitmapAndnot(bitmapBuild([1,2,3]),bitmapBuild([3,4,5]))) AS
 
     bitmapCardinality(bitmap)
 
-**Parameters**
+**参数**
 
 -   `bitmap` – 位图对象。
 
@@ -263,7 +268,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
     bitmapMin(bitmap)
 
-**Parameters**
+**参数**
 
 -   `bitmap` – 位图对象。
 
@@ -283,7 +288,7 @@ SELECT bitmapMin(bitmapBuild([1, 2, 3, 4, 5])) AS res
 
     bitmapMax(bitmap)
 
-**Parameters**
+**参数**
 
 -   `bitmap` – 位图对象。
 
@@ -297,7 +302,7 @@ SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res
     │   5 │
     └─────┘
 
-## bitmapAndCardinality {#bitmapandcardinality}
+## 位图和标准性 {#bitmapandcardinality}
 
 为两个位图对象进行与操作，返回结果位图的基数。
 
@@ -360,7 +365,7 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]),bitmapBuild([3,4,5])) AS res;
     │   4 │
     └─────┘
 
-## bitmapAndnotCardinality {#bitmapandnotcardinality}
+## 位图和非标准性 {#bitmapandnotcardinality}
 
 计算两个位图的差异，返回结果位图的基数。
 

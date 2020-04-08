@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # SELECT 查询语法 {#select-cha-xun-yu-fa}
 
 `SELECT` 语句用于执行数据的检索。
@@ -35,7 +40,7 @@ FROM子句规定了将从哪个表、或子查询、或表函数中读取数据�
 
 可以使用包含在括号里的子查询来替代表。
 在这种情况下，子查询的处理将会构建在外部的查询内部。
-不同于SQL标准，子查询后无需指定别名。为了兼容，你可以在子查询后添加‘AS 别名’，但是指定的名字不能被使用在任何地方。
+不同于SQL标准，子查询后无需指定别名。为了兼容，你可以在子查询后添加'AS 别名'，但是指定的名字不能被使用在任何地方。
 
 也可以使用表函数来代替表，有关信息，参见«表函数»。
 
@@ -50,10 +55,10 @@ FROM子句规定了将从哪个表、或子查询、或表函数中读取数据�
 
 `SAMPLE`子句可以使用`SAMPLE k`来表示，其中k可以是0到1的小数值，或者是一个足够大的正整数值。
 
-当k为0到1的小数时，查询将使用’k’作为百分比选取数据。例如，`SAMPLE 0.1`查询只会检索数据总量的10%。
-当k为一个足够大的正整数时，查询将使用’k’作为最大样本数。例如， `SAMPLE 10000000`查询只会检索最多10，000，000行数据。
+当k为0到1的小数时，查询将使用'k'作为百分比选取数据。例如，`SAMPLE 0.1`查询只会检索数据总量的10%。
+当k为一个足够大的正整数时，查询将使用'k'作为最大样本数。例如， `SAMPLE 10000000`查询只会检索最多10，000，000行数据。
 
-Example:
+示例:
 
 ``` sql
 SELECT
@@ -348,13 +353,13 @@ FROM <left_subquery>
 
 你可以在会话中通过设置 [join\_default\_strictness](../../operations/settings/settings.md) 来指定默认的JOIN修饰符。
 
-**`GLOBAL` distribution**
+**`GLOBAL` 分布**
 
 当使用普通的`JOIN`时，查询将被发送给远程的服务器。并在这些远程服务器上生成右表并与它们关联。换句话说，右表来自于各个服务器本身。
 
 当使用`GLOBAL ... JOIN`，首先会在请求服务器上计算右表并以临时表的方式将其发送到所有服务器。这时每台服务器将直接使用它进行计算。
 
-使用`GLOBAL`时需要小心。更多信息，参阅 [Distributed subqueries](#select-distributed-subqueries) 部分。
+使用`GLOBAL`时需要小心。更多信息，参阅 [分布式子查询](#select-distributed-subqueries) 部分。
 
 **使用建议**
 
@@ -402,7 +407,7 @@ LIMIT 10
     └───────────┴────────┴────────┘
 
 子查询不允许您设置别名或在其他地方引用它们。
-`USING`中指定的列必须在两个子查询中具有相同的名称，而其他列必须具有不同的名称。您可以通过使用别名的方式来更改子查询中的列名（示例中就分别使用了’hits’与’visits’别名）。
+`USING`中指定的列必须在两个子查询中具有相同的名称，而其他列必须具有不同的名称。您可以通过使用别名的方式来更改子查询中的列名（示例中就分别使用了'hits'与'visits'别名）。
 
 `USING`子句用于指定要进行链接的一个或多个列，系统会将这些列在两张表中相等的值连接起来。如果列是一个列表，不需要使用括号包裹。同时JOIN不支持其他更复杂的Join方式。
 
@@ -410,7 +415,7 @@ LIMIT 10
 
 只能在查询中指定一个`JOIN`。若要运行多个`JOIN`，你可以将它们放入子查询中。
 
-每次运行相同的`JOIN`查询，总是会再次计算 - 没有缓存结果。 为了避免这种情况，可以使用‘Join’引擎，它是一个预处理的Join数据结构，总是保存在内存中。更多信息，参见«Join引擎»部分。
+每次运行相同的`JOIN`查询，总是会再次计算 - 没有缓存结果。 为了避免这种情况，可以使用'Join'引擎，它是一个预处理的Join数据结构，总是保存在内存中。更多信息，参见«Join引擎»部分。
 
 在一些场景下，使用`IN`代替`JOIN`将会得到更高的效率。在各种类型的JOIN中，最高效的是`ANY LEFT JOIN`，然后是`ANY INNER JOIN`，效率最差的是`ALL LEFT JOIN`以及`ALL INNER JOIN`。
 
@@ -420,7 +425,7 @@ LIMIT 10
 
 JOIN的行为受 [join\_use\_nulls](../../operations/settings/settings.md) 的影响。当`join_use_nulls=1`时，`JOIN`的工作与SQL标准相同。
 
-如果JOIN的key是 [Nullable](../../sql_reference/statements/select.md) 类型的字段，则其中至少一个存在 [NULL](../syntax.md) 值的key不会被关联。
+如果JOIN的key是 [可为空](../../sql_reference/statements/select.md) 类型的字段，则其中至少一个存在 [NULL](../syntax.md) 值的key不会被关联。
 
 ### WHERE 子句 {#select-where}
 
@@ -444,7 +449,7 @@ PREWHERE 仅支持`*MergeTree`系列引擎。
 
 值得注意的是，PREWHERE不适合用于已经存在于索引中的列，因为当列已经存在于索引中的情况下，只有满足索引的数据块才会被读取。
 
-如果将’optimize\_move\_to\_prewhere’设置为1，并且在查询中不包含PREWHERE，则系统将自动的把适合PREWHERE表达式的部分从WHERE中抽离到PREWHERE中。
+如果将'optimize\_move\_to\_prewhere'设置为1，并且在查询中不包含PREWHERE，则系统将自动的把适合PREWHERE表达式的部分从WHERE中抽离到PREWHERE中。
 
 ### GROUP BY 子句 {#select-group-by-clause}
 
@@ -455,7 +460,7 @@ SELECT，HAVING，ORDER BY子句中的表达式列表必须来自于这些«key�
 
 如果查询表达式列表中仅包含聚合函数，则可以省略GROUP BY子句，这时会假定将所有数据聚合成一组空«key»。
 
-Example:
+示例:
 
 ``` sql
 SELECT
@@ -467,9 +472,9 @@ FROM hits
 
 与SQL标准不同的是，如果表中不存在任何数据（可能表本身中就不存在任何数据，或者由于被WHERE条件过滤掉了），将返回一个空结果，而不是一个包含聚合函数初始值的结果。
 
-与MySQL不同的是（实际上这是符合SQL标准的），你不能够获得一个不在key中的非聚合函数列（除了常量表达式）。但是你可以使用‘any’（返回遇到的第一个值）、max、min等聚合函数使它工作。
+与MySQL不同的是（实际上这是符合SQL标准的），你不能够获得一个不在key中的非聚合函数列（除了常量表达式）。但是你可以使用'any'（返回遇到的第一个值）、max、min等聚合函数使它工作。
 
-Example:
+示例:
 
 ``` sql
 SELECT
@@ -520,9 +525,9 @@ GROUP BY子句会为遇到的每一个不同的key计算一组聚合函数的值
 
 该行仅在JSON\*, TabSeparated\*, Pretty\*输出格式中与其他行分开输出。
 
-在JSON\*输出格式中，这行将出现在Json的‘totals’字段中。在TabSeparated\*输出格式中，这行将位于其他结果之后，同时与其他结果使用空白行分隔。在Pretty\*输出格式中，这行将作为单独的表在所有结果之后输出。
+在JSON\*输出格式中，这行将出现在Json的'totals'字段中。在TabSeparated\*输出格式中，这行将位于其他结果之后，同时与其他结果使用空白行分隔。在Pretty\*输出格式中，这行将作为单独的表在所有结果之后输出。
 
-当`WITH TOTALS`与HAVING子句同时存在时，它的行为受‘totals\_mode’配置的影响。
+当`WITH TOTALS`与HAVING子句同时存在时，它的行为受'totals\_mode'配置的影响。
 默认情况下，`totals_mode = 'before_having'`，这时`WITH TOTALS`将会在HAVING前计算最多不超过`max_rows_to_group_by`行的数据。
 
 在`group_by_overflow_mode = 'any'`并指定了`max_rows_to_group_by`的情况下，`WITH TOTALS`的行为受`totals_mode`的影响。
@@ -531,7 +536,7 @@ GROUP BY子句会为遇到的每一个不同的key计算一组聚合函数的值
 
 `after_having_inclusive` - 在HAVING后进行计算，计算不少于`max_rows_to_group_by`行的数据。
 
-`after_having_auto` - 在HAVING后进行计算，采用统计通过HAVING的行数，在超过不超过‘max\_rows\_to\_group\_by’指定值（默认为50%）的情况下，包含所有行的结果。否则排除这些结果。
+`after_having_auto` - 在HAVING后进行计算，采用统计通过HAVING的行数，在超过不超过'max\_rows\_to\_group\_by'指定值（默认为50%）的情况下，包含所有行的结果。否则排除这些结果。
 
 `totals_auto_threshold` - 默认 0.5，是`after_having_auto`的参数。
 
@@ -637,9 +642,9 @@ WHERE于HAVING不同之处在于WHERE在聚合前(GROUP BY)执行，HAVING在聚
 
 如果你在ORDER BY子句后面存在LIMIT并给定了较小的数值，则将会使用较少的内存。否则，内存的使用量将与需要排序的数据成正比。对于分布式查询，如果省略了GROUP BY，则在远程服务器上执行部分排序，最后在请求服务器上合并排序结果。这意味这对于分布式查询而言，要排序的数据量可以大于单台服务器的内存。
 
-如果没有足够的内存，可以使用外部排序（在磁盘中创建一些临时文件）。可以使用`max_bytes_before_external_sort`来设置外部排序，如果你讲它设置为0（默认），则表示禁用外部排序功能。如果启用该功能。当要排序的数据量达到所指定的字节数时，当前排序的结果会被转存到一个临时文件中去。当全部数据读取完毕后，所有的临时文件将会合并成最终输出结果。这些临时文件将会写到config文件配置的/var/lib/clickhouse/tmp/目录中（默认值，你可以通过修改’tmp\_path’配置调整该目录的位置）。
+如果没有足够的内存，可以使用外部排序（在磁盘中创建一些临时文件）。可以使用`max_bytes_before_external_sort`来设置外部排序，如果你讲它设置为0（默认），则表示禁用外部排序功能。如果启用该功能。当要排序的数据量达到所指定的字节数时，当前排序的结果会被转存到一个临时文件中去。当全部数据读取完毕后，所有的临时文件将会合并成最终输出结果。这些临时文件将会写到config文件配置的/var/lib/clickhouse/tmp/目录中（默认值，你可以通过修改'tmp\_path'配置调整该目录的位置）。
 
-查询运行使用的内存要高于‘max\_bytes\_before\_external\_sort’，为此，这个配置必须要远远小于‘max\_memory\_usage’配置的值。例如，如果你的服务器有128GB的内存去运行一个查询，那么推荐你将‘max\_memory\_usage’设置为100GB，‘max\_bytes\_before\_external\_sort’设置为80GB。
+查询运行使用的内存要高于'max\_bytes\_before\_external\_sort'，为此，这个配置必须要远远小于'max\_memory\_usage'配置的值。例如，如果你的服务器有128GB的内存去运行一个查询，那么推荐你将'max\_memory\_usage'设置为100GB，'max\_bytes\_before\_external\_sort'设置为80GB。
 
 外部排序效率要远低于在内存中排序。
 
@@ -668,7 +673,7 @@ WHERE于HAVING不同之处在于WHERE在聚合前(GROUP BY)执行，HAVING在聚
 LIMIT m 用于在查询结果中选择前m行数据。
 LIMIT n, m 用于在查询结果中选择从n行开始的m行数据。
 
-‘n’与‘m’必须是正整数。
+'n'与'm'必须是正整数。
 
 如果没有指定ORDER BY子句，则结果可能是任意的顺序，并且是不确定的。
 
@@ -730,11 +735,11 @@ SELECT (CounterID, UserID) IN ((34, 123), (101500, 456)) FROM ...
 如果左侧是单个列并且是一个索引，并且右侧是一组常量时，系统将使用索引来处理查询。
 
 不要在列表中列出太多的值（百万）。如果数据集很大，将它们放入临时表中（可以参考«»）, 然后使用子查询。
-Don’t list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section «External data for query processing»), then use a subquery.
+Don't list too many values explicitly (i.e. millions). If a data set is large, put it in a temporary table (for example, see the section «External data for query processing»), then use a subquery.
 
 右侧可以是一个由常量表达式组成的元组列表（像上面的例子一样），或者是一个数据库中的表的名称，或是一个包含在括号中的子查询。
 
-如果右侧是一个表的名字（例如，`UserID IN users`），这相当于`UserID IN (SELECT * FROM users)`。在查询与外部数据表组合使用时可以使用该方法。例如，查询与包含user IDS的‘users’临时表一起被发送的同时需要对结果进行过滤时。
+如果右侧是一个表的名字（例如，`UserID IN users`），这相当于`UserID IN (SELECT * FROM users)`。在查询与外部数据表组合使用时可以使用该方法。例如，查询与包含user IDS的'users'临时表一起被发送的同时需要对结果进行过滤时。
 
 如果操作符的右侧是一个Set引擎的表时（数据总是在内存中准备好），则不会每次都为查询创建新的数据集。
 
@@ -809,7 +814,7 @@ IN子句中的子查询仅在单个服务器上运行一次。不能够是相关
 对于带有子查询的（类似与JOINs）IN中，有两种选择:普通的`IN`／`JOIN`与`GLOBAL IN` ／ `GLOBAL JOIN`。它们对于分布式查询的处理运行方式是不同的。
 
 !!! 注意 "注意"
-    请记住，下面描述的算法可能因为根据 [settings](../../operations/settings/settings.md) 配置的不同而不同。
+    请记住，下面描述的算法可能因为根据 [设置](../../operations/settings/settings.md) 配置的不同而不同。
 
 当使用普通的IN时，查询总是被发送到远程的服务器，并且在每个服务器中运行«IN»或«JOIN»子句中的子查询。
 
@@ -905,13 +910,13 @@ SELECT uniq(UserID) FROM local_table WHERE CounterID = 101500 AND UserID GLOBAL 
 
 另外，在`GLOBAL IN`子句中使用本地表也是有用的，比如，本地表仅在请求服务器上可用，并且您希望在远程服务器上使用来自本地表的数据。
 
-### Extreme Values {#extreme-values}
+### 极端值 {#extreme-values}
 
-除了结果外，你还可以获得结果列的最大值与最小值，可以将**extremes**配置设置成1来做到这一点。最大值最小值的计算是针对于数字类型，日期类型进行计算的，对于其他列，将会输出默认值。
+除了结果外，你还可以获得结果列的最大值与最小值，可以将**极端**配置设置成1来做到这一点。最大值最小值的计算是针对于数字类型，日期类型进行计算的，对于其他列，将会输出默认值。
 
 额外计算的两行结果 - 最大值与最小值，这两行额外的结果仅在JSON\*, TabSeparated\*, and Pretty\* 格式与其他行分开的输出方式输出，不支持其他输出格式。
 
-在JSON\*格式中，Extreme值在单独的’extremes’字段中。在TabSeparated\*格式中，在其他结果与’totals’之后输出，并使用空行与其分隔。在Pretty\* 格式中，将在其他结果与’totals’后以单独的表格输出。
+在JSON\*格式中，Extreme值在单独的'extremes'字段中。在TabSeparated\*格式中，在其他结果与'totals'之后输出，并使用空行与其分隔。在Pretty\* 格式中，将在其他结果与'totals'后以单独的表格输出。
 
 如果在计算Extreme值的同时包含LIMIT。extremes的计算结果将包含offset跳过的行。在流式的请求中，它可能还包含多余LIMIT的少量行的值。
 

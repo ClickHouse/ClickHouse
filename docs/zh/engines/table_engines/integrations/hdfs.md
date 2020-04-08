@@ -1,41 +1,43 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 36
 toc_title: HDFS
 ---
 
 # HDFS {#table_engines-hdfs}
 
-This engine provides integration with [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) ecosystem by allowing to manage data on [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)via ClickHouse. This engine is similar
-to the [File](../special/file.md) and [URL](../special/url.md) engines, but provides Hadoop-specific features.
+该引擎提供了集成 [Apache Hadoop](https://en.wikipedia.org/wiki/Apache_Hadoop) 生态系统通过允许管理数据 [HDFS](https://hadoop.apache.org/docs/current/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)通过ClickHouse. 这个引擎是相似的
+到 [文件](../special/file.md) 和 [URL](../special/url.md) 引擎，但提供Hadoop特定的功能。
 
-## Usage {#usage}
+## 用途 {#usage}
 
 ``` sql
 ENGINE = HDFS(URI, format)
 ```
 
-The `URI` parameter is the whole file URI in HDFS.
-The `format` parameter specifies one of the available file formats. To perform
-`SELECT` queries, the format must be supported for input, and to perform
+该 `URI` 参数是HDFS中的整个文件URI。
+该 `format` 参数指定一种可用的文件格式。 执行
+`SELECT` 查询时，格式必须支持输入，并执行
 `INSERT` queries – for output. The available formats are listed in the
-[Formats](../../../interfaces/formats.md#formats) section.
-The path part of `URI` may contain globs. In this case the table would be readonly.
+[格式](../../../interfaces/formats.md#formats) 科。
+路径部分 `URI` 可能包含水珠。 在这种情况下，表将是只读的。
 
-**Example:**
+**示例:**
 
-**1.** Set up the `hdfs_engine_table` table:
+**1.** 设置 `hdfs_engine_table` 表:
 
 ``` sql
 CREATE TABLE hdfs_engine_table (name String, value UInt32) ENGINE=HDFS('hdfs://hdfs1:9000/other_storage', 'TSV')
 ```
 
-**2.** Fill file:
+**2.** 填充文件:
 
 ``` sql
 INSERT INTO hdfs_engine_table VALUES ('one', 1), ('two', 2), ('three', 3)
 ```
 
-**3.** Query the data:
+**3.** 查询数据:
 
 ``` sql
 SELECT * FROM hdfs_engine_table LIMIT 2
@@ -48,28 +50,28 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-## Implementation Details {#implementation-details}
+## 实施细节 {#implementation-details}
 
--   Reads and writes can be parallel
--   Not supported:
-    -   `ALTER` and `SELECT...SAMPLE` operations.
-    -   Indexes.
-    -   Replication.
+-   读取和写入可以并行
+-   不支持:
+    -   `ALTER` 和 `SELECT...SAMPLE` 操作。
+    -   索引。
+    -   复制。
 
-**Globs in path**
+**路径中的水珠**
 
-Multiple path components can have globs. For being processed file should exists and matches to the whole path pattern. Listing of files determines during `SELECT` (not at `CREATE` moment).
+多个路径组件可以具有globs。 对于正在处理的文件应该存在并匹配到整个路径模式。 文件列表确定在 `SELECT` （不在 `CREATE` 时刻）。
 
--   `*` — Substitutes any number of any characters except `/` including empty string.
+-   `*` — Substitutes any number of any characters except `/` 包括空字符串。
 -   `?` — Substitutes any single character.
 -   `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 -   `{N..M}` — Substitutes any number in range from N to M including both borders.
 
-Constructions with `{}` are similar to the [remote](../../../sql_reference/table_functions/remote.md) table function.
+建筑与 `{}` 类似于 [远程](../../../sql_reference/table_functions/remote.md) 表功能。
 
-**Example**
+**示例**
 
-1.  Suppose we have several files in TSV format with the following URIs on HDFS:
+1.  假设我们在HDFS上有几个TSV格式的文件，其中包含以下Uri:
 
 -   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_1’
 -   ‘hdfs://hdfs1:9000/some\_dir/some\_file\_2’
@@ -78,7 +80,7 @@ Constructions with `{}` are similar to the [remote](../../../sql_reference/table
 -   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_2’
 -   ‘hdfs://hdfs1:9000/another\_dir/some\_file\_3’
 
-1.  There are several ways to make a table consisting of all six files:
+1.  有几种方法可以创建由所有六个文件组成的表:
 
 <!-- -->
 
@@ -86,36 +88,36 @@ Constructions with `{}` are similar to the [remote](../../../sql_reference/table
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')
 ```
 
-Another way:
+另一种方式:
 
 ``` sql
 CREATE TABLE table_with_question_mark (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_?', 'TSV')
 ```
 
-Table consists of all the files in both directories (all files should satisfy format and schema described in query):
+表由两个目录中的所有文件组成（所有文件都应满足query中描述的格式和模式):
 
 ``` sql
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
 ```
 
-!!! warning "Warning"
-    If the listing of files contains number ranges with leading zeros, use the construction with braces for each digit separately or use `?`.
+!!! warning "警告"
+    如果文件列表包含带有前导零的数字范围，请单独使用带有大括号的构造或使用 `?`.
 
-**Example**
+**示例**
 
-Create table with files named `file000`, `file001`, … , `file999`:
+创建具有名为文件的表 `file000`, `file001`, … , `file999`:
 
 ``` sql
 CREARE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
 
-## Virtual Columns {#virtual-columns}
+## 虚拟列 {#virtual-columns}
 
 -   `_path` — Path to the file.
 -   `_file` — Name of the file.
 
-**See Also**
+**另请参阅**
 
--   [Virtual columns](../index.md#table_engines-virtual_columns)
+-   [虚拟列](../index.md#table_engines-virtual_columns)
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/hdfs/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/hdfs/) <!--hide-->

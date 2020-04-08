@@ -1,41 +1,46 @@
-# clickhouse-local {#clickhouse-local}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
 
-The `clickhouse-local` program enables you to perform fast processing on local files, without having to deploy and configure the ClickHouse server.
+# ﾂ环板-ｮﾂ嘉ｯﾂ偲 {#clickhouse-local}
 
-Accepts data that represent tables and queries them using [ClickHouse SQL dialect](../../operations/utilities/clickhouse-local.md).
+该 `clickhouse-local` 程序使您能够对本地文件执行快速处理，而无需部署和配置ClickHouse服务器。
 
-`clickhouse-local` uses the same core as ClickHouse server, so it supports most of the features and the same set of formats and table engines.
+接受表示表的数据并使用以下方式查询它们 [ﾂ环板ECTｮﾂ嘉ｯﾂ偲](../../operations/utilities/clickhouse-local.md).
 
-By default `clickhouse-local` does not have access to data on the same host, but it supports loading server configuration using `--config-file` argument.
+`clickhouse-local` 使用与ClickHouse server相同的核心，因此它支持大多数功能以及相同的格式和表引擎。
 
-!!! warning "Warning"
-    It is not recommended to load production server configuration into `clickhouse-local` because data can be damaged in case of human error.
+默认情况下 `clickhouse-local` 不能访问同一主机上的数据，但它支持使用以下方式加载服务器配置 `--config-file` 争论。
 
-## Usage {#usage}
+!!! warning "警告"
+    不建议将生产服务器配置加载到 `clickhouse-local` 因为数据可以在人为错误的情况下被损坏。
 
-Basic usage:
+## 用途 {#usage}
+
+基本用法:
 
 ``` bash
 clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" -q "query"
 ```
 
-Arguments:
+参数:
 
 -   `-S`, `--structure` — table structure for input data.
--   `-if`, `--input-format` — input format, `TSV` by default.
--   `-f`, `--file` — path to data, `stdin` by default.
--   `-q` `--query` — queries to execute with `;` as delimeter.
--   `-N`, `--table` — table name where to put output data, `table` by default.
--   `-of`, `--format`, `--output-format` — output format, `TSV` by default.
+-   `-if`, `--input-format` — input format, `TSV` 默认情况下。
+-   `-f`, `--file` — path to data, `stdin` 默认情况下。
+-   `-q` `--query` — queries to execute with `;` 如delimeter。
+-   `-N`, `--table` — table name where to put output data, `table` 默认情况下。
+-   `-of`, `--format`, `--output-format` — output format, `TSV` 默认情况下。
 -   `--stacktrace` — whether to dump debug output in case of exception.
 -   `--verbose` — more details on query execution.
--   `-s` — disables `stderr` logging.
+-   `-s` — disables `stderr` 记录。
 -   `--config-file` — path to configuration file in same format as for ClickHouse server, by default the configuration empty.
 -   `--help` — arguments references for `clickhouse-local`.
 
-Also there are arguments for each ClickHouse configuration variable which are more commonly used instead of `--config-file`.
+还有每个ClickHouse配置变量的参数，这些变量更常用，而不是 `--config-file`.
 
-## Examples {#examples}
+## 例 {#examples}
 
 ``` bash
 echo -e "1,2\n3,4" | clickhouse-local -S "a Int64, b Int64" -if "CSV" -q "SELECT * FROM table"
@@ -44,7 +49,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
 3 4
 ```
 
-Previous example is the same as:
+前面的例子是一样的:
 
 ``` bash
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
@@ -53,7 +58,7 @@ Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
 3 4
 ```
 
-Now let’s output memory user for each Unix user:
+现在让我们为每个Unix用户输出内存用户:
 
 ``` bash
 $ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' | clickhouse-local -S "user String, mem Float64" -q "SELECT user, round(sum(mem), 2) as memTotal FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
@@ -68,4 +73,4 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/utils/clickhouse-local/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/utils/clickhouse-local/) <!--hide-->

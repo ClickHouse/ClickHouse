@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # MergeTree {#table_engines-mergetree}
 
 Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及该系列（`*MergeTree`）中的其他引擎。
@@ -23,7 +28,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
         需要的话，你可以给表设置一个采样方法。
 
 !!! 注意 "注意"
-    [Merge](../special/merge.md) 引擎并不属于 `*MergeTree` 系列。
+    [合并](../special/merge.md) 引擎并不属于 `*MergeTree` 系列。
 
 ## 建表 {#table_engine-mergetree-creating-a-table}
 
@@ -105,9 +110,9 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
 
 **MergeTree() 参数**
 
--   `date-column` — 类型为 [Date](../../../engines/table_engines/mergetree_family/mergetree.md) 的列名。ClickHouse 会自动依据这个列按月创建分区。分区名格式为 `"YYYYMM"` 。
+-   `date-column` — 类型为 [日期](../../../engines/table_engines/mergetree_family/mergetree.md) 的列名。ClickHouse 会自动依据这个列按月创建分区。分区名格式为 `"YYYYMM"` 。
 -   `sampling_expression` — 采样表达式。
--   `(primary, key)` — 主键。类型 — [Tuple()](../../../engines/table_engines/mergetree_family/mergetree.md)
+-   `(primary, key)` — 主键。类型 — [元组()](../../../engines/table_engines/mergetree_family/mergetree.md)
 -   `index_granularity` — 索引粒度。即索引中相邻『标记』间的数据行数。设为 8192 可以适用大部分场景。
 
 **示例**
@@ -168,7 +173,7 @@ ClickHouse 不要求主键惟一。所以，你可以插入多条具有相同主
 
         ClickHouse 以主键排序片段数据，所以，数据的一致性越高，压缩越好。
 
--   [CollapsingMergeTree](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里，数据合并时，会有额外的处理逻辑。
+-   [折叠树](collapsingmergetree.md#table_engine-collapsingmergetree) 和 [SummingMergeTree](summingmergetree.md) 引擎里，数据合并时，会有额外的处理逻辑。
 
         在这种情况下，指定一个跟主键不同的 *排序键* 也是有意义的。
 
@@ -299,14 +304,14 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 TTL可以设置值的生命周期，它既可以为整张表设置，也可以为每个列字段单独设置。如果`TTL`同时作用于表和字段，ClickHouse会使用先到期的那个。
 
-被设置TTL的表，必须拥有[Date](../../../engines/table_engines/mergetree_family/mergetree.md) 或 [DateTime](../../../engines/table_engines/mergetree_family/mergetree.md) 类型的字段。要定义数据的生命周期，需要在这个日期字段上使用操作符，例如:
+被设置TTL的表，必须拥有[日期](../../../engines/table_engines/mergetree_family/mergetree.md) 或 [日期时间](../../../engines/table_engines/mergetree_family/mergetree.md) 类型的字段。要定义数据的生命周期，需要在这个日期字段上使用操作符，例如:
 
 ``` sql
 TTL time_column
 TTL time_column + interval
 ```
 
-要定义`interval`, 需要使用 [time interval](../../../engines/table_engines/mergetree_family/mergetree.md#operators-datetime) 操作符。
+要定义`interval`, 需要使用 [时间间隔](../../../engines/table_engines/mergetree_family/mergetree.md#operators-datetime) 操作符。
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH
@@ -387,8 +392,8 @@ ALTER TABLE example_table
 
 如果在合并的时候执行`SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在`SELECT`之前使用 [OPTIMIZE](../../../engines/table_engines/mergetree_family/mergetree.md#misc_operations-optimize) 查询。
 
-## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
+## 使用多个块设备进行数据存储 {#table_engine-mergetree-multiple-volumes}
 
-### Configuration {#table_engine-mergetree-multiple-volumes-configure}
+### 配置 {#table_engine-mergetree-multiple-volumes-configure}
 
 [来源文章](https://clickhouse.tech/docs/en/operations/table_engines/mergetree/) <!--hide-->

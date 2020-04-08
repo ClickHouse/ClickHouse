@@ -1,13 +1,15 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 43
-toc_title: Sources of External Dictionaries
+toc_title: "\u5916\u90E8\u5B57\u5178\u7684\u6765\u6E90"
 ---
 
-# Sources Of External Dictionaries {#dicts-external-dicts-dict-sources}
+# 外部字典的来源 {#dicts-external-dicts-dict-sources}
 
-An external dictionary can be connected from many different sources.
+外部字典可以从许多不同的来源连接。
 
-If dictionary is configured using xml-file, the configuration looks like this:
+如果使用xml-file配置字典，则配置如下所示:
 
 ``` xml
 <yandex>
@@ -24,7 +26,7 @@ If dictionary is configured using xml-file, the configuration looks like this:
 </yandex>
 ```
 
-In case of [DDL-query](../../statements/create.md#create-dictionary-query), equal configuration will looks like:
+在情况下 [DDL-查询](../../statements/create.md#create-dictionary-query)，相等的配置将看起来像:
 
 ``` sql
 CREATE DICTIONARY dict_name (...)
@@ -33,12 +35,12 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 ...
 ```
 
-The source is configured in the `source` section.
+源配置在 `source` 科。
 
-Types of sources (`source_type`):
+来源类型 (`source_type`):
 
--   [Local file](#dicts-external_dicts_dict_sources-local_file)
--   [Executable file](#dicts-external_dicts_dict_sources-executable)
+-   [本地文件](#dicts-external_dicts_dict_sources-local_file)
+-   [可执行文件](#dicts-external_dicts_dict_sources-executable)
 -   [HTTP(s)](#dicts-external_dicts_dict_sources-http)
 -   DBMS
     -   [ODBC](#dicts-external_dicts_dict_sources-odbc)
@@ -47,9 +49,9 @@ Types of sources (`source_type`):
     -   [MongoDB](#dicts-external_dicts_dict_sources-mongodb)
     -   [Redis](#dicts-external_dicts_dict_sources-redis)
 
-## Local File {#dicts-external_dicts_dict_sources-local_file}
+## 本地文件 {#dicts-external_dicts_dict_sources-local_file}
 
-Example of settings:
+设置示例:
 
 ``` xml
 <source>
@@ -60,22 +62,22 @@ Example of settings:
 </source>
 ```
 
-or
+或
 
 ``` sql
 SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 ```
 
-Setting fields:
+设置字段:
 
 -   `path` – The absolute path to the file.
--   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
+-   `format` – The file format. All the formats described in “[格式](../../../interfaces/formats.md#formats)” 支持。
 
-## Executable File {#dicts-external_dicts_dict_sources-executable}
+## 可执行文件 {#dicts-external_dicts_dict_sources-executable}
 
-Working with executable files depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request to the executable file’s STDIN. Otherwise, ClickHouse starts executable file and treats its output as dictionary data.
+使用可执行文件取决于 [字典如何存储在内存中](external_dicts_dict_layout.md). 如果字典存储使用 `cache` 和 `complex_key_cache`，ClickHouse通过向可执行文件的STDIN发送请求来请求必要的密钥。 否则，ClickHouse将启动可执行文件并将其输出视为字典数据。
 
-Example of settings:
+设置示例:
 
 ``` xml
 <source>
@@ -86,22 +88,22 @@ Example of settings:
 </source>
 ```
 
-or
+或
 
 ``` sql
 SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
 ```
 
-Setting fields:
+设置字段:
 
 -   `command` – The absolute path to the executable file, or the file name (if the program directory is written to `PATH`).
--   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
+-   `format` – The file format. All the formats described in “[格式](../../../interfaces/formats.md#formats)” 支持。
 
 ## Http(s) {#dicts-external_dicts_dict_sources-http}
 
-Working with an HTTP(s) server depends on [how the dictionary is stored in memory](external_dicts_dict_layout.md). If the dictionary is stored using `cache` and `complex_key_cache`, ClickHouse requests the necessary keys by sending a request via the `POST` method.
+使用HTTP（s）服务器取决于 [字典如何存储在内存中](external_dicts_dict_layout.md). 如果字典存储使用 `cache` 和 `complex_key_cache`，ClickHouse通过通过发送请求请求必要的密钥 `POST` 方法。
 
-Example of settings:
+设置示例:
 
 ``` xml
 <source>
@@ -122,7 +124,7 @@ Example of settings:
 </source>
 ```
 
-or
+或
 
 ``` sql
 SOURCE(HTTP(
@@ -133,12 +135,12 @@ SOURCE(HTTP(
 ))
 ```
 
-In order for ClickHouse to access an HTTPS resource, you must [configure openSSL](../../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-openssl) in the server configuration.
+为了让ClickHouse访问HTTPS资源，您必须 [配置openSSL](../../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-openssl) 在服务器配置中。
 
-Setting fields:
+设置字段:
 
 -   `url` – The source URL.
--   `format` – The file format. All the formats described in “[Formats](../../../interfaces/formats.md#formats)” are supported.
+-   `format` – The file format. All the formats described in “[格式](../../../interfaces/formats.md#formats)” 支持。
 -   `credentials` – Basic HTTP authentication. Optional parameter.
     -   `user` – Username required for the authentication.
     -   `password` – Password required for the authentication.
@@ -149,9 +151,9 @@ Setting fields:
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
-You can use this method to connect any database that has an ODBC driver.
+您可以使用此方法连接具有ODBC驱动程序的任何数据库。
 
-Example of settings:
+设置示例:
 
 ``` xml
 <source>
@@ -164,7 +166,7 @@ Example of settings:
 </source>
 ```
 
-or
+或
 
 ``` sql
 SOURCE(ODBC(
@@ -175,25 +177,25 @@ SOURCE(ODBC(
 ))
 ```
 
-Setting fields:
+设置字段:
 
--   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` parameters.
+-   `db` – Name of the database. Omit it if the database name is set in the `<connection_string>` 参数。
 -   `table` – Name of the table and schema if exists.
 -   `connection_string` – Connection string.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [更新字典](external_dicts_dict_lifetime.md).
 
-ClickHouse receives quoting symbols from ODBC-driver and quote all settings in queries to driver, so it’s necessary to set table name accordingly to table name case in database.
+ClickHouse接收来自ODBC-driver的引用符号，并将查询中的所有设置引用到driver，因此有必要根据数据库中的表名大小写设置表名。
 
-If you have a problems with encodings when using Oracle, see the corresponding [FAQ](../../../faq/general.md#oracle-odbc-encodings) article.
+如果您在使用Oracle时遇到编码问题，请参阅相应的 [FAQ](../../../faq/general.md#oracle-odbc-encodings) 文章.
 
-### Known Vulnerability Of the ODBC Dictionary Functionality {#known-vulnerability-of-the-odbc-dictionary-functionality}
+### ODBC字典功能的已知漏洞 {#known-vulnerability-of-the-odbc-dictionary-functionality}
 
-!!! attention "Attention"
-    When connecting to the database through the ODBC driver connection parameter `Servername` can be substituted. In this case values of `USERNAME` and `PASSWORD` from `odbc.ini` are sent to the remote server and can be compromised.
+!!! attention "注意"
+    通过ODBC驱动程序连接参数连接到数据库时 `Servername` 可以取代。 在这种情况下，值 `USERNAME` 和 `PASSWORD` 从 `odbc.ini` 被发送到远程服务器，并且可能会受到损害。
 
-**Example of insecure use**
+**不安全使用示例**
 
-Let’s configure unixODBC for PostgreSQL. Content of `/etc/odbc.ini`:
+让我们为PostgreSQL配置unixODBC。 的内容 `/etc/odbc.ini`:
 
 ``` text
 [gregtest]
@@ -206,25 +208,25 @@ USERNAME = test
 PASSWORD = test
 ```
 
-If you then make a query such as
+如果然后进行查询，例如
 
 ``` sql
 SELECT * FROM odbc('DSN=gregtest;Servername=some-server.com', 'test_db');
 ```
 
-ODBC driver will send values of `USERNAME` and `PASSWORD` from `odbc.ini` to `some-server.com`.
+ODBC驱动程序将发送的值 `USERNAME` 和 `PASSWORD` 从 `odbc.ini` 到 `some-server.com`.
 
-### Example Of Connecting Postgresql {#example-of-connecting-postgresql}
+### 连接Postgresql的示例 {#example-of-connecting-postgresql}
 
-Ubuntu OS.
+Ubuntu操作系统。
 
-Installing unixODBC and the ODBC driver for PostgreSQL:
+为PostgreSQL安装unixODBC和ODBC驱动程序:
 
 ``` bash
 $ sudo apt-get install -y unixodbc odbcinst odbc-postgresql
 ```
 
-Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
+配置 `/etc/odbc.ini` （或 `~/.odbc.ini`):
 
 ``` text
     [DEFAULT]
@@ -245,7 +247,7 @@ Configuring `/etc/odbc.ini` (or `~/.odbc.ini`):
     ConnSettings        =
 ```
 
-The dictionary configuration in ClickHouse:
+ClickHouse中的字典配置:
 
 ``` xml
 <yandex>
@@ -280,7 +282,7 @@ The dictionary configuration in ClickHouse:
 </yandex>
 ```
 
-or
+或
 
 ``` sql
 CREATE DICTIONARY table_name (
@@ -293,19 +295,19 @@ LAYOUT(HASHED())
 LIFETIME(MIN 300 MAX 360)
 ```
 
-You may need to edit `odbc.ini` to specify the full path to the library with the driver `DRIVER=/usr/local/lib/psqlodbcw.so`.
+您可能需要编辑 `odbc.ini` 使用驱动程序指定库的完整路径 `DRIVER=/usr/local/lib/psqlodbcw.so`.
 
-### Example Of Connecting MS SQL Server {#example-of-connecting-ms-sql-server}
+### 连接MS SQL Server的示例 {#example-of-connecting-ms-sql-server}
 
-Ubuntu OS.
+Ubuntu操作系统。
 
-Installing the driver: :
+安装驱动程序: :
 
 ``` bash
 $ sudo apt-get install tdsodbc freetds-bin sqsh
 ```
 
-Configuring the driver:
+配置驱动程序:
 
 ``` bash
     $ cat /etc/freetds/freetds.conf
@@ -340,7 +342,7 @@ Configuring the driver:
     Port            = 1433
 ```
 
-Configuring the dictionary in ClickHouse:
+在ClickHouse中配置字典:
 
 ``` xml
 <yandex>
@@ -376,7 +378,7 @@ Configuring the dictionary in ClickHouse:
 </yandex>
 ```
 
-or
+或
 
 ``` sql
 CREATE DICTIONARY test (
@@ -393,7 +395,7 @@ LIFETIME(MIN 300 MAX 360)
 
 ### Mysql {#dicts-external_dicts_dict_sources-mysql}
 
-Example of settings:
+设置示例:
 
 ``` xml
 <source>
@@ -417,7 +419,7 @@ Example of settings:
 </source>
 ```
 
-or
+或
 
 ``` sql
 SOURCE(MYSQL(
@@ -433,7 +435,7 @@ SOURCE(MYSQL(
 ))
 ```
 
-Setting fields:
+设置字段:
 
 -   `port` – The port on the MySQL server. You can specify it for all replicas, or for each one individually (inside `<replica>`).
 
@@ -450,13 +452,13 @@ Setting fields:
 
 -   `table` – Name of the table.
 
--   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` clause in MySQL, for example, `id > 10 AND id < 20`. Optional parameter.
+-   `where` – The selection criteria. The syntax for conditions is the same as for `WHERE` 例如，mysql中的子句, `id > 10 AND id < 20`. 可选参数。
 
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [更新字典](external_dicts_dict_lifetime.md).
 
-MySQL can be connected on a local host via sockets. To do this, set `host` and `socket`.
+MySQL可以通过套接字在本地主机上连接。 要做到这一点，设置 `host` 和 `socket`.
 
-Example of settings:
+设置示例:
 
 ``` xml
 <source>
@@ -473,7 +475,7 @@ Example of settings:
 </source>
 ```
 
-or
+或
 
 ``` sql
 SOURCE(MYSQL(
@@ -490,7 +492,7 @@ SOURCE(MYSQL(
 
 ### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
 
-Example of settings:
+设置示例:
 
 ``` xml
 <source>
@@ -506,7 +508,7 @@ Example of settings:
 </source>
 ```
 
-or
+或
 
 ``` sql
 SOURCE(CLICKHOUSE(
@@ -520,20 +522,20 @@ SOURCE(CLICKHOUSE(
 ))
 ```
 
-Setting fields:
+设置字段:
 
--   `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [Distributed](../../../engines/table_engines/special/distributed.md) table and enter it in subsequent configurations.
+-   `host` – The ClickHouse host. If it is a local host, the query is processed without any network activity. To improve fault tolerance, you can create a [分布](../../../engines/table_engines/special/distributed.md) 表并在后续配置中输入它。
 -   `port` – The port on the ClickHouse server.
 -   `user` – Name of the ClickHouse user.
 -   `password` – Password of the ClickHouse user.
 -   `db` – Name of the database.
 -   `table` – Name of the table.
 -   `where` – The selection criteria. May be omitted.
--   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [Updating dictionaries](external_dicts_dict_lifetime.md).
+-   `invalidate_query` – Query for checking the dictionary status. Optional parameter. Read more in the section [更新字典](external_dicts_dict_lifetime.md).
 
 ### Mongodb {#dicts-external_dicts_dict_sources-mongodb}
 
-Example of settings:
+设置示例:
 
 ``` xml
 <source>
@@ -548,7 +550,7 @@ Example of settings:
 </source>
 ```
 
-or
+或
 
 ``` sql
 SOURCE(MONGO(
@@ -561,7 +563,7 @@ SOURCE(MONGO(
 ))
 ```
 
-Setting fields:
+设置字段:
 
 -   `host` – The MongoDB host.
 -   `port` – The port on the MongoDB server.
@@ -572,7 +574,7 @@ Setting fields:
 
 ### Redis {#dicts-external_dicts_dict_sources-redis}
 
-Example of settings:
+设置示例:
 
 ``` xml
 <source>
@@ -585,7 +587,7 @@ Example of settings:
 </source>
 ```
 
-or
+或
 
 ``` sql
 SOURCE(REDIS(
@@ -596,11 +598,11 @@ SOURCE(REDIS(
 ))
 ```
 
-Setting fields:
+设置字段:
 
 -   `host` – The Redis host.
 -   `port` – The port on the Redis server.
--   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` is for simple sources and for hashed single key sources, `hash_map` is for hashed sources with two keys. Ranged sources and cache sources with complex key are unsupported. May be omitted, default value is `simple`.
+-   `storage_type` – The structure of internal Redis storage using for work with keys. `simple` 适用于简单源和散列单键源, `hash_map` 用于具有两个键的散列源。 不支持具有复杂键的范围源和缓存源。 可以省略，默认值为 `simple`.
 -   `db_index` – The specific numeric index of Redis logical database. May be omitted, default value is 0.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_sources/) <!--hide-->

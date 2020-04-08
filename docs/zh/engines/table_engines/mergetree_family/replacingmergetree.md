@@ -1,4 +1,9 @@
-# ReplacingMergeTree {#replacingmergetree}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# 更换麦树 {#replacingmergetree}
 
 该引擎和[MergeTree](mergetree.md)的不同之处在于它会删除具有相同主键的重复项。
 
@@ -23,7 +28,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 请求参数的描述，参考[请求参数](../../../engines/table_engines/mergetree_family/replacingmergetree.md)。
 
-**ReplacingMergeTree Parameters**
+**替换树参数**
 
 -   `ver` — 版本列。类型为 `UInt*`, `Date` 或 `DateTime`。可选参数。
 

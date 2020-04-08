@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 操作符 {#cao-zuo-fu}
 
 所有的操作符（运算符）都会在查询时依据他们的优先级及其结合顺序在被解析时转换为对应的函数。下面按优先级从高到低列出各组运算符及其对应的函数：
@@ -82,7 +87,7 @@
 
 条件运算符会先计算表达式b和表达式c的值，再根据表达式a的真假，返回相应的值。如果表达式b和表达式c是 [arrayJoin()](../sql_reference/functions/array_join.md#functions_arrayjoin) 函数，则不管表达式a是真是假，每行都会被复制展开。
 
-## Operators for Working with Dates and Times {#operators-datetime}
+## 使用日期和时间的操作员 {#operators-datetime}
 
 ### EXTRACT {#operator-extract}
 
@@ -90,9 +95,9 @@
 EXTRACT(part FROM date);
 ```
 
-Extracts a part from a given date. For example, you can retrieve a month from a given date, or a second from a time.
+从给定日期中提取部件。 例如，您可以从给定日期检索一个月，或从时间检索一秒钟。
 
-The `part` parameter specifies which part of the date to retrieve. The following values are available:
+该 `part` 参数指定要检索的日期部分。 以下值可用:
 
 -   `DAY` — The day of the month. Possible values: 1–31.
 -   `MONTH` — The number of a month. Possible values: 1–12.
@@ -101,11 +106,11 @@ The `part` parameter specifies which part of the date to retrieve. The following
 -   `MINUTE` — The minute. Possible values: 0–59.
 -   `HOUR` — The hour. Possible values: 0–23.
 
-The `part` parameter is case-insensitive.
+该 `part` 参数不区分大小写。
 
-The `date` parameter specifies the date or the time to process. Either [Date](../sql_reference/data_types/date.md) or [DateTime](../sql_reference/data_types/datetime.md) type is supported.
+该 `date` 参数指定要处理的日期或时间。 无论是 [日期](../sql_reference/data_types/date.md) 或 [日期时间](../sql_reference/data_types/datetime.md) 支持类型。
 
-Examples:
+例:
 
 ``` sql
 SELECT EXTRACT(DAY FROM toDate('2017-06-15'));
@@ -113,7 +118,7 @@ SELECT EXTRACT(MONTH FROM toDate('2017-06-15'));
 SELECT EXTRACT(YEAR FROM toDate('2017-06-15'));
 ```
 
-In the following example we create a table and insert into it a value with the `DateTime` type.
+在下面的例子中，我们创建一个表，并在其中插入一个值 `DateTime` 类型。
 
 ``` sql
 CREATE TABLE test.Orders
@@ -146,13 +151,13 @@ FROM test.Orders;
 └───────────┴────────────┴──────────┴───────────┴─────────────┴─────────────┘
 ```
 
-You can see more examples in [tests](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql).
+你可以看到更多的例子 [测试](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00619_extract.sql).
 
 ### INTERVAL {#operator-interval}
 
-Creates an [Interval](../sql_reference/operators.md)-type value that should be used in arithmetical operations with [Date](../sql_reference/data_types/date.md) and [DateTime](../sql_reference/data_types/datetime.md)-type values.
+创建一个 [间隔](../sql_reference/operators.md)-应在算术运算中使用的类型值 [日期](../sql_reference/data_types/date.md) 和 [日期时间](../sql_reference/data_types/datetime.md)-类型值。
 
-Example:
+示例:
 
 ``` sql
 SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL 3 HOUR
@@ -164,10 +169,10 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 └─────────────────────┴────────────────────────────────────────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [Interval](../sql_reference/operators.md) data type
--   [toInterval](../sql_reference/operators.md#function-tointerval) type convertion functions
+-   [间隔](../sql_reference/operators.md) 数据类型
+-   [toInterval](../sql_reference/operators.md#function-tointerval) 类型转换函数
 
 ## CASE条件表达式 {#operator_case}
 
@@ -216,7 +221,7 @@ ClickHouse 支持 `IS NULL` 和 `IS NOT NULL` 。
 
 ### IS NULL {#operator-is-null}
 
--   对于 [Nullable](../sql_reference/operators.md) 类型的值， `IS NULL` 会返回：
+-   对于 [可为空](../sql_reference/operators.md) 类型的值， `IS NULL` 会返回：
     -   `1` 值为 `NULL`
     -   `0` 否则
 -   对于其他类型的值， `IS NULL` 总会返回 `0`
@@ -239,7 +244,7 @@ WHERE isNull(y)
 
 ### IS NOT NULL {#is-not-null}
 
--   对于 [Nullable](../sql_reference/operators.md) 类型的值， `IS NOT NULL` 会返回：
+-   对于 [可为空](../sql_reference/operators.md) 类型的值， `IS NOT NULL` 会返回：
     -   `0` 值为 `NULL`
     -   `1` 否则
 -   对于其他类型的值，`IS NOT NULL` 总会返回 `1`

@@ -1,13 +1,18 @@
-# URL(URL, Format) {#table_engines-url}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# URL(URL,格式) {#table_engines-url}
 
 用于管理远程 HTTP/HTTPS 服务器上的数据。该引擎类似
-[File](file.md) 引擎。
+[文件](file.md) 引擎。
 
 ## 在 ClickHouse 服务器中使用引擎 {#zai-clickhouse-fu-wu-qi-zhong-shi-yong-yin-qing}
 
 `Format` 必须是 ClickHouse 可以用于
 `SELECT` 查询的一种格式，若有必要，还要可用于 `INSERT` 。有关支持格式的完整列表，请查看
-[Formats](../../../interfaces/formats.md#formats)。
+[格式](../../../interfaces/formats.md#formats)。
 
 `URL` 必须符合统一资源定位符的结构。指定的URL必须指向一个
 HTTP 或 HTTPS 服务器。对于服务端响应，

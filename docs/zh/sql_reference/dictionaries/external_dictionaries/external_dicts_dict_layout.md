@@ -1,29 +1,31 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 41
-toc_title: Storing Dictionaries in Memory
+toc_title: "\u5728\u5185\u5B58\u4E2D\u5B58\u50A8\u5B57\u5178"
 ---
 
-# Storing Dictionaries In Memory {#dicts-external-dicts-dict-layout}
+# 在内存中存储字典 {#dicts-external-dicts-dict-layout}
 
-There are a variety of ways to store dictionaries in memory.
+有多种方法可以将字典存储在内存中。
 
-We recommend [flat](#flat), [hashed](#dicts-external_dicts_dict_layout-hashed) and [complex\_key\_hashed](#complex-key-hashed). which provide optimal processing speed.
+我们建议 [平](#flat), [散列](#dicts-external_dicts_dict_layout-hashed) 和 [complex\_key\_hashed](#complex-key-hashed). 其提供最佳的处理速度。
 
-Caching is not recommended because of potentially poor performance and difficulties in selecting optimal parameters. Read more in the section “[cache](#cache)”.
+不建议使用缓存，因为性能可能较差，并且难以选择最佳参数。 阅读更多的部分 “[缓存](#cache)”.
 
-There are several ways to improve dictionary performance:
+有几种方法可以提高字典性能:
 
--   Call the function for working with the dictionary after `GROUP BY`.
--   Mark attributes to extract as injective. An attribute is called injective if different attribute values correspond to different keys. So when `GROUP BY` uses a function that fetches an attribute value by the key, this function is automatically taken out of `GROUP BY`.
+-   调用该函数以使用后的字典 `GROUP BY`.
+-   将要提取的属性标记为"注射"。 如果不同的属性值对应于不同的键，则称为注射属性。 所以当 `GROUP BY` 使用由键获取属性值的函数，此函数会自动取出 `GROUP BY`.
 
-ClickHouse generates an exception for errors with dictionaries. Examples of errors:
+ClickHouse为字典中的错误生成异常。 错误示例:
 
--   The dictionary being accessed could not be loaded.
--   Error querying a `cached` dictionary.
+-   无法加载正在访问的字典。
+-   查询错误 `cached` 字典
 
-You can view the list of external dictionaries and their statuses in the `system.dictionaries` table.
+您可以查看外部字典的列表及其状态 `system.dictionaries` 桌子
 
-The configuration looks like this:
+配置如下所示:
 
 ``` xml
 <yandex>
@@ -39,7 +41,7 @@ The configuration looks like this:
 </yandex>
 ```
 
-Corresponding [DDL-query](../../statements/create.md#create-dictionary-query):
+相应的 [DDL-查询](../../statements/create.md#create-dictionary-query):
 
 ``` sql
 CREATE DICTIONARY (...)
@@ -48,28 +50,28 @@ LAYOUT(LAYOUT_TYPE(param value)) -- layout settings
 ...
 ```
 
-## Ways To Store Dictionaries In Memory {#ways-to-store-dictionaries-in-memory}
+## 在内存中存储字典的方法 {#ways-to-store-dictionaries-in-memory}
 
--   [flat](#flat)
--   [hashed](#dicts-external_dicts_dict_layout-hashed)
+-   [平](#flat)
+-   [散列](#dicts-external_dicts_dict_layout-hashed)
 -   [sparse\_hashed](#dicts-external_dicts_dict_layout-sparse_hashed)
--   [cache](#cache)
+-   [缓存](#cache)
 -   [range\_hashed](#range-hashed)
 -   [complex\_key\_hashed](#complex-key-hashed)
 -   [complex\_key\_cache](#complex-key-cache)
 -   [ip\_trie](#ip-trie)
 
-### flat {#flat}
+### 平 {#flat}
 
-The dictionary is completely stored in memory in the form of flat arrays. How much memory does the dictionary use? The amount is proportional to the size of the largest key (in space used).
+字典以平面数组的形式完全存储在内存中。 字典使用多少内存？ 量与最大键的大小（在使用的空间中）成正比。
 
-The dictionary key has the `UInt64` type and the value is limited to 500,000. If a larger key is discovered when creating the dictionary, ClickHouse throws an exception and does not create the dictionary.
+字典键具有 `UInt64` 类型和值限制为500,000。 如果在创建字典时发现较大的键，ClickHouse将引发异常，不会创建字典。
 
-All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
+支持所有类型的来源。 更新时，数据（来自文件或表）将完整读取。
 
-This method provides the best performance among all available methods of storing the dictionary.
+此方法在存储字典的所有可用方法中提供了最佳性能。
 
-Configuration example:
+配置示例:
 
 ``` xml
 <layout>
@@ -77,19 +79,19 @@ Configuration example:
 </layout>
 ```
 
-or
+或
 
 ``` sql
 LAYOUT(FLAT())
 ```
 
-### hashed {#dicts-external_dicts_dict_layout-hashed}
+### 散列 {#dicts-external_dicts_dict_layout-hashed}
 
-The dictionary is completely stored in memory in the form of a hash table. The dictionary can contain any number of elements with any identifiers In practice, the number of keys can reach tens of millions of items.
+该字典以哈希表的形式完全存储在内存中。 字典中可以包含任意数量的带有任意标识符的元素，在实践中，键的数量可以达到数千万项。
 
-All types of sources are supported. When updating, data (from a file or from a table) is read in its entirety.
+支持所有类型的来源。 更新时，数据（来自文件或表）将完整读取。
 
-Configuration example:
+配置示例:
 
 ``` xml
 <layout>
@@ -97,7 +99,7 @@ Configuration example:
 </layout>
 ```
 
-or
+或
 
 ``` sql
 LAYOUT(HASHED())
@@ -105,9 +107,9 @@ LAYOUT(HASHED())
 
 ### sparse\_hashed {#dicts-external_dicts_dict_layout-sparse_hashed}
 
-Similar to `hashed`, but uses less memory in favor more CPU usage.
+类似于 `hashed`，但使用更少的内存，有利于更多的CPU使用率。
 
-Configuration example:
+配置示例:
 
 ``` xml
 <layout>
@@ -121,9 +123,9 @@ LAYOUT(SPARSE_HASHED())
 
 ### complex\_key\_hashed {#complex-key-hashed}
 
-This type of storage is for use with composite [keys](external_dicts_dict_structure.md). Similar to `hashed`.
+这种类型的存储是用于复合 [键](external_dicts_dict_structure.md). 类似于 `hashed`.
 
-Configuration example:
+配置示例:
 
 ``` xml
 <layout>
@@ -137,11 +139,11 @@ LAYOUT(COMPLEX_KEY_HASHED())
 
 ### range\_hashed {#range-hashed}
 
-The dictionary is stored in memory in the form of a hash table with an ordered array of ranges and their corresponding values.
+字典以哈希表的形式存储在内存中，其中包含有序范围及其相应值的数组。
 
-This storage method works the same way as hashed and allows using date/time (arbitrary numeric type) ranges in addition to the key.
+此存储方法的工作方式与散列方式相同，除了键之外，还允许使用日期/时间（任意数字类型）范围。
 
-Example: The table contains discounts for each advertiser in the format:
+示例：该表格包含每个广告客户的折扣，格式为:
 
 ``` text
 +---------|-------------|-------------|------+
@@ -155,9 +157,9 @@ Example: The table contains discounts for each advertiser in the format:
 +---------|-------------|-------------|------+
 ```
 
-To use a sample for date ranges, define the `range_min` and `range_max` elements in the [structure](external_dicts_dict_structure.md). These elements must contain elements `name` and`type` (if `type` is not specified, the default type will be used - Date). `type` can be any numeric type (Date / DateTime / UInt64 / Int32 / others).
+要对日期范围使用示例，请定义 `range_min` 和 `range_max` 中的元素 [结构](external_dicts_dict_structure.md). 这些元素必须包含元素 `name` 和`type` （如果 `type` 如果没有指定，则默认类型将使用-Date）。 `type` 可以是任何数字类型（Date/DateTime/UInt64/Int32/others）。
 
-Example:
+示例:
 
 ``` xml
 <structure>
@@ -175,7 +177,7 @@ Example:
     ...
 ```
 
-or
+或
 
 ``` sql
 CREATE DICTIONARY somedict (
@@ -188,21 +190,21 @@ LAYOUT(RANGE_HASHED())
 RANGE(MIN first MAX last)
 ```
 
-To work with these dictionaries, you need to pass an additional argument to the `dictGetT` function, for which a range is selected:
+要使用这些字典，您需要将附加参数传递给 `dictGetT` 函数，为其选择一个范围:
 
 ``` sql
 dictGetT('dict_name', 'attr_name', id, date)
 ```
 
-This function returns the value for the specified `id`s and the date range that includes the passed date.
+此函数返回指定的值 `id`s和包含传递日期的日期范围。
 
-Details of the algorithm:
+算法的详细信息:
 
--   If the `id` is not found or a range is not found for the `id`, it returns the default value for the dictionary.
--   If there are overlapping ranges, you can use any.
--   If the range delimiter is `NULL` or an invalid date (such as 1900-01-01 or 2039-01-01), the range is left open. The range can be open on both sides.
+-   如果 `id` 未找到或范围未找到 `id`，它返回字典的默认值。
+-   如果存在重叠范围，则可以使用任意范围。
+-   如果范围分隔符是 `NULL` 或无效日期（如1900-01-01或2039-01-01），范围保持打开状态。 范围可以在两侧打开。
 
-Configuration example:
+配置示例:
 
 ``` xml
 <yandex>
@@ -237,7 +239,7 @@ Configuration example:
 </yandex>
 ```
 
-or
+或
 
 ``` sql
 CREATE DICTIONARY somedict(
@@ -250,20 +252,20 @@ PRIMARY KEY Abcdef
 RANGE(MIN StartTimeStamp MAX EndTimeStamp)
 ```
 
-### cache {#cache}
+### 缓存 {#cache}
 
-The dictionary is stored in a cache that has a fixed number of cells. These cells contain frequently used elements.
+字典存储在具有固定数量的单元格的缓存中。 这些单元格包含经常使用的元素。
 
-When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
+搜索字典时，首先搜索缓存。 对于每个数据块，所有在缓存中找不到或过期的密钥都从源请求，使用 `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. 然后将接收到的数据写入高速缓存。
 
-For cache dictionaries, the expiration [lifetime](external_dicts_dict_lifetime.md) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell’s value is not used, and it is re-requested the next time it needs to be used.
-This is the least effective of all the ways to store dictionaries. The speed of the cache depends strongly on correct settings and the usage scenario. A cache type dictionary performs well only when the hit rates are high enough (recommended 99% and higher). You can view the average hit rate in the `system.dictionaries` table.
+对于缓存字典，过期 [使用寿命](external_dicts_dict_lifetime.md) 可以设置高速缓存中的数据。 如果更多的时间比 `lifetime` 自从在单元格中加载数据以来，单元格的值不被使用，并且在下次需要使用时重新请求它。
+这是存储字典的所有方法中最不有效的。 缓存的速度在很大程度上取决于正确的设置和使用场景。 缓存类型字典只有在命中率足够高（推荐99%或更高）时才能表现良好。 您可以查看平均命中率 `system.dictionaries` 桌子
 
-To improve cache performance, use a subquery with `LIMIT`, and call the function with the dictionary externally.
+要提高缓存性能，请使用以下子查询 `LIMIT`，并从外部调用字典函数。
 
-Supported [sources](external_dicts_dict_sources.md): MySQL, ClickHouse, executable, HTTP.
+支持 [来源](external_dicts_dict_sources.md):MySQL的,ClickHouse的,可执行文件,HTTP.
 
-Example of settings:
+设置示例:
 
 ``` xml
 <layout>
@@ -274,31 +276,31 @@ Example of settings:
 </layout>
 ```
 
-or
+或
 
 ``` sql
 LAYOUT(CACHE(SIZE_IN_CELLS 1000000000))
 ```
 
-Set a large enough cache size. You need to experiment to select the number of cells:
+设置足够大的缓存大小。 你需要尝试选择细胞的数量:
 
-1.  Set some value.
-2.  Run queries until the cache is completely full.
-3.  Assess memory consumption using the `system.dictionaries` table.
-4.  Increase or decrease the number of cells until the required memory consumption is reached.
+1.  设置一些值。
+2.  运行查询，直到缓存完全满。
+3.  使用评估内存消耗 `system.dictionaries` 桌子
+4.  增加或减少单元数，直到达到所需的内存消耗。
 
-!!! warning "Warning"
-    Do not use ClickHouse as a source, because it is slow to process queries with random reads.
+!!! warning "警告"
+    不要使用ClickHouse作为源，因为处理随机读取的查询速度很慢。
 
 ### complex\_key\_cache {#complex-key-cache}
 
-This type of storage is for use with composite [keys](external_dicts_dict_structure.md). Similar to `cache`.
+这种类型的存储是用于复合 [键](external_dicts_dict_structure.md). 类似于 `cache`.
 
 ### ip\_trie {#ip-trie}
 
-This type of storage is for mapping network prefixes (IP addresses) to metadata such as ASN.
+这种类型的存储用于将网络前缀（IP地址）映射到ASN等元数据。
 
-Example: The table contains network prefixes and their corresponding AS number and country code:
+示例：该表包含网络前缀及其对应的AS号码和国家代码:
 
 ``` text
   +-----------|-----|------+
@@ -314,9 +316,9 @@ Example: The table contains network prefixes and their corresponding AS number a
   +-----------|-----|------+
 ```
 
-When using this type of layout, the structure must have a composite key.
+使用此类布局时，结构必须具有复合键。
 
-Example:
+示例:
 
 ``` xml
 <structure>
@@ -339,7 +341,7 @@ Example:
     ...
 ```
 
-or
+或
 
 ``` sql
 CREATE DICTIONARY somedict (
@@ -350,22 +352,22 @@ CREATE DICTIONARY somedict (
 PRIMARY KEY prefix
 ```
 
-The key must have only one String type attribute that contains an allowed IP prefix. Other types are not supported yet.
+该键必须只有一个包含允许的IP前缀的字符串类型属性。 还不支持其他类型。
 
-For queries, you must use the same functions (`dictGetT` with a tuple) as for dictionaries with composite keys:
+对于查询，必须使用相同的函数 (`dictGetT` 与元组）至于具有复合键的字典:
 
 ``` sql
 dictGetT('dict_name', 'attr_name', tuple(ip))
 ```
 
-The function takes either `UInt32` for IPv4, or `FixedString(16)` for IPv6:
+该函数采用任一 `UInt32` 对于IPv4，或 `FixedString(16)` 碌莽禄Ipv6拢IPv6:
 
 ``` sql
 dictGetString('prefix', 'asn', tuple(IPv6StringToNum('2001:db8::1')))
 ```
 
-Other types are not supported yet. The function returns the attribute for the prefix that corresponds to this IP address. If there are overlapping prefixes, the most specific one is returned.
+还不支持其他类型。 该函数返回与此IP地址对应的前缀的属性。 如果有重叠的前缀，则返回最具体的前缀。
 
-Data is stored in a `trie`. It must completely fit into RAM.
+数据存储在一个 `trie`. 它必须完全适合RAM。
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_layout/) <!--hide-->

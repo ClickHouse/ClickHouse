@@ -1,19 +1,21 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 47
 toc_title: generateRandom
 ---
 
 # generateRandom {#generaterandom}
 
-Generates random data with given schema.
-Allows to populate test tables with data.
-Supports all data types that can be stored in table except `LowCardinality` and `AggregateFunction`.
+使用给定的模式生成随机数据。
+允许用数据填充测试表。
+支持可以存储在表中的所有数据类型，除了 `LowCardinality` 和 `AggregateFunction`.
 
 ``` sql
 generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]);
 ```
 
-**Parameters**
+**参数**
 
 -   `name` — Name of corresponding column.
 -   `TypeName` — Type of corresponding column.
@@ -22,11 +24,11 @@ generateRandom('name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_stri
 -   `max_string_length` — Maximum string length for all generated strings. Defaults to `10`.
 -   `random_seed` — Specify random seed manually to produce stable results. If NULL — seed is randomly generated.
 
-**Returned Value**
+**返回值**
 
-A table object with requested schema.
+具有请求架构的表对象。
 
-## Usage Example {#usage-example}
+## 用法示例 {#usage-example}
 
 ``` sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2);
@@ -40,4 +42,4 @@ SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(
 └──────────┴──────────────┴────────────────────────────────────────────────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/generate/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/generate/) <!--hide-->

@@ -1,13 +1,15 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 45
-toc_title: Hierarchical dictionaries
+toc_title: "\u5206\u5C42\u5B57\u5178"
 ---
 
-# Hierarchical Dictionaries {#hierarchical-dictionaries}
+# 分层字典 {#hierarchical-dictionaries}
 
-ClickHouse supports hierarchical dictionaries with a [numeric key](external_dicts_dict_structure.md#ext_dict-numeric-key).
+ClickHouse支持分层字典与 [数字键](external_dicts_dict_structure.md#ext_dict-numeric-key).
 
-Look at the following hierarchical structure:
+看看下面的层次结构:
 
 ``` text
 0 (Common parent)
@@ -23,23 +25,23 @@ Look at the following hierarchical structure:
     └── 5 (London)
 ```
 
-This hierarchy can be expressed as the following dictionary table.
+这种层次结构可以表示为下面的字典表。
 
-| region\_id | parent\_region | region\_name  |
-|--------|----------|---------|
-| 1          | 0              | Russia        |
-| 2          | 1              | Moscow        |
-| 3          | 2              | Center        |
-| 4          | 0              | Great Britain |
-| 5          | 4              | London        |
+| region\_id | parent\_region | region\_name |
+|------------|----------------|--------------|
+| 1          | 0              | 俄罗斯       |
+| 2          | 1              | 莫斯科       |
+| 3          | 2              | 中心         |
+| 4          | 0              | 英国         |
+| 5          | 4              | 伦敦         |
 
-This table contains a column `parent_region` that contains the key of the nearest parent for the element.
+此表包含一列 `parent_region` 包含该元素的最近父项的键。
 
-ClickHouse supports the [hierarchical](external_dicts_dict_structure.md#hierarchical-dict-attr) property for [external dictionary](index.md) attributes. This property allows you to configure the hierarchical dictionary similar to described above.
+ClickHouse支持 [等级](external_dicts_dict_structure.md#hierarchical-dict-attr) 属性为 [外部字典](index.md) 属性。 此属性允许您配置类似于上述的分层字典。
 
-The [dictGetHierarchy](../../../sql_reference/functions/ext_dict_functions.md#dictgethierarchy) function allows you to get the parent chain of an element.
+该 [独裁主义](../../../sql_reference/functions/ext_dict_functions.md#dictgethierarchy) 函数允许您获取元素的父链。
 
-For our example, the structure of dictionary can be the following:
+对于我们的例子，dictionary的结构可以是以下内容:
 
 ``` xml
 <dictionary>
@@ -65,4 +67,4 @@ For our example, the structure of dictionary can be the following:
 </dictionary>
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts_dict_hierarchical/) <!--hide-->

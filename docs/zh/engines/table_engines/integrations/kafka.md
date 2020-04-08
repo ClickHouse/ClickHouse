@@ -1,4 +1,9 @@
-# Kafka {#kafka}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# 卡夫卡 {#kafka}
 
 此引擎与 [Apache Kafka](http://kafka.apache.org/) 结合使用。
 
@@ -36,7 +41,7 @@ Kafka 特性：
 可选参数：
 
 -   `kafka_row_delimiter` - 每个消息体（记录）之间的分隔符。
--   `kafka_schema` – 如果解析格式需要一个 schema 时，此参数必填。例如，[Cap’n Proto](https://capnproto.org/) 需要 schema 文件路径以及根对象 `schema.capnp:Message` 的名字。
+-   `kafka_schema` – 如果解析格式需要一个 schema 时，此参数必填。例如，[普罗托船长](https://capnproto.org/) 需要 schema 文件路径以及根对象 `schema.capnp:Message` 的名字。
 -   `kafka_num_consumers` – 单个表的消费者数量。默认值是：`1`，如果一个消费者的吞吐量不足，则指定更多的消费者。消费者的总数不应该超过 topic 中分区的数量，因为每个分区只能分配一个消费者。
 
 示例：
@@ -130,6 +135,6 @@ Kafka 特性：
   </kafka_logs>
 ```
 
-有关详细配置选项列表，请参阅 [librdkafka configuration reference](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)。在 ClickHouse 配置中使用下划线 (`_`) ，并不是使用点 (`.`)。例如，`check.crcs=true` 将是 `<check_crcs>true</check_crcs>`。
+有关详细配置选项列表，请参阅 [librdkafka配置参考](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)。在 ClickHouse 配置中使用下划线 (`_`) ，并不是使用点 (`.`)。例如，`check.crcs=true` 将是 `<check_crcs>true</check_crcs>`。
 
-[Original article](https://clickhouse.tech/docs/zh/operations/table_engines/kafka/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/zh/operations/table_engines/kafka/) <!--hide-->

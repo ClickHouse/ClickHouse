@@ -1,4 +1,9 @@
-# Set {#set}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# 设置 {#set}
 
 始终存在于 RAM 中的数据集。它适用于IN运算符的右侧（请参见 «IN运算符» 部分）。
 
@@ -8,4 +13,4 @@
 
 对于强制服务器重启，磁盘上的数据块可能会丢失或损坏。在数据块损坏的情况下，可能需要手动删除包含损坏数据的文件。
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/set/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/set/) <!--hide-->

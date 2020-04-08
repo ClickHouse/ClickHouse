@@ -1,6 +1,11 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # GEO函数 {#geohan-shu}
 
-## greatCircleDistance {#greatcircledistance}
+## 大圆形距离 {#greatcircledistance}
 
 使用[great-circle distance公式](https://en.wikipedia.org/wiki/Great-circle_distance)计算地球表面两点之间的距离。
 
@@ -35,7 +40,7 @@ SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673)
 └───────────────────────────────────────────────────────────────────┘
 ```
 
-## pointInEllipses {#pointinellipses}
+## 尖尖的人 {#pointinellipses}
 
 检查指定的点是否至少包含在指定的一个椭圆中。
 下述中的坐标是几何图形在笛卡尔坐标系中的位置。
@@ -78,8 +83,8 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **输入参数**
 
--   `(x, y)` — 平面上某个点的坐标。[Tuple](../../sql_reference/functions/geo.md)类型，包含坐标的两个数字。
--   `[(a, b), (c, d) ...]` — 多边形的顶点。[Array](../../sql_reference/functions/geo.md)类型。每个顶点由一对坐标`(a, b)`表示。顶点可以按顺时针或逆时针指定。顶点的个数应该大于等于3。同时只能是常量的。
+-   `(x, y)` — 平面上某个点的坐标。[元组](../../sql_reference/functions/geo.md)类型，包含坐标的两个数字。
+-   `[(a, b), (c, d) ...]` — 多边形的顶点。[阵列](../../sql_reference/functions/geo.md)类型。每个顶点由一对坐标`(a, b)`表示。顶点可以按顺时针或逆时针指定。顶点的个数应该大于等于3。同时只能是常量的。
 -   该函数还支持镂空的多边形（切除部分）。如果需要，可以使用函数的其他参数定义需要切除部分的多边形。(The function does not support non-simply-connected polygons.)
 
 **返回值**

@@ -1,62 +1,64 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 65
-toc_title: Introspection
+toc_title: "\u81EA\u7701"
 ---
 
-# Introspection Functions {#introspection-functions}
+# 内省功能 {#introspection-functions}
 
-You can use functions described in this chapter to introspect [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) and [DWARF](https://en.wikipedia.org/wiki/DWARF) for query profiling.
+您可以使用本章中描述的函数来反省 [ELF](https://en.wikipedia.org/wiki/Executable_and_Linkable_Format) 和 [DWARF](https://en.wikipedia.org/wiki/DWARF) 用于查询分析。
 
-!!! warning "Warning"
-    These functions are slow and may impose security considerations.
+!!! warning "警告"
+    这些功能很慢，可能会强加安全考虑。
 
-For proper operation of introspection functions:
+对于内省功能的正确操作:
 
--   Install the `clickhouse-common-static-dbg` package.
+-   安装 `clickhouse-common-static-dbg` 包。
 
--   Set the [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) setting to 1.
+-   设置 [allow\_introspection\_functions](../../operations/settings/settings.md#settings-allow_introspection_functions) 设置为1。
 
         For security reasons introspection functions are disabled by default.
 
-ClickHouse saves profiler reports to the [trace\_log](../../operations/system_tables.md#system_tables-trace_log) system table. Make sure the table and profiler are configured properly.
+ClickHouse将探查器报告保存到 [trace\_log](../../operations/system_tables.md#system_tables-trace_log) 系统表. 确保正确配置了表和探查器。
 
 ## addressToLine {#addresstoline}
 
-Converts virtual memory address inside ClickHouse server process to the filename and the line number in ClickHouse source code.
+将ClickHouse服务器进程内的虚拟内存地址转换为ClickHouse源代码中的文件名和行号。
 
-If you use official ClickHouse packages, you need to install the `clickhouse-common-static-dbg` package.
+如果您使用官方的ClickHouse软件包，您需要安装 `clickhouse-common-static-dbg` 包。
 
-**Syntax**
+**语法**
 
 ``` sql
 addressToLine(address_of_binary_instruction)
 ```
 
-**Parameters**
+**参数**
 
 -   `address_of_binary_instruction` ([UInt64](../../sql_reference/data_types/int_uint.md)) — Address of instruction in a running process.
 
-**Returned value**
+**返回值**
 
--   Source code filename and the line number in this file delimited by colon.
+-   源代码文件名和此文件中用冒号分隔的行号。
 
         For example, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, where `199` is a line number.
 
--   Name of a binary, if the function couldn’t find the debug information.
+-   二进制文件的名称，如果函数找不到调试信息。
 
--   Empty string, if the address is not valid.
+-   空字符串，如果地址无效。
 
-Type: [String](../../sql_reference/data_types/string.md).
+类型: [字符串](../../sql_reference/data_types/string.md).
 
-**Example**
+**示例**
 
-Enabling introspection functions:
+启用内省功能:
 
 ``` sql
 SET allow_introspection_functions=1
 ```
 
-Selecting the first string from the `trace_log` system table:
+从中选择第一个字符串 `trace_log` 系统表:
 
 ``` sql
 SELECT * FROM system.trace_log LIMIT 1 \G
@@ -74,9 +76,9 @@ query_id:                421b6855-1858-45a5-8f37-f383409d6d72
 trace:                   [140658411141617,94784174532828,94784076370703,94784076372094,94784076361020,94784175007680,140658411116251,140658403895439]
 ```
 
-The `trace` field contains the stack trace at the moment of sampling.
+该 `trace` 字段包含采样时的堆栈跟踪。
 
-Getting the source code filename and the line number for a single address:
+获取单个地址的源代码文件名和行号:
 
 ``` sql
 SELECT addressToLine(94784076370703) \G
@@ -88,7 +90,7 @@ Row 1:
 addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
 ```
 
-Applying the function to the whole stack trace:
+将函数应用于整个堆栈跟踪:
 
 ``` sql
 SELECT
@@ -98,7 +100,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](higher_order_functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `addressToLine` function. The result of this processing you see in the `trace_source_code_lines` column of output.
+该 [arrayMap](higher_order_functions.md#higher_order_functions-array-map) 功能允许处理的每个单独的元素 `trace` 阵列由 `addressToLine` 功能。 这种处理的结果，你在看 `trace_source_code_lines` 列的输出。
 
 ``` text
 Row 1:
@@ -115,34 +117,34 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 
 ## addressToSymbol {#addresstosymbol}
 
-Converts virtual memory address inside ClickHouse server process to the symbol from ClickHouse object files.
+将ClickHouse服务器进程内的虚拟内存地址转换为ClickHouse对象文件中的符号。
 
-**Syntax**
+**语法**
 
 ``` sql
 addressToSymbol(address_of_binary_instruction)
 ```
 
-**Parameters**
+**参数**
 
 -   `address_of_binary_instruction` ([UInt64](../../sql_reference/data_types/int_uint.md)) — Address of instruction in a running process.
 
-**Returned value**
+**返回值**
 
--   Symbol from ClickHouse object files.
--   Empty string, if the address is not valid.
+-   来自ClickHouse对象文件的符号。
+-   空字符串，如果地址无效。
 
-Type: [String](../../sql_reference/data_types/string.md).
+类型: [字符串](../../sql_reference/data_types/string.md).
 
-**Example**
+**示例**
 
-Enabling introspection functions:
+启用内省功能:
 
 ``` sql
 SET allow_introspection_functions=1
 ```
 
-Selecting the first string from the `trace_log` system table:
+从中选择第一个字符串 `trace_log` 系统表:
 
 ``` sql
 SELECT * FROM system.trace_log LIMIT 1 \G
@@ -160,9 +162,9 @@ query_id:      724028bf-f550-45aa-910d-2af6212b94ac
 trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
 ```
 
-The `trace` field contains the stack trace at the moment of sampling.
+该 `trace` 字段包含采样时的堆栈跟踪。
 
-Getting a symbol for a single address:
+获取单个地址的符号:
 
 ``` sql
 SELECT addressToSymbol(94138803686098) \G
@@ -174,7 +176,7 @@ Row 1:
 addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20AggregateFunctionSumImmNS_24AggregateFunctionSumDataImEEEEE19addBatchSinglePlaceEmPcPPKNS_7IColumnEPNS_5ArenaE
 ```
 
-Applying the function to the whole stack trace:
+将函数应用于整个堆栈跟踪:
 
 ``` sql
 SELECT
@@ -184,7 +186,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](higher_order_functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `addressToSymbols` function. The result of this processing you see in the `trace_symbols` column of output.
+该 [arrayMap](higher_order_functions.md#higher_order_functions-array-map) 功能允许处理的每个单独的元素 `trace` 阵列由 `addressToSymbols` 功能。 这种处理的结果，你在看 `trace_symbols` 列的输出。
 
 ``` text
 Row 1:
@@ -212,34 +214,34 @@ clone
 
 ## demangle {#demangle}
 
-Converts a symbol that you can get using the [addressToSymbol](#addresstosymbol) function to the C++ function name.
+转换一个符号，您可以使用 [addressToSymbol](#addresstosymbol) 函数到C++函数名。
 
-**Syntax**
+**语法**
 
 ``` sql
 demangle(symbol)
 ```
 
-**Parameters**
+**参数**
 
--   `symbol` ([String](../../sql_reference/data_types/string.md)) — Symbol from an object file.
+-   `symbol` ([字符串](../../sql_reference/data_types/string.md)) — Symbol from an object file.
 
-**Returned value**
+**返回值**
 
--   Name of the C++ function.
--   Empty string if a symbol is not valid.
+-   C++函数的名称。
+-   如果符号无效，则为空字符串。
 
-Type: [String](../../sql_reference/data_types/string.md).
+类型: [字符串](../../sql_reference/data_types/string.md).
 
-**Example**
+**示例**
 
-Enabling introspection functions:
+启用内省功能:
 
 ``` sql
 SET allow_introspection_functions=1
 ```
 
-Selecting the first string from the `trace_log` system table:
+从中选择第一个字符串 `trace_log` 系统表:
 
 ``` sql
 SELECT * FROM system.trace_log LIMIT 1 \G
@@ -257,9 +259,9 @@ query_id:      724028bf-f550-45aa-910d-2af6212b94ac
 trace:         [94138803686098,94138815010911,94138815096522,94138815101224,94138815102091,94138814222988,94138806823642,94138814457211,94138806823642,94138814457211,94138806823642,94138806795179,94138806796144,94138753770094,94138753771646,94138753760572,94138852407232,140399185266395,140399178045583]
 ```
 
-The `trace` field contains the stack trace at the moment of sampling.
+该 `trace` 字段包含采样时的堆栈跟踪。
 
-Getting a function name for a single address:
+获取单个地址的函数名称:
 
 ``` sql
 SELECT demangle(addressToSymbol(94138803686098)) \G
@@ -271,7 +273,7 @@ Row 1:
 demangle(addressToSymbol(94138803686098)): DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
 ```
 
-Applying the function to the whole stack trace:
+将函数应用于整个堆栈跟踪:
 
 ``` sql
 SELECT
@@ -281,7 +283,7 @@ LIMIT 1
 \G
 ```
 
-The [arrayMap](higher_order_functions.md#higher_order_functions-array-map) function allows to process each individual element of the `trace` array by the `demangle` function. The result of this processing you see in the `trace_functions` column of output.
+该 [arrayMap](higher_order_functions.md#higher_order_functions-array-map) 功能允许处理的每个单独的元素 `trace` 阵列由 `demangle` 功能。 这种处理的结果，你在看 `trace_functions` 列的输出。
 
 ``` text
 Row 1:

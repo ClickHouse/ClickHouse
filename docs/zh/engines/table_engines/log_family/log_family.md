@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 日志引擎系列 {#table_engines-log-engine-family}
 
 这些引擎是为了需要写入许多小数据量（少于一百万行）的表的场景而开发的。
@@ -5,7 +10,7 @@
 这系列的引擎有：
 
 -   [StripeLog](stripelog.md)
--   [Log](log.md)
+-   [日志](log.md)
 -   [TinyLog](tinylog.md)
 
 ## 共同属性 {#table_engines-log-engine-family-common-properties}

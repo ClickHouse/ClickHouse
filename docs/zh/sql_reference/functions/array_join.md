@@ -1,10 +1,15 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # arrayJoin函数 {#functions_arrayjoin}
 
 这是一个非常有用的函数。
 
 普通函数不会更改结果集的行数，而只是计算每行中的值（map）。
 聚合函数将多行压缩到一行中（fold或reduce）。
-’arrayJoin’函数获取每一行并将他们展开到多行（unfold）。
+'arrayJoin'函数获取每一行并将他们展开到多行（unfold）。
 
 此函数将数组作为参数，并将该行在结果集中复制数组元素个数。
 除了应用此函数的列中的值之外，简单地复制列中的所有值;它被替换为相应的数组值。

@@ -1,4 +1,9 @@
-# File(InputFormat) {#table_engines-file}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
+# 文件(输入格式) {#table_engines-file}
 
 数据源是以 Clickhouse 支持的一种输入格式（TabSeparated，Native等）存储数据的文件。
 
@@ -14,7 +19,7 @@
 
 选用的 `Format` 需要支持 `INSERT` 或 `SELECT` 。有关支持格式的完整列表，请参阅 [格式](../../../interfaces/formats.md#formats)。
 
-ClickHouse 不支持给 `File` 指定文件系统路径。它使用服务器配置中 [path](../../../operations/server_configuration_parameters/settings.md) 设定的文件夹。
+ClickHouse 不支持给 `File` 指定文件系统路径。它使用服务器配置中 [路径](../../../operations/server_configuration_parameters/settings.md) 设定的文件夹。
 
 使用 `File(Format)` 创建表时，它会在该文件夹中创建空的子目录。当数据写入该表时，它会写到该子目录中的 `data.Format` 文件中。
 
@@ -54,7 +59,7 @@ SELECT * FROM file_engine_table
 
 ## 在 Clickhouse-local 中的使用 {#zai-clickhouse-local-zhong-de-shi-yong}
 
-使用 [clickhouse-local](../../../engines/table_engines/special/file.md) 时，File 引擎除了 `Format` 之外，还可以接受文件路径参数。可以使用数字或人类可读的名称来指定标准输入/输出流，例如 `0` 或 `stdin`，`1` 或 `stdout`。
+使用 [ﾂ环板-ｮﾂ嘉ｯﾂ偲](../../../engines/table_engines/special/file.md) 时，File 引擎除了 `Format` 之外，还可以接受文件路径参数。可以使用数字或人类可读的名称来指定标准输入/输出流，例如 `0` 或 `stdin`，`1` 或 `stdout`。
 **例如：**
 
 ``` bash

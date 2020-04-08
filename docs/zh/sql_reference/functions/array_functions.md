@@ -1,6 +1,11 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 数组函数 {#shu-zu-han-shu}
 
-## empty {#empty}
+## 空 {#empty}
 
 对于空数组返回1，对于非空数组返回0。
 结果类型是UInt8。
@@ -12,21 +17,21 @@
 结果类型是UInt8。
 该函数也适用于字符串。
 
-## length {#array_functions-length}
+## 长度 {#array_functions-length}
 
 返回数组中的元素个数。
 结果类型是UInt64。
 该函数也适用于字符串。
 
-## emptyArrayUInt8, emptyArrayUInt16, emptyArrayUInt32, emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
+## emptyArrayUInt8,emptyArrayUInt16,emptyArrayUInt32,emptyArrayUInt64 {#emptyarrayuint8-emptyarrayuint16-emptyarrayuint32-emptyarrayuint64}
 
-## emptyArrayInt8, emptyArrayInt16, emptyArrayInt32, emptyArrayInt64 {#emptyarrayint8-emptyarrayint16-emptyarrayint32-emptyarrayint64}
+## emptyArrayInt8,emptyArrayInt16,emptyArrayInt32,emptyArrayInt64 {#emptyarrayint8-emptyarrayint16-emptyarrayint32-emptyarrayint64}
 
-## emptyArrayFloat32, emptyArrayFloat64 {#emptyarrayfloat32-emptyarrayfloat64}
+## emptyArrayFloat32,emptyArrayFloat64 {#emptyarrayfloat32-emptyarrayfloat64}
 
-## emptyArrayDate, emptyArrayDateTime {#emptyarraydate-emptyarraydatetime}
+## 空空漫步，空空漫步时间 {#emptyarraydate-emptyarraydatetime}
 
-## emptyArrayString {#emptyarraystring}
+## 空字符串 {#emptyarraystring}
 
 不接受任何参数并返回适当类型的空数组。
 
@@ -34,7 +39,7 @@
 
 接受一个空数组并返回一个仅包含一个默认值元素的数组。
 
-## range(N) {#rangen}
+## 范围(N) {#rangen}
 
 返回从0到N-1的数字数组。
 以防万一，如果在数据块中创建总长度超过100,000,000个元素的数组，则抛出异常。
@@ -42,8 +47,8 @@
 ## array(x1, …), operator \[x1, …\] {#arrayx1-operator-x1}
 
 使用函数的参数作为数组元素创建一个数组。
-参数必须是常量，并且具有最小公共类型的类型。必须至少传递一个参数，否则将不清楚要创建哪种类型的数组。也就是说，你不能使用这个函数来创建一个空数组（为此，使用上面描述的’emptyArray  \*’函数）。
-返回’Array（T）’类型的结果，其中’T’是传递的参数中最小的公共类型。
+参数必须是常量，并且具有最小公共类型的类型。必须至少传递一个参数，否则将不清楚要创建哪种类型的数组。也就是说，你不能使用这个函数来创建一个空数组（为此，使用上面描述的'emptyArray  \*'函数）。
+返回'Array（T）'类型的结果，其中'T'是传递的参数中最小的公共类型。
 
 ## arrayConcat {#arrayconcat}
 
@@ -53,7 +58,7 @@
 
 **参数**
 
--   `arrays` – 任意数量的[Array](../../sql_reference/functions/array_functions.md)类型的参数.
+-   `arrays` – 任意数量的[阵列](../../sql_reference/functions/array_functions.md)类型的参数.
     **示例**
 
 <!-- -->
@@ -66,7 +71,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
     │ [1,2,3,4,5,6] │
     └───────────────┘
 
-## arrayElement(arr, n), operator arr\[n\] {#arrayelementarr-n-operator-arrn}
+## arrayElement(arr,n),运算符arr\[n\] {#arrayelementarr-n-operator-arrn}
 
 从数组`arr`中获取索引为«n»的元素。 `n`必须是任何整数类型。
 数组中的索引从一开始。
@@ -74,9 +79,9 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 如果索引超出数组的边界，则返回默认值（数字为0，字符串为空字符串等）。
 
-## has(arr, elem) {#hasarr-elem}
+## 有(arr,elem) {#hasarr-elem}
 
-检查’arr’数组是否具有’elem’元素。
+检查'arr'数组是否具有'elem'元素。
 如果元素不在数组中，则返回0;如果在，则返回1。
 
 `NULL` 值的处理。
@@ -111,17 +116,17 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 **示例**
 
-`SELECT hasAll([], [])` returns 1.
+`SELECT hasAll([], [])` 返回1。
 
-`SELECT hasAll([1, Null], [Null])` returns 1.
+`SELECT hasAll([1, Null], [Null])` 返回1。
 
-`SELECT hasAll([1.0, 2, 3, 4], [1, 3])` returns 1.
+`SELECT hasAll([1.0, 2, 3, 4], [1, 3])` 返回1。
 
-`SELECT hasAll(['a', 'b'], ['a'])` returns 1.
+`SELECT hasAll(['a', 'b'], ['a'])` 返回1。
 
-`SELECT hasAll([1], ['a'])` returns 0.
+`SELECT hasAll([1], ['a'])` 返回0。
 
-`SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` returns 0.
+`SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [3, 5]])` 返回0。
 
 ## hasAny {#hasany}
 
@@ -146,19 +151,19 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 **示例**
 
-`SELECT hasAny([1], [])` returns `0`.
+`SELECT hasAny([1], [])` 返回 `0`.
 
-`SELECT hasAny([Null], [Null, 1])` returns `1`.
+`SELECT hasAny([Null], [Null, 1])` 返回 `1`.
 
-`SELECT hasAny([-128, 1., 512], [1])` returns `1`.
+`SELECT hasAny([-128, 1., 512], [1])` 返回 `1`.
 
-`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` returns `0`.
+`SELECT hasAny([[1, 2], [3, 4]], ['a', 'c'])` 返回 `0`.
 
-`SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])` returns `1`.
+`SELECT hasAll([[1, 2], [3, 4]], [[1, 2], [1, 2]])` 返回 `1`.
 
-## indexOf(arr, x) {#indexofarr-x}
+## indexOf(arr,x) {#indexofarr-x}
 
-返回数组中第一个‘x’元素的索引（从1开始），如果‘x’元素不存在在数组中，则返回0。
+返回数组中第一个'x'元素的索引（从1开始），如果'x'元素不存在在数组中，则返回0。
 
 示例:
 
@@ -172,7 +177,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
 
 设置为«NULL»的元素将作为普通的元素值处理。
 
-## countEqual(arr, x) {#countequalarr-x}
+## countEqual(arr,x) {#countequalarr-x}
 
 返回数组中等于x的元素的个数。相当于arrayCount（elem - \> elem = x，arr）。
 
@@ -186,7 +191,7 @@ SELECT arrayConcat([1, 2], [3, 4], [5, 6]) AS res
     │                                    2 │
     └──────────────────────────────────────┘
 
-## arrayEnumerate(arr) {#array_functions-arrayenumerate}
+## ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人) {#array_functions-arrayenumerate}
 
 返回 Array \[1, 2, 3, …, length (arr) \]
 
@@ -324,7 +329,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res
 **参数**
 
 -   `array` – 数组。
--   `single_value` – 单个值。只能将数字添加到带数字的数组中，并且只能将字符串添加到字符串数组中。添加数字时，ClickHouse会自动为数组的数据类型设置`single_value`类型。有关ClickHouse中数据类型的更多信息，请参阅«[数据类型](../../sql_reference/functions/array_functions.md#data_types)»。可以是’NULL`。该函数向数组添加一个«NULL»元素，数组元素的类型转换为`Nullable\`。
+-   `single_value` – 单个值。只能将数字添加到带数字的数组中，并且只能将字符串添加到字符串数组中。添加数字时，ClickHouse会自动为数组的数据类型设置`single_value`类型。有关ClickHouse中数据类型的更多信息，请参阅«[数据类型](../../sql_reference/functions/array_functions.md#data_types)»。可以是'NULL`。该函数向数组添加一个«NULL»元素，数组元素的类型转换为`Nullable\`。
 
 **示例**
 
@@ -345,7 +350,7 @@ SELECT arrayPushBack(['a'], 'b') AS res
 **参数**
 
 -   `array` – 数组。
--   `single_value` – 单个值。只能将数字添加到带数字的数组中，并且只能将字符串添加到字符串数组中。添加数字时，ClickHouse会自动为数组的数据类型设置`single_value`类型。有关ClickHouse中数据类型的更多信息，请参阅«[数据类型](../../sql_reference/functions/array_functions.md#data_types)»。可以是’NULL`。该函数向数组添加一个«NULL»元素，数组元素的类型转换为`Nullable\`。
+-   `single_value` – 单个值。只能将数字添加到带数字的数组中，并且只能将字符串添加到字符串数组中。添加数字时，ClickHouse会自动为数组的数据类型设置`single_value`类型。有关ClickHouse中数据类型的更多信息，请参阅«[数据类型](../../sql_reference/functions/array_functions.md#data_types)»。可以是'NULL`。该函数向数组添加一个«NULL»元素，数组元素的类型转换为`Nullable\`。
 
 **示例**
 
@@ -369,7 +374,7 @@ SELECT arrayPushFront(['b'], 'a') AS res
 -   `size` — 数组所需的长度。
     -   如果`size`小于数组的原始大小，则数组将从右侧截断。
 -   如果`size`大于数组的初始大小，则使用`extender`值或数组项的数据类型的默认值将数组扩展到右侧。
--   `extender` — 扩展数组的值。可以是’NULL\`。
+-   `extender` — 扩展数组的值。可以是'NULL\`。
 
 **返回值:**
 
@@ -476,7 +481,7 @@ SELECT arraySort((x, y) -> y, ['hello', 'world'], [2, 1]) as res;
     │ ['world', 'hello'] │
     └────────────────────┘
 
-这里，在第二个数组（\[2, 1\]）中定义了第一个数组（\[‘hello’，‘world’\]）的相应元素的排序键，即\[‘hello’ -\> 2，‘world’ -\> 1\]。 由于lambda函数中没有使用`x`，因此源数组中的实际值不会影响结果的顺序。所以，‘world’将是结果中的第一个元素，‘hello’将是结果中的第二个元素。
+这里，在第二个数组（\[2, 1\]）中定义了第一个数组（\[‘hello’，‘world’\]）的相应元素的排序键，即\[‘hello’ -\> 2，‘world’ -\> 1\]。 由于lambda函数中没有使用`x`，因此源数组中的实际值不会影响结果的顺序。所以，'world'将是结果中的第一个元素，'hello'将是结果中的第二个元素。
 
 其他示例如下所示。
 
@@ -501,7 +506,7 @@ SELECT arraySort((x, y) -> -y, [0, 1, 2], [1, 2, 3]) as res;
 ```
 
 !!! 注意 "注意"
-    为了提高排序效率， 使用了[Schwartzian transform](https://en.wikipedia.org/wiki/Schwartzian_transform)。
+    为了提高排序效率， 使用了[施瓦茨变换](https://en.wikipedia.org/wiki/Schwartzian_transform)。
 
 ## arrayReverseSort(\[func,\] arr, …) {#array_functions-reverse-sort}
 
@@ -555,7 +560,7 @@ SELECT arrayReverseSort((x) -> -x, [1, 2, 3]) as res;
     └─────────┘
 
 数组按以下方式排序：
-The array is sorted in the following way:
+数组按以下方式排序:
 
 1.  首先，根据lambda函数的调用结果对源数组（\[1, 2, 3\]）进行排序。 结果是\[3, 2, 1\]。
 2.  反转上一步获得的数组。 所以，最终的结果是\[1, 2, 3\]。
@@ -606,7 +611,7 @@ SELECT arrayReverseSort((x, y) -> -y, [4, 3, 5], [1, 2, 3]) AS res;
 
 如果要获取数组中唯一项的列表，可以使用arrayReduce（‘groupUniqArray’，arr）。
 
-## arrayJoin(arr) {#array-functions-join}
+## arryjoin(arr) {#array-functions-join}
 
 一个特殊的功能。请参见[«ArrayJoin函数»](array_join.md#functions_arrayjoin)部分。
 
@@ -658,7 +663,7 @@ SELECT
 
 arrayReduce（‘agg\_func’，arr1，…） - 将聚合函数`agg_func`应用于数组`arr1 ...`。如果传递了多个数组，则相应位置上的元素将作为多个参数传递给聚合函数。例如：SELECT arrayReduce（‘max’，\[1,2,3\]）= 3
 
-## arrayReverse(arr) {#arrayreversearr}
+## ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人) {#arrayreversearr}
 
 返回与源数组大小相同的数组，包含反转源数组的所有元素的结果。
 

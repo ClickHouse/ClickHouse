@@ -1,40 +1,45 @@
-# clickhouse-copier {#clickhouse-copier}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
 
-Copies data from the tables in one cluster to tables in another (or the same) cluster.
+# ﾂ环板-ｮﾂ嘉ｯﾂ偲 {#clickhouse-copier}
 
-You can run multiple `clickhouse-copier` instances on different servers to perform the same job. ZooKeeper is used for syncing the processes.
+将数据从一个群集中的表复制到另一个（或相同）群集中的表。
 
-After starting, `clickhouse-copier`:
+您可以运行多个 `clickhouse-copier` 不同服务器上的实例执行相同的作业。 ZooKeeper用于同步进程。
 
--   Connects to ZooKeeper and receives:
+开始后, `clickhouse-copier`:
 
-    -   Copying jobs.
-    -   The state of the copying jobs.
+-   连接到动物园管理员和接收:
 
--   It performs the jobs.
+    -   复制作业。
+    -   复制作业的状态。
+
+-   它执行的工作。
 
         Each running process chooses the "closest" shard of the source cluster and copies the data into the destination cluster, resharding the data if necessary.
 
-`clickhouse-copier` tracks the changes in ZooKeeper and applies them on the fly.
+`clickhouse-copier` 跟踪ZooKeeper中的更改，并实时应用它们。
 
-To reduce network traffic, we recommend running `clickhouse-copier` on the same server where the source data is located.
+为了减少网络流量，我们建议运行 `clickhouse-copier` 在源数据所在的同一服务器上。
 
-## Running clickhouse-copier {#running-clickhouse-copier}
+## ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人 {#running-clickhouse-copier}
 
-The utility should be run manually:
+该实用程序应手动运行:
 
 ``` bash
 clickhouse-copier copier --daemon --config zookeeper.xml --task-path /task/path --base-dir /path/to/dir
 ```
 
-Parameters:
+参数:
 
--   `daemon` — Starts `clickhouse-copier` in daemon mode.
--   `config` — The path to the `zookeeper.xml` file with the parameters for the connection to ZooKeeper.
--   `task-path` — The path to the ZooKeeper node. This node is used for syncing `clickhouse-copier` processes and storing tasks. Tasks are stored in `$task-path/description`.
--   `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` creates `clickhouse-copier_YYYYMMHHSS_<PID>` subdirectories in `$base-dir`. If this parameter is omitted, the directories are created in the directory where `clickhouse-copier` was launched.
+-   `daemon` — Starts `clickhouse-copier` 在守护进程模式。
+-   `config` — The path to the `zookeeper.xml` 带有连接到ZooKeeper的参数的文件。
+-   `task-path` — The path to the ZooKeeper node. This node is used for syncing `clickhouse-copier` 处理和存储任务。 任务存储在 `$task-path/description`.
+-   `base-dir` — The path to logs and auxiliary files. When it starts, `clickhouse-copier` 创建 `clickhouse-copier_YYYYMMHHSS_<PID>` 子目录 `$base-dir`. 如果省略此参数，则在以下目录中创建目录 `clickhouse-copier` 被推出。
 
-## Format of zookeeper.xml {#format-of-zookeeper-xml}
+## 动物园管理员的格式。xml {#format-of-zookeeper-xml}
 
 ``` xml
 <yandex>
@@ -53,7 +58,7 @@ Parameters:
 </yandex>
 ```
 
-## Configuration of copying tasks {#configuration-of-copying-tasks}
+## 复制任务的配置 {#configuration-of-copying-tasks}
 
 ``` xml
 <yandex>
@@ -162,6 +167,6 @@ Parameters:
 </yandex>
 ```
 
-`clickhouse-copier` tracks the changes in `/task/path/description` and applies them on the fly. For instance, if you change the value of `max_workers`, the number of processes running tasks will also change.
+`clickhouse-copier` 跟踪更改 `/task/path/description` 并在飞行中应用它们。 例如，如果你改变的值 `max_workers`，运行任务的进程数也会发生变化。
 
-[Original article](https://clickhouse.tech/docs/en/operations/utils/clickhouse-copier/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/utils/clickhouse-copier/) <!--hide-->

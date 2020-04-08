@@ -1,16 +1,18 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 39
-toc_title: numbers
+toc_title: "\u6570\u5B57"
 ---
 
-# numbers {#numbers}
+# 数字 {#numbers}
 
-`numbers(N)` – Returns a table with the single ‘number’ column (UInt64) that contains integers from 0 to N-1.
-`numbers(N, M)` - Returns a table with the single ‘number’ column (UInt64) that contains integers from N to (N + M - 1).
+`numbers(N)` – Returns a table with the single ‘number’ 包含从0到N-1的整数的列(UInt64)。
+`numbers(N, M)` -返回一个表与单 ‘number’ 包含从N到(N+M-1)的整数的列(UInt64)。
 
-Similar to the `system.numbers` table, it can be used for testing and generating successive values, `numbers(N, M)` more efficient than `system.numbers`.
+类似于 `system.numbers` 表，它可以用于测试和生成连续的值, `numbers(N, M)` 比 `system.numbers`.
 
-The following queries are equivalent:
+以下查询是等效的:
 
 ``` sql
 SELECT * FROM numbers(10);
@@ -18,11 +20,11 @@ SELECT * FROM numbers(0, 10);
 SELECT * FROM system.numbers LIMIT 10;
 ```
 
-Examples:
+例:
 
 ``` sql
 -- Generate a sequence of dates from 2010-01-01 to 2010-12-31
 select toDate('2010-01-01') + number as d FROM numbers(365);
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/numbers/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/numbers/) <!--hide-->

@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 维基访问数据 {#wei-ji-fang-wen-shu-ju}
 
 参考: http://dumps.wikimedia.org/other/pagecounts-raw/
@@ -25,4 +30,4 @@ $ cat links.txt | while read link; do wget http://dumps.wikimedia.org/other/page
 $ ls -1 /opt/wikistat/ | grep gz | while read i; do echo $i; gzip -cd /opt/wikistat/$i | ./wikistat-loader --time="$(echo -n $i | sed -r 's/pagecounts-([0-9]{4})([0-9]{2})([0-9]{2})-([0-9]{2})([0-9]{2})([0-9]{2})\.gz/\1-\2-\3 \4-00-00/')" | clickhouse-client --query="INSERT INTO wikistat FORMAT TabSeparated"; done
 ```
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/wikistat/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets/wikistat/) <!--hide-->

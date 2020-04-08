@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 编码函数 {#bian-ma-han-shu}
 
 ## hex {#hex}
@@ -17,11 +22,11 @@
 
 接受FixedString（16）值。返回包含36个字符的文本格式的字符串。
 
-## bitmaskToList(num) {#bitmasktolistnum}
+## 位掩码列表(num) {#bitmasktolistnum}
 
 接受一个整数。返回一个字符串，其中包含一组2的幂列表，其列表中的所有值相加等于这个整数。列表使用逗号分割，按升序排列。
 
-## bitmaskToArray(num) {#bitmasktoarraynum}
+## 位掩码阵列(num) {#bitmasktoarraynum}
 
 接受一个整数。返回一个UInt64类型数组，其中包含一组2的幂列表，其列表中的所有值相加等于这个整数。数组中的数字按升序排列。
 

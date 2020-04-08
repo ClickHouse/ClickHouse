@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # TinyLog {#tinylog}
 
 最简单的表引擎，用于将数据存储在磁盘上。每列都存储在单独的压缩文件中。写入时，数据将附加到文件末尾。
@@ -10,4 +15,4 @@
 
 在 Yandex.Metrica 中，TinyLog 表用于小批量处理的中间数据。
 
-[Original article](https://clickhouse.tech/docs/zh/operations/table_engines/tinylog/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/zh/operations/table_engines/tinylog/) <!--hide-->

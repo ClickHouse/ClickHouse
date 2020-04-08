@@ -1,13 +1,18 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 条件函数 {#tiao-jian-han-shu}
 
-## if(cond, then, else), cond ? operator then : else {#ifcond-then-else-cond-operator-then-else}
+## 如果（cond，那么，否则），cond？ 运算符然后：else {#ifcond-then-else-cond-operator-then-else}
 
 如果`cond ！= 0`则返回`then`，如果`cond = 0`则返回`else`。
 `cond`必须是`UInt8`类型，`then`和`else`必须存在最低的共同类型。
 
 `then`和`else`可以是`NULL`
 
-## multiIf {#multiif}
+## 多 {#multiif}
 
 允许您在查询中更紧凑地编写[CASE](../operators.md#operator_case)运算符。
 

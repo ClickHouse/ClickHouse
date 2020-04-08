@@ -1,33 +1,35 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 46
 toc_title: UUID
 ---
 
 # UUID {#uuid-data-type}
 
-A universally unique identifier (UUID) is a 16-byte number used to identify records. For detailed information about the UUID, see [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
+通用唯一标识符(UUID)是用于标识记录的16字节数。 有关UUID的详细信息，请参阅 [维基百科](https://en.wikipedia.org/wiki/Universally_unique_identifier).
 
-The example of UUID type value is represented below:
+UUID类型值的示例如下所示:
 
 ``` text
 61f0c404-5cb3-11e7-907b-a6006ad3dba0
 ```
 
-If you do not specify the UUID column value when inserting a new record, the UUID value is filled with zero:
+如果在插入新记录时未指定UUID列值，则UUID值将用零填充:
 
 ``` text
 00000000-0000-0000-0000-000000000000
 ```
 
-## How To Generate {#how-to-generate}
+## 如何生成 {#how-to-generate}
 
-To generate the UUID value, ClickHouse provides the [generateUUIDv4](../../sql_reference/functions/uuid_functions.md) function.
+要生成UUID值，ClickHouse提供了 [generateuidv4](../../sql_reference/functions/uuid_functions.md) 功能。
 
-## Usage Example {#usage-example}
+## 用法示例 {#usage-example}
 
-**Example 1**
+**示例1**
 
-This example demonstrates creating a table with the UUID type column and inserting a value into the table.
+此示例演示如何创建具有UUID类型列的表并将值插入到表中。
 
 ``` sql
 CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
@@ -47,9 +49,9 @@ SELECT * FROM t_uuid
 └──────────────────────────────────────┴───────────┘
 ```
 
-**Example 2**
+**示例2**
 
-In this example, the UUID column value is not specified when inserting a new record.
+在此示例中，插入新记录时未指定UUID列值。
 
 ``` sql
 INSERT INTO t_uuid (y) VALUES ('Example 2')
@@ -66,10 +68,10 @@ SELECT * FROM t_uuid
 └──────────────────────────────────────┴───────────┘
 ```
 
-## Restrictions {#restrictions}
+## 限制 {#restrictions}
 
-The UUID data type only supports functions which [String](string.md) data type also supports (for example, [min](../../sql_reference/aggregate_functions/reference.md#agg_function-min), [max](../../sql_reference/aggregate_functions/reference.md#agg_function-max), and [count](../../sql_reference/aggregate_functions/reference.md#agg_function-count)).
+UUID数据类型仅支持以下功能 [字符串](string.md) 数据类型也支持（例如, [min](../../sql_reference/aggregate_functions/reference.md#agg_function-min), [max](../../sql_reference/aggregate_functions/reference.md#agg_function-max)，和 [计数](../../sql_reference/aggregate_functions/reference.md#agg_function-count)).
 
-The UUID data type is not supported by arithmetic operations (for example, [abs](../../sql_reference/functions/arithmetic_functions.md#arithm_func-abs)) or aggregate functions, such as [sum](../../sql_reference/aggregate_functions/reference.md#agg_function-sum) and [avg](../../sql_reference/aggregate_functions/reference.md#agg_function-avg).
+算术运算不支持UUID数据类型（例如, [abs](../../sql_reference/functions/arithmetic_functions.md#arithm_func-abs)）或聚合函数，例如 [sum](../../sql_reference/aggregate_functions/reference.md#agg_function-sum) 和 [avg](../../sql_reference/aggregate_functions/reference.md#agg_function-avg).
 
-[Original article](https://clickhouse.tech/docs/en/data_types/uuid/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/data_types/uuid/) <!--hide-->

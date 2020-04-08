@@ -1,25 +1,27 @@
 ---
-toc_folder_title: Aggregate Functions
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_folder_title: "\u805A\u5408\u51FD\u6570"
 toc_priority: 33
-toc_title: Introduction
+toc_title: "\u5BFC\u8A00"
 ---
 
-# Aggregate functions {#aggregate-functions}
+# 聚合函数 {#aggregate-functions}
 
-Aggregate functions work in the [normal](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) way as expected by database experts.
+聚合函数在 [正常](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) 方式如预期的数据库专家。
 
-ClickHouse also supports:
+ClickHouse还支持:
 
--   [Parametric aggregate functions](parametric_functions.md#aggregate_functions_parametric), which accept other parameters in addition to columns.
--   [Combinators](combinators.md#aggregate_functions_combinators), which change the behavior of aggregate functions.
+-   [参数聚合函数](parametric_functions.md#aggregate_functions_parametric)，它接受除列之外的其他参数。
+-   [组合器](combinators.md#aggregate_functions_combinators)，这改变了聚合函数的行为。
 
-## NULL processing {#null-processing}
+## 空处理 {#null-processing}
 
-During aggregation, all `NULL`s are skipped.
+在聚合过程中，所有 `NULL`s被跳过。
 
-**Examples:**
+**例:**
 
-Consider this table:
+考虑这个表:
 
 ``` text
 ┌─x─┬────y─┐
@@ -31,7 +33,7 @@ Consider this table:
 └───┴──────┘
 ```
 
-Let’s say you need to total the values in the `y` column:
+比方说，你需要在总的值 `y` 列:
 
 ``` sql
 SELECT sum(y) FROM t_null_big
@@ -41,9 +43,9 @@ SELECT sum(y) FROM t_null_big
     │      7 │
     └────────┘
 
-The `sum` function interprets `NULL` as `0`. In particular, this means that if the function receives input of a selection where all the values are `NULL`, then the result will be `0`, not `NULL`.
+该 `sum` 函数解释 `NULL` 作为 `0`. 特别是，这意味着，如果函数接收输入的选择，其中所有的值 `NULL`，那么结果将是 `0`，不 `NULL`.
 
-Now you can use the `groupArray` function to create an array from the `y` column:
+现在你可以使用 `groupArray` 函数从创建一个数组 `y` 列:
 
 ``` sql
 SELECT groupArray(y) FROM t_null_big
@@ -55,6 +57,6 @@ SELECT groupArray(y) FROM t_null_big
 └───────────────┘
 ```
 
-`groupArray` does not include `NULL` in the resulting array.
+`groupArray` 不包括 `NULL` 在生成的数组中。
 
-[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/agg_functions/) <!--hide-->

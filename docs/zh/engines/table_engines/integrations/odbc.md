@@ -1,17 +1,19 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 35
 toc_title: ODBC
 ---
 
 # ODBC {#table-engine-odbc}
 
-Allows ClickHouse to connect to external databases via [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+允许ClickHouse通过以下方式连接到外部数据库 [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
 
-To safely implement ODBC connections, ClickHouse uses a separate program `clickhouse-odbc-bridge`. If the ODBC driver is loaded directly from `clickhouse-server`, driver problems can crash the ClickHouse server. ClickHouse automatically starts `clickhouse-odbc-bridge` when it is required. The ODBC bridge program is installed from the same package as the `clickhouse-server`.
+为了安全地实现ODBC连接，ClickHouse使用单独的程序 `clickhouse-odbc-bridge`. 如果直接从ODBC驱动程序加载 `clickhouse-server`，驱动程序问题可能会导致ClickHouse服务器崩溃。 ClickHouse自动启动 `clickhouse-odbc-bridge` 当它是必需的。 ODBC桥程序是从相同的软件包作为安装 `clickhouse-server`.
 
-This engine supports the [Nullable](../../../sql_reference/data_types/nullable.md) data type.
+该引擎支持 [可为空](../../../sql_reference/data_types/nullable.md) 数据类型。
 
-## Creating a Table {#creating-a-table}
+## 创建表 {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -23,28 +25,28 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ENGINE = ODBC(connection_settings, external_database, external_table)
 ```
 
-See a detailed description of the [CREATE TABLE](../../../sql_reference/statements/create.md#create-table-query) query.
+请参阅的详细说明 [CREATE TABLE](../../../sql_reference/statements/create.md#create-table-query) 查询。
 
-The table structure can differ from the source table structure:
+表结构可以与源表结构不同:
 
--   Column names should be the same as in the source table, but you can use just some of these columns and in any order.
--   Column types may differ from those in the source table. ClickHouse tries to [cast](../../../sql_reference/functions/type_conversion_functions.md#type_conversion_function-cast) values to the ClickHouse data types.
+-   列名应与源表中的列名相同，但您可以按任何顺序使用其中的一些列。
+-   列类型可能与源表中的列类型不同。 ClickHouse尝试 [投](../../../sql_reference/functions/type_conversion_functions.md#type_conversion_function-cast) ClickHouse数据类型的值。
 
-**Engine Parameters**
+**发动机参数**
 
--   `connection_settings` — Name of the section with connection settings in the `odbc.ini` file.
+-   `connection_settings` — Name of the section with connection settings in the `odbc.ini` 文件
 -   `external_database` — Name of a database in an external DBMS.
 -   `external_table` — Name of a table in the `external_database`.
 
-## Usage Example {#usage-example}
+## 用法示例 {#usage-example}
 
-**Retrieving data from the local MySQL installation via ODBC**
+**通过ODBC从本地MySQL安装中检索数据**
 
-This example is checked for Ubuntu Linux 18.04 and MySQL server 5.7.
+此示例检查Ubuntu Linux18.04和MySQL服务器5.7。
 
-Ensure that unixODBC and MySQL Connector are installed.
+确保安装了unixODBC和MySQL连接器。
 
-By default (if installed from packages), ClickHouse starts as user `clickhouse`. Thus, you need to create and configure this user in the MySQL server.
+默认情况下（如果从软件包安装），ClickHouse以用户身份启动 `clickhouse`. 因此，您需要在MySQL服务器中创建和配置此用户。
 
 ``` bash
 $ sudo mysql
@@ -55,7 +57,7 @@ mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
 mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
 ```
 
-Then configure the connection in `/etc/odbc.ini`.
+然后配置连接 `/etc/odbc.ini`.
 
 ``` bash
 $ cat /etc/odbc.ini
@@ -68,7 +70,7 @@ USERNAME = clickhouse
 PASSWORD = clickhouse
 ```
 
-You can check the connection using the `isql` utility from the unixODBC installation.
+您可以使用 `isql` unixodbc安装中的实用程序。
 
 ``` bash
 $ isql -v mysqlconn
@@ -78,7 +80,7 @@ $ isql -v mysqlconn
 ...
 ```
 
-Table in MySQL:
+MySQL中的表:
 
 ``` text
 mysql> CREATE TABLE `test`.`test` (
@@ -101,7 +103,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Table in ClickHouse, retrieving data from the MySQL table:
+ClickHouse中的表，从MySQL表中检索数据:
 
 ``` sql
 CREATE TABLE odbc_t
@@ -122,9 +124,9 @@ SELECT * FROM odbc_t
 └────────┴────────────────┘
 ```
 
-## See Also {#see-also}
+## 另请参阅 {#see-also}
 
--   [ODBC external dictionaries](../../../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
--   [ODBC table function](../../../sql_reference/table_functions/odbc.md)
+-   [ODBC外部字典](../../../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-odbc)
+-   [ODBC表函数](../../../sql_reference/table_functions/odbc.md)
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/odbc/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/odbc/) <!--hide-->

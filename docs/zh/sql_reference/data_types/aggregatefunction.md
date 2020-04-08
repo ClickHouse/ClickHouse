@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # AggregateFunction(name, types\_of\_arguments…) {#data-type-aggregatefunction}
 
 聚合函数的中间状态，可以通过聚合函数名称加`-State`后缀的形式得到它。与此同时，当您需要访问该类型的最终状态数据时，您需要以相同的聚合函数名加`-Merge`后缀的形式来得到最终状态数据。
@@ -23,7 +28,7 @@ CREATE TABLE t
 ) ENGINE = ...
 ```
 
-上述中的[uniq](../../sql_reference/data_types/aggregatefunction.md#agg_function-uniq)， anyIf ([any](../../sql_reference/data_types/aggregatefunction.md#agg_function-any)+[If](../../sql_reference/data_types/aggregatefunction.md#agg-functions-combinator-if)) 以及 [quantiles](../../sql_reference/data_types/aggregatefunction.md) 都为ClickHouse中支持的聚合函数。
+上述中的[uniq](../../sql_reference/data_types/aggregatefunction.md#agg_function-uniq)， anyIf ([任何](../../sql_reference/data_types/aggregatefunction.md#agg_function-any)+[如果](../../sql_reference/data_types/aggregatefunction.md#agg-functions-combinator-if)) 以及 [分位数](../../sql_reference/data_types/aggregatefunction.md) 都为ClickHouse中支持的聚合函数。
 
 ## 使用指南 {#shi-yong-zhi-nan}
 

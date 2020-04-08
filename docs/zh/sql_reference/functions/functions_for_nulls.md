@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # Nullable处理函数 {#nullablechu-li-han-shu}
 
 ## isNull {#isnull}
@@ -76,7 +81,7 @@
 
     1 rows in set. Elapsed: 0.010 sec.
 
-## coalesce {#coalesce}
+## 合并 {#coalesce}
 
 检查从左到右是否传递了«NULL»参数并返回第一个非`'NULL`参数。
 
@@ -88,8 +93,8 @@
 
 **返回值**
 
--   第一个非’NULL\`参数。
--   `NULL`，如果所有参数都是’NULL\`。
+-   第一个非'NULL\`参数。
+-   `NULL`，如果所有参数都是'NULL\`。
 
 **示例**
 
@@ -125,12 +130,12 @@
 **参数:**
 
 -   `x` — 要检查«NULL»的值。
--   `alt` — 如果`x`为’NULL\`，函数返回的值。
+-   `alt` — 如果`x`为'NULL\`，函数返回的值。
 
 **返回值**
 
--   The value `x`, if `x` is not `NULL`.
--   The value `alt`, if `x` is `NULL`.
+-   价值 `x`，如果 `x` 不是 `NULL`.
+-   价值 `alt`，如果 `x` 是 `NULL`.
 
 **示例**
 
@@ -177,7 +182,7 @@
 
 ## assumeNotNull {#assumenotnull}
 
-将[Nullable](../../sql_reference/functions/functions_for_nulls.md)类型的值转换为非`Nullable`类型的值。
+将[可为空](../../sql_reference/functions/functions_for_nulls.md)类型的值转换为非`Nullable`类型的值。
 
     assumeNotNull(x)
 
@@ -221,7 +226,7 @@
     │ Int8                         │
     └──────────────────────────────┘
 
-## toNullable {#tonullable}
+## 可调整 {#tonullable}
 
 将参数的类型转换为`Nullable`。
 

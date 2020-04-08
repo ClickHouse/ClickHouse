@@ -1,57 +1,59 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 37
-toc_title: Aggregate function combinators
+toc_title: "\u805A\u5408\u51FD\u6570\u7EC4\u5408\u5668"
 ---
 
-# Aggregate Function Combinators {#aggregate_functions_combinators}
+# 聚合函数组合器 {#aggregate_functions_combinators}
 
-The name of an aggregate function can have a suffix appended to it. This changes the way the aggregate function works.
+聚合函数的名称可以附加一个后缀。 这改变了聚合函数的工作方式。
 
-## -If {#agg-functions-combinator-if}
+## -如果 {#agg-functions-combinator-if}
 
 The suffix -If can be appended to the name of any aggregate function. In this case, the aggregate function accepts an extra argument – a condition (Uint8 type). The aggregate function processes only the rows that trigger the condition. If the condition was not triggered even once, it returns a default value (usually zeros or empty strings).
 
-Examples: `sumIf(column, cond)`, `countIf(cond)`, `avgIf(x, cond)`, `quantilesTimingIf(level1, level2)(x, cond)`, `argMinIf(arg, val, cond)` and so on.
+例: `sumIf(column, cond)`, `countIf(cond)`, `avgIf(x, cond)`, `quantilesTimingIf(level1, level2)(x, cond)`, `argMinIf(arg, val, cond)` 等等。
 
-With conditional aggregate functions, you can calculate aggregates for several conditions at once, without using subqueries and `JOIN`s. For example, in Yandex.Metrica, conditional aggregate functions are used to implement the segment comparison functionality.
+使用条件聚合函数，您可以一次计算多个条件的聚合，而无需使用子查询和 `JOIN`例如，在Yandex的。Metrica，条件聚合函数用于实现段比较功能。
 
-## -Array {#agg-functions-combinator-array}
+## -阵列 {#agg-functions-combinator-array}
 
-The -Array suffix can be appended to any aggregate function. In this case, the aggregate function takes arguments of the ‘Array(T)’ type (arrays) instead of ‘T’ type arguments. If the aggregate function accepts multiple arguments, this must be arrays of equal lengths. When processing arrays, the aggregate function works like the original aggregate function across all array elements.
+-Array后缀可以附加到任何聚合函数。 在这种情况下，聚合函数采用的参数 ‘Array(T)’ 类型（数组）而不是 ‘T’ 类型参数。 如果聚合函数接受多个参数，则它必须是长度相等的数组。 在处理数组时，聚合函数的工作方式与所有数组元素的原始聚合函数类似。
 
-Example 1: `sumArray(arr)` - Totals all the elements of all ‘arr’ arrays. In this example, it could have been written more simply: `sum(arraySum(arr))`.
+示例1: `sumArray(arr)` -总计所有的所有元素 ‘arr’ 阵列。 在这个例子中，它可以更简单地编写: `sum(arraySum(arr))`.
 
-Example 2: `uniqArray(arr)` – Counts the number of unique elements in all ‘arr’ arrays. This could be done an easier way: `uniq(arrayJoin(arr))`, but it’s not always possible to add ‘arrayJoin’ to a query.
+示例2: `uniqArray(arr)` – Counts the number of unique elements in all ‘arr’ 阵列。 这可以做一个更简单的方法: `uniq(arrayJoin(arr))`，但它并不总是可以添加 ‘arrayJoin’ 到查询。
 
--If and -Array can be combined. However, ‘Array’ must come first, then ‘If’. Examples: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. Due to this order, the ‘cond’ argument won’t be an array.
+-如果和-阵列可以组合。 然而, ‘Array’ 必须先来，然后 ‘If’. 例: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. 由于这个顺序，该 ‘cond’ 参数不会是数组。
 
-## -State {#agg-functions-combinator-state}
+## -州 {#agg-functions-combinator-state}
 
-If you apply this combinator, the aggregate function doesn’t return the resulting value (such as the number of unique values for the [uniq](reference.md#agg_function-uniq) function), but an intermediate state of the aggregation (for `uniq`, this is the hash table for calculating the number of unique values). This is an `AggregateFunction(...)` that can be used for further processing or stored in a table to finish aggregating later.
+如果应用此combinator，则聚合函数不会返回结果值（例如唯一值的数量 [uniq](reference.md#agg_function-uniq) 函数），但聚合的中间状态（用于 `uniq`，这是用于计算唯一值的数量的散列表）。 这是一个 `AggregateFunction(...)` 可用于进一步处理或存储在表中以完成聚合。
 
-To work with these states, use:
+要使用这些状态，请使用:
 
--   [AggregatingMergeTree](../../engines/table_engines/mergetree_family/aggregatingmergetree.md) table engine.
--   [finalizeAggregation](../../sql_reference/functions/other_functions.md#function-finalizeaggregation) function.
--   [runningAccumulate](../../sql_reference/functions/other_functions.md#function-runningaccumulate) function.
--   [-Merge](#aggregate_functions_combinators_merge) combinator.
--   [-MergeState](#aggregate_functions_combinators_mergestate) combinator.
+-   [AggregatingMergeTree](../../engines/table_engines/mergetree_family/aggregatingmergetree.md) 表引擎。
+-   [最后聚会](../../sql_reference/functions/other_functions.md#function-finalizeaggregation) 功能。
+-   [跑累积](../../sql_reference/functions/other_functions.md#function-runningaccumulate) 功能。
+-   [-合并](#aggregate_functions_combinators_merge) combinator
+-   [-MergeState](#aggregate_functions_combinators_mergestate) combinator
 
-## -Merge {#aggregate_functions_combinators-merge}
+## -合并 {#aggregate_functions_combinators-merge}
 
-If you apply this combinator, the aggregate function takes the intermediate aggregation state as an argument, combines the states to finish aggregation, and returns the resulting value.
+如果应用此组合器，则聚合函数将中间聚合状态作为参数，组合状态以完成聚合，并返回结果值。
 
 ## -MergeState {#aggregate_functions_combinators-mergestate}
 
-Merges the intermediate aggregation states in the same way as the -Merge combinator. However, it doesn’t return the resulting value, but an intermediate aggregation state, similar to the -State combinator.
+以与-Merge combinator相同的方式合并中间聚合状态。 但是，它不会返回结果值，而是返回中间聚合状态，类似于-State combinator。
 
 ## -ForEach {#agg-functions-combinator-foreach}
 
-Converts an aggregate function for tables into an aggregate function for arrays that aggregates the corresponding array items and returns an array of results. For example, `sumForEach` for the arrays `[1, 2]`, `[3, 4, 5]`and`[6, 7]`returns the result `[10, 13, 5]` after adding together the corresponding array items.
+将表的聚合函数转换为聚合相应数组项并返回结果数组的数组的聚合函数。 例如, `sumForEach` 对于数组 `[1, 2]`, `[3, 4, 5]`和`[6, 7]`返回结果 `[10, 13, 5]` 之后将相应的数组项添加在一起。
 
 ## -OrDefault {#agg-functions-combinator-ordefault}
 
-Fills the default value of the aggregate function’s return type if there is nothing to aggregate.
+如果没有要聚合的内容，则填充聚合函数的返回类型的默认值。
 
 ``` sql
 SELECT avg(number), avgOrDefault(number) FROM numbers(0)
@@ -65,7 +67,7 @@ SELECT avg(number), avgOrDefault(number) FROM numbers(0)
 
 ## -OrNull {#agg-functions-combinator-ornull}
 
-Fills `null` if there is nothing to aggregate. The return column will be nullable.
+填充 `null` 如果没有什么聚合。 返回列将为空。
 
 ``` sql
 SELECT avg(number), avgOrNull(number) FROM numbers(0)
@@ -77,7 +79,7 @@ SELECT avg(number), avgOrNull(number) FROM numbers(0)
 └─────────────┴───────────────────┘
 ```
 
--OrDefault and -OrNull can be combined with other combinators. It is useful when the aggregate function does not accept the empty input.
+-OrDefault和-OrNull可以与其他组合器相结合。 当聚合函数不接受空输入时，它很有用。
 
 ``` sql
 SELECT avgOrNullIf(x, x > 10)
@@ -93,29 +95,29 @@ FROM
 └────────────────────────────────┘
 ```
 
-## -Resample {#agg-functions-combinator-resample}
+## -重新采样 {#agg-functions-combinator-resample}
 
-Lets you divide data into groups, and then separately aggregates the data in those groups. Groups are created by splitting the values from one column into intervals.
+允许您将数据划分为组，然后单独聚合这些组中的数据。 通过将一列中的值拆分为间隔来创建组。
 
 ``` sql
 <aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
 ```
 
-**Parameters**
+**参数**
 
--   `start` — Starting value of the whole required interval for `resampling_key` values.
--   `stop` — Ending value of the whole required interval for `resampling_key` values. The whole interval doesn’t include the `stop` value `[start, stop)`.
--   `step` — Step for separating the whole interval into subintervals. The `aggFunction` is executed over each of those subintervals independently.
+-   `start` — Starting value of the whole required interval for `resampling_key` 值。
+-   `stop` — Ending value of the whole required interval for `resampling_key` 值。 整个时间间隔不包括 `stop` 价值 `[start, stop)`.
+-   `step` — Step for separating the whole interval into subintervals. The `aggFunction` 在每个子区间上独立执行。
 -   `resampling_key` — Column whose values are used for separating data into intervals.
--   `aggFunction_params` — `aggFunction` parameters.
+-   `aggFunction_params` — `aggFunction` 参数。
 
-**Returned values**
+**返回值**
 
--   Array of `aggFunction` results for each subinterval.
+-   阵列 `aggFunction` 每个子区间的结果。
 
-**Example**
+**示例**
 
-Consider the `people` table with the following data:
+考虑一下 `people` 具有以下数据的表:
 
 ``` text
 ┌─name───┬─age─┬─wage─┐
@@ -128,9 +130,9 @@ Consider the `people` table with the following data:
 └────────┴─────┴──────┘
 ```
 
-Let’s get the names of the people whose age lies in the intervals of `[30,60)` and `[60,75)`. Since we use integer representation for age, we get ages in the `[30, 59]` and `[60,74]` intervals.
+让我们得到的人的名字，他们的年龄在于的时间间隔 `[30,60)` 和 `[60,75)`. 由于我们使用整数表示的年龄，我们得到的年龄 `[30, 59]` 和 `[60,74]` 间隔。
 
-To aggregate names in an array, we use the [groupArray](reference.md#agg_function-grouparray) aggregate function. It takes one argument. In our case, it’s the `name` column. The `groupArrayResample` function should use the `age` column to aggregate names by age. To define the required intervals, we pass the `30, 75, 30` arguments into the `groupArrayResample` function.
+要在数组中聚合名称，我们使用 [groupArray](reference.md#agg_function-grouparray) 聚合函数。 这需要一个参数。 在我们的例子中，它是 `name` 列。 该 `groupArrayResample` 函数应该使用 `age` 按年龄聚合名称的列。 要定义所需的时间间隔，我们通过 `30, 75, 30` 参数到 `groupArrayResample` 功能。
 
 ``` sql
 SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
@@ -142,11 +144,11 @@ SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
 └───────────────────────────────────────────────┘
 ```
 
-Consider the results.
+考虑结果。
 
-`Jonh` is out of the sample because he’s too young. Other people are distributed according to the specified age intervals.
+`Jonh` 是因为他太年轻了 其他人按照指定的年龄间隔进行分配。
 
-Now let’s count the total number of people and their average wage in the specified age intervals.
+现在让我们计算指定年龄间隔内的总人数和平均工资。
 
 ``` sql
 SELECT
@@ -161,4 +163,4 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-[Original article](https://clickhouse.tech/docs/en/query_language/agg_functions/combinators/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/agg_functions/combinators/) <!--hide-->

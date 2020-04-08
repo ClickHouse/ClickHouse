@@ -1,23 +1,25 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 39
-toc_title: General Description
+toc_title: "\u6982\u8FF0"
 ---
 
-# External Dictionaries {#dicts-external-dicts}
+# 外部字典 {#dicts-external-dicts}
 
-You can add your own dictionaries from various data sources. The data source for a dictionary can be a local text or executable file, an HTTP(s) resource, or another DBMS. For more information, see “[Sources for external dictionaries](external_dicts_dict_sources.md)”.
+您可以从各种数据源添加自己的字典。 字典的数据源可以是本地文本或可执行文件、HTTP(s)资源或其他DBMS。 有关详细信息，请参阅 “[外部字典的来源](external_dicts_dict_sources.md)”.
 
 ClickHouse:
 
--   Fully or partially stores dictionaries in RAM.
--   Periodically updates dictionaries and dynamically loads missing values. In other words, dictionaries can be loaded dynamically.
--   Allows to create external dictionaries with xml files or [DDL queries](../../statements/create.md#create-dictionary-query).
+-   完全或部分存储在RAM中的字典。
+-   定期更新字典并动态加载缺失的值。 换句话说，字典可以动态加载。
+-   允许创建外部字典与xml文件或 [DDL查询](../../statements/create.md#create-dictionary-query).
 
-The configuration of external dictionaries can be located in one or more xml-files. The path to the configuration is specified in the [dictionaries\_config](../../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-dictionaries_config) parameter.
+外部字典的配置可以位于一个或多个xml文件中。 配置的路径在指定 [dictionaries\_config](../../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-dictionaries_config) 参数。
 
-Dictionaries can be loaded at server startup or at first use, depending on the [dictionaries\_lazy\_load](../../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) setting.
+字典可以在服务器启动或首次使用时加载，具体取决于 [dictionaries\_lazy\_load](../../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-dictionaries_lazy_load) 设置。
 
-The dictionary configuration file has the following format:
+字典配置文件具有以下格式:
 
 ``` xml
 <yandex>
@@ -35,20 +37,20 @@ The dictionary configuration file has the following format:
 </yandex>
 ```
 
-You can [configure](external_dicts_dict.md) any number of dictionaries in the same file.
+你可以 [配置](external_dicts_dict.md) 同一文件中的任意数量的字典。
 
-[DDL queries for dictionaries](../../statements/create.md#create-dictionary-query) doesn’t require any additional records in server configuration. They allow to work with dictionaries as first-class entities, like tables or views.
+[字典的DDL查询](../../statements/create.md#create-dictionary-query) 在服务器配置中不需要任何其他记录。 它们允许使用字典作为一流的实体，如表或视图。
 
-!!! attention "Attention"
-    You can convert values for a small dictionary by describing it in a `SELECT` query (see the [transform](../../../sql_reference/functions/other_functions.md) function). This functionality is not related to external dictionaries.
+!!! attention "注意"
+    您可以通过在一个小字典中描述它来转换小字典的值 `SELECT` 查询（见 [变换](../../../sql_reference/functions/other_functions.md) 功能）。 此功能与外部字典无关。
 
-## See Also {#ext-dicts-see-also}
+## 另请参阅 {#ext-dicts-see-also}
 
--   [Configuring an External Dictionary](external_dicts_dict.md)
--   [Storing Dictionaries in Memory](external_dicts_dict_layout.md)
--   [Dictionary Updates](external_dicts_dict_lifetime.md)
--   [Sources of External Dictionaries](external_dicts_dict_sources.md)
--   [Dictionary Key and Fields](external_dicts_dict_structure.md)
--   [Functions for Working with External Dictionaries](../../../sql_reference/functions/ext_dict_functions.md)
+-   [配置外部字典](external_dicts_dict.md)
+-   [在内存中存储字典](external_dicts_dict_layout.md)
+-   [字典更新](external_dicts_dict_lifetime.md)
+-   [外部字典的来源](external_dicts_dict_sources.md)
+-   [字典键和字段](external_dicts_dict_structure.md)
+-   [使用外部字典的函数](../../../sql_reference/functions/ext_dict_functions.md)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/dicts/external_dicts/) <!--hide-->

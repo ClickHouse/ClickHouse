@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # SummingMergeTree {#summingmergetree}
 
 该引擎继承自 [MergeTree](mergetree.md)。区别在于，当合并 `SummingMergeTree` 表的数据片段时，ClickHouse 会把所有具有相同主键的行合并为一行，该行包含了被合并的行中具有数值数据类型的列的汇总值。如果主键的组合方式使得单个键值对应于大量的行，则可以显著的减少存储空间并加快数据查询的速度。
@@ -117,7 +122,7 @@ ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含
     [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
     [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 
-请求数据时，使用 [sumMap(key, value)](../../../engines/table_engines/mergetree_family/summingmergetree.md) 函数来对 `Map` 进行聚合。
+请求数据时，使用 [sumMap(key,value)](../../../engines/table_engines/mergetree_family/summingmergetree.md) 函数来对 `Map` 进行聚合。
 
 对于嵌套数据结构，你无需在列的元组中指定列以进行汇总。
 

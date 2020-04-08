@@ -1,64 +1,66 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 61
-toc_title: clickhouse-benchmark
+toc_title: "\uFF82\u6697\uFF6A\uFF82\u6C3E\u73AF\u50AC\uFF82\u56E3"
 ---
 
-# clickhouse-benchmark {#clickhouse-benchmark}
+# ﾂ暗ｪﾂ氾环催ﾂ団 {#clickhouse-benchmark}
 
-Connects to a ClickHouse server and repeatedly sends specified queries.
+连接到ClickHouse服务器并重复发送指定的查询。
 
-Syntax:
+语法:
 
 ``` bash
 $ echo "single query" | clickhouse-benchmark [keys]
 ```
 
-or
+或
 
 ``` bash
 $ clickhouse-benchmark [keys] <<< "single query"
 ```
 
-If you want to send a set of queries, create a text file and place each query on the individual string in this file. For example:
+如果要发送一组查询，请创建一个文本文件，并将每个查询放在此文件中的单个字符串上。 例如:
 
 ``` sql
 SELECT * FROM system.numbers LIMIT 10000000
 SELECT 1
 ```
 
-Then pass this file to a standard input of `clickhouse-benchmark`.
+然后将此文件传递给标准输入 `clickhouse-benchmark`.
 
 ``` bash
 clickhouse-benchmark [keys] < queries_file
 ```
 
-## Keys {#clickhouse-benchmark-keys}
+## 键 {#clickhouse-benchmark-keys}
 
--   `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
+-   `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` 同时发送。 默认值：1。
 -   `-d N`, `--delay=N` — Interval in seconds between intermediate reports (set 0 to disable reports). Default value: 1.
--   `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-h` keys.
--   `-p N`, `--port=N` — Server port. Default value: 9000. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-p` keys.
+-   `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. 为 [比较模式](#clickhouse-benchmark-comparison-mode) 您可以使用多个 `-h` 钥匙
+-   `-p N`, `--port=N` — Server port. Default value: 9000. For the [比较模式](#clickhouse-benchmark-comparison-mode) 您可以使用多个 `-p` 钥匙
 -   `-i N`, `--iterations=N` — Total number of queries. Default value: 0.
 -   `-r`, `--randomize` — Random order of queries execution if there is more then one input query.
 -   `-s`, `--secure` — Using TLS connection.
--   `-t N`, `--timelimit=N` — Time limit in seconds. `clickhouse-benchmark` stops sending queries when the specified time limit is reached. Default value: 0 (time limit disabled).
--   `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5. In the [comparison mode](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` performs the [Independent two-sample Student’s t-test](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) test to determine whether the two distributions aren’t different with the selected level of confidence.
+-   `-t N`, `--timelimit=N` — Time limit in seconds. `clickhouse-benchmark` 达到指定的时间限制时停止发送查询。 默认值：0（禁用时间限制）。
+-   `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5. In the [比较模式](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` 执行 [独立双样本学生的t测试](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) 测试以确定两个分布是否与所选置信水平没有不同。
 -   `--cumulative` — Printing cumulative data instead of data per interval.
 -   `--database=DATABASE_NAME` — ClickHouse database name. Default value: `default`.
--   `--json=FILEPATH` — JSON output. When the key is set, `clickhouse-benchmark` outputs a report to the specified JSON-file.
+-   `--json=FILEPATH` — JSON output. When the key is set, `clickhouse-benchmark` 将报告输出到指定的JSON文件。
 -   `--user=USERNAME` — ClickHouse user name. Default value: `default`.
 -   `--password=PSWD` — ClickHouse user password. Default value: empty string.
--   `--stacktrace` — Stack traces output. When the key is set, `clickhouse-bencmark` outputs stack traces of exceptions.
--   `--stage=WORD` — Query processing stage at server. ClickHouse stops query processing and returns answer to `clickhouse-benchmark` at the specified stage. Possible values: `complete`, `fetch_columns`, `with_mergeable_state`. Default value: `complete`.
+-   `--stacktrace` — Stack traces output. When the key is set, `clickhouse-bencmark` 输出异常的堆栈跟踪。
+-   `--stage=WORD` — Query processing stage at server. ClickHouse stops query processing and returns answer to `clickhouse-benchmark` 在指定的阶段。 可能的值: `complete`, `fetch_columns`, `with_mergeable_state`. 默认值: `complete`.
 -   `--help` — Shows the help message.
 
-If you want to apply some [settings](../../operations/settings/index.md) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
+如果你想申请一些 [设置](../../operations/settings/index.md) 对于查询，请将它们作为键传递 `--<session setting name>= SETTING_VALUE`. 例如, `--max_memory_usage=1048576`.
 
-## Output {#clickhouse-benchmark-output}
+## 输出 {#clickhouse-benchmark-output}
 
-By default, `clickhouse-benchmark` reports for each `--delay` interval.
+默认情况下, `clickhouse-benchmark` 每个报表 `--delay` 间隔。
 
-Example of the report:
+报告示例:
 
 ``` text
 Queries executed: 10.
@@ -81,29 +83,29 @@ localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, resul
 99.990%     0.150 sec.
 ```
 
-In the report you can find:
+在报告中，您可以找到:
 
--   Number of queries in the `Queries executed:` field.
+-   在查询的数量 `Queries executed:` 场。
 
--   Status string containing (in order):
+-   状态字符串包含（按顺序):
 
-    -   Endpoint of ClickHouse server.
-    -   Number of processed queries.
-    -   QPS: QPS: How many queries server performed per second during a period specified in the `--delay` argument.
-    -   RPS: How many rows server read per second during a period specified in the `--delay` argument.
-    -   MiB/s: How many mebibytes server read per second during a period specified in the `--delay` argument.
-    -   result RPS: How many rows placed by server to the result of a query per second during a period specified in the `--delay` argument.
-    -   result MiB/s. How many mebibytes placed by server to the result of a query per second during a period specified in the `--delay` argument.
+    -   ClickHouse服务器的端点。
+    -   已处理的查询数。
+    -   QPS：QPS：在指定的时间段内每秒执行多少个查询服务器 `--delay` 争论。
+    -   RPS：在指定的时间段内，服务器每秒读取多少行 `--delay` 争论。
+    -   MiB/s：在指定的时间段内每秒读取多少mebibytes服务器 `--delay` 争论。
+    -   结果RPS：在指定的时间段内，服务器每秒放置到查询结果的行数 `--delay` 争论。
+    -   结果MiB/s.在指定的时间段内，服务器每秒将多少mebibytes放置到查询结果中 `--delay` 争论。
 
--   Percentiles of queries execution time.
+-   查询执行时间的百分位数。
 
-## Comparison mode {#clickhouse-benchmark-comparison-mode}
+## 比较模式 {#clickhouse-benchmark-comparison-mode}
 
-`clickhouse-benchmark` can compare performances for two running ClickHouse servers.
+`clickhouse-benchmark` 可以比较两个正在运行的ClickHouse服务器的性能。
 
-To use the comparison mode, specify endpoints of both servers by two pairs of `--host`, `--port` keys. Keys matched together by position in arguments list, the first `--host` is matched with the first `--port` and so on. `clickhouse-benchmark` establishes connections to both servers, then sends queries. Each query addressed to a randomly selected server. The results are shown for each server separately.
+要使用比较模式，请通过以下两对指定两个服务器的端点 `--host`, `--port` 钥匙 键在参数列表中的位置匹配在一起，第一 `--host` 与第一匹配 `--port` 等等。 `clickhouse-benchmark` 建立到两个服务器的连接，然后发送查询。 每个查询寻址到随机选择的服务器。 每个服务器的结果分别显示。
 
-## Example {#clickhouse-benchmark-example}
+## 示例 {#clickhouse-benchmark-example}
 
 ``` bash
 $ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark -i 10

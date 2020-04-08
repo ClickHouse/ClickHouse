@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # Hash函数 {#hashhan-shu}
 
 Hash函数可以用于将元素不可逆的伪随机打乱。
@@ -6,12 +11,12 @@ Hash函数可以用于将元素不可逆的伪随机打乱。
 
 计算字符串的MD5。然后获取结果的前8个字节并将它们作为UInt64（大端）返回。
 此函数相当低效（500万个短字符串/秒/核心）。
-如果您不需要一定使用MD5，请使用‘sipHash64’函数。
+如果您不需要一定使用MD5，请使用'sipHash64'函数。
 
 ## MD5 {#md5}
 
 计算字符串的MD5并将结果放入FixedString(16)中返回。
-如果您只是需要一个128位的hash，同时不需要一定使用MD5，请使用‘sipHash128’函数。
+如果您只是需要一个128位的hash，同时不需要一定使用MD5，请使用'sipHash128'函数。
 如果您要获得与md5sum程序相同的输出结果，请使用lower(hex(MD5(s)))。
 
 ## sipHash64 {#siphash64}
@@ -56,7 +61,7 @@ SipHash是一种加密哈希函数。它的处理性能至少比MD5快三倍。
 我们建议仅在必须使用这些Hash函数且无法更改的情况下使用这些函数。
 即使在这些情况下，我们仍建议将函数采用在写入数据时使用预计算的方式将其计算完毕。而不是在SELECT中计算它们。
 
-## URLHash(url\[, N\]) {#urlhashurl-n}
+## URLHash(url\[,N\]) {#urlhashurl-n}
 
 一种快速的非加密哈希函数，用于规范化的从URL获得的字符串。
 `URLHash(s)` - 从一个字符串计算一个哈希，如果结尾存在尾随符号`/`，`？`或`#`则忽略。
@@ -93,19 +98,19 @@ URL的层级与URLHierarchy中的层级相同。 此函数被用于Yandex.Metric
 接受UInt64类型的参数。返回Int32。
 有关更多信息，请参见链接：[JumpConsistentHash](https://arxiv.org/pdf/1406.2294.pdf)
 
-## murmurHash2\_32, murmurHash2\_64 {#murmurhash2-32-murmurhash2-64}
+## murmurHash2\_32,murmurHash2\_64 {#murmurhash2-32-murmurhash2-64}
 
 计算字符串的MurmurHash2。
 接受一个String类型的参数。返回UInt64或UInt32。
 有关更多信息，请参阅链接：[MurmurHash2](https://github.com/aappleby/smhasher)
 
-## murmurHash3\_32, murmurHash3\_64, murmurHash3\_128 {#murmurhash3-32-murmurhash3-64-murmurhash3-128}
+## murmurHash3\_32,murmurHash3\_64,murmurHash3\_128 {#murmurhash3-32-murmurhash3-64-murmurhash3-128}
 
 计算字符串的MurmurHash3。
 接受一个String类型的参数。返回UInt64或UInt32或FixedString(16)。
 有关更多信息，请参阅链接：[MurmurHash3](https://github.com/aappleby/smhasher)
 
-## xxHash32, xxHash64 {#xxhash32-xxhash64}
+## xxHash32,xxHash64 {#xxhash32-xxhash64}
 
 计算字符串的xxHash。
 接受一个String类型的参数。返回UInt64或UInt32。

@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 客户端 {#interfaces}
 
 ClickHouse提供了两个网络接口（两者都可以选择包装在TLS中以提高安全性）：

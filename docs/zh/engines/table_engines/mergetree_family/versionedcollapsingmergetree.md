@@ -1,20 +1,22 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 37
-toc_title: VersionedCollapsingMergeTree
+toc_title: "\u7248\u672C\u96C6\u5408\u5728\u65B0\u6811"
 ---
 
-# VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
+# 版本集合在新树 {#versionedcollapsingmergetree}
 
-This engine:
+这个引擎:
 
--   Allows quick writing of object states that are continually changing.
--   Deletes old object states in the background. This significantly reduces the volume of storage.
+-   允许快速写入不断变化的对象状态。
+-   删除后台中的旧对象状态。 这显着降低了存储体积。
 
-See the section [Collapsing](#table_engines_versionedcollapsingmergetree) for details.
+请参阅部分 [崩溃](#table_engines_versionedcollapsingmergetree) 有关详细信息。
 
-The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree) and adds the logic for collapsing rows to the algorithm for merging data parts. `VersionedCollapsingMergeTree` serves the same purpose as [CollapsingMergeTree](collapsingmergetree.md) but uses a different collapsing algorithm that allows inserting the data in any order with multiple threads. In particular, the `Version` column helps to collapse the rows properly even if they are inserted in the wrong order. In contrast, `CollapsingMergeTree` allows only strictly consecutive insertion.
+引擎继承自 [MergeTree](mergetree.md#table_engines-mergetree) 并将折叠行的逻辑添加到合并数据部分的算法中。 `VersionedCollapsingMergeTree` 用于相同的目的 [折叠树](collapsingmergetree.md) 但使用不同的折叠算法，允许以多个线程的任何顺序插入数据。 特别是， `Version` 列有助于正确折叠行，即使它们以错误的顺序插入。 相比之下, `CollapsingMergeTree` 只允许严格连续插入。
 
-## Creating a Table {#creating-a-table}
+## 创建表 {#creating-a-table}
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -29,32 +31,32 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-For a description of query parameters, see the [query description](../../../sql_reference/statements/create.md).
+有关查询参数的说明，请参阅 [查询说明](../../../sql_reference/statements/create.md).
 
-**Engine Parameters**
+**发动机参数**
 
 ``` sql
 VersionedCollapsingMergeTree(sign, version)
 ```
 
--   `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
+-   `sign` — Name of the column with the type of row: `1` 是一个 “state” 行, `-1` 是一个 “cancel” 划
 
-    The column data type should be `Int8`.
+    列数据类型应为 `Int8`.
 
 -   `version` — Name of the column with the version of the object state.
 
-    The column data type should be `UInt*`.
+    列数据类型应为 `UInt*`.
 
-**Query Clauses**
+**查询子句**
 
-When creating a `VersionedCollapsingMergeTree` table, the same [clauses](mergetree.md) are required as when creating a `MergeTree` table.
+当创建一个 `VersionedCollapsingMergeTree` 表，相同 [条款](mergetree.md) 需要创建一个时 `MergeTree` 桌子
 
 <details markdown="1">
 
-<summary>Deprecated Method for Creating a Table</summary>
+<summary>不推荐使用的创建表的方法</summary>
 
-!!! attention "Attention"
-    Do not use this method in new projects. If possible, switch the old projects to the method described above.
+!!! attention "注意"
+    不要在新项目中使用此方法。 如果可能，请将旧项目切换到上述方法。
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -65,27 +67,27 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE [=] VersionedCollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, sign, version)
 ```
 
-All of the parameters except `sign` and `version` have the same meaning as in `MergeTree`.
+所有的参数，除了 `sign` 和 `version` 具有相同的含义 `MergeTree`.
 
--   `sign` — Name of the column with the type of row: `1` is a “state” row, `-1` is a “cancel” row.
+-   `sign` — Name of the column with the type of row: `1` 是一个 “state” 行, `-1` 是一个 “cancel” 划
 
     Column Data Type — `Int8`.
 
 -   `version` — Name of the column with the version of the object state.
 
-    The column data type should be `UInt*`.
+    列数据类型应为 `UInt*`.
 
 </details>
 
-## Collapsing {#table_engines-versionedcollapsingmergetree}
+## 崩溃 {#table_engines-versionedcollapsingmergetree}
 
-### Data {#data}
+### 数据 {#data}
 
-Consider a situation where you need to save continually changing data for some object. It is reasonable to have one row for an object and update the row whenever there are changes. However, the update operation is expensive and slow for a DBMS because it requires rewriting the data in the storage. Update is not acceptable if you need to write data quickly, but you can write the changes to an object sequentially as follows.
+考虑一种情况，您需要为某个对象保存不断变化的数据。 对于一个对象有一行，并在发生更改时更新该行是合理的。 但是，对于数据库管理系统来说，更新操作非常昂贵且速度很慢，因为它需要重写存储中的数据。 如果需要快速写入数据，则不能接受更新，但可以按如下顺序将更改写入对象。
 
-Use the `Sign` column when writing the row. If `Sign = 1` it means that the row is a state of an object (let’s call it the “state” row). If `Sign = -1` it indicates the cancellation of the state of an object with the same attributes (let’s call it the “cancel” row). Also use the `Version` column, which should identify each state of an object with a separate number.
+使用 `Sign` 列写入行时。 如果 `Sign = 1` 这意味着该行是一个对象的状态（让我们把它称为 “state” 行）。 如果 `Sign = -1` 它指示具有相同属性的对象的状态的取消（让我们称之为 “cancel” 行）。 还可以使用 `Version` 列，它应该用单独的数字标识对象的每个状态。
 
-For example, we want to calculate how many pages users visited on some site and how long they were there. At some point in time we write the following row with the state of user activity:
+例如，我们要计算用户在某个网站上访问了多少页面以及他们在那里的时间。 在某个时间点，我们用用户活动的状态写下面的行:
 
 ``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
@@ -93,7 +95,7 @@ For example, we want to calculate how many pages users visited on some site and 
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
 ```
 
-At some point later we register the change of user activity and write it with the following two rows.
+在稍后的某个时候，我们注册用户活动的变化，并用以下两行写入它。
 
 ``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
@@ -102,11 +104,11 @@ At some point later we register the change of user activity and write it with th
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
 ```
 
-The first row cancels the previous state of the object (user). It should copy all of the fields of the canceled state except `Sign`.
+第一行取消对象（用户）的先前状态。 它应该复制已取消状态的所有字段，除了 `Sign`.
 
-The second row contains the current state.
+第二行包含当前状态。
 
-Because we need only the last state of user activity, the rows
+因为我们只需要用户活动的最后一个状态，行
 
 ``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
@@ -115,35 +117,35 @@ Because we need only the last state of user activity, the rows
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
 ```
 
-can be deleted, collapsing the invalid (old) state of the object. `VersionedCollapsingMergeTree` does this while merging the data parts.
+可以删除，折叠对象的无效（旧）状态。 `VersionedCollapsingMergeTree` 在合并数据部分时执行此操作。
 
-To find out why we need two rows for each change, see [Algorithm](#table_engines-versionedcollapsingmergetree-algorithm).
+要了解为什么每次更改都需要两行，请参阅 [算法](#table_engines-versionedcollapsingmergetree-algorithm).
 
-**Notes on Usage**
+**使用注意事项**
 
-1.  The program that writes the data should remember the state of an object in order to cancel it. The “cancel” string should be a copy of the “state” string with the opposite `Sign`. This increases the initial size of storage but allows to write the data quickly.
-2.  Long growing arrays in columns reduce the efficiency of the engine due to the load for writing. The more straightforward the data, the better the efficiency.
-3.  `SELECT` results depend strongly on the consistency of the history of object changes. Be accurate when preparing data for inserting. You can get unpredictable results with inconsistent data, such as negative values for non-negative metrics like session depth.
+1.  写入数据的程序应该记住对象的状态以取消它。 该 “cancel” 字符串应该是 “state” 与相反的字符串 `Sign`. 这增加了存储的初始大小，但允许快速写入数据。
+2.  列中长时间增长的数组由于写入负载而降低了引擎的效率。 数据越简单，效率就越高。
+3.  `SELECT` 结果很大程度上取决于对象变化历史的一致性。 准备插入数据时要准确。 您可以通过不一致的数据获得不可预测的结果，例如会话深度等非负指标的负值。
 
-### Algorithm {#table_engines-versionedcollapsingmergetree-algorithm}
+### 算法 {#table_engines-versionedcollapsingmergetree-algorithm}
 
-When ClickHouse merges data parts, it deletes each pair of rows that have the same primary key and version and different `Sign`. The order of rows does not matter.
+当ClickHouse合并数据部分时，它会删除具有相同主键和版本且不同主键和版本的每对行 `Sign`. 行的顺序并不重要。
 
-When ClickHouse inserts data, it orders rows by the primary key. If the `Version` column is not in the primary key, ClickHouse adds it to the primary key implicitly as the last field and uses it for ordering.
+当ClickHouse插入数据时，它会按主键对行进行排序。 如果 `Version` 列不在主键中，ClickHouse将其隐式添加到主键作为最后一个字段并使用它进行排序。
 
-## Selecting Data {#selecting-data}
+## 选择数据 {#selecting-data}
 
-ClickHouse doesn’t guarantee that all of the rows with the same primary key will be in the same resulting data part or even on the same physical server. This is true both for writing the data and for subsequent merging of the data parts. In addition, ClickHouse processes `SELECT` queries with multiple threads, and it cannot predict the order of rows in the result. This means that aggregation is required if there is a need to get completely “collapsed” data from a `VersionedCollapsingMergeTree` table.
+ClickHouse不保证具有相同主键的所有行都将位于相同的结果数据部分中，甚至位于相同的物理服务器上。 对于写入数据和随后合并数据部分都是如此。 此外，ClickHouse流程 `SELECT` 具有多个线程的查询，并且无法预测结果中的行顺序。 这意味着聚合是必需的，如果有必要得到完全 “collapsed” 从数据 `VersionedCollapsingMergeTree` 桌子
 
-To finalize collapsing, write a query with a `GROUP BY` clause and aggregate functions that account for the sign. For example, to calculate quantity, use `sum(Sign)` instead of `count()`. To calculate the sum of something, use `sum(Sign * x)` instead of `sum(x)`, and add `HAVING sum(Sign) > 0`.
+要完成折叠，请使用 `GROUP BY` 考虑符号的子句和聚合函数。 例如，要计算数量，请使用 `sum(Sign)` 而不是 `count()`. 要计算的东西的总和，使用 `sum(Sign * x)` 而不是 `sum(x)`，并添加 `HAVING sum(Sign) > 0`.
 
-The aggregates `count`, `sum` and `avg` can be calculated this way. The aggregate `uniq` can be calculated if an object has at least one non-collapsed state. The aggregates `min` and `max` can’t be calculated because `VersionedCollapsingMergeTree` does not save the history of values of collapsed states.
+聚合 `count`, `sum` 和 `avg` 可以这样计算。 聚合 `uniq` 如果对象至少具有一个非折叠状态，则可以计算。 聚合 `min` 和 `max` 无法计算是因为 `VersionedCollapsingMergeTree` 不保存折叠状态值的历史记录。
 
-If you need to extract the data with “collapsing” but without aggregation (for example, to check whether rows are present whose newest values match certain conditions), you can use the `FINAL` modifier for the `FROM` clause. This approach is inefficient and should not be used with large tables.
+如果您需要提取数据 “collapsing” 但是，如果没有聚合（例如，要检查是否存在其最新值与某些条件匹配的行），则可以使用 `FINAL` 修饰符 `FROM` 条款 这种方法效率低下，不应与大型表一起使用。
 
-## Example Of Use {#example-of-use}
+## 使用示例 {#example-of-use}
 
-Example data:
+示例数据:
 
 ``` text
 ┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
@@ -153,7 +155,7 @@ Example data:
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
 ```
 
-Creating the table:
+创建表:
 
 ``` sql
 CREATE TABLE UAct
@@ -168,7 +170,7 @@ ENGINE = VersionedCollapsingMergeTree(Sign, Version)
 ORDER BY UserID
 ```
 
-Inserting the data:
+插入数据:
 
 ``` sql
 INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1, 1)
@@ -178,9 +180,9 @@ INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1, 1)
 INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1, 1),(4324182021466249494, 6, 185, 1, 2)
 ```
 
-We use two `INSERT` queries to create two different data parts. If we insert the data with a single query, ClickHouse creates one data part and will never perform any merge.
+我们用两个 `INSERT` 查询以创建两个不同的数据部分。 如果我们使用单个查询插入数据，ClickHouse将创建一个数据部分，并且永远不会执行任何合并。
 
-Getting the data:
+获取数据:
 
 ``` sql
 SELECT * FROM UAct
@@ -196,11 +198,11 @@ SELECT * FROM UAct
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
 ```
 
-What do we see here and where are the collapsed parts?
-We created two data parts using two `INSERT` queries. The `SELECT` query was performed in two threads, and the result is a random order of rows.
-Collapsing did not occur because the data parts have not been merged yet. ClickHouse merges data parts at an unknown point in time which we cannot predict.
+我们在这里看到了什么，折叠的部分在哪里？
+我们使用两个创建了两个数据部分 `INSERT` 查询。 该 `SELECT` 查询是在两个线程中执行的，结果是行的随机顺序。
+由于数据部分尚未合并，因此未发生折叠。 ClickHouse在我们无法预测的未知时间点合并数据部分。
 
-This is why we need aggregation:
+这就是为什么我们需要聚合:
 
 ``` sql
 SELECT
@@ -219,7 +221,7 @@ HAVING sum(Sign) > 0
 └─────────────────────┴───────────┴──────────┴─────────┘
 ```
 
-If we don’t need aggregation and want to force collapsing, we can use the `FINAL` modifier for the `FROM` clause.
+如果我们不需要聚合，并希望强制折叠，我们可以使用 `FINAL` 修饰符 `FROM` 条款
 
 ``` sql
 SELECT * FROM UAct FINAL
@@ -231,6 +233,6 @@ SELECT * FROM UAct FINAL
 └─────────────────────┴───────────┴──────────┴──────┴─────────┘
 ```
 
-This is a very inefficient way to select data. Don’t use it for large tables.
+这是一个非常低效的方式来选择数据。 不要把它用于大桌子。
 
-[Original article](https://clickhouse.tech/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/table_engines/versionedcollapsingmergetree/) <!--hide-->

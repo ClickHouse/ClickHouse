@@ -1,11 +1,16 @@
-# Server configuration parameters {#server-settings}
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
 
-This section contains descriptions of server settings that cannot be changed at the session or query level.
+# 服务器配置参数 {#server-settings}
 
-These settings are stored in the `config.xml` file on the ClickHouse server.
+本节包含无法在会话或查询级别更改的服务器设置的说明。
 
-Other settings are described in the «[Settings](../settings/index.md#settings)» section.
+这些设置存储在 `config.xml` ClickHouse服务器上的文件。
 
-Before studying the settings, read the [Configuration files](../configuration_files.md#configuration_files) section and note the use of substitutions (the `incl` and `optional` attributes).
+Other settings are described in the «[设置](../settings/index.md#settings)» section.
 
-[Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/) <!--hide-->
+在研究设置之前，请阅读 [配置文件](../configuration_files.md#configuration_files) 部分和注意使用替换（的 `incl` 和 `optional` 属性）。
+
+[原始文章](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/) <!--hide-->

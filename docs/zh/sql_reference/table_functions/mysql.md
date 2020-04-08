@@ -1,17 +1,19 @@
 ---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 42
 toc_title: mysql
 ---
 
 # mysql {#mysql}
 
-Allows `SELECT` queries to be performed on data that is stored on a remote MySQL server.
+允许 `SELECT` 要对存储在远程MySQL服务器上的数据执行的查询。
 
 ``` sql
 mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_duplicate_clause']);
 ```
 
-**Parameters**
+**参数**
 
 -   `host:port` — MySQL server address.
 
@@ -23,25 +25,25 @@ mysql('host:port', 'database', 'table', 'user', 'password'[, replace_query, 'on_
 
 -   `password` — User password.
 
--   `replace_query` — Flag that converts `INSERT INTO` queries to `REPLACE INTO`. If `replace_query=1`, the query is replaced.
+-   `replace_query` — Flag that converts `INSERT INTO` 查询到 `REPLACE INTO`. 如果 `replace_query=1`，查询被替换。
 
--   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` expression that is added to the `INSERT` query.
+-   `on_duplicate_clause` — The `ON DUPLICATE KEY on_duplicate_clause` 表达式被添加到 `INSERT` 查询。
 
         Example: `INSERT INTO t (c1,c2) VALUES ('a', 2) ON DUPLICATE KEY UPDATE c2 = c2 + 1`, where `on_duplicate_clause` is `UPDATE c2 = c2 + 1`. See the MySQL documentation to find which `on_duplicate_clause` you can use with the `ON DUPLICATE KEY` clause.
 
         To specify `on_duplicate_clause` you need to pass `0` to the `replace_query` parameter. If you simultaneously pass `replace_query = 1` and `on_duplicate_clause`, ClickHouse generates an exception.
 
-Simple `WHERE` clauses such as `=, !=, >, >=, <, <=` are currently executed on the MySQL server.
+简单 `WHERE` 条款如 `=, !=, >, >=, <, <=` 当前在MySQL服务器上执行。
 
-The rest of the conditions and the `LIMIT` sampling constraint are executed in ClickHouse only after the query to MySQL finishes.
+其余的条件和 `LIMIT` 只有在对MySQL的查询完成后，才会在ClickHouse中执行采样约束。
 
-**Returned Value**
+**返回值**
 
-A table object with the same columns as the original MySQL table.
+与原始MySQL表具有相同列的table对象。
 
-## Usage Example {#usage-example}
+## 用法示例 {#usage-example}
 
-Table in MySQL:
+MySQL中的表:
 
 ``` text
 mysql> CREATE TABLE `test`.`test` (
@@ -64,7 +66,7 @@ mysql> select * from test;
 1 row in set (0,00 sec)
 ```
 
-Selecting data from ClickHouse:
+从ClickHouse中选择数据:
 
 ``` sql
 SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
@@ -76,9 +78,9 @@ SELECT * FROM mysql('localhost:3306', 'test', 'test', 'bayonet', '123')
 └────────┴──────────────┴───────┴────────────────┘
 ```
 
-## See Also {#see-also}
+## 另请参阅 {#see-also}
 
--   [The ‘MySQL’ table engine](../../engines/table_engines/integrations/mysql.md)
--   [Using MySQL as a source of external dictionary](../../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
+-   [该 ‘MySQL’ 表引擎](../../engines/table_engines/integrations/mysql.md)
+-   [使用MySQL作为外部字典的来源](../../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md#dicts-external_dicts_dict_sources-mysql)
 
-[Original article](https://clickhouse.tech/docs/en/query_language/table_functions/mysql/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/query_language/table_functions/mysql/) <!--hide-->

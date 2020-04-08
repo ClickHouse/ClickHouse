@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 ## CREATE DATABASE {#create-database}
 
 该查询用于根据指定名称创建数据库。
@@ -22,7 +27,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = engine
 ```
 
-在指定的‘db’数据库中创建一个名为‘name’的表，如果查询中没有包含‘db’，则默认使用当前选择的数据库作为‘db’。后面的是包含在括号中的表结构以及表引擎的声明。
+在指定的'db'数据库中创建一个名为'name'的表，如果查询中没有包含'db'，则默认使用当前选择的数据库作为'db'。后面的是包含在括号中的表结构以及表引擎的声明。
 其中表结构声明是一个包含一组列描述声明的组合。如果表引擎是支持索引的，那么可以在表引擎的参数中对其进行说明。
 
 在最简单的情况下，列描述是指`名称 类型`这样的子句。例如： `RegionID UInt32`。
@@ -49,9 +54,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 在列描述中你可以通过以下方式之一为列指定默认表达式：`DEFAULT expr`，`MATERIALIZED expr`，`ALIAS expr`。
 示例：`URLDomain String DEFAULT domain(URL)`。
 
-如果在列描述中未定义任何默认表达式，那么系统将会根据类型设置对应的默认值，如：数值类型为零、字符串类型为空字符串、数组类型为空数组、日期类型为‘0000-00-00’以及时间类型为‘0000-00-00 00:00:00’。不支持使用NULL作为普通类型的默认值。
+如果在列描述中未定义任何默认表达式，那么系统将会根据类型设置对应的默认值，如：数值类型为零、字符串类型为空字符串、数组类型为空数组、日期类型为'0000-00-00'以及时间类型为'0000-00-00 00:00:00'。不支持使用NULL作为普通类型的默认值。
 
-如果定义了默认表达式，则可以不定义列的类型。如果没有明确的定义类的类型，则使用默认表达式的类型。例如：`EventDate DEFAULT toDate(EventTime)` - 最终‘EventDate’将使用‘Date’作为类型。
+如果定义了默认表达式，则可以不定义列的类型。如果没有明确的定义类的类型，则使用默认表达式的类型。例如：`EventDate DEFAULT toDate(EventTime)` - 最终'EventDate'将使用'Date'作为类型。
 
 如果同时指定了默认表达式与列的类型，则将使用类型转换函数将默认表达式转换为指定的类型。例如：`Hits UInt32 DEFAULT 0`与`Hits UInt32 DEFAULT toUInt32(0)`意思相同。
 
@@ -65,7 +70,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 物化表达式，被该表达式指定的列不能包含在INSERT的列表中，因为它总是被计算出来的。
 对于INSERT而言，不需要考虑这些列。
-另外，在SELECT查询中如果包含星号，此列不会被用来替换星号，这是因为考虑到数据转储，在使用`SELECT *`查询出的结果总能够被’INSERT’回表。
+另外，在SELECT查询中如果包含星号，此列不会被用来替换星号，这是因为考虑到数据转储，在使用`SELECT *`查询出的结果总能够被'INSERT'回表。
 
 `ALIAS expr`
 
@@ -79,9 +84,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 不能够为nested类型的列设置默认值。
 
-### Constraints {#constraints}
+### 制约因素 {#constraints}
 
-Along with columns descriptions constraints could be defined:
+随着列描述约束可以定义:
 
 ``` sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -93,17 +98,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = engine
 ```
 
-`boolean_expr_1` could by any boolean expression. If constraints are defined for the table, each of them will be checked for every row in `INSERT` query. If any constraint is not satisfied — server will raise an exception with constraint name and checking expression.
+`boolean_expr_1` 可以通过任何布尔表达式。 如果为表定义了约束，则将为表中的每一行检查它们中的每一行 `INSERT` query. If any constraint is not satisfied — server will raise an exception with constraint name and checking expression.
 
-Adding large amount of constraints can negatively affect performance of big `INSERT` queries.
+添加大量的约束会对big的性能产生负面影响 `INSERT` 查询。
 
-### TTL Expression {#ttl-expression}
+### Ttl表达式 {#ttl-expression}
 
-Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../../sql_reference/statements/create.md#table_engine-mergetree-ttl).
+定义值的存储时间。 只能为MergeTree系列表指定。 有关详细说明，请参阅 [列和表的TTL](../../sql_reference/statements/create.md#table_engine-mergetree-ttl).
 
-### Column Compression Codecs {#codecs}
+### 列压缩编解ecs {#codecs}
 
-By default, ClickHouse applies the compression method, defined in [server settings](../../sql_reference/statements/create.md#server-settings-compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
+默认情况下，ClickHouse应用以下定义的压缩方法 [服务器设置](../../sql_reference/statements/create.md#server-settings-compression)，列。 您还可以定义在每个单独的列的压缩方法 `CREATE TABLE` 查询。
 
 ``` sql
 CREATE TABLE codec_example
@@ -118,32 +123,32 @@ ENGINE = <Engine>
 ...
 ```
 
-If a codec is specified, the default codec doesn’t apply. Codecs can be combined in a pipeline, for example, `CODEC(Delta, ZSTD)`. To select the best codec combination for you project, pass benchmarks similar to described in the Altinity [New Encodings to Improve ClickHouse Efficiency](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) article.
+如果指定了编解ec，则默认编解码器不适用。 编解码器可以组合在一个流水线中，例如, `CODEC(Delta, ZSTD)`. 要为您的项目选择最佳的编解码器组合，请通过类似于Altinity中描述的基准测试 [新编码提高ClickHouse效率](https://www.altinity.com/blog/2019/7/new-encodings-to-improve-clickhouse) 文章.
 
-!!! warning "Warning"
-    You can’t decompress ClickHouse database files with external utilities like `lz4`. Instead, use the special [clickhouse-compressor](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) utility.
+!!! warning "警告"
+    您无法使用外部实用程序解压缩ClickHouse数据库文件，如 `lz4`. 相反，使用特殊的 [ﾂ环板compressorｮﾂ嘉ｯﾂ偲](https://github.com/ClickHouse/ClickHouse/tree/master/programs/compressor) 实用程序。
 
-Compression is supported for the following table engines:
+下表引擎支持压缩:
 
--   [MergeTree](../../sql_reference/statements/create.md) family
--   [Log](../../sql_reference/statements/create.md) family
--   [Set](../../sql_reference/statements/create.md)
--   [Join](../../sql_reference/statements/create.md)
+-   [MergeTree](../../sql_reference/statements/create.md) 家庭
+-   [日志](../../sql_reference/statements/create.md) 家庭
+-   [设置](../../sql_reference/statements/create.md)
+-   [加入我们](../../sql_reference/statements/create.md)
 
-ClickHouse supports common purpose codecs and specialized codecs.
+ClickHouse支持通用编解码器和专用编解ecs。
 
-#### Specialized Codecs {#create-query-specialized-codecs}
+#### 专业编解ecs {#create-query-specialized-codecs}
 
-These codecs are designed to make compression more effective by using specific features of data. Some of these codecs don’t compress data themself. Instead, they prepare the data for a common purpose codec, which compresses it better than without this preparation.
+这些编解码器旨在通过使用数据的特定功能使压缩更有效。 其中一些编解码器不压缩数据本身。 相反，他们准备的数据用于共同目的的编解ec，其压缩它比没有这种准备更好。
 
-Specialized codecs:
+专业编解ecs:
 
--   `Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. Up to `delta_bytes` are used for storing delta values, so `delta_bytes` is the maximum size of raw values. Possible `delta_bytes` values: 1, 2, 4, 8. The default value for `delta_bytes` is `sizeof(type)` if equal to 1, 2, 4, or 8. In all other cases, it’s 1.
--   `DoubleDelta` — Calculates delta of deltas and writes it in compact binary form. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-byte deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
--   `Gorilla` — Calculates XOR between current and previous value and writes it in compact binary form. Efficient when storing a series of floating point values that change slowly, because the best compression rate is achieved when neighboring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see Compressing Values in [Gorilla: A Fast, Scalable, In-Memory Time Series Database](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
--   `T64` — Compression approach that crops unused high bits of values in integer data types (including `Enum`, `Date` and `DateTime`). At each step of its algorithm, codec takes a block of 64 values, puts them into 64x64 bit matrix, transposes it, crops the unused bits of values and returns the rest as a sequence. Unused bits are the bits, that don’t differ between maximum and minimum values in the whole data part for which the compression is used.
+-   `Delta(delta_bytes)` — Compression approach in which raw values are replaced by the difference of two neighboring values, except for the first value that stays unchanged. Up to `delta_bytes` 用于存储增量值，所以 `delta_bytes` 是原始值的最大大小。 可能 `delta_bytes` 值:1,2,4,8. 默认值 `delta_bytes` 是 `sizeof(type)` 如果等于1，2，4或8。 在所有其他情况下，它是1。
+-   `DoubleDelta` — Calculates delta of deltas and writes it in compact binary form. Optimal compression rates are achieved for monotonic sequences with a constant stride, such as time series data. Can be used with any fixed-width type. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. Uses 1 extra bit for 32-byte deltas: 5-bit prefixes instead of 4-bit prefixes. For additional information, see Compressing Time Stamps in [Gorilla：一个快速、可扩展的内存时间序列数据库](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
+-   `Gorilla` — Calculates XOR between current and previous value and writes it in compact binary form. Efficient when storing a series of floating point values that change slowly, because the best compression rate is achieved when neighboring values are binary equal. Implements the algorithm used in Gorilla TSDB, extending it to support 64-bit types. For additional information, see Compressing Values in [Gorilla：一个快速、可扩展的内存时间序列数据库](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
+-   `T64` — Compression approach that crops unused high bits of values in integer data types (including `Enum`, `Date` 和 `DateTime`). 在算法的每个步骤中，编解码器采用64个值块，将它们放入64x64位矩阵中，对其进行转置，裁剪未使用的值位并将其余部分作为序列返回。 未使用的位是使用压缩的整个数据部分的最大值和最小值之间没有区别的位。
 
-`DoubleDelta` and `Gorilla` codecs are used in Gorilla TSDB as the components of its compressing algorithm. Gorilla approach is effective in scenarios when there is a sequence of slowly changing values with their timestamps. Timestamps are effectively compressed by the `DoubleDelta` codec, and values are effectively compressed by the `Gorilla` codec. For example, to get an effectively stored table, you can create it in the following configuration:
+`DoubleDelta` 和 `Gorilla` 编解码器在Gorilla TSDB中用作其压缩算法的组件。 大猩猩的方法是有效的情况下，当有缓慢变化的值与他们的时间戳序列。 时间戳是由有效地压缩 `DoubleDelta` 编解ec，和值有效地由压缩 `Gorilla` 编解ec 例如，要获取有效存储的表，可以在以下配置中创建它:
 
 ``` sql
 CREATE TABLE codec_example
@@ -154,16 +159,16 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-#### Common purpose codecs {#create-query-common-purpose-codecs}
+#### 通用编解ecs {#create-query-common-purpose-codecs}
 
-Codecs:
+编解ecs:
 
 -   `NONE` — No compression.
--   `LZ4` — Lossless [data compression algorithm](https://github.com/lz4/lz4) used by default. Applies LZ4 fast compression.
--   `LZ4HC[(level)]` — LZ4 HC (high compression) algorithm with configurable level. Default level: 9. Setting `level <= 0` applies the default level. Possible levels: \[1, 12\]. Recommended level range: \[4, 9\].
--   `ZSTD[(level)]` — [ZSTD compression algorithm](https://en.wikipedia.org/wiki/Zstandard) with configurable `level`. Possible levels: \[1, 22\]. Default value: 1.
+-   `LZ4` — Lossless [数据压缩算法](https://github.com/lz4/lz4) 默认情况下使用。 应用LZ4快速压缩。
+-   `LZ4HC[(level)]` — LZ4 HC (high compression) algorithm with configurable level. Default level: 9. Setting `level <= 0` 应用默认级别。 可能的水平：\[1，12\]。 推荐级别范围：\[4，9\]。
+-   `ZSTD[(level)]` — [ZSTD压缩算法](https://en.wikipedia.org/wiki/Zstandard) 可配置 `level`. 可能的水平：\[1，22\]。 默认值：1。
 
-High compression levels are useful for asymmetric scenarios, like compress once, decompress repeatedly. Higher levels mean better compression and higher CPU usage.
+高压缩级别对于非对称场景非常有用，例如压缩一次，重复解压缩。 更高的级别意味着更好的压缩和更高的CPU使用率。
 
 ## 临时表 {#lin-shi-biao}
 

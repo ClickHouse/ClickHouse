@@ -1,3 +1,8 @@
+---
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+---
+
 # 高阶函数 {#gao-jie-han-shu}
 
 ## `->` 运算符, lambda(params, expr) 函数 {#yun-suan-fu-lambdaparams-expr-han-shu}
@@ -10,17 +15,17 @@
 
 高阶函数可以接受多个参数的lambda函数作为其参数，在这种情况下，高阶函数需要同时传递几个长度相等的数组，这些数组将被传递给lambda参数。
 
-除了’arrayMap’和’arrayFilter’以外的所有其他函数，都可以省略第一个参数（lambda函数）。在这种情况下，默认返回数组元素本身。
+除了'arrayMap'和'arrayFilter'以外的所有其他函数，都可以省略第一个参数（lambda函数）。在这种情况下，默认返回数组元素本身。
 
 ### arrayMap(func, arr1, …) {#higher_order_functions-array-map}
 
 将arr
-将从’func’函数的原始应用程序获得的数组返回到’arr’数组中的每个元素。
-Returns an array obtained from the original application of the ‘func’ function to each element in the ‘arr’ array.
+将从'func'函数的原始应用程序获得的数组返回到'arr'数组中的每个元素。
+返回从原始应用程序获得的数组 ‘func’ 函数中的每个元素 ‘arr’ 阵列。
 
 ### arrayFilter(func, arr1, …) {#arrayfilterfunc-arr1}
 
-Returns an array containing only the elements in ‘arr1’ for which ‘func’ returns something other than 0.
+返回一个仅包含以下元素的数组 ‘arr1’ 对于哪个 ‘func’ 返回0以外的内容。
 
 示例:
 
@@ -47,27 +52,27 @@ SELECT
 
 ### arrayCount(\[func,\] arr1, …) {#arraycountfunc-arr1}
 
-返回数组arr中非零元素的数量，如果指定了‘func’，则通过‘func’的返回值确定元素是否为非零元素。
+返回数组arr中非零元素的数量，如果指定了'func'，则通过'func'的返回值确定元素是否为非零元素。
 
 ### arrayExists(\[func,\] arr1, …) {#arrayexistsfunc-arr1}
 
-返回数组‘arr’中是否存在非零元素，如果指定了‘func’，则使用‘func’的返回值确定元素是否为非零元素。
+返回数组'arr'中是否存在非零元素，如果指定了'func'，则使用'func'的返回值确定元素是否为非零元素。
 
 ### arrayAll(\[func,\] arr1, …) {#arrayallfunc-arr1}
 
-返回数组‘arr’中是否存在为零的元素，如果指定了‘func’，则使用‘func’的返回值确定元素是否为零元素。
+返回数组'arr'中是否存在为零的元素，如果指定了'func'，则使用'func'的返回值确定元素是否为零元素。
 
 ### arraySum(\[func,\] arr1, …) {#arraysumfunc-arr1}
 
-计算arr数组的总和，如果指定了‘func’，则通过‘func’的返回值计算数组的总和。
+计算arr数组的总和，如果指定了'func'，则通过'func'的返回值计算数组的总和。
 
 ### arrayFirst(func, arr1, …) {#arrayfirstfunc-arr1}
 
-返回数组中第一个匹配的元素，函数使用‘func’匹配所有元素，直到找到第一个匹配的元素。
+返回数组中第一个匹配的元素，函数使用'func'匹配所有元素，直到找到第一个匹配的元素。
 
 ### arrayFirstIndex(func, arr1, …) {#arrayfirstindexfunc-arr1}
 
-返回数组中第一个匹配的元素的下标索引，函数使用‘func’匹配所有元素，直到找到第一个匹配的元素。
+返回数组中第一个匹配的元素的下标索引，函数使用'func'匹配所有元素，直到找到第一个匹配的元素。
 
 ### arrayCumSum(\[func,\] arr1, …) {#arraycumsumfunc-arr1}
 
