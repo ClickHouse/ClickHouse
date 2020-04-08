@@ -1496,10 +1496,12 @@ struct ToStringMonotonicity
         IFunction::Monotonicity positive(true, true);
         IFunction::Monotonicity not_monotonic;
 
-        /// `toString` function is monotonous if the argument is Date or DateTime, or non-negative numbers with the same number of symbols.
+        auto type_ptr = &type;
+        if (auto * low_cardinality_type = checkAndGetDataType<DataTypeLowCardinality>(type_ptr))
+            type_ptr = low_cardinality_type->getDictionaryType().get();
 
-        if (checkAndGetDataType<DataTypeDate>(&type)
-            || typeid_cast<const DataTypeDateTime *>(&type))
+        /// `toString` function is monotonous if the argument is Date or DateTime or String, or non-negative numbers with the same number of symbols.
+        if (checkDataTypes<DataTypeDate, DataTypeDateTime, DataTypeString>(type_ptr))
             return positive;
 
         if (left.isNull() || right.isNull())
