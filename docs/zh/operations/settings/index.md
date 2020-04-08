@@ -1,4 +1,6 @@
-
+---
+toc_folder_title: "\u8bbe\u7f6e"
+---
 # 设置 {#settings}
 
 有多种方法可以进行以下所述的所有设置。
