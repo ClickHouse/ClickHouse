@@ -54,6 +54,8 @@ public:
         return description;
     }
 
+    const String & dictionaryName() const { return dictionary_name; }
+
 private:
     using Ptr = MultiVersion<IDictionaryBase>::Version;
 

@@ -305,12 +305,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     max_streams = settings.max_threads;
     ASTSelectQuery & query = getSelectQuery();
+    std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
                 query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),
-                options, joined_tables.tablesWithColumns(), required_result_column_names);
+                options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         /// Save scalar sub queries's results in the query context
         if (context->hasQueryContext())
