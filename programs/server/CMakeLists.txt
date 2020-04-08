@@ -1,4 +1,4 @@
-include (${CMAKE_CURRENT_SOURCE_DIR}/etcd_protos/etcd_protos.cmake)
+include (${CMAKE_CURRENT_SOURCE_DIR}/grpc_protos/grpc_protos.cmake)
 
 set(CLICKHOUSE_SERVER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/HTTPHandler.cpp
@@ -29,7 +29,8 @@ set(CLICKHOUSE_SERVER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/MySQLHandlerFactory.cpp
 )
 
-set(CLICKHOUSE_SERVER_LINK PRIVATE clickhouse_dictionaries clickhouse_common_io clickhouse_common_config clickhouse_common_zookeeper clickhouse_parsers string_utils PUBLIC daemon PRIVATE clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${Poco_Net_LIBRARY})
+
+set(CLICKHOUSE_SERVER_LINK PRIVATE clickhouse_dictionaries clickhouse_common_io clickhouse_common_config clickhouse_common_zookeeper clickhouse_parsers string_utils PUBLIC daemon PRIVATE clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions ${Poco_Net_LIBRARY} PUBLIC grpc++ PUBLIC libprotobuf)
 if (USE_POCO_NETSSL)
     set(CLICKHOUSE_SERVER_LINK ${CLICKHOUSE_SERVER_LINK} PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
 endif ()

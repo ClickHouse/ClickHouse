@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package HelloApi;
+
+message HelloRequest {
+  string username = 1;
+}
+
+message HelloResponse {
+  string username = 1;
+  float karma = 2;
+}
+
+service Hello {
+  rpc SayHello(HelloRequest) returns (HelloResponse) {}
+}
