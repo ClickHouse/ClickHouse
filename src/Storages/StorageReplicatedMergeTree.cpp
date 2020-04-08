@@ -246,7 +246,7 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         createTableIfNotExists();
 
-        /// We have to check granularity on other replicas. It it's fixed we
+        /// We have to check granularity on other replicas. If it's fixed we
         /// must create our new replica with fixed granularity and store this
         /// information in /replica/metadata.
         other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
