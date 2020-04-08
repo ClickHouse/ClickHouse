@@ -24,6 +24,12 @@ const Type * checkAndGetDataType(const IDataType * data_type)
     return typeid_cast<const Type *>(data_type);
 }
 
+template <typename... Types>
+bool checkDataTypes(const IDataType * data_type)
+{
+    return (... || typeid_cast<const Types *>(data_type));
+}
+
 template <typename Type>
 const ColumnConst * checkAndGetColumnConst(const IColumn * column)
 {
