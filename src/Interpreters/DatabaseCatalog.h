@@ -102,9 +102,9 @@ public:
 
     static DatabaseCatalog & init(Context * global_context_);
     static DatabaseCatalog & instance();
+    static void shutdown();
 
     void loadDatabases();
-    void shutdown();
 
     /// Get an object that protects the table from concurrently executing multiple DDL operations.
     std::unique_ptr<DDLGuard> getDDLGuard(const String & database, const String & table);
@@ -166,6 +166,8 @@ private:
     void assertDatabaseExistsUnlocked(const String & database_name) const;
     void assertDatabaseDoesntExistUnlocked(const String & database_name) const;
 
+    void shutdownImpl();
+
 
     struct UUIDToStorageMapPart
     {
@@ -222,7 +224,7 @@ private:
     mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
-    time_t drop_delay_s;
+    time_t drop_delay_s = 60;
 };
 
 }

@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int DATABASE_NOT_EMPTY;
     extern const int DATABASE_ACCESS_DENIED;
     extern const int LOGICAL_ERROR;
+    extern const int NULL_POINTER_DEREFERENCE;
 }
 
 TemporaryTableHolder::TemporaryTableHolder(const Context & context_,
@@ -107,6 +108,7 @@ StoragePtr TemporaryTableHolder::getTable() const
 
 void DatabaseCatalog::loadDatabases()
 {
+    drop_delay_s = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_s", 60);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE);
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
@@ -117,7 +119,7 @@ void DatabaseCatalog::loadDatabases()
     (*drop_task)->activateAndSchedule();
 }
 
-void DatabaseCatalog::shutdown()
+void DatabaseCatalog::shutdownImpl()
 {
     if (drop_task)
         (*drop_task)->deactivate();
@@ -378,8 +380,7 @@ DatabaseCatalog::DatabaseCatalog(Context * global_context_)
     : global_context(global_context_), log(&Poco::Logger::get("DatabaseCatalog"))
 {
     if (!global_context)
-        throw Exception("DatabaseCatalog is not initialized. It's a bug.", ErrorCodes::LOGICAL_ERROR);
-    drop_delay_s = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_s", 60);
+        throw Exception("DatabaseCatalog is not initialized. It's a bug.", ErrorCodes::NULL_POINTER_DEREFERENCE);
 }
 
 DatabaseCatalog & DatabaseCatalog::init(Context * global_context_)
@@ -391,6 +392,23 @@ DatabaseCatalog & DatabaseCatalog::init(Context * global_context_)
 DatabaseCatalog & DatabaseCatalog::instance()
 {
     return init(nullptr);
+}
+
+void DatabaseCatalog::shutdown()
+{
+    try
+    {
+        instance().shutdownImpl();
+    }
+    catch (const Exception & e)
+    {
+        /// If catalog was not initialized yet by init(global_context), instance() throws NULL_POINTER_DEREFERENCE.
+        /// It can happen if some exception was thrown on first steps of startup (e.g. command line arguments parsing).
+        /// Ignore it.
+        if (e.code() == ErrorCodes::NULL_POINTER_DEREFERENCE)
+            return;
+        throw;
+    }
 }
 
 DatabasePtr DatabaseCatalog::getDatabase(const String & database_name, const Context & local_context) const

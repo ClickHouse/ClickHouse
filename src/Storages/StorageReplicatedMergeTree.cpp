@@ -2880,11 +2880,15 @@ void StorageReplicatedMergeTree::startup()
         move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
         pool.startTask(move_parts_task_handle);
     }
+    need_shutdown.store(true);
 }
 
 
 void StorageReplicatedMergeTree::shutdown()
 {
+    if (!need_shutdown.load())
+        return;
+
     clearOldPartsFromFilesystem(true);
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
@@ -2917,6 +2921,7 @@ void StorageReplicatedMergeTree::shutdown()
         std::unique_lock lock(data_parts_exchange_endpoint->rwlock);
     }
     data_parts_exchange_endpoint.reset();
+    need_shutdown.store(false);
 }
 
 

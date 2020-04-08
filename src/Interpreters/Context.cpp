@@ -404,7 +404,7 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
-        DatabaseCatalog::instance().shutdown();
+        DatabaseCatalog::shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
         /// TODO: Get rid of this.
