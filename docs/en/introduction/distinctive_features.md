@@ -60,7 +60,7 @@ ClickHouse provides various ways to trade accuracy for performance:
 2.  Running a query based on a part (sample) of data and getting an approximated result. In this case, proportionally less data is retrieved from the disk.
 3.  Running an aggregation for a limited number of random keys, instead of for all keys. Under certain conditions for key distribution in the data, this provides a reasonably accurate result while using fewer resources.
 
-## Data replication and data integrity support {#data-replication-and-data-integrity-support}
+## Data Replication and Data Integrity Support {#data-replication-and-data-integrity-support}
 
 ClickHouse uses asynchronous multi-master replication. After being written to any available replica, all the remaining replicas retrieve their copy in the background. The system maintains identical data on different replicas. Recovery after most failures is performed automatically, or semi-automatically in complex cases.
 
