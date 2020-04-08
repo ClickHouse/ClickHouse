@@ -6,10 +6,10 @@
 </url>
 <url>
   <loc>https://clickhouse.tech/benchmark.html</loc>
-  <changefreq>daily</changefreq>
+  <changefreq>weekly</changefreq>
 </url>
 <url>
   <loc>https://clickhouse.tech/benchmark_hardware.html</loc>
-  <changefreq>daily</changefreq>
+  <changefreq>weekly</changefreq>
 </url>
 </urlset>
