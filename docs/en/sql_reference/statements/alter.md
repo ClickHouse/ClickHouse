@@ -507,7 +507,7 @@ Changes ClickHouse user accounts.
 ### Syntax {#alter-user-syntax}
 
 ``` sql
-ALTER USER [IF EXISTS] name
+ALTER USER [IF EXISTS] name [ON CLUSTER]
     [RENAME TO new_name]
     [IDENTIFIED [WITH {PLAINTEXT_PASSWORD|SHA256_PASSWORD|DOUBLE_SHA1_PASSWORD}] BY {'password'|'hash'}]
     [[ADD|DROP] HOST {LOCAL | NAME 'name' | NAME REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
@@ -537,7 +537,7 @@ Changes roles.
 ### Syntax {#alter-role-syntax}
 
 ```sql
-ALTER ROLE [IF EXISTS] name
+ALTER ROLE [IF EXISTS] name [ON CLUSTER]
     [RENAME TO new_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
@@ -550,7 +550,7 @@ Changes row policy.
 ### Syntax {#alter-row-policy-syntax}
 
 ``` sql
-ALTER [ROW] POLICY [IF EXISTS] name ON [database.]table
+ALTER [ROW] POLICY [IF EXISTS] name  [ON CLUSTER] ON [database.]table
     [RENAME TO new_name]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR {SELECT | ALL}]
@@ -566,7 +566,7 @@ Changes quotas.
 ### Syntax {#alter-quota-syntax}
 
 ``` sql
-ALTER QUOTA [IF EXISTS] name
+ALTER QUOTA [IF EXISTS] name [ON CLUSTER]
     [RENAME TO new_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
     [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
@@ -583,7 +583,7 @@ Changes quotas.
 ### Syntax {#alter-quota-syntax}
 
 ``` sql
-ALTER SETTINGS PROFILE [IF EXISTS] name
+ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER]
     [RENAME TO new_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```

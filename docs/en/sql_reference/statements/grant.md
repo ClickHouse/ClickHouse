@@ -6,16 +6,15 @@ toc_title: GRANT
 
 # GRANT
 
-Grants [privileges](#grant-privileges) to a ClickHouse user account or a role.
+- Grants [privileges](#grant-privileges) to ClickHouse user accounts or roles.
+- Assigns roles to user accounts or to another roles.
 
 To revoke privileges, use the [REVOKE](revoke.md) statement. Also you can list granted privileges by the [SHOW GRANTS](show.md#show-grants-statement) statement.
 
-## Syntax {#grant-syntax}
-
-### Granting privilege to a User Account
+## Granting Privilege Syntax {#grant-privigele-syntax}
 
 ```sql
-GRANT privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
+GRANT [ON CLUSTER] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
 ```
 - `privilege` — Type of privilege.
 - `role` — ClickHouse user role.
@@ -23,10 +22,10 @@ GRANT privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {
 
 The `WITH GRANT OPTION` clause sets [GRANT OPTION](#grant-option-privilege) privilege for `user` or `role`.
 
-### Assigning Role to a User Account
+## Assigning Role Syntax {#assign-role-syntax}
 
 ```sql
-GRANT role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
+GRANT [ON CLUSTER] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
 ```
 
 - `role` — ClickHouse user role.

@@ -314,7 +314,7 @@ Creates a [user account](../../operations/access_rights.md#user-account-manageme
 ### Syntax {#create-user-syntax}
 
 ```sql
-CREATE USER [IF NOT EXISTS | OR REPLACE] name
+CREATE USER [IF NOT EXISTS | OR REPLACE] name  [ON CLUSTER]
     [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
     [HOST {LOCAL | NAME 'name' | NAME REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
@@ -423,7 +423,7 @@ Creates a filter for rows, which a user can read from a table. Also, you can cre
 ### Syntax {#create-row-policy-syntax}
 
 ``` sql
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [db.]table
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name  [ON CLUSTER] ON [db.]table
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR SELECT]
     [USING condition]
@@ -446,7 +446,6 @@ In the section `TO` you can give a mixed list of roles and users, for example, `
 
 Keyword `ALL` means all the ClickHouse users including current user. Keywords `ALL EXCEPT` allow to to exclude some users from the all users list, for example `CREATE ROW POLICY ... TO ALL EXCEPT accountant, vasya@localhost`
 
-
 ### Examples
 
 - `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant, vasya@localhost`
@@ -460,7 +459,7 @@ Creates a [quota](../../operations/quotas.md) that can be assigned to a user of 
 ### Syntax {create-quota-syntax}
 
 ``` sql
-CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
     [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
         {[SET] MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] | [SET] TRACKING} [,...]]
@@ -475,7 +474,7 @@ Creates a [settings profile](../../operations/settings/settings_profiles.md) tha
 ### Syntax {create-quota-syntax}
 
 ``` sql
-CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
