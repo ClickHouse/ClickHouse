@@ -364,12 +364,12 @@ void MySQLHandlerSSL::finishHandshakeSSL(size_t packet_size, char * buf, size_t 
 static bool isFederatedServerSetupSetCommand(const String & query)
 {
     static const std::regex expr{
-        "(^(SET NAMES(.*)))"\
-        "|(^(SET character_set_results(.*)))"\
-        "|(^(SET FOREIGN_KEY_CHECKS(.*)))"\
-        "|(^(SET AUTOCOMMIT(.*)))"\
-        "|(^(SET sql_mode(.*)))"\
-        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"\
+        "(^(SET NAMES(.*)))"
+        "|(^(SET character_set_results(.*)))"
+        "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
+        "|(^(SET AUTOCOMMIT(.*)))"
+        "|(^(SET sql_mode(.*)))"
+        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
         , std::regex::icase};
     return 1 == std::regex_match(query, expr);
 }
@@ -377,9 +377,9 @@ static bool isFederatedServerSetupSetCommand(const String & query)
 static bool isFederatedServerSetupSelectVarCommand(const String & query)
 {
      static const std::regex expr{
-         "|(^(SELECT @@(.*)))"\
-         "|(^((/\\*(.*)\\*/)([ \t]*)(SELECT([ \t]*)@@(.*))))"\
-         "|(^((/\\*(.*)\\*/)([ \t]*)(SHOW VARIABLES(.*))))"\
+         "|(^(SELECT @@(.*)))"
+         "|(^((/\\*(.*)\\*/)([ \t]*)(SELECT([ \t]*)@@(.*))))"
+         "|(^((/\\*(.*)\\*/)([ \t]*)(SHOW VARIABLES(.*))))"
          , std::regex::icase};
      return 1 == std::regex_match(query, expr);
 }
