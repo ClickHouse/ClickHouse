@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/IProcessor.h>
+#include <Processors/ISink.h>
 
 namespace DB
 {
@@ -17,6 +18,16 @@ public:
     }
 
     InputPort & getPort() { return inputs.front(); }
+};
+
+class EmptySink : public ISink
+{
+public:
+    explicit EmptySink(Block header) : ISink(std::move(header)) {}
+    String getName() const override { return "EmptySink"; }
+
+protected:
+    void consume(Chunk) override {}
 };
 
 }
