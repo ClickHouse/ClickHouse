@@ -203,6 +203,14 @@ namespace
             return true;
         });
     }
+
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+        });
+    }
 }
 
 
@@ -246,16 +254,10 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         || !parseDatabaseAndTableName(pos, expected, database, table_name))
         return false;
 
-    String cluster;
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
-    {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
-            return false;
-    }
-
     String new_policy_name;
     std::optional<bool> is_restrictive;
     std::vector<std::pair<ConditionType, ASTPtr>> conditions;
+    String cluster;
 
     while (true)
     {
@@ -268,11 +270,17 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (parseMultipleConditions(pos, expected, alter, conditions))
             continue;
 
+        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+            continue;
+
         break;
     }
 
     std::shared_ptr<ASTExtendedRoleSet> roles;
     parseToRoles(pos, expected, attach_mode, roles);
+
+    if (cluster.empty())
+        parseOnCluster(pos, expected, cluster);
 
     auto query = std::make_shared<ASTCreateRowPolicyQuery>();
     node = query;

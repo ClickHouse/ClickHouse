@@ -250,6 +250,14 @@ namespace
             return true;
         });
     }
+
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+        });
+    }
 }
 
 
@@ -290,13 +298,6 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parseUserName(pos, expected, name, host_pattern))
         return false;
 
-    String cluster;
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
-    {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
-            return false;
-    }
-
     String new_name;
     std::optional<String> new_host_pattern;
     std::optional<Authentication> authentication;
@@ -305,6 +306,7 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     std::optional<AllowedClientHosts> remove_hosts;
     std::shared_ptr<ASTExtendedRoleSet> default_roles;
     std::shared_ptr<ASTSettingsProfileElements> settings;
+    String cluster;
 
     while (true)
     {
@@ -318,6 +320,9 @@ bool ParserCreateUserQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             continue;
 
         if (!default_roles && parseDefaultRoles(pos, expected, attach_mode, default_roles))
+            continue;
+
+        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;
 
         if (alter)

@@ -190,6 +190,14 @@ namespace
             return true;
         });
     }
+
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+        });
+    }
 }
 
 
@@ -229,16 +237,10 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!parseIdentifierOrStringLiteral(pos, expected, name))
         return false;
 
-    String cluster;
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
-    {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
-            return false;
-    }
-
     String new_name;
     std::optional<KeyType> key_type;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
+    String cluster;
 
     while (true)
     {
@@ -251,11 +253,17 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (parseAllLimits(pos, expected, all_limits))
             continue;
 
+        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+            continue;
+
         break;
     }
 
     std::shared_ptr<ASTExtendedRoleSet> roles;
     parseToRoles(pos, expected, attach_mode, roles);
+
+    if (cluster.empty())
+        parseOnCluster(pos, expected, cluster);
 
     auto query = std::make_shared<ASTCreateQuotaQuery>();
     node = query;
