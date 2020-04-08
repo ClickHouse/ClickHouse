@@ -80,6 +80,13 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     if (!parseRoleName(pos, expected, name))
         return false;
 
+    String cluster;
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+            return false;
+    }
+
     String new_name;
     std::shared_ptr<ASTSettingsProfileElements> settings;
     while (true)
@@ -101,6 +108,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
+    query->cluster = std::move(cluster);
     query->name = std::move(name);
     query->new_name = std::move(new_name);
     query->settings = std::move(settings);

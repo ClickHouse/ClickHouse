@@ -26,7 +26,7 @@
 namespace DB
 {
 
-class AnalyzedJoin;
+class TableJoin;
 
 namespace JoinStuff
 {
@@ -143,10 +143,10 @@ using MappedAsof =       WithFlags<AsofRowRefs, false>;
   * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
   *  as in standard SQL.
   */
-class Join : public IJoin
+class HashJoin : public IJoin
 {
 public:
-    Join(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
+    HashJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block, bool any_take_last_row_ = false);
 
     bool empty() { return data->type == Type::EMPTY; }
 
@@ -315,7 +315,7 @@ public:
         Arena pool;
     };
 
-    void reuseJoinedData(const Join & join)
+    void reuseJoinedData(const HashJoin & join)
     {
         data = join.data;
     }
@@ -329,7 +329,7 @@ private:
     friend class NonJoinedBlockInputStream;
     friend class JoinSource;
 
-    std::shared_ptr<AnalyzedJoin> table_join;
+    std::shared_ptr<TableJoin> table_join;
     ASTTableJoin::Kind kind;
     ASTTableJoin::Strictness strictness;
 
@@ -379,7 +379,7 @@ private:
         const Block & block_with_columns_to_add,
         const Maps & maps) const;
 
-    void joinBlockImplCross(Block & block) const;
+    void joinBlockImplCross(Block & block, ExtraBlockPtr & not_processed) const;
 
     template <typename Maps>
     void joinGetImpl(Block & block, const String & column_name, const Maps & maps) const;

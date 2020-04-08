@@ -402,8 +402,8 @@ Pipes StorageTinyLog::read(
 
     Pipes pipes;
 
-	// When reading, we lock the entire storage, because we only have one file
-	// per column and can't modify it concurrently.
+    // When reading, we lock the entire storage, because we only have one file
+    // per column and can't modify it concurrently.
     pipes.emplace_back(std::make_shared<TinyLogSource>(
         max_block_size, Nested::collect(getColumns().getAllPhysical().addTypes(column_names)), *this, context.getSettingsRef().max_read_buffer_size));
 

@@ -233,7 +233,7 @@ public:
 
     UserPtr getUser() const;
     String getUserName() const;
-    UUID getUserID() const;
+    std::optional<UUID> getUserID() const;
 
     void setCurrentRoles(const std::vector<UUID> & current_roles_);
     void setCurrentRolesDefault();
