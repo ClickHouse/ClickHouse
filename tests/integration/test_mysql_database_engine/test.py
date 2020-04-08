@@ -5,6 +5,7 @@ import pymysql.cursors
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+from helpers.client import QueryRuntimeException
 
 cluster = ClickHouseCluster(__file__)
 clickhouse_node = cluster.add_instance('node1', main_configs=['configs/remote_servers.xml'], with_mysql=True)
@@ -116,12 +117,17 @@ def test_clickhouse_join_for_mysql_database(started_cluster):
         clickhouse_node.query("CREATE TABLE default.t1_remote_mysql AS mysql('mysql1:3306','test','t1_mysql_local','root','clickhouse')")
         clickhouse_node.query("CREATE TABLE default.t2_remote_mysql AS mysql('mysql1:3306','test','t2_mysql_local','root','clickhouse')")
         assert clickhouse_node.query("SELECT s.pays "
-                              "FROM default.t1_remote_mysql AS s "
-                              "LEFT JOIN default.t1_remote_mysql AS s_ref "
-                              "ON (s_ref.opco = s.opco AND s_ref.service = s.service)") == ''
+                                     "FROM default.t1_remote_mysql AS s "
+                                     "LEFT JOIN default.t1_remote_mysql AS s_ref "
+                                     "ON (s_ref.opco = s.opco AND s_ref.service = s.service)") == ''
         mysql_node.query("DROP DATABASE test")
 
+
 def test_bad_arguments_for_mysql_database_engine(started_cluster):
-    assert clickhouse_node.query(
-        "CREATE TABLE default.t1_remote_mysql AS mysql('mysql1:3306', 'test', 't1_mysql_local', root, 'clickhouse')").find(
-        'Database engine MySQL requested literal argument.') != -1
+    with contextlib.closing(MySQLNodeInstance('root', 'clickhouse', '127.0.0.1', port=3308)) as mysql_node:
+        with pytest.raises(QueryRuntimeException) as exception:
+            mysql_node.query("CREATE DATABASE IF NOT EXISTS test_bad_arguments DEFAULT CHARACTER SET 'utf8'")
+            clickhouse_node.query("CREATE DATABASE test_database ENGINE = MySQL('mysql1:3306', test_bad_arguments, root, 'clickhouse')")
+
+        assert 'Database engine MySQL requested literal argument.' in str(exception.value)
+        mysql_node.query("DROP DATABASE test_bad_arguments")
