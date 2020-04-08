@@ -25,7 +25,7 @@ struct Settings;
 class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
 
-class AnalyzedJoin
+class TableJoin
 {
     /** Query of the form `SELECT expr(x) AS k FROM t1 ANY LEFT JOIN (SELECT expr(x) AS k FROM t2) USING k`
       * The join is made by column k.
@@ -69,10 +69,10 @@ class AnalyzedJoin
     VolumePtr tmp_volume;
 
 public:
-    AnalyzedJoin(const Settings &, VolumePtr tmp_volume);
+    TableJoin(const Settings &, VolumePtr tmp_volume);
 
     /// for StorageJoin
-    AnalyzedJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
+    TableJoin(SizeLimits limits, bool use_nulls, ASTTableJoin::Kind kind, ASTTableJoin::Strictness strictness,
                  const Names & key_names_right_)
         : size_limits(limits)
         , default_max_bytes(0)
@@ -133,7 +133,7 @@ public:
     /// StorageJoin overrides key names (cause of different names qualification)
     void setRightKeys(const Names & keys) { key_names_right = keys; }
 
-    static bool sameJoin(const AnalyzedJoin * x, const AnalyzedJoin * y);
+    static bool sameJoin(const TableJoin * x, const TableJoin * y);
 };
 
 }

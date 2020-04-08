@@ -23,6 +23,9 @@ if __name__ == '__main__':
         title = meta.get('toc_title')
         if title:
             meta['toc_title'] = translate.translate(title, target_language)
+        folder_title = meta.get('toc_folder_title')
+        if folder_title:
+            meta['toc_folder_title'] = translate.translate(folder_title, target_language)
         if 'en_copy' in meta:
             del meta['en_copy']
     

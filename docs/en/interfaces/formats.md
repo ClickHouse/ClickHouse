@@ -1028,7 +1028,7 @@ The root schema of input Avro file must be of `record` type.
 To find the correspondence between table columns and fields of Avro schema ClickHouse compares their names. This comparison is case-sensitive.
 Unused fields are skipped.
 
-Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to corresponding column type.
+Data types of ClickHouse table columns can differ from the corresponding fields of the Avro data inserted. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql_reference/functions/type_conversion_functions.md#type_conversion_function-cast) the data to corresponding column type.
 
 ### Selecting Data {#selecting-data-1}
 
@@ -1170,7 +1170,7 @@ ClickHouse supports configurable precision of the `Decimal` type. The `INSERT` q
 
 Unsupported ORC data types: `DATE32`, `TIME32`, `FIXED_SIZE_BINARY`, `JSON`, `UUID`, `ENUM`.
 
-The data types of ClickHouse table columns don’t have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../query_language/functions/type_conversion_functions/#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
+The data types of ClickHouse table columns don’t have to match the corresponding ORC data fields. When inserting data, ClickHouse interprets data types according to the table above and then [casts](../sql_reference/functions/type_conversion_functions.md#type_conversion_function-cast) the data to the data type set for the ClickHouse table column.
 
 ### Inserting Data {#inserting-data-2}
 
