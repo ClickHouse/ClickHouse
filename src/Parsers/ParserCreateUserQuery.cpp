@@ -166,7 +166,7 @@ namespace
                 {
                     new_hosts.addLocalHost();
                 }
-                else if (ParserKeyword{"NAME REGEXP"}.ignore(pos, expected))
+                else if (ParserKeyword{"REGEXP"}.ignore(pos, expected))
                 {
                     ASTPtr ast;
                     if (!ParserList{std::make_unique<ParserStringLiteral>(), std::make_unique<ParserToken>(TokenType::Comma), false}.parse(pos, ast, expected))
