@@ -83,14 +83,13 @@ namespace
             static constexpr char delete_op[] = "DELETE";
             std::vector<const char *> ops;
 
-            bool keyword_for = false;
             if (ParserKeyword{"FOR"}.ignore(pos, expected))
             {
-                keyword_for = true;
                 do
                 {
                     if (ParserKeyword{"SELECT"}.ignore(pos, expected))
                         ops.push_back(select_op);
+#if 0 /// INSERT, UPDATE, DELETE are not supported yet
                     else if (ParserKeyword{"INSERT"}.ignore(pos, expected))
                         ops.push_back(insert_op);
                     else if (ParserKeyword{"UPDATE"}.ignore(pos, expected))
@@ -100,6 +99,7 @@ namespace
                     else if (ParserKeyword{"ALL"}.ignore(pos, expected))
                     {
                     }
+#endif
                     else
                         return false;
                 }
@@ -109,9 +109,11 @@ namespace
             if (ops.empty())
             {
                 ops.push_back(select_op);
+#if 0 /// INSERT, UPDATE, DELETE are not supported yet
                 ops.push_back(insert_op);
                 ops.push_back(update_op);
                 ops.push_back(delete_op);
+#endif
             }
 
             std::optional<ASTPtr> filter;
@@ -123,14 +125,15 @@ namespace
                 if (!parseConditionalExpression(pos, expected, filter))
                     return false;
             }
+#if 0 /// INSERT, UPDATE, DELETE are not supported yet
             if (ParserKeyword{"WITH CHECK"}.ignore(pos, expected))
             {
                 keyword_with_check = true;
                 if (!parseConditionalExpression(pos, expected, check))
                     return false;
             }
-
-            if (!keyword_for && !keyword_using && !keyword_with_check)
+#endif
+            if (!keyword_using && !keyword_with_check)
                 return false;
 
             if (filter && !check && !alter)
