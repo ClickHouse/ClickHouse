@@ -167,7 +167,7 @@ def build_for_lang(lang, args):
             mkdocs_build.build(cfg)
 
         if not args.skip_single_page:
-            build_single_page_version(lang, args, nav, cfg)
+            build_single_page_version(lang, args, raw_config.get('nav'), cfg)
 
         mdx_clickhouse.PatchedMacrosPlugin.disabled = False
 
