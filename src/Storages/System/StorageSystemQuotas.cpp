@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Access/AccessControlManager.h>
 #include <Access/Quota.h>
+#include <Access/AccessFlags.h>
 #include <ext/range.h>
 
 
@@ -54,6 +55,8 @@ NamesAndTypesList StorageSystemQuotas::getNamesAndTypes()
 
 void StorageSystemQuotas::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
+    context.checkAccess(AccessType::SHOW_QUOTAS);
+
     size_t i = 0;
     auto & name_column = *res_columns[i++];
     auto & id_column = *res_columns[i++];

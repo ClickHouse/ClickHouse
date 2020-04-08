@@ -765,7 +765,14 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
 
     if (!create.to_table.empty())
-        required_access.emplace_back(AccessType::INSERT, create.to_database, create.to_table);
+        required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, create.to_database, create.to_table);
+
+    if (create.storage && create.storage->engine)
+    {
+        auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
+        if (source_access_type != AccessType::NONE)
+            required_access.emplace_back(source_access_type);
+    }
 
     return required_access;
 }

@@ -61,6 +61,8 @@ void ASTCreateSettingsProfileQuery::formatImpl(const FormatSettings & format, Fo
 
     format.ostr << " " << backQuoteIfNeed(name);
 
+    formatOnCluster(format);
+
     if (!new_name.empty())
         formatRenameTo(new_name, format);
 
@@ -71,4 +73,10 @@ void ASTCreateSettingsProfileQuery::formatImpl(const FormatSettings & format, Fo
         formatToRoles(*to_roles, format);
 }
 
+
+void ASTCreateSettingsProfileQuery::replaceCurrentUserTagWithName(const String & current_user_name)
+{
+    if (to_roles)
+        to_roles->replaceCurrentUserTagWithName(current_user_name);
+}
 }
