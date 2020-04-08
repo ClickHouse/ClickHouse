@@ -1,3 +1,4 @@
+
 # ClickHouse 架构概述 {#clickhouse-jia-gou-gai-shu}
 
 ClickHouse 是一个真正的列式数据库管理系统（DBMS)。在 ClickHouse 中，数据始终是按列存储的，包括矢量（向量或列块）执行的过程。只要有可能，操作都是基于矢量进行分派的，而不是单个的值，这被称为«矢量化查询执行»，它有利于降低实际的数据处理开销。
@@ -12,7 +13,7 @@ ClickHouse 是一个真正的列式数据库管理系统（DBMS)。在 ClickHous
 
 不同的 `IColumn` 实现（`ColumnUInt8`、`ColumnString` 等）负责不同的列内存布局。内存布局通常是一个连续的数组。对于数据类型为整型的列，只是一个连续的数组，比如 `std::vector`。对于 `String` 列和 `Array` 列，则由两个向量组成：其中一个向量连续存储所有的 `String` 或数组元素，另一个存储每一个 `String` 或 `Array` 的起始元素在第一个向量中的偏移。而 `ColumnConst` 则仅在内存中存储一个值，但是看起来像一个列。
 
-## Field {#field}
+## 字段 {#field}
 
 尽管如此，有时候也可能需要处理单个值。表示单个值，可以使用 `Field`。`Field` 是 `UInt64`、`Int64`、`Float64`、`String` 和 `Array` 组成的联合。`IColumn` 拥有 `operator[]` 方法来获取第 `n` 个值成为一个 `Field`，同时也拥有 `insert` 方法将一个 `Field` 追加到一个列的末尾。这些方法并不高效，因为它们需要处理表示单一值的临时 `Field` 对象，但是有更高效的方法比如 `insertFrom` 和 `insertRangeFrom` 等。
 
@@ -115,7 +116,7 @@ ClickHouse 是一个真正的列式数据库管理系统（DBMS)。在 ClickHous
 
 普通函数不会改变行数 - 它们的执行看起来就像是独立地处理每一行数据。实际上，函数不会作用于一个单独的行上，而是作用在以 `Block` 为单位的数据上，以实现向量查询执行。
 
-还有一些杂项函数，比如 [blockSize](../query_language/functions/other_functions.md#function-blocksize)、[rowNumberInBlock](../query_language/functions/other_functions.md#function-rownumberinblock)，以及 [runningAccumulate](../query_language/functions/other_functions.md#function-runningaccumulate)，它们对块进行处理，并且不遵从行的独立性。
+还有一些杂项函数，比如 [块大小](../sql_reference/functions/other_functions.md#function-blocksize)、[rowNumberInBlock](../sql_reference/functions/other_functions.md#function-rownumberinblock)，以及 [跑累积](../sql_reference/functions/other_functions.md#function-runningaccumulate)，它们对块进行处理，并且不遵从行的独立性。
 
 ClickHouse 具有强类型，因此隐式类型转换不会发生。如果函数不支持某个特定的类型组合，则会抛出异常。但函数可以通过重载以支持许多不同的类型组合。比如，`plus` 函数（用于实现 `+` 运算符）支持任意数字类型的组合：`UInt8` + `Float32`，`UInt16` + `Int8` 等。同时，一些可变参数的函数能够级接收任意数目的参数，比如 `concat` 函数。
 
@@ -159,7 +160,7 @@ ClickHouse 具有强类型，因此隐式类型转换不会发生。如果函数
 
 分布式查询执行没有全局查询计划。每个节点都有针对自己的工作部分的本地查询计划。我们仅有简单的一次性分布式查询执行：将查询发送给远程节点，然后合并结果。但是对于具有高基数的 `GROUP BY` 或具有大量临时数据的 `JOIN` 这样困难的查询的来说，这是不可行的：在这种情况下，我们需要在服务器之间«改组»数据，这需要额外的协调。ClickHouse 不支持这类查询执行，我们需要在这方面进行努力。
 
-## Merge Tree {#merge-tree}
+## 合并树 {#merge-tree}
 
 `MergeTree` 是一系列支持按主键索引的存储引擎。主键可以是一个任意的列或表达式的元组。`MergeTree` 表中的数据存储于«分块»中。每一个分块以主键序存储数据（数据按主键元组的字典序排序）。表的所有列都存储在这些«分块»中分离的 `column.bin` 文件中。`column.bin` 文件由压缩块组成，每一个块通常是 64 KB 到 1 MB 大小的未压缩数据，具体取决于平均值大小。这些块由一个接一个连续放置的列值组成。每一列的列值顺序相同（顺序由主键定义），因此当你按多列进行迭代时，你能够得到相应列的值。
 
