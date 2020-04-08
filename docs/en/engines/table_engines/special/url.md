@@ -8,7 +8,7 @@ toc_title: URL
 Manages data on a remote HTTP/HTTPS server. This engine is similar
 to the [File](file.md) engine.
 
-## Using the Engine In the Clickhouse Server {#using-the-engine-in-the-clickhouse-server}
+## Using the Engine In the ClickHouse Server {#using-the-engine-in-the-clickhouse-server}
 
 The `format` must be one that ClickHouse can use in
 `SELECT` queries and, if necessary, in `INSERTs`. For the full list of supported formats, see
