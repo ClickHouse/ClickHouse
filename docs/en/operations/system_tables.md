@@ -839,7 +839,7 @@ If this query doesn’t return anything, it means that everything is fine.
 
 ## system.settings {#system-tables-system-settings}
 
-Contains information about session settings for current user.  
+Contains information about session settings for current user.
 
 Columns:
 
@@ -858,13 +858,13 @@ Columns:
 
 The following example shows how to get information about settings which name contains `min_i`.
 
-```sql
+``` sql
 SELECT *
 FROM system.settings
 WHERE name LIKE '%min_i%'
 ```
 
-```text
+``` text
 ┌─name────────────────────────────────────────┬─value─────┬─changed─┬─description───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┐
 │ min_insert_block_size_rows                  │ 1048576   │       0 │ Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.                                                                         │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
 │ min_insert_block_size_bytes                 │ 268435456 │       0 │ Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
@@ -874,20 +874,23 @@ WHERE name LIKE '%min_i%'
 
 Using of `WHERE changed` can be useful, for example, when you want to check:
 
-- Whether settings in configuration files are loaded correctly and are in use.
-- Settings that changed in the current session.
+-   Whether settings in configuration files are loaded correctly and are in use.
+-   Settings that changed in the current session.
 
-```sql
+<!-- -->
+
+``` sql
 SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 ```
 
 **See also**
 
-- [Settings](settings/index.md#settings)
-- [Permissions for Queries](settings/permissions_for_queries.md#settings_readonly)
-- [Constraints on Settings](settings/constraints_on_settings.md)
+-   [Settings](settings/index.md#settings)
+-   [Permissions for Queries](settings/permissions_for_queries.md#settings_readonly)
+-   [Constraints on Settings](settings/constraints_on_settings.md)
 
-## system.table_engines
+## system.table\_engines {#system.table_engines}
+
 ``` text
 ┌─name───────────────────┬─value───────┐
 │ max_threads            │ 8           │
