@@ -1,58 +1,61 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 44
+toc_title: "\u0627\u0644\u0632\u0627\u0645\u0627\u062A"
 ---
 
-# Requirements {#requirements}
+# الزامات {#requirements}
 
 ## CPU {#cpu}
 
-For installation from prebuilt deb packages, use a CPU with x86\_64 architecture and support for SSE 4.2 instructions. To run ClickHouse with processors that do not support SSE 4.2 or have AArch64 or PowerPC64LE architecture, you should build ClickHouse from sources.
+برای نصب و راه اندازی از بسته های پیش ساخته دب, استفاده از یک پردازنده با معماری ایکس86\_64 و پشتیبانی برای سوس 4.2 دستورالعمل. برای اجرای clickhouse با پردازنده های که پشتیبانی نمی کند sse 4.2 یا aarch64 یا powerpc64le معماری شما باید ساخت clickhouse از منابع.
 
-ClickHouse implements parallel data processing and uses all the hardware resources available. When choosing a processor, take into account that ClickHouse works more efficiently at configurations with a large number of cores but a lower clock rate than at configurations with fewer cores and a higher clock rate. For example, 16 cores with 2600 MHz is preferable to 8 cores with 3600 MHz.
+تاتر پیاده سازی پردازش داده های موازی و با استفاده از تمام منابع سخت افزاری در دسترس. در هنگام انتخاب یک پردازنده, را به حساب که فاحشه خانه کار می کند موثر تر در تنظیمات با تعداد زیادی از هسته اما نرخ ساعت پایین تر از در تنظیمات با هسته کمتر و نرخ ساعت بالاتر. مثلا, 16 هسته با 2600 مگاهرتز بهتر از است 8 هسته با 3600 مگاهرتز.
 
-Use of **Turbo Boost** and **hyper-threading** technologies is recommended. It significantly improves performance with a typical load.
+استفاده از **افزایش توربو** و **بیش از حد نخ** تکنولوژی توصیه می شود. این به طور قابل توجهی عملکرد را با یک بار معمولی بهبود می بخشد.
 
 ## RAM {#ram}
 
-We recommend to use a minimum of 4GB of RAM in order to perform non-trivial queries. The ClickHouse server can run with a much smaller amount of RAM, but it requires memory for processing queries.
+ما توصیه می کنیم به استفاده از حداقل 4 گیگابایت رم به منظور انجام نمایش داده شد غیر بدیهی. سرور کلیک می توانید با مقدار بسیار کوچکتر از رم اجرا, اما نیاز به حافظه برای پردازش نمایش داده شد.
 
-The required volume of RAM depends on:
+حجم مورد نیاز رم بستگی دارد:
 
--   The complexity of queries.
--   The amount of data that is processed in queries.
+-   پیچیدگی نمایش داده شد.
+-   مقدار داده هایی که در نمایش داده شد پردازش شده است.
 
-To calculate the required volume of RAM, you should estimate the size of temporary data for [GROUP BY](../query_language/select.md#select-group-by-clause), [DISTINCT](../query_language/select.md#select-distinct), [JOIN](../query_language/select.md#select-join) and other operations you use.
+برای محاسبه حجم مورد نیاز رم, شما باید اندازه داده های موقت برای تخمین [GROUP BY](../sql_reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql_reference/statements/select.md#select-distinct), [JOIN](../sql_reference/statements/select.md#select-join) و عملیات دیگر استفاده می کنید.
 
-ClickHouse can use external memory for temporary data. See [GROUP BY in External Memory](../query_language/select.md#select-group-by-in-external-memory) for details.
+تاتر می توانید حافظه خارجی برای داده های موقت استفاده. ببینید [گروه در حافظه خارجی](../sql_reference/statements/select.md#select-group-by-in-external-memory) برای اطلاعات بیشتر.
 
-## Swap File {#swap-file}
+## تعویض پرونده {#swap-file}
 
-Disable the swap file for production environments.
+غیر فعال کردن فایل مبادله برای محیط های تولید.
 
-## Storage Subsystem {#storage-subsystem}
+## زیرسیستم ذخیره سازی {#storage-subsystem}
 
-You need to have 2GB of free disk space to install ClickHouse.
+شما باید 2 گیگابایت فضای دیسک رایگان برای نصب کلیک کنید.
 
-The volume of storage required for your data should be calculated separately. Assessment should include:
+حجم ذخیره سازی مورد نیاز برای داده های خود را باید به طور جداگانه محاسبه می شود. ارزیابی باید شامل موارد زیر باشد:
 
--   Estimation of the data volume.
+-   تخمین حجم داده ها.
 
-    You can take a sample of the data and get the average size of a row from it. Then multiply the value by the number of rows you plan to store.
+    شما می توانید یک نمونه از داده ها و اندازه متوسط یک ردیف از. سپس مقدار ضرب شده توسط تعدادی از ردیف شما برنامه ای برای ذخیره.
 
--   The data compression coefficient.
+-   ضریب فشرده سازی داده ها.
 
-    To estimate the data compression coefficient, load a sample of your data into ClickHouse and compare the actual size of the data with the size of the table stored. For example, clickstream data is usually compressed by 6-10 times.
+    برای تخمین ضریب فشرده سازی داده ها, بار یک نمونه از داده های خود را به خانه رعیتی و مقایسه اندازه واقعی از داده ها با اندازه جدول ذخیره می شود. مثلا, داده های کلیک استریم است که معمولا توسط فشرده 6-10 بار.
 
-To calculate the final volume of data to be stored, apply the compression coefficient to the estimated data volume. If you plan to store data in several replicas, then multiply the estimated volume by the number of replicas.
+برای محاسبه حجم نهایی داده ها ذخیره می شود, اعمال ضریب فشرده سازی به حجم داده های تخمین زده شده. اگر شما قصد دارید برای ذخیره داده ها در چند کپی, سپس ضرب حجم تخمین زده شده توسط تعدادی از کپی.
 
-## Network {#network}
+## شبکه {#network}
 
-If possible, use networks of 10G or higher class.
+در صورت امکان از شبکه های 10 گرم یا کلاس بالاتر استفاده کنید.
 
-The network bandwidth is critical for processing distributed queries with a large amount of intermediate data. In addition, network speed affects replication processes.
+پهنای باند شبکه برای پردازش نمایش داده شد توزیع با مقدار زیادی از داده های متوسط بسیار مهم است. علاوه بر این, سرعت شبکه را تحت تاثیر قرار فرایندهای تکرار.
 
-## Software {#software}
+## نرم افزار {#software}
 
-ClickHouse is developed for the Linux family of operating systems. The recommended Linux distribution is Ubuntu. The `tzdata` package should be installed in the system.
+کلیک هاوس برای خانواده لینوکس سیستم عامل توسعه یافته است. توزیع لینوکس توصیه شده اوبونتو است. این `tzdata` بسته باید در سیستم نصب شود.
 
-ClickHouse can also work in other operating system families. See details in the [Getting started](../getting_started/index.md) section of the documentation.
+تاتر همچنین می توانید در دیگر خانواده سیستم عامل کار. مشاهده اطلاعات در [شروع کار](../getting_started/index.md) بخش از اسناد و مدارک.

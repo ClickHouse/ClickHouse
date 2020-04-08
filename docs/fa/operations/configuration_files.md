@@ -1,32 +1,36 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 50
+toc_title: "\u067E\u0631\u0648\u0646\u062F\u0647\u0647\u0627\u06CC \u067E\u06CC\u06A9\
+  \u0631\u0628\u0646\u062F\u06CC"
 ---
 
-# Configuration Files {#configuration_files}
+# پروندههای پیکربندی {#configuration_files}
 
-ClickHouse supports multi-file configuration management. The main server configuration file is `/etc/clickhouse-server/config.xml`. Other files must be in the `/etc/clickhouse-server/config.d` directory.
+تاتر پشتیبانی از مدیریت پیکربندی چند فایل. فایل پیکربندی سرور اصلی است `/etc/clickhouse-server/config.xml`. فایل های دیگر باید در `/etc/clickhouse-server/config.d` فهرست راهنما.
 
-!!! note "Note"
-    All the configuration files should be in XML format. Also, they should have the same root element, usually `<yandex>`.
+!!! note "یادداشت"
+    تمام فایل های پیکربندی باید در فرمت میلی لیتر باشد. همچنین معمولا باید یک عنصر ریشه داشته باشند `<yandex>`.
 
-Some settings specified in the main configuration file can be overridden in other configuration files. The `replace` or `remove` attributes can be specified for the elements of these configuration files.
+برخی از تنظیمات مشخص شده در فایل پیکربندی اصلی را می توان در دیگر فایل های پیکربندی باطل. این `replace` یا `remove` صفات را می توان برای عناصر این فایل های پیکربندی مشخص شده است.
 
-If neither is specified, it combines the contents of elements recursively, replacing values of duplicate children.
+اگر نه مشخص شده است, ترکیبی از محتویات عناصر به صورت بازگشتی, جایگزینی مقادیر کودکان تکراری.
 
-If `replace` is specified, it replaces the entire element with the specified one.
+اگر `replace` مشخص شده است, جایگزین کل عنصر با یک مشخص.
 
-If `remove` is specified, it deletes the element.
+اگر `remove` مشخص شده است, حذف عنصر.
 
-The config can also define “substitutions”. If an element has the `incl` attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [include\_from](server_settings/settings.md#server_settings-include_from) element in the server config. The substitution values are specified in `/yandex/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify the `optional="true"` attribute (for example, settings for [macros](server_settings/settings.md)).
+پیکربندی همچنین می توانید تعریف “substitutions”. اگر یک عنصر است `incl` ویژگی, جایگزینی مربوطه را از فایل خواهد شد به عنوان ارزش استفاده. به طور پیش فرض, مسیر به فایل با تعویض است `/etc/metrika.xml`. این را می توان در تغییر [include\_from](server_configuration_parameters/settings.md#server_configuration_parameters-include_from) عنصر در پیکربندی سرور. مقادیر جایگزینی در مشخص `/yandex/substitution_name` عناصر در این فایل. اگر جایگزینی مشخص شده در `incl` وجود ندارد, این است که در ورود به سیستم ثبت. برای جلوگیری از جایگزینی ورود به سیستم کلیک کنید `optional="true"` ویژگی (مثلا, تنظیمات برای [& کلاندارها](server_configuration_parameters/settings.md)).
 
-Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
+تعویض همچنین می توانید از باغ وحش انجام شود. برای انجام این کار ویژگی را مشخص کنید `from_zk = "/path/to/node"`. مقدار عنصر با محتویات گره در جایگزین `/path/to/node` در باغ وحش. شما همچنین می توانید یک زیر درخت کل در گره باغ وحش قرار داده و به طور کامل به عنصر منبع وارد می شود.
 
-The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the `users_config` element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
+این `config.xml` فایل می تواند یک پیکربندی جداگانه با تنظیمات کاربر مشخص, پروفایل, و سهمیه. مسیر نسبی به این پیکربندی در مجموعه `users_config` عنصر. به طور پیش فرض است `users.xml`. اگر `users_config` حذف شده است, تنظیمات کاربر, پروفایل, و سهمیه به طور مستقیم در مشخص `config.xml`.
 
-Users configuration can be splitted into separate files similar to `config.xml` and `config.d/`.
-Directory name is defined as `users_config` setting without `.xml` postfix concatenated with `.d`.
-Directory `users.d` is used by default, as `users_config` defaults to `users.xml`.
-For example, you can have separate config file for each user like this:
+پیکربندی کاربران را می توان به فایل های جداگانه شبیه به تقسیم `config.xml` و `config.d/`.
+نام فهرست راهنما به نام `users_config` تنظیم بدون `.xml` پس از مخلوط با `.d`.
+فهرست راهنما `users.d` به طور پیش فرض استفاده می شود, مانند `users_config` پیشفرضها به `users.xml`.
+مثلا, شما می توانید فایل پیکربندی جداگانه برای هر کاربر مثل این دارند:
 
 ``` bash
 $ cat /etc/clickhouse-server/users.d/alice.xml
@@ -47,8 +51,8 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </yandex>
 ```
 
-For each config file, the server also generates `file-preprocessed.xml` files when starting. These files contain all the completed substitutions and overrides, and they are intended for informational use. If ZooKeeper substitutions were used in the config files but ZooKeeper is not available on the server start, the server loads the configuration from the preprocessed file.
+برای هر فایل پیکربندی سرور نیز تولید می کند `file-preprocessed.xml` فایل در هنگام شروع. این فایل ها شامل تمام تعویض های تکمیل شده و لغو می شوند و برای استفاده اطلاعاتی در نظر گرفته می شوند. اگر تعویض باغ وحش در فایل های پیکربندی مورد استفاده قرار گرفت اما باغ وحش در دسترس بر روی شروع سرور نیست, سرور بارهای پیکربندی از فایل پیش پردازش.
 
-The server tracks changes in config files, as well as files and ZooKeeper nodes that were used when performing substitutions and overrides, and reloads the settings for users and clusters on the fly. This means that you can modify the cluster, users, and their settings without restarting the server.
+مسیر سرور تغییر در فایل های پیکربندی, و همچنین فایل ها و گره باغ وحش که در هنگام انجام تعویض و لغو مورد استفاده قرار گرفت, و بارگذاری مجدد تنظیمات برای کاربران و خوشه در پرواز. این به این معنی است که شما می توانید خوشه تغییر, کاربران, و تنظیمات خود را بدون راه اندازی مجدد سرور.
 
-[Original article](https://clickhouse.tech/docs/en/operations/configuration_files/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/configuration_files/) <!--hide-->

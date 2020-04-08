@@ -1,58 +1,62 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 58
+toc_title: "\u0645\u062C\u0648\u0632 \u0628\u0631\u0627\u06CC \u0646\u0645\u0627\u06CC\
+  \u0634 \u062F\u0627\u062F\u0647 \u0634\u062F"
 ---
 
-# Permissions for Queries {#permissions_for_queries}
+# مجوز برای نمایش داده شد {#permissions_for_queries}
 
-Queries in ClickHouse can be divided into several types:
+نمایش داده شد در کلیک خانه را می توان به انواع مختلفی تقسیم شده است:
 
-1.  Read data queries: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
-2.  Write data queries: `INSERT`, `OPTIMIZE`.
-3.  Change settings query: `SET`, `USE`.
-4.  [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+1.  خواندن نمایش داده شد داده: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
+2.  نوشتن نمایش داده شد داده ها: `INSERT`, `OPTIMIZE`.
+3.  تغییر پرسوجوی تنظیمات: `SET`, `USE`.
+4.  [DDL](https://en.wikipedia.org/wiki/Data_definition_language) نمایش داده شد: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
 5.  `KILL QUERY`.
 
-The following settings regulate user permissions by the type of query:
+تنظیمات زیر تنظیم مجوز کاربر بر اساس نوع پرس و جو:
 
--   [readonly](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
--   [allow\_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
+-   [فقط خواندنی](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
+-   [اجازه دادن به \_نشانی](#settings_allow_ddl) — Restricts permissions for DDL queries.
 
-`KILL QUERY` can be performed with any settings.
+`KILL QUERY` را می توان با هر تنظیمات انجام می شود.
 
-## readonly {#settings_readonly}
+## فقط خواندنی {#settings_readonly}
 
-Restricts permissions for reading data, write data and change settings queries.
+محدود مجوز برای خواندن داده ها, نوشتن داده ها و تغییر تنظیمات نمایش داده شد.
 
-See how the queries are divided into types [above](#permissions_for_queries).
+ببینید که چگونه نمایش داده شد به انواع تقسیم [بالا](#permissions_for_queries).
 
-Possible values:
+مقادیر ممکن:
 
 -   0 — All queries are allowed.
 -   1 — Only read data queries are allowed.
 -   2 — Read data and change settings queries are allowed.
 
-After setting `readonly = 1`, the user can’t change `readonly` and `allow_ddl` settings in the current session.
+پس از تنظیم `readonly = 1` کاربر نمیتواند تغییر کند `readonly` و `allow_ddl` تنظیمات در جلسه فعلی.
 
-When using the `GET` method in the [HTTP interface](../../interfaces/http.md), `readonly = 1` is set automatically. To modify data, use the `POST` method.
+هنگام استفاده از `GET` روش در [رابط قام](../../interfaces/http.md), `readonly = 1` به طور خودکار تنظیم شده است. برای تغییر داده ها از `POST` روش.
 
-Setting `readonly = 1` prohibit the user from changing all the settings. There is a way to prohibit the user
-from changing only specific settings, for details see [constraints on settings](constraints_on_settings.md).
+تنظیم `readonly = 1` منع کاربر از تغییر تمام تنظیمات. یک راه برای منع کاربر وجود دارد
+از تغییر تنظیمات تنها خاص, برای اطلاعات بیشتر ببینید [محدودیت در تنظیمات](constraints_on_settings.md).
 
-Default value: 0
+مقدار پیشفرض: 0
 
-## allow\_ddl {#settings_allow_ddl}
+## اجازه دادن به \_نشانی {#settings_allow_ddl}
 
-Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
+اجازه می دهد یا رد می کند [DDL](https://en.wikipedia.org/wiki/Data_definition_language) نمایش داده شد.
 
-See how the queries are divided into types [above](#permissions_for_queries).
+ببینید که چگونه نمایش داده شد به انواع تقسیم [بالا](#permissions_for_queries).
 
-Possible values:
+مقادیر ممکن:
 
 -   0 — DDL queries are not allowed.
 -   1 — DDL queries are allowed.
 
-You can’t execute `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
+شما نمی توانید اجرا کنید `SET allow_ddl = 1` اگر `allow_ddl = 0` برای جلسه فعلی.
 
-Default value: 1
+مقدار پیشفرض: 1
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/permissions_for_queries/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/operations/settings/permissions_for_queries/) <!--hide-->
