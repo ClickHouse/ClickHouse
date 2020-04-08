@@ -58,11 +58,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
 
     String client_protocol_version = params.get("client_protocol_version", REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE);
 
-
     String part_name = params.get("part");
-
-    if (client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE && client_protocol_version != REPLICATION_PROTOCOL_VERSION_WITHOUT_PARTS_SIZE)
-        throw Exception("Unsupported fetch protocol version", ErrorCodes::UNKNOWN_PROTOCOL);
 
     const auto data_settings = data.getSettings();
 
@@ -113,7 +109,7 @@ void Service::processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & /*bo
         MergeTreeData::DataPart::Checksums data_checksums;
 
 
-        if (client_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+        if (client_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
             writeBinary(checksums.getTotalSizeOnDisk(), out);
 
         writeBinary(checksums.files.size(), out);
@@ -227,7 +223,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::fetchPart(
 
 
     DiskSpace::ReservationPtr reservation;
-    if (server_protocol_version == REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
+    if (server_protocol_version >= REPLICATION_PROTOCOL_VERSION_WITH_PARTS_SIZE)
     {
         size_t sum_files_size;
         readBinary(sum_files_size, in);
