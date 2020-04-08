@@ -625,6 +625,9 @@ public:
         return storage_settings.get();
     }
 
+    /// Get relative table path
+    String getRelativeDataPath() const { return relative_data_path; }
+
     /// Get table path on disk
     String getFullPathOnDisk(const DiskPtr & disk) const;
 
