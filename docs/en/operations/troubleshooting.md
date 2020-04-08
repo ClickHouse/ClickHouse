@@ -12,7 +12,7 @@ toc_title: Troubleshooting
 
 ## Installation {#troubleshooting-installation-errors}
 
-### You Cannot Get Deb Packages from Clickhouse Repository with Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+### You Cannot Get Deb Packages from ClickHouse Repository with Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Check firewall settings.
 -   If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
