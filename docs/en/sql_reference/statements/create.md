@@ -24,10 +24,9 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
     ClickHouse creates the `db_name` database on all the servers of a specified cluster.
 
 -   `ENGINE`
-    - [MySQL](../engines/database_engines/mysql.md)  
-    Allows you to retrieve data from the remote MySQL server.
-
-        By default, ClickHouse uses its own [database engine](../engines/database_engines/index.md).
+    - [MySQL](../../engines/database_engines/mysql.md)  
+    Allows you to retrieve data from the remote MySQL server.  
+  By default, ClickHouse uses its own [database engine](../../engines/database_engines/index.md).
 
 ## CREATE TABLE {#create-table-query}
 
