@@ -373,26 +373,19 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
-/// Remove duplicate ORDER BY and DISTINCT from subquries
-void optimizeDuplicateOrderByAndDistinct(ASTPtr & current_ast,
-                                         std::vector<std::vector<std::pair<String, String>>> & upper_order_by,
-                                         bool is_distinct)
+/// Remove duplicate ORDER BY from subquries.
+void optimizeDuplicateOrderBy(ASTPtr & current_ast,
+                              std::vector<std::vector<std::pair<String, String>>> & upper_order_by)
 {
+    if (!current_ast)
+        return;
+
     std::vector<std::pair<String, String>> elems_vector;
-    int removed = 0;
+    int is_duplicate_removed = 0;
 
     if (current_ast->getID() == "SelectQuery")
     {
         auto select_query = current_ast->as<ASTSelectQuery>();
-
-        if (select_query->distinct)
-        {
-            if (is_distinct)
-            {
-                select_query->distinct = false;
-            }
-            is_distinct = true;
-        }
 
         if (select_query->orderBy())
         {
@@ -411,34 +404,61 @@ void optimizeDuplicateOrderByAndDistinct(ASTPtr & current_ast,
                 if (elems_vector == visited_order_by)
                 {
                     select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
-                    removed = 1;
+                    is_duplicate_removed = 1;
                     break;
                 }
             }
 
-            if (!removed)
+            if (!is_duplicate_removed)
                 upper_order_by.push_back(std::move(elems_vector));
         }
     }
 
     for (auto & child : current_ast->children)
     {
-        optimizeDuplicateOrderByAndDistinct(child, upper_order_by, is_distinct);
+        optimizeDuplicateOrderBy(child, upper_order_by);
     }
+
+    if (current_ast->getID() == "SelectQuery" && !is_duplicate_removed)
+    {
+        auto select_query = current_ast->as<ASTSelectQuery>();
+
+        if (select_query->orderBy())
+            upper_order_by.pop_back();
+    }
+}
+
+/// Remove duplicate ORDER BY from subqueries.
+void optimizeDuplicateOrderBy(ASTPtr & current_ast)
+{
+    std::vector<std::vector<std::pair<String, String>>> upper_order_by;
+    optimizeDuplicateOrderBy(current_ast, upper_order_by);
+}
+
+/// Remove duplicate DISTINCT from subquries.
+void optimizeDuplicateDistinct(ASTPtr & current_ast, bool is_distinct)
+{
+    if (!current_ast)
+        return;
 
     if (current_ast->getID() == "SelectQuery")
     {
         auto select_query = current_ast->as<ASTSelectQuery>();
 
-        if (select_query->orderBy() && !removed)
-            upper_order_by.pop_back();
+        if (select_query->distinct)
+        {
+            if (is_distinct)
+            {
+                select_query->distinct = false;
+            }
+            is_distinct = true;
+        }
     }
-}
 
-void optimizeDuplicateOrderByAndDistinct(ASTPtr & current_ast)
-{
-    std::vector<std::vector<std::pair<String, String>>> upper_order_by;
-    optimizeDuplicateOrderByAndDistinct(current_ast, upper_order_by, false);
+    for (auto & child : current_ast->children)
+    {
+        optimizeDuplicateDistinct(child, is_distinct);
+    }
 }
 
 /// Remove duplicate items from LIMIT BY.
@@ -912,8 +932,11 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         /// Remove duplicate items from ORDER BY.
         optimizeOrderBy(select_query);
 
-        /// Remove duplicate ORDER BY and DISTINCT.
-        optimizeDuplicateOrderByAndDistinct(query);
+        /// Remove duplicate ORDER BY from subqueries.
+        optimizeDuplicateOrderBy(query);
+
+        /// Remove duplicate DISTINCT from subqueries.
+        optimizeDuplicateDistinct(query, false);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
