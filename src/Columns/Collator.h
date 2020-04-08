@@ -1,5 +1,9 @@
 #pragma once
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #include <string>
 #include <vector>
 #include <boost/noncopyable.hpp>
@@ -48,5 +52,7 @@ public:
 private:
 
     std::string locale;
+#if USE_ICU
     UCollator * collator;
+#endif
 };

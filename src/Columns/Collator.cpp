@@ -1,9 +1,5 @@
 #include <Columns/Collator.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include "config_core.h"
-#endif
-
 #if USE_ICU
 #    include <unicode/locid.h>
 #    include <unicode/ucnv.h>
