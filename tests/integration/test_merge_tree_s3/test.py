@@ -84,7 +84,12 @@ def drop_table(cluster):
     minio = cluster.minio_client
 
     node.query("DROP TABLE IF EXISTS s3_test")
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 0
+    try:
+        assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 0
+    finally:
+        # Remove extra objects to prevent tests cascade failing
+        for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
+            minio.remove_object(cluster.minio_bucket, obj.object_name)
 
 
 @pytest.mark.parametrize(
@@ -210,7 +215,7 @@ def test_attach_detach_partition(cluster):
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE
 
     node.query("ALTER TABLE s3_test DETACH PARTITION '2020-01-04'")
-    node.query("SET allow_drop_detached=1; ALTER TABLE s3_test DROP DETACHED PARTITION '2020-01-04'")
+    node.query("ALTER TABLE s3_test DROP DETACHED PARTITION '2020-01-04'", settings={"allow_drop_detached": 1})
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(0)"
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD
 
@@ -245,8 +250,7 @@ def test_table_manipulations(cluster):
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE*2
     node.query("RENAME TABLE s3_renamed TO s3_test")
 
-    # TODO: Doesn't work with min_max index.
-    #assert node.query("SET check_query_single_value_result='false'; CHECK TABLE s3_test FORMAT Values") == "(1)"
+    assert node.query("CHECK TABLE s3_test FORMAT Values") == "(1)"
 
     node.query("DETACH TABLE s3_test")
     node.query("ATTACH TABLE s3_test")

@@ -67,8 +67,6 @@ def create_table(cluster):
         ) ENGINE=ReplicatedMergeTree('/clickhouse/{cluster}/tables/test/s3', '{instance}')
         PARTITION BY dt
         ORDER BY (dt, id)
-        SETTINGS
-            old_parts_lifetime=0, index_granularity=512
         """
 
     for node in cluster.instances.values():
@@ -78,11 +76,16 @@ def create_table(cluster):
 @pytest.fixture(autouse=True)
 def drop_table(cluster):
     yield
-    #for node in cluster.instances.values():
-    #    node.query("DROP TABLE IF EXISTS s3_test")
+    for node in cluster.instances.values():
+        node.query("DROP TABLE IF EXISTS s3_test")
 
-    #minio = cluster.minio_client
-    #assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 0
+    minio = cluster.minio_client
+    try:
+        assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 0
+    finally:
+        # Remove extra objects to prevent tests cascade failing
+        for obj in list(minio.list_objects(cluster.minio_bucket, 'data/')):
+            minio.remove_object(cluster.minio_bucket, obj.object_name)
 
 
 def test_insert_select_replicated(cluster):
