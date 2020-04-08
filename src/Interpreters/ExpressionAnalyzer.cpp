@@ -44,6 +44,7 @@
 #include <DataStreams/IBlockInputStream.h>
 
 #include <Dictionaries/IDictionary.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -519,20 +520,41 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
+static bool allowDictJoin(const TableJoin & table_join, const Context & context, String & dict_name)
+{
+    if (!table_join.joined_storage)
+        return false;
+
+    const Names & right_keys = table_join.keyNamesRight();
+    if (right_keys.size() != 1)
+        return false;
+
+    const String & key_name = right_keys[0]; /// TODO: compound name
+
+    auto * dict = dynamic_cast<const StorageDictionary *>(table_join.joined_storage.get());
+    if (!dict)
+        return false;
+
+    dict_name = dict->dictionaryName();
+    auto dictionary = context.getExternalDictionariesLoader().getDictionary(dict_name);
+    if (!dictionary)
+        return false;
+
+    const DictionaryStructure & structure = dictionary->getStructure();
+    return structure.id && (structure.id->name == key_name); /// key is UInt64
+}
+
 static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block,
                                        const Names & original_right_columns, const Context & context)
 {
     bool allow_merge_join = analyzed_join->allowMergeJoin();
 
-    /// TODO: check keys
-    if (auto * storage = analyzed_join->joined_storage.get())
+    String dict_name;
+    if (allowDictJoin(*analyzed_join, context, dict_name))
     {
-        if (auto * dict = dynamic_cast<StorageDictionary *>(storage))
-        {
-            analyzed_join->dictionary_reader = std::make_shared<DictionaryReader>(
-                dict->dictionaryName(), original_right_columns, sample_block.getNamesAndTypesList(), context);
-            return std::make_shared<HashJoin>(analyzed_join, sample_block);
-        }
+        analyzed_join->dictionary_reader = std::make_shared<DictionaryReader>(
+            dict_name, original_right_columns, sample_block.getNamesAndTypesList(), context);
+        return std::make_shared<HashJoin>(analyzed_join, sample_block);
     }
 
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
