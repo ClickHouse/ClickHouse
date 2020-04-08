@@ -83,12 +83,7 @@ struct XorImpl
 
     static inline constexpr bool isSaturable() { return false; }
     static inline constexpr bool isSaturatedValue(bool) { return false; }
-    /** Considering that CH uses UInt8 for representation of boolean values this function
-      * returns 255 as "true" but the current implementation of logical functions suggests that
-      * any nonzero value is "true" as well. Also the current code provides no guarantee
-      * for "true" to be represented with the value of 1.
-      */
-    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return (a != b) ? Ternary::True : Ternary::False; }
+    static inline constexpr ResultType apply(UInt8 a, UInt8 b) { return !!a != !!b; }
     static inline constexpr bool specialImplementationForNulls() { return false; }
 
 #if USE_EMBEDDED_COMPILER
