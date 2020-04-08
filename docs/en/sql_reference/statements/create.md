@@ -462,7 +462,7 @@ Creates a [quota](../../operations/quotas.md) that can be assigned to a user of 
 CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
     [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
-        {[SET] MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] | [SET] TRACKING} [,...]]
+        {[SET] MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] | [SET] TRACKING} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
 

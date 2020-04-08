@@ -536,7 +536,7 @@ Changes roles.
 
 ### Syntax {#alter-role-syntax}
 
-```sql
+``` sql
 ALTER ROLE [IF EXISTS] name [ON CLUSTER]
     [RENAME TO new_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
@@ -570,7 +570,7 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER]
     [RENAME TO new_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
     [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
-        {[SET] MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] |
+        {[SET] MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] |
          [SET] TRACKING | UNSET TRACKING} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
 ```
@@ -580,13 +580,12 @@ ALTER QUOTA [IF EXISTS] name [ON CLUSTER]
 
 Changes quotas.
 
-### Syntax {#alter-quota-syntax}
+### Syntax {#alter-settings-profile-syntax}
 
 ``` sql
 ALTER SETTINGS PROFILE [IF EXISTS] name [ON CLUSTER]
     [RENAME TO new_name]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
-
 
 [Original article](https://clickhouse.tech/docs/en/query_language/alter/) <!--hide-->
