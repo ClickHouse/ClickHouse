@@ -376,6 +376,7 @@ DatabaseCatalog::DatabaseCatalog(Context * global_context_)
 {
     if (!global_context)
         throw Exception("DatabaseCatalog is not initialized. It's a bug.", ErrorCodes::LOGICAL_ERROR);
+    drop_delay_s = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_s", 60);
 }
 
 DatabaseCatalog & DatabaseCatalog::init(Context * global_context_)
@@ -551,11 +552,11 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         drop_time = Poco::File(dropped_metadata_path).getLastModified().epochTime();
     }
 
-    std::lock_guard lock(tables_marked_droped_mutex);
+    std::lock_guard lock(tables_marked_dropped_mutex);
     if (ignore_delay)
-        tables_marked_droped.push_front({table_id, table, dropped_metadata_path, 0});
+        tables_marked_dropped.push_front({table_id, table, dropped_metadata_path, 0});
     else
-        tables_marked_droped.push_back({table_id, table, dropped_metadata_path, drop_time});
+        tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time});
 }
 
 void DatabaseCatalog::dropTableDataTask()
@@ -563,19 +564,19 @@ void DatabaseCatalog::dropTableDataTask()
     TableMarkedAsDropped table;
     try
     {
-        std::lock_guard lock(tables_marked_droped_mutex);
+        std::lock_guard lock(tables_marked_dropped_mutex);
         time_t current_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        auto it = std::find_if(tables_marked_droped.begin(), tables_marked_droped.end(), [current_time](const auto & elem)
+        auto it = std::find_if(tables_marked_dropped.begin(), tables_marked_dropped.end(), [&](const auto & elem)
         {
             bool not_in_use = !elem.table || elem.table.unique();
             bool old_enough = elem.drop_time + drop_delay_s < current_time;
             return not_in_use && old_enough;
         });
-        if (it != tables_marked_droped.end())
+        if (it != tables_marked_dropped.end())
         {
             table = std::move(*it);
             LOG_INFO(log, "Will try drop " + table.table_id.getNameForLogs());
-            tables_marked_droped.erase(it);
+            tables_marked_dropped.erase(it);
         }
     }
     catch (...)
@@ -595,8 +596,8 @@ void DatabaseCatalog::dropTableDataTask()
             tryLogCurrentException(log, "Cannot drop table " + table.table_id.getNameForLogs() +
                                         ". Will retry later.");
             {
-                std::lock_guard lock(tables_marked_droped_mutex);
-                tables_marked_droped.emplace_back(std::move(table));
+                std::lock_guard lock(tables_marked_dropped_mutex);
+                tables_marked_dropped.emplace_back(std::move(table));
             }
         }
     }
