@@ -3,7 +3,7 @@ toc_priority: 34
 toc_title: SummingMergeTree
 ---
 
-# Summingmergetree {#summingmergetree}
+# SummingMergeTree {#summingmergetree}
 
 The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](mergetree.md)) with one row which contains summarized values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
