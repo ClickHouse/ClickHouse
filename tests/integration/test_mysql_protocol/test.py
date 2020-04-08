@@ -279,8 +279,11 @@ def test_java_client(server_address, java_container):
         reference = fp.read()
 
     code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
-                                                       'default'.format(host=server_address, port=server_port), demux=True)
+                                                       'abc'.format(host=server_address, port=server_port), demux=True)
+    assert code == 1
 
+    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
+                                                       'default'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
     assert stdout == reference
 
