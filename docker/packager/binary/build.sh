@@ -16,15 +16,15 @@ rm -f CMakeCache.txt
 cmake .. -LA -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSANITIZE=$SANITIZER $CMAKE_FLAGS
 ninja
 ccache --show-stats ||:
-mv ./dbms/programs/clickhouse* /output
-mv ./dbms/unit_tests_dbms /output
+mv ./programs/clickhouse* /output
+mv ./unit_tests_dbms /output
 find . -name '*.so' -print -exec mv '{}' /output \;
 find . -name '*.so.*' -print -exec mv '{}' /output \;
 
 # Different files for performance test.
 if [ "performance" == "$COMBINED_OUTPUT" ]
 then
-    cp -r ../dbms/tests/performance /output
+    cp -r ../tests/performance /output
     rm /output/unit_tests_dbms ||:
     rm /output/clickhouse-odbc-bridge ||:
 fi
@@ -33,9 +33,9 @@ fi
 if [ "" != "$COMBINED_OUTPUT" ]
 then
     mkdir -p /output/config
-    cp ../dbms/programs/server/config.xml /output/config
-    cp ../dbms/programs/server/users.xml /output/config
-    cp -r ../dbms/programs/server/config.d /output/config
+    cp ../programs/server/config.xml /output/config
+    cp ../programs/server/users.xml /output/config
+    cp -r ../programs/server/config.d /output/config
     tar -czvf "$COMBINED_OUTPUT.tgz" /output
     rm -r /output/*
     mv "$COMBINED_OUTPUT.tgz" /output

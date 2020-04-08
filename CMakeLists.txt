@@ -398,8 +398,13 @@ macro (add_executable target)
     endif()
 endmacro()
 
+set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNAL "Path to generated configuration files.")
+include_directories(${ConfigIncludePath})
+
 add_subdirectory (libs)
+add_subdirectory (programs)
+add_subdirectory (src)
+add_subdirectory (tests)
 add_subdirectory (utils)
-add_subdirectory (dbms)
 
 include (cmake/print_include_directories.cmake)
