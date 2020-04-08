@@ -16,7 +16,7 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Storages/IStorage.h>
 #include <boost/algorithm/string/replace.hpp>
-#include <boost/regex.hpp>
+#include <regex>
 
 #if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
@@ -363,25 +363,25 @@ void MySQLHandlerSSL::finishHandshakeSSL(size_t packet_size, char * buf, size_t 
 
 static bool isFederatedServerSetupSetCommand(const String & query)
 {
-    static const boost::regex expr{
+    static const std::regex expr{
         "(^(SET NAMES(.*)))"\
         "|(^(SET character_set_results(.*)))"\
         "|(^(SET FOREIGN_KEY_CHECKS(.*)))"\
         "|(^(SET AUTOCOMMIT(.*)))"\
         "|(^(SET sql_mode(.*)))"\
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"\
-        , boost::regex::icase};
-    return 1 == boost::regex_match(query, expr);
+        , std::regex::icase};
+    return 1 == std::regex_match(query, expr);
 }
 
 static bool isFederatedServerSetupSelectVarCommand(const String & query)
 {
-     static const boost::regex expr{
+     static const std::regex expr{
          "|(^(SELECT @@(.*)))"\
          "|(^((/\\*(.*)\\*/)([ \t]*)(SELECT([ \t]*)@@(.*))))"\
          "|(^((/\\*(.*)\\*/)([ \t]*)(SHOW VARIABLES(.*))))"\
-         , boost::regex::icase};
-     return 1 == boost::regex_match(query, expr);
+         , std::regex::icase};
+     return 1 == std::regex_match(query, expr);
 }
 
 const String MySQLHandler::show_table_status_replacement_query("SELECT"
