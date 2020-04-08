@@ -24,7 +24,8 @@ def started_cluster():
 
 def drop_table(nodes, table_name):
     for node in nodes:
-        node.query("DROP TABLE IF EXISTS {}".format(table_name))
+        node.query("DROP TABLE IF EXISTS {} NO DELAY".format(table_name))
+    time.sleep(1)
 
 def test_ttl_columns(started_cluster):
     drop_table([node1, node2], "test_ttl")

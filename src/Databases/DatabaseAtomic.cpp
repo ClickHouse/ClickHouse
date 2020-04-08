@@ -21,7 +21,7 @@ namespace ErrorCodes
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
 {
 public:
-    AtomicDatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && base)
+    explicit AtomicDatabaseTablesSnapshotIterator(DatabaseTablesSnapshotIterator && base)
         : DatabaseTablesSnapshotIterator(std::move(base)) {}
     UUID uuid() const override { return table()->getStorageID().uuid; }
 };

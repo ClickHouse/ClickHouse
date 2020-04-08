@@ -194,7 +194,6 @@ private:
     void dropTableDataTask();
     void dropTableFinally(const TableMarkedAsDropped & table) const;
 
-    static constexpr time_t drop_delay_s = 10;
     static constexpr size_t reschedule_time_ms = 100;
 
 private:
@@ -219,10 +218,11 @@ private:
     /// If you capture mutex and ddl_guards_mutex, then you need to grab them strictly in this order.
     mutable std::mutex ddl_guards_mutex;
 
-    TablesMarkedAsDropped tables_marked_droped;
-    mutable std::mutex tables_marked_droped_mutex;
+    TablesMarkedAsDropped tables_marked_dropped;
+    mutable std::mutex tables_marked_dropped_mutex;
 
     std::unique_ptr<BackgroundSchedulePoolTaskHolder> drop_task;
+    time_t drop_delay_s;
 };
 
 }

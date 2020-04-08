@@ -54,17 +54,11 @@ namespace ErrorCodes
 
 #endif
 
-#if !defined(__NR_renameat2)
-[[noreturn]]
-#endif
 void renameNoReplace(const std::string & old_path, const std::string & new_path)
 {
     renameat2(old_path, new_path, RENAME_NOREPLACE);
 }
 
-#if !defined(__NR_renameat2)
-[[noreturn]]
-#endif
 void renameExchange(const std::string & old_path, const std::string & new_path)
 {
     renameat2(old_path, new_path, RENAME_EXCHANGE);
