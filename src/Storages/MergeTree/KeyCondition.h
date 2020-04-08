@@ -22,7 +22,7 @@ using FunctionBasePtr = std::shared_ptr<IFunctionBase>;
 class ExpressionActions;
 using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 
-/** A field, that can be stored in two reperesenation:
+/** A field, that can be stored in two reperesenations:
   * - A standalone field.
   * - A field with reference to it's position in block.
   *   It's needed for execution functions on ranges during
