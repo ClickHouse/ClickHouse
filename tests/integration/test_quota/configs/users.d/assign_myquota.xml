@@ -1,7 +1,7 @@
 <yandex>
     <users>
         <default>
-            <access_management>1</access_management>
+            <quota>myQuota</quota>
         </default>
     </users>
 </yandex>
