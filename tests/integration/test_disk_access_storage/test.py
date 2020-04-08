@@ -22,7 +22,7 @@ def create_entities():
     instance.query("CREATE USER u2 IDENTIFIED BY 'qwerty' HOST LOCAL DEFAULT ROLE rx")
     instance.query("CREATE SETTINGS PROFILE s2 SETTINGS PROFILE s1 TO u2")
     instance.query("CREATE ROW POLICY p ON mydb.mytable FOR SELECT USING a<1000 TO u1, u2")
-    instance.query("CREATE QUOTA q FOR INTERVAL 1 HOUR SET MAX QUERIES = 100 TO ALL EXCEPT rx")
+    instance.query("CREATE QUOTA q FOR INTERVAL 1 HOUR MAX QUERIES 100 TO ALL EXCEPT rx")
 
 
 @pytest.fixture(autouse=True)
@@ -41,7 +41,7 @@ def test_create():
         assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS PROFILE s1\n"
         assert instance.query("SHOW CREATE USER u2") == "CREATE USER u2 HOST LOCAL DEFAULT ROLE rx\n"
         assert instance.query("SHOW CREATE ROW POLICY p ON mydb.mytable") == "CREATE ROW POLICY p ON mydb.mytable FOR SELECT USING a < 1000 TO u1, u2\n"
-        assert instance.query("SHOW CREATE QUOTA q") == "CREATE QUOTA q KEYED BY \\'none\\' FOR INTERVAL 1 HOUR MAX QUERIES = 100 TO ALL EXCEPT rx\n"
+        assert instance.query("SHOW CREATE QUOTA q") == "CREATE QUOTA q KEYED BY \\'none\\' FOR INTERVAL 1 HOUR MAX QUERIES 100 TO ALL EXCEPT rx\n"
         assert instance.query("SHOW GRANTS FOR u1") == ""
         assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx TO u2\n"
         assert instance.query("SHOW CREATE ROLE rx") == "CREATE ROLE rx SETTINGS PROFILE s1\n"
