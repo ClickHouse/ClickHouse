@@ -8,9 +8,6 @@
 #include <stdexcept>
 #include <vector>
 
-#include <dlfcn.h>
-#include <link.h>
-
 #if defined(OS_LINUX) && !defined(THREAD_SANITIZER)
 #    define USE_PHDR_CACHE 1
 #endif
@@ -24,6 +21,8 @@
 
 /// Thread Sanitizer uses dl_iterate_phdr function on initialization and fails if we provide our own.
 #if defined(USE_PHDR_CACHE)
+#    include <dlfcn.h>
+#    include <link.h>
 
 namespace
 {
