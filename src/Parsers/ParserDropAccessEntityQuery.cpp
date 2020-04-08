@@ -117,10 +117,18 @@ bool ParserDropAccessEntityQuery::parseImpl(Pos & pos, ASTPtr & node, Expected &
             return false;
     }
 
+    String cluster;
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+            return false;
+    }
+
     auto query = std::make_shared<ASTDropAccessEntityQuery>(kind);
     node = query;
 
     query->if_exists = if_exists;
+    query->cluster = std::move(cluster);
     query->names = std::move(names);
     query->row_policies_names = std::move(row_policies_names);
 

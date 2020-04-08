@@ -2,6 +2,7 @@
 #include <Parsers/ASTCreateQuotaQuery.h>
 #include <Parsers/ASTExtendedRoleSet.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
 #include <ext/range.h>
@@ -76,9 +77,15 @@ void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, 
 
 BlockIO InterpreterCreateQuotaQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTCreateQuotaQuery &>();
+    auto & query = query_ptr->as<ASTCreateQuotaQuery &>();
     auto & access_control = context.getAccessControlManager();
     context.checkAccess(query.alter ? AccessType::ALTER_QUOTA : AccessType::CREATE_QUOTA);
+
+    if (!query.cluster.empty())
+    {
+        query.replaceCurrentUserTagWithName(context.getUserName());
+        return executeDDLQueryOnCluster(query_ptr, context);
+    }
 
     std::optional<ExtendedRoleSet> roles_from_query;
     if (query.roles)

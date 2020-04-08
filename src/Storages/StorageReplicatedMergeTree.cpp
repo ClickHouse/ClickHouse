@@ -256,6 +256,15 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
     else
     {
+        /// In old tables this node may missing or be empty
+        String replica_metadata;
+        bool replica_metadata_exists = current_zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
+        if (!replica_metadata_exists || replica_metadata.empty())
+        {
+            ReplicatedMergeTreeTableMetadata current_metadata(*this);
+            current_zookeeper->createOrUpdate(replica_path + "/metadata", current_metadata.toString(), zkutil::CreateMode::Persistent);
+        }
+
         checkTableStructure(replica_path);
         checkParts(skip_sanity_checks);
 
@@ -263,8 +272,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         {
             metadata_version = parse<int>(current_zookeeper->get(replica_path + "/metadata_version"));
         }
-        else /// This replica was created on old version, so we have to take version of global node
+        else
         {
+            /// This replica was created with old clickhouse version, so we have
+            /// to take version of global node. If somebody will alter our
+            /// table, then we will fill /metadata_version node in zookeeper.
+            /// Otherwise on the next restart we can again use version from
+            /// shared metadata node because it was not changed.
             Coordination::Stat metadata_stat;
             current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
             metadata_version = metadata_stat.version;
