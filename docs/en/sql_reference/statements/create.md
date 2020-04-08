@@ -337,7 +337,7 @@ There are multiple ways of user identification:
 User host is a host from which a connection to ClickHouse server could be established. Host can be specified in the `HOST` section of query by the following ways:
 
 - `HOST IP 'ip_address_or_subnetwork'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). Examples: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`.
-- `HOST ANY` — User can connect from any location.
+- `HOST ANY` — User can connect from any location. This is default option.
 - `HOST LOCAL` — User can connect only locally.
 - `HOST NAME 'FQDN'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
 - `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.

@@ -76,15 +76,15 @@ Top scope privileges:
 - [OPTIMIZE](#grant-optimize)
 - [SHOW](#grant-show)
 - [EXISTS](#grant-exists)
-- [KILL](#grant-kill)
+- [KILL QUERY](#grant-kill-query)
 - [CREATE USER](#grant-create-user)
-- [ROLE ADMIN](#grant-role-admin)
+- [ACCESS MANAGEMENT](#grant-access-management)
 - [SYSTEM](#grant-system)
 - [INTROSPECTION](#grant-introspection)
+- [SOURCES](#grant-SOURCES)
 - [dictGet](#grant-dictget)
-- [Table Functions](#grant-table-functions)
 
-The special privilege [ALL](#grant-all) grants all the privileges to a user account or a role.
+The special privilege [ALL](#grant-all) grants all the privileges to a user account or a role. The opposite [NONE](#grant-none) privilege revokes all the privileges from a user account or a role.
 
 By default, a user account or a role has no privileges.
 
@@ -129,30 +129,33 @@ Allows to perform [ALTER](alter.md) queries corresponding to the following hiera
 
 - `ALTER`
     - `ALTER TABLE`
-        - `UPDATE`
-        - `DELETE`
+        - `ALTER UPDATE`. Aliases: `UPDATE`
+        - `ALTER DELETE`. Aliases: `DELETE`
         - `ALTER COLUMN`
-            - `ADD COLUMN`
-            - `DROP COLUMN`
-            - `MODIFY COLUMN`
-            - `COMMENT COLUMN`
-        - `INDEX`
-            - `ALTER ORDER BY`
-            - `ADD INDEX`
-            - `DROP INDEX`
-            - `MATERIALIZE INDEX`
-            - `CLEAR INDEX`
-        - `ALTER CONSTRAINT`
-            - `ADD CONSTRAINT`
-            - `DROP CONSTRAINT`
-        - `MODIFY TTL`
-        - `MODIFY SETTING`
-        - `MOVE PARTITION`
-        - `FETCH PARTITION`
-        - `FREEZE PARTITION`
-        - `ALTER VIEW`
-            - `REFRESH VIEW`
-            - `MODIFY VIEW QUERY`
+            - `ALTER ADD COLUMN`. Aliases: `ADD COLUMN`
+            - `ALTER DROP COLUMN`. Aliases: `DROP COLUMN`
+            - `ALTER MODIFY COLUMN`. Aliases: `MODIFY COLUMN`
+            - `ALTER COMMENT COLUMN`. Aliases: `COMMENT COLUMN`
+            - `ALTER CLEAR COLUMN`. Aliases: `CLEAR COLUMN`
+            - `ALTER RENAME COLUMN`. Aliases: `RENAME COLUMN`
+        - `ALTER INDEX`. Aliases: `INDEX`
+            - `ALTER ORDER BY`. Aliases: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
+            - `ALTER ADD INDEX`. Aliases: `ADD INDEX`
+            - `ALTER DROP INDEX`. Aliases: `DROP INDEX`
+            - `ALTER MATERIALIZE INDEX`. Aliases: `MATERIALIZE INDEX`
+            - `ALTER CLEAR INDEX`. Aliases: `CLEAR INDEX`
+        - `ALTER CONSTRAINT`. Aliases: `CONSTRAINT`
+            - `ALTER ADD CONSTRAINT`. Aliases: `ADD CONSTRAINT`
+            - `ALTER DROP CONSTRAINT`. Aliases: `DROP CONSTRAINT`
+        - `ALTER TTL`. Aliases: `ALTER MODIFY TTL`, `MODIFY TTL`
+        - `ALTER MATERIALIZE TTL`. Aliases: `MATERIALIZE TTL`
+        - `ALTER SETTINGS`. Aliases: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
+        - `ALTER MOVE PARTITION`. Aliases: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
+        - `ALTER FETCH PARTITION`. Aliases: `FETCH PARTITION`
+        - `ALTER FREEZE PARTITION`. Aliases: `FREEZE PARTITION`
+    - `ALTER VIEW`
+        - `ALTER VIEW REFRESH `. Aliases: `ALTER LIVE VIEW REFRESH`, `REFRESH VIEW`
+        - `ALTER VIEW MODIFY QUERY`. Aliases: `ALTER TABLE MODIFY QUERY`
 
 Examples of how this hierarchy is treated:
 
@@ -168,14 +171,14 @@ Examples of how this hierarchy is treated:
 
 ### CREATE {#grant-create}
 
-Allows to perform [CREATE](create.md) DDL-queries corresponding to the following hierarchy of privileges:
+Allows to perform [CREATE](create.md) and [ATTACH](misc.md#attach) DDL-queries corresponding to the following hierarchy of privileges:
 
 - `CREATE`
     - `CREATE DATABASE`
     - `CREATE TABLE`
-        - `CREATE VIEW`
-    - `CREATE TEMPORARY TABLE`
+    - `CREATE VIEW`
     - `CREATE DICTIONARY`
+    - `CREATE TEMPORARY TABLE`
 
 **Notes**
 
@@ -188,8 +191,9 @@ Allows to perform [DROP](misc.md#drop-statement) queries corresponding to the fo
 - `DROP`
     - `DROP DATABASE`
     - `DROP TABLE`
-        - `DROP VIEW`
+    - `DROP VIEW`
     - `DROP DICTIONARY`
+
 
 ### TRUNCATE {#grant-truncate}
 
@@ -206,22 +210,27 @@ Allows to perform the [OPTIMIZE TABLE](misc.md#misc_operations-optimize) queries
 
 ### SHOW {#grant-show}
 
-Allows to perform the [SHOW CREATE TABLE](show.md#show-create-table-statement) queries.
+Allows to perform `SHOW`, `DESCRIBE`, `USE`, and `EXISTS` queries, corresponding to the following hierarchy of privileges:
+
+- `SHOW`
+    - `SHOW DATABASES`. Allows to execute `SHOW DATABASES`, `SHOW CREATE DATABASE`, `USE <database>` queries.
+    - `SHOW TABLES`. Allows to execute `SHOW TABLES`, `EXISTS <table>`, `CHECK <table>` queries.
+    - `SHOW COLUMNS`.  Allows to execute `SHOW CREATE TABLE`, `DESCRIBE` queries.
+    - `SHOW DICTIONARIES`. Allows to execute `SHOW DICTIONARIES`, `SHOW CREATE DICTIONARY`, `EXISTS <dictionary>` queries.
 
 **Notes**
 
-A user has the `SHOW` privilege if it has any another right concerning the specified table.
+A user has the `SHOW` privilege if it has any another privilege concerning the specified table, dictionary or database.
+
 
 ### EXISTS {#grant-exists}
 
 Allows to perform the [EXISTS](misc.md#exists-statement) queries.
 
-### KILL {#grant-kill}
+
+### KILL QUERY {#grant-kill-query}
 
 Allows to perform the [KILL](misc.md#kill-query-statement) queries corresponding to the following hierarchy of privileges:
-
-- `KILL`
-    - `KILL QUERY`
 
 **Notes**
 
@@ -241,88 +250,123 @@ Allows to manage user accounts, roles and row policy by `CREATE` and `DROP` quer
     - `CREATE QUOTA`
         - `DROP QUOTA`
 
-### ROLE ADMIN {#grant-role-admin}
 
-Allows a user to grant and revoke roles of other users.
+### ACCESS MANAGEMENT {#grant-access-management}
 
-**Syntax**
+Allows a user to perform queries that manage users, roles and row policies.
 
-```sql
-ROLE ADMIN
-```
+- `ACCESS MANAGEMENT`
+    - `CREATE USER`
+    - `ALTER USER`
+    - `DROP USER`
+    - `CREATE ROLE`
+    - `ALTER ROLE`
+    - `DROP ROLE`
+    - `CREATE ROW POLICY`. Aliases: `CREATE POLICY`
+    - `ALTER ROW POLICY`. Aliases: `ALTER POLICY`
+    - `DROP ROW POLICY`. Aliases: `DROP POLICY`
+    - `CREATE QUOTA`
+    - `ALTER QUOTA`
+    - `DROP QUOTA`
+    - `CREATE SETTINGS PROFILE`. Aliases: `CREATE PROFILE`
+    - `ALTER SETTINGS PROFILE`. Aliases: `ALTER PROFILE`
+    - `DROP SETTINGS PROFILE`. Aliases: `DROP PROFILE`
+    - `SHOW ACCESS`
+        - `SHOW_USERS`. Aliases: `SHOW CREATE USER`
+        - `SHOW_ROLES`. Aliases: `SHOW CREATE ROLE`
+        - `SHOW_ROW_POLICIES`. Aliases: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
+        - `SHOW_QUOTAS`. Aliases: `SHOW CREATE QUOTA`
+        - `SHOW_SETTINGS_PROFILES`. Aliases: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
+
+The `ROLE ADMIN` privilege allows to grant and revoke the roles which are not granted to the current user with admin option.
 
 ### SYSTEM {#grant-system}
 
 Allows a user to perform the [SYSTEM](system.md) queries corresponding to the following hierarchy of privileges.
 
 - `SYSTEM`
-    - `SHUTDOWN`
-    - `DROP CACHE`
-    - `RELOAD CONFIG`
-    - `RELOAD DICTIONARY`
-    - `STOP MERGES`
-    - `STOP TTL MERGES`
-    - `STOP FETCHES`
-    - `STOP MOVES`
-    - `STOP DISTRIBUTED_SENDS`
-    - `STOP REPLICATED_SENDS`
-    - `SYNC REPLICA`
-    - `RESTART REPLICA`
-    - `FLUSH DISTRIBUTED`
-    - `FLUSH LOGS`
+    - `SYSTEM SHUTDOWN`. Aliases: `SYSTEM KILL`, `SHUTDOWN`
+    - `SYSTEM DROP CACHE`. Aliases: `DROP CACHE`
+        - `SYSTEM DROP DNS CACHE`. Aliases: `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
+        - `SYSTEM DROP MARK CACHE`. Aliases: `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
+        - `SYSTEM DROP UNCOMPRESSED CACHE`. Aliases: `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
+    - `SYSTEM RELOAD`
+        - `SYSTEM RELOAD CONFIG`. Aliases: `RELOAD CONFIG`
+        - `SYSTEM RELOAD DICTIONARY`. Aliases: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+        - `SYSTEM RELOAD EMBEDDED DICTIONARIES`. Aliases: R`ELOAD EMBEDDED DICTIONARIES`
+    - `SYSTEM MERGES`. Aliases: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
+    - `SYSTEM TTL MERGES`. Aliases: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
+    - `SYSTEM FETCHES`. Aliases: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
+    - `SYSTEM MOVES`. Aliases: `SYSTEM STOP MOVES`, `SYSTEM START MOVES`, `STOP MOVES`, `START MOVES`
+    - `SYSTEM SENDS`. Aliases: `SYSTEM STOP SENDS`, `SYSTEM START SENDS`, `STOP SENDS`, `START SENDS`
+        - `SYSTEM DISTRIBUTED SENDS`. Aliases: `SYSTEM STOP DISTRIBUTED SENDS`, `SYSTEM START DISTRIBUTED SENDS`, `STOP DISTRIBUTED SENDS`, `START DISTRIBUTED SENDS`
+        - `SYSTEM REPLICATED SENDS`. Aliases: `SYSTEM STOP REPLICATED SENDS`, `SYSTEM START REPLICATED SENDS`, `STOP REPLICATED SENDS`, `START REPLICATED SENDS`
+    - `SYSTEM REPLICATION QUEUES`. Aliases: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
+    - `SYSTEM SYNC REPLICA`. Aliases: `SYNC REPLICA`
+    - `SYSTEM RESTART REPLICA`. Aliases: `RESTART REPLICA`
+    - `SYSTEM FLUSH`
+        - `SYSTEM FLUSH DISTRIBUTED`. Aliases: `FLUSH DISTRIBUTED`
+        - `SYSTEM FLUSH LOGS`. Aliases: `FLUSH LOGS`
+
+The `SYSTEM RELOAD EMBEDDED DICTIONARIES` privilege implicitly granted by the `SYSTEM RELOAD DICTIONARY ON *.*` privilege.
 
 
 ### INTROSPECTION {#grant-introspection}
 
 Allows using [introspection](../../operations/optimizing_performance/sampling_query_profiler.md) functions.
 
-- `INTROSPECTION`
-    - `addressToLine()`
-    - `addressToSymbol()`
-    - `demangle()`
+- `INTROSPECTION`. Aliases: `INTROSPECTION FUNCTIONS`
+    - `addressToLine`
+    - `addressToSymbol`
+    - `demangle`
 
 
-### dictGet {#grant-dictget}
-
-Allows a user to execute the [dictGet](../functions/ext_dict_functions.md#dictget) function.
-
-Some kinds of ClickHouse [dictionaries](../dictionaries/index.md) are not stored in a database. Use the `'no_database'` placeholder to grant a privilege to use `dictGet()` with such dictionaries.
-
-**Examples**
-
-- `GRANT dictGet() ON mydb.mydictionary TO john`
-- `GRANT dictGet() ON mydictionary TO john`
-- `GRANT dictGet() ON 'no_database'.mydictionary TO john`
-
-### Table Functions {#grant-table-functions}
+### SOURCES {#grant-sources}
 
 Allows using [table functions](../table_functions/index.md).
 
-- `TABLE FUNCTIONS`
-    - `file()`
-    - `url()`
-    - `input()`
-    - `values()`
-    - `numbers()`
-    - `merge()`
-    - `remote()`
-    - `mysql()`
-    - `odbc()`
-    - `jdbc()`
-    - `jdfs()`
-    - `s3()`
+- `SOURCES`
+    - `FILE`
+    - `URL`
+    - `REMOTE`
+    - `YSQL`
+    - `ODBC`
+    - `JDBC`
+    - `HDFS`
+    - `S3`
 
 The `TABLE FUNCTIONS` privilege enables use of all the table functions. Also you can grant a privilege for each function individually.
 
 Table functions create temporary tables. Another way of creating a temporary table is the [CREATE TEMPORARY TABLE](create.md#temporary-tables) statement. Privileges for these ways of creating a table are granted independently and don't affect each other.
 
+
+### dictGet {#grant-dictget}
+
+- `dictGet`. Aliases: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+
+Allows a user to execute [dictGet](../functions/ext_dict_functions.md#dictget), [dictHas](..functions/ext_dict_functions.md#dicthas), [dictGetHierarchy](../functions/ext_dict_functions.md#dictgethierarchy), [dictIsIn](../functions/ext_dict_functions.md#dictisin) functions.
+
+Some kinds of ClickHouse [dictionaries](../dictionaries/index.md) are not stored in a database. Use the `'no_database'` placeholder to grant a privilege to use `dictGet` with such dictionaries.
+
+**Examples**
+
+- `GRANT dictGet ON mydb.mydictionary TO john`
+- `GRANT dictGet ON mydictionary TO john`
+- `GRANT dictGet ON 'no_database'.mydictionary TO john`
+
 ### ALL {#grant-all}
 
-Grants all the privileges on regulated entity to a user account or a role.
+Grants all the privileges on regulated entity to a user account or a role._
+
+### NONE {#grant-none}
+
+Revokes all the privileges.
+
 
 ### GRANT OPTION {#grant-option-privilege}
 
 To use `GRANT`, a user account must have the `GRANT OPTION` privilege. User can grant privileges only inside the scope of their account privileges.
+
 
 ### ADMIN OPTION {#admin-option-privilege}
 
