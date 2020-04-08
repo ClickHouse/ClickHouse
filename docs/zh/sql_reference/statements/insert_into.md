@@ -13,9 +13,9 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 -   如果存在`DEFAULT`表达式，根据`DEFAULT`表达式计算被填充的值。
 -   如果没有定义`DEFAULT`表达式，则填充零或空字符串。
 
-如果 [strict\_insert\_defaults=1](../operations/settings/settings.md)，你必须在查询中列出所有没有定义`DEFAULT`表达式的列。
+如果 [strict\_insert\_defaults=1](../../operations/settings/settings.md)，你必须在查询中列出所有没有定义`DEFAULT`表达式的列。
 
-数据可以以ClickHouse支持的任何 [输入输出格式](../interfaces/formats.md#formats) 传递给INSERT。格式的名称必须显示的指定在查询中：
+数据可以以ClickHouse支持的任何 [输入输出格式](../../interfaces/formats.md#formats) 传递给INSERT。格式的名称必须显示的指定在查询中：
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
@@ -37,7 +37,7 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-在使用命令行客户端或HTTP客户端时，你可以将具体的查询语句与数据分开发送。更多具体信息，请参考«[客户端](../interfaces/index.md#interfaces)»部分。
+在使用命令行客户端或HTTP客户端时，你可以将具体的查询语句与数据分开发送。更多具体信息，请参考«[客户端](../../interfaces/index.md#interfaces)»部分。
 
 ### 使用`SELECT`的结果写入 {#insert_query_insert-select}
 

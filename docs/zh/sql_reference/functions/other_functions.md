@@ -12,7 +12,7 @@
 
 **参数**
 
--   `expr` — 任何一个返回[String](../../data_types/string.md)结果的表达式。[String](../../data_types/string.md)
+-   `expr` — 任何一个返回[String](../../sql_reference/functions/other_functions.md)结果的表达式。[String](../../sql_reference/functions/other_functions.md)
 
 **返回值**
 
@@ -358,7 +358,7 @@ FROM
 
 ## getSizeOfEnumType {#getsizeofenumtype}
 
-返回[Enum](../../data_types/enum.md)中的枚举数量。
+返回[Enum](../../sql_reference/functions/other_functions.md)中的枚举数量。
 
     getSizeOfEnumType(value)
 
@@ -453,7 +453,7 @@ FROM
 
 -   数值类型返回`0`。
 -   字符串类型返回空的字符串。
--   [Nullable](../../data_types/nullable.md)类型返回`ᴺᵁᴸᴸ`。
+-   [Nullable](../../sql_reference/functions/other_functions.md)类型返回`ᴺᵁᴸᴸ`。
 
 **示例**
 

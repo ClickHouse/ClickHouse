@@ -12,13 +12,13 @@
 
     File(Format)
 
-选用的 `Format` 需要支持 `INSERT` 或 `SELECT` 。有关支持格式的完整列表，请参阅 [格式](../../interfaces/formats.md#formats)。
+选用的 `Format` 需要支持 `INSERT` 或 `SELECT` 。有关支持格式的完整列表，请参阅 [格式](../../../interfaces/formats.md#formats)。
 
-ClickHouse 不支持给 `File` 指定文件系统路径。它使用服务器配置中 [path](../server_settings/settings.md) 设定的文件夹。
+ClickHouse 不支持给 `File` 指定文件系统路径。它使用服务器配置中 [path](../../../operations/server_configuration_parameters/settings.md) 设定的文件夹。
 
 使用 `File(Format)` 创建表时，它会在该文件夹中创建空的子目录。当数据写入该表时，它会写到该子目录中的 `data.Format` 文件中。
 
-你也可以在服务器文件系统中手动创建这些子文件夹和文件，然后通过 [ATTACH](../../query_language/misc.md) 将其创建为具有对应名称的表，这样你就可以从该文件中查询数据了。
+你也可以在服务器文件系统中手动创建这些子文件夹和文件，然后通过 [ATTACH](../../../engines/table_engines/special/file.md) 将其创建为具有对应名称的表，这样你就可以从该文件中查询数据了。
 
 !!! 注意 "注意"
     注意这个功能，因为 ClickHouse 不会跟踪这些文件在外部的更改。在 ClickHouse 中和 ClickHouse 外部同时写入会造成结果是不确定的。
@@ -54,7 +54,7 @@ SELECT * FROM file_engine_table
 
 ## 在 Clickhouse-local 中的使用 {#zai-clickhouse-local-zhong-de-shi-yong}
 
-使用 [clickhouse-local](../utils/clickhouse-local.md) 时，File 引擎除了 `Format` 之外，还可以接受文件路径参数。可以使用数字或人类可读的名称来指定标准输入/输出流，例如 `0` 或 `stdin`，`1` 或 `stdout`。
+使用 [clickhouse-local](../../../engines/table_engines/special/file.md) 时，File 引擎除了 `Format` 之外，还可以接受文件路径参数。可以使用数字或人类可读的名称来指定标准输入/输出流，例如 `0` 或 `stdin`，`1` 或 `stdout`。
 **例如：**
 
 ``` bash

@@ -49,7 +49,7 @@ SELECT
 
 ## toDecimal32(value, S), toDecimal64(value, S), toDecimal128(value, S) {#todecimal32value-s-todecimal64value-s-todecimal128value-s}
 
-将`value`转换为精度为`S`的[Decimal](../../data_types/decimal.md)。`value`可以是数字或字符串。`S`参数为指定的小数位数。
+将`value`转换为精度为`S`的[Decimal](../../sql_reference/functions/type_conversion_functions.md)。`value`可以是数字或字符串。`S`参数为指定的小数位数。
 
 ## toFixedString(s, N) {#tofixedstrings-n}
 
@@ -117,7 +117,7 @@ SELECT
 
 将参数转换为FixedString(N)，仅适用于String或FixedString(N)类型的参数。
 
-支持将数据转换为[Nullable](../../data_types/nullable.md)。例如：
+支持将数据转换为[Nullable](../../sql_reference/functions/type_conversion_functions.md)。例如：
 
     SELECT toTypeName(x) FROM t_null
 

@@ -13,54 +13,54 @@
 
 ## MergeTree {#mergetree}
 
-适用于高负载任务的最通用和功能最强大的表引擎。这些引擎的共同特点是可以快速插入数据并进行后续的后台数据处理。 MergeTree系列引擎支持数据复制（使用[Replicated\*](replication.md) 的引擎版本），分区和一些其他引擎不支持的其他功能。
+适用于高负载任务的最通用和功能最强大的表引擎。这些引擎的共同特点是可以快速插入数据并进行后续的后台数据处理。 MergeTree系列引擎支持数据复制（使用[Replicated\*](mergetree_family/replication.md) 的引擎版本），分区和一些其他引擎不支持的其他功能。
 
 该类型的引擎：
-\* [MergeTree](mergetree.md)
-\* [ReplacingMergeTree](replacingmergetree.md)
-\* [SummingMergeTree](summingmergetree.md)
-\* [AggregatingMergeTree](aggregatingmergetree.md)
-\* [CollapsingMergeTree](collapsingmergetree.md)
-\* [VersionedCollapsingMergeTree](versionedcollapsingmergetree.md)
-\* [GraphiteMergeTree](graphitemergetree.md)
+\* [MergeTree](mergetree_family/mergetree.md)
+\* [ReplacingMergeTree](mergetree_family/replacingmergetree.md)
+\* [SummingMergeTree](mergetree_family/summingmergetree.md)
+\* [AggregatingMergeTree](mergetree_family/aggregatingmergetree.md)
+\* [CollapsingMergeTree](mergetree_family/collapsingmergetree.md)
+\* [VersionedCollapsingMergeTree](mergetree_family/versionedcollapsingmergetree.md)
+\* [GraphiteMergeTree](mergetree_family/graphitemergetree.md)
 
 ## Log {#log}
 
-具有最小功能的[轻量级引擎](log_family.md)。当您需要快速写入许多小表（最多约100万行）并在以后整体读取它们时，该类型的引擎是最有效的。
+具有最小功能的[轻量级引擎](log_family/index.md)。当您需要快速写入许多小表（最多约100万行）并在以后整体读取它们时，该类型的引擎是最有效的。
 
 该类型的引擎：
 
--   \[TinyLog\](tinylog/）
--   \[StripeLog\](stripelog/）
--   [Log](#log)(log/）
+-   [TinyLog](log_family/tinylog.md)
+-   [StripeLog](log_family/stripelog.md)
+-   [Log](log_family/log.md)
 
 ## Integration engines {#integration-engines}
 
 用于与其他的数据存储与处理系统集成的引擎。
 该类型的引擎：
 
--   [Kafka](kafka.md)
--   [MySQL](mysql.md)
--   [ODBC](odbc.md)
--   [JDBC](jdbc.md)
--   [HDFS](hdfs.md)
+-   [Kafka](integrations/kafka.md)
+-   [MySQL](integrations/mysql.md)
+-   [ODBC](integrations/odbc.md)
+-   [JDBC](integrations/jdbc.md)
+-   [HDFS](integrations/hdfs.md)
 
 ## 用于其他特定功能的引擎 {#yong-yu-qi-ta-te-ding-gong-neng-de-yin-qing}
 
 该类型的引擎：
 
--   [Distributed](distributed.md)
--   [MaterializedView](materializedview.md)
--   [Dictionary](dictionary.md)
--   [Merge](merge.md)
--   [File](file.md)
--   [Null](null.md)
--   [Set](set.md)
--   [Join](join.md)
--   [URL](url.md)
--   [View](view.md)
--   [Memory](memory.md)
--   [Buffer](buffer.md)
+-   [Distributed](special/distributed.md)
+-   [MaterializedView](special/materializedview.md)
+-   [Dictionary](special/dictionary.md)
+-   [Merge](special/merge.md)
+-   [File](special/file.md)
+-   [Null](special/null.md)
+-   [Set](special/set.md)
+-   [Join](special/join.md)
+-   [URL](special/url.md)
+-   [View](special/view.md)
+-   [Memory](special/memory.md)
+-   [Buffer](special/buffer.md)
 
 # 虚拟列 {#xu-ni-lie}
 

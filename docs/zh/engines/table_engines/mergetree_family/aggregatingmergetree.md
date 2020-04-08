@@ -4,7 +4,7 @@
 
 可以使用 `AggregatingMergeTree` 表来做增量数据统计聚合，包括物化视图的数据聚合。
 
-引擎需使用 [AggregateFunction](../../data_types/nested_data_structures/aggregatefunction.md) 类型来处理所有列。
+引擎需使用 [AggregateFunction](../../../engines/table_engines/mergetree_family/aggregatingmergetree.md) 类型来处理所有列。
 
 如果要按一组规则来合并减少行数，则使用 `AggregatingMergeTree` 是合适的。
 
@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-语句参数的说明，请参阅 [语句描述](../../query_language/create.md)。
+语句参数的说明，请参阅 [语句描述](../../../engines/table_engines/mergetree_family/aggregatingmergetree.md)。
 
 **子句**
 
@@ -50,7 +50,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## SELECT 和 INSERT {#select-he-insert}
 
-插入数据，需使用带有聚合 -State- 函数的 [INSERT SELECT](../../query_language/insert_into.md) 语句。
+插入数据，需使用带有聚合 -State- 函数的 [INSERT SELECT](../../../engines/table_engines/mergetree_family/aggregatingmergetree.md) 语句。
 从 `AggregatingMergeTree` 表中查询数据时，需使用 `GROUP BY` 子句并且要使用与插入时相同的聚合函数，但后缀要改为 `-Merge` 。
 
 在 `SELECT` 查询的结果中，对于 ClickHouse 的所有输出格式 `AggregateFunction` 类型的值都实现了特定的二进制表示法。如果直接用 `SELECT` 导出这些数据，例如如用 `TabSeparated` 格式，那么这些导出数据也能直接用 `INSERT` 语句加载导入。

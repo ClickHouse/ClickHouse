@@ -17,7 +17,7 @@
     [SAMPLE BY expr]
     [SETTINGS name=value, ...]
 
-请求参数的描述，参考 [请求描述](../../query_language/create.md)。
+请求参数的描述，参考 [请求描述](../../../engines/table_engines/mergetree_family/summingmergetree.md)。
 
 **SummingMergeTree 的参数**
 
@@ -83,7 +83,7 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 
 当数据被插入到表中时，他们将被原样保存。ClickHouse 定期合并插入的数据片段，并在这个时候对所有具有相同主键的行中的列进行汇总，将这些行替换为包含汇总数据的一行记录。
 
-ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含具有相同主键的行，即单个汇总片段将会是不完整的。因此，聚合函数 [sum()](../../query_language/agg_functions/reference.md#agg_function-sum) 和 `GROUP BY` 子句应该在（`SELECT`）查询语句中被使用，如上文中的例子所述。
+ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含具有相同主键的行，即单个汇总片段将会是不完整的。因此，聚合函数 [sum()](../../../engines/table_engines/mergetree_family/summingmergetree.md#agg_function-sum) 和 `GROUP BY` 子句应该在（`SELECT`）查询语句中被使用，如上文中的例子所述。
 
 ### 汇总的通用规则 {#hui-zong-de-tong-yong-gui-ze}
 
@@ -97,7 +97,7 @@ ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含
 
 ### AggregateFunction 列中的汇总 {#aggregatefunction-lie-zhong-de-hui-zong}
 
-对于 [AggregateFunction 类型](../../data_types/nested_data_structures/aggregatefunction.md)的列，ClickHouse 根据对应函数表现为 [AggregatingMergeTree](aggregatingmergetree.md) 引擎的聚合。
+对于 [AggregateFunction 类型](../../../engines/table_engines/mergetree_family/summingmergetree.md)的列，ClickHouse 根据对应函数表现为 [AggregatingMergeTree](aggregatingmergetree.md) 引擎的聚合。
 
 ### 嵌套结构 {#qian-tao-jie-gou}
 
@@ -117,7 +117,7 @@ ClickHouse 会按片段合并数据，以至于不同的数据片段中会包含
     [(1, 100)] + [(1, 150), (2, 150)] -> [(1, 250), (2, 150)]
     [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 
-请求数据时，使用 [sumMap(key, value)](../../query_language/agg_functions/reference.md) 函数来对 `Map` 进行聚合。
+请求数据时，使用 [sumMap(key, value)](../../../engines/table_engines/mergetree_family/summingmergetree.md) 函数来对 `Map` 进行聚合。
 
 对于嵌套数据结构，你无需在列的元组中指定列以进行汇总。
 

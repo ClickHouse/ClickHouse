@@ -78,8 +78,8 @@ pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
 
 **输入参数**
 
--   `(x, y)` — 平面上某个点的坐标。[Tuple](../../data_types/tuple.md)类型，包含坐标的两个数字。
--   `[(a, b), (c, d) ...]` — 多边形的顶点。[Array](../../data_types/array.md)类型。每个顶点由一对坐标`(a, b)`表示。顶点可以按顺时针或逆时针指定。顶点的个数应该大于等于3。同时只能是常量的。
+-   `(x, y)` — 平面上某个点的坐标。[Tuple](../../sql_reference/functions/geo.md)类型，包含坐标的两个数字。
+-   `[(a, b), (c, d) ...]` — 多边形的顶点。[Array](../../sql_reference/functions/geo.md)类型。每个顶点由一对坐标`(a, b)`表示。顶点可以按顺时针或逆时针指定。顶点的个数应该大于等于3。同时只能是常量的。
 -   该函数还支持镂空的多边形（切除部分）。如果需要，可以使用函数的其他参数定义需要切除部分的多边形。(The function does not support non-simply-connected polygons.)
 
 **返回值**
@@ -163,16 +163,16 @@ geoToH3(lon, lat, resolution)
 
 **输入值**
 
--   `lon` — 经度。 [Float64](../../data_types/float.md)类型。
--   `lat` — 纬度。 [Float64](../../data_types/float.md)类型。
--   `resolution` — 索引的分辨率。 取值范围为: `[0, 15]`。 [UInt8](../../data_types/int_uint.md)类型。
+-   `lon` — 经度。 [Float64](../../sql_reference/functions/geo.md)类型。
+-   `lat` — 纬度。 [Float64](../../sql_reference/functions/geo.md)类型。
+-   `resolution` — 索引的分辨率。 取值范围为: `[0, 15]`。 [UInt8](../../sql_reference/functions/geo.md)类型。
 
 **返回值**
 
 -   H3中六边形的索引值。
 -   发生异常时返回0。
 
-[UInt64](../../data_types/int_uint.md)类型。
+[UInt64](../../sql_reference/functions/geo.md)类型。
 
 **示例**
 

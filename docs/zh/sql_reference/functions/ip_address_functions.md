@@ -160,7 +160,7 @@ SELECT IPv6CIDRToRange(toIPv6('2001:0db8:0000:85a3:0000:0000:ac1f:8001'), 32);
 
 ## toIPv4(string) {#toipv4string}
 
-`IPv4StringToNum()`的别名，它采用字符串形式的IPv4地址并返回[IPv4](../../data_types/domains/ipv4.md)类型的值，该二进制值等于`IPv4StringToNum()`返回的值。
+`IPv4StringToNum()`的别名，它采用字符串形式的IPv4地址并返回[IPv4](../../sql_reference/functions/ip_address_functions.md)类型的值，该二进制值等于`IPv4StringToNum()`返回的值。
 
 ``` sql
 WITH
@@ -188,7 +188,7 @@ SELECT
 
 ## toIPv6(string) {#toipv6string}
 
-`IPv6StringToNum()`的别名，它采用字符串形式的IPv6地址并返回[IPv6](../../data_types/domains/ipv6.md)类型的值，该二进制值等于`IPv6StringToNum()`返回的值。
+`IPv6StringToNum()`的别名，它采用字符串形式的IPv6地址并返回[IPv6](../../sql_reference/functions/ip_address_functions.md)类型的值，该二进制值等于`IPv6StringToNum()`返回的值。
 
 ``` sql
 WITH

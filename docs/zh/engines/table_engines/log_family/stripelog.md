@@ -13,7 +13,7 @@
         ...
     ) ENGINE = StripeLog
 
-查看[建表](../../query_language/create.md#create-table-query)请求的详细说明。
+查看[建表](../../../engines/table_engines/log_family/stripelog.md#create-table-query)请求的详细说明。
 
 ## 写数据 {#table_engines-stripelog-writing-the-data}
 

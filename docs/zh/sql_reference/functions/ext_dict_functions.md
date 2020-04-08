@@ -1,6 +1,6 @@
 # 字典函数 {#zi-dian-han-shu}
 
-有关连接和配置外部词典的信息，请参阅[外部词典](../dicts/external_dicts.md)。
+有关连接和配置外部词典的信息，请参阅[外部词典](../../sql_reference/functions/ext_dict_functions.md)。
 
 ## dictGetUInt8, dictGetUInt16, dictGetUInt32, dictGetUInt64 {#dictgetuint8-dictgetuint16-dictgetuint32-dictgetuint64}
 

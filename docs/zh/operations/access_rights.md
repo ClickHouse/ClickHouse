@@ -61,7 +61,7 @@ Users are recorded in the `users` section. Here is a fragment of the `users.xml`
 
 You can see a declaration from two users: `default`and`web`. We added the `web` user separately.
 
-The `default` user is chosen in cases when the username is not passed. The `default` user is also used for distributed query processing, if the configuration of the server or cluster doesn’t specify the `user` and `password` (see the section on the [Distributed](../operations/table_engines/distributed.md) engine).
+The `default` user is chosen in cases when the username is not passed. The `default` user is also used for distributed query processing, if the configuration of the server or cluster doesn’t specify the `user` and `password` (see the section on the [Distributed](../engines/table_engines/special/distributed.md) engine).
 
 The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
 

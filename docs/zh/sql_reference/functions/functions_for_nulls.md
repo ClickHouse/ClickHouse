@@ -177,7 +177,7 @@
 
 ## assumeNotNull {#assumenotnull}
 
-将[Nullable](../../data_types/nullable.md)类型的值转换为非`Nullable`类型的值。
+将[Nullable](../../sql_reference/functions/functions_for_nulls.md)类型的值转换为非`Nullable`类型的值。
 
     assumeNotNull(x)
 

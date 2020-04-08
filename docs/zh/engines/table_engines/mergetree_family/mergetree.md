@@ -23,7 +23,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
         需要的话，你可以给表设置一个采样方法。
 
 !!! 注意 "注意"
-    [Merge](merge.md) 引擎并不属于 `*MergeTree` 系列。
+    [Merge](../special/merge.md) 引擎并不属于 `*MergeTree` 系列。
 
 ## 建表 {#table_engine-mergetree-creating-a-table}
 
@@ -41,7 +41,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
     [SAMPLE BY expr]
     [SETTINGS name=value, ...]
 
-请求参数的描述，参考 [请求描述](../../query_language/create.md) 。
+请求参数的描述，参考 [请求描述](../../../engines/table_engines/mergetree_family/mergetree.md) 。
 
 <a name="mergetree-query-clauses"></a>
 
@@ -51,7 +51,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
 
 -   `PARTITION BY` — [分区键](custom_partitioning_key.md) 。
 
-        要按月分区，可以使用表达式 `toYYYYMM(date_column)` ，这里的 `date_column` 是一个 [Date](../../data_types/date.md) 类型的列。这里该分区名格式会是 `"YYYYMM"` 这样。
+        要按月分区，可以使用表达式 `toYYYYMM(date_column)` ，这里的 `date_column` 是一个 [Date](../../../engines/table_engines/mergetree_family/mergetree.md) 类型的列。这里该分区名格式会是 `"YYYYMM"` 这样。
 
 -   `ORDER BY` — 表的排序键。
 
@@ -72,7 +72,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
     -   `index_granularity` — 索引粒度。即索引中相邻『标记』间的数据行数。默认值，8192 。该列表中所有可用的参数可以从这里查看 [MergeTreeSettings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/MergeTree/MergeTreeSettings.h) 。
     -   `index_granularity_bytes` — 索引粒度，以字节为单位，默认值: 10Mb。如果仅按数据行数限制索引粒度, 请设置为0(不建议)。
     -   `enable_mixed_granularity_parts` — 启用或禁用通过 `index_granularity_bytes` 控制索引粒度的大小。在19.11版本之前, 只有 `index_granularity` 配置能够用于限制索引粒度的大小。当从大表(数十或数百兆)中查询数据时候，`index_granularity_bytes` 配置能够提升ClickHouse的性能。如果你的表内数据量很大，可以开启这项配置用以提升`SELECT` 查询的性能。
-    -   `use_minimalistic_part_header_in_zookeeper` — 数据片段头在 ZooKeeper 中的存储方式。如果设置了 `use_minimalistic_part_header_in_zookeeper=1` ，ZooKeeper 会存储更少的数据。更多信息参考『服务配置参数』这章中的 [设置描述](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) 。
+    -   `use_minimalistic_part_header_in_zookeeper` — 数据片段头在 ZooKeeper 中的存储方式。如果设置了 `use_minimalistic_part_header_in_zookeeper=1` ，ZooKeeper 会存储更少的数据。更多信息参考『服务配置参数』这章中的 [设置描述](../../../operations/server_configuration_parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) 。
     -   `min_merge_bytes_to_use_direct_io` — 使用直接 I/O 来操作磁盘的合并操作时要求的最小数据量。合并数据片段时，ClickHouse 会计算要被合并的所有数据的总存储空间。如果大小超过了 `min_merge_bytes_to_use_direct_io` 设置的字节数，则 ClickHouse 将使用直接 I/O 接口（`O_DIRECT` 选项）对磁盘读写。如果设置 `min_merge_bytes_to_use_direct_io = 0` ，则会禁用直接 I/O。默认值：`10 * 1024 * 1024 * 1024` 字节。
         <a name="mergetree_setting-merge_with_ttl_timeout"></a>
     -   `merge_with_ttl_timeout` — TTL合并频率的最小间隔时间。默认值: 86400 (1 天)。
@@ -85,7 +85,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
 
 示例中，我们设为按月分区。
 
-同时我们设置了一个按用户ID哈希的抽样表达式。这让你可以有该表中每个 `CounterID` 和 `EventDate` 下面的数据的伪随机分布。如果你在查询时指定了 [SAMPLE](../../query_language/select.md#select-sample-clause) 子句。 ClickHouse会返回对于用户子集的一个均匀的伪随机数据采样。
+同时我们设置了一个按用户ID哈希的抽样表达式。这让你可以有该表中每个 `CounterID` 和 `EventDate` 下面的数据的伪随机分布。如果你在查询时指定了 [SAMPLE](../../../engines/table_engines/mergetree_family/mergetree.md#select-sample-clause) 子句。 ClickHouse会返回对于用户子集的一个均匀的伪随机数据采样。
 
 `index_granularity` 可省略，默认值为 8192 。
 
@@ -105,9 +105,9 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
 
 **MergeTree() 参数**
 
--   `date-column` — 类型为 [Date](../../data_types/date.md) 的列名。ClickHouse 会自动依据这个列按月创建分区。分区名格式为 `"YYYYMM"` 。
+-   `date-column` — 类型为 [Date](../../../engines/table_engines/mergetree_family/mergetree.md) 的列名。ClickHouse 会自动依据这个列按月创建分区。分区名格式为 `"YYYYMM"` 。
 -   `sampling_expression` — 采样表达式。
--   `(primary, key)` — 主键。类型 — [Tuple()](../../data_types/tuple.md)
+-   `(primary, key)` — 主键。类型 — [Tuple()](../../../engines/table_engines/mergetree_family/mergetree.md)
 -   `index_granularity` — 索引粒度。即索引中相邻『标记』间的数据行数。设为 8192 可以适用大部分场景。
 
 **示例**
@@ -191,7 +191,7 @@ ClickHouse 不要求主键惟一。所以，你可以插入多条具有相同主
 这种情况下，主键中仅预留少量列保证高效范围扫描，
 剩下的维度列放到排序键元组里。这样是合理的。
 
-[排序键的修改](../../query_language/alter.md) 是轻量级的操作，因为一个新列同时被加入到表里和排序键后时，已存在的数据片段并不需要修改。由于旧的排序键是新排序键的前缀，并且刚刚添加的列中没有数据，因此在表修改时的数据对于新旧的排序键来说都是有序的。
+[排序键的修改](../../../engines/table_engines/mergetree_family/mergetree.md) 是轻量级的操作，因为一个新列同时被加入到表里和排序键后时，已存在的数据片段并不需要修改。由于旧的排序键是新排序键的前缀，并且刚刚添加的列中没有数据，因此在表修改时的数据对于新旧的排序键来说都是有序的。
 
 ### 索引和分区在查询中的应用 {#suo-yin-he-fen-qu-zai-cha-xun-zhong-de-ying-yong}
 
@@ -221,7 +221,7 @@ ClickHouse 会依据主键索引剪掉不符合的数据，依据按月分区的
 SELECT count() FROM table WHERE CounterID = 34 OR URL LIKE '%upyachka%'
 ```
 
-要检查 ClickHouse 执行一个查询时能否使用索引，可设置 [force\_index\_by\_date](../settings/settings.md#settings-force_index_by_date) 和 [force\_primary\_key](../settings/settings.md) 。
+要检查 ClickHouse 执行一个查询时能否使用索引，可设置 [force\_index\_by\_date](../../../operations/settings/settings.md#settings-force_index_by_date) 和 [force\_primary\_key](../../../operations/settings/settings.md) 。
 
 按月分区的分区键是只能读取包含适当范围日期的数据块。这种情况下，数据块会包含很多天（最多整月）的数据。在块中，数据按主键排序，主键第一列可能不包含日期。因此，仅使用日期而没有带主键前缀条件的查询将会导致读取超过这个日期范围。
 
@@ -299,14 +299,14 @@ INDEX sample_index3 (lower(str), str) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 
 
 TTL可以设置值的生命周期，它既可以为整张表设置，也可以为每个列字段单独设置。如果`TTL`同时作用于表和字段，ClickHouse会使用先到期的那个。
 
-被设置TTL的表，必须拥有[Date](../../data_types/date.md) 或 [DateTime](../../data_types/datetime.md) 类型的字段。要定义数据的生命周期，需要在这个日期字段上使用操作符，例如:
+被设置TTL的表，必须拥有[Date](../../../engines/table_engines/mergetree_family/mergetree.md) 或 [DateTime](../../../engines/table_engines/mergetree_family/mergetree.md) 类型的字段。要定义数据的生命周期，需要在这个日期字段上使用操作符，例如:
 
 ``` sql
 TTL time_column
 TTL time_column + interval
 ```
 
-要定义`interval`, 需要使用 [time interval](../../query_language/operators.md#operators-datetime) 操作符。
+要定义`interval`, 需要使用 [time interval](../../../engines/table_engines/mergetree_family/mergetree.md#operators-datetime) 操作符。
 
 ``` sql
 TTL date_time + INTERVAL 1 MONTH
@@ -385,7 +385,7 @@ ALTER TABLE example_table
 
 当ClickHouse发现数据过期时, 它将会执行一个计划外的合并。要控制这类合并的频率, 你可以设置 [merge\_with\_ttl\_timeout](#mergetree_setting-merge_with_ttl_timeout)。如果该值被设置的太低, 它将导致执行许多的计划外合并，这可能会消耗大量资源。
 
-如果在合并的时候执行`SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在`SELECT`之前使用 [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) 查询。
+如果在合并的时候执行`SELECT` 查询, 则可能会得到过期的数据。为了避免这种情况，可以在`SELECT`之前使用 [OPTIMIZE](../../../engines/table_engines/mergetree_family/mergetree.md#misc_operations-optimize) 查询。
 
 ## Using Multiple Block Devices for Data Storage {#table_engine-mergetree-multiple-volumes}
 

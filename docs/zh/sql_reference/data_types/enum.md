@@ -65,7 +65,7 @@
 
 `Enum8` 类型的每个值范围是 `-128 ... 127`，`Enum16` 类型的每个值范围是 `-32768 ... 32767`。所有的字符串或者数字都必须是不一样的。允许存在空字符串。如果某个 Enum 类型被指定了（在表定义的时候），数字可以是任意顺序。然而，顺序并不重要。
 
-`Enum` 中的字符串和数值都不能是 [NULL](../query_language/syntax.md)。
+`Enum` 中的字符串和数值都不能是 [NULL](../../sql_reference/data_types/enum.md)。
 
 `Enum` 包含在 [Nullable](nullable.md) 类型中。因此，如果您使用此查询创建一个表
 

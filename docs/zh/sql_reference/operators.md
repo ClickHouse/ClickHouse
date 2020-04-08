@@ -52,7 +52,7 @@
 
 ## 集合关系运算符 {#ji-he-guan-xi-yun-suan-fu}
 
-*详见此节 [IN 相关操作符](select.md#select-in-operators) 。*
+*详见此节 [IN 相关操作符](statements/select.md#select-in-operators) 。*
 
 `a IN ...` – 对应函数 `in(a, b)`
 
@@ -80,7 +80,7 @@
 
 注意:
 
-条件运算符会先计算表达式b和表达式c的值，再根据表达式a的真假，返回相应的值。如果表达式b和表达式c是 [arrayJoin()](functions/array_join.md#functions_arrayjoin) 函数，则不管表达式a是真是假，每行都会被复制展开。
+条件运算符会先计算表达式b和表达式c的值，再根据表达式a的真假，返回相应的值。如果表达式b和表达式c是 [arrayJoin()](../sql_reference/functions/array_join.md#functions_arrayjoin) 函数，则不管表达式a是真是假，每行都会被复制展开。
 
 ## Operators for Working with Dates and Times {#operators-datetime}
 
@@ -103,7 +103,7 @@ The `part` parameter specifies which part of the date to retrieve. The following
 
 The `part` parameter is case-insensitive.
 
-The `date` parameter specifies the date or the time to process. Either [Date](../data_types/date.md) or [DateTime](../data_types/datetime.md) type is supported.
+The `date` parameter specifies the date or the time to process. Either [Date](../sql_reference/data_types/date.md) or [DateTime](../sql_reference/data_types/datetime.md) type is supported.
 
 Examples:
 
@@ -150,7 +150,7 @@ You can see more examples in [tests](https://github.com/ClickHouse/ClickHouse/bl
 
 ### INTERVAL {#operator-interval}
 
-Creates an [Interval](../data_types/special_data_types/interval.md)-type value that should be used in arithmetical operations with [Date](../data_types/date.md) and [DateTime](../data_types/datetime.md)-type values.
+Creates an [Interval](../sql_reference/operators.md)-type value that should be used in arithmetical operations with [Date](../sql_reference/data_types/date.md) and [DateTime](../sql_reference/data_types/datetime.md)-type values.
 
 Example:
 
@@ -166,8 +166,8 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 **See Also**
 
--   [Interval](../data_types/special_data_types/interval.md) data type
--   [toInterval](functions/type_conversion_functions.md#function-tointerval) type convertion functions
+-   [Interval](../sql_reference/operators.md) data type
+-   [toInterval](../sql_reference/operators.md#function-tointerval) type convertion functions
 
 ## CASE条件表达式 {#operator_case}
 
@@ -216,7 +216,7 @@ ClickHouse 支持 `IS NULL` 和 `IS NOT NULL` 。
 
 ### IS NULL {#operator-is-null}
 
--   对于 [Nullable](../data_types/nullable.md) 类型的值， `IS NULL` 会返回：
+-   对于 [Nullable](../sql_reference/operators.md) 类型的值， `IS NULL` 会返回：
     -   `1` 值为 `NULL`
     -   `0` 否则
 -   对于其他类型的值， `IS NULL` 总会返回 `0`
@@ -239,7 +239,7 @@ WHERE isNull(y)
 
 ### IS NOT NULL {#is-not-null}
 
--   对于 [Nullable](../data_types/nullable.md) 类型的值， `IS NOT NULL` 会返回：
+-   对于 [Nullable](../sql_reference/operators.md) 类型的值， `IS NOT NULL` 会返回：
     -   `0` 值为 `NULL`
     -   `1` 否则
 -   对于其他类型的值，`IS NOT NULL` 总会返回 `1`

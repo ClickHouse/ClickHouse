@@ -42,7 +42,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 以上所有情况，如果指定了`IF NOT EXISTS`，那么在该表已经存在的情况下，查询不会返回任何错误。在这种情况下，查询几乎不会做任何事情。
 
-在`ENGINE`子句后还可能存在一些其他的子句，更详细的信息可以参考 [表引擎](../operations/table_engines/index.md) 中关于建表的描述。
+在`ENGINE`子句后还可能存在一些其他的子句，更详细的信息可以参考 [表引擎](../../sql_reference/statements/create.md) 中关于建表的描述。
 
 ### 默认值 {#create-default-values}
 
@@ -99,11 +99,11 @@ Adding large amount of constraints can negatively affect performance of big `INS
 
 ### TTL Expression {#ttl-expression}
 
-Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../operations/table_engines/mergetree.md#table_engine-mergetree-ttl).
+Defines storage time for values. Can be specified only for MergeTree-family tables. For the detailed description, see [TTL for columns and tables](../../sql_reference/statements/create.md#table_engine-mergetree-ttl).
 
 ### Column Compression Codecs {#codecs}
 
-By default, ClickHouse applies the compression method, defined in [server settings](../operations/server_settings/settings.md#server-settings-compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
+By default, ClickHouse applies the compression method, defined in [server settings](../../sql_reference/statements/create.md#server-settings-compression), to columns. You can also define the compression method for each individual column in the `CREATE TABLE` query.
 
 ``` sql
 CREATE TABLE codec_example
@@ -125,10 +125,10 @@ If a codec is specified, the default codec doesn’t apply. Codecs can be combin
 
 Compression is supported for the following table engines:
 
--   [MergeTree](../operations/table_engines/mergetree.md) family
--   [Log](../operations/table_engines/log_family.md) family
--   [Set](../operations/table_engines/set.md)
--   [Join](../operations/table_engines/join.md)
+-   [MergeTree](../../sql_reference/statements/create.md) family
+-   [Log](../../sql_reference/statements/create.md) family
+-   [Set](../../sql_reference/statements/create.md)
+-   [Join](../../sql_reference/statements/create.md)
 
 ClickHouse supports common purpose codecs and specialized codecs.
 

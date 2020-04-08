@@ -53,7 +53,7 @@
 
 **参数**
 
--   `arrays` – 任意数量的[Array](../../data_types/array.md)类型的参数.
+-   `arrays` – 任意数量的[Array](../../sql_reference/functions/array_functions.md)类型的参数.
     **示例**
 
 <!-- -->
@@ -324,7 +324,7 @@ SELECT arrayPopFront([1, 2, 3]) AS res
 **参数**
 
 -   `array` – 数组。
--   `single_value` – 单个值。只能将数字添加到带数字的数组中，并且只能将字符串添加到字符串数组中。添加数字时，ClickHouse会自动为数组的数据类型设置`single_value`类型。有关ClickHouse中数据类型的更多信息，请参阅«[数据类型](../../data_types/index.md#data_types)»。可以是’NULL`。该函数向数组添加一个«NULL»元素，数组元素的类型转换为`Nullable\`。
+-   `single_value` – 单个值。只能将数字添加到带数字的数组中，并且只能将字符串添加到字符串数组中。添加数字时，ClickHouse会自动为数组的数据类型设置`single_value`类型。有关ClickHouse中数据类型的更多信息，请参阅«[数据类型](../../sql_reference/functions/array_functions.md#data_types)»。可以是’NULL`。该函数向数组添加一个«NULL»元素，数组元素的类型转换为`Nullable\`。
 
 **示例**
 
@@ -345,7 +345,7 @@ SELECT arrayPushBack(['a'], 'b') AS res
 **参数**
 
 -   `array` – 数组。
--   `single_value` – 单个值。只能将数字添加到带数字的数组中，并且只能将字符串添加到字符串数组中。添加数字时，ClickHouse会自动为数组的数据类型设置`single_value`类型。有关ClickHouse中数据类型的更多信息，请参阅«[数据类型](../../data_types/index.md#data_types)»。可以是’NULL`。该函数向数组添加一个«NULL»元素，数组元素的类型转换为`Nullable\`。
+-   `single_value` – 单个值。只能将数字添加到带数字的数组中，并且只能将字符串添加到字符串数组中。添加数字时，ClickHouse会自动为数组的数据类型设置`single_value`类型。有关ClickHouse中数据类型的更多信息，请参阅«[数据类型](../../sql_reference/functions/array_functions.md#data_types)»。可以是’NULL`。该函数向数组添加一个«NULL»元素，数组元素的类型转换为`Nullable\`。
 
 **示例**
 

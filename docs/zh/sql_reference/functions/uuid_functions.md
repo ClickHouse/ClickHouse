@@ -54,7 +54,7 @@ UUID类型的值
 
 ## UUIDStringToNum {#uuidstringtonum}
 
-接受一个String类型的值，其中包含36个字符且格式为`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`，将其转换为UUID的数值并以[FixedString(16)](../../data_types/fixedstring.md)将其返回。
+接受一个String类型的值，其中包含36个字符且格式为`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`，将其转换为UUID的数值并以[FixedString(16)](../../sql_reference/functions/uuid_functions.md)将其返回。
 
 ``` sql
 UUIDStringToNum(String)
@@ -78,7 +78,7 @@ FixedString(16)
 
 ## UUIDNumToString {#uuidnumtostring}
 
-接受一个[FixedString(16)](../../data_types/fixedstring.md)类型的值，返回其对应的String表现形式。
+接受一个[FixedString(16)](../../sql_reference/functions/uuid_functions.md)类型的值，返回其对应的String表现形式。
 
 ``` sql
 UUIDNumToString(FixedString(16))

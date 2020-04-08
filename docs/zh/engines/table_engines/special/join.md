@@ -4,7 +4,7 @@
 
     Join(ANY|ALL, LEFT|INNER, k1[, k2, ...])
 
-引擎参数：`ANY|ALL` – 连接修饰；`LEFT|INNER` – 连接类型。更多信息可参考 [JOIN子句](../../query_language/select.md#select-join)。
+引擎参数：`ANY|ALL` – 连接修饰；`LEFT|INNER` – 连接类型。更多信息可参考 [JOIN子句](../../../engines/table_engines/special/join.md#select-join)。
 这些参数设置不用带引号，但必须与要 JOIN 表匹配。 k1，k2，……是 USING 子句中要用于连接的关键列。
 
 此引擎表不能用于 GLOBAL JOIN 。

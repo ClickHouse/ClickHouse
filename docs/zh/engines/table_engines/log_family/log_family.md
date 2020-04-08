@@ -16,7 +16,7 @@
 
 -   写入时将数据追加在文件末尾。
 
--   不支持[突变](../../query_language/alter.md#alter-mutations)操作。
+-   不支持[突变](../../../engines/table_engines/log_family/log_family.md#alter-mutations)操作。
 
 -   不支持索引。
 

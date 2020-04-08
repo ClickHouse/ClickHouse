@@ -21,7 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-请求参数的描述，参考[请求参数](../../query_language/create.md)。
+请求参数的描述，参考[请求参数](../../../engines/table_engines/mergetree_family/replacingmergetree.md)。
 
 **ReplacingMergeTree Parameters**
 

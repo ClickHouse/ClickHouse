@@ -67,4 +67,4 @@ SELECT -0.5 / 0
     │          nan │
     └──────────────┘
 
-可以在 [ORDER BY 子句](../query_language/select.md) 查看更多关于 `NaN` 排序的规则。
+可以在 [ORDER BY 子句](../../sql_reference/data_types/float.md) 查看更多关于 `NaN` 排序的规则。

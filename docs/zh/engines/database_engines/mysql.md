@@ -30,23 +30,23 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 
 | MySQL                            | ClickHouse                                  |
 |----------------------------------|---------------------------------------------|
-| UNSIGNED TINYINT                 | [UInt8](../data_types/int_uint.md)          |
-| TINYINT                          | [Int8](../data_types/int_uint.md)           |
-| UNSIGNED SMALLINT                | [UInt16](../data_types/int_uint.md)         |
-| SMALLINT                         | [Int16](../data_types/int_uint.md)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../data_types/int_uint.md)         |
-| INT, MEDIUMINT                   | [Int32](../data_types/int_uint.md)          |
-| UNSIGNED BIGINT                  | [UInt64](../data_types/int_uint.md)         |
-| BIGINT                           | [Int64](../data_types/int_uint.md)          |
-| FLOAT                            | [Float32](../data_types/float.md)           |
-| DOUBLE                           | [Float64](../data_types/float.md)           |
-| DATE                             | [Date](../data_types/date.md)               |
-| DATETIME, TIMESTAMP              | [DateTime](../data_types/datetime.md)       |
-| BINARY                           | [FixedString](../data_types/fixedstring.md) |
+| UNSIGNED TINYINT                 | [UInt8](../../sql_reference/data_types/int_uint.md)          |
+| TINYINT                          | [Int8](../../sql_reference/data_types/int_uint.md)           |
+| UNSIGNED SMALLINT                | [UInt16](../../sql_reference/data_types/int_uint.md)         |
+| SMALLINT                         | [Int16](../../sql_reference/data_types/int_uint.md)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../../sql_reference/data_types/int_uint.md)         |
+| INT, MEDIUMINT                   | [Int32](../../sql_reference/data_types/int_uint.md)          |
+| UNSIGNED BIGINT                  | [UInt64](../../sql_reference/data_types/int_uint.md)         |
+| BIGINT                           | [Int64](../../sql_reference/data_types/int_uint.md)          |
+| FLOAT                            | [Float32](../../sql_reference/data_types/float.md)           |
+| DOUBLE                           | [Float64](../../sql_reference/data_types/float.md)           |
+| DATE                             | [Date](../../sql_reference/data_types/date.md)               |
+| DATETIME, TIMESTAMP              | [DateTime](../../sql_reference/data_types/datetime.md)       |
+| BINARY                           | [FixedString](../../sql_reference/data_types/fixedstring.md) |
 
-其他的MySQL数据类型将全部都转换为[String](../data_types/string.md)。
+其他的MySQL数据类型将全部都转换为[String](../../sql_reference/data_types/string.md)。
 
-同时以上的所有类型都支持[Nullable](../data_types/nullable.md)。
+同时以上的所有类型都支持[Nullable](../../sql_reference/data_types/nullable.md)。
 
 ## 使用示例 {#shi-yong-shi-li}
 
