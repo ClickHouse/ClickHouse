@@ -25,9 +25,9 @@ def cluster():
     try:
         cluster = ClickHouseCluster(__file__)
 
-        cluster.add_instance("node1", config_dir="configs", with_minio=True, with_zookeeper=True)
-        cluster.add_instance("node2", config_dir="configs")
-        cluster.add_instance("node3", config_dir="configs")
+        cluster.add_instance("node1", config_dir="configs", macros={'cluster': 'test1'}, with_minio=True, with_zookeeper=True)
+        cluster.add_instance("node2", config_dir="configs", macros={'cluster': 'test1'}, with_zookeeper=True)
+        cluster.add_instance("node3", config_dir="configs", macros={'cluster': 'test1'}, with_zookeeper=True)
 
         logging.info("Starting cluster...")
         cluster.start()
@@ -64,25 +64,25 @@ def create_table(cluster):
             id Int64,
             data String,
             INDEX min_max (id) TYPE minmax GRANULARITY 3
-        ) ENGINE=ReplicatedMergeTree('/clickhouse/{cluster}/tables/test/test_mutations', '{instance}')
+        ) ENGINE=ReplicatedMergeTree('/clickhouse/{cluster}/tables/test/s3', '{instance}')
         PARTITION BY dt
         ORDER BY (dt, id)
         SETTINGS
             old_parts_lifetime=0, index_granularity=512
         """
 
-    for node in cluster.instances:
+    for node in cluster.instances.values():
         node.query(create_table_statement)
 
 
 @pytest.fixture(autouse=True)
 def drop_table(cluster):
     yield
-    for node in cluster.instances:
-        node.query("DROP TABLE IF EXISTS s3_test")
+    #for node in cluster.instances.values():
+    #    node.query("DROP TABLE IF EXISTS s3_test")
 
-    minio = cluster.minio_client
-    assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 0
+    #minio = cluster.minio_client
+    #assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 0
 
 
 def test_insert_select_replicated(cluster):
@@ -92,17 +92,14 @@ def test_insert_select_replicated(cluster):
     for node_idx in range(1, 4):
         node = cluster.instances["node" + str(node_idx)]
         values = generate_values("2020-01-0" + str(node_idx), 4096)
-        node.query("INSERT INTO s3_test VALUES {}".format(values))
+        node.query("INSERT INTO s3_test VALUES {}".format(values), settings={"insert_quorum": 3})
         if node_idx != 1:
             all_values += ","
         all_values += values
 
-    # Wait for replication
-    time.sleep(10)
-
     for node_idx in range(1, 4):
         node = cluster.instances["node" + str(node_idx)]
-        assert node.query("SELECT * FROM s3_test order by dt, id FORMAT Values") == all_values
+        assert node.query("SELECT * FROM s3_test order by dt, id FORMAT Values", settings={"select_sequential_consistency": 1}) == all_values
 
     minio = cluster.minio_client
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 3 * (FILES_OVERHEAD + FILES_OVERHEAD_PER_PART * 3)

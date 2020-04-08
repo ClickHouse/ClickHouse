@@ -254,7 +254,6 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
     const ReservationPtr reservation,
     PooledReadWriteBufferFromHTTP & in)
 {
-
     size_t files;
     readBinary(files, in);
 
@@ -285,7 +284,7 @@ MergeTreeData::MutableDataPartPtr Fetcher::downloadPart(
         /// File must be inside "absolute_part_path" directory.
         /// Otherwise malicious ClickHouse replica may force us to write to arbitrary path.
         String absolute_file_path = Poco::Path(part_download_path + file_name).absolute().toString();
-        if (!startsWith(absolute_file_path, part_download_path))
+        if (!startsWith(absolute_file_path, Poco::Path(part_download_path).absolute().toString()))
             throw Exception("File path (" + absolute_file_path + ") doesn't appear to be inside part path (" + part_download_path + ")."
                 " This may happen if we are trying to download part from malicious replica or logical error.",
                 ErrorCodes::INSECURE_PATH);
