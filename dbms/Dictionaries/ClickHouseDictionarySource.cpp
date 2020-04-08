@@ -74,6 +74,7 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
     /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
     context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0), {});
     /// Processors are not supported here yet.
+    context.setSettings(context_.getSettings());
     context.setSetting("experimental_use_processors", false);
     /// Query context is needed because some code in executeQuery function may assume it exists.
     /// Current example is Context::getSampleBlockCache from InterpreterSelectWithUnionQuery::getSampleBlock.
@@ -217,6 +218,8 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  bool /* check_config */) -> DictionarySourcePtr
     {
         Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+        
+        std::cerr << "initialization: " << context_local_copy.getSettings().max_bytes_to_read << '\n';
         /// Note that processors are not supported yet (see constructor),
         /// hence it is not possible to override experimental_use_processors setting
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context_local_copy);
