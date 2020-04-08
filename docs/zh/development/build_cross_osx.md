@@ -1,7 +1,3 @@
----
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
----
 
 # 如何在Linux中编译Mac OS X ClickHouse {#ru-he-zai-linuxzhong-bian-yi-mac-os-x-clickhouse}
 

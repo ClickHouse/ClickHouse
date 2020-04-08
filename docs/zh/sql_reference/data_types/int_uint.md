@@ -1,7 +1,3 @@
----
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
----
 
 # UInt8,UInt16,UInt32,UInt64,Int8,Int16,Int32,Int64 {#uint8-uint16-uint32-uint64-int8-int16-int32-int64}
 

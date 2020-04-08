@@ -1,7 +1,3 @@
----
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
----
 
 # Nested(Name1 Type1, Name2 Type2, …) {#nestedname1-type1-name2-type2}
 

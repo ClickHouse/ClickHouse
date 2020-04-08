@@ -1,7 +1,3 @@
----
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
----
 
 # ClickHouse的限制 {#clickhouseke-yi-ren-wei-shi-que-dian-de-gong-neng}
 
