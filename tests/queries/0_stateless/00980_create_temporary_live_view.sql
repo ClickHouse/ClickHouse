@@ -9,8 +9,8 @@ SELECT name, value from system.settings WHERE name = 'live_view_heartbeat_interv
 CREATE TABLE mt (a Int32) Engine=MergeTree order by tuple();
 CREATE LIVE VIEW lv WITH TIMEOUT 1 AS SELECT sum(a) FROM mt;
 
-SHOW TABLES FROM currentDatabase() LIKE 'lv';
+SHOW TABLES WHERE database=currentDatabase() and name LIKE 'lv';
 SELECT sleep(2);
-SHOW TABLES FROM currentDatabase() LIKE 'lv';
+SHOW TABLES WHERE database=currentDatabase() and name LIKE 'lv';
 
 DROP TABLE mt;
