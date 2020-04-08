@@ -94,7 +94,8 @@ public:
         SyntaxAnalyzerResult && result,
         const SelectQueryOptions & select_options = {},
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns = {},
-        const Names & required_result_columns = {}) const;
+        const Names & required_result_columns = {},
+        std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
     const Context & context;
