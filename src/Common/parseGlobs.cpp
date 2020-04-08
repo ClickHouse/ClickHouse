@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <sstream>
 #include <cassert>
+#include <iomanip>
 
 
 namespace DB
@@ -46,10 +47,17 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             std::istringstream iss_range(buffer);
             iss_range >> range_begin >> point >> point >> range_end;
             assert(iss_range.good());
+            bool leading_zeros = buffer[0] == '0';
+            size_t num_len = std::to_string(range_end).size();
+            if (leading_zeros)
+                oss_for_replacing << std::setfill('0') << std::setw(num_len);
             oss_for_replacing << range_begin;
             for (size_t i = range_begin + 1; i <= range_end; ++i)
             {
-                oss_for_replacing << '|' << i;
+                oss_for_replacing << '|';
+                if (leading_zeros)
+                    oss_for_replacing << std::setfill('0') << std::setw(num_len);
+                oss_for_replacing << i;
             }
         }
         else
