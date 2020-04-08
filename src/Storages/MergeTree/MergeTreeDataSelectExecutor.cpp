@@ -1204,7 +1204,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         std::vector<MarkRange> ranges_stack = { {0, marks_count} };
 
         std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
-        /// If there is no monotonic functions, there is no need to save block reference.
+        /// If there are no monotonic functions, there is no need to save block reference.
         /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
         if (key_condition.hasMonotonicFunctionsChain())
         {
