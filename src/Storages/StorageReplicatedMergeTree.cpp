@@ -246,6 +246,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         createTableIfNotExists();
 
+        /// We have to check granularity on other replicas. It it's fixed we
+        /// must create our new replica with fixed granularity and store this
+        /// information in /replica/metadata.
+        other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+
         checkTableStructure(zookeeper_path);
 
         Coordination::Stat metadata_stat;
@@ -256,11 +261,14 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
     else
     {
+
         /// In old tables this node may missing or be empty
         String replica_metadata;
         bool replica_metadata_exists = current_zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
         if (!replica_metadata_exists || replica_metadata.empty())
         {
+            /// We have to check shared node granularity before we create ours.
+            other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
             ReplicatedMergeTreeTableMetadata current_metadata(*this);
             current_zookeeper->createOrUpdate(replica_path + "/metadata", current_metadata.toString(), zkutil::CreateMode::Persistent);
         }
@@ -291,7 +299,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     createNewZooKeeperNodes();
 
 
-    other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
 }
 
 
