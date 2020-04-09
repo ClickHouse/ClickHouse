@@ -69,9 +69,14 @@ ClickHouse искусственно выполняет `INSERT` дольше (д
 Значение по умолчанию: 1.
 
 Величина задержи (в миллисекундах) для `INSERT` вычисляется по формуле
-`pow(max_delay_to_insert * 1000, (1 + parts_count_in_partition - parts_to_delay_insert) / (parts_to_throw_insert - parts_to_delay_insert))`
 
-Т.е. если в партиции уже 299 кусков и parts_to_throw_insert =300, parts_to_delay_insert = 150, max_delay_to_insert = 1, `INSERT` замедлится на `pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000` миллисекунд.
+```code
+max_k = parts_to_throw_insert - parts_to_delay_insert
+k = 1 + parts_count_in_partition - parts_to_delay_insert
+delay_milliseconds = pow(max_delay_to_insert * 1000, k / max_k)
+```
+
+Т.е. если в партиции уже 299 кусков и parts_to_throw_insert = 300, parts_to_delay_insert = 150, max_delay_to_insert = 1, `INSERT` замедлится на `pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000` миллисекунд.
 
 
 
