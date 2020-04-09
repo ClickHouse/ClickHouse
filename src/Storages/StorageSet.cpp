@@ -112,7 +112,7 @@ StorageSet::StorageSet(
     const ConstraintsDescription & constraints_,
     const Context & context_)
     : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_},
-    set(std::make_shared<Set>(SizeLimits(), false, context_))
+    set(std::make_shared<Set>(SizeLimits(), false, context_.getSettingsRef().transform_null_in))
 {
     Block header = getSampleBlock();
     header = header.sortColumns();
@@ -137,7 +137,7 @@ void StorageSet::truncate(const ASTPtr &, const Context & context, TableStructur
     header = header.sortColumns();
 
     increment = 0;
-    set = std::make_shared<Set>(SizeLimits(), false, context);
+    set = std::make_shared<Set>(SizeLimits(), false, context.getSettingsRef().transform_null_in);
     set->setHeader(header);
 }
 

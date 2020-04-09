@@ -30,9 +30,9 @@ public:
     /// (that is useful only for checking that some value is in the set and may not store the original values),
     /// store all set elements in explicit form.
     /// This is needed for subsequent use for index.
-    Set(const SizeLimits & limits_, bool fill_set_elements_, const Context & context_)
+    Set(const SizeLimits & limits_, bool fill_set_elements_, bool transform_null_in_)
         : log(&Logger::get("Set")),
-        limits(limits_), fill_set_elements(fill_set_elements_), context(context_)
+        limits(limits_), fill_set_elements(fill_set_elements_), transform_null_in(transform_null_in_)
     {
     }
 
@@ -45,7 +45,7 @@ public:
       * 'types' - types of what are on the left hand side of IN.
       * 'node' - list of values: 1, 2, 3 or list of tuples: (1, 2), (3, 4), (5, 6).
       */
-    void createFromAST(const DataTypes & types, ASTPtr node);
+    void createFromAST(const DataTypes & types, ASTPtr node, const Context & context);
 
     /** Create a Set from stream.
       * Call setHeader, then call insertFromBlock for each block.
@@ -113,7 +113,7 @@ private:
     /// Do we need to additionally store all elements of the set in explicit form for subsequent use for index.
     bool fill_set_elements;
 
-    const Context & context;
+    bool transform_null_in;
 
     bool has_null = false;
 
