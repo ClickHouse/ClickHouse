@@ -387,7 +387,6 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     auto & group_keys = select_query->groupBy()->children;
     auto grp_by = select_query->groupBy();
 
-
     ///check if optimization is not needed
     int opt = 0;
     for (auto & group_key : group_keys)
@@ -404,7 +403,7 @@ void optimizeGroupByFunctionKeys(ASTSelectQuery * select_query)
     }
 
     ASTs modified; ///result
-    std::unordered_map<String, int> checks; ///map of pairs <name of key (variable/function), int>
+    std::unordered_map<String, int> checks; ///map of pairs <structure of key (variable/function), int>
 
     ///filling map with pairs <key name, 1>
     for (auto & group_key : group_keys)
