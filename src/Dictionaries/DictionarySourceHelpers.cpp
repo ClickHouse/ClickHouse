@@ -53,12 +53,12 @@ void formatKeys(
 }
 
 Context copyContextAndApplySettings(
-    const std::string & config_prefix, 
-    const Context & context, 
+    const std::string & config_prefix,
+    const Context & context,
     const Poco::Util::AbstractConfiguration & config)
 {
     Context local_context(context);
-    if (config.has(config_prefix + ".settings")) 
+    if (config.has(config_prefix + ".settings"))
         {
             const auto prefix = config_prefix + ".settings";
             Settings settings;
@@ -66,7 +66,7 @@ Context copyContextAndApplySettings(
             settings.loadSettingsFromConfig(prefix, config);
             local_context.setSettings(settings);
         }
-    
+
     return local_context;
 }
 
