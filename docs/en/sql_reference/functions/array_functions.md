@@ -999,7 +999,9 @@ arrayZip(arr1, arr2, ..., arrN)
 
 **Parameters**
 
-- `arrN` — [Array](../data_types/array.md). The function can take any number of arrays. All the input arrays must be of equal size.
+- `arrN` — [Array](../data_types/array.md).
+
+The function can take any number of arrays. All the input arrays must be of equal size.
 
 **Returned value**
 
