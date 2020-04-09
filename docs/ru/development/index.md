@@ -1,7 +1,8 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
 ---
 
-# ClickHouse Development {#clickhouse-development}
+# Разработка ClickHouse {#clickhouse-development}
 
-[Original article](https://clickhouse.tech/docs/en/development/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/en/development/) <!--hide-->
