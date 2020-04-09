@@ -14,7 +14,7 @@ namespace Poco
 namespace DB
 {
 
-using ChannelPtr = std::shared_ptr<AMQP::Channel>;
+using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
 class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 {

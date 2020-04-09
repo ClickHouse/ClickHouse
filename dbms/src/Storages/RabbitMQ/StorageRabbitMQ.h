@@ -17,7 +17,7 @@
 namespace DB
 {
 
-using ChannelPtr = std::shared_ptr<AMQP::Channel>;
+using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
 
 class StorageRabbitMQ final: public ext::shared_ptr_helper<StorageRabbitMQ>, public IStorage
 {
@@ -59,7 +59,7 @@ protected:
             const StorageID & table_id_,
             Context & context_,
             const ColumnsDescription & columns_,
-            const String & host_port_, const Names & routing_keys_,
+            const String & host_port_, const Names & routing_keys_, const String & exchange_name, 
             const String & format_name_, char row_delimiter_,
             size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken);
 
@@ -68,7 +68,7 @@ private:
 
     const String host_port;
     Names routing_keys;
-    ChannelPtr publishing_channel;
+    const String exchange_name;
 
     const String format_name;
     char row_delimiter;
@@ -78,20 +78,26 @@ private:
     size_t skip_broken;
 
     Poco::Logger * log;
+
     Poco::Semaphore semaphore;
+    std::mutex mutex;
+    std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     RabbitMQHandler connection_handler;
-    AMQP::Connection connection;
+    AMQP::Address address;
+    AMQP::TcpConnection connection;
+
+    ChannelPtr publishing_channel; /// Shared between all publishers
+    ChannelPtr consumer_channel; /// Unique to consumer
 
     BackgroundSchedulePool::TaskHolder task;
     std::atomic<bool> stream_cancelled{false};
-
-    std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     ConsumerBufferPtr createReadBuffer();
 
     void threadFunc();
     bool streamToViews();
     bool checkDependencies(const StorageID & table_id);
+    void initQueues(ChannelPtr consumer_channel, String key);
 };
 }

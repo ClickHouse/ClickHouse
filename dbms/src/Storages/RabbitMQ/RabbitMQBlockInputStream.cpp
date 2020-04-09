@@ -13,15 +13,17 @@ namespace DB
 
 RabbitMQBlockInputStream::RabbitMQBlockInputStream(
         StorageRabbitMQ & storage_, const Context & context_, const Names & columns,
-        size_t max_block_size_, bool commit_in_suffix_)
+        size_t max_block_size_, Poco::Logger * log_, bool commit_in_suffix_)
         : storage(storage_)
         , context(context_)
         , column_names(columns)
         , max_block_size(max_block_size_)
+        , log(log_)
         , commit_in_suffix(commit_in_suffix_)
         , non_virtual_header(storage.getSampleBlockNonMaterialized())
         , virtual_header(storage.getSampleBlockForColumns(
-                {"_exchange", "_routingKey", "_deliveryTag"}))
+                {"_exchange", "_routingKey", "_deliveryTag"}) 
+        )
 {
     context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context
     context.setSetting("input_format_allow_errors_ratio", 0.);
@@ -34,7 +36,6 @@ RabbitMQBlockInputStream::~RabbitMQBlockInputStream()
     if (!claimed)
         return;
 
-    storage.getHandler().updatePending();
     storage.pushReadBuffer(buffer);
 }
 
@@ -46,7 +47,10 @@ Block RabbitMQBlockInputStream::getHeader() const
 
 void RabbitMQBlockInputStream::readPrefixImpl()
 {
+    LOG_DEBUG(log, "ReadPrefixImpl.\n");
+
     auto timeout = std::chrono::milliseconds(context.getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
+
     buffer = storage.popReadBuffer(timeout);
     claimed = !!buffer;
 
@@ -58,8 +62,12 @@ void RabbitMQBlockInputStream::readPrefixImpl()
 
 Block RabbitMQBlockInputStream::readImpl()
 {
+    LOG_DEBUG(log, "ReadImpl.\n");
+
     if (!buffer)
         return Block();
+
+    LOG_DEBUG(log, "Starting writing data into table");
 
     MutableColumns result_columns  = non_virtual_header.cloneEmptyColumns();
     MutableColumns virtual_columns = virtual_header.cloneEmptyColumns();
@@ -159,31 +167,34 @@ Block RabbitMQBlockInputStream::readImpl()
 
 void RabbitMQBlockInputStream::readSuffixImpl()
 {
+    LOG_DEBUG(log, "ReadSuffixImpl.");
+    LOG_DEBUG(log, "Check for commit.");
     if (commit_in_suffix)
+    {
         commit();
+    }
 }
 
 void RabbitMQBlockInputStream::commit()
 {
+    LOG_DEBUG(log, "Commit.");
     if (!buffer)
         return;
 
-    startProcessing();
+    LOG_DEBUG(log, "Commit is called: starting processing.");
+    /// startProcessing();
 }
 
 void RabbitMQBlockInputStream::commitNotSubscribed(const Names & routing_keys)
 {
+    LOG_DEBUG(log, "CommitNotSubscribed.");
+
     if (!buffer)
         return;
 
+    LOG_DEBUG(log, "Starting commit for not subscribed.");
     buffer->commitNotSubscribed(routing_keys);
-    startProcessing();
-}
-
-void RabbitMQBlockInputStream::startProcessing()
-{
-    storage.getHandler().onWait();
-    storage.getHandler().process();
+    /// startProcessing();
 }
 
 }

@@ -32,48 +32,63 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 
 void ReadBufferFromRabbitMQConsumer::subscribe(const Names & routing_keys)
 {
-    consumer_channel->setQos(batch_size, false);
+    //consumer_channel->setQos(batch_size, false);
 
+    /// Tell the RabbitMQ server that we're ready to consume messages from queue with the given key
     for (auto & key : routing_keys)
     {
-        /* queue.declare is an idempotent operation. So, if you run it once, twice, N times, the result
-         * will still be the same. We need to ensure that the queue exists before using it. */
-        consumer_channel->declareQueue(key);
+        LOG_DEBUG(log, "Subscribing to - " + key);
 
-        /// Tell the RabbitMQ server that we're ready to consume messages from queue with the given key
+        /// since we let the library generate consumerTag, this is the only way to access it
         if (consumerTag == "")
         {
-            /// since we let the library generate consumerTag, this is the only way to access it
-            consumer_channel->consume(key, AMQP::noack).onSuccess([this](const std::string &consumer)
-            {
-                   consumerTag = consumer;
+            /* queue.declare is an idempotent operation. So, if you run it once, twice, N times, the result
+             * will still be the same. We need to ensure that the queue exists before using it. */
+            consumer_channel->declareQueue(AMQP::exclusive)
+                .onSuccess([&](const std::string &queue_name, int /*msgcount*/, int /*consumercount*/)
+                        {
+                            LOG_TRACE(log, "Queue declared with the binding key - "+ key);
 
-            }).onReceived([this](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
-            {
-                messages.push_back(RabbitMQMessage(const_cast<char *>(message.body()), message.bodySize(),
-                        message.exchange(), message.routingkey(), deliveryTag, redelivered));
+                            consumer_channel->bindQueue("direct_exchange", "", key);
+                            consumer_channel->consume(queue_name, AMQP::noack)
+                            .onSuccess([&](const std::string &consumer)
+                                    {
+                                        LOG_DEBUG(log, "Successfully subscribed by key - " + key);
 
-                this->stalled = false;
+                                        consumerTag = consumer;
+                                    })
+                            .onReceived([&](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
+                                    {
+                                        LOG_DEBUG(log, "Message reseived: " << message.body());
 
-            }).onError([this](const char *message)
-            {
-                LOG_TRACE(log, message);
-            });
+                                        messages.push_back(RabbitMQMessage(const_cast<char *>(message.body()), message.bodySize(),
+                                        message.exchange(), message.routingkey(), deliveryTag, redelivered));
+                                        this->stalled = false; 
+                                    });
+
+                        });
         }
         else
         {
-            consumer_channel->consume(key, consumerTag, AMQP::noack).onReceived(
-                    [this](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
-           {
-               messages.push_back(RabbitMQMessage(const_cast<char *>(message.body()), message.bodySize(),
-                       message.exchange(), message.routingkey(), deliveryTag, redelivered));
+            consumer_channel->declareQueue(AMQP::exclusive)
+                .onSuccess([&](const std::string &queue_name, int /*msgcount*/, int /*consumercount*/)
+                        {
+                            consumer_channel->bindQueue("direct_exchange", "", key);
+                            consumer_channel->consume(queue_name, AMQP::noack)
+                            .onSuccess([&](const std::string & /* consumer */)
+                                    {
+                                        LOG_DEBUG(log, "Successfully subscribed by key - " + key);
+                                    })
+                            .onReceived([&](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
+                                    {
+                                        LOG_DEBUG(log, "Message reseived: " << message.body());
 
-               this->stalled = false;
+                                        messages.push_back(RabbitMQMessage(const_cast<char *>(message.body()), message.bodySize(),
+                                        message.exchange(), message.routingkey(), deliveryTag, redelivered));
+                                        this->stalled = false; 
+                                    });
 
-           }).onError([this](const char *message)
-           {
-               LOG_TRACE(log, message);
-           });
+                        });
         }
     }
 }
@@ -81,6 +96,8 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const Names & routing_keys)
 
 void ReadBufferFromRabbitMQConsumer::unsubscribe()
 {
+    LOG_DEBUG(log, "Unsubscribe.");
+
     if (consumer_channel->usable())
     {
         if (consumerTag != "")
@@ -101,6 +118,8 @@ Since messages are pushed and are not to be pulled - no explicit fetch (commit) 
 So this method is called only in streamToViews(), where no subcription took place. */
 void ReadBufferFromRabbitMQConsumer::commitNotSubscribed(const Names & routing_keys)
 {
+    LOG_DEBUG(log, "CommitNotSubscribed.");
+
     consumer_channel->setQos(batch_size, false); /// per consumer limit. FIXME: size_t may not fit into uint16_t
 
     for (auto & key : routing_keys)
@@ -155,7 +174,7 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     Since messages are pushed and not pulled, Messages list would not normally be empty if at least one message was successfully sent */
     if (messages.empty())
     {
-        LOG_TRACE(log, "Stalled");
+        LOG_TRACE(log, "Stalled : no messages received. (in nextImpl().)");
         stalled = true;
         return false;
     }

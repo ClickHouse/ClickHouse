@@ -2,122 +2,62 @@
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <common/logger_useful.h>
 
+#include <stdio.h>
 namespace DB
 {
 
 /// to connect to rabbitmq server
-RabbitMQHandler::RabbitMQHandler(const std::pair<std::string, UInt16> & parsed_host_port, Poco::Logger * log_) :
-        log(log_),
-        handler_impl(new ConnectionImpl)
+RabbitMQHandler::RabbitMQHandler(Poco::Logger * log_) :
+        log(log_)
 {
-    const Poco::Net::SocketAddress address(parsed_host_port.first, parsed_host_port.second);
-    handler_impl->socket.connect(address);
-    handler_impl->socket.setKeepAlive(true);
-
-    if (parsed_host_port.first == "localhost" && parsed_host_port.second == 5672)
-    {
-        user_name = "guest";
-        password = "guest";
-    }
-    else
-    {
-        //TODO: get login and password
-    }
 }
 
 RabbitMQHandler::~RabbitMQHandler()
 {
-    handler_impl->socket.close();
 }
 
-/* Send the data over a socket that is connected with RabbitMQ.
-Note that the AMQP library does no buffering by itself. This means that this method
-hould always send out all data or do the buffering itself. */
-void RabbitMQHandler::onData(AMQP::Connection *connection, const char * data, size_t size)
+void RabbitMQHandler::onAttached(AMQP::TcpConnection * /* connection */)
 {
-    handler_impl->connection = connection;
+    LOG_TRACE(log, "A new connection attached to the hadler.");
 
-    if (!data)
-        return;
-
-    handler_impl->socket.sendBytes(data, size);
+    /// TODO:init all that is needed further here
 }
 
-void RabbitMQHandler::onError(AMQP::Connection * /* connection */, const char * message)
+void RabbitMQHandler::onConnected(AMQP::TcpConnection * /* connection */)
 {
-    LOG_TRACE(log, message);
+    LOG_TRACE(log, "TCP connection has been established. Setting up started.");
 }
 
-
-void RabbitMQHandler::onReady(AMQP::Connection * /* connection */)
+void RabbitMQHandler::onReady(AMQP::TcpConnection * /* connection */)
 {
-    LOG_TRACE(log, "Connection is ready to use, the RabbitMQ server is ready to receive instructions.");
-    handler_impl->connected = true;
+    LOG_TRACE(log, "Login attempt succeeded. TcpConnection is ready to use.");
 }
 
-void RabbitMQHandler::onClosed(AMQP::Connection * /* connection */)
+void RabbitMQHandler::onError(AMQP::TcpConnection * /* connection */, const char * message)
 {
-    handler_impl->closed  = true;
+    LOG_ERROR(log, message);
 }
 
-void RabbitMQHandler::process()
+void RabbitMQHandler::onClosed(AMQP::TcpConnection * /* connection */)
 {
-    try
-    {
-        /* If you notice in your event loop that the socket that is connected with the RabbitMQ server
-        becomes readable, you should read out that socket, and pass the received bytes to the AMQP-CPP
-        library. This is done by calling the parse() method in the Connection object. */
-        while (!handler_impl->closed && pending > 0)
-        {
-            if (handler_impl->socket.available() > 0)
-            {
-                size_t avail = handler_impl->socket.available();
+    LOG_TRACE(log, "Closing the connection.");
 
-                if (handler_impl->tmpBuff.size() < avail)
-                {
-                    handler_impl->tmpBuff.resize(avail, 0);
-                }
-
-                handler_impl->socket.receiveBytes(&handler_impl->tmpBuff[0], avail);
-
-                size_t count = 0;
-                if (handler_impl->connection)
-                {
-                    count = handler_impl->connection->parse(handler_impl->tmpBuff.data(), avail);
-                }
-
-                if (count != avail)
-                {
-                }
-            }
-
-            if (handler_impl->socket.available() < 0)
-            {
-                LOG_TRACE(log, "Socket error!");
-            }
-
-            // std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        }
-
-    } catch (const Poco::Exception& e)
-    {
-        LOG_TRACE(log, "Poco error: " << e.message());
-    }
+    /// TODO: Close the connection here.
 }
 
-bool RabbitMQHandler::connected() const
+void RabbitMQHandler::onLost(AMQP::TcpConnection * /* connection */)
 {
-    return handler_impl->connected;
+    LOG_TRACE(log, "TcpConnection closed or lost.");
 }
 
-void RabbitMQHandler::onWait()
+void RabbitMQHandler::onDetached(AMQP::TcpConnection * /* connection */)
 {
-    ++pending;
+    LOG_TRACE(log, "TcpConnection is detached.");
 }
 
-void RabbitMQHandler::updatePending()
+void RabbitMQHandler::monitor(AMQP::TcpConnection * /* connection */, int /* fd */, int /* flags */ )
 {
-    --pending;
+    LOG_TRACE(log, "monitor() method is called.");
 }
 
 }

@@ -1,8 +1,9 @@
 #pragma once
 #include <memory>
 #include <amqpcpp.h>
+#include <amqpcpp/linux_tcp.h>
 #include <Poco/Net/StreamSocket.h>
-#include <common/Types.h>
+#include <common/types.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -16,59 +17,29 @@ namespace DB
  * called by the library every time it wants to send out data, or when it needs to inform you that an error occured.
  */
 
-class ConnectionImpl;
-class RabbitMQHandler: public AMQP::ConnectionHandler
+class RabbitMQHandler: public AMQP::TcpHandler
 {
 public:
 
-    RabbitMQHandler(const std::pair<std::string, UInt16> & parsedAddress_, Poco::Logger * log_);
+    RabbitMQHandler(Poco::Logger * log_);
 
     ~RabbitMQHandler() override;
-
-    void process();
-    void onWait();
-    void updatePending();
-    bool connected() const;
 
     RabbitMQHandler(const RabbitMQHandler&) = delete;
     RabbitMQHandler& operator=(const RabbitMQHandler&) = delete;
 
-    const String & get_user_name() { return user_name; }
-    const String & get_password() { return password; }
-
 private:
-    void onReady(AMQP::Connection * conection) override;
-    void onData(AMQP::Connection * connection, const char *data, size_t size) override;
-    void onError(AMQP::Connection * connection, const char *message) override;
-    void onClosed(AMQP::Connection * connection) override;
+    void onAttached(AMQP::TcpConnection * conection) override;
+    void onConnected(AMQP::TcpConnection * conection) override;
+    void onReady(AMQP::TcpConnection * conection) override;
+    void onError(AMQP::TcpConnection * connection, const char *message) override;
+    void onClosed(AMQP::TcpConnection * connection) override;
+    void onLost(AMQP::TcpConnection * connection) override;
+    void onDetached(AMQP::TcpConnection * connection) override;
+    void monitor(AMQP::TcpConnection *connection, int fd, int flags) override;
 
 private:
     Poco::Logger * log;
-    String user_name;
-    String password;
-
-    std::shared_ptr<ConnectionImpl> handler_impl;
-
-    size_t pending = 0;
-};
-
-class ConnectionImpl
-{
-public:
-    ConnectionImpl() :
-            connected(false),
-            connection(nullptr),
-            closed(false),
-            readable(false)
-    {
-    }
-    Poco::Net::StreamSocket socket;
-    bool connected = false;
-    AMQP::Connection * connection;
-    bool closed;
-    bool readable;
-
-    std::vector<char> tmpBuff;
 };
 
 }

@@ -42,6 +42,7 @@
 
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <amqpcpp.h>
+#include <amqpcpp/linux_tcp.h>
 
 namespace DB
 {
@@ -66,6 +67,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         const ColumnsDescription & columns_,
         const String & host_port_,
         const Names & routing_keys_,
+        const String & exchange_name_,
         const String & format_name_,
         char row_delimiter_,
         size_t num_consumers_,
@@ -80,6 +82,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , global_context(context_.getGlobalContext())
         , host_port(global_context.getMacros()->expand(host_port_))
         , routing_keys(global_context.getMacros()->expand(routing_keys_))
+        , exchange_name(exchange_name_)
         , format_name(global_context.getMacros()->expand(format_name_))
         , row_delimiter(row_delimiter_)
         , num_consumers(num_consumers_)
@@ -87,16 +90,48 @@ StorageRabbitMQ::StorageRabbitMQ(
         , skip_broken(skip_broken_)
         , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
-        , connection_handler(parseAddress(host_port, 5672), log)
-        , connection(&connection_handler,
-                     AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()))
+        , connection_handler(log)
+        , address(parseAddress(host_port, 15672).first, parseAddress(host_port, 15672).second, AMQP::Login(), "/")
+        , connection(&connection_handler, address)
 {
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
 
-    publishing_channel = std::make_shared<AMQP::Channel>(&connection);
+    if (num_consumers == 1)
+    {
+        consumer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
+        consumer_channel->onReady([&]()
+                    {
+                        LOG_TRACE(log, "Created consumer channel.");
+                    });
+        initQueues(consumer_channel, routing_keys[0]);
+    }
+
+    LOG_TRACE(log, "connection ready? - " + std::to_string(connection.ready()));
 }
+
+/*
+ * Messages are pushed to consumers (and not pulled by consumers), so if there is no queue binding from exchange
+ * to any queue with a routing key of the message, then the message is not routed anywhere from the exchange and lost.
+ */
+void StorageRabbitMQ::initQueues(ChannelPtr channel_, String routing_key)
+{
+    LOG_DEBUG(log, "Binding queues.");
+
+    channel_->declareExchange(exchange_name, AMQP::direct)
+        .onSuccess([&]()
+                {
+                    LOG_TRACE(log, "Exchange declared");
+                });
+    channel_->declareQueue(AMQP::exclusive)
+        .onSuccess([&](const std::string & queue_name, int /*msgcount*/, int /*consumercount*/)
+        {
+            LOG_TRACE(log, "Queue declared with the binding key - "+ routing_key);
+            channel_->bindQueue(exchange_name, queue_name, routing_key);
+        });
+}
+
 
 Pipes StorageRabbitMQ::read(
         const Names & column_names,
@@ -114,7 +149,7 @@ Pipes StorageRabbitMQ::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<RabbitMQBlockInputStream>(*this, context, column_names, 1)));
+        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<RabbitMQBlockInputStream>(*this, context, column_names, 1, log)));
     }
 
     LOG_DEBUG(log, "Starting reading " << pipes.size() << " streams");
@@ -128,6 +163,8 @@ BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const Context & cont
 
 void StorageRabbitMQ::startup()
 {
+    LOG_DEBUG(log, "startup.");
+
     for (size_t i = 0; i < num_consumers; ++i)
     {
         try
@@ -146,10 +183,12 @@ void StorageRabbitMQ::startup()
 
 void StorageRabbitMQ::shutdown()
 {
+    LOG_DEBUG(log, "shutdown.");
     stream_cancelled = true;
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
+        LOG_DEBUG(log, "poping read buffer.");
         auto buffer = popReadBuffer();
     }
 
@@ -158,7 +197,9 @@ void StorageRabbitMQ::shutdown()
 
 void StorageRabbitMQ::pushReadBuffer(ConsumerBufferPtr buffer)
 {
+    std::lock_guard lock(mutex);
     buffers.push_back(buffer);
+    semaphore.set();
 }
 
 
@@ -175,18 +216,31 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
         semaphore.wait();
     else
     {
+        LOG_DEBUG(log, ":(");
         if (!semaphore.tryWait(timeout.count()))
             return nullptr;
     }
+
     // Take the first available buffer from the list
+    std::lock_guard lock(mutex);
     auto buffer = buffers.back();
     buffers.pop_back();
+
+    LOG_DEBUG(log, "Poping read buffer.");
     return buffer;
 }
 
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
+    LOG_DEBUG(log, "CreateWriteBuffer.");
+
+    /// Sharing one channel between publishers
+    if (!publishing_channel)
+    {
+        publishing_channel = std::make_shared<AMQP::TcpChannel>(&connection);
+    }
+
     return std::make_shared<WriteBufferToRabbitMQProducer>(
             publishing_channel, routing_keys[0],
             row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
@@ -195,18 +249,26 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
+    LOG_DEBUG(log, "CreateReadBuffer.");
+
     const Settings & settings = global_context.getSettingsRef();
     size_t batch_size = max_block_size;
     if (!batch_size)
         batch_size = settings.max_block_size.value;
 
-    return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-            std::make_shared<AMQP::Channel>(&connection), log, batch_size, stream_cancelled);
+    if (num_consumers != 1)
+        return std::make_shared<ReadBufferFromRabbitMQConsumer>(
+                std::make_shared<AMQP::TcpChannel>(&connection), log, batch_size, stream_cancelled);
+    else
+        return std::make_shared<ReadBufferFromRabbitMQConsumer>(
+                consumer_channel, log, batch_size, stream_cancelled);
 }
 
 
 bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 {
+    LOG_DEBUG(log, "CheckDependencies.");
+
     // Check if all dependencies are attached
     auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
     if (dependencies.empty())
@@ -235,6 +297,8 @@ bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 
 void StorageRabbitMQ::threadFunc()
 {
+    LOG_DEBUG(log, "threadFunc");
+
     try
     {
         auto table_id = getStorageID();
@@ -290,7 +354,7 @@ bool StorageRabbitMQ::streamToViews()
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
         auto stream = std::make_shared<RabbitMQBlockInputStream>(
-                *this, global_context, block_io.out->getHeader().getNames(), block_size, false);
+                *this, global_context, block_io.out->getHeader().getNames(), block_size, log, false);
         streams.emplace_back(stream);
 
         // Limit read batch to maximum block size to allow DDL
@@ -334,6 +398,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
               * - RabbitMQ host:port (default: localhost:5672)
               * - List of routing keys to bind producer->exchange->queue <-> consumer (default: "")
               * optional for now:
+              *  - echxange name
               * - Number of consumers
               * - Message format (string)
               * - Row delimiter
@@ -375,10 +440,23 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             boost::trim(key);
         }
 
-        UInt64 num_consumers = rabbitmq_settings.rabbitmq_num_consumers;
+        String exchange = rabbitmq_settings.rabbitmq_exchange_name.value;
         if (args_count >= 3)
         {
+            engine_args[2] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[2], args.local_context);
+
             const auto * ast = engine_args[2]->as<ASTLiteral>();
+            if (ast && ast->value.getType() == Field::Types::String)
+            {
+                exchange = safeGet<String>(ast->value);
+            }
+        }
+
+
+        UInt64 num_consumers = rabbitmq_settings.rabbitmq_num_consumers;
+        if (args_count >= 4)
+        {
+            const auto * ast = engine_args[3]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 num_consumers = safeGet<UInt64>(ast->value);
@@ -391,11 +469,11 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
 
         String format = rabbitmq_settings.rabbitmq_format.value;
-        if (args_count >= 4)
+        if (args_count >= 5)
         {
-            engine_args[3] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[3], args.local_context);
+            engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
 
-            const auto * ast = engine_args[3]->as<ASTLiteral>();
+            const auto * ast = engine_args[4]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::String)
             {
                 format = safeGet<String>(ast->value);
@@ -407,11 +485,11 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         char row_delimiter = rabbitmq_settings.rabbitmq_row_delimiter;
-        if (args_count >= 5)
+        if (args_count >= 6)
         {
-            engine_args[4] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[4], args.local_context);
+            engine_args[5] = evaluateConstantExpressionOrIdentifierAsLiteral(engine_args[5], args.local_context);
 
-            const auto * ast = engine_args[4]->as<ASTLiteral>();
+            const auto * ast = engine_args[5]->as<ASTLiteral>();
             String arg;
             if (ast && ast->value.getType() == Field::Types::String)
             {
@@ -436,9 +514,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         UInt64 max_block_size = static_cast<size_t>(rabbitmq_settings.rabbitmq_max_block_size);
-        if (args_count >= 6)
+        if (args_count >= 7)
         {
-            const auto * ast = engine_args[5]->as<ASTLiteral>();
+            const auto * ast = engine_args[6]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 max_block_size = static_cast<size_t>(safeGet<UInt64>(ast->value));
@@ -450,9 +528,9 @@ void registerStorageRabbitMQ(StorageFactory & factory)
         }
 
         size_t skip_broken = static_cast<size_t>(rabbitmq_settings.rabbitmq_skip_broken_messages);
-        if (args_count >= 7)
+        if (args_count >= 8)
         {
-            const auto * ast = engine_args[6]->as<ASTLiteral>();
+            const auto * ast = engine_args[7]->as<ASTLiteral>();
             if (ast && ast->value.getType() == Field::Types::UInt64)
             {
                 skip_broken = static_cast<size_t>(safeGet<UInt64>(ast->value));
@@ -465,7 +543,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         return StorageRabbitMQ::create(
                 args.table_id, args.context, args.columns,
-                host_port, routing_keys,
+                host_port, routing_keys, exchange, 
                 format, row_delimiter, num_consumers, max_block_size, skip_broken);
     };
 
