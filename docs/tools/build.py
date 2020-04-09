@@ -21,6 +21,7 @@ from mkdocs.commands import build as mkdocs_build
 from concatenate import concatenate
 
 import mdx_clickhouse
+import nav
 import test
 import util
 import website
@@ -86,10 +87,10 @@ def build_for_lang(lang, args):
 
         site_names = {
             'en': 'ClickHouse %s Documentation',
+            'zh': 'ClickHouse文档 %s',
             'es': 'Documentación de ClickHouse %s',
             'fr': 'Documentation ClickHouse %s',
             'ru': 'Документация ClickHouse %s',
-            'zh': 'ClickHouse文档 %s',
             'ja': 'ClickHouseドキュメント %s',
             'fa': 'مستندات %sClickHouse'
         }
@@ -124,7 +125,6 @@ def build_for_lang(lang, args):
             plugins.append('htmlproofer')
 
         raw_config = dict(
-            config_file=config_path,
             site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
             site_url=f'https://clickhouse.tech/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
@@ -151,6 +151,11 @@ def build_for_lang(lang, args):
             }
         )
 
+        if os.path.exists(config_path):
+            raw_config['config_file'] = config_path
+        else:
+            raw_config['nav'] = nav.build_nav(lang, args)
+
         cfg = config.load_config(**raw_config)
 
         try:
@@ -162,7 +167,7 @@ def build_for_lang(lang, args):
             mkdocs_build.build(cfg)
 
         if not args.skip_single_page:
-            build_single_page_version(lang, args, cfg)
+            build_single_page_version(lang, args, raw_config.get('nav'), cfg)
 
         mdx_clickhouse.PatchedMacrosPlugin.disabled = False
 
@@ -172,14 +177,14 @@ def build_for_lang(lang, args):
         raise SystemExit('\n' + str(e))
 
 
-def build_single_page_version(lang, args, cfg):
+def build_single_page_version(lang, args, nav, cfg):
     logging.info(f'Building single page version for {lang}')
     os.environ['SINGLE_PAGE'] = '1'
     extra = cfg.data['extra']
     extra['single_page'] = True
 
     with util.autoremoved_file(os.path.join(args.docs_dir, lang, 'single.md')) as single_md:
-        concatenate(lang, args.docs_dir, single_md)
+        concatenate(lang, args.docs_dir, single_md, nav)
 
         with util.temp_dir() as site_temp:
             with util.temp_dir() as docs_temp:
@@ -300,7 +305,7 @@ def write_redirect_html(out_path, to_url):
 
 
 def build_redirect_html(args, from_path, to_path):
-    for lang in args.lang.split(','):
+    for lang in ['en', 'es', 'fr', 'ja', 'fa']: # TODO: args.lang.split(','):
         out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
         version_prefix = args.version_prefix + '/' if args.version_prefix else '/'
         target_path = to_path.replace('.md', '/')
