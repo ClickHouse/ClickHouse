@@ -914,7 +914,7 @@ public:
         scramble.resize(SCRAMBLE_LENGTH + 1, 0);
         Poco::RandomInputStream generator;
 
-       /** Generate a random string using ASCII characters but avoid seperator character,
+       /** Generate a random string using ASCII characters but avoid separator character,
          * produce pseudo random numbers between with about 7 bit worth of entropty between 1-127.
          * https://github.com/mysql/mysql-server/blob/8.0/mysys/crypt_genhash_impl.cc#L427
          */
