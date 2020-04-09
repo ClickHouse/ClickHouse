@@ -14,8 +14,6 @@ using BlockOutputStreamPtr = std::shared_ptr<IBlockOutputStream>;
 struct DictionaryStructure;
 class Context;
 
-
-
 /// Write keys to block output stream.
 
 /// For simple key
@@ -30,8 +28,8 @@ void formatKeys(
 
 /// Used for applying settings to copied context in some register[...]Source functions
 Context copyContextAndApplySettings(
-    const std::string & config_prefix, 
-    const Context & context, 
+    const std::string & config_prefix,
+    const Context & context,
     const Poco::Util::AbstractConfiguration & config);
 
 }
