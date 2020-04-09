@@ -933,7 +933,11 @@ def test_concurrent_alter_modify(start_cluster, name, engine):
         def alter_modify(num):
             for i in range(num):
                 column_type = random.choice(["UInt64", "String"])
-                node1.query("ALTER TABLE {} MODIFY COLUMN number {}".format(name, column_type))
+                try:
+                    node1.query("ALTER TABLE {} MODIFY COLUMN number {}".format(name, column_type))
+                except:
+                    if "Replicated" not in engine:
+                        raise
 
         insert(100)
 
