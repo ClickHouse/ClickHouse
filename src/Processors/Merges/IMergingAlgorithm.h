@@ -24,10 +24,12 @@ public:
     virtual void consume(Chunk chunk, size_t source_num) = 0;
     virtual Status merge() = 0;
 
+    IMergingAlgorithm(IMergingAlgorithm &&) = default;
     virtual ~IMergingAlgorithm() = default;
 };
 
-template <class T>
-concept MergingAlgorithm = std::is_base_of<IMergingAlgorithm, T>::value && std::is_move_constructible<T>::value;
+// TODO: use when compile with clang which could support it
+// template <class T>
+// concept MergingAlgorithm = std::is_base_of<IMergingAlgorithm, T>::value && std::is_move_constructible<T>::value;
 
 }

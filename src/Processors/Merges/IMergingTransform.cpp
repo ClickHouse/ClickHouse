@@ -200,28 +200,22 @@ IProcessor::Status IMergingTransform::prepare()
     return Status::Ready;
 }
 
-
-template <MergingAlgorithm Algorithm>
-IMergingTransform2<Algorithm>::IMergingTransform2(
-        Algorithm algorithm,
-        size_t num_inputs,
-        const Block & input_header,
-        const Block & output_header,
-        bool have_all_inputs_)
-        : IProcessor(InputPorts(num_inputs, input_header), {output_header})
-        , algorithm(std::move(algorithm))
-        , have_all_inputs(have_all_inputs_)
+IMergingTransformBase::IMergingTransformBase(
+    size_t num_inputs,
+    const Block & input_header,
+    const Block & output_header,
+    bool have_all_inputs_)
+    : IProcessor(InputPorts(num_inputs, input_header), {output_header})
+    , have_all_inputs(have_all_inputs_)
 {
 }
 
-template <MergingAlgorithm Algorithm>
-void IMergingTransform2<Algorithm>::onNewInput()
+void IMergingTransformBase::onNewInput()
 {
     throw Exception("onNewInput is not implemented for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
-template <MergingAlgorithm Algorithm>
-void IMergingTransform2<Algorithm>::addInput()
+void IMergingTransformBase::addInput()
 {
     if (have_all_inputs)
         throw Exception("IMergingTransform already have all inputs.", ErrorCodes::LOGICAL_ERROR);
@@ -230,8 +224,7 @@ void IMergingTransform2<Algorithm>::addInput()
     onNewInput();
 }
 
-template <MergingAlgorithm Algorithm>
-void IMergingTransform2<Algorithm>::setHaveAllInputs()
+void IMergingTransformBase::setHaveAllInputs()
 {
     if (have_all_inputs)
         throw Exception("IMergingTransform already have all inputs.", ErrorCodes::LOGICAL_ERROR);
@@ -239,8 +232,7 @@ void IMergingTransform2<Algorithm>::setHaveAllInputs()
     have_all_inputs = true;
 }
 
-template <MergingAlgorithm Algorithm>
-IProcessor::Status IMergingTransform2<Algorithm>::prepareInitializeInputs()
+IProcessor::Status IMergingTransformBase::prepareInitializeInputs()
 {
     /// Add information about inputs.
     if (input_states.empty())
@@ -296,8 +288,7 @@ IProcessor::Status IMergingTransform2<Algorithm>::prepareInitializeInputs()
     return Status::Ready;
 }
 
-template <MergingAlgorithm Algorithm>
-IProcessor::Status IMergingTransform2<Algorithm>::prepare()
+IProcessor::Status IMergingTransformBase::prepare()
 {
     if (!have_all_inputs)
         return Status::NeedData;
@@ -327,11 +318,8 @@ IProcessor::Status IMergingTransform2<Algorithm>::prepare()
     bool is_port_full = !output.canPush();
 
     /// Push if has data.
-    if (has_output_chunk && !is_port_full)
-    {
+    if (output_chunk && !is_port_full)
         output.push(std::move(output_chunk));
-        has_output_chunk = false;
-    }
 
     if (!is_initialized)
         return prepareInitializeInputs();
@@ -365,7 +353,7 @@ IProcessor::Status IMergingTransform2<Algorithm>::prepare()
             if (!chunk.hasRows() && !input.isFinished())
                 return Status::NeedData;
 
-            algorithm.consume(std::move(chunk), next_input_to_read);
+            input_chunk = std::move(chunk);
         }
 
         need_data = false;
@@ -375,27 +363,6 @@ IProcessor::Status IMergingTransform2<Algorithm>::prepare()
         return Status::PortFull;
 
     return Status::Ready;
-}
-
-template <MergingAlgorithm Algorithm>
-void IMergingTransform2<Algorithm>::work()
-{
-    if (!init_chunks.empty())
-        algorithm.initialize(std::move(init_chunks));
-
-    IMergingAlgorithm::Status status = algorithm.merge();
-
-    if (status.chunk && status.chunk.hasRows())
-    {
-        has_output_chunk = true;
-        output_chunk = std::move(status.chunk);
-    }
-
-    if (status.required_source >= 0)
-        next_input_to_read = status.required_source;
-
-    if (status.is_finished)
-        is_finished = true;
 }
 
 }
