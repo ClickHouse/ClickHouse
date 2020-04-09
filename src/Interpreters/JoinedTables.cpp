@@ -247,6 +247,9 @@ void JoinedTables::rewriteDistributedInAndJoins(ASTPtr & query)
 
 std::shared_ptr<TableJoin> JoinedTables::makeTableJoin(const ASTSelectQuery & select_query)
 {
+    if (tables_with_columns.size() < 2)
+        return {};
+
     auto settings = context.getSettingsRef();
     auto table_join = std::make_shared<TableJoin>(settings, context.getTemporaryVolume());
 
