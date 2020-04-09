@@ -132,40 +132,40 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 ## system.detached\_parts {#system_tables-detached_parts}
 
 Содержит информацию об отсоединённых кусках таблиц семейства [MergeTree](../engines/table_engines/mergetree_family/mergetree.md). Столбец `reason` содержит причину, по которой кусок был отсоединён. Для кусов, отсоединённых пользователем, `reason` содержит пустую строку.
-Такие куски могут быть присоединены с помощью [ALTER TABLE ATTACH PARTITION\|PART](../sql_reference/sql_reference/alter/#alter_attach-partition). Остальные столбцы описаны в [system.parts](#system_tables-parts).
-Если имя куска некорректно, значения некоторых столбцов могут быть `NULL`. Такие куски могут быть удалены с помощью [ALTER TABLE DROP DETACHED PART](../sql_reference/sql_reference/alter/#alter_drop-detached).
+Такие куски могут быть присоединены с помощью [ALTER TABLE ATTACH PARTITION\|PART](../sql_reference/alter/#alter_attach-partition). Остальные столбцы описаны в [system.parts](#system_tables-parts).
+Если имя куска некорректно, значения некоторых столбцов могут быть `NULL`. Такие куски могут быть удалены с помощью [ALTER TABLE DROP DETACHED PART](../sql_reference/alter/#alter_drop-detached).
 
 ## system.dictionaries {#system_tables-dictionaries}
 
-Содержит информацию о [внешних словарях](../query_language/dicts/external_dicts.md).
+Содержит информацию о [внешних словарях](../sql_reference/dictionaries/external_dictionaries/external_dicts.md).
 
 Столбцы:
 
-- `database` ([String](../data_types/string.md)) — Имя базы данных, в которой находится словарь, созданный с помощью DDL-запроса. Пустая строка для других словарей.
-- `name` ([String](../data_types/string.md)) — [Имя словаря](../query_language/dicts/external_dicts_dict.md).
-- `status` ([Enum8](../data_types/enum.md)) — Статус словаря. Возможные значения:
+- `database` ([String](../sql_reference/data_types/string.md)) — Имя базы данных, в которой находится словарь, созданный с помощью DDL-запроса. Пустая строка для других словарей.
+- `name` ([String](../sql_reference/data_types/string.md)) — [Имя словаря](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict.md).
+- `status` ([Enum8](../sql_reference/data_types/enum.md)) — Статус словаря. Возможные значения:
      - `NOT_LOADED` — Словарь не загружен, потому что не использовался.
      - `LOADED` — Словарь загружен успешно.
      - `FAILED` — Словарь не загружен в результате ошибки.
      - `LOADING` — Словарь в процессе загрузки.
-     - `LOADED_AND_RELOADING` — Словарь загружен успешно, сейчас перезагружается (частые причины: запрос [SYSTEM RELOAD DICTIONARY](../query_language/system.md#query_language-system-reload-dictionary), таймаут, изменение настроек словаря).
+     - `LOADED_AND_RELOADING` — Словарь загружен успешно, сейчас перезагружается (частые причины: запрос [SYSTEM RELOAD DICTIONARY](../sql_reference/statements/system.md#query_language-system-reload-dictionary), таймаут, изменение настроек словаря).
      - `FAILED_AND_RELOADING` — Словарь не загружен в результате ошибки, сейчас перезагружается.
-- `origin` ([String](../data_types/string.md)) — Путь к конфигурационному файлу, описывающему словарь.
-- `type`  ([String](../data_types/string.md)) — Тип размещения словаря. [Хранение словарей в памяти](../query_language/dicts/external_dicts_dict_layout.md).
-- `key` — [Тип ключа](../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-key): Числовой ключ ([UInt64](../data_types/int_uint.md#uint-ranges)) или Составной ключ ([String](../data_types/string.md)) — строка вида "(тип 1, тип 2, ..., тип n)".
-- `attribute.names` ([Array](../data_types/array.md)([String](../data_types/string.md))) — Массив [имен атрибутов](../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
-- `attribute.types` ([Array](../data_types/array.md)([String](../data_types/string.md))) — Соответствующий массив [типов атрибутов](../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
-- `bytes_allocated` ([UInt64](../data_types/int_uint.md#uint-ranges)) — Объем оперативной памяти, используемый словарем.
-- `query_count` ([UInt64](../data_types/int_uint.md#uint-ranges)) — Количество запросов с момента загрузки словаря или с момента последней успешной перезагрузки.
-- `hit_rate` ([Float64](../data_types/float.md)) — Для cache-словарей — процент закэшированных значений.
-- `element_count` ([UInt64](../data_types/int_uint.md#uint-ranges))  — Количество элементов, хранящихся в словаре.
-- `load_factor` ([Float64](../data_types/float.md)) — Процент заполнения словаря (для хэшированного словаря  — процент заполнения хэш-таблицы).
-- `source` ([String](../data_types/string.md)) — Текст, описывающий [источник данных](../query_language/dicts/external_dicts_dict_sources.md) для словаря.
-- `lifetime_min` ([UInt64](../data_types/int_uint.md#uint-ranges)) — Минимальное [время обновления](../query_language/dicts/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах. 
-- `lifetime_max` ([UInt64](../data_types/int_uint.md#uint-ranges)) — Максимальное [время обновления](../query_language/dicts/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах.
-- `loading_start_time` ([DateTime](../data_types/datetime.md)) — Время начала загрузки словаря.
-- `loading_duration` ([Float32](../data_types/float.md)) — Время, затраченное на загрузку словаря.
-- `last_exception` ([String](../data_types/string.md)) — Текст ошибки, возникающей при создании или перезагрузке словаря, если словарь не удалось создать.
+- `origin` ([String](../sql_reference/data_types/string.md)) — Путь к конфигурационному файлу, описывающему словарь.
+- `type`  ([String](../sql_reference/data_types/string.md)) — Тип размещения словаря. [Хранение словарей в памяти](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_layout.md).
+- `key` — [Тип ключа](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-key): Числовой ключ ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) или Составной ключ ([String](../sql_reference/data_types/string.md)) — строка вида "(тип 1, тип 2, ..., тип n)".
+- `attribute.names` ([Array](../sql_reference/data_types/array.md)([String](../sql_reference/data_types/string.md))) — Массив [имен атрибутов](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
+- `attribute.types` ([Array](../sql_reference/data_types/array.md)([String](../sql_reference/data_types/string.md))) — Соответствующий массив [типов атрибутов](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
+- `bytes_allocated` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Объем оперативной памяти, используемый словарем.
+- `query_count` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Количество запросов с момента загрузки словаря или с момента последней успешной перезагрузки.
+- `hit_rate` ([Float64](../sql_reference/data_types/float.md)) — Для cache-словарей — процент закэшированных значений.
+- `element_count` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges))  — Количество элементов, хранящихся в словаре.
+- `load_factor` ([Float64](../sql_reference/data_types/float.md)) — Процент заполнения словаря (для хэшированного словаря  — процент заполнения хэш-таблицы).
+- `source` ([String](../sql_reference/data_types/string.md)) — Текст, описывающий [источник данных](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md) для словаря.
+- `lifetime_min` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Минимальное [время обновления](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах. 
+- `lifetime_max` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Максимальное [время обновления](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах.
+- `loading_start_time` ([DateTime](../sql_reference/data_types/datetime.md)) — Время начала загрузки словаря.
+- `loading_duration` ([Float32](../sql_reference/data_types/float.md)) — Время, затраченное на загрузку словаря.
+- `last_exception` ([String](../sql_reference/data_types/string.md)) — Текст ошибки, возникающей при создании или перезагрузке словаря, если словарь не удалось создать.
 
 **Пример**
 
