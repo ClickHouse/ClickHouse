@@ -98,11 +98,16 @@ set(_gRPC_UPB_LIBRARIES upb)
 
 # zlib.cmake
 <<<<<<< HEAD
+<<<<<<< HEAD
 set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib-ng)
+=======
+set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib)
+>>>>>>> zlib
 include_directories("${ZLIB_ROOT_DIR}")
 # add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
 set(_gRPC_ZLIB_LIBRARIES zlibstatic)
 set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}")
+<<<<<<< HEAD
 
 =======
 #set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib-ng)
@@ -125,6 +130,10 @@ if(EXISTS "${ZLIB_ROOT_DIR}/CMakeLists.txt")
     set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/third_party/zlib")
   endif()
 endif()
+>>>>>>> zlib
+=======
+#include(${GRPC_SOURCE_DIR}/cmake/zlib.cmake)
+
 >>>>>>> zlib
 
 set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -std=c99")
