@@ -1,87 +1,88 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
 ---
 
-# ClickHouse Testing {#clickhouse-testing}
+# Тестирование ClickHouse {#clickhouse-testing}
 
-## Functional Tests {#functional-tests}
+## Функциональные пробы {#functional-tests}
 
-Functional tests are the most simple and convenient to use. Most of ClickHouse features can be tested with functional tests and they are mandatory to use for every change in ClickHouse code that can be tested that way.
+Функциональные тесты являются наиболее простыми и удобными в использовании. Большинство функций ClickHouse можно протестировать с помощью функциональных тестов, и они обязательны для использования при каждом изменении кода ClickHouse, которое может быть протестировано таким образом.
 
-Each functional test sends one or multiple queries to the running ClickHouse server and compares the result with reference.
+Каждый функциональный тест отправляет один или несколько запросов на запущенный сервер ClickHouse и сравнивает результат со ссылкой.
 
-Tests are located in `queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from Yandex.Metrica and not available to general public. We tend to use only `stateless` tests and avoid adding new `stateful` tests.
+Тесты расположены в `queries` каталог. Существует два подкаталога: `stateless` и `stateful`. Тесты без состояния выполняют запросы без каких - либо предварительно загруженных тестовых данных-они часто создают небольшие синтетические наборы данных на лету, в самом тесте. Статусные тесты требуют предварительно загруженных тестовых данных от Яндекса.Метрика и не доступна широкой публике. Мы склонны использовать только `stateless` тесты и избегайте добавления новых `stateful` тесты.
 
-Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery --testmode`. `.sh` test is a script that is run by itself.
+Каждый тест может быть одного из двух типов: `.sql` и `.sh`. `.sql` тест - это простой SQL-скрипт, который передается по конвейеру в `clickhouse-client --multiquery --testmode`. `.sh` тест - это скрипт, который запускается сам по себе.
 
-To run all tests, use `testskhouse-test` tool. Look `--help` for the list of possible options. You can simply run all tests or run subset of tests filtered by substring in test name: `./clickhouse-test substring`.
+Чтобы выполнить все тесты, используйте `testskhouse-test` инструмент. Смотри `--help` для списка возможных вариантов. Вы можете просто запустить все тесты или запустить подмножество тестов, отфильтрованных по подстроке в имени теста: `./clickhouse-test substring`.
 
-The most simple way to invoke functional tests is to copy `clickhouse-client` to `/usr/bin/`, run `clickhouse-server` and then run `./clickhouse-test` from its own directory.
+Самый простой способ вызвать функциональные тесты-это скопировать `clickhouse-client` к `/usr/bin/`, бежать `clickhouse-server` а потом бежать `./clickhouse-test` из собственного каталога.
 
-To add new test, create a `.sql` or `.sh` file in `queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
+Чтобы добавить новый тест, создайте `.sql` или `.sh` файл в `queries/0_stateless` каталог, проверьте его вручную, а затем сгенерируйте `.reference` файл создается следующим образом: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` или `./00000_test.sh > ./00000_test.reference`.
 
-Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
+Тесты должны использовать (создавать, отбрасывать и т. д.) Только таблицы в `test` предполагается, что база данных создается заранее; также тесты могут использовать временные таблицы.
 
-If you want to use distributed queries in functional tests, you can leverage `remote` table function with `127.0.0.{1..2}` addresses for the server to query itself; or you can use predefined test clusters in server configuration file like `test_shard_localhost`.
+Если вы хотите использовать распределенные запросы в функциональных тестах, вы можете использовать их в качестве рычагов `remote` функция таблицы с `127.0.0.{1..2}` адреса для запроса самого сервера; или вы можете использовать предопределенные тестовые кластеры в файле конфигурации сервера, например `test_shard_localhost`.
 
-Some tests are marked with `zookeeper`, `shard` or `long` in their names.
-`zookeeper` is for tests that are using ZooKeeper. `shard` is for tests that
-requires server to listen `127.0.0.*`; `distributed` or `global` have the same
-meaning. `long` is for tests that run slightly longer that one second. You can
-disable these groups of tests using `--no-zookeeper`, `--no-shard` and
-`--no-long` options, respectively.
+Некоторые тесты помечены знаком `zookeeper`, `shard` или `long` в своем названии.
+`zookeeper` это для тестов, которые используют ZooKeeper. `shard` это для тестов, что
+требуется сервер для прослушивания `127.0.0.*`; `distributed` или `global` есть то же самое
+значение. `long` это для тестов, которые работают немного дольше, чем одна секунда. Ты можешь
+отключите эти группы тестов с помощью `--no-zookeeper`, `--no-shard` и
+`--no-long` варианты, соответственно.
 
-## Known bugs {#known-bugs}
+## Известная ошибка {#known-bugs}
 
-If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `queries/bugs` directory. These tests will be moved to `teststests_stateless` when bugs are fixed.
+Если мы знаем некоторые ошибки, которые могут быть легко воспроизведены функциональными тестами, мы помещаем подготовленные функциональные тесты в `queries/bugs` каталог. Эти тесты будут перенесены в `teststests_stateless` когда ошибки будут исправлены.
 
-## Integration Tests {#integration-tests}
+## Интеграционные Тесты {#integration-tests}
 
-Integration tests allow to test ClickHouse in clustered configuration and ClickHouse interaction with other servers like MySQL, Postgres, MongoDB. They are useful to emulate network splits, packet drops, etc. These tests are run under Docker and create multiple containers with various software.
+Интеграционные тесты позволяют тестировать ClickHouse в кластерной конфигурации и взаимодействие ClickHouse с другими серверами, такими как MySQL, Postgres, MongoDB. Они полезны для эмуляции сетевых разбиений, отбрасывания пакетов и т. д. Эти тесты выполняются в Docker и создают несколько контейнеров с различным программным обеспечением.
 
-See `testsgration/README.md` on how to run these tests.
+Видеть `testsgration/README.md` о том, как проводить эти тесты.
 
-Note that integration of ClickHouse with third-party drivers is not tested. Also we currently don’t have integration tests with our JDBC and ODBC drivers.
+Обратите внимание, что интеграция ClickHouse со сторонними драйверами не тестируется. Кроме того, в настоящее время у нас нет интеграционных тестов с нашими драйверами JDBC и ODBC.
 
-## Unit Tests {#unit-tests}
+## Модульное тестирование {#unit-tests}
 
-Unit tests are useful when you want to test not the ClickHouse as a whole, but a single isolated library or class. You can enable or disable build of tests with `ENABLE_TESTS` CMake option. Unit tests (and other test programs) are located in `tests` subdirectories across the code. To run unit tests, type `ninja test`. Some tests use `gtest`, but some are just programs that return non-zero exit code on test failure.
+Модульные тесты полезны, если вы хотите протестировать не весь ClickHouse в целом, а одну изолированную библиотеку или класс. Вы можете включить или отключить сборку тестов с помощью `ENABLE_TESTS` Вариант CMake. Модульные тесты (и другие тестовые программы) расположены в `tests` подкаталоги по всему коду. Чтобы запустить модульные тесты, введите `ninja test`. Некоторые тесты используют `gtest`, но некоторые из них-это просто программы, которые возвращают ненулевой код выхода при сбое теста.
 
-It’s not necessarily to have unit tests if the code is already covered by functional tests (and functional tests are usually much more simple to use).
+Не обязательно иметь модульные тесты, Если код уже охвачен функциональными тестами (а функциональные тесты обычно гораздо более просты в использовании).
 
-## Performance Tests {#performance-tests}
+## Эксплуатационное испытание {#performance-tests}
 
-Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `clickhouse performance-test` tool (that is embedded in `clickhouse` binary). See `--help` for invocation.
+Тесты производительности позволяют измерять и сравнивать производительность некоторой изолированной части ClickHouse по синтетическим запросам. Тесты расположены по адресу `tests/performance`. Каждый тест представлен следующим образом `.xml` файл с описанием тестового случая. Тесты выполняются с помощью `clickhouse performance-test` инструмент (который встроен в `clickhouse` двоичный). Видеть `--help` для призыва.
 
-Each test run one or miltiple queries (possibly with combinations of parameters) in a loop with some conditions for stop (like “maximum execution speed is not changing in three seconds”) and measure some metrics about query performance (like “maximum execution speed”). Some tests can contain preconditions on preloaded test dataset.
+Каждый тест запускает один или несколько запросов (возможно, с комбинациями параметров) в цикле с некоторыми условиями остановки (например «maximum execution speed is not changing in three seconds») и измерьте некоторые показатели производительности запросов (например, «maximum execution speed»). Некоторые тесты могут содержать предварительные условия для предварительно загруженного тестового набора данных.
 
-If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
+Если вы хотите улучшить производительность ClickHouse в каком-то сценарии, и если улучшения могут наблюдаться в простых запросах, настоятельно рекомендуется написать тест производительности. Это всегда имеет смысл использовать `perf top` или другие инструменты perf во время ваших тестов.
 
-## Test Tools And Scripts {#test-tools-and-scripts}
+## Инструменты И Сценарии Тестирования {#test-tools-and-scripts}
 
-Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `dbms/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
+Некоторые программы в `tests` каталог-это не подготовленные тесты, а инструменты тестирования. Например, для `Lexer` есть такой инструмент `dbms/Parsers/tests/lexer` это просто делает токенизацию stdin и записывает раскрашенный результат в stdout. Вы можете использовать эти инструменты в качестве примеров кода, а также для исследования и ручного тестирования.
 
-You can also place pair of files `.sh` and `.reference` along with the tool to run it on some predefined input - then script result can be compared to `.reference` file. These kind of tests are not automated.
+Вы также можете разместить пару файлов `.sh` и `.reference` вместе с инструментом нужно запустить его на каком - то заранее заданном входе- тогда результат скрипта можно сравнить с `.reference` файл. Такого рода тесты не автоматизированы.
 
-## Miscellanous Tests {#miscellanous-tests}
+## Различные Тесты {#miscellanous-tests}
 
-There are tests for external dictionaries located at `tests/external_dictionaries` and for machine learned models in `tests/external_models`. These tests are not updated and must be transferred to integration tests.
+Существуют тесты для внешних словарей, расположенных по адресу `tests/external_dictionaries` и для машинно-обученных моделей в `tests/external_models`. Эти тесты не обновляются и должны быть перенесены в интеграционные тесты.
 
-There is separate test for quorum inserts. This test run ClickHouse cluster on separate servers and emulate various failure cases: network split, packet drop (between ClickHouse nodes, between ClickHouse and ZooKeeper, between ClickHouse server and client, etc.), `kill -9`, `kill -STOP` and `kill -CONT` , like [Jepsen](https://aphyr.com/tags/Jepsen). Then the test checks that all acknowledged inserts was written and all rejected inserts was not.
+Существует отдельный тест для вставки кворума. Этот тест запускает кластер ClickHouse на отдельных серверах и эмулирует различные случаи сбоя: разделение сети, отбрасывание пакетов (между узлами ClickHouse, между ClickHouse и ZooKeeper, между сервером ClickHouse и клиентом и т. д.), `kill -9`, `kill -STOP` и `kill -CONT` , любить [Джепсен](https://aphyr.com/tags/Jepsen). Затем тест проверяет, что все признанные вставки были записаны, а все отклоненные вставки-нет.
 
-Quorum test was written by separate team before ClickHouse was open-sourced. This team no longer work with ClickHouse. Test was accidentially written in Java. For these reasons, quorum test must be rewritten and moved to integration tests.
+Тест кворума был написан отдельной командой еще до того, как ClickHouse стал открытым исходным кодом. Эта команда больше не работает с ClickHouse. Тест был случайно написан на Java. По этим причинам тест кворума должен быть переписан и перенесен в интеграционные тесты.
 
-## Manual Testing {#manual-testing}
+## Ручное тестирование {#manual-testing}
 
-When you develop a new feature, it is reasonable to also test it manually. You can do it with the following steps:
+Когда вы разрабатываете новую функцию, разумно также протестировать ее вручную. Вы можете сделать это с помощью следующих шагов:
 
-Build ClickHouse. Run ClickHouse from the terminal: change directory to `programs/clickhouse-server` and run it with `./clickhouse-server`. It will use configuration (`config.xml`, `users.xml` and files within `config.d` and `users.d` directories) from the current directory by default. To connect to ClickHouse server, run `programs/clickhouse-client/clickhouse-client`.
+Постройте ClickHouse. Запустите ClickHouse из терминала: измените каталог на `programs/clickhouse-server` и запустить его с помощью `./clickhouse-server`. Он будет использовать конфигурацию (`config.xml`, `users.xml` и файлы внутри `config.d` и `users.d` каталоги) из текущего каталога по умолчанию. Чтобы подключиться к серверу ClickHouse, выполните команду `programs/clickhouse-client/clickhouse-client`.
 
-Note that all clickhouse tools (server, client, etc) are just symlinks to a single binary named `clickhouse`. You can find this binary at `programs/clickhouse`. All tools can also be invoked as `clickhouse tool` instead of `clickhouse-tool`.
+Обратите внимание, что все инструменты clickhouse (сервер, клиент и т. д.) являются просто символическими ссылками на один двоичный файл с именем `clickhouse`. Вы можете найти этот двоичный файл по адресу `programs/clickhouse`. Все инструменты также могут быть вызваны как `clickhouse tool` вместо `clickhouse-tool`.
 
-Alternatively you can install ClickHouse package: either stable release from Yandex repository or you can build package for yourself with `./release` in ClickHouse sources root. Then start the server with `sudo service clickhouse-server start` (or stop to stop the server). Look for logs at `/etc/clickhouse-server/clickhouse-server.log`.
+В качестве альтернативы вы можете установить пакет ClickHouse: либо стабильный релиз из репозитория Яндекса, либо вы можете построить пакет для себя с помощью `./release` в корне источников ClickHouse. Затем запустите сервер с помощью `sudo service clickhouse-server start` (или остановить, чтобы остановить сервер). Ищите журналы по адресу `/etc/clickhouse-server/clickhouse-server.log`.
 
-When ClickHouse is already installed on your system, you can build a new `clickhouse` binary and replace the existing binary:
+Когда ClickHouse уже установлен в вашей системе, вы можете построить новый `clickhouse` двоичный код и заменить существующий двоичный код:
 
 ``` bash
 $ sudo service clickhouse-server stop
@@ -89,161 +90,161 @@ $ sudo cp ./clickhouse /usr/bin/
 $ sudo service clickhouse-server start
 ```
 
-Also you can stop system clickhouse-server and run your own with the same configuration but with logging to terminal:
+Также вы можете остановить системный clickhouse-сервер и запустить свой собственный с той же конфигурацией, но с регистрацией в терминал:
 
 ``` bash
 $ sudo service clickhouse-server stop
 $ sudo -u clickhouse /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-Example with gdb:
+Пример с gdb:
 
 ``` bash
 $ sudo -u clickhouse gdb --args /usr/bin/clickhouse server --config-file /etc/clickhouse-server/config.xml
 ```
 
-If the system clickhouse-server is already running and you don’t want to stop it, you can change port numbers in your `config.xml` (or override them in a file in `config.d` directory), provide appropriate data path, and run it.
+Если системный clickhouse-сервер уже запущен, и вы не хотите его останавливать, вы можете изменить номера портов в своей системе. `config.xml` (или переопределить их в файле внутри `config.d` каталог), укажите соответствующий путь к данным и запустите его.
 
-`clickhouse` binary has almost no dependencies and works across wide range of Linux distributions. To quick and dirty test your changes on a server, you can simply `scp` your fresh built `clickhouse` binary to your server and then run it as in examples above.
+`clickhouse` binary почти не имеет зависимостей и работает в широком диапазоне дистрибутивов Linux. Чтобы быстро и грязно протестировать свои изменения на сервере, вы можете просто `scp` ваша свежая постройка `clickhouse` двоичный файл на ваш сервер, а затем запустите его, как в приведенных выше примерах.
 
-## Testing Environment {#testing-environment}
+## Тестовая среда {#testing-environment}
 
-Before publishing release as stable we deploy it on testing environment. Testing environment is a cluster that process 1/39 part of [Yandex.Metrica](https://metrica.yandex.com/) data. We share our testing environment with Yandex.Metrica team. ClickHouse is upgraded without downtime on top of existing data. We look at first that data is processed successfully without lagging from realtime, the replication continue to work and there is no issues visible to Yandex.Metrica team. First check can be done in the following way:
+Перед публикацией релиза как стабильного мы развертываем его в тестовой среде. Среда тестирования-это кластер, который обрабатывает 1/39 часть [Яндекс.Метрика](https://metrica.yandex.com/) данные. Мы делимся нашей тестовой средой с Яндексом.Команда метрики. ClickHouse обновляется без простоев поверх существующих данных. Мы смотрим сначала на то, что данные обрабатываются успешно, не отставая от реального времени, репликация продолжает работать и нет никаких проблем, видимых Яндексу.Команда метрики. Первую проверку можно провести следующим образом:
 
 ``` sql
 SELECT hostName() AS h, any(version()), any(uptime()), max(UTCEventTime), count() FROM remote('example01-01-{1..3}t', merge, hits) WHERE EventDate >= today() - 2 GROUP BY h ORDER BY h;
 ```
 
-In some cases we also deploy to testing environment of our friend teams in Yandex: Market, Cloud, etc. Also we have some hardware servers that are used for development purposes.
+В некоторых случаях мы также развернуть на тестирование среды нашего друга команды Яндекса: Маркет, облако и т. д. Кроме того, у нас есть некоторые аппаратные серверы, которые используются для целей разработки.
 
-## Load Testing {#load-testing}
+## Нагрузочное тестирование {#load-testing}
 
-After deploying to testing environment we run load testing with queries from production cluster. This is done manually.
+После развертывания в среде тестирования мы запускаем нагрузочное тестирование с запросами из производственного кластера. Это делается вручную.
 
-Make sure you have enabled `query_log` on your production cluster.
+Убедитесь, что вы включили `query_log` на вашем производственном кластере.
 
-Collect query log for a day or more:
+Сбор журнала запросов в течение одного или нескольких дней:
 
 ``` bash
 $ clickhouse-client --query="SELECT DISTINCT query FROM system.query_log WHERE event_date = today() AND query LIKE '%ym:%' AND query NOT LIKE '%system.query_log%' AND type = 2 AND is_initial_query" > queries.tsv
 ```
 
-This is a way complicated example. `type = 2` will filter queries that are executed successfully. `query LIKE '%ym:%'` is to select relevant queries from Yandex.Metrica. `is_initial_query` is to select only queries that are initiated by client, not by ClickHouse itself (as parts of distributed query processing).
+Это очень сложный пример. `type = 2` будет фильтровать запросы, которые выполняются успешно. `query LIKE '%ym:%'` это выбор релевантных запросов от Яндекса.Метрика. `is_initial_query` это выбор только тех запросов, которые инициируются клиентом, а не самим ClickHouse (как части распределенной обработки запросов).
 
-`scp` this log to your testing cluster and run it as following:
+`scp` это войдите в свой тестовый кластер и запустите его следующим образом:
 
 ``` bash
 $ clickhouse benchmark --concurrency 16 < queries.tsv
 ```
 
-(probably you also want to specify a `--user`)
+(вероятно, вы также хотите указать a `--user`)
 
-Then leave it for a night or weekend and go take a rest.
+Затем оставьте его на ночь или выходные и идите отдыхать.
 
-You should check that `clickhouse-server` doesn’t crash, memory footprint is bounded and performance not degrading over time.
+Вы должны это проверить `clickhouse-server` не дает сбоя, объем памяти ограничен, а производительность не ухудшается с течением времени.
 
-Precise query execution timings are not recorded and not compared due to high variability of queries and environment.
+Точные тайминги выполнения запросов не регистрируются и не сравниваются из-за высокой вариативности запросов и окружающей среды.
 
-## Build Tests {#build-tests}
+## Построение Тестов {#build-tests}
 
-Build tests allow to check that build is not broken on various alternative configurations and on some foreign systems. Tests are located at `ci` directory. They run build from source inside Docker, Vagrant, and sometimes with `qemu-user-static` inside Docker. These tests are under development and test runs are not automated.
+Тесты сборки позволяют проверить, что сборка не нарушается на различных альтернативных конфигурациях и на некоторых зарубежных системах. Тесты расположены по адресу `ci` каталог. Они запускают сборку из исходного кода внутри Docker, Vagrant, а иногда и с помощью `qemu-user-static` внутри Докер. Эти тесты находятся в стадии разработки, и тестовые запуски не автоматизированы.
 
-Motivation:
+Мотивация:
 
-Normally we release and run all tests on a single variant of ClickHouse build. But there are alternative build variants that are not thoroughly tested. Examples:
+Обычно мы выпускаем и запускаем все тесты на одном варианте сборки ClickHouse. Но есть и альтернативные варианты сборки, которые не проходят тщательной проверки. Примеры:
 
--   build on FreeBSD;
--   build on Debian with libraries from system packages;
--   build with shared linking of libraries;
--   build on AArch64 platform;
--   build on PowerPc platform.
+-   сборка на FreeBSD;
+-   сборка на Debian с библиотеками из системных пакетов;
+-   сборка с общим связыванием библиотек;
+-   построить на платформе AArch64 ;
+-   постройте на платформе PowerPc.
 
-For example, build with system packages is bad practice, because we cannot guarantee what exact version of packages a system will have. But this is really needed by Debian maintainers. For this reason we at least have to support this variant of build. Another example: shared linking is a common source of trouble, but it is needed for some enthusiasts.
+Например, сборка с системными пакетами-это плохая практика, потому что мы не можем гарантировать, какая именно версия пакетов будет у системы. Но это действительно необходимо сопровождающим Debian. По этой причине мы, по крайней мере, должны поддерживать этот вариант сборки. Другой пример: Общие ссылки-это общий источник проблем, но он необходим для некоторых энтузиастов.
 
-Though we cannot run all tests on all variant of builds, we want to check at least that various build variants are not broken. For this purpose we use build tests.
+Хотя мы не можем выполнить все тесты на всех вариантах сборки, мы хотим проверить, по крайней мере, что различные варианты сборки не нарушены. Для этого мы используем тесты сборки.
 
-## Testing For Protocol Compatibility {#testing-for-protocol-compatibility}
+## Тестирование Совместимости Протоколов {#testing-for-protocol-compatibility}
 
-When we extend ClickHouse network protocol, we test manually that old clickhouse-client works with new clickhouse-server and new clickhouse-client works with old clickhouse-server (simply by running binaries from corresponding packages).
+Когда мы расширяем сетевой протокол ClickHouse, мы вручную проверяем, что старый clickhouse-клиент работает с новым clickhouse-сервером, а новый clickhouse-клиент работает со старым clickhouse-сервером (просто запустив двоичные файлы из соответствующих пакетов).
 
-## Help From The Compiler {#help-from-the-compiler}
+## Помощь От Компилятора {#help-from-the-compiler}
 
-Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings. Although these options are not enabled for third-party libraries.
+Основной код ClickHouse (который находится в `dbms` каталог) строится с помощью `-Wall -Wextra -Werror` и с некоторыми дополнительными включенными предупреждениями. Хотя эти параметры не включены для сторонних библиотек.
 
-Clang has even more useful warnings - you can look for them with `-Weverything` and pick something to default build.
+У Clang есть еще более полезные предупреждения - вы можете искать их с помощью `-Weverything` и выберите что-то для сборки по умолчанию.
 
-For production builds, gcc is used (it still generates slightly more efficient code than clang). For development, clang is usually more convenient to use. You can build on your own machine with debug mode (to save battery of your laptop), but please note that compiler is able to generate more warnings with `-O3` due to better control flow and inter-procedure analysis. When building with clang, `libc++` is used instead of `libstdc++` and when building with debug mode, debug version of `libc++` is used that allows to catch more errors at runtime.
+Для производственных сборок используется gcc (он все еще генерирует немного более эффективный код, чем clang). Для развития, лязгают, как правило, более удобны в использовании. Вы можете построить на своей собственной машине с режимом отладки (чтобы сэкономить батарею вашего ноутбука), но обратите внимание, что компилятор способен генерировать больше предупреждений с помощью `-O3` благодаря лучшему потоку управления и межпроцедурному анализу. При строительстве с лязгом, `libc++` используется вместо `libstdc++` и при построении с режимом отладки, отладочная версия `libc++` используется, что позволяет ловить больше ошибок во время выполнения.
 
-## Sanitizers {#sanitizers}
+## Дезинфицирующее средство {#sanitizers}
 
-**Address sanitizer**.
-We run functional and integration tests under ASan on per-commit basis.
+**Адрес дезинфицирующее средство**.
+Мы проводим функциональные и интеграционные тесты в асане на фиксации основы.
 
-**Valgrind (Memcheck)**.
-We run functional tests under Valgrind overnight. It takes multiple hours. Currently there is one known false positive in `re2` library, see [this article](https://research.swtch.com/sparse).
+**С Valgrind (Помощи Valgrind)**.
+Мы проводим функциональные тесты под Valgrind ночь. Это займет несколько часов. В настоящее время существует один известный ложноположительный результат в `re2` библиотека, см. [эта статья](https://research.swtch.com/sparse).
 
-**Undefined behaviour sanitizer.**
-We run functional and integration tests under ASan on per-commit basis.
+**Неопределенное поведение дезинфицирующего средства.**
+Мы проводим функциональные и интеграционные тесты в асане на фиксации основы.
 
-**Thread sanitizer**.
-We run functional tests under TSan on per-commit basis. We still don’t run integration tests under TSan on per-commit basis.
+**Дезинфицирующее средство для нитей**.
+Мы проводим функциональные тесты в рамках TSan на основе per-commit. Мы все еще не запускаем интеграционные тесты под TSan на основе per-commit.
 
-**Memory sanitizer**.
-Currently we still don’t use MSan.
+**Дезинфицирующее средство для памяти**.
+В настоящее время мы все еще не используем MSan.
 
-**Debug allocator.**
-Debug version of `jemalloc` is used for debug build.
+**Отладочный распределитель.**
+Отладочная версия `jemalloc` используется для отладки сборки.
 
-## Fuzzing {#fuzzing}
+## Затуманивающего {#fuzzing}
 
-We use simple fuzz test to generate random SQL queries and to check that the server doesn’t die. Fuzz testing is performed with Address sanitizer. You can find it in `00746_sql_fuzzy.pl`. This test should be run continuously (overnight and longer).
+Мы используем простой тест fuzz для генерации случайных SQL-запросов и проверки того, что сервер не умирает. Тестирование пуха проводится с помощью адресного дезинфицирующего средства. Вы можете найти его в `00746_sql_fuzzy.pl`. Этот тест следует проводить непрерывно (в течение ночи и дольше).
 
-As of December 2018, we still don’t use isolated fuzz testing of library code.
+По состоянию на декабрь 2018 года мы все еще не используем изолированное тестирование fuzz библиотечного кода.
 
-## Security Audit {#security-audit}
+## Аудит безопасности {#security-audit}
 
-People from Yandex Cloud department do some basic overview of ClickHouse capabilities from the security standpoint.
+Люди из облачного отдела Яндекса делают некоторый базовый обзор возможностей ClickHouse с точки зрения безопасности.
 
-## Static Analyzers {#static-analyzers}
+## Статический анализатор {#static-analyzers}
 
-We run `PVS-Studio` on per-commit basis. We have evaluated `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`. You will find instructions for usage in `tests/instructions/` directory. Also you can read [the article in russian](https://habr.com/company/yandex/blog/342018/).
+Мы бежим `PVS-Studio` на основе каждой фиксации. Мы провели оценку `clang-tidy`, `Coverity`, `cppcheck`, `PVS-Studio`, `tscancode`. Вы найдете инструкции по использованию в `tests/instructions/` каталог. Кроме того, вы можете читать [статья на русском языке](https://habr.com/company/yandex/blog/342018/).
 
-If you use `CLion` as an IDE, you can leverage some `clang-tidy` checks out of the box.
+Если вы используете `CLion` как IDE, вы можете использовать некоторые из них `clang-tidy` выписывает чеки из коробки.
 
-## Hardening {#hardening}
+## Затвердение {#hardening}
 
-`FORTIFY_SOURCE` is used by default. It is almost useless, but still makes sense in rare cases and we don’t disable it.
+`FORTIFY_SOURCE` используется по умолчанию. Это почти бесполезно, но все же имеет смысл в редких случаях, и мы не отключаем его.
 
-## Code Style {#code-style}
+## Стиль Кода  {#code-style}
 
-Code style rules are described [here](https://clickhouse.tech/docs/en/development/style/).
+Описаны правила стиля кода [здесь](https://clickhouse.tech/docs/en/development/style/).
 
-To check for some common style violations, you can use `utils/check-style` script.
+Чтобы проверить наличие некоторых распространенных нарушений стиля, вы можете использовать `utils/check-style` скрипт.
 
-To force proper style of your code, you can use `clang-format`. File `.clang-format` is located at the sources root. It mostly corresponding with our actual code style. But it’s not recommended to apply `clang-format` to existing files because it makes formatting worse. You can use `clang-format-diff` tool that you can find in clang source repository.
+Чтобы принудительно создать правильный стиль вашего кода, Вы можете использовать `clang-format`. Файл `.clang-format` находится в корне источника. Это в основном соответствует нашему фактическому стилю кода. Но применять его не рекомендуется `clang-format` к существующим файлам, потому что это ухудшает форматирование. Вы можете использовать `clang-format-diff` инструмент, который вы можете найти в репозитории Clang source.
 
-Alternatively you can try `uncrustify` tool to reformat your code. Configuration is in `uncrustify.cfg` in the sources root. It is less tested than `clang-format`.
+В качестве альтернативы вы можете попробовать `uncrustify` инструмент для переформатирования вашего кода. Конфигурации в `uncrustify.cfg` в корне источников. Это меньше, чем `clang-format`.
 
-`CLion` has its own code formatter that has to be tuned for our code style.
+`CLion` имеет свой собственный формататор кода, который должен быть настроен для нашего стиля кода.
 
-## Metrica B2B Tests {#metrica-b2b-tests}
+## В2В метрика тесты {#metrica-b2b-tests}
 
-Each ClickHouse release is tested with Yandex Metrica and AppMetrica engines. Testing and stable versions of ClickHouse are deployed on VMs and run with a small copy of Metrica engine that is processing fixed sample of input data. Then results of two instances of Metrica engine are compared together.
+Каждый релиз ClickHouse тестируется с помощью движков Yandex Metrica и AppMetrica. Тестовые и стабильные версии ClickHouse развертываются на виртуальных машинах и запускаются с небольшой копией движка Metrica engine, который обрабатывает фиксированную выборку входных данных. Затем результаты двух экземпляров двигателя Metrica сравниваются вместе.
 
-These tests are automated by separate team. Due to high number of moving parts, tests are fail most of the time by completely unrelated reasons, that are very difficult to figure out. Most likely these tests have negative value for us. Nevertheless these tests was proved to be useful in about one or two times out of hundreds.
+Эти тесты автоматизированы отдельной командой. Из-за большого количества движущихся частей тесты чаще всего проваливаются по совершенно несвязанным причинам, которые очень трудно выяснить. Скорее всего, эти тесты имеют для нас отрицательное значение. Тем не менее эти тесты оказались полезными примерно в одном или двух случаях из сотен.
 
-## Test Coverage {#test-coverage}
+## Тестовое покрытие {#test-coverage}
 
-As of July 2018 we don’t track test coverage.
+По состоянию на июль 2018 года мы не отслеживаем покрытие тестов.
 
-## Test Automation {#test-automation}
+## Автоматизация тестирования {#test-automation}
 
-We run tests with Yandex internal CI and job automation system named “Sandbox”.
+Мы проводим тесты с помощью внутренней CI Яндекса и системы автоматизации заданий под названием «Sandbox».
 
-Build jobs and tests are run in Sandbox on per commit basis. Resulting packages and test results are published in GitHub and can be downloaded by direct links. Artifacts are stored eternally. When you send a pull request on GitHub, we tag it as “can be tested” and our CI system will build ClickHouse packages (release, debug, with address sanitizer, etc) for you.
+Задания сборки и тесты выполняются в песочнице на основе каждой фиксации. Полученные пакеты и результаты тестирования публикуются на GitHub и могут быть загружены по прямым ссылкам. Артефакты хранятся вечно. Когда вы отправляете запрос на вытягивание на GitHub, мы помечаем его как «can be tested» и наша система CI построит пакеты ClickHouse (release, debug, with address sanitizer и т. д.) Для вас.
 
-We don’t use Travis CI due to the limit on time and computational power.
-We don’t use Jenkins. It was used before and now we are happy we are not using Jenkins.
+Мы не используем Travis CI из-за ограничения по времени и вычислительной мощности.
+Мы не используем Дженкинса. Он был использован раньше, и теперь мы счастливы, что не используем Дженкинса.
 
-[Original article](https://clickhouse.tech/docs/en/development/tests/) <!--hide-->
-velopment/tests/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/en/development/tests/) <!--hide-->
+разработка / испытания/) <!--hide-->
