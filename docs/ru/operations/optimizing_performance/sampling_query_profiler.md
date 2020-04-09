@@ -1,47 +1,48 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
 ---
 
-# Sampling Query Profiler {#sampling-query-profiler}
+# Выборки Профилировщик Запросов  {#sampling-query-profiler}
 
-ClickHouse runs sampling profiler that allows analyzing query execution. Using profiler you can find source code routines that used the most frequently during query execution. You can trace CPU time and wall-clock time spent including idle time.
+ClickHouse запускает профилировщик выборок, который позволяет анализировать выполнение запросов. С помощью profiler можно найти подпрограммы исходного кода, которые наиболее часто используются во время выполнения запроса. Вы можете отслеживать процессорное время и время работы настенных часов, включая время простоя.
 
-To use profiler:
+Чтобы использовать профилировщик:
 
--   Setup the [trace\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-trace_log) section of the server configuration.
+-   Настройка программы [журнал трассировки](../server_configuration_parameters/settings.md#server_configuration_parameters-trace_log) раздел конфигурации сервера.
 
-    This section configures the [trace\_log](../../operations/optimizing_performance/sampling_query_profiler.md#system_tables-trace_log) system table containing the results of the profiler functioning. It is configured by default. Remember that data in this table is valid only for a running server. After the server restart, ClickHouse doesn’t clean up the table and all the stored virtual memory address may become invalid.
+    В этом разделе настраиваются следующие параметры: [журнал трассировки](../../operations/optimizing_performance/sampling_query_profiler.md#system_tables-trace_log) системная таблица, содержащая результаты работы профилировщика. Он настроен по умолчанию. Помните, что данные в этой таблице действительны только для работающего сервера. После перезагрузки сервера ClickHouse не очищает таблицу, и все сохраненные адреса виртуальной памяти могут стать недействительными.
 
--   Setup the [query\_profiler\_cpu\_time\_period\_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) or [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) settings. Both settings can be used simultaneously.
+-   Настройка программы [query\_profiler\_cpu\_time\_period\_ns](../settings/settings.md#query_profiler_cpu_time_period_ns) или [query\_profiler\_real\_time\_period\_ns](../settings/settings.md#query_profiler_real_time_period_ns) настройки. Обе настройки можно использовать одновременно.
 
-    These settings allow you to configure profiler timers. As these are the session settings, you can get different sampling frequency for the whole server, individual users or user profiles, for your interactive session, and for each individual query.
+    Эти параметры позволяют настроить таймеры профилировщика. Поскольку это параметры сеанса, вы можете получить различную частоту дискретизации для всего сервера, отдельных пользователей или профилей пользователей, для вашего интерактивного сеанса и для каждого отдельного запроса.
 
-The default sampling frequency is one sample per second and both CPU and real timers are enabled. This frequency allows collecting enough information about ClickHouse cluster. At the same time, working with this frequency, profiler doesn’t affect ClickHouse server’s performance. If you need to profile each individual query try to use higher sampling frequency.
+Частота дискретизации по умолчанию составляет одну выборку в секунду, и включены как ЦП, так и реальные таймеры. Эта частота позволяет собрать достаточно информации о кластере ClickHouse. В то же время, работая с такой частотой, профилировщик не влияет на производительность сервера ClickHouse. Если вам нужно профилировать каждый отдельный запрос, попробуйте использовать более высокую частоту дискретизации.
 
-To analyze the `trace_log` system table:
+Для того чтобы проанализировать `trace_log` системная таблица:
 
--   Install the `clickhouse-common-static-dbg` package. See [Install from DEB Packages](../../getting_started/install.md#install-from-deb-packages).
+-   Установите устройство `clickhouse-common-static-dbg` пакет. Видеть [Установка из пакетов DEB](../../getting_started/install.md#install-from-deb-packages).
 
--   Allow introspection functions by the [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) setting.
+-   Разрешить функции самоанализа с помощью [allow\_introspection\_functions](../settings/settings.md#settings-allow_introspection_functions) установка.
 
-    For security reasons, introspection functions are disabled by default.
+    По соображениям безопасности функции самоанализа по умолчанию отключены.
 
--   Use the `addressToLine`, `addressToSymbol` and `demangle` [introspection functions](../../operations/optimizing_performance/sampling_query_profiler.md) to get function names and their positions in ClickHouse code. To get a profile for some query, you need to aggregate data from the `trace_log` table. You can aggregate data by individual functions or by the whole stack traces.
+-   Используйте `addressToLine`, `addressToSymbol` и `demangle` [функции самоанализа](../../operations/optimizing_performance/sampling_query_profiler.md) чтобы получить имена функций и их позиции в коде ClickHouse. Чтобы получить профиль для какого-либо запроса, вам необходимо агрегировать данные из `trace_log` стол. Вы можете агрегировать данные по отдельным функциям или по всем трассировкам стека.
 
-If you need to visualize `trace_log` info, try [flamegraph](../../interfaces/third-party/gui/#clickhouse-flamegraph) and [speedscope](https://github.com/laplab/clickhouse-speedscope).
+Если вам нужно визуализировать `trace_log` информация, попробуйте [огнемет](../../interfaces/third-party/gui/#clickhouse-flamegraph) и [speedscope](https://github.com/laplab/clickhouse-speedscope).
 
-## Example {#example}
+## Пример {#example}
 
-In this example we:
+В этом примере мы:
 
--   Filtering `trace_log` data by a query identifier and the current date.
+-   Фильтрация `trace_log` данные по идентификатору запроса и текущей дате.
 
--   Aggregating by stack trace.
+-   Агрегирование по трассировке стека.
 
--   Using introspection functions, we will get a report of:
+-   Используя функции интроспекции, мы получим отчет о:
 
-    -   Names of symbols and corresponding source code functions.
-    -   Source code locations of these functions.
+    -   Имена символов и соответствующие им функции исходного кода.
+    -   Расположение исходных кодов этих функций.
 
 <!-- -->
 

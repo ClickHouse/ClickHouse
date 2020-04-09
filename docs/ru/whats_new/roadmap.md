@@ -1,16 +1,17 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
 ---
 
-# Roadmap {#roadmap}
+# Дорожная карта {#roadmap}
 
 ## Q1 2020 {#q1-2020}
 
--   Role-based access control
+-   Управление доступом на основе ролей
 
 ## Q2 2020 {#q2-2020}
 
--   Integration with external authentication services
--   Resource pools for more precise distribution of cluster capacity between users
+-   Интеграция с внешними службами аутентификации
+-   Пулы ресурсов для более точного распределения емкости кластера между пользователями
 
-{## [Original article](https://clickhouse.tech/docs/en/roadmap/) ##}
+{## [Оригинальная статья](https://clickhouse.tech/docs/en/roadmap/) ##}

@@ -1,63 +1,64 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
 ---
 
-# clickhouse-benchmark {#clickhouse-benchmark}
+# clickhouse-бенчмарк {#clickhouse-benchmark}
 
-Connects to a ClickHouse server and repeatedly sends specified queries.
+Подключается к серверу ClickHouse и повторно отправляет указанные запросы.
 
-Syntax:
+Синтаксис:
 
 ``` bash
 $ echo "single query" | clickhouse-benchmark [keys]
 ```
 
-or
+или
 
 ``` bash
 $ clickhouse-benchmark [keys] <<< "single query"
 ```
 
-If you want to send a set of queries, create a text file and place each query on the individual string in this file. For example:
+Если вы хотите отправить набор запросов, создайте текстовый файл и поместите каждый запрос в отдельную строку в этом файле. Например:
 
 ``` sql
 SELECT * FROM system.numbers LIMIT 10000000
 SELECT 1
 ```
 
-Then pass this file to a standard input of `clickhouse-benchmark`.
+Затем передайте этот файл на стандартный вход `clickhouse-benchmark`.
 
 ``` bash
 clickhouse-benchmark [keys] < queries_file
 ```
 
-## Keys {#clickhouse-benchmark-keys}
+## Ключи {#clickhouse-benchmark-keys}
 
--   `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` sends simultaneously. Default value: 1.
+-   `-c N`, `--concurrency=N` — Number of queries that `clickhouse-benchmark` посылает одновременно. Значение по умолчанию: 1.
 -   `-d N`, `--delay=N` — Interval in seconds between intermediate reports (set 0 to disable reports). Default value: 1.
--   `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-h` keys.
--   `-p N`, `--port=N` — Server port. Default value: 9000. For the [comparison mode](#clickhouse-benchmark-comparison-mode) you can use multiple `-p` keys.
+-   `-h WORD`, `--host=WORD` — Server host. Default value: `localhost`. Для [режим сравнения](#clickhouse-benchmark-comparison-mode) вы можете использовать несколько `-h` ключи.
+-   `-p N`, `--port=N` — Server port. Default value: 9000. For the [режим сравнения](#clickhouse-benchmark-comparison-mode) вы можете использовать несколько `-p` ключи.
 -   `-i N`, `--iterations=N` — Total number of queries. Default value: 0.
 -   `-r`, `--randomize` — Random order of queries execution if there is more then one input query.
 -   `-s`, `--secure` — Using TLS connection.
--   `-t N`, `--timelimit=N` — Time limit in seconds. `clickhouse-benchmark` stops sending queries when the specified time limit is reached. Default value: 0 (time limit disabled).
--   `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5. In the [comparison mode](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` performs the [Independent two-sample Student’s t-test](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) test to determine whether the two distributions aren’t different with the selected level of confidence.
+-   `-t N`, `--timelimit=N` — Time limit in seconds. `clickhouse-benchmark` прекращает отправку запросов по достижении указанного срока. Значение по умолчанию: 0 (ограничение по времени отключено).
+-   `--confidence=N` — Level of confidence for T-test. Possible values: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99.5%). Default value: 5. In the [режим сравнения](#clickhouse-benchmark-comparison-mode) `clickhouse-benchmark` выполняет следующие функции: [Независимый двухпробный t-тест Стьюдента](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) проверьте, не отличаются ли эти два распределения с выбранным уровнем достоверности.
 -   `--cumulative` — Printing cumulative data instead of data per interval.
 -   `--database=DATABASE_NAME` — ClickHouse database name. Default value: `default`.
--   `--json=FILEPATH` — JSON output. When the key is set, `clickhouse-benchmark` outputs a report to the specified JSON-file.
+-   `--json=FILEPATH` — JSON output. When the key is set, `clickhouse-benchmark` выводит отчет в указанный JSON-файл.
 -   `--user=USERNAME` — ClickHouse user name. Default value: `default`.
 -   `--password=PSWD` — ClickHouse user password. Default value: empty string.
--   `--stacktrace` — Stack traces output. When the key is set, `clickhouse-bencmark` outputs stack traces of exceptions.
--   `--stage=WORD` — Query processing stage at server. ClickHouse stops query processing and returns answer to `clickhouse-benchmark` at the specified stage. Possible values: `complete`, `fetch_columns`, `with_mergeable_state`. Default value: `complete`.
+-   `--stacktrace` — Stack traces output. When the key is set, `clickhouse-bencmark` выводит трассировки стека исключений.
+-   `--stage=WORD` — Query processing stage at server. ClickHouse stops query processing and returns answer to `clickhouse-benchmark` на указанном этапе. Возможное значение: `complete`, `fetch_columns`, `with_mergeable_state`. Значение по умолчанию: `complete`.
 -   `--help` — Shows the help message.
 
-If you want to apply some [settings](../../operations/settings/index.md) for queries, pass them as a key `--<session setting name>= SETTING_VALUE`. For example, `--max_memory_usage=1048576`.
+Если вы хотите применить некоторые из них [настройки](../../operations/settings/index.md) для запросов передайте их в качестве ключа `--<session setting name>= SETTING_VALUE`. Например, `--max_memory_usage=1048576`.
 
-## Output {#clickhouse-benchmark-output}
+## Выход {#clickhouse-benchmark-output}
 
-By default, `clickhouse-benchmark` reports for each `--delay` interval.
+По умолчанию, `clickhouse-benchmark` отчеты для каждого из них `--delay` интервал.
 
-Example of the report:
+Пример отчета:
 
 ``` text
 Queries executed: 10.
@@ -80,29 +81,29 @@ localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, resul
 99.990%     0.150 sec.
 ```
 
-In the report you can find:
+В отчете вы можете найти::
 
--   Number of queries in the `Queries executed:` field.
+-   Количество запросов в системе `Queries executed:` поле.
 
--   Status string containing (in order):
+-   Строка состояния, содержащая (по порядку):
 
-    -   Endpoint of ClickHouse server.
-    -   Number of processed queries.
-    -   QPS: QPS: How many queries server performed per second during a period specified in the `--delay` argument.
-    -   RPS: How many rows server read per second during a period specified in the `--delay` argument.
-    -   MiB/s: How many mebibytes server read per second during a period specified in the `--delay` argument.
-    -   result RPS: How many rows placed by server to the result of a query per second during a period specified in the `--delay` argument.
-    -   result MiB/s. How many mebibytes placed by server to the result of a query per second during a period specified in the `--delay` argument.
+    -   Конечная точка сервера ClickHouse.
+    -   Количество обработанных запросов.
+    -   QPS: QPS: сколько запросов сервер выполняет в секунду в течение периода, указанного в `--delay` аргумент.
+    -   RPS: сколько строк сервер читает в секунду в течение периода, указанного в `--delay` аргумент.
+    -   MiB/s: сколько мегабайт сервер читает в секунду в течение периода, указанного в `--delay` аргумент.
+    -   result RPS: сколько строк помещается сервером в результат запроса в секунду в течение периода, указанного в `--delay` аргумент.
+    -   результат MiB/s. сколько мебибайт помещается сервером в результат запроса в секунду в течение периода, указанного в `--delay` аргумент.
 
--   Percentiles of queries execution time.
+-   Процентили времени выполнения запросов.
 
-## Comparison mode {#clickhouse-benchmark-comparison-mode}
+## Режим сравнения {#clickhouse-benchmark-comparison-mode}
 
-`clickhouse-benchmark` can compare performances for two running ClickHouse servers.
+`clickhouse-benchmark` можно сравнить производительность для двух запущенных серверов ClickHouse.
 
-To use the comparison mode, specify endpoints of both servers by two pairs of `--host`, `--port` keys. Keys matched together by position in arguments list, the first `--host` is matched with the first `--port` and so on. `clickhouse-benchmark` establishes connections to both servers, then sends queries. Each query addressed to a randomly selected server. The results are shown for each server separately.
+Чтобы использовать режим сравнения, укажите конечные точки обоих серверов по двум парам `--host`, `--port` ключи. Ключи, сопоставленные вместе по позиции в списке аргументов, первые `--host` сопоставляется с первым `--port` и так далее. `clickhouse-benchmark` устанавливает соединения с обоими серверами, а затем отправляет запросы. Каждый запрос адресован случайно выбранному серверу. Результаты отображаются для каждого сервера отдельно.
 
-## Example {#clickhouse-benchmark-example}
+## Пример {#clickhouse-benchmark-example}
 
 ``` bash
 $ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark -i 10

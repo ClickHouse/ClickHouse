@@ -1,18 +1,19 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
 ---
 
-# How To Test Your Hardware With ClickHouse {#how-to-test-your-hardware-with-clickhouse}
+# Как Протестировать Ваше Оборудование С Помощью ClickHouse {#how-to-test-your-hardware-with-clickhouse}
 
-With this instruction you can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
+С помощью этой инструкции вы можете запустить базовый тест производительности ClickHouse на любом сервере без установки пакетов ClickHouse.
 
-1.  Go to “commits” page: https://github.com/ClickHouse/ClickHouse/commits/master
+1.  Идти к «commits» страница: https://github.com/ClickHouse/ClickHouse/commits/master
 
-2.  Click on the first green check mark or red cross with green “ClickHouse Build Check” and click on the “Details” link near “ClickHouse Build Check”.
+2.  Нажмите на первую зеленую галочку или красный крест с зеленым цветом «ClickHouse Build Check» и нажмите на кнопку «Details» ссылка рядом «ClickHouse Build Check».
 
-3.  Copy the link to “clickhouse” binary for amd64 or aarch64.
+3.  Скопируйте ссылку на «clickhouse» двоичный код для amd64 или aarch64.
 
-4.  ssh to the server and download it with wget:
+4.  ssh к серверу и скачать его с помощью wget:
 
 <!-- -->
 
@@ -23,7 +24,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
       # Then do:
       chmod a+x clickhouse
 
-1.  Download configs:
+1.  Скачать конфиги:
 
 <!-- -->
 
@@ -33,7 +34,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/path.xml -O config.d/path.xml
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
 
-1.  Download benchmark files:
+1.  Скачать тест файлы:
 
 <!-- -->
 
@@ -41,7 +42,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
       chmod a+x benchmark-new.sh
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 
-1.  Download test data according to the [Yandex.Metrica dataset](../getting_started/example_datasets/metrica.md) instruction (“hits” table containing 100 million rows).
+1.  Загрузите тестовые данные в соответствии с [Яндекс.Набор метрика ](../getting_started/example_datasets/metrica.md) инструкция («hits» таблица, содержащая 100 миллионов строк).
 
 <!-- -->
 
@@ -49,31 +50,31 @@ With this instruction you can run basic ClickHouse performance test on any serve
       tar xvf hits_100m_obfuscated_v1.tar.xz -C .
       mv hits_100m_obfuscated_v1/* .
 
-1.  Run the server:
+1.  Запустите сервер:
 
 <!-- -->
 
       ./clickhouse server
 
-1.  Check the data: ssh to the server in another terminal
+1.  Проверьте данные: ssh на сервер в другом терминале
 
 <!-- -->
 
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-1.  Edit the benchmark-new.sh, change “clickhouse-client” to “./clickhouse client” and add “–max\_memory\_usage 100000000000” parameter.
+1.  Отредактируйте текст benchmark-new.sh, изменение «clickhouse-client» к «./clickhouse client» и добавить «–max\_memory\_usage 100000000000» параметр.
 
 <!-- -->
 
       mcedit benchmark-new.sh
 
-1.  Run the benchmark:
+1.  Выполнить тест:
 
 <!-- -->
 
       ./benchmark-new.sh hits_100m_obfuscated
 
-1.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
+1.  Отправьте номера и информацию о конфигурации вашего оборудования по адресу clickhouse-feedback@yandex-team.com
 
-All the results are published here: https://clickhouse.tech/benchmark\_hardware.html
+Все результаты опубликованы здесь: https://clickhouse-да.технология / benchmark\_hardware.HTML
