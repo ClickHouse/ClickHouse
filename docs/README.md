@@ -135,16 +135,13 @@ When adding a new file:
     $ ln -sr en/new/file.md lang/new/file.md
     ```
 
-- Reference the file from `toc_{en,ru,zh,ja,fa}.yaml` files with the pages index.
-
-
 <a name="adding-a-new-language"/>
 
 ### Adding a New Language
 
 1. Create a new docs subfolder named using the [ISO-639-1 language code](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes).
 2. Add Markdown files with the translation, mirroring the folder structure of other languages.
-3. Commit and open a pull request with the new content.
+3. Commit and open a pull-request with the new content.
 
 When everything is ready, we will add the new language to the website.
 
