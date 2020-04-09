@@ -520,18 +520,9 @@ static ExpressionActionsPtr createJoinedBlockActions(const Context & context, co
     return ExpressionAnalyzer(expression_list, syntax_result, context).getActions(true, false);
 }
 
-static bool allowDictJoin(const TableJoin & table_join, const Context & context, String & dict_name)
+static bool allowDictJoin(StoragePtr joined_storage, const Context & context, String & dict_name, String & key_name)
 {
-    if (!table_join.joined_storage)
-        return false;
-
-    const Names & right_keys = table_join.keyNamesRight();
-    if (right_keys.size() != 1)
-        return false;
-
-    const String & key_name = right_keys[0]; /// TODO: compound name
-
-    auto * dict = dynamic_cast<const StorageDictionary *>(table_join.joined_storage.get());
+    auto * dict = dynamic_cast<const StorageDictionary *>(joined_storage.get());
     if (!dict)
         return false;
 
@@ -541,20 +532,30 @@ static bool allowDictJoin(const TableJoin & table_join, const Context & context,
         return false;
 
     const DictionaryStructure & structure = dictionary->getStructure();
-    return structure.id && (structure.id->name == key_name); /// key is UInt64
+    if (structure.id)
+    {
+        key_name = structure.id->name;
+        return true;
+    }
+    return false;
 }
 
-static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block,
-                                       const Names & original_right_columns, const Context & context)
+static std::shared_ptr<IJoin> makeJoin(std::shared_ptr<TableJoin> analyzed_join, const Block & sample_block, const Context & context)
 {
     bool allow_merge_join = analyzed_join->allowMergeJoin();
 
+    /// HashJoin with Dictionary optimisation
     String dict_name;
-    if (allowDictJoin(*analyzed_join, context, dict_name))
+    String key_name;
+    if (analyzed_join->joined_storage && allowDictJoin(analyzed_join->joined_storage, context, dict_name, key_name))
     {
-        analyzed_join->dictionary_reader = std::make_shared<DictionaryReader>(
-            dict_name, original_right_columns, sample_block.getNamesAndTypesList(), context);
-        return std::make_shared<HashJoin>(analyzed_join, sample_block);
+        Names original_names;
+        NamesAndTypesList result_columns;
+        if (analyzed_join->allowDictJoin(key_name, sample_block, original_names, result_columns))
+        {
+            analyzed_join->dictionary_reader = std::make_shared<DictionaryReader>(dict_name, original_names, result_columns, context);
+            return std::make_shared<HashJoin>(analyzed_join, sample_block);
+        }
     }
 
     if (analyzed_join->forceHashJoin() || (analyzed_join->preferMergeJoin() && !allow_merge_join))
@@ -601,7 +602,7 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
 
         /// TODO You do not need to set this up when JOIN is only needed on remote servers.
         subquery_for_join.setJoinActions(joined_block_actions); /// changes subquery_for_join.sample_block inside
-        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, original_right_columns, context);
+        subquery_for_join.join = makeJoin(syntax->analyzed_join, subquery_for_join.sample_block, context);
 
         /// Do not make subquery for join over dictionary.
         if (syntax->analyzed_join->dictionary_reader)
