@@ -151,10 +151,10 @@ void QueryPipeline::init(Pipes pipes)
             totals.emplace_back(totals_port);
         }
 
-        if (auto * extremes_port_ = pipe.getExtremesPort())
+        if (auto * port = pipe.getExtremesPort())
         {
-            assertBlocksHaveEqualStructure(current_header, extremes_port_->getHeader(), "QueryPipeline");
-            extremes.emplace_back(extremes_port_);
+            assertBlocksHaveEqualStructure(current_header, port->getHeader(), "QueryPipeline");
+            extremes.emplace_back(port);
         }
 
         streams.addStream(&pipe.getPort(), pipe.maxParallelStreams());
