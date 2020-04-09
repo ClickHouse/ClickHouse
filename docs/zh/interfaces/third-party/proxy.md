@@ -1,3 +1,4 @@
+
 # 来自第三方开发人员的代理服务器 {#lai-zi-di-san-fang-kai-fa-ren-yuan-de-dai-li-fu-wu-qi}
 
 [chproxy](https://github.com/Vertamedia/chproxy) 是ClickHouse数据库的http代理和负载均衡器。
@@ -22,9 +23,9 @@
 
 在Go中实现。
 
-## ClickHouse-Bulk {#clickhouse-bulk}
+## ﾂ环板-ｮﾂ嘉ｯﾂ偲 {#clickhouse-bulk}
 
-[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) 是一个简单的ClickHouse插入收集器。
+[ﾂ环板-ｮﾂ嘉ｯﾂ偲](https://github.com/nikepan/clickhouse-bulk) 是一个简单的ClickHouse插入收集器。
 
 特征：
 

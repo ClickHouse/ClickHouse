@@ -23,7 +23,7 @@ It builds only binaries, not packages.
 
 For example, run server:
 ```
-cd $(git rev-parse --show-toplevel)/dbms/Server
+cd $(git rev-parse --show-toplevel)/src/Server
 $(git rev-parse --show-toplevel)/docker/builder/programs/clickhouse server --config-file $(git rev-parse --show-toplevel)/programs/server/config.xml
 ```
 

@@ -38,6 +38,16 @@
             window.history.replaceState('', document.title, dst);
         }
     });
+
+    var top_nav = $('#top-nav.sticky-top');
+    if (window.location.hash.length > 1 && top_nav.length) {
+        var offset = $(window.location.hash).offset().top - top_nav.height() * 1.5;
+        $('html, body').animate({
+            scrollTop: offset
+        }, 70);
+    }
+
+
     (function (d, w, c) {
         (w[c] = w[c] || []).push(function() {
             try {
@@ -62,12 +72,14 @@
             d.addEventListener("DOMContentLoaded", f, false);
         } else { f(); }
     })(document, window, "yandex_metrika_callbacks2");
+
     var beforePrint = function() {
         var details = document.getElementsByTagName("details");
         for (var i = 0; i < details.length; ++i) {
             details[i].open = 1;
         }
     };
+
     if (window.matchMedia) {
         window.matchMedia('print').addListener(function(q) {
             if (q.matches) {

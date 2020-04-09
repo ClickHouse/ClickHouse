@@ -1,3 +1,8 @@
+---
+toc_priority: 78
+toc_title: General Questions
+---
+
 # General Questions {#general-questions}
 
 ## Why Not Use Something Like MapReduce? {#why-not-use-something-like-mapreduce}
@@ -22,7 +27,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 
 ### Using INTO OUTFILE Clause {#using-into-outfile-clause}
 
-Add an [INTO OUTFILE](../query_language/select/#into-outfile-clause) clause to your query.
+Add an [INTO OUTFILE](../sql_reference/statements/select.md#into-outfile-clause) clause to your query.
 
 For example:
 
@@ -30,7 +35,7 @@ For example:
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-By default, ClickHouse uses the [TabSeparated](../interfaces/formats.md#tabseparated) format for output data. To select the [data format](../interfaces/formats.md), use the [FORMAT clause](../query_language/select/#format-clause).
+By default, ClickHouse uses the [TabSeparated](../interfaces/formats.md#tabseparated) format for output data. To select the [data format](../interfaces/formats.md), use the [FORMAT clause](../sql_reference/statements/select.md#format-clause).
 
 For example:
 
@@ -40,7 +45,7 @@ SELECT * FROM table INTO OUTFILE 'file' FORMAT CSV
 
 ### Using a File-Engine Table {#using-a-file-engine-table}
 
-See [File](../operations/table_engines/file.md).
+See [File](../engines/table_engines/special/file.md).
 
 ### Using Command-Line Redirection {#using-command-line-redirection}
 

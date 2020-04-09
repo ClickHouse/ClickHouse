@@ -10,7 +10,7 @@ cluster = ClickHouseCluster(__file__)
 
 node1 = cluster.add_instance('node1')
 node2 = cluster.add_instance('node2')
-distributed = cluster.add_instance('distributed', main_configs=['configs/remote_servers.xml'])
+distributed = cluster.add_instance('distributed', main_configs=["configs/remote_servers.xml"])
 
 
 @pytest.fixture(scope="module")

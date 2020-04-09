@@ -82,3 +82,20 @@ GROUP BY ORDER BY distributed_aggregation_memory_efficient/group_by_two_level_th
 0
 1
 2
+COUNT
+132
+distributed_group_by_no_merge
+33
+33
+33
+33
+only one shard in nested
+66
+distributed_group_by_no_merge
+33
+33
+merge()
+66
+distributed_group_by_no_merge
+33
+33
