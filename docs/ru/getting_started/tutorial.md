@@ -10,7 +10,7 @@ By going through this tutorial, you’ll learn how to set up a simple ClickHouse
 
 ## Single Node Setup {#single-node-setup}
 
-To postpone the complexities of a distributed environment, we’ll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](index.md#install-from-deb-packages) or [rpm](index.md#from-rpm-packages) packages, but there are [alternatives](index.md#from-docker-image) for the operating systems that do no support them.
+To postpone the complexities of a distributed environment, we’ll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](install.md#install-from-deb-packages) or [rpm](install.md#from-rpm-packages) packages, but there are [alternatives](install.md#from-docker-image) for the operating systems that do no support them.
 
 For example, you have chosen `deb` packages and executed:
 
@@ -103,11 +103,11 @@ As in most databases management systems, ClickHouse logically groups tables into
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 ```
 
-Syntax for creating tables is way more complicated compared to databases (see [reference](../sql_reference/create.md). In general `CREATE TABLE` statement has to specify three key things:
+Syntax for creating tables is way more complicated compared to databases (see [reference](../sql_reference/statements/create.md). In general `CREATE TABLE` statement has to specify three key things:
 
 1.  Name of table to create.
-2.  Table schema, i.e. list of columns and their [data types](../data_types/index.md).
-3.  [Table engine](../operations/table_engines/index.md) and it’s settings, which determines all the details on how queries to this table will be physically executed.
+2.  Table schema, i.e. list of columns and their [data types](../sql_reference/data_types/index.md).
+3.  [Table engine](../engines/table_engines/index.md) and it’s settings, which determines all the details on how queries to this table will be physically executed.
 
 Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
 

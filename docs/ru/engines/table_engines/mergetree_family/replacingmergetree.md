@@ -21,7 +21,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-Описание параметров запроса смотрите в [описании запроса](../../engines/table_engines/mergetree_family/replacingmergetree.md).
+Описание параметров запроса смотрите в [описании запроса](../../../engines/table_engines/mergetree_family/replacingmergetree.md).
 
 **Параметры ReplacingMergeTree**
 

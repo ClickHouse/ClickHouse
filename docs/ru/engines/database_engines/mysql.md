@@ -30,23 +30,23 @@ ENGINE = MySQL('host:port', 'database', 'user', 'password')
 
 | MySQL                            | ClickHouse                                  |
 |----------------------------------|---------------------------------------------|
-| UNSIGNED TINYINT                 | [UInt8](../engines/database_engines/mysql.md)          |
-| TINYINT                          | [Int8](../engines/database_engines/mysql.md)           |
-| UNSIGNED SMALLINT                | [UInt16](../engines/database_engines/mysql.md)         |
-| SMALLINT                         | [Int16](../engines/database_engines/mysql.md)          |
-| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../engines/database_engines/mysql.md)         |
-| INT, MEDIUMINT                   | [Int32](../engines/database_engines/mysql.md)          |
-| UNSIGNED BIGINT                  | [UInt64](../engines/database_engines/mysql.md)         |
-| BIGINT                           | [Int64](../engines/database_engines/mysql.md)          |
-| FLOAT                            | [Float32](../engines/database_engines/mysql.md)           |
-| DOUBLE                           | [Float64](../engines/database_engines/mysql.md)           |
-| DATE                             | [Date](../engines/database_engines/mysql.md)               |
-| DATETIME, TIMESTAMP              | [DateTime](../engines/database_engines/mysql.md)       |
-| BINARY                           | [FixedString](../engines/database_engines/mysql.md) |
+| UNSIGNED TINYINT                 | [UInt8](../../engines/database_engines/mysql.md)          |
+| TINYINT                          | [Int8](../../engines/database_engines/mysql.md)           |
+| UNSIGNED SMALLINT                | [UInt16](../../engines/database_engines/mysql.md)         |
+| SMALLINT                         | [Int16](../../engines/database_engines/mysql.md)          |
+| UNSIGNED INT, UNSIGNED MEDIUMINT | [UInt32](../../engines/database_engines/mysql.md)         |
+| INT, MEDIUMINT                   | [Int32](../../engines/database_engines/mysql.md)          |
+| UNSIGNED BIGINT                  | [UInt64](../../engines/database_engines/mysql.md)         |
+| BIGINT                           | [Int64](../../engines/database_engines/mysql.md)          |
+| FLOAT                            | [Float32](../../engines/database_engines/mysql.md)           |
+| DOUBLE                           | [Float64](../../engines/database_engines/mysql.md)           |
+| DATE                             | [Date](../../engines/database_engines/mysql.md)               |
+| DATETIME, TIMESTAMP              | [DateTime](../../engines/database_engines/mysql.md)       |
+| BINARY                           | [FixedString](../../engines/database_engines/mysql.md) |
 
-Все прочие типы данных преобразуются в [String](../engines/database_engines/mysql.md).
+Все прочие типы данных преобразуются в [String](../../engines/database_engines/mysql.md).
 
-[Nullable](../engines/database_engines/mysql.md) поддержан.
+[Nullable](../../engines/database_engines/mysql.md) поддержан.
 
 ## Примеры использования {#primery-ispolzovaniia}
 

@@ -4,7 +4,7 @@
 
 Чтобы использование ODBC было безопасным, ClickHouse использует отдельную программу `clickhouse-odbc-bridge`. Если драйвер ODBC подгружать непосредственно из `clickhouse-server`, то проблемы с драйвером могут привести к аварийной остановке сервера ClickHouse. ClickHouse автоматически запускает `clickhouse-odbc-bridge` по мере необходимости. Программа устанавливается из того же пакета, что и `clickhouse-server`.
 
-Движок поддерживает тип данных [Nullable](../../engines/table_engines/integrations/odbc.md).
+Движок поддерживает тип данных [Nullable](../../../engines/table_engines/integrations/odbc.md).
 
 ## Создание таблицы {#sozdanie-tablitsy}
 
@@ -18,12 +18,12 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ENGINE = ODBC(connection_settings, external_database, external_table)
 ```
 
-Смотрите подробное описание запроса [CREATE TABLE](../../engines/table_engines/integrations/odbc.md#create-table-query).
+Смотрите подробное описание запроса [CREATE TABLE](../../../engines/table_engines/integrations/odbc.md#create-table-query).
 
 Структура таблицы может отличаться от структуры исходной таблицы в удалённой СУБД:
 
 -   Имена столбцов должны быть такими же, как в исходной таблице, но вы можете использовать только некоторые из этих столбцов и в любом порядке.
--   Типы столбцов могут отличаться от типов аналогичных столбцов в исходной таблице. ClickHouse пытается [приводить](../../engines/table_engines/integrations/odbc.md#type_conversion_function-cast) значения к типам данных ClickHouse.
+-   Типы столбцов могут отличаться от типов аналогичных столбцов в исходной таблице. ClickHouse пытается [приводить](../../../engines/table_engines/integrations/odbc.md#type_conversion_function-cast) значения к типам данных ClickHouse.
 
 **Параметры движка**
 
@@ -119,7 +119,7 @@ SELECT * FROM odbc_t
 
 ## Смотрите также {#smotrite-takzhe}
 
--   [Внешние словари ODBC](../../engines/table_engines/integrations/odbc.md#dicts-external_dicts_dict_sources-odbc)
--   [Табличная функция odbc](../../engines/table_engines/integrations/odbc.md)
+-   [Внешние словари ODBC](../../../engines/table_engines/integrations/odbc.md#dicts-external_dicts_dict_sources-odbc)
+-   [Табличная функция odbc](../../../engines/table_engines/integrations/odbc.md)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/odbc/) <!--hide-->

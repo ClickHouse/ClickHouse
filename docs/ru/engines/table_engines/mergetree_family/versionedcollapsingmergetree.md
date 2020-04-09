@@ -24,7 +24,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-Подробности про `CREATE TABLE` смотрите в [описании запроса](../../engines/table_engines/mergetree_family/versionedcollapsingmergetree.md).
+Подробности про `CREATE TABLE` смотрите в [описании запроса](../../../engines/table_engines/mergetree_family/versionedcollapsingmergetree.md).
 
 **Параметры движка**
 

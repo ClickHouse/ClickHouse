@@ -1,6 +1,6 @@
 # HDFS {#table_engines-hdfs}
 
-Управляет данными в HDFS. Данный движок похож на движки [File](file.md) и [URL](url.md).
+Управляет данными в HDFS. Данный движок похож на движки [File](../special/file.md) и [URL](../special/url.md).
 
 ## Использование движка {#ispolzovanie-dvizhka}
 
@@ -9,7 +9,7 @@ ENGINE = HDFS(URI, format)
 ```
 
 В параметр `URI` нужно передавать полный URI файла в HDFS.
-Параметр `format` должен быть таким, который ClickHouse может использовать и в запросах `INSERT`, и в запросах `SELECT`. Полный список поддерживаемых форматов смотрите в разделе [Форматы](../../interfaces/formats.md#formats).
+Параметр `format` должен быть таким, который ClickHouse может использовать и в запросах `INSERT`, и в запросах `SELECT`. Полный список поддерживаемых форматов смотрите в разделе [Форматы](../../../interfaces/formats.md#formats).
 Часть URI с путем файла может содержать шаблоны. В этом случае таблица может использоваться только для чтения.
 
 **Пример:**
@@ -56,7 +56,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 -   `{some_string,another_string,yet_another_one}` — Заменяет любую из строк `'some_string', 'another_string', 'yet_another_one'`.
 -   `{N..M}` — Заменяет любое число в интервале от `N` до `M` включительно (может содержать ведущие нули).
 
-Конструкция с `{}` аналогична табличной функции [remote](../../engines/table_engines/integrations/hdfs.md).
+Конструкция с `{}` аналогична табличной функции [remote](../../../engines/table_engines/integrations/hdfs.md).
 
 **Пример**
 

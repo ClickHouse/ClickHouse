@@ -4,7 +4,7 @@
 
 Таблицы типа `AggregatingMergeTree` могут использоваться для инкрементальной агрегации данных, в том числе, для агрегирующих материализованных представлений.
 
-Движок обрабатывает все столбцы типа [AggregateFunction](../../engines/table_engines/mergetree_family/aggregatingmergetree.md).
+Движок обрабатывает все столбцы типа [AggregateFunction](../../../engines/table_engines/mergetree_family/aggregatingmergetree.md).
 
 Использование `AggregatingMergeTree` оправдано только в том случае, когда это уменьшает количество строк на порядки.
 
@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-Описание параметров запроса смотрите в [описании запроса](../../engines/table_engines/mergetree_family/aggregatingmergetree.md).
+Описание параметров запроса смотрите в [описании запроса](../../../engines/table_engines/mergetree_family/aggregatingmergetree.md).
 
 **Секции запроса**
 

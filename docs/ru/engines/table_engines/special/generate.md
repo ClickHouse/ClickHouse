@@ -22,7 +22,7 @@ array columns and strings correspondingly in generated data.
 
 Generate table engine supports only `SELECT` queries.
 
-It supports all [DataTypes](../../engines/table_engines/special/generate.md) that can be stored in a table except `LowCardinality` and `AggregateFunction`.
+It supports all [DataTypes](../../../engines/table_engines/special/generate.md) that can be stored in a table except `LowCardinality` and `AggregateFunction`.
 
 **Example:**
 

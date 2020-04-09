@@ -1,6 +1,6 @@
 # Dictionary {#dictionary}
 
-Движок `Dictionary` отображает данные [словаря](../../engines/table_engines/special/dictionary.md) как таблицу ClickHouse.
+Движок `Dictionary` отображает данные [словаря](../../../engines/table_engines/special/dictionary.md) как таблицу ClickHouse.
 
 Рассмотрим для примера словарь `products` со следующей конфигурацией:
 
@@ -57,7 +57,7 @@ WHERE name = 'products'
 └──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
 ```
 
-В таком виде данные из словаря можно получить при помощи функций [dictGet\*](../../engines/table_engines/special/dictionary.md#ext_dict_functions).
+В таком виде данные из словаря можно получить при помощи функций [dictGet\*](../../../engines/table_engines/special/dictionary.md#ext_dict_functions).
 
 Такое представление неудобно, когда нам необходимо получить данные в чистом виде, а также при выполнении операции `JOIN`. Для этих случаев можно использовать движок `Dictionary`, который отобразит данные словаря в таблицу.
 

@@ -23,7 +23,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-Смотрите описание запроса [CREATE TABLE](../../engines/table_engines/mergetree_family/graphitemergetree.md#create-table-query).
+Смотрите описание запроса [CREATE TABLE](../../../engines/table_engines/mergetree_family/graphitemergetree.md#create-table-query).
 
 В таблице должны быть столбцы для следующих данных:
 
@@ -74,7 +74,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## Конфигурация rollup {#rollup-configuration}
 
-Настройки прореживания данных задаются параметром [graphite\_rollup](../server_configuration_parameters/settings.md#server_configuration_parameters-graphite_rollup) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
+Настройки прореживания данных задаются параметром [graphite\_rollup](../../../operations/server_configuration_parameters/settings.md#server_configuration_parameters-graphite_rollup) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
 
 Структура конфигурации rollup:
 

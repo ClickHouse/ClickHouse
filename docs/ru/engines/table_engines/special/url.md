@@ -7,7 +7,7 @@
 
 `Format` должен быть таким, который ClickHouse может использовать в запросах
 `SELECT` и, если есть необходимость, `INSERT`. Полный список поддерживаемых форматов смотрите в
-разделе [Форматы](../../interfaces/formats.md#formats).
+разделе [Форматы](../../../interfaces/formats.md#formats).
 
 `URL` должен соответствовать структуре Uniform Resource Locator. По указанному URL должен находится сервер
 работающий по протоколу HTTP или HTTPS. При этом не должно требоваться никаких
@@ -17,7 +17,7 @@
 соответственно. Для обработки `POST`-запросов удаленный сервер должен поддерживать
 [Chunked transfer encoding](https://ru.wikipedia.org/wiki/Chunked_transfer_encoding).
 
-Максимальное количество переходов по редиректам при выполнении HTTP-запроса методом GET можно ограничить с помощью настройки [max\_http\_get\_redirects](../settings/settings.md#setting-max_http_get_redirects).
+Максимальное количество переходов по редиректам при выполнении HTTP-запроса методом GET можно ограничить с помощью настройки [max\_http\_get\_redirects](../../../operations/settings/settings.md#setting-max_http_get_redirects).
 
 **Пример:**
 

@@ -13,27 +13,27 @@
 
 ### MergeTree {#mergetree}
 
-Наиболее универсальные и функциональные движки таблиц для задач с высокой загрузкой. Общим свойством этих движков является быстрая вставка данных с последующей фоновой обработкой данных. Движки `*MergeTree` поддерживают репликацию данных (в [Replicated\*](replication.md) версиях движков), партиционирование, и другие возможности не поддержанные для других движков.
+Наиболее универсальные и функциональные движки таблиц для задач с высокой загрузкой. Общим свойством этих движков является быстрая вставка данных с последующей фоновой обработкой данных. Движки `*MergeTree` поддерживают репликацию данных (в [Replicated\*](mergetree_family/replication.md) версиях движков), партиционирование, и другие возможности не поддержанные для других движков.
 
 Движки семейства:
 
--   [MergeTree](mergetree.md)
--   [ReplacingMergeTree](replacingmergetree.md)
--   [SummingMergeTree](summingmergetree.md)
--   [AggregatingMergeTree](aggregatingmergetree.md)
--   [CollapsingMergeTree](collapsingmergetree.md)
--   [VersionedCollapsingMergeTree](versionedcollapsingmergetree.md)
--   [GraphiteMergeTree](graphitemergetree.md)
+-   [MergeTree](mergetree_family/mergetree.md)
+-   [ReplacingMergeTree](mergetree_family/replacingmergetree.md)
+-   [SummingMergeTree](mergetree_family/summingmergetree.md)
+-   [AggregatingMergeTree](mergetree_family/aggregatingmergetree.md)
+-   [CollapsingMergeTree](mergetree_family/collapsingmergetree.md)
+-   [VersionedCollapsingMergeTree](mergetree_family/versionedcollapsingmergetree.md)
+-   [GraphiteMergeTree](mergetree_family/graphitemergetree.md)
 
 ### Log {#log}
 
-Простые [движки](log_family.md) с минимальной функциональностью. Они наиболее эффективны, когда вам нужно быстро записать много небольших таблиц (до примерно 1 миллиона строк) и прочитать их позже целиком.
+Простые [движки](log_family/index.md) с минимальной функциональностью. Они наиболее эффективны, когда вам нужно быстро записать много небольших таблиц (до примерно 1 миллиона строк) и прочитать их позже целиком.
 
 Движки семейства:
 
--   [TinyLog](tinylog.md)
--   [StripeLog](stripelog.md)
--   [Log](log.md)
+-   [TinyLog](log_family/tinylog.md)
+-   [StripeLog](log_family/stripelog.md)
+-   [Log](log_family/log.md)
 
 ### Движки для интеграции {#dvizhki-dlia-integratsii}
 
@@ -41,27 +41,27 @@
 
 Движки семейства:
 
--   [Kafka](kafka.md)
--   [MySQL](mysql.md)
--   [ODBC](odbc.md)
--   [JDBC](jdbc.md)
+-   [Kafka](integrations/kafka.md)
+-   [MySQL](integrations/mysql.md)
+-   [ODBC](integrations/odbc.md)
+-   [JDBC](integrations/jdbc.md)
 
 ### Специальные движки {#spetsialnye-dvizhki}
 
 Движки семейства:
 
--   [Distributed](distributed.md)
--   [MaterializedView](materializedview.md)
--   [Dictionary](dictionary.md)
--   [Merge](merge.md)
--   [File](file.md)
--   [Null](null.md)
--   [Set](set.md)
--   [Join](join.md)
--   [URL](url.md)
--   [View](view.md)
--   [Memory](memory.md)
--   [Buffer](buffer.md)
+-   [Distributed](special/distributed.md)
+-   [MaterializedView](special/materializedview.md)
+-   [Dictionary](special/dictionary.md)
+-   [Merge](special/merge.md)
+-   [File](special/file.md)
+-   [Null](special/null.md)
+-   [Set](special/set.md)
+-   [Join](special/join.md)
+-   [URL](special/url.md)
+-   [View](special/view.md)
+-   [Memory](special/memory.md)
+-   [Buffer](special/buffer.md)
 
 ## Виртуальные столбцы {#table_engines-virtual-columns}
 

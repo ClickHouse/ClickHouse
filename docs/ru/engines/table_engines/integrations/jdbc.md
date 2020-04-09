@@ -4,7 +4,7 @@
 
 Для реализации соединения по JDBC ClickHouse использует отдельную программу [clickhouse-jdbc-bridge](https://github.com/alex-krash/clickhouse-jdbc-bridge), которая должна запускаться как демон.
 
-Движок поддерживает тип данных [Nullable](../../engines/table_engines/integrations/jdbc.md).
+Движок поддерживает тип данных [Nullable](../../../engines/table_engines/integrations/jdbc.md).
 
 ## Создание таблицы {#sozdanie-tablitsy}
 
@@ -82,6 +82,6 @@ FROM jdbc_table
 
 ## Смотрите также {#smotrite-takzhe}
 
--   [Табличная функция JDBC](../../engines/table_engines/integrations/jdbc.md).
+-   [Табличная функция JDBC](../../../engines/table_engines/integrations/jdbc.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/operations/table_engines/jdbc/) <!--hide-->

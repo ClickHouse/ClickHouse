@@ -15,7 +15,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 ) ENGINE = StripeLog
 ```
 
-Смотрите подробное описание запроса [CREATE TABLE](../../engines/table_engines/log_family/stripelog.md#create-table-query).
+Смотрите подробное описание запроса [CREATE TABLE](../../../engines/table_engines/log_family/stripelog.md#create-table-query).
 
 ## Запись данных {#table_engines-stripelog-writing-the-data}
 

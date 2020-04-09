@@ -19,7 +19,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 [SETTINGS name=value, ...]
 ```
 
-Описание параметров запроса смотрите в [описании запроса](../../engines/table_engines/mergetree_family/summingmergetree.md).
+Описание параметров запроса смотрите в [описании запроса](../../../engines/table_engines/mergetree_family/summingmergetree.md).
 
 **Параметры SummingMergeTree**
 
@@ -91,7 +91,7 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 
 При вставке данных в таблицу они сохраняются как есть. Периодически ClickHouse выполняет слияние вставленных кусков данных и именно в этот момент производится суммирование и замена многих строк с одинаковым первичным ключом на одну для каждого результирующего куска данных.
 
-ClickHouse может слить куски данных таким образом, что не все строки с одинаковым первичным ключом окажутся в одном финальном куске, т.е. суммирование будет не полным. Поэтому, при выборке данных (`SELECT`) необходимо использовать агрегатную функцию [sum()](../../engines/table_engines/mergetree_family/summingmergetree.md#agg_function-sum) и секцию `GROUP BY` как описано в примере выше.
+ClickHouse может слить куски данных таким образом, что не все строки с одинаковым первичным ключом окажутся в одном финальном куске, т.е. суммирование будет не полным. Поэтому, при выборке данных (`SELECT`) необходимо использовать агрегатную функцию [sum()](../../../engines/table_engines/mergetree_family/summingmergetree.md#agg_function-sum) и секцию `GROUP BY` как описано в примере выше.
 
 ### Общие правила суммирования {#obshchie-pravila-summirovaniia}
 
@@ -105,7 +105,7 @@ ClickHouse может слить куски данных таким образо
 
 ### Суммирование в столбцах AggregateFunction {#summirovanie-v-stolbtsakh-aggregatefunction}
 
-Для столбцов типа [AggregateFunction](../../engines/table_engines/mergetree_family/summingmergetree.md#data_type-aggregatefunction) ClickHouse выполняет агрегацию согласно заданной функции, повторяя поведение движка [AggregatingMergeTree](aggregatingmergetree.md).
+Для столбцов типа [AggregateFunction](../../../engines/table_engines/mergetree_family/summingmergetree.md#data_type-aggregatefunction) ClickHouse выполняет агрегацию согласно заданной функции, повторяя поведение движка [AggregatingMergeTree](aggregatingmergetree.md).
 
 ### Вложенные структуры {#vlozhennye-struktury}
 
@@ -127,7 +127,7 @@ ClickHouse может слить куски данных таким образо
 [(1, 100), (2, 150)] + [(1, -100)] -> [(2, 150)]
 ```
 
-При запросе данных используйте функцию [sumMap(key, value)](../../engines/table_engines/mergetree_family/summingmergetree.md) для агрегации `Map`.
+При запросе данных используйте функцию [sumMap(key, value)](../../../engines/table_engines/mergetree_family/summingmergetree.md) для агрегации `Map`.
 
 Для вложенной структуры данных не нужно указывать её столбцы в кортеже столбцов для суммирования.
 
