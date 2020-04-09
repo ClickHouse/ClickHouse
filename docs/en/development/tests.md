@@ -11,7 +11,7 @@ Functional tests are the most simple and convenient to use. Most of ClickHouse f
 
 Each functional test sends one or multiple queries to the running ClickHouse server and compares the result with reference.
 
-Tests are located in `testsies` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from Yandex.Metrica and not available to general public. We tend to use only `stateless` tests and avoid adding new `stateful` tests.
+Tests are located in `queries` directory. There are two subdirectories: `stateless` and `stateful`. Stateless tests run queries without any preloaded test data - they often create small synthetic datasets on the fly, within the test itself. Stateful tests require preloaded test data from Yandex.Metrica and not available to general public. We tend to use only `stateless` tests and avoid adding new `stateful` tests.
 
 Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery --testmode`. `.sh` test is a script that is run by itself.
 
@@ -19,7 +19,7 @@ To run all tests, use `testskhouse-test` tool. Look `--help` for the list of pos
 
 The most simple way to invoke functional tests is to copy `clickhouse-client` to `/usr/bin/`, run `clickhouse-server` and then run `./clickhouse-test` from its own directory.
 
-To add new test, create a `.sql` or `.sh` file in `testsies/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
+To add new test, create a `.sql` or `.sh` file in `queries/0_stateless` directory, check it manually and then generate `.reference` file in the following way: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`.
 
 Tests should use (create, drop, etc) only tables in `test` database that is assumed to be created beforehand; also tests can use temporary tables.
 
@@ -32,9 +32,9 @@ meaning. `long` is for tests that run slightly longer that one second. You can
 disable these groups of tests using `--no-zookeeper`, `--no-shard` and
 `--no-long` options, respectively.
 
-## Known bugs {#known-bugs}
+## Known Bugs {#known-bugs}
 
-If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `testsies/bugs` directory. These tests will be moved to `teststests_stateless` when bugs are fixed.
+If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `queries/bugs` directory. These tests will be moved to `teststests_stateless` when bugs are fixed.
 
 ## Integration Tests {#integration-tests}
 
@@ -58,7 +58,7 @@ Each test run one or miltiple queries (possibly with combinations of parameters)
 
 If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
 
-## Test Tools And Scripts {#test-tools-and-scripts}
+## Test Tools and Scripts {#test-tools-and-scripts}
 
 Some programs in `tests` directory are not prepared tests, but are test tools. For example, for `Lexer` there is a tool `src/Parsers/tests/lexer` that just do tokenization of stdin and writes colorized result to stdout. You can use these kind of tools as a code examples and for exploration and manual testing.
 
@@ -163,11 +163,11 @@ For example, build with system packages is bad practice, because we cannot guara
 
 Though we cannot run all tests on all variant of builds, we want to check at least that various build variants are not broken. For this purpose we use build tests.
 
-## Testing For Protocol Compatibility {#testing-for-protocol-compatibility}
+## Testing for Protocol Compatibility {#testing-for-protocol-compatibility}
 
 When we extend ClickHouse network protocol, we test manually that old clickhouse-client works with new clickhouse-server and new clickhouse-client works with old clickhouse-server (simply by running binaries from corresponding packages).
 
-## Help From The Compiler {#help-from-the-compiler}
+## Help from the Compiler {#help-from-the-compiler}
 
 Main ClickHouse code (that is located in `dbms` directory) is built with `-Wall -Wextra -Werror` and with some additional enabled warnings. Although these options are not enabled for third-party libraries.
 
