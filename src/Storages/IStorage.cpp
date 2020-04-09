@@ -324,7 +324,7 @@ RWLockImpl::LockHolder IStorage::tryLockTimed(
         const String type_str = type == RWLockImpl::Type::Read ? "READ" : "WRITE";
         throw Exception(
                 type_str + " locking attempt on \"" + getStorageID().getFullTableName() +
-                "\" has timed out! (" + toString(acquire_timeout.totalMilliseconds()) + "ms ). "
+                "\" has timed out! (" + toString(acquire_timeout.totalMilliseconds()) + "ms) "
                 "Possible deadlock avoided. Client should retry.",
                 ErrorCodes::DEADLOCK_AVOIDED);
     }
