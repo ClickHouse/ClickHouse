@@ -42,7 +42,7 @@ machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
       chmod a+x benchmark-new.sh
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 
-1.  Загрузите тестовые данные в соответствии с [Яндекс.Набор метрика ](../getting_started/example_datasets/metrica.md) инструкция («hits» таблица, содержащая 100 миллионов строк).
+1.  Загрузите тестовые данные в соответствии с [Яндекс.Набор метрика](../getting_started/example_datasets/metrica.md) инструкция («hits» таблица, содержащая 100 миллионов строк).
 
 <!-- -->
 
