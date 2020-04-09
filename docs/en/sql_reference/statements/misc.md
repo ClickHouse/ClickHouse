@@ -118,7 +118,7 @@ Deletes a user.
 ### Syntax {#drop-user-syntax}
 
 ```sql
-DROP USER [IF EXISTS] name [,...]  [ON CLUSTER]
+DROP USER [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
 
@@ -126,12 +126,12 @@ DROP USER [IF EXISTS] name [,...]  [ON CLUSTER]
 
 Deletes a role.
 
-Deleted role is revoked from all the entities where it was assigned.
+Deleted role is revoked from all the entities where it was granted.
 
 ### Syntax {#drop-role-syntax}
 
 ```sql
-DROP ROLE [IF EXISTS] name [,...]  [ON CLUSTER]
+DROP ROLE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
 ## DROP ROW POLICY {#drop-row-policy-statement}
@@ -143,7 +143,7 @@ Deleted row policy is revoked from all the entities where it was assigned.
 ### Syntax {#drop-row-policy-syntax}
 
 ``` sql
-DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...]  [ON CLUSTER]
+DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...] [ON CLUSTER cluster_name]
 ```
 
 
@@ -156,7 +156,7 @@ Deleted quota is revoked from all the entities where it was assigned.
 ### Syntax {#drop-quota-syntax}
 
 ``` sql
-DROP QUOTA [IF EXISTS] name [,...]  [ON CLUSTER]
+DROP QUOTA [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
 
@@ -169,7 +169,7 @@ Deleted quota is revoked from all the entities where it was assigned.
 ### Syntax {#drop-settings-profile-syntax}
 
 ``` sql
-DROP [SETTINGS] PROFILE [IF EXISTS] name [,...]  [ON CLUSTER]
+DROP [SETTINGS] PROFILE [IF EXISTS] name [,...] [ON CLUSTER cluster_name]
 ```
 
 

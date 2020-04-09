@@ -14,18 +14,19 @@ To revoke privileges, use the [REVOKE](revoke.md) statement. Also you can list g
 ## Granting Privilege Syntax {#grant-privigele-syntax}
 
 ```sql
-GRANT [ON CLUSTER] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
 ```
 - `privilege` — Type of privilege.
 - `role` — ClickHouse user role.
 - `user` — ClickHouse user account.
 
-The `WITH GRANT OPTION` clause sets [GRANT OPTION](#grant-option-privilege) privilege for `user` or `role`.
+The `WITH GRANT OPTION` clause grants `user` or `role` with permission to perform the `GRANT` query. User can grant privileges only inside the scope of their account privileges.
+
 
 ## Assigning Role Syntax {#assign-role-syntax}
 
 ```sql
-GRANT [ON CLUSTER] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
+GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION]
 ```
 
 - `role` — ClickHouse user role.
@@ -53,7 +54,7 @@ It means that `john` has the permission to perform:
 
 Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or the smaller scope.
 
-Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO john` query allows `john` to perform the `SELECT` query over all the tables in `db` database. Also, you can omit database name. In this case privileges are granted for current database.
+Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO john` query allows `john` to perform the `SELECT` query over all the tables in `db` database. Also, you can omit database name. In this case privileges are granted for current database, for example: `GRANT SELECT ON * TO john` grants the privilege on all the tables in the current database, `GRANT SELECT ON mytable TO john` grants the privilege on the `mytable` table in the current database.
 
 You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO john, petya` allows accounts `john` and `petya` to perform the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
 
@@ -198,11 +199,7 @@ Allows to perform [DROP](misc.md#drop-statement) queries corresponding to the fo
 
 ### TRUNCATE {#grant-truncate}
 
-Allows to perform [TRUNCATE](misc.md#truncate-statement) queries corresponding to the following hierarchy of privileges:
-
-- `TRUNCATE`
-    - `TRUNCATE TABLE`
-        - `TRUNCATE VIEW`
+Allows to perform [TRUNCATE](misc.md#truncate-statement) queries.
 
 ### OPTIMIZE {#grant-optimize}
 
@@ -362,11 +359,6 @@ Grants all the privileges on regulated entity to a user account or a role._
 ### NONE {#grant-none}
 
 Doesn't grant any privileges.
-
-
-### GRANT OPTION {#grant-option-privilege}
-
-To use `GRANT`, a user account must have the `GRANT OPTION` privilege. User can grant privileges only inside the scope of their account privileges.
 
 
 ### ADMIN OPTION {#admin-option-privilege}

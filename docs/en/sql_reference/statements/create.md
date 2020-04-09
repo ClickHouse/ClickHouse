@@ -314,9 +314,9 @@ Creates a [user account](../../operations/access_rights.md#user-account-manageme
 ### Syntax {#create-user-syntax}
 
 ```sql
-CREATE USER [IF NOT EXISTS | OR REPLACE] name  [ON CLUSTER]
+CREATE USER [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [IDENTIFIED [WITH {NO_PASSWORD|PLAINTEXT_PASSWORD|SHA256_PASSWORD|SHA256_HASH|DOUBLE_SHA1_PASSWORD|DOUBLE_SHA1_HASH}] BY {'password'|'hash'}]
-    [HOST {LOCAL | NAME 'name' | NAME REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
+    [HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [DEFAULT ROLE role [,...]]
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
@@ -339,9 +339,9 @@ User host is a host from which a connection to ClickHouse server could be establ
 - `HOST IP 'ip_address_or_subnetwork'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). Examples: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`.
 - `HOST ANY` — User can connect from any location. This is default option.
 - `HOST LOCAL` — User can connect only locally.
-- `HOST NAME 'FQDN'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
+- `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
 - `HOST NAME REGEXP 'regexp'` — You can use [pcre](http://www.pcre.org/) regular expressions when specifying user hosts. For example, `HOST NAME REGEXP '.*\.mysite\.com'`.
-- `HOST LIKE 'te.mp.la.te'` — Allows you use the [LIKE](../functions/string_search_functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, or `HOST LIKE '192.168.%.%'` is equivalent to `HOST IP '192.168.0.0/16'`.
+- `HOST LIKE 'template'` — Allows you use the [LIKE](../functions/string_search_functions.md#function-like) operator to filter the user hosts. For example, `HOST LIKE '%'` is equivalent to `HOST ANY`, `HOST LIKE '%.mysite.com'` filters all the hosts in the `mysite.com` domain.
 
 Another way of specifying host is to use `@` syntax with the user name. Examples:
 
@@ -364,37 +364,52 @@ CREATE USER mira HOST IP '127.0.0.1' IDENTIFIED WITH sha256_password BY 'qwerty'
 
 `mira` should start client app at the host where the ClickHouse server runs.
 
-
 Create the user account `john`, assign roles to it and make this roles default:
 
 ``` sql
-CREATE USER user DEFAULT ROLE role1, role2
+CREATE USER john DEFAULT ROLE role1, role2
 ```
+
+Create the user account `john` and make all his future roles default:
+
+``` sql
+ALTER USER user DEFAULT ROLE ALL
+```
+
+When some role will be assigned to `john` in the future it will become default automatically.
+
+Create the user account `john` and make all his future roles default excepting `role1` and `role2`:
+
+``` sql
+ALTER USER john DEFAULT ROLE ALL EXCEPT role1, role2
+```
+
+
 
 ## CREATE ROLE {#create-role-statement}
 
 Creates a role.
 
-### Syntax
+### Syntax {#create-role-syntax}
 
 ```sql
 CREATE ROLE [IF NOT EXISTS | OR REPLACE] name
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
 ```
 
-### Description
+### Description {#create-role-description}
 
-Role is a set of [privileges](grant.md#grant-privileges). A user assigned with a role gets all the privileges of this role. 
+Role is a set of [privileges](grant.md#grant-privileges). A user granted with a role gets all the privileges of this role. 
 
-A user can be assigned with multiple roles. Users can apply their assigned roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges assigned directly to it's user account, they are also combined with the privileges granted by roles.
+A user can be assigned with multiple roles. Users can apply their granted roles in arbitrary combinations by the [SET ROLE](misc.md#set-role-statement) statement. The final scope of privileges is a combined set of all the privileges of all the applied roles. If a user has privileges granted directly to it's user account, they are also combined with the privileges granted by roles.
 
 User can have default roles which apply at user login. To set default roles, use the [SET DEFAULT ROLE](misc.md#set-default-role-statement) statement or the [ALTER USER](alter.md#alter-user-statement) statement.
 
 To revoke a role, use the [REVOKE](revoke.md) statement.
 
-To delete role, use the [DROP ROLE](misc.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was assigned.
+To delete role, use the [DROP ROLE](misc.md#drop-role-statement) statement. The deleted role is being automatically revoked from all the users and roles to which it was granted.
 
-### Example
+### Examples {#create-role-examples}
 
 ```sql
 CREATE ROLE accountant;
@@ -403,13 +418,13 @@ GRANT SELECT ON db.* TO accountant;
 
 This sequence of queries creates the role `accountant` that has the privilege of reading data from the `accounting` database.
 
-Assigning the role to the user `mira`:
+Granting the role to the user `mira`:
 
 ```sql
 GRANT accountant TO mira;
 ```
 
-After the role is assigned, the user can use it and perform the allowed queries. For example:
+After the role is granted, the user can use it and perform the allowed queries. For example:
 
 ```sql
 SET ROLE accountant;
@@ -423,7 +438,7 @@ Creates a filter for rows, which a user can read from a table. Also, you can cre
 ### Syntax {#create-row-policy-syntax}
 
 ``` sql
-CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name  [ON CLUSTER] ON [db.]table
+CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [ON CLUSTER cluster_name] ON [db.]table
     [AS {PERMISSIVE | RESTRICTIVE}]
     [FOR SELECT]
     [USING condition]
@@ -456,14 +471,23 @@ Keyword `ALL` means all the ClickHouse users including current user. Keywords `A
 
 Creates a [quota](../../operations/quotas.md) that can be assigned to a user of role.
 
-### Syntax {create-quota-syntax}
+### Syntax {#create-quota-syntax}
 
 ``` sql
-CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER]
+CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
     [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
     [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
-        {[SET] MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] | [SET] TRACKING} [,...]]
+        {MAX { {QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number } [,...] |
+         NO LIMITS | TRACKING ONLY} [,...]]
     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
+```
+
+### Example {#create-quota-example}
+
+Limit the maximum number of queries for the current user with 123 queries in 15 months constraint:
+
+``` sql
+CREATE QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES 123 TO CURRENT_USER
 ```
 
 
@@ -471,11 +495,19 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER]
 
 Creates a [settings profile](../../operations/settings/settings_profiles.md) that can be assigned to a user of role.
 
-### Syntax {create-quota-syntax}
+### Syntax {#create-settings-profile-syntax}
 
 ``` sql
-CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER]
-    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | INHERIT 'profile_name'] [,...]
+```
+
+# Example {#create-settings-profile-syntax}
+
+Create the `max_memory_usage_profile` settings profile with value and constraints for the `max_memory_usage` setting. Assign it to `robin`:
+
+``` sql
+CREATE SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000 TO robin
 ```
 
 
