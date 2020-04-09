@@ -34,9 +34,10 @@ toc_title: Client Libraries
     -   [AnyEvent-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
 -   Ruby
     -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
+    -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   R
     -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
-    -   [RClickhouse](https://github.com/IMSMWU/RClickhouse)
+    -   [RClickHouse](https://github.com/IMSMWU/RClickHouse)
 -   Java
     -   [clickhouse-client-java](https://github.com/VirtusAI/clickhouse-client-java)
     -   [clickhouse-client](https://github.com/Ecwid/clickhouse-client)

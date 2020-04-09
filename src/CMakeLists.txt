@@ -274,10 +274,6 @@ set_source_files_properties(Common/malloc.cpp PROPERTIES COMPILE_FLAGS "-fno-bui
 add_library (clickhouse_new_delete STATIC Common/new_delete.cpp)
 target_link_libraries (clickhouse_new_delete PRIVATE clickhouse_common_io jemalloc)
 
-if (OS_FREEBSD)
-    target_compile_definitions (clickhouse_common_io PUBLIC CLOCK_MONOTONIC_COARSE=CLOCK_MONOTONIC_FAST)
-endif ()
-
 add_subdirectory(Common/ZooKeeper)
 add_subdirectory(Common/Config)
 

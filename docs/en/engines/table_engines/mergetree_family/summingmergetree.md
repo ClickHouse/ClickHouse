@@ -3,7 +3,7 @@ toc_priority: 34
 toc_title: SummingMergeTree
 ---
 
-# Summingmergetree {#summingmergetree}
+# SummingMergeTree {#summingmergetree}
 
 The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree). The difference is that when merging data parts for `SummingMergeTree` tables ClickHouse replaces all the rows with the same primary key (or more accurately, with the same [sorting key](mergetree.md)) with one row which contains summarized values for the columns with the numeric data type. If the sorting key is composed in a way that a single key value corresponds to large number of rows, this significantly reduces storage volume and speeds up data selection.
 
@@ -94,7 +94,7 @@ SELECT key, sum(value) FROM summtt GROUP BY key
 
 ## Data Processing {#data-processing}
 
-When data are inserted into a table, they are saved as-is. Clickhouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
+When data are inserted into a table, they are saved as-is. ClickHouse merges the inserted parts of data periodically and this is when rows with the same primary key are summed and replaced with one for each resulting part of data.
 
 ClickHouse can merge the data parts so that different resulting parts of data cat consist rows with the same primary key, i.e. the summation will be incomplete. Therefore (`SELECT`) an aggregate function [sum()](../../../sql_reference/aggregate_functions/reference.md#agg_function-sum) and `GROUP BY` clause should be used in a query as described in the example above.
 

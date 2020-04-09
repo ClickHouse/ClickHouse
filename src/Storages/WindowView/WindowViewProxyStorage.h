@@ -22,7 +22,7 @@ public:
 public:
     std::string getName() const override { return "WindowViewProxy"; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & /*context*/, const ASTPtr &) const override { return to_stage; }
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override { return to_stage; }
 
     Pipes read(
             const Names & /*column_names*/,
