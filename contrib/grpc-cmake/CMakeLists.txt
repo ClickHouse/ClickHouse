@@ -3,7 +3,6 @@ cmake_minimum_required(VERSION 3.5.1)
 set(GRPC_SOURCE_DIR ${ClickHouse_SOURCE_DIR}/contrib/grpc)
 set(GRPC_INCLUDE_DIR ${GRPC_SOURCE_DIR}/include/)
 set(GRPC_BINARY_DIR ${ClickHouse_BINARY_DIR}/contrib/grpc)
-
 if(UNIX)
   if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     set(_gRPC_PLATFORM_LINUX ON)
@@ -112,30 +111,19 @@ set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}")
 #set(_gRPC_ZLIB_LIBRARIES zlibstatic)
 #set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}")
 #include(${GRPC_SOURCE_DIR}/cmake/zlib.cmake)
+
 if(NOT ZLIB_ROOT_DIR)
-  set(ZLIB_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/third_party/zlib)
+  set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib)
 endif()
+
 if(EXISTS "${ZLIB_ROOT_DIR}/CMakeLists.txt")
-  # TODO(jtattermusch): workaround for https://github.com/madler/zlib/issues/218
   include_directories("${ZLIB_ROOT_DIR}")
   add_subdirectory(${ZLIB_ROOT_DIR} third_party/zlib)
 
   if(TARGET zlibstatic)
     set(_gRPC_ZLIB_LIBRARIES zlibstatic)
     set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/third_party/zlib")
-    if(gRPC_INSTALL AND _gRPC_INSTALL_SUPPORTED_FROM_MODULE)
-      install(TARGETS zlibstatic EXPORT gRPCTargets
-        RUNTIME DESTINATION ${gRPC_INSTALL_BINDIR}
-        LIBRARY DESTINATION ${gRPC_INSTALL_LIBDIR}
-        ARCHIVE DESTINATION ${gRPC_INSTALL_LIBDIR})
-    endif()
   endif()
-else()
-  message(WARNING "gRPC_ZLIB_PROVIDER is \"module\" but ZLIB_ROOT_DIR is wrong")
-endif()
-if(gRPC_INSTALL AND NOT _gRPC_INSTALL_SUPPORTED_FROM_MODULE)
-  message(WARNING "gRPC_INSTALL will be forced to FALSE because gRPC_ZLIB_PROVIDER is \"module\"  and CMake version (${CMAKE_VERSION}) is less than 3.13.")
-  set(gRPC_INSTALL FALSE)
 endif()
 >>>>>>> zlib
 
