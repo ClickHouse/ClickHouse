@@ -43,6 +43,9 @@ private:
 class Collator : private boost::noncopyable
 {
 public:
+#if !USE_ICU
+    [[noreturn]]
+#endif
     explicit Collator(const std::string & locale_);
     ~Collator();
 

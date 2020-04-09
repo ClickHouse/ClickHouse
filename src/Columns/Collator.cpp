@@ -82,6 +82,9 @@ bool AvailableCollationLocales::isCollationSupported(const std::string & locale_
     return locales_map.count(Poco::toLower(locale_name));
 }
 
+#if !USE_ICU
+[[noreturn]]
+#endif
 Collator::Collator(const std::string & locale_)
     : locale(Poco::toLower(locale_))
 {
