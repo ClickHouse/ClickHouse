@@ -41,6 +41,7 @@ public:
             result.type = prepare_function->getReturnType();
             if (result.type->getTypeId() != expected_type)
                 throw Exception("Type mismatch in dictionary reader for: " + column_name, ErrorCodes::TYPE_MISMATCH);
+            block.insert(result);
 
             function = prepare_function->prepare(block, arg_positions, result_pos);
         }
@@ -113,6 +114,7 @@ public:
         {
             size_t column_name_pos = key_size + i;
             auto & column = result_header.getByPosition(i);
+            arguments_get[1].column = DataTypeString().createColumnConst(1, src_column_names[i]);
             ColumnNumbers positions_get{0, column_name_pos, key_position};
             functions_get.emplace_back(FunctionWrapper(
                 *dict_get, arguments_get, sample_block, positions_get, column.name, column.type->getTypeId()));

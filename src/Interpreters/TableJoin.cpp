@@ -238,4 +238,27 @@ bool TableJoin::allowMergeJoin() const
     return allow_merge_join;
 }
 
+bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_block, Names & names, NamesAndTypesList & result_columns) const
+{
+    const Names & right_keys = keyNamesRight();
+    if (right_keys.size() != 1)
+        return false;
+
+    for (auto & col : sample_block)
+    {
+        String original = original_names.find(col.name)->second;
+        if (col.name == right_keys[0])
+        {
+            if (original != dict_key)
+                return false; /// JOIN key != Dictionary key
+            continue; /// do not extract key column
+        }
+
+        names.push_back(original);
+        result_columns.push_back({col.name, col.type});
+    }
+
+    return true;
+}
+
 }
