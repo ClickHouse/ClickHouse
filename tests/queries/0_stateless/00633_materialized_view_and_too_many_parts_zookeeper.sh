@@ -23,10 +23,10 @@ fi
 echo
 ${CLICKHOUSE_CLIENT} --query "SELECT _table, d FROM merge('${CLICKHOUSE_DATABASE}', '^[abc]\$') ORDER BY _table"
 
-${CLICKHOUSE_CLIENT} --query "DROP TABLE root NO DELAY"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE root"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE a NO DELAY"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE b NO DELAY"
-${CLICKHOUSE_CLIENT} --query "DROP TABLE c NO DELAY"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE b"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE c"
 sleep 2
 
 # Deduplication check for non-replicated root table
@@ -36,6 +36,6 @@ ${CLICKHOUSE_CLIENT} --query "CREATE MATERIALIZED VIEW a (d UInt64) ENGINE = Rep
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO root VALUES (1)";
 ${CLICKHOUSE_CLIENT} --query "INSERT INTO root VALUES (1)";
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM a";
-${CLICKHOUSE_CLIENT} --query "DROP TABLE root NO DELAY"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE root"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE a NO DELAY"
 sleep 1
