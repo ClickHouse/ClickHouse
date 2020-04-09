@@ -118,7 +118,8 @@ bool StorageMerge::isRemote() const
 bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const
 {
     /// It's beneficial if it is true for at least one table.
-    StorageListWithLocks selected_tables = getSelectedTables(query_context.getCurrentQueryId());
+    StorageListWithLocks selected_tables = getSelectedTables(
+            query_context.getCurrentQueryId(), query_context.getSettingsRef());
 
     size_t i = 0;
     for (const auto & table : selected_tables)
@@ -195,7 +196,7 @@ Pipes StorageMerge::read(
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
     StorageListWithLocks selected_tables = getSelectedTables(
-        query_info.query, has_table_virtual_column, context.getCurrentQueryId());
+        query_info.query, has_table_virtual_column, context.getCurrentQueryId(), context.getSettingsRef());
 
     if (selected_tables.empty())
         /// FIXME: do we support sampling in this case?
@@ -355,7 +356,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 }
 
 
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String & query_id) const
+StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String & query_id, const Settings & settings) const
 {
     StorageListWithLocks selected_tables;
     auto iterator = getDatabaseIterator();
@@ -364,7 +365,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
     {
         auto & table = iterator->table();
         if (table.get() != this)
-            selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id), iterator->name());
+            selected_tables.emplace_back(
+                    table, table->lockStructureForShare(false, query_id, settings.lock_acquire_timeout), iterator->name());
 
         iterator->next();
     }
@@ -373,7 +375,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
 }
 
 
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, const String & query_id) const
+StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
+        const ASTPtr & query, bool has_virtual_column, const String & query_id, const Settings & settings) const
 {
     StorageListWithLocks selected_tables;
     DatabaseTablesIteratorPtr iterator = getDatabaseIterator();
@@ -389,7 +392,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
         if (storage.get() != this)
         {
-            selected_tables.emplace_back(storage, storage->lockStructureForShare(false, query_id), iterator->name());
+            selected_tables.emplace_back(
+                    storage, storage->lockStructureForShare(false, query_id, settings.lock_acquire_timeout), iterator->name());
             virtual_column->insert(iterator->name());
         }
 
@@ -434,7 +438,7 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Se
 void StorageMerge::alter(
     const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();

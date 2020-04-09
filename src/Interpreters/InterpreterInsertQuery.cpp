@@ -109,7 +109,8 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
 
     StoragePtr table = getTable(query);
-    auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
+    auto table_lock = table->lockStructureForShare(
+            true, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
     auto query_sample_block = getSampleBlock(query, table);
     if (!query.table_function)
