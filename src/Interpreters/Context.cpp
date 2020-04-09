@@ -41,16 +41,7 @@
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/InterserverIOHandler.h>
-<<<<<<< HEAD
 #include <Interpreters/SystemLog.h>
-=======
-#include <Interpreters/MetricLog.h>
-#include <Interpreters/QueryThreadLog.h>
-#include <Interpreters/QueryLog.h>
-#include <Interpreters/SystemLog.h>
-#include <Interpreters/TextLog.h>
-#include <Interpreters/TraceLog.h>
->>>>>>> 53aedc245f... Fix deadlock in #9642
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLWorker.h>
 #include <Common/DNSResolver.h>
@@ -1558,8 +1549,6 @@ void Context::initializeSystemLogs()
     shared->system_logs.emplace(*global_context, getConfigRef());
 }
 
-<<<<<<< HEAD
-=======
 void Context::createSystemLogs()
 {
     auto system_logs = std::make_optional<SystemLogs>(*global_context, getConfigRef());
@@ -1583,7 +1572,6 @@ void Context::createSystemLogs()
     shared->system_logs.swap(system_logs);
 }
 
->>>>>>> 53aedc245f... Fix deadlock in #9642
 void Context::initializeTraceCollector()
 {
     shared->initializeTraceCollector(getTraceLog());

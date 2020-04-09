@@ -492,6 +492,9 @@ public:
     /// Call after initialization before using system logs. Call for global context.
     void initializeSystemLogs();
 
+    /// Call after initialization to implement non-lazy load and initialization before using system logs. Call for global context.
+    void createSystemLogs();
+
     /// Call after initialization before using trace collector.
     void initializeTraceCollector();
 
