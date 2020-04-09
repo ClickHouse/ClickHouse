@@ -94,6 +94,8 @@ nav:
     - 'ALTER': 'query_language/alter.md'
     - 'SYSTEM': 'query_language/system.md'
     - 'SHOW': 'query_language/show.md'
+    - 'GRANT': 'query_language/grant.md'
+    - 'REVOKE': 'query_language/revoke.md'
     - 'Прочие': 'query_language/misc.md'
   - 'Функции':
     - 'Введение': 'query_language/functions/index.md'

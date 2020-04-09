@@ -884,15 +884,16 @@ Contains information about session settings for current user.
 
 Columns:
 
--   `name` ([String](../sql_reference/data_types/string.md)) — Setting name.
--   `value` ([String](../sql_reference/data_types/string.md)) — Setting value.
--   `changed` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — Shows whether a setting is changed from its default value.
--   `description` ([String](../sql_reference/data_types/string.md)) — Short setting description.
--   `min` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — Minimum value of the setting, if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings). If the setting has no minimum value, contains [NULL](../sql_reference/syntax.md#null-literal).
--   `max` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — Maximum value of the setting, if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings). If the setting has no maximum value, contains [NULL](../sql_reference/syntax.md#null-literal).
--   `readonly` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — Shows whether the current user can change the setting:
-    -   `0` — Current user can change the setting.
-    -   `1` — Current user can’t change the setting.
+- `name` ([String](../sql_reference/data_types/string.md)) — Setting name.
+- `value` ([String](../sql_reference/data_types/string.md)) — Setting value.
+- `changed` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — Shows whether a setting is changed from its default value.
+- `description` ([String](../sql_reference/data_types/string.md)) — Short setting description. 
+- `min` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — Minimum value of the setting, if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings). If the setting has no minimum value, contains [NULL](../sql_reference/syntax.md#null-literal). 
+- `max` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — Maximum value of the setting, if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings). If the setting has no maximum value, contains [NULL](../sql_reference/syntax.md#null-literal). 
+- `readonly` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — Shows whether the current user can change the setting:
+     - `0` — Current user can change the setting.
+     - `1` — Current user can't change the setting.
+
 
 **Example**
 
