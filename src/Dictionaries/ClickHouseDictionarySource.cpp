@@ -230,7 +230,6 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
     {
         Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
         
-        std::cerr << "initialization: " << context_local_copy.getSettings().max_bytes_to_read << '\n';
         /// Note that processors are not supported yet (see constructor),
         /// hence it is not possible to override experimental_use_processors setting
         return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context_local_copy);
