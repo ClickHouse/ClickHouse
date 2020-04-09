@@ -153,7 +153,7 @@ Contains information about [external dictionaries](../sql_reference/dictionaries
 
 Columns:
 
-- `database` ([String](../sql_reference/data_types/string.md)) — Database name where the dictionary is located. Only for dictionaries created by DDL query, for others is always an empty string.
+- `database` ([String](../sql_reference/data_types/string.md)) — Name of the database containing the dictionary created by DDL query. Empty string for other dictionaries.
 - `name` ([String](../sql_reference/data_types/string.md)) — [Dictionary name](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict.md).
 - `status` ([Enum8](../sql_reference/data_types/enum.md)) — Dictionary status. Possible values: 
      - `NOT_LOADED` — Dictionary was not loaded because it was not used.
