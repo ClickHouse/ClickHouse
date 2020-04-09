@@ -28,12 +28,12 @@
     </div>
     {% endif %}
 </div>
-<!-- BREAK -->
 {% if single_page and page.content %}
+<!-- BREAK -->
 (function() {
     {% for chunk in page.content|chunks %}
     document.write({{ chunk|tojson|safe }});
     {% endfor %}
 })();
-{% endif %}
 <!-- BREAK -->
+{% endif %}
