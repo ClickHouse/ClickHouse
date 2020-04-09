@@ -3,7 +3,7 @@ machine_translated: true
 machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
 ---
 
-# Как построить ClickHouse на Linux для архитектуры AArch64 (ARM64)  {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
+# Как построить ClickHouse на Linux для архитектуры AArch64 (ARM64) {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
 
 Это для случая, когда у вас есть Linux-машина и вы хотите использовать ее для сборки `clickhouse` двоичный файл, который будет работать на другой машине Linux с архитектурой процессора AARCH64. Это предназначено для непрерывной проверки интеграции, которая выполняется на серверах Linux.
 
