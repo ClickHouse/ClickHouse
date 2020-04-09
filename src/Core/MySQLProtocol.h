@@ -914,8 +914,16 @@ public:
         scramble.resize(SCRAMBLE_LENGTH + 1, 0);
         Poco::RandomInputStream generator;
 
-        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+       /** Generate a random string using ASCII characters but avoid seperator character,
+         * produce pseudo random numbers between with about 7 bit worth of entropty between 1-127.
+         * https://github.com/mysql/mysql-server/blob/8.0/mysys/crypt_genhash_impl.cc#L427
+         */
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++){
             generator >> scramble[i];
+            scramble[i] &= 0x7f;
+            if (scramble[i] == '\0' || scramble[i] == '$')
+                scramble[i] = scramble[i] + 1;
+        }
     }
 
     String getName() override
@@ -993,8 +1001,12 @@ public:
         scramble.resize(SCRAMBLE_LENGTH + 1, 0);
         Poco::RandomInputStream generator;
 
-        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++) {
             generator >> scramble[i];
+            scramble[i] &= 0x7f;
+            if (scramble[i] == '\0' || scramble[i] == '$')
+                scramble[i] = scramble[i] + 1;
+        }
     }
 
     String getName() override
