@@ -375,13 +375,16 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 
 /// Remove duplicate ORDER BY from subquries.
 void optimizeDuplicateOrderBy(ASTPtr & current_ast,
-                              std::vector<std::vector<std::pair<String, String>>> & upper_order_by)
+                              std::vector<std::pair<String, String>> & last_order_by,
+                              std::vector<int> & last_directions)
 {
     if (!current_ast)
         return;
 
-    std::vector<std::pair<String, String>> elems_vector;
-    int is_duplicate_removed = 0;
+    for (auto & child : current_ast->children)
+    {
+        optimizeDuplicateOrderBy(child, last_order_by, last_directions);
+    }
 
     if (current_ast->getID() == "SelectQuery")
     {
@@ -389,57 +392,49 @@ void optimizeDuplicateOrderBy(ASTPtr & current_ast,
 
         if (select_query->orderBy())
         {
+            std::vector<std::pair<String, String>> current_order_by;
             ASTs elems = select_query->orderBy()->children;
+            std::vector<int> current_directions;
 
             for (const auto & elem : elems)
             {
                 String name = elem->children.front()->getColumnName();
                 const auto & order_by_elem = elem->as<ASTOrderByElement &>();
 
-                elems_vector.emplace_back(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "");
+                current_order_by.emplace_back(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "");
+                current_directions.push_back(order_by_elem.direction);
             }
 
-            for (auto & visited_order_by : upper_order_by)
+            if (current_order_by == last_order_by && current_directions == last_directions)
             {
-                if (elems_vector == visited_order_by)
-                {
-                    select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
-                    is_duplicate_removed = 1;
-                    break;
-                }
+                select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
             }
 
-            if (!is_duplicate_removed)
-                upper_order_by.push_back(std::move(elems_vector));
+            last_order_by = std::move(current_order_by);
+            last_directions = std::move(current_directions);
         }
-    }
-
-    for (auto & child : current_ast->children)
-    {
-        optimizeDuplicateOrderBy(child, upper_order_by);
-    }
-
-    if (current_ast->getID() == "SelectQuery" && !is_duplicate_removed)
-    {
-        auto select_query = current_ast->as<ASTSelectQuery>();
-
-        if (select_query->orderBy())
-            upper_order_by.pop_back();
     }
 }
 
-/// Remove duplicate ORDER BY from subqueries.
 void optimizeDuplicateOrderBy(ASTPtr & current_ast)
 {
-    std::vector<std::vector<std::pair<String, String>>> upper_order_by;
-    optimizeDuplicateOrderBy(current_ast, upper_order_by);
+    std::vector<std::pair<String, String>> last_order_by;
+    std::vector<int> direction;
+    optimizeDuplicateOrderBy(current_ast, last_order_by, direction);
 }
 
 /// Remove duplicate DISTINCT from subquries.
-void optimizeDuplicateDistinct(ASTPtr & current_ast, bool is_distinct)
+void optimizeDuplicateDistinct(ASTPtr & current_ast,
+                               bool & is_distinct,
+                               std::vector<String> & last_ids)
 {
     if (!current_ast)
         return;
+
+    for (auto & child : current_ast->children)
+    {
+        optimizeDuplicateDistinct(child, is_distinct, last_ids);
+    }
 
     if (current_ast->getID() == "SelectQuery")
     {
@@ -447,18 +442,30 @@ void optimizeDuplicateDistinct(ASTPtr & current_ast, bool is_distinct)
 
         if (select_query->distinct)
         {
-            if (is_distinct)
+            ASTs elems = select_query->select()->children;
+            std::vector<String> current_ids;
+
+            for (const auto & elem : elems)
+            {
+                current_ids.push_back(elem->getColumnName());
+            }
+
+            if (is_distinct && current_ids == last_ids)
             {
                 select_query->distinct = false;
             }
+
             is_distinct = true;
+            last_ids = std::move(current_ids);
         }
     }
+}
 
-    for (auto & child : current_ast->children)
-    {
-        optimizeDuplicateDistinct(child, is_distinct);
-    }
+void optimizeDuplicateDistinct(ASTPtr & current_ast)
+{
+    std::vector<String> last_ids;
+    bool is_distinct = false;
+    optimizeDuplicateDistinct(current_ast, is_distinct, last_ids);
 }
 
 /// Remove duplicate items from LIMIT BY.
@@ -936,7 +943,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeDuplicateOrderBy(query);
 
         /// Remove duplicate DISTINCT from subqueries.
-        optimizeDuplicateDistinct(query, false);
+        optimizeDuplicateDistinct(query);
 
         /// Remove duplicated elements from LIMIT BY clause.
         optimizeLimitBy(select_query);
