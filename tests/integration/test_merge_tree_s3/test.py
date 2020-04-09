@@ -67,7 +67,9 @@ def create_table(cluster, table_name, additional_settings=None):
         PARTITION BY dt
         ORDER BY (dt, id)
         SETTINGS
-            old_parts_lifetime=0, index_granularity=512
+            storage_policy = 's3',
+            old_parts_lifetime=0, 
+            index_granularity=512
         """.format(table_name)
 
     if additional_settings:

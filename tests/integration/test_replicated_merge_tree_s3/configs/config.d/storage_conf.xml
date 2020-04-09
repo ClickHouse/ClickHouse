@@ -7,22 +7,15 @@
                 <access_key_id>minio</access_key_id>
                 <secret_access_key>minio123</secret_access_key>
             </s3>
-            <hdd>
-                <type>local</type>
-                <path>/</path>
-            </hdd>
         </disks>
         <policies>
-            <default>
+            <s3>
                 <volumes>
                     <main>
                         <disk>s3</disk>
                     </main>
-                    <external>
-                        <disk>hdd</disk>
-                    </external>
                 </volumes>
-            </default>
+            </s3>
         </policies>
     </storage_configuration>
 </yandex>
