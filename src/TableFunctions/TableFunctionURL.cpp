@@ -16,11 +16,6 @@ StoragePtr TableFunctionURL::getStorage(
     return StorageURL::create(uri, StorageID(getDatabaseName(), table_name), format, columns, ConstraintsDescription{}, global_context, compression_method);
 }
 
-AccessType TableFunctionURL::getRequiredAccessType() const
-{
-    return AccessType::url;
-}
-
 void registerTableFunctionURL(TableFunctionFactory & factory)
 {
     factory.registerFunction<TableFunctionURL>();

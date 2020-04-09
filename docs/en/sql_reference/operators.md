@@ -58,7 +58,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a NOT BETWEEN b AND c` – The same as `a < b OR a > c`.
 
-## Operators For Working With Data Sets {#operators-for-working-with-data-sets}
+## Operators for Working with Data Sets {#operators-for-working-with-data-sets}
 
 *See [IN operators](statements/select.md#select-in-operators).*
 
@@ -70,7 +70,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 
 `a GLOBAL NOT IN ...` – The `globalNotIn(a, b)` function.
 
-## Operators For Working With Dates and Times {#operators-datetime}
+## Operators for Working with Dates and Times {#operators-datetime}
 
 ### EXTRACT {#operator-extract}
 
@@ -231,7 +231,7 @@ Sometimes this doesn’t work the way you expect. For example, `SELECT 4 > 2 > 3
 
 For efficiency, the `and` and `or` functions accept any number of arguments. The corresponding chains of `AND` and `OR` operators are transformed to a single call of these functions.
 
-## Checking For `NULL` {#checking-for-null}
+## Checking for `NULL` {#checking-for-null}
 
 ClickHouse supports the `IS NULL` and `IS NOT NULL` operators.
 

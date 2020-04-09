@@ -511,7 +511,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
     }
 
     if (storage && !options.only_analyze)
-        from_stage = storage->getQueryProcessingStage(*context, query_ptr);
+        from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_ptr);
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     bool first_stage = from_stage < QueryProcessingStage::WithMergeableState

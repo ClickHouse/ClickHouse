@@ -33,6 +33,8 @@ public:
     String layout_type;
     /// optional parameter (size_in_cells)
     std::optional<KeyValue> parameter;
+    /// has brackets after layout type
+    bool has_brackets = true;
 
     String getID(char) const override { return "Dictionary layout"; }
 
