@@ -13,4 +13,4 @@
 -   Шифрование и изоляция
 -   Автоматизированное техническое обслуживание
 
-{## [Оригинальная статья](https://clickhouse.tech/docs/en/commercial/cloud/) ##}
+{## [Оригинальная статья](https://clickhouse.tech/docs/ru/commercial/cloud/) ##}
