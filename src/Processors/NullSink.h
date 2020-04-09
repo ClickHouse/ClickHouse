@@ -5,6 +5,7 @@
 namespace DB
 {
 
+/// Sink which closes input port and reads nothing.
 class NullSink : public IProcessor
 {
 public:
@@ -20,6 +21,7 @@ public:
     InputPort & getPort() { return inputs.front(); }
 };
 
+/// Sink which reads everything and do nothing with it.
 class EmptySink : public ISink
 {
 public:
