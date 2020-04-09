@@ -4,9 +4,9 @@ set -ex
 BASE_DIR=$(dirname $(readlink -f $0))
 BUILD_DIR="${BASE_DIR}/../build"
 PUBLISH_DIR="${BASE_DIR}/../publish"
-BASE_DOMAIN="${BASE_DOMAIN:-clickhouse.tech}"
+BASE_DOMAIN="${BASE_DOMAIN:-content.clickhouse.tech}"
 GIT_TEST_URI="${GIT_TEST_URI:-git@github.com:ClickHouse/clickhouse.github.io.git}"
-GIT_PROD_URI="git@github.com:ClickHouse/clickhouse.github.io.git"
+GIT_PROD_URI="git@github.com:ClickHouse/clickhouse-website-content.git"
 EXTRA_BUILD_ARGS="${EXTRA_BUILD_ARGS:---enable-stable-releases --minify}"
 HISTORY_SIZE="${HISTORY_SIZE:-5}"
 
