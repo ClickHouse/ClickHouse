@@ -80,6 +80,11 @@ void MergingSortedAlgorithm::consume(Chunk chunk, size_t source_num)
     prepareChunk(chunk);
     source_chunks[source_num] = std::move(chunk);
     cursors[source_num].reset(source_chunks[source_num].getColumns(), {});
+
+    if (has_collation)
+        queue_with_collation.push(cursors[source_num]);
+    else
+        queue_without_collation.push(cursors[source_num]);
 }
 
 IMergingAlgorithm::Status MergingSortedAlgorithm::merge()
@@ -166,9 +171,9 @@ IMergingAlgorithm::Status MergingSortedAlgorithm::insertFromChunk(size_t source_
     auto num_rows = source_chunks[source_num].getNumRows();
 
     UInt64 total_merged_rows_after_insertion = merged_data.mergedRows() + num_rows;
-    bool is_finished = limit && total_merged_rows_after_insertion > limit;
+    bool is_finished = limit && total_merged_rows_after_insertion >= limit;
 
-    if (is_finished)
+    if (limit && total_merged_rows_after_insertion > limit)
     {
         num_rows = total_merged_rows_after_insertion - limit;
         merged_data.insertFromChunk(std::move(source_chunks[source_num]), num_rows);
