@@ -843,7 +843,7 @@ SELECT formatReadableSize(filesystemFree()) AS "Free space", toTypeName(filesyst
 
 ## filesystemCapacity {#filesystemcapacity}
 
-Возвращает информацию о ёмкости файловой системы в байтах. Для оценки должен быть настроен [путь](../../sql_reference/functions/other_functions.md#server_settings-path) к каталогу с данными.
+Возвращает информацию о ёмкости файловой системы в байтах. Для оценки должен быть настроен [путь](../../sql_reference/functions/other_functions.md#server_configuration_parameters-path) к каталогу с данными.
 
 **Синтаксис**
 

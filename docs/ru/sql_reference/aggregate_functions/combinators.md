@@ -27,9 +27,9 @@
 
 Для работы с промежуточными состояниями предназначены:
 
--   Движок таблиц [AggregatingMergeTree](../../sql_reference/aggregate_functions/combinators.md).
--   Функция [finalizeAggregation](../sql_reference/aggregate_functions/combinators.md#function-finalizeaggregation).
--   Функция [runningAccumulate](../sql_reference/aggregate_functions/combinators.md#function-runningaccumulate).
+-   Движок таблиц [AggregatingMergeTree](../../engines/table_engines/mergetree_family/aggregatingmergetree.md).
+-   Функция [finalizeAggregation](../../sql_reference/aggregate_functions/combinators.md#function-finalizeaggregation).
+-   Функция [runningAccumulate](../../sql_reference/aggregate_functions/combinators.md#function-runningaccumulate).
 -   Комбинатор [-Merge](#aggregate_functions_combinators_merge).
 -   Комбинатор [-MergeState](#aggregate_functions_combinators_mergestate).
 

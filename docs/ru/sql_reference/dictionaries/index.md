@@ -8,7 +8,7 @@ ClickHouse поддерживает специальные функции для
 
 ClickHouse поддерживает:
 
--   [Встроенные словари](internal_dicts.md#internal_dicts) со специфическим [набором функций](../sql_reference/dictionaries/index.md).
--   [Подключаемые (внешние) словари](external_dicts.md) с [набором функций](../sql_reference/dictionaries/index.md).
+-   [Встроенные словари](internal_dicts.md#internal_dicts) со специфическим [набором функций](../../sql_reference/dictionaries/external_dictionaries/index.md).
+-   [Подключаемые (внешние) словари](external_dictionaries/external_dicts.md) с [набором функций](../../sql_reference/dictionaries/external_dictionaries/index.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/) <!--hide-->

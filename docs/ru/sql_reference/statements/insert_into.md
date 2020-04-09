@@ -13,9 +13,9 @@ INSERT INTO [db.]table [(c1, c2, c3)] VALUES (v11, v12, v13), (v21, v22, v23), .
 - Значения, вычисляемые из `DEFAULT` выражений, указанных в определении таблицы.
 - Нули и пустые строки, если `DEFAULT` не определены.
 
-Если [strict\_insert\_defaults=1](../operations/settings/settings.md), то столбцы, для которых не определены `DEFAULT`, необходимо перечислить в запросе.
+Если [strict\_insert\_defaults=1](../../operations/settings/settings.md), то столбцы, для которых не определены `DEFAULT`, необходимо перечислить в запросе.
 
-В INSERT можно передавать данные любого [формата](../interfaces/formats.md#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
+В INSERT можно передавать данные любого [формата](../../interfaces/formats.md#formats), который поддерживает ClickHouse. Для этого формат необходимо указать в запросе в явном виде:
 
 ``` sql
 INSERT INTO [db.]table [(c1, c2, c3)] FORMAT format_name data_set
@@ -37,7 +37,7 @@ INSERT INTO t FORMAT TabSeparated
 22  Qwerty
 ```
 
-С помощью консольного клиента или HTTP интерфейса можно вставлять данные отдельно от запроса. Как это сделать, читайте в разделе «[Интерфейсы](../interfaces/index.md#interfaces)».
+С помощью консольного клиента или HTTP интерфейса можно вставлять данные отдельно от запроса. Как это сделать, читайте в разделе «[Интерфейсы](../../interfaces/index.md#interfaces)».
 
 ### Ограничения (constraints) {#ogranicheniia-constraints}
 
@@ -56,7 +56,7 @@ INSERT INTO [db.]table [(c1, c2, c3)] SELECT ...
 Не поддерживаются другие запросы на модификацию части данных: `UPDATE`, `DELETE`, `REPLACE`, `MERGE`, `UPSERT`, `INSERT UPDATE`.
 Вы можете удалять старые данные с помощью запроса `ALTER TABLE ... DROP PARTITION`.
 
-Для табличной функции [input()](table_functions/input.md) после секции `SELECT` должна следовать
+Для табличной функции [input()](../table_functions/input.md) после секции `SELECT` должна следовать
 секция `FORMAT`.
 
 ### Замечания о производительности {#zamechaniia-o-proizvoditelnosti}

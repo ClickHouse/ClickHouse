@@ -5,11 +5,11 @@
 ClickHouse:
 - Полностью или частично хранит словари в оперативной памяти.
 - Периодически обновляет их и динамически подгружает отсутствующие значения.
-- Позволяет создавать внешние словари с помощью xml-файлов или [DDL-запросов](../create.md#create-dictionary-query).
+- Позволяет создавать внешние словари с помощью xml-файлов или [DDL-запросов](../../../sql_reference/statements/create.md#create-dictionary-query).
 
-Конфигурация внешних словарей может находится в одном или нескольких xml-файлах. Путь к конфигурации указывается в параметре [dictionaries\_config](../../sql_reference/dictionaries/external_dictionaries/external_dicts.md).
+Конфигурация внешних словарей может находится в одном или нескольких xml-файлах. Путь к конфигурации указывается в параметре [dictionaries\_config](../../../sql_reference/dictionaries/external_dictionaries/external_dicts.md).
 
-Словари могут загружаться при старте сервера или при первом использовании, в зависимости от настройки [dictionaries\_lazy\_load](../../sql_reference/dictionaries/external_dictionaries/external_dicts.md).
+Словари могут загружаться при старте сервера или при первом использовании, в зависимости от настройки [dictionaries\_lazy\_load](../../../sql_reference/dictionaries/external_dictionaries/external_dicts.md).
 
 Конфигурационный файл словарей имеет вид:
 
@@ -35,10 +35,10 @@ ClickHouse:
 
 В одном файле можно [сконфигурировать](external_dicts_dict.md) произвольное количество словарей.
 
-Если вы создаёте внешние словари [DDL-запросами](../create.md#create-dictionary-query), то не задавайте конфигурацию словаря в конфигурации сервера.
+Если вы создаёте внешние словари [DDL-запросами](../../../sql_reference/statements/create.md#create-dictionary-query), то не задавайте конфигурацию словаря в конфигурации сервера.
 
 !!! attention "Внимание"
-    Можно преобразовывать значения по небольшому словарю, описав его в запросе `SELECT` (см. функцию [transform](../sql_reference/dictionaries/external_dictionaries/external_dicts.md)). Эта функциональность не связана с внешними словарями.
+    Можно преобразовывать значения по небольшому словарю, описав его в запросе `SELECT` (см. функцию [transform](../../../sql_reference/dictionaries/external_dictionaries/external_dicts.md)). Эта функциональность не связана с внешними словарями.
 
 ## Смотрите также {#ext-dicts-see-also}
 
@@ -47,6 +47,6 @@ ClickHouse:
 -   [Обновление словарей](external_dicts_dict_lifetime.md)
 -   [Источники внешних словарей](external_dicts_dict_sources.md)
 -   [Ключ и поля словаря](external_dicts_dict_structure.md)
--   [Функции для работы с внешними словарями](../sql_reference/dictionaries/external_dictionaries/external_dicts.md#ext_dict_functions)
+-   [Функции для работы с внешними словарями](../../../sql_reference/dictionaries/external_dictionaries/external_dicts.md#ext_dict_functions)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/dicts/external_dicts/) <!--hide-->

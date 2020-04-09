@@ -1,6 +1,6 @@
 # Функции для работы с внешними словарями {#ext_dict_functions}
 
-Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../sql_reference/functions/ext_dict_functions.md).
+Информацию о подключении и настройке внешних словарей смотрите в разделе [Внешние словари](../../sql_reference/functions/ext_dict_functions.md).
 
 ## dictGet {#dictget}
 
@@ -20,7 +20,7 @@ dictGetOrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Возвращаемое значение**
 
--   Значение атрибута, соответствующее ключу `id_expr`, если ClickHouse смог привести это значение к [заданному типу данных](../sql_reference/functions/ext_dict_functions.md#ext_dict_structure-attributes).
+-   Значение атрибута, соответствующее ключу `id_expr`, если ClickHouse смог привести это значение к [заданному типу данных](../../sql_reference/functions/ext_dict_functions.md#ext_dict_structure-attributes).
 
 -   Если ключа, соответствующего `id_expr` в словаре нет, то:
 
@@ -90,7 +90,7 @@ LIMIT 3
 
 **Смотрите также**
 
--   [Внешние словари](../sql_reference/functions/ext_dict_functions.md)
+-   [Внешние словари](../../sql_reference/functions/ext_dict_functions.md)
 
 ## dictHas {#dicthas}
 
@@ -114,7 +114,7 @@ dictHas('dict_name', id)
 
 ## dictGetHierarchy {#dictgethierarchy}
 
-Создаёт массив, содержащий цепочку предков для заданного ключа в [иерархическом словаре](../dicts/external_dicts_dict_hierarchical.md).
+Создаёт массив, содержащий цепочку предков для заданного ключа в [иерархическом словаре](../dictionaries/external_dictionaries/external_dicts_dict_hierarchical.md).
 
 **Синтаксис**
 
@@ -184,7 +184,7 @@ dictGet[Type]OrDefault('dict_name', 'attr_name', id_expr, default_value_expr)
 
 **Возвращаемое значение**
 
--   Если ClickHouse успешно обработал атрибут в соответствии с [заданным типом данных](../sql_reference/functions/ext_dict_functions.md#ext_dict_structure-attributes), то функции возвращают значение атрибута, соответствующее ключу `id_expr`.
+-   Если ClickHouse успешно обработал атрибут в соответствии с [заданным типом данных](../../sql_reference/functions/ext_dict_functions.md#ext_dict_structure-attributes), то функции возвращают значение атрибута, соответствующее ключу `id_expr`.
 
 -   Если запрошенного `id_expr` нет в словаре, то:
 

@@ -19,7 +19,7 @@
 </yandex>
 ```
 
-Аналогичный [DDL-запрос](../create.md#create-dictionary-query):
+Аналогичный [DDL-запрос](../../../sql_reference/statements/create.md#create-dictionary-query):
 
 ``` sql
 CREATE DICTIONARY dict_name (...)
@@ -64,7 +64,7 @@ SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
 Поля настройки:
 
 -   `path` — Абсолютный путь к файлу.
--   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
 
 ## Исполняемый файл {#dicts-external_dicts_dict_sources-executable}
 
@@ -90,7 +90,7 @@ SOURCE(EXECUTABLE(command 'cat /opt/dictionaries/os.tsv' format 'TabSeparated'))
 Поля настройки:
 
 -   `command` — Абсолютный путь к исполняемому файлу или имя файла (если каталог программы прописан в `PATH`).
--   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
 
 ## HTTP(s) {#dicts-external_dicts_dict_sources-http}
 
@@ -128,12 +128,12 @@ SOURCE(HTTP(
 ))
 ```
 
-Чтобы ClickHouse смог обратиться к HTTPS-ресурсу, необходимо [настроить openSSL](../../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md) в конфигурации сервера.
+Чтобы ClickHouse смог обратиться к HTTPS-ресурсу, необходимо [настроить openSSL](../../../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md) в конфигурации сервера.
 
 Поля настройки:
 
 -   `url` — URL источника.
--   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../interfaces/formats.md#formats)».
+-   `format` — Формат файла. Поддерживаются все форматы, описанные в разделе «[Форматы](../../../interfaces/formats.md#formats)».
 
 ## ODBC {#dicts-external_dicts_dict_sources-odbc}
 
@@ -172,7 +172,7 @@ SOURCE(ODBC(
 
 ClickHouse получает от ODBC-драйвера информацию о квотировании и квотирует настройки в запросах к драйверу, поэтому имя таблицы нужно указывать в соответствии с регистром имени таблицы в базе данных.
 
-Если у вас есть проблемы с кодировками при использовании Oracle, ознакомьтесь с соответствующим разделом [FAQ](../../faq/general.md#oracle-odbc-encodings).
+Если у вас есть проблемы с кодировками при использовании Oracle, ознакомьтесь с соответствующим разделом [FAQ](../../../faq/general.md#oracle-odbc-encodings).
 
 ### Выявленная уязвимость в функционировании ODBC словарей {#vyiavlennaia-uiazvimost-v-funktsionirovanii-odbc-slovarei}
 
@@ -509,7 +509,7 @@ SOURCE(CLICKHOUSE(
 
 Поля настройки:
 
--   `host` — хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md) и прописать её в дальнейших настройках.
+-   `host` — хост ClickHouse. Если host локальный, то запрос выполняется без сетевого взаимодействия. Чтобы повысить отказоустойчивость решения, можно создать таблицу типа [Distributed](../../../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md) и прописать её в дальнейших настройках.
 -   `port` — порт сервера ClickHouse.
 -   `user` — имя пользователя ClickHouse.
 -   `password` — пароль пользователя ClickHouse.

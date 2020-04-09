@@ -18,13 +18,13 @@ DateTime([timezone])
 Список поддерживаемых временных зон можно найти в [IANA Time Zone Database](https://www.iana.org/time-zones).
 Пакет `tzdata`, содержащий [базу данных часовых поясов IANA](https://www.iana.org/time-zones), должен быть установлен в системе. Используйте команду `timedatectl list-timezones` для получения списка часовых поясов, известных локальной системе.
 
-Часовой пояс для столбца типа `DateTime` можно в явном виде установить при создании таблицы. Если часовой пояс не установлен, то ClickHouse использует значение параметра [timezone](../sql_reference/data_types/datetime.md#server_settings-timezone), установленное в конфигурации сервера или в настройках операционной системы на момент запуска сервера.
+Часовой пояс для столбца типа `DateTime` можно в явном виде установить при создании таблицы. Если часовой пояс не установлен, то ClickHouse использует значение параметра [timezone](../../sql_reference/data_types/datetime.md#server_configuration_parameters-timezone), установленное в конфигурации сервера или в настройках операционной системы на момент запуска сервера.
 
-Консольный клиент ClickHouse по умолчанию использует часовой пояс сервера, если для значения `DateTime` часовой пояс не был задан в явном виде при инициализации типа данных. Чтобы использовать часовой пояс клиента, запустите [clickhouse-client](../interfaces/cli.md) с параметром `--use_client_time_zone`.
+Консольный клиент ClickHouse по умолчанию использует часовой пояс сервера, если для значения `DateTime` часовой пояс не был задан в явном виде при инициализации типа данных. Чтобы использовать часовой пояс клиента, запустите [clickhouse-client](../../interfaces/cli.md) с параметром `--use_client_time_zone`.
 
-ClickHouse отображает значения типа `DateTime` в формате `YYYY-MM-DD hh:mm:ss`. Отображение можно поменять с помощью функции [formatDateTime](../sql_reference/data_types/datetime.md#formatdatetime).
+ClickHouse отображает значения типа `DateTime` в формате `YYYY-MM-DD hh:mm:ss`. Отображение можно поменять с помощью функции [formatDateTime](../../sql_reference/data_types/datetime.md#formatdatetime).
 
-При вставке данных в ClickHouse, можно использовать различные форматы даты и времени в зависимости от значения настройки [date\_time\_input\_format](../operations/settings/settings.md#settings-date_time_input_format).
+При вставке данных в ClickHouse, можно использовать различные форматы даты и времени в зависимости от значения настройки [date\_time\_input\_format](../../operations/settings/settings.md#settings-date_time_input_format).
 
 ## Примеры {#primery}
 
@@ -111,12 +111,12 @@ FROM dt
 
 ## See Also {#see-also}
 
--   [Функции преобразования типов](../sql_reference/data_types/datetime.md)
--   [Функции для работы с датой и временем](../sql_reference/data_types/datetime.md)
--   [Функции для работы с массивами](../sql_reference/data_types/datetime.md)
--   [Настройка `date_time_input_format`](../operations/settings/settings.md#settings-date_time_input_format)
--   [Конфигурационный параметр сервера `timezone`](../sql_reference/data_types/datetime.md#server_settings-timezone)
--   [Операторы для работы с датой и временем](../sql_reference/data_types/datetime.md#operators-datetime)
+-   [Функции преобразования типов](../../sql_reference/data_types/datetime.md)
+-   [Функции для работы с датой и временем](../../sql_reference/data_types/datetime.md)
+-   [Функции для работы с массивами](../../sql_reference/data_types/datetime.md)
+-   [Настройка `date_time_input_format`](../../operations/settings/settings.md#settings-date_time_input_format)
+-   [Конфигурационный параметр сервера `timezone`](../../sql_reference/data_types/datetime.md#server_configuration_parameters-timezone)
+-   [Операторы для работы с датой и временем](../../sql_reference/data_types/datetime.md#operators-datetime)
 -   [Тип данных `Date`](date.md)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/data_types/datetime/) <!--hide-->

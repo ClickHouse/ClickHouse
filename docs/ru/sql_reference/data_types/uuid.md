@@ -16,7 +16,7 @@
 
 ## Как сгенерировать UUID {#kak-sgenerirovat-uuid}
 
-Для генерации UUID-значений предназначена функция [generateUUIDv4](../sql_reference/data_types/uuid.md).
+Для генерации UUID-значений предназначена функция [generateUUIDv4](../../sql_reference/data_types/uuid.md).
 
 ## Примеры использования {#primery-ispolzovaniia}
 
@@ -65,8 +65,8 @@ SELECT * FROM t_uuid
 
 ## Ограничения {#ogranicheniia}
 
-Тип данных UUID можно использовать только с функциями, которые поддерживаются типом данных [String](string.md) (например, [min](../sql_reference/data_types/uuid.md#agg_function-min), [max](../sql_reference/data_types/uuid.md#agg_function-max), и [count](../sql_reference/data_types/uuid.md#agg_function-count)).
+Тип данных UUID можно использовать только с функциями, которые поддерживаются типом данных [String](string.md) (например, [min](../../sql_reference/data_types/uuid.md#agg_function-min), [max](../../sql_reference/data_types/uuid.md#agg_function-max), и [count](../../sql_reference/data_types/uuid.md#agg_function-count)).
 
-Тип данных UUID не поддерживается арифметическими операциями (например, [abs](../sql_reference/data_types/uuid.md#arithm_func-abs)) или агрегатными функциями, такими как [sum](../sql_reference/data_types/uuid.md#agg_function-sum) и [avg](../sql_reference/data_types/uuid.md#agg_function-avg).
+Тип данных UUID не поддерживается арифметическими операциями (например, [abs](../../sql_reference/data_types/uuid.md#arithm_func-abs)) или агрегатными функциями, такими как [sum](../../sql_reference/data_types/uuid.md#agg_function-sum) и [avg](../../sql_reference/data_types/uuid.md#agg_function-avg).
 
 [Original article](https://clickhouse.tech/docs/en/data_types/uuid/) <!--hide-->

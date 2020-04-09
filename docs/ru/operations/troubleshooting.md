@@ -98,7 +98,7 @@ $ sudo -u clickhouse /usr/bin/clickhouse-server --config-file /etc/clickhouse-se
 
 -   Параметры endpoint.
 
-        Проверьте настройки [listen_host](server_settings/settings.md#server_settings-listen_host) и [tcp_port](server_settings/settings.md#server_settings-tcp_port).
+        Проверьте настройки [listen_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) и [tcp_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port).
 
         По умолчанию, сервер ClickHouse принимает только локальные подключения.
 

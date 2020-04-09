@@ -20,11 +20,11 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
 -   `ENGINE`
 
-        - [MySQL](../sql_reference/statements/create.md)
+        - [MySQL](../../sql_reference/statements/create.md)
 
             Позволяет получать данные с удаленного сервера MySQL.
 
-        По умолчанию ClickHouse использует собственный [движок баз данных](../sql_reference/statements/create.md).
+        По умолчанию ClickHouse использует собственный [движок баз данных](../../sql_reference/statements/create.md).
 
 ## CREATE TABLE {#create-table-query}
 
@@ -65,7 +65,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name ENGINE = engine AS SELECT ...
 
 Во всех случаях, если указано `IF NOT EXISTS`, то запрос не будет возвращать ошибку, если таблица уже существует. В этом случае, запрос будет ничего не делать.
 
-После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков таблиц](../sql_reference/statements/create.md#table_engines).
+После секции `ENGINE` в запросе могут использоваться и другие секции в зависимости от движка. Подробную документацию по созданию таблиц смотрите в описаниях [движков таблиц](../../sql_reference/statements/create.md#table_engines).
 
 ### Значения по умолчанию {#create-default-values}
 
@@ -123,11 +123,11 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ### Выражение для TTL {#vyrazhenie-dlia-ttl}
 
-Определяет время хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробнее смотрите в [TTL для столбцов и таблиц](../sql_reference/statements/create.md#table_engine-mergetree-ttl).
+Определяет время хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробнее смотрите в [TTL для столбцов и таблиц](../../sql_reference/statements/create.md#table_engine-mergetree-ttl).
 
 ### Кодеки сжатия столбцов {#codecs}
 
-По умолчанию, ClickHouse применяет к столбцу метод сжатия, определённый в [конфигурации сервера](../sql_reference/statements/create.md#compression). Кроме этого, можно задать метод сжатия для каждого отдельного столбца в запросе `CREATE TABLE`.
+По умолчанию, ClickHouse применяет к столбцу метод сжатия, определённый в [конфигурации сервера](../../sql_reference/statements/create.md#compression). Кроме этого, можно задать метод сжатия для каждого отдельного столбца в запросе `CREATE TABLE`.
 
 ``` sql
 CREATE TABLE codec_example
@@ -149,10 +149,10 @@ ENGINE = <Engine>
 
 Сжатие поддерживается для следующих движков таблиц:
 
--   [MergeTree family](../sql_reference/statements/create.md)
--   [Log family](../sql_reference/statements/create.md)
--   [Set](../sql_reference/statements/create.md)
--   [Join](../sql_reference/statements/create.md)
+-   [MergeTree family](../../sql_reference/statements/create.md)
+-   [Log family](../../sql_reference/statements/create.md)
+-   [Set](../../sql_reference/statements/create.md)
+-   [Join](../../sql_reference/statements/create.md)
 
 ClickHouse поддерживает кодеки общего назначения и специализированные кодеки.
 
@@ -213,7 +213,7 @@ CREATE TEMPORARY TABLE [IF NOT EXISTS] table_name
 
 В большинстве случаев, временные таблицы создаются не вручную, а при использовании внешних данных для запроса, или при распределённом `(GLOBAL) IN`. Подробнее см. соответствующие разделы
 
-Вместо временных можно использовать обычные таблицы с [ENGINE = Memory](../sql_reference/statements/create.md).
+Вместо временных можно использовать обычные таблицы с [ENGINE = Memory](../../sql_reference/statements/create.md).
 
 ## Распределенные DDL запросы (секция ON CLUSTER) {#raspredelennye-ddl-zaprosy-sektsiia-on-cluster}
 
@@ -289,12 +289,12 @@ LAYOUT(LAYOUT_NAME([param_name param_value]))
 LIFETIME([MIN val1] MAX val2)
 ```
 
-Создаёт [внешний словарь](sql_reference/statements/create.md) с заданной [структурой](sql_reference/statements/create.md), [источником](sql_reference/statements/create.md), [способом размещения в памяти](sql_reference/statements/create.md) и [периодом обновления](sql_reference/statements/create.md).
+Создаёт [внешний словарь](../../sql_reference/statements/create.md) с заданной [структурой](../../sql_reference/statements/create.md), [источником](../../sql_reference/statements/create.md), [способом размещения в памяти](../../sql_reference/statements/create.md) и [периодом обновления](../../sql_reference/statements/create.md).
 
 Структура внешнего словаря состоит из атрибутов. Атрибуты словаря задаются как столбцы таблицы. Единственным обязательным свойством атрибута является его тип, все остальные свойства могут иметь значения по умолчанию.
 
-В зависимости от [способа размещения словаря в памяти](sql_reference/statements/create.md), ключами словаря могут быть один и более атрибутов.
+В зависимости от [способа размещения словаря в памяти](../../sql_reference/statements/create.md), ключами словаря могут быть один и более атрибутов.
 
-Смотрите [Внешние словари](sql_reference/statements/create.md).
+Смотрите [Внешние словари](../../sql_reference/statements/create.md).
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/create/) <!--hide-->

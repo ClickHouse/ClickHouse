@@ -25,17 +25,17 @@ CHECK TABLE [db.]name
 
 Запрос `CHECK TABLE` сравнивает текущие размеры файлов (в которых хранятся данные из колонок) с ожидаемыми значениями. Если значения не совпадают, данные в таблице считаются поврежденными. Искажение возможно, например, из-за сбоя при записи данных.
 
-Ответ содержит колонку `result`, содержащую одну строку с типом [Boolean](../sql_reference/statements/misc.md). Допустимые значения:
+Ответ содержит колонку `result`, содержащую одну строку с типом [Boolean](../../sql_reference/data_types/boolean.md). Допустимые значения:
 
 -   0 - данные в таблице повреждены;
 -   1 - данные не повреждены.
 
 Запрос `CHECK TABLE` поддерживает следующие движки таблиц:
 
--   [Log](../sql_reference/statements/misc.md)
--   [TinyLog](../sql_reference/statements/misc.md)
--   [StripeLog](../sql_reference/statements/misc.md)
--   [Семейство MergeTree](../sql_reference/statements/misc.md)
+-   [Log](../../engines/table_engines/log_family/log.md)
+-   [TinyLog](../../engines/table_engines/log_family/tinylog.md)
+-   [StripeLog](../../engines/table_engines/log_family/stripelog.md)
+-   [Семейство MergeTree](../../engines/table_engines/mergetree_family/index.md)
 
 При попытке выполнить запрос с таблицами с другими табличными движками, ClickHouse генерирует исключение.
 
@@ -48,7 +48,7 @@ CHECK TABLE [db.]name
 В этом случае можно скопировать оставшиеся неповрежденные данные в другую таблицу. Для этого:
 
 1.  Создайте новую таблицу с такой же структурой, как у поврежденной таблицы. Для этого выполните запрос `CREATE TABLE <new_table_name> AS <damaged_table_name>`.
-2.  Установите значение параметра [max\_threads](../operations/settings/settings.md#settings-max_threads) в 1. Это нужно для того, чтобы выполнить следующий запрос в одном потоке. Установить значение параметра можно через запрос: `SET max_threads = 1`.
+2.  Установите значение параметра [max\_threads](../../operations/settings/settings.md#settings-max_threads) в 1. Это нужно для того, чтобы выполнить следующий запрос в одном потоке. Установить значение параметра можно через запрос: `SET max_threads = 1`.
 3.  Выполните запрос `INSERT INTO <new_table_name> SELECT * FROM <damaged_table_name>`. В результате неповрежденные данные будут скопированы в другую таблицу. Обратите внимание, будут скопированы только те данные, которые следуют до поврежденного участка.
 4.  Перезапустите `clickhouse-client`, чтобы вернуть предыдущее значение параметра `max_threads`.
 
@@ -153,7 +153,7 @@ KILL MUTATION [ON CLUSTER cluster]
   [FORMAT format]
 ```
 
-Пытается остановить выполняющиеся в данные момент [мутации](alter.md#alter-mutations). Мутации для остановки выбираются из таблицы [`system.mutations`](../operations/system_tables.md#system_tables-mutations) с помощью условия, указанного в секции `WHERE` запроса `KILL`.
+Пытается остановить выполняющиеся в данные момент [мутации](alter.md#alter-mutations). Мутации для остановки выбираются из таблицы [`system.mutations`](../../operations/system_tables.md#system_tables-mutations) с помощью условия, указанного в секции `WHERE` запроса `KILL`.
 
 Тестовый вариант запроса (`TEST`) только проверяет права пользователя и выводит список запросов для остановки.
 
@@ -177,11 +177,11 @@ KILL MUTATION WHERE database = 'default' AND table = 'table' AND mutation_id = '
 OPTIMIZE TABLE [db.]name [ON CLUSTER cluster] [PARTITION partition | PARTITION ID 'partition_id'] [FINAL] [DEDUPLICATE]
 ```
 
-Запрос пытается запустить внеплановый мёрж кусков данных для таблиц семейства [MergeTree](../sql_reference/statements/misc.md). Другие движки таблиц не поддерживаются.
+Запрос пытается запустить внеплановый мёрж кусков данных для таблиц семейства [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md). Другие движки таблиц не поддерживаются.
 
-Если `OPTIMIZE` применяется к таблицам семейства [ReplicatedMergeTree](../sql_reference/statements/misc.md), ClickHouse создаёт задачу на мёрж и ожидает её исполнения на всех узлах (если активирована настройка `replication_alter_partitions_sync`).
+Если `OPTIMIZE` применяется к таблицам семейства [ReplicatedMergeTree](../../engines/table_engines/mergetree_family/replication.md), ClickHouse создаёт задачу на мёрж и ожидает её исполнения на всех узлах (если активирована настройка `replication_alter_partitions_sync`).
 
--   Если `OPTIMIZE` не выполняет мёрж по любой причине, ClickHouse не оповещает об этом клиента. Чтобы включить оповещения, используйте настройку [optimize\_throw\_if\_noop](../operations/settings/settings.md#setting-optimize_throw_if_noop).
+-   Если `OPTIMIZE` не выполняет мёрж по любой причине, ClickHouse не оповещает об этом клиента. Чтобы включить оповещения, используйте настройку [optimize\_throw\_if\_noop](../../operations/settings/settings.md#setting-optimize_throw_if_noop).
 -   Если указать `PARTITION`, то оптимизация выполняется только для указанной партиции. [Как задавать имя партиции в запросах](alter.md#alter-how-to-specify-part-expr).
 -   Если указать `FINAL`, то оптимизация выполняется даже в том случае, если все данные уже лежат в одном куске.
 -   Если указать `DEDUPLICATE`, то произойдет схлопывание полностью одинаковых строк (сравниваются значения во всех колонках), имеет смысл только для движка MergeTree.
@@ -205,7 +205,7 @@ RENAME TABLE [db11.]name11 TO [db12.]name12, [db21.]name21 TO [db22.]name22, ...
 SET param = value
 ```
 
-Устанавливает значение `value` для [настройки](../operations/settings/index.md) `param` в текущей сессии. [Конфигурационные параметры сервера](../sql_reference/statements/misc.md) нельзя изменить подобным образом.
+Устанавливает значение `value` для [настройки](../../operations/settings/index.md) `param` в текущей сессии. [Конфигурационные параметры сервера](../../operations/server_configuration_parameters/settings.md) нельзя изменить подобным образом.
 
 Можно одним запросом установить все настройки из заданного профиля настроек.
 
@@ -213,7 +213,7 @@ SET param = value
 SET profile = 'profile-name-from-the-settings-file'
 ```
 
-Подробности смотрите в разделе [Настройки](../operations/settings/settings.md).
+Подробности смотрите в разделе [Настройки](../../operations/settings/settings.md).
 
 ## TRUNCATE {#truncate}
 
@@ -223,7 +223,7 @@ TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster]
 
 Удаляет все данные из таблицы. Если условие `IF EXISTS` не указано, запрос вернет ошибку, если таблицы не существует.
 
-Запрос `TRUNCATE` не поддерживается для следующих движков: [View](../sql_reference/statements/misc.md), [File](../sql_reference/statements/misc.md), [URL](../sql_reference/statements/misc.md) и [Null](../sql_reference/statements/misc.md).
+Запрос `TRUNCATE` не поддерживается для следующих движков: [View](../../engines/table_engines/special/view.md), [File](../../engines/table_engines/special/file.md), [URL](../../engines/table_engines/special/url.md) и [Null](../../engines/table_engines/special/null.md).
 
 ## USE {#use}
 

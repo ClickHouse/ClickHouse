@@ -17,7 +17,7 @@
 ## RELOAD DICTIONARIES {#query_language-system-reload-dictionaries}
 
 Перегружает все словари, которые были успешно загружены до этого.
-По умолчанию включена ленивая загрузка [dictionaries\_lazy\_load](../sql_reference/statements/system.md#dictionaries-lazy-load), поэтому словари не загружаются автоматически при старте, а только при первом обращении через dictGet или SELECT к ENGINE=Dictionary. После этого такие словари (LOADED) будут перегружаться командой `system reload dictionaries`.
+По умолчанию включена ленивая загрузка [dictionaries\_lazy\_load](../../sql_reference/statements/system.md#dictionaries-lazy-load), поэтому словари не загружаются автоматически при старте, а только при первом обращении через dictGet или SELECT к ENGINE=Dictionary. После этого такие словари (LOADED) будут перегружаться командой `system reload dictionaries`.
 Всегда возвращает `Ok.`, вне зависимости от результата обновления словарей.
 
 ## RELOAD DICTIONARY dictionary\_name {#query_language-system-reload-dictionary}
@@ -58,7 +58,7 @@ SELECT name, status FROM system.dictionaries;
 
 ## Управление распределёнными таблицами {#query-language-system-distributed}
 
-ClickHouse может оперировать [распределёнными](../sql_reference/statements/system.md) таблицами. Когда пользователь вставляет данные в эти таблицы, ClickHouse сначала формирует очередь из данных, которые должны быть отправлены на узлы кластера, а затем асинхронно отправляет подготовленные данные. Вы можете управлять очередью с помощью запросов [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) и [FLUSH DISTRIBUTED](#query_language-system-flush-distributed). Также есть возможность синхронно вставлять распределенные данные с помощью настройки `insert_distributed_sync`.
+ClickHouse может оперировать [распределёнными](../../sql_reference/statements/system.md) таблицами. Когда пользователь вставляет данные в эти таблицы, ClickHouse сначала формирует очередь из данных, которые должны быть отправлены на узлы кластера, а затем асинхронно отправляет подготовленные данные. Вы можете управлять очередью с помощью запросов [STOP DISTRIBUTED SENDS](#query_language-system-stop-distributed-sends), [START DISTRIBUTED SENDS](#query_language-system-start-distributed-sends) и [FLUSH DISTRIBUTED](#query_language-system-flush-distributed). Также есть возможность синхронно вставлять распределенные данные с помощью настройки `insert_distributed_sync`.
 
 ### STOP DISTRIBUTED SENDS {#query_language-system-stop-distributed-sends}
 

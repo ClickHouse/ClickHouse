@@ -55,7 +55,7 @@
 
 ## Операторы для работы с множествами {#operatory-dlia-raboty-s-mnozhestvami}
 
-*Смотрите раздел [Операторы IN](select.md#select-in-operators).*
+*Смотрите раздел [Операторы IN](../sql_reference/statements/select.md#select-in-operators).*
 
 `a IN ...` - функция `in(a, b)`
 
@@ -86,7 +86,7 @@ EXTRACT(part FROM date);
 
 Эти значения могут быть указаны также в нижнем регистре (`day`, `month`).
 
-В параметре `date` указывается исходная дата. Поддерживаются типы [Date](../sql_reference/operators.md) и [DateTime](../sql_reference/operators.md).
+В параметре `date` указывается исходная дата. Поддерживаются типы [Date](../sql_reference/data_types/date.md) и [DateTime](../sql_reference/data_types/datetime.md).
 
 Примеры:
 
@@ -163,7 +163,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 **Смотрите также**
 
 -   Тип данных [Interval](../sql_reference/operators.md)
--   Функции преобразования типов [toInterval](sql_reference/operators.md#function-tointerval)
+-   Функции преобразования типов [toInterval](../sql_reference/operators.md#function-tointerval)
 
 ## Оператор логического отрицания {#operator-logicheskogo-otritsaniia}
 
@@ -183,7 +183,7 @@ SELECT now() AS current_date_time, current_date_time + INTERVAL 4 DAY + INTERVAL
 
 Примечание:
 
-Условный оператор сначала вычисляет значения b и c, затем проверяет выполнение условия a, и только после этого возвращает соответствующее значение. Если в качестве b или с выступает функция [arrayJoin()](sql_reference/operators.md#functions_arrayjoin), то размножение каждой строки произойдет вне зависимости от условия а.
+Условный оператор сначала вычисляет значения b и c, затем проверяет выполнение условия a, и только после этого возвращает соответствующее значение. Если в качестве b или с выступает функция [arrayJoin()](../sql_reference/operators.md#functions_arrayjoin), то размножение каждой строки произойдет вне зависимости от условия а.
 
 ## Условное выражение {#operator_case}
 

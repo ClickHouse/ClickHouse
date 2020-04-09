@@ -84,7 +84,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
         - `index_granularity` — максимальное количество строк данных между засечками индекса. По умолчанию — 8192. Смотрите [Хранение данных](#mergetree-data-storage).
         - `index_granularity_bytes` — максимальный размер гранул данных в байтах. По умолчанию — 10Mb. Чтобы ограничить размер гранул только количеством строк, установите значение 0 (не рекомендовано). Смотрите [Хранение данных](#mergetree-data-storage).
         - `enable_mixed_granularity_parts` — включает или выключает переход к ограничению размера гранул с помощью настройки `index_granularity_bytes`. До версии 19.11, размер гранул ограничивался только настройкой `index_granularity`. Настройка `index_granularity_bytes` улучшает производительность ClickHouse при выборке данных из таблиц с большими (десятки и сотни мегабайтов) строками. Если у вас есть таблицы с большими строками, можно включить эту настройку, чтобы повысить эффективность запросов `SELECT`.
-        - `use_minimalistic_part_header_in_zookeeper` — Способ хранения заголовков кусков данных в ZooKeeper. Если  `use_minimalistic_part_header_in_zookeeper = 1`, то ZooKeeper хранит меньше данных. Подробнее читайте в [описании настройки](../server_settings/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) в разделе "Конфигурационные параметры сервера".
+        - `use_minimalistic_part_header_in_zookeeper` — Способ хранения заголовков кусков данных в ZooKeeper. Если  `use_minimalistic_part_header_in_zookeeper = 1`, то ZooKeeper хранит меньше данных. Подробнее читайте в [описании настройки](../server_configuration_parameters/settings.md#server-settings-use_minimalistic_part_header_in_zookeeper) в разделе "Конфигурационные параметры сервера".
         - `min_merge_bytes_to_use_direct_io` — минимальный объём данных при слиянии, необходимый для прямого (небуферизованного) чтения/записи (direct I/O) на диск. При слиянии частей данных ClickHouse вычисляет общий объём хранения всех данных, подлежащих слиянию. Если общий объём хранения всех данных для чтения превышает `min_bytes_to_use_direct_io` байт, тогда ClickHouse  использует флаг `O_DIRECT` при чтении данных с диска. Если `min_merge_bytes_to_use_direct_io = 0`, тогда прямой ввод-вывод отключен. Значение по умолчанию: `10 * 1024 * 1024 * 1024` байтов.
         <a name="mergetree_setting-merge_with_ttl_timeout"></a>
         - `merge_with_ttl_timeout` — минимальное время в секундах перед повторным слиянием с TTL. По умолчанию — 86400 (1 день).
@@ -478,7 +478,7 @@ ALTER TABLE example_table
 ### Термины {#terminy}
 
 -   Диск — примонтированное в файловой системе блочное устройство.
--   Диск по умолчанию — диск, на котором находится путь, указанный в конфигурационной настройке сервера [path](../server_settings/settings.md#server_settings-path).
+-   Диск по умолчанию — диск, на котором находится путь, указанный в конфигурационной настройке сервера [path](../server_configuration_parameters/settings.md#server_configuration_parameters-path).
 -   Том (Volume) — упорядоченный набор равноценных дисков (схоже с [JBOD](https://ru.wikipedia.org/wiki/JBOD))
 -   Политика хранения (StoragePolicy) — множество томов с правилами перемещения данных между ними.
 

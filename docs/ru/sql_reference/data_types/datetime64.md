@@ -87,11 +87,11 @@ FROM dt
 
 ## See Also {#see-also}
 
--   [Функции преобразования типов](../sql_reference/data_types/datetime64.md)
--   [Функции для работы с датой и временем](../sql_reference/data_types/datetime64.md)
--   [Функции для работы с массивами](../sql_reference/data_types/datetime64.md)
--   [Настройка `date_time_input_format`](../operations/settings/settings.md#settings-date_time_input_format)
--   [Конфигурационный параметр сервера `timezone`](../sql_reference/data_types/datetime64.md#server_settings-timezone)
--   [Операторы для работы с датой и временем](../sql_reference/data_types/datetime64.md#operators-datetime)
+-   [Функции преобразования типов](../../sql_reference/data_types/datetime64.md)
+-   [Функции для работы с датой и временем](../../sql_reference/data_types/datetime64.md)
+-   [Функции для работы с массивами](../../sql_reference/data_types/datetime64.md)
+-   [Настройка `date_time_input_format`](../../operations/settings/settings.md#settings-date_time_input_format)
+-   [Конфигурационный параметр сервера `timezone`](../../sql_reference/data_types/datetime64.md#server_configuration_parameters-timezone)
+-   [Операторы для работы с датой и временем](../../sql_reference/data_types/datetime64.md#operators-datetime)
 -   [Тип данных `Date`](date.md)
 -   [Тип данных `DateTime`](datetime.md)

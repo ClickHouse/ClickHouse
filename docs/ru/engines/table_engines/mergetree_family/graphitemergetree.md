@@ -74,7 +74,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 ## Конфигурация rollup {#rollup-configuration}
 
-Настройки прореживания данных задаются параметром [graphite\_rollup](../server_settings/settings.md#server_settings-graphite_rollup) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
+Настройки прореживания данных задаются параметром [graphite\_rollup](../server_configuration_parameters/settings.md#server_configuration_parameters-graphite_rollup) в конфигурации сервера . Имя параметра может быть любым. Можно создать несколько конфигураций и использовать их для разных таблиц.
 
 Структура конфигурации rollup:
 

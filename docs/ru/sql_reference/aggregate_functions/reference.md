@@ -19,9 +19,9 @@ ClickHouse поддерживает следующие виды синтакси
 **Возвращаемое значение**
 
 -   Если функция вызывается без параметров, она вычисляет количество строк.
--   Если передаётся [выражение](../syntax.md#syntax-expressions) , то функция вычисляет количество раз, когда выражение возвращает не NULL. Если выражение возвращает значение типа [Nullable](../../sql_reference/aggregate_functions/reference.md), то результат `count` не становится `Nullable`. Функция возвращает 0, если выражение возвращает `NULL` для всех строк.
+-   Если передаётся [выражение](../syntax.md#syntax-expressions) , то функция вычисляет количество раз, когда выражение возвращает не NULL. Если выражение возвращает значение типа [Nullable](../../sql_reference/data_types/nullable.md), то результат `count` не становится `Nullable`. Функция возвращает 0, если выражение возвращает `NULL` для всех строк.
 
-В обоих случаях тип возвращаемого значения [UInt64](../../sql_reference/aggregate_functions/reference.md).
+В обоих случаях тип возвращаемого значения [UInt64](../../sql_reference/data_types/int_uint.md).
 
 **Подробности**
 
@@ -240,7 +240,7 @@ binary     decimal
 
 ## groupBitmap {#groupbitmap}
 
-Bitmap или агрегатные вычисления для столбца с типом данных `UInt*`, возвращают кардинальность в виде значения типа UInt64, если добавить суффикс -State, то возвращают [объект bitmap](../sql_reference/aggregate_functions/reference.md).
+Bitmap или агрегатные вычисления для столбца с типом данных `UInt*`, возвращают кардинальность в виде значения типа UInt64, если добавить суффикс -State, то возвращают [объект bitmap](../../sql_reference/aggregate_functions/reference.md).
 
 ``` sql
 groupBitmap(expr)
@@ -1173,7 +1173,7 @@ quantileTiming(level)(expr)
 Тип: `Float32`.
 
 !!! note "Примечания"
-    Если в функцию `quantileTimingIf` не передать значений, то вернётся [NaN](../../sql_reference/aggregate_functions/reference.md#data_type-float-nan-inf). Это необходимо для отделения подобных случаев от случаев, когда результат 0. Подробности про сортировку `NaN` cмотрите в разделе [Секция ORDER BY](../select.md#select-order-by).
+    Если в функцию `quantileTimingIf` не передать значений, то вернётся [NaN](../../sql_reference/aggregate_functions/reference.md#data_type-float-nan-inf). Это необходимо для отделения подобных случаев от случаев, когда результат 0. Подробности про сортировку `NaN` cмотрите в разделе [Секция ORDER BY](../../sql_reference/statements/select.md#select-order-by).
 
 **Пример**
 
@@ -1258,7 +1258,7 @@ quantileTimingWeighted(level)(expr, weight)
 Тип: `Float32`.
 
 !!! note "Примечания"
-    Если в функцию `quantileTimingIf` не передать значений, то вернётся [NaN](../../sql_reference/aggregate_functions/reference.md#data_type-float-nan-inf). Это необходимо для отделения подобных случаев от случаев, когда результат 0. Подробности про сортировку `NaN` cмотрите в разделе [Секция ORDER BY](../select.md#select-order-by).
+    Если в функцию `quantileTimingIf` не передать значений, то вернётся [NaN](../../sql_reference/aggregate_functions/reference.md#data_type-float-nan-inf). Это необходимо для отделения подобных случаев от случаев, когда результат 0. Подробности про сортировку `NaN` cмотрите в разделе [Секция ORDER BY](../../sql_reference/statements/select.md#select-order-by).
 
 **Пример**
 

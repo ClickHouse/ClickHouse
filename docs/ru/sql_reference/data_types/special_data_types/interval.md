@@ -1,6 +1,6 @@
 # Interval {#data-type-interval}
 
-Семейство типов данных, представляющих интервалы дат и времени. Оператор [INTERVAL](../../sql_reference/data_types/special_data_types/interval.md#operator-interval) возвращает значения этих типов.
+Семейство типов данных, представляющих интервалы дат и времени. Оператор [INTERVAL](../../../sql_reference/data_types/special_data_types/interval.md#operator-interval) возвращает значения этих типов.
 
 !!! warning "Внимание"
     Нельзя использовать типы данных `Interval` для хранения данных в таблице.
@@ -35,7 +35,7 @@ SELECT toTypeName(INTERVAL 4 DAY)
 
 ## Использование {#data-type-interval-usage-remarks}
 
-Значения типов `Interval` можно использовать в арифметических операциях со значениями типов [Date](../../sql_reference/data_types/special_data_types/interval.md) и [DateTime](../../sql_reference/data_types/special_data_types/interval.md). Например, можно добавить 4 дня к текущей дате:
+Значения типов `Interval` можно использовать в арифметических операциях со значениями типов [Date](../../../sql_reference/data_types/special_data_types/interval.md) и [DateTime](../../../sql_reference/data_types/special_data_types/interval.md). Например, можно добавить 4 дня к текущей дате:
 
 ``` sql
 SELECT now() as current_date_time, current_date_time + INTERVAL 4 DAY
@@ -74,5 +74,5 @@ Code: 43. DB::Exception: Received from localhost:9000. DB::Exception: Wrong argu
 
 ## Смотрите также {#smotrite-takzhe}
 
--   Оператор[INTERVAL](../../sql_reference/data_types/special_data_types/interval.md#operator-interval)
--   Функция приведения типа [toInterval](../../sql_reference/data_types/special_data_types/interval.md#function-tointerval)
+-   Оператор[INTERVAL](../../../sql_reference/data_types/special_data_types/interval.md#operator-interval)
+-   Функция приведения типа [toInterval](../../../sql_reference/data_types/special_data_types/interval.md#function-tointerval)

@@ -17,7 +17,7 @@
 
 **Возвращаемые значения**
 
--   [Массив](../../sql_reference/aggregate_functions/parametric_functions.md) [кортежей](../../sql_reference/aggregate_functions/parametric_functions.md) следующего вида:
+-   [Массив](../../sql_reference/data_types/array.md) [кортежей](../../sql_reference/data_types/tuple.md) следующего вида:
 
         ```
         [(lower_1, upper_1, height_1), ... (lower_N, upper_N, height_N)]
@@ -44,7 +44,7 @@ FROM (
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-С помощью функции [bar](../sql_reference/aggregate_functions/parametric_functions.md#function-bar) можно визуализировать гистограмму, например:
+С помощью функции [bar](../../sql_reference/aggregate_functions/parametric_functions.md#function-bar) можно визуализировать гистограмму, например:
 
 ``` sql
 WITH histogram(5)(rand() % 100) AS hist
@@ -299,7 +299,7 @@ ORDER BY level ASC
 Аналитическая функция, которая показывает, насколько
 выдерживаются те или иные условия, например, удержание динамики/уровня [посещаемости сайта](https://yandex.ru/support/partner2/statistics/metrika-visitors-statistics.html?lang=ru).
 
-Функция принимает набор (от 1 до 32) логических условий, как в [WHERE](../select.md#select-where), и применяет их к заданному набору данных.
+Функция принимает набор (от 1 до 32) логических условий, как в [WHERE](../../sql_reference/statements/select.md#select-where), и применяет их к заданному набору данных.
 
 Условия, кроме первого, применяются попарно: результат второго будет истинным, если истинно первое и второе, третьего - если истинно первое и третье и т. д.
 

@@ -1,9 +1,9 @@
 # Справка по SQL {#spravka-po-sql}
 
--   [SELECT](select.md)
--   [INSERT INTO](insert_into.md)
--   [CREATE](create.md)
--   [ALTER](alter.md#query_language_queries_alter)
--   [Прочие виды запросов](misc.md)
+-   [SELECT](statements/select.md)
+-   [INSERT INTO](statements/insert_into.md)
+-   [CREATE](statements/create.md)
+-   [ALTER](statements/alter.md)
+-   [Прочие виды запросов](statements/misc.md)
 
 [Оригинальная статья](https://clickhouse.tech/docs/ru/query_language/) <!--hide-->

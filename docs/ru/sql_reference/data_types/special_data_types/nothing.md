@@ -1,8 +1,8 @@
 # Nothing {#nothing}
 
-Этот тип данных предназначен только для того, чтобы представлять [NULL](../../sql_reference/data_types/special_data_types/nothing.md), т.е. отсутствие значения.
+Этот тип данных предназначен только для того, чтобы представлять [NULL](../../../sql_reference/data_types/special_data_types/nothing.md), т.е. отсутствие значения.
 
-Невозможно создать значение типа `Nothing`, поэтому он используется там, где значение не подразумевается. Например, `NULL` записывается как `Nullable(Nothing)` ([Nullable](../../sql_reference/data_types/special_data_types/nothing.md) — это тип данных, позволяющий хранить `NULL` в таблицах). Также тип `Nothing` используется для обозначения пустых массивов:
+Невозможно создать значение типа `Nothing`, поэтому он используется там, где значение не подразумевается. Например, `NULL` записывается как `Nullable(Nothing)` ([Nullable](../../../sql_reference/data_types/special_data_types/nothing.md) — это тип данных, позволяющий хранить `NULL` в таблицах). Также тип `Nothing` используется для обозначения пустых массивов:
 
 ``` sql
 SELECT toTypeName(Array())
