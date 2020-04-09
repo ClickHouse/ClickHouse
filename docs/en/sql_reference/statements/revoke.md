@@ -39,11 +39,11 @@ GRANT SELECT ON *.* TO john;
 REVOKE SELECT ON accounts.* FROM john;
 ```
 
-Grant `mira` with a privilege to select from the `accounts.all` table. Then revoke the privilege to select data from the `wage` column.
+Grant `mira` with a privilege to select from the `accounts.staff` table. Then revoke the privilege to select data from the `wage` column.
 
 ``` sql
-GRANT SELECT ON accounts.all TO mira;
-REVOKE SELECT(wage) ON accounts.all FROM mira;
+GRANT SELECT ON accounts.staff TO mira;
+REVOKE SELECT(wage) ON accounts.staff FROM mira;
 ```
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
