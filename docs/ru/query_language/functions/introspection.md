@@ -35,7 +35,7 @@ addressToLine(address_of_binary_instruction)
 
 -   Имя файла исходного кода и номер строки в этом файле разделяются двоеточием.
 
-        Например, `/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199`, где `199` — номер строки.
+        Например, `/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199`, где `199` — номер строки.
 
 -   Имя бинарного файла, если функция не может найти отладочную информацию.
 
@@ -80,7 +80,7 @@ SELECT addressToLine(94784076370703) \G
 ``` text
 Row 1:
 ──────
-addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199
+addressToLine(94784076370703): /build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
 ```
 
 Применение функции ко всему стектрейсу:
@@ -100,8 +100,8 @@ Row 1:
 ──────
 trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 /usr/lib/debug/usr/bin/clickhouse
-/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.cpp:199
-/build/obj-x86_64-linux-gnu/../dbms/src/Common/ThreadPool.h:155
+/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.cpp:199
+/build/obj-x86_64-linux-gnu/../src/Common/ThreadPool.h:155
 /usr/include/c++/9/bits/atomic_base.h:551
 /usr/lib/debug/usr/bin/clickhouse
 /lib/x86_64-linux-gnu/libpthread-2.27.so

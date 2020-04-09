@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 17
+toc_title: AMPLab Big Data Benchmark
 ---
 
 # AMPLab Big Data Benchmark {#amplab-big-data-benchmark}

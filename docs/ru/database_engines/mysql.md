@@ -6,8 +6,6 @@
 
 Не поддерживаемые виды запросов:
 
--   `ATTACH`/`DETACH`
--   `DROP`
 -   `RENAME`
 -   `CREATE TABLE`
 -   `ALTER`
@@ -16,7 +14,7 @@
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MySQL('host:port', 'database', 'user', 'password')
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 ```
 
 **Параметры движка**

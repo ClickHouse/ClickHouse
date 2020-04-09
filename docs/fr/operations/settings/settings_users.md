@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 63
+toc_title: "Les Param\xE8tres De L'Utilisateur"
 ---
 
 # Les Paramètres De L'Utilisateur {#user-settings}
@@ -140,6 +143,6 @@ La configuration suivante force cet utilisateur `user1` ne peut voir les lignes 
 </user1>
 ```
 
-Le `filter` peut être n'importe quelle expression résultant en un [UInt8](../../data_types/int_uint.md)-le type de la valeur. Il contient généralement des comparaisons et des opérateurs logiques. Les lignes de `database_name.table1` où filtrer les résultats à 0 ne sont pas retournés pour cet utilisateur. Le filtrage est incompatible avec `PREWHERE` opérations et désactive `WHERE→PREWHERE` optimisation.
+Le `filter` peut être n'importe quelle expression résultant en un [UInt8](../../sql_reference/data_types/int_uint.md)-le type de la valeur. Il contient généralement des comparaisons et des opérateurs logiques. Les lignes de `database_name.table1` où filtrer les résultats à 0 ne sont pas retournés pour cet utilisateur. Le filtrage est incompatible avec `PREWHERE` opérations et désactive `WHERE→PREWHERE` optimisation.
 
 [Article Original](https://clickhouse.tech/docs/en/operations/settings/settings_users/) <!--hide-->

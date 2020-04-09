@@ -1,3 +1,8 @@
+---
+toc_priority: 48
+toc_title: Access Control and Account Management
+---
+
 # Access Control and Account Management {#access-control}
 
 ClickHouse support access control management based on [RBAC](https://en.wikipedia.org/wiki/Role-based_access_control) approach.

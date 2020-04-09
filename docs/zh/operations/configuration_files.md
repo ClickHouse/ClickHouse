@@ -1,24 +1,25 @@
-# Configuration Files {#configuration_files}
 
-The main server config file is `config.xml`. It resides in the `/etc/clickhouse-server/` directory.
+# 配置文件 {#configuration_files}
 
-Individual settings can be overridden in the `*.xml` and `*.conf` files in the `conf.d` and `config.d` directories next to the config file.
+主服务器配置文件是 `config.xml`. 它驻留在 `/etc/clickhouse-server/` 目录。
 
-The `replace` or `remove` attributes can be specified for the elements of these config files.
+单个设置可以在复盖 `*.xml` 和 `*.conf` 在文件 `conf.d` 和 `config.d` 配置文件旁边的目录。
 
-If neither is specified, it combines the contents of elements recursively, replacing values of duplicate children.
+该 `replace` 或 `remove` 可以为这些配置文件的元素指定属性。
 
-If `replace` is specified, it replaces the entire element with the specified one.
+如果两者都未指定，则递归组合元素的内容，替换重复子项的值。
 
-If `remove` is specified, it deletes the element.
+如果 `replace` 如果指定，则将整个元素替换为指定的元素。
 
-The config can also define «substitutions». If an element has the `incl` attribute, the corresponding substitution from the file will be used as the value. By default, the path to the file with substitutions is `/etc/metrika.xml`. This can be changed in the [include\_from](server_settings/settings.md#server_settings-include_from) element in the server config. The substitution values are specified in `/yandex/substitution_name` elements in this file. If a substitution specified in `incl` does not exist, it is recorded in the log. To prevent ClickHouse from logging missing substitutions, specify the `optional="true"` attribute (for example, settings for [macros](#macros) server\_settings/settings.md)).
+如果 `remove` 如果指定，则删除该元素。
 
-Substitutions can also be performed from ZooKeeper. To do this, specify the attribute `from_zk = "/path/to/node"`. The element value is replaced with the contents of the node at `/path/to/node` in ZooKeeper. You can also put an entire XML subtree on the ZooKeeper node and it will be fully inserted into the source element.
+The config can also define «substitutions». If an element has the `incl` 属性时，从文件中的相应替换将被用作该值。 默认情况下，具有替换的文件的路径为 `/etc/metrika.xml`. 这可以在改变 [包括\_从](server_configuration_parameters/settings.md#server_configuration_parameters-include_from) 服务器配置中的元素。 替换值在指定 `/yandex/substitution_name` 这个文件中的元素。 如果在指定的替换 `incl` 不存在，则将其记录在日志中。 要防止ClickHouse记录丢失的替换，请指定 `optional="true"` 属性（例如，设置 [宏](#macros) server\_settings/settings.md))。
 
-The `config.xml` file can specify a separate config with user settings, profiles, and quotas. The relative path to this config is set in the ‘users\_config’ element. By default, it is `users.xml`. If `users_config` is omitted, the user settings, profiles, and quotas are specified directly in `config.xml`.
+替换也可以从ZooKeeper执行。 为此，请指定属性 `from_zk = "/path/to/node"`. 元素值被替换为节点的内容 `/path/to/node` 在动物园管理员。 您还可以将整个XML子树放在ZooKeeper节点上，并将其完全插入到源元素中。
 
-In addition, `users_config` may have overrides in files from the `users_config.d` directory (for example, `users.d`) and substitutions. For example, you can have separate config file for each user like this:
+该 `config.xml` 文件可以指定具有用户设置、配置文件和配额的单独配置。 这个配置的相对路径在 ‘users\_config’ 元素。 默认情况下，它是 `users.xml`. 如果 `users_config` 被省略，用户设置，配置文件和配额直接在指定 `config.xml`.
+
+此外, `users_config` 可以从文件中复盖 `users_config.d` 目录（例如, `users.d`）和替换。 例如，您可以为每个用户提供单独的配置文件，如下所示:
 
 ``` xml
 $ cat /etc/clickhouse-server/users.d/alice.xml
@@ -36,8 +37,8 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </yandex>
 ```
 
-For each config file, the server also generates `file-preprocessed.xml` files when starting. These files contain all the completed substitutions and overrides, and they are intended for informational use. If ZooKeeper substitutions were used in the config files but ZooKeeper is not available on the server start, the server loads the configuration from the preprocessed file.
+对于每个配置文件，服务器还会生成 `file-preprocessed.xml` 启动时的文件。 这些文件包含所有已完成的替换和复盖，并且它们旨在提供信息。 如果zookeeper替换在配置文件中使用，但ZooKeeper在服务器启动时不可用，则服务器将从预处理的文件中加载配置。
 
-The server tracks changes in config files, as well as files and ZooKeeper nodes that were used when performing substitutions and overrides, and reloads the settings for users and clusters on the fly. This means that you can modify the cluster, users, and their settings without restarting the server.
+服务器跟踪配置文件中的更改，以及执行替换和复盖时使用的文件和ZooKeeper节点，并动态重新加载用户和集群的设置。 这意味着您可以在不重新启动服务器的情况下修改群集、用户及其设置。
 
-[Original article](https://clickhouse.tech/docs/en/operations/configuration_files/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/configuration_files/) <!--hide-->
