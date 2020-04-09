@@ -1,3 +1,8 @@
+---
+toc_priority: 27
+toc_title: Integrations
+---
+
 # Integration Libraries from Third-party Developers {#integration-libraries-from-third-party-developers}
 
 !!! warning "Disclaimer"
@@ -35,7 +40,7 @@
         -   [graphouse](https://github.com/yandex/graphouse)
         -   [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../operations/table_engines/graphitemergetree.md#rollup-configuration) could be applied
+        -   [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimizes staled partitions in [\*GraphiteMergeTree](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) if rules from [rollup configuration](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) could be applied
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
@@ -69,10 +74,10 @@
         -   [pandahouse](https://github.com/kszucs/pandahouse)
 -   R
     -   [dplyr](https://db.rstudio.com/dplyr/)
-        -   [RClickhouse](https://github.com/IMSMWU/RClickhouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
+        -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../query_language/table_functions/jdbc.md))
+        -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../sql_reference/table_functions/jdbc.md))
 -   Scala
     -   [Akka](https://akka.io)
         -   [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)

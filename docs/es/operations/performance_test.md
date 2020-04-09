@@ -1,12 +1,15 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 54
+toc_title: Prueba de hardware
 ---
 
 # Cómo probar su hardware con ClickHouse {#how-to-test-your-hardware-with-clickhouse}
 
 Con esta instrucción, puede ejecutar una prueba de rendimiento básica de ClickHouse en cualquier servidor sin instalar paquetes de ClickHouse.
 
-1.  Ir a un “commits” página: https://github.com/ClickHouse/ClickHouse/commits/master
+1.  Ir a “commits” página: https://github.com/ClickHouse/ClickHouse/commits/master
 
 2.  Haga clic en la primera marca de verificación verde o cruz roja con verde “ClickHouse Build Check” y haga clic en el “Details” enlace cerca “ClickHouse Build Check”.
 
@@ -23,23 +26,23 @@ Con esta instrucción, puede ejecutar una prueba de rendimiento básica de Click
       # Then do:
       chmod a+x clickhouse
 
-1.  Descargar configuraciones:
+1.  Descargar configs:
 
 <!-- -->
 
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/config.xml
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/users.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/users.xml
       mkdir config.d
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/config.d/path.xml -O config.d/path.xml
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/path.xml -O config.d/path.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
 
 1.  Descargar archivos de referencia:
 
 <!-- -->
 
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/benchmark/clickhouse/benchmark-new.sh
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/benchmark-new.sh
       chmod a+x benchmark-new.sh
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/benchmark/clickhouse/queries.sql
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 
 1.  Descargue los datos de prueba de acuerdo con el [El Yandex.Conjunto de datos de Metrica](../getting_started/example_datasets/metrica.md) instrucción (“hits” tabla que contiene 100 millones de filas).
 
@@ -62,7 +65,7 @@ Con esta instrucción, puede ejecutar una prueba de rendimiento básica de Click
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-1.  Edite el benchmark-new.sh, cambie “clickhouse-client” Naciones “./clickhouse client” y añadir “–max\_memory\_usage 100000000000” parámetro.
+1.  Edite el benchmark-new.sh, cambie “clickhouse-client” a “./clickhouse client” y añadir “–max\_memory\_usage 100000000000” parámetro.
 
 <!-- -->
 

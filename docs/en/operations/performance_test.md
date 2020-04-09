@@ -1,10 +1,15 @@
-# How To Test Your Hardware With ClickHouse {#how-to-test-your-hardware-with-clickhouse}
+---
+toc_priority: 54
+toc_title: Testing Hardware
+---
+
+# How to Test Your Hardware with ClickHouse {#how-to-test-your-hardware-with-clickhouse}
 
 With this instruction you can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
 
 1.  Go to “commits” page: https://github.com/ClickHouse/ClickHouse/commits/master
 
-2.  Click on the first green check mark or red cross with green “ClickHouse Build Check” and click on the “Details” link near “ClickHouse Build Check”.
+2.  Click on the first green check mark or red cross with green “ClickHouse Build Check” and click on the “Details” link near “ClickHouse Build Check”. There is no such link in some commits, for example commits with documentation. In this case, choose the nearest commit having this link.
 
 3.  Copy the link to “clickhouse” binary for amd64 or aarch64.
 
@@ -23,19 +28,19 @@ With this instruction you can run basic ClickHouse performance test on any serve
 
 <!-- -->
 
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/config.xml
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/users.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/users.xml
       mkdir config.d
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/config.d/path.xml -O config.d/path.xml
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/path.xml -O config.d/path.xml
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
 
 1.  Download benchmark files:
 
 <!-- -->
 
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/benchmark/clickhouse/benchmark-new.sh
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/benchmark-new.sh
       chmod a+x benchmark-new.sh
-      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/dbms/benchmark/clickhouse/queries.sql
+      wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 
 1.  Download test data according to the [Yandex.Metrica dataset](../getting_started/example_datasets/metrica.md) instruction (“hits” table containing 100 million rows).
 

@@ -1,3 +1,4 @@
+
 # ClickHouse的独特功能 {#clickhousede-du-te-gong-neng}
 
 ## 真正的列式数据库管理系统 {#zhen-zheng-de-lie-shi-shu-ju-ku-guan-li-xi-tong}
@@ -59,6 +60,6 @@ ClickHouse提供各种各样在允许牺牲数据精度的情况下对查询进�
 
 ClickHouse使用异步的多主复制技术。当数据被写入任何一个可用副本后，系统会在后台将数据分发给其他副本，以保证系统在不同副本上保持相同的数据。在大多数情况下ClickHouse能在故障后自动恢复，在一些少数的复杂情况下需要手动恢复。
 
-更多信息，参见 [数据复制](../operations/table_engines/replication.md)。
+更多信息，参见 [数据复制](../engines/table_engines/mergetree_family/replication.md)。
 
 [来源文章](https://clickhouse.tech/docs/en/introduction/distinctive_features/) <!--hide-->

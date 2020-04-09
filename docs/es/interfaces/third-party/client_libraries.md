@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 26
+toc_title: Bibliotecas de clientes
 ---
 
 # Bibliotecas de clientes de desarrolladores de terceros {#client-libraries-from-third-party-developers}
@@ -13,12 +16,12 @@ machine_translated: true
     -   [Casa de clics-cliente](https://github.com/yurial/clickhouse-client)
     -   [Aiochclient](https://github.com/maximdanilchenko/aiochclient)
 -   PHP
-    -   [smi2/phpclickhouse](https://packagist.org/packages/smi2/phpClickHouse)
-    -   [8bitov/clickhouse-php-client](https://packagist.org/packages/8bitov/clickhouse-php-client)
-    -   [bozerkins/clickhouse-client](https://packagist.org/packages/bozerkins/clickhouse-client)
-    -   [simpod/clickhouse-client](https://packagist.org/packages/simpod/clickhouse-client)
-    -   [seva-code/php-click-house-client](https://packagist.org/packages/seva-code/php-click-house-client)
-    -   [SeasClick C++ client](https://github.com/SeasX/SeasClick)
+    -   [MÃ©todo de codificaciÃ³n de datos:](https://packagist.org/packages/smi2/phpClickHouse)
+    -   [Sistema abierto.](https://packagist.org/packages/8bitov/clickhouse-php-client)
+    -   [Sistema abierto.](https://packagist.org/packages/bozerkins/clickhouse-client)
+    -   [Sistema abierto.](https://packagist.org/packages/simpod/clickhouse-client)
+    -   [Seva-code/php-click-house-cliente](https://packagist.org/packages/seva-code/php-click-house-client)
+    -   [Cliente de SeasClick C++](https://github.com/SeasX/SeasClick)
 -   Ve
     -   [Casa de clics](https://github.com/kshvakov/clickhouse/)
     -   [Sistema abierto.](https://github.com/roistat/go-clickhouse)
@@ -33,6 +36,7 @@ machine_translated: true
     -   [Cualquier evento-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
 -   Rubí
     -   [Haga clic en Casa (Ruby)](https://github.com/shlima/click_house)
+    -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   R
     -   [Sistema abierto.](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/IMSMWU/RClickhouse)
@@ -52,4 +56,4 @@ machine_translated: true
 -   Nim
     -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/leonardoce/nim-clickhouse)
 
-[Artículo Original](https://clickhouse.tech/docs/es/interfaces/third-party/client_libraries/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/interfaces/third-party/client_libraries/) <!--hide-->
