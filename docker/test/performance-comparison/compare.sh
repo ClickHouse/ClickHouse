@@ -174,7 +174,7 @@ function run_tests
     # if some performance tests xmls were changed in a PR, run only these ones.
     if [ "$PR_TO_TEST" != "0" ]
     then
-        test_files_override=$(sed 's/dbms\/tests/right/' changed-tests.txt)
+        test_files_override=$(sed 's/tests/right/' changed-tests.txt)
         if [ "$test_files_override" != "" ]
         then
             test_files=$test_files_override

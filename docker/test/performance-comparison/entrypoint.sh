@@ -42,7 +42,7 @@ done
     echo
 ) | tee right-commit.txt
 
-(cd ch && git diff --name-only "$SHA_TO_TEST" "$(git merge-base "$SHA_TO_TEST" master)" -- dbms/tests/performance) | tee changed-tests.txt
+(cd ch && git diff --name-only "$SHA_TO_TEST" "$(git merge-base "$SHA_TO_TEST" master)" -- tests/performance) | tee changed-tests.txt
 
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
