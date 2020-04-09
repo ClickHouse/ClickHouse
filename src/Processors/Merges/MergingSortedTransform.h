@@ -1,16 +1,14 @@
 #pragma once
 
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/Merges/MergedData.h>
-#include <Core/SortDescription.h>
-#include <Core/SortCursor.h>
+#include <Processors/Merges/MergingSortedAlgorithm.h>
 
 
 namespace DB
 {
 
 /// Merges several sorted inputs into one sorted output.
-class MergingSortedTransform final : public IMergingTransform
+class MergingSortedTransform final : public IMergingTransform2<MergingSortedAlgorithm>
 {
 public:
     MergingSortedTransform(
@@ -25,41 +23,13 @@ public:
         bool have_all_inputs_ = true);
 
     String getName() const override { return "MergingSortedTransform"; }
-    void work() override;
 
 protected:
     void onNewInput() override;
-    void initializeInputs() override;
-    void consume(Chunk chunk, size_t input_number) override;
     void onFinish() override;
 
 private:
-    MergedData merged_data;
-
-    /// Settings
-    SortDescription description;
-    UInt64 limit;
-    bool has_collation = false;
     bool quiet = false;
-
-    /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
-    /// If it is not nullptr then it should be populated during execution
-    WriteBuffer * out_row_sources_buf = nullptr;
-
-    /// Chunks currently being merged.
-    std::vector<Chunk> source_chunks;
-
-    SortCursorImpls cursors;
-
-    SortingHeap<SortCursor> queue_without_collation;
-    SortingHeap<SortCursorWithCollation> queue_with_collation;
-    bool is_queue_initialized = false;
-
-    template <typename TSortingHeap>
-    void merge(TSortingHeap & queue);
-
-    void insertFromChunk(size_t source_num);
-    void updateCursor(Chunk chunk, size_t source_num);
 };
 
 }
