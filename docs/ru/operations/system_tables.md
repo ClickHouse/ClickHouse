@@ -141,7 +141,7 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 
 Столбцы:
 
-- `database` ([String](../data_types/string.md)) — Имя базы данных, в которой находится словарь. Только для словарей, созданных с помощью DDL-запроса, для остальных — всегда пустая строка.
+- `database` ([String](../data_types/string.md)) — Имя базы данных, в которой находится словарь, созданный с помощью DDL-запроса. Пустая строка для других словарей.
 - `name` ([String](../data_types/string.md)) — [Имя словаря](../query_language/dicts/external_dicts_dict.md).
 - `status` ([Enum8](../data_types/enum.md)) — Статус словаря. Возможные значения:
      - `NOT_LOADED` — Словарь не загружен, потому что не использовался.
