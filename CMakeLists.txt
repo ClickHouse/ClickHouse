@@ -228,7 +228,7 @@ else ()
     set(NOT_UNBUNDLED 1)
 endif ()
 
-if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN) OR ARCH_32)
+if (UNBUNDLED OR NOT (OS_LINUX OR OS_DARWIN))
     # Using system libs can cause a lot of warnings in includes (on macro expansion).
     option (WERROR "Enable -Werror compiler option" OFF)
 else ()
@@ -251,6 +251,8 @@ if (OS_LINUX)
     include(cmake/linux/default_libs.cmake)
 elseif (OS_DARWIN)
     include(cmake/darwin/default_libs.cmake)
+elseif (OS_FREEBSD)
+    include(cmake/freebsd/default_libs.cmake)
 endif ()
 
 ######################################
@@ -316,7 +318,6 @@ include (cmake/find/poco.cmake)
 include (cmake/find/lz4.cmake)
 include (cmake/find/xxhash.cmake)
 include (cmake/find/sparsehash.cmake)
-include (cmake/find/execinfo.cmake)
 include (cmake/find/re2.cmake)
 include (cmake/find/libgsasl.cmake)
 include (cmake/find/rdkafka.cmake)
@@ -384,8 +385,8 @@ set(ConfigIncludePath ${CMAKE_CURRENT_BINARY_DIR}/includes/configs CACHE INTERNA
 include_directories(${ConfigIncludePath})
 
 add_subdirectory (base)
-add_subdirectory (dbms)
 add_subdirectory (programs)
+add_subdirectory (src)
 add_subdirectory (tests)
 add_subdirectory (utils)
 

@@ -1,3 +1,4 @@
+
 # ClickHouse 测试 {#clickhouse-ce-shi}
 
 ## 功能性测试 {#gong-neng-xing-ce-shi}
@@ -14,7 +15,7 @@
 
 调用功能测试最简单的方法是将 `clickhouse-client` 复制到`/usr/bin/`，运行`clickhouse-server`，然后从自己的目录运行`./ clickhouse-test`。
 
-要添加新测试，请在 `tests/queries/0_stateless` 目录内添加新的 `.sql` 或 `.sh` 文件，手动检查，然后按以下方式生成 `.reference` 文件： `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` or `./00000_test.sh > ./00000_test.reference`。
+要添加新测试，请在 `tests/queries/0_stateless` 目录内添加新的 `.sql` 或 `.sh` 文件，手动检查，然后按以下方式生成 `.reference` 文件： `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` 或 `./00000_test.sh > ./00000_test.reference`。
 
 测试应该只使用（创建，删除等）`test` 数据库中的表，这些表假定是事先创建的; 测试也可以使用临时表。
 
@@ -52,7 +53,7 @@
 
 ## 测试工具和脚本 {#ce-shi-gong-ju-he-jiao-ben}
 
-`tests`目录中的一些程序不是准备测试，而是测试工具。例如，对于`Lexer`，有一个工具`dbms/Parsers/tests/lexer` 标准输出。您可以使用这些工具作为代码示例以及探索和手动测试。
+`tests`目录中的一些程序不是准备测试，而是测试工具。例如，对于`Lexer`，有一个工具`src/Parsers/tests/lexer` 标准输出。您可以使用这些工具作为代码示例以及探索和手动测试。
 
 您还可以将一对文件 `.sh` 和 `.reference` 与工具放在一些预定义的输入上运行它 - 然后可以将脚本结果与 `.reference` 文件进行比较。这些测试不是自动化的。
 
@@ -152,24 +153,24 @@ Clang 有更多有用的警告 - 您可以使用 `-Weverything` 查找它们并�
 
 对于生产构建，使用 gcc（它仍然生成比 clang 稍高效的代码）。对于开发来说，clang 通常更方便使用。您可以使用调试模式在自己的机器上构建（以节省笔记本电脑的电量），但请注意，由于更好的控制流程和过程分析，编译器使用 `-O3` 会生成更多警告。 当使用 clang 构建时，使用 `libc++` 而不是 `libstdc++`，并且在使用调试模式构建时，使用调试版本的 `libc++`，它允许在运行时捕获更多错误。
 
-## Sanitizers {#sanitizers}
+## 消毒剂 {#sanitizers}
 
-**Address sanitizer**.
+**地址消毒剂**.
 我们在每个提交的基础上在 ASan 下运行功能和集成测试。
 
-**Valgrind (Memcheck)**.
+**ﾂ暗ｪﾂ氾环催ﾂ団ﾂ法ﾂ人)**.
 我们在 Valgrind 过夜进行功能测试。 这需要几个小时。 目前在 `re2` 库中有一个已知的误报，请参阅 [文章](https://research.swtch.com/sparse)。
 
-**Thread sanitizer**.
+**螺纹消毒剂**.
 我们在 TSan 下进行功能测试。ClickHouse 必须通过所有测试。在 TSan 下运行不是自动化的，只是偶尔执行。
 
-**Memory sanitizer**.
+**记忆消毒剂**.
 目前我们不使用 MSan。
 
-**Undefined behaviour sanitizer.**
+**未定义的行为消毒剂。**
 我们仍然不会在每次提交的基础上使用 UBSan。 有一些地方需要解决。
 
-**Debug allocator.**
+**调试分alloc。**
 您可以使用 `DEBUG_TCMALLOC` CMake 选项启用 `tcmalloc` 的调试版本。我们在每次提交的基础上使用调试分配器运行测试。
 
 更多请参阅 `tests/instructions/sanitizers.txt`。
