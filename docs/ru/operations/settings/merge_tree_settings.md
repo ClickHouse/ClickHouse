@@ -33,7 +33,7 @@ ALTER TABLE foo
 
 ## parts_to_throw_insert {#parts-to-throw-insert}
 
-Eсли число кусков в партиции превышает значение `parts_to_throw_insert` INSERT прерывается с исключением 'Too many parts (N). Merges are processing significantly slower than inserts'.
+Eсли число кусков в партиции превышает значение `parts_to_throw_insert` INSERT прерывается с исключением `Too many parts (N). Merges are processing significantly slower than inserts`.
 
 Возможные значения:
 
@@ -60,7 +60,7 @@ ClickHouse искусственно выполняет `INSERT` дольше (д
 
 ## max_delay_to_insert {#max-delay-to-insert}
 
-Время в секундах на которое будет замедлен `INSERT`, если число кусков в партиции превышает значение [parts_to_delay_insert](#parts-to-delay-insert)
+Величина в секундах, которая используется для расчета задержки `INSERT`, если число кусков в партиции превышает значение [parts_to_delay_insert](#parts-to-delay-insert).
 
 Возможные значения:
 
@@ -68,7 +68,7 @@ ClickHouse искусственно выполняет `INSERT` дольше (д
 
 Значение по умолчанию: 1.
 
-Величина задержи (в миллисекундах) для `INSERT` вычисляется по формуле
+Величина задержи (в миллисекундах) для `INSERT` вычисляется по формуле:
 
 ```code
 max_k = parts_to_throw_insert - parts_to_delay_insert
