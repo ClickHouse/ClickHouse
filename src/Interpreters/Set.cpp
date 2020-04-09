@@ -140,7 +140,7 @@ void Set::setHeader(const Block & header)
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, context.getSettingsRef().transform_null_in);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
 
     if (fill_set_elements)
     {
@@ -230,7 +230,7 @@ static Field extractValueFromNode(const ASTPtr & node, const IDataType & type, c
         throw Exception("Incorrect element of set. Must be literal or constant expression.", ErrorCodes::INCORRECT_ELEMENT_OF_SET);
 }
 
-void Set::createFromAST(const DataTypes & types, ASTPtr node)
+void Set::createFromAST(const DataTypes & types, ASTPtr node, const Context & context)
 {
     /// Will form a block with values from the set.
 
@@ -350,7 +350,8 @@ ColumnPtr Set::execute(const Block & block, bool negative) const
 
     /// We will check existence in Set only for keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, context.getSettingsRef().transform_null_in);
+
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
 
     executeOrdinary(key_columns, vec_res, negative, null_map);
 

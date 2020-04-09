@@ -186,7 +186,7 @@ SetPtr makeExplicitSet(
     else
         throw_unsupported_type(right_arg_type);
 
-    SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set, context);
+    SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
 
     set->setHeader(block);
     set->insertFromBlock(block);
@@ -654,7 +654,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
             return subquery_for_set.set;
         }
 
-        SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.context);
+        SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
 
         /** The following happens for GLOBAL INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,
