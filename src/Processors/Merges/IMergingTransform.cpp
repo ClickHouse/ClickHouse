@@ -55,6 +55,9 @@ void IMergingTransform::requestDataForInput(size_t input_number)
 
 void IMergingTransform::prepareOutputChunk(MergedData & merged_data)
 {
+    if (need_data)
+        return;
+
     has_output_chunk = (is_finished && merged_data.mergedRows()) || merged_data.hasEnoughRows();
     if (has_output_chunk)
         output_chunk = merged_data.pull();
