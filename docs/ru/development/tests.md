@@ -215,7 +215,7 @@ $ clickhouse benchmark --concurrency 16 < queries.tsv
 
 `FORTIFY_SOURCE` используется по умолчанию. Это почти бесполезно, но все же имеет смысл в редких случаях, и мы не отключаем его.
 
-## Стиль Кода  {#code-style}
+## Стиль Кода {#code-style}
 
 Описаны правила стиля кода [здесь](https://clickhouse.tech/docs/en/development/style/).
 
