@@ -131,8 +131,11 @@ def parse_env_variables(build_type, compiler, sanitizer, package_type, image_typ
     if alien_pkgs:
         result.append("ALIEN_PKGS='" + ' '.join(['--' + pkg for pkg in alien_pkgs]) + "'")
 
-    if with_binaries:
-        result.append('BINARY_OUTPUT=binary')
+    if with_binaries == "programs":
+        result.append('BINARY_OUTPUT=programs')
+    elif with_binaries == "tests":
+        result.append('BINARY_OUTPUT=tests')
+        cmake_flags.append('-DENABLE_TESTS=1')
 
     if unbundled:
         # TODO: fix build with ENABLE_RDKAFKA
@@ -182,7 +185,7 @@ if __name__ == "__main__":
     parser.add_argument("--official", action="store_true")
     parser.add_argument("--alien-pkgs", nargs='+', default=[])
     parser.add_argument("--with-coverage", action="store_true")
-    parser.add_argument("--with-binaries", action="store_true")
+    parser.add_argument("--with-binaries", choices=("programs", "tests", ""), default="")
 
     args = parser.parse_args()
     if not os.path.isabs(args.output_dir):
@@ -199,8 +202,11 @@ if __name__ == "__main__":
     if args.alien_pkgs and not image_type == "deb":
         raise Exception("Can add alien packages only in deb build")
 
-    if args.with_binaries and not image_type == "deb":
+    if args.with_binaries != "" and not image_type == "deb":
         raise Exception("Can add additional binaries only in deb build")
+
+    if args.with_binaries != "" and image_type == "deb":
+        logging.info("Should place {} to output".format(args.with_binaries))
 
     dockerfile = os.path.join(ch_root, "docker/packager", image_type, "Dockerfile")
     if image_type != "freebsd" and not check_image_exists_locally(image_name) or args.force_build_image:

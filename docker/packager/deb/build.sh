@@ -11,11 +11,15 @@ mv *.buildinfo /output
 mv /*.rpm /output ||: # if exists
 mv /*.tgz /output ||: # if exists
 
-if [ "binary" == "$BINARY_OUTPUT" ]
+if [ -n "$BINARY_OUTPUT" ] && { [ "$BINARY_OUTPUT" = "programs" ] || [ "$BINARY_OUTPUT" = "tests" ] ;}
 then
-  mkdir /output/binary
+  echo Place $BINARY_OUTPUT to output
+  mkdir /output/binary ||: # if exists
   mv /build/obj-x86_64-linux-gnu/programs/clickhouse* /output/binary
-  mv /build/obj-x86_64-linux-gnu/src/unit_tests_dbms /output/binary
+  if [ "$BINARY_OUTPUT" = "tests" ]
+  then
+    mv /build/obj-x86_64-linux-gnu/src/unit_tests_dbms /output/binary
+  fi
 fi
 ccache --show-stats ||:
 ln -s /usr/lib/x86_64-linux-gnu/libOpenCL.so.1.0.0 /usr/lib/libOpenCL.so ||:

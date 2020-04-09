@@ -92,7 +92,7 @@ override_dh_auto_test:
 
 override_dh_clean:
 	rm -rf debian/copyright debian/clickhouse-client.docs debian/clickhouse-common-static.docs
-	dh_clean -X contrib
+	dh_clean # -X contrib
 
 override_dh_strip:
 	dh_strip -pclickhouse-common-static --dbg-package=clickhouse-common-static-dbg
