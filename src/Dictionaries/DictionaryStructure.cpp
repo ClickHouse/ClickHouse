@@ -20,7 +20,6 @@ namespace ErrorCodes
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int TYPE_MISMATCH;
     extern const int BAD_ARGUMENTS;
-    extern const int NO_ELEMENTS_IN_CONFIG;
 }
 
 namespace
@@ -194,7 +193,6 @@ DictionaryStructure::DictionaryStructure(const Poco::Util::AbstractConfiguration
     }
 
     attributes = getAttributes(config, config_prefix);
-
     if (attributes.empty())
         throw Exception{"Dictionary has no attributes defined", ErrorCodes::BAD_ARGUMENTS};
 }
