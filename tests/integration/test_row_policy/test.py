@@ -113,6 +113,9 @@ def test_prewhere_not_supported():
     assert expected_error in instance.query_and_get_error("SELECT * FROM mydb.filtered_table2 PREWHERE 1")
     assert expected_error in instance.query_and_get_error("SELECT * FROM mydb.filtered_table3 PREWHERE 1")
 
+    # However PREWHERE should still work for user without filtering.
+    assert instance.query("SELECT * FROM mydb.filtered_table1 PREWHERE 1", user="another") == "0\t0\n0\t1\n1\t0\n1\t1\n"
+
 
 def test_single_table_name():
     copy_policy_xml('tag_with_table_name.xml')
