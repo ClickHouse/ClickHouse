@@ -147,27 +147,68 @@ This system table is used for implementing the `SHOW DATABASES` query.
 
 Contains information about detached parts of [MergeTree](../engines/table_engines/mergetree_family/mergetree.md) tables. The `reason` column specifies why the part was detached. For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION\|PART](../sql_reference/statements/alter.md#alter_attach-partition) command. For the description of other columns, see [system.parts](#system_tables-parts). If part name is invalid, values of some columns may be `NULL`. Such parts can be deleted with [ALTER TABLE DROP DETACHED PART](../sql_reference/statements/alter.md#alter_drop-detached).
 
-## system.dictionaries {#system-dictionaries}
+## system.dictionaries {#system_tables-dictionaries}
 
-Contains information about external dictionaries.
+Contains information about [external dictionaries](../sql_reference/dictionaries/external_dictionaries/external_dicts.md).
 
 Columns:
 
--   `name` (String) — Dictionary name.
--   `type` (String) — Dictionary type: Flat, Hashed, Cache.
--   `origin` (String) — Path to the configuration file that describes the dictionary.
--   `attribute.names` (Array(String)) — Array of attribute names provided by the dictionary.
--   `attribute.types` (Array(String)) — Corresponding array of attribute types that are provided by the dictionary.
--   `has_hierarchy` (UInt8) — Whether the dictionary is hierarchical.
--   `bytes_allocated` (UInt64) — The amount of RAM the dictionary uses.
--   `hit_rate` (Float64) — For cache dictionaries, the percentage of uses for which the value was in the cache.
--   `element_count` (UInt64) — The number of items stored in the dictionary.
--   `load_factor` (Float64) — The percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
--   `creation_time` (DateTime) — The time when the dictionary was created or last successfully reloaded.
--   `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created.
--   `source` (String) — Text describing the data source for the dictionary.
+- `database` ([String](../sql_reference/data_types/string.md)) — Name of the database containing the dictionary created by DDL query. Empty string for other dictionaries.
+- `name` ([String](../sql_reference/data_types/string.md)) — [Dictionary name](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict.md).
+- `status` ([Enum8](../sql_reference/data_types/enum.md)) — Dictionary status. Possible values: 
+     - `NOT_LOADED` — Dictionary was not loaded because it was not used.
+     - `LOADED` — Dictionary loaded successfully.
+     - `FAILED` — Unable to load the dictionary as a result of an error.
+     - `LOADING` — Dictionary is loading now.
+     - `LOADED_AND_RELOADING` — Dictionary is loaded successfully, and is being reloaded right now (frequent reasons: [SYSTEM RELOAD DICTIONARY](../sql_reference/statements/system.md#query_language-system-reload-dictionary) query, timeout, dictionary config has changed).
+     - `FAILED_AND_RELOADING` — Could not load the dictionary as a result of an error and is loading now.
+- `origin` ([String](../sql_reference/data_types/string.md)) — Path to the configuration file that describes the dictionary.
+- `type` ([String](../sql_reference/data_types/string.md)) — Type of a dictionary allocation. [Storing Dictionaries in Memory](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_layout.md).
+- `key` — [Key type](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-key): Numeric Key ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) or Сomposite key ([String](../sql_reference/data_types/string.md)) — form "(type 1, type 2, ..., type n)".
+- `attribute.names` ([Array](../sql_reference/data_types/array.md)([String](../sql_reference/data_types/string.md))) — Array of [attribute names](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-attributes) provided by the dictionary.
+- `attribute.types`  ([Array](../sql_reference/data_types/array.md)([String](../sql_reference/data_types/string.md))) — Corresponding array of [attribute types](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-attributes) that are provided by the dictionary.
+- `bytes_allocated` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Amount of RAM allocated for the dictionary.
+- `query_count` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Number of queries since the dictionary was loaded or since the last successful reboot.
+- `hit_rate` ([Float64](../sql_reference/data_types/float.md)) — For cache dictionaries, the percentage of uses for which the value was in the cache.
+- `element_count` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Number of items stored in the dictionary.
+- `load_factor` ([Float64](../sql_reference/data_types/float.md)) — Percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
+- `source` ([String](../sql_reference/data_types/string.md)) — Text describing the [data source](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md) for the dictionary.
+- `lifetime_min` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Minimum [lifetime](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_lifetime.md) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
+- `lifetime_max` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Maximum [lifetime](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_lifetime.md) of the dictionary in memory, after which ClickHouse tries to reload the dictionary (if `invalidate_query` is set, then only if it has changed). Set in seconds.
+- `loading_start_time` ([DateTime](../sql_reference/data_types/datetime.md)) — Start time for loading the dictionary.
+- `last_successful_update_time` ([DateTime](../sql_reference/data_types/datetime.md)) — End time for loading or updating the dictionary. Helps to monitor some troubles with external sources and investigate causes.
+- `loading_duration` ([Float32](../sql_reference/data_types/float.md)) — Duration of a dictionary loading.
+- `last_exception` ([String](../sql_reference/data_types/string.md)) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
 
-Note that the amount of memory used by the dictionary is not proportional to the number of items stored in it. So for flat and cached dictionaries, all the memory cells are pre-assigned, regardless of how full the dictionary actually is.
+
+**Example**
+
+Configure the dictionary.
+
+```sql
+CREATE DICTIONARY dictdb.dict
+(
+    `key` Int64 DEFAULT -1,
+    `value_default` String DEFAULT 'world',
+    `value_expression` String DEFAULT 'xxx' EXPRESSION 'toString(127 * 172)'
+)
+PRIMARY KEY key
+SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'dicttbl' DB 'dictdb'))
+LIFETIME(MIN 0 MAX 1)
+LAYOUT(FLAT())
+```
+
+Make sure that the dictionary is loaded.
+
+```sql
+SELECT * FROM system.dictionaries
+```
+
+```text
+┌─database─┬─name─┬─status─┬─origin──────┬─type─┬─key────┬─attribute.names──────────────────────┬─attribute.types─────┬─bytes_allocated─┬─query_count─┬─hit_rate─┬─element_count─┬───────────load_factor─┬─source─────────────────────┬─lifetime_min─┬─lifetime_max─┬──loading_start_time─┌──last_successful_update_time─┬──────loading_duration─┬─last_exception─┐
+│ dictdb   │ dict │ LOADED │ dictdb.dict │ Flat │ UInt64 │ ['value_default','value_expression'] │ ['String','String'] │           74032 │           0 │        1 │             1 │ 0.0004887585532746823 │ ClickHouse: dictdb.dicttbl │            0 │            1 │ 2020-03-04 04:17:34 │   2020-03-04 04:30:34        │                 0.002 │                │
+└──────────┴──────┴────────┴─────────────┴──────┴────────┴──────────────────────────────────────┴─────────────────────┴─────────────────┴─────────────┴──────────┴───────────────┴───────────────────────┴────────────────────────────┴──────────────┴──────────────┴─────────────────────┴──────────────────────────────┘───────────────────────┴────────────────┘
+```
 
 ## system.events {#system_tables-events}
 
