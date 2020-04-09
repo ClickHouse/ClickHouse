@@ -11,6 +11,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
 
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -43,6 +45,11 @@ StorageDictionary::StorageDictionary(
         const DictionaryStructure & dictionary_structure = dictionary->getStructure();
         checkNamesAndTypesCompatibleWithDictionary(dictionary_structure);
     }
+}
+
+void StorageDictionary::checkTableCanBeDropped() const
+{
+    throw Exception("Cannot detach dictionary " + backQuoteIfNeed(dictionary_name) + " as table, use DETACH DICTIONARY query.", ErrorCodes::UNKNOWN_TABLE);
 }
 
 Pipes StorageDictionary::read(
