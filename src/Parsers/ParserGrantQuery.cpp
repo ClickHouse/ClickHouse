@@ -17,15 +17,6 @@ namespace ErrorCodes
 
 namespace
 {
-    bool parseRoundBrackets(IParser::Pos & pos, Expected & expected)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            return ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected)
-                && ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected);
-        });
-    }
-
     bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & access_flags)
     {
         static constexpr auto is_one_of_access_type_words = [](IParser::Pos & pos_)
@@ -63,7 +54,6 @@ namespace
                 return false;
             }
 
-            parseRoundBrackets(pos, expected);
             return true;
         });
     }
@@ -269,6 +259,13 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
+    String cluster;
+    if (ParserKeyword{"ON"}.ignore(pos, expected))
+    {
+        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
+            return false;
+    }
+
     bool grant_option = false;
     bool admin_option = false;
     if (kind == Kind::REVOKE)
@@ -306,6 +303,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->kind = kind;
     query->attach = attach;
+    query->cluster = std::move(cluster);
     query->access_rights_elements = std::move(elements);
     query->roles = std::move(roles);
     query->to_roles = std::move(to_roles);

@@ -3,6 +3,7 @@
 #include <Parsers/ASTExtendedRoleSet.h>
 #include <Parsers/formatAST.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/AccessFlags.h>
 #include <boost/range/algorithm/sort.hpp>
@@ -63,9 +64,15 @@ namespace
 
 BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTCreateRowPolicyQuery &>();
+    auto & query = query_ptr->as<ASTCreateRowPolicyQuery &>();
     auto & access_control = context.getAccessControlManager();
-    context.checkAccess(query.alter ? AccessType::ALTER_POLICY : AccessType::CREATE_POLICY);
+    context.checkAccess(query.alter ? AccessType::ALTER_ROW_POLICY : AccessType::CREATE_ROW_POLICY);
+
+    if (!query.cluster.empty())
+    {
+        query.replaceCurrentUserTagWithName(context.getUserName());
+        return executeDDLQueryOnCluster(query_ptr, context);
+    }
 
     std::optional<ExtendedRoleSet> roles_from_query;
     if (query.roles)

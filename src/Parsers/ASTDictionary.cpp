@@ -24,6 +24,7 @@ void ASTDictionaryRange::formatImpl(const FormatSettings & settings,
                   << "("
                   << (settings.hilite ? hilite_keyword : "")
                   << "MIN "
+                  << (settings.hilite ? hilite_none : "")
                   << min_attr_name << " "
                   << (settings.hilite ? hilite_keyword : "")
                   << "MAX "
@@ -52,6 +53,7 @@ void ASTDictionaryLifetime::formatImpl(const FormatSettings & settings,
                   << "("
                   << (settings.hilite ? hilite_keyword : "")
                   << "MIN "
+                  << (settings.hilite ? hilite_none : "")
                   << min_sec << " "
                   << (settings.hilite ? hilite_keyword : "")
                   << "MAX "
@@ -86,7 +88,9 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
                   << Poco::toUpper(layout_type)
                   << (settings.hilite ? hilite_none : "");
 
-    settings.ostr << "(";
+    if (has_brackets)
+        settings.ostr << "(";
+
     if (parameter)
     {
         settings.ostr << (settings.hilite ? hilite_keyword : "")
@@ -96,7 +100,10 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
 
         parameter->second->formatImpl(settings, state, frame);
     }
-    settings.ostr << ")";
+
+    if (has_brackets)
+        settings.ostr << ")";
+
     settings.ostr << ")";
 }
 

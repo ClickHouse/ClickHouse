@@ -2,7 +2,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance', config_dir='configs', main_configs=['configs/access_control_path.xml'], stay_alive=True)
+instance = cluster.add_instance('instance', config_dir='configs', stay_alive=True)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -40,7 +40,7 @@ def test_create():
     def check():
         assert instance.query("SHOW CREATE USER u1") == "CREATE USER u1 SETTINGS PROFILE s1\n"
         assert instance.query("SHOW CREATE USER u2") == "CREATE USER u2 HOST LOCAL DEFAULT ROLE rx\n"
-        assert instance.query("SHOW CREATE ROW POLICY p ON mydb.mytable") == "CREATE POLICY p ON mydb.mytable FOR SELECT USING a < 1000 TO u1, u2\n"
+        assert instance.query("SHOW CREATE ROW POLICY p ON mydb.mytable") == "CREATE ROW POLICY p ON mydb.mytable FOR SELECT USING a < 1000 TO u1, u2\n"
         assert instance.query("SHOW CREATE QUOTA q") == "CREATE QUOTA q KEYED BY \\'none\\' FOR INTERVAL 1 HOUR MAX QUERIES = 100 TO ALL EXCEPT rx\n"
         assert instance.query("SHOW GRANTS FOR u1") == ""
         assert instance.query("SHOW GRANTS FOR u2") == "GRANT rx TO u2\n"

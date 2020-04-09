@@ -2,7 +2,7 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-instance = cluster.add_instance('instance')
+instance = cluster.add_instance('instance', config_dir="configs")
 
 
 @pytest.fixture(scope="module", autouse=True)
