@@ -25,11 +25,16 @@ Context removeUserRestrictionsFromSettings(const Context & context, const Settin
     new_settings.max_memory_usage_for_user = 0;
     /// This setting is really not for user and should not be sent to remote server.
     new_settings.max_memory_usage_for_all_queries = 0;
+    /** This is validated and enforced on executor server and doesn't make sense to be sent to leafs.
+      * If sent, it precludes using a readonly>0 profile on remote server.
+      */
+    new_settings.readonly = 0;
 
     /// Set as unchanged to avoid sending to remote server.
     new_settings.max_concurrent_queries_for_user.changed = false;
     new_settings.max_memory_usage_for_user.changed = false;
     new_settings.max_memory_usage_for_all_queries.changed = false;
+    new_settings.readonly.changed = false;
 
     if (settings.force_optimize_skip_unused_shards_no_nested)
     {
