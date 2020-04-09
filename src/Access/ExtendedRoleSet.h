@@ -32,9 +32,9 @@ struct ExtendedRoleSet
 
     /// The constructor from AST requires the AccessControlManager if `ast.id_mode == false`.
     ExtendedRoleSet(const ASTExtendedRoleSet & ast);
-    ExtendedRoleSet(const ASTExtendedRoleSet & ast, const UUID & current_user_id);
+    ExtendedRoleSet(const ASTExtendedRoleSet & ast, const std::optional<UUID> & current_user_id);
     ExtendedRoleSet(const ASTExtendedRoleSet & ast, const AccessControlManager & manager);
-    ExtendedRoleSet(const ASTExtendedRoleSet & ast, const AccessControlManager & manager, const UUID & current_user_id);
+    ExtendedRoleSet(const ASTExtendedRoleSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id);
 
     std::shared_ptr<ASTExtendedRoleSet> toAST() const;
     String toString() const;
@@ -69,7 +69,7 @@ struct ExtendedRoleSet
     boost::container::flat_set<UUID> except_ids;
 
 private:
-    void init(const ASTExtendedRoleSet & ast, const AccessControlManager * manager = nullptr, const UUID * current_user_id = nullptr);
+    void init(const ASTExtendedRoleSet & ast, const AccessControlManager * manager = nullptr, const std::optional<UUID> & current_user_id = {});
 };
 
 }

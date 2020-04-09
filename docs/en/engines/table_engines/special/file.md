@@ -14,7 +14,7 @@ Usage examples:
 -   Convert data from one format to another.
 -   Updating data in ClickHouse via editing a file on a disk.
 
-## Usage In Clickhouse Server {#usage-in-clickhouse-server}
+## Usage In ClickHouse Server {#usage-in-clickhouse-server}
 
 ``` sql
 File(Format)
@@ -65,7 +65,7 @@ SELECT * FROM file_engine_table
 └──────┴───────┘
 ```
 
-## Usage In Clickhouse-local {#usage-in-clickhouse-local}
+## Usage In ClickHouse-local {#usage-in-clickhouse-local}
 
 In [clickhouse-local](../../../operations/utilities/clickhouse-local.md) File engine accepts file path in addition to `Format`. Default input/output streams can be specified using numeric or human-readable names like `0` or `stdin`, `1` or `stdout`.
 **Example:**

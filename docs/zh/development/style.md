@@ -1,3 +1,4 @@
+
 # 如何编写 C++ 代码 {#ru-he-bian-xie-c-dai-ma}
 
 ## 一般建议 {#yi-ban-jian-yi}
@@ -200,7 +201,7 @@ std::cerr << static_cast<int>(c) << std::endl;
 for (Names::const_iterator it = column_names.begin(); it != column_names.end(); ++it)
 ```
 
-## Comments {#comments}
+## 评论 {#comments}
 
 **1.** 请务必为所有非常重要的代码部分添加注释。
 
@@ -297,7 +298,7 @@ void executeQuery(
 /// for
 ```
 
-## Names {#names}
+## 姓名 {#names}
 
 **1.** 在变量和类成员的名称中使用带下划线的小写字母。
 
@@ -623,7 +624,7 @@ Loader() {}
 
 **18.** 编码。
 
-在所有情况下使用 UTF-8 编码。使用 `std::string` and `char *`。不要使用 `std::wstring` 和 `wchar_t`。
+在所有情况下使用 UTF-8 编码。使用 `std::string` 和 `char *`。不要使用 `std::wstring` 和 `wchar_t`。
 
 **19.** 日志。
 

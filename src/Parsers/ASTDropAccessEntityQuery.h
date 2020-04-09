@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Access/RowPolicy.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
@@ -13,7 +14,7 @@ namespace DB
   * DROP [ROW] POLICY [IF EXISTS] name [,...] ON [database.]table [,...]
   * DROP [SETTINGS] PROFILE [IF EXISTS] name [,...]
   */
-class ASTDropAccessEntityQuery : public IAST
+class ASTDropAccessEntityQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     enum class Kind
@@ -34,5 +35,6 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTDropAccessEntityQuery>(clone()); }
 };
 }
