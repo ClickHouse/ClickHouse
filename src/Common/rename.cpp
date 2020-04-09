@@ -1,22 +1,51 @@
 #include <Common/rename.h>
 #include <Common/Exception.h>
+#include <Poco/File.h>
 
-#if defined(_GNU_SOURCE)
+#if defined(linux) || defined(__linux) || defined(__linux__)
 #include <unistd.h>
 #include <sys/syscall.h>
 #include <linux/fs.h>
+#include <sys/utsname.h>
 #endif
 
 namespace DB
 {
 
-#if defined(__NR_renameat2)
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int ATOMIC_RENAME_FAIL;
     extern const int SYSTEM_ERROR;
+    extern const int UNSUPPORTED_METHOD;
+    extern const int FILE_ALREADY_EXISTS;
 }
+
+static bool supportsRenameat2Impl()
+{
+#if defined(__NR_renameat2)
+    /// renameat2 is available in linux since 3.15
+    struct utsname sysinfo;
+    if (uname(&sysinfo))
+        return false;
+    char * point = nullptr;
+    long v_major = strtol(sysinfo.release, &point, 10);
+
+    errno = 0;
+    if (errno || *point != '.' || v_major < 3)
+        return false;
+    if (3 < v_major)
+        return true;
+
+    errno = 0;
+    long v_minor = strtol(point + 1, nullptr, 10);
+    return !errno && 15 <= v_minor;
+#else
+    return false;
+#endif
+}
+
+#if defined(__NR_renameat2)
 
 static void renameat2(const std::string & old_path, const std::string & new_path, int flags)
 {
@@ -39,29 +68,55 @@ static void renameat2(const std::string & old_path, const std::string & new_path
 }
 
 #else
-#define RENAME_NOREPLACE 0
-#define RENAME_EXCHANGE 0
+#define RENAME_NOREPLACE -1
+#define RENAME_EXCHANGE -1
 
-namespace ErrorCodes
-{
-    extern const int UNSUPPORTED_METHOD;
-}
-
-[[noreturn]] static void renameat2(const std::string &, const std::string &, int)
+[[noreturn]]
+static void renameat2(const std::string &, const std::string &, int)
 {
     throw Exception("Compiled without renameat2() support", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
 #endif
 
+static void renameNoReplaceFallback(const std::string & old_path, const std::string & new_path)
+{
+    /// NOTE it's unsafe
+    if (Poco::File{new_path}.exists())
+        throw Exception("File " + new_path + " exists", ErrorCodes::FILE_ALREADY_EXISTS);
+    Poco::File{old_path}.renameTo(new_path);
+}
+
+/// Do not use [[noreturn]] to avoid warnings like "code will never be executed" in other places
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-noreturn"
+static void renameExchangeFallback(const std::string &, const std::string &)
+{
+    throw Exception("System call renameat2() is not supported", ErrorCodes::UNSUPPORTED_METHOD);
+}
+#pragma GCC diagnostic pop
+
+
+bool supportsRenameat2()
+{
+    static bool supports = supportsRenameat2Impl();
+    return supports;
+}
+
 void renameNoReplace(const std::string & old_path, const std::string & new_path)
 {
-    renameat2(old_path, new_path, RENAME_NOREPLACE);
+    if (supportsRenameat2())
+        renameat2(old_path, new_path, RENAME_NOREPLACE);
+    else
+        renameNoReplaceFallback(old_path, new_path);
 }
 
 void renameExchange(const std::string & old_path, const std::string & new_path)
 {
-    renameat2(old_path, new_path, RENAME_EXCHANGE);
+    if (supportsRenameat2())
+        renameat2(old_path, new_path, RENAME_EXCHANGE);
+    else
+        renameExchangeFallback(old_path, new_path);
 }
 
 }
