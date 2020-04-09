@@ -10,11 +10,11 @@ DATA_DIR=${DATA_DIR:=`mktemp -d /tmp/clickhouse.test..XXXXX`}
 DATA_DIR_PATTERN=${DATA_DIR_PATTERN:=/tmp/clickhouse} # path from config file, will be replaced to temporary
 LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
 export CLICKHOUSE_BINARY_NAME=${CLICKHOUSE_BINARY_NAME:="clickhouse"}
-( [ -x "$ROOT_DIR/dbms/programs/${CLICKHOUSE_BINARY_NAME}-server" ] || [ -x "$ROOT_DIR/dbms/programs/${CLICKHOUSE_BINARY_NAME}" ] ) && BUILD_DIR=${BUILD_DIR:=$ROOT_DIR} # Build without separate build dir
+( [ -x "$ROOT_DIR/programs/${CLICKHOUSE_BINARY_NAME}-server" ] || [ -x "$ROOT_DIR/programs/${CLICKHOUSE_BINARY_NAME}" ] ) && BUILD_DIR=${BUILD_DIR:=$ROOT_DIR} # Build without separate build dir
 [ -d "$ROOT_DIR/build${BUILD_TYPE}" ] && BUILD_DIR=${BUILD_DIR:=$ROOT_DIR/build${BUILD_TYPE}}
 BUILD_DIR=${BUILD_DIR:=$ROOT_DIR}
 [ -x ${CLICKHOUSE_BINARY_NAME}-server" ] && [ -x ${CLICKHOUSE_BINARY_NAME}-client" ] && BIN_DIR= # Allow run in /usr/bin
-( [ -x "$BUILD_DIR/dbms/programs/${CLICKHOUSE_BINARY_NAME}" ] || [ -x "$BUILD_DIR/dbms/programs/${CLICKHOUSE_BINARY_NAME}-server" ] ) && BIN_DIR=${BIN_DIR:=$BUILD_DIR/dbms/programs/}
+( [ -x "$BUILD_DIR/programs/${CLICKHOUSE_BINARY_NAME}" ] || [ -x "$BUILD_DIR/programs/${CLICKHOUSE_BINARY_NAME}-server" ] ) && BIN_DIR=${BIN_DIR:=$BUILD_DIR/programs/}
 [ -x "$BIN_DIR/${CLICKHOUSE_BINARY_NAME}-server" ] && CLICKHOUSE_SERVER=${CLICKHOUSE_SERVER:=$BIN_DIR/${CLICKHOUSE_BINARY_NAME}-server}
 [ -x "$BIN_DIR/${CLICKHOUSE_BINARY_NAME}" ] && CLICKHOUSE_SERVER=${CLICKHOUSE_SERVER:=$BIN_DIR/${CLICKHOUSE_BINARY_NAME} server}
 [ -x "$BIN_DIR/${CLICKHOUSE_BINARY_NAME}-client" ] && CLICKHOUSE_CLIENT=${CLICKHOUSE_CLIENT:=$BIN_DIR/${CLICKHOUSE_BINARY_NAME}-client}
@@ -91,7 +91,7 @@ fi
 
 VERSION=`$CLICKHOUSE_CLIENT --version-clean`
 # If run from compile dir - use in-place compile binary and headers
-[ -n "$BIN_DIR" ] && INTERNAL_COMPILER_PARAMS="--compiler_executable_root=${INTERNAL_COMPILER_BIN_ROOT:=$BUILD_DIR/dbms/programs/} --compiler_headers=$BUILD_DIR/dbms/programs/clang/headers/$VERSION/ --compiler_headers_root=$BUILD_DIR/dbms/programs/clang/headers/$VERSION/"
+[ -n "$BIN_DIR" ] && INTERNAL_COMPILER_PARAMS="--compiler_executable_root=${INTERNAL_COMPILER_BIN_ROOT:=$BUILD_DIR/programs/} --compiler_headers=$BUILD_DIR/programs/clang/headers/$VERSION/ --compiler_headers_root=$BUILD_DIR/programs/clang/headers/$VERSION/"
 
 $GDB $CLICKHOUSE_SERVER --config-file=$CLICKHOUSE_CONFIG --log=$CLICKHOUSE_LOG $TEST_SERVER_PARAMS -- \
     --http_port=$CLICKHOUSE_PORT_HTTP \

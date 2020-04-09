@@ -24,7 +24,7 @@ class CStringsHolder;
 
 /// Allows loading dictionaries from dynamic libraries (.so)
 /// Experimental version
-/// Example: dbms/tests/external_dictionaries/dictionary_library/dictionary_library.cpp
+/// Example: tests/external_dictionaries/dictionary_library/dictionary_library.cpp
 class LibraryDictionarySource final : public IDictionarySource
 {
 public:

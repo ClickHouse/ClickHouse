@@ -2,9 +2,9 @@
 
 # Get all server logs
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="trace"
-#export CLICKHOUSE_BINARY='../../../../build-vscode/Debug/dbms/programs/clickhouse'
+#export CLICKHOUSE_BINARY='../../../../build-vscode/Debug/programs/clickhouse'
 #export CLICKHOUSE_PORT_TCP=59000
-#export CLICKHOUSE_CLIENT_BINARY='../../../../cmake-build-debug/dbms/programs/clickhouse client'
+#export CLICKHOUSE_CLIENT_BINARY='../../../../cmake-build-debug/programs/clickhouse client'
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . $CURDIR/../shell_config.sh

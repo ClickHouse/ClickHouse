@@ -52,7 +52,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--configs-dir",
-        default=os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", os.path.join(DEFAULT_CLICKHOUSE_ROOT, "dbms/programs/server")),
+        default=os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", os.path.join(DEFAULT_CLICKHOUSE_ROOT, "programs/server")),
         help="Path to clickhouse configs directory")
 
     parser.add_argument(
