@@ -292,7 +292,7 @@ inline itype rotl(itype value, bitcount_t rot)
 {
     constexpr bitcount_t bits = sizeof(itype) * 8;
     constexpr bitcount_t mask = bits - 1;
-#if PCG_USE_ZEROCHECK_ROTATE_IDIOM
+#if defined(PCG_USE_ZEROCHECK_ROTATE_IDIOM)
     return rot ? (value << rot) | (value >> (bits - rot)) : value;
 #else
     return (value << rot) | (value >> ((- rot) & mask));
@@ -304,7 +304,7 @@ inline itype rotr(itype value, bitcount_t rot)
 {
     constexpr bitcount_t bits = sizeof(itype) * 8;
     constexpr bitcount_t mask = bits - 1;
-#if PCG_USE_ZEROCHECK_ROTATE_IDIOM
+#if defined(PCG_USE_ZEROCHECK_ROTATE_IDIOM)
     return rot ? (value >> rot) | (value << (bits - rot)) : value;
 #else
     return (value >> rot) | (value << ((- rot) & mask));
@@ -318,7 +318,7 @@ inline itype rotr(itype value, bitcount_t rot)
  *
  * These overloads will be preferred over the general template code above.
  */
-#if PCG_USE_INLINE_ASM && __GNUC__ && (__x86_64__  || __i386__)
+#if defined(PCG_USE_INLINE_ASM) && __GNUC__ && (__x86_64__  || __i386__)
 
 inline uint8_t rotr(uint8_t value, bitcount_t rot)
 {
@@ -600,7 +600,7 @@ std::ostream& operator<<(std::ostream& out, printable_typename<T>) {
 #ifdef __GNUC__
     int status;
     char* pretty_name =
-        abi::__cxa_demangle(implementation_typename, NULL, NULL, &status);
+        abi::__cxa_demangle(implementation_typename, nullptr, nullptr, &status);
     if (status == 0)
         out << pretty_name;
     free(static_cast<void*>(pretty_name));

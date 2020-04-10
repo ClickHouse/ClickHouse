@@ -4,8 +4,9 @@ endif ()
 
 add_subdirectory (cityhash)
 add_subdirectory (common)
-add_subdirectory (loggers)
 add_subdirectory (daemon)
+add_subdirectory (loggers)
+add_subdirectory (pcg-random)
 
 if (USE_MYSQL)
     add_subdirectory (mysqlxx)
