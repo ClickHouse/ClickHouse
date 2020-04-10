@@ -93,7 +93,8 @@ struct ZooKeeperRequest;
 class ZooKeeper : public IKeeper
 {
 public:
-    struct Node {
+    struct Node
+    {
         Poco::Net::SocketAddress address;
         bool secure;
     };

@@ -72,9 +72,8 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
             {
                 bool secure = bool(startsWith(host_string, "secure://"));
 
-                if (secure) {
+                if (secure)
                     host_string.erase(0, strlen("secure://"));
-                }
 
                 nodes.emplace_back(Coordination::ZooKeeper::Node{Poco::Net::SocketAddress{host_string}, secure});
             }
