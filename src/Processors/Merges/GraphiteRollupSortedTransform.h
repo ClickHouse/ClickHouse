@@ -7,7 +7,6 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
-#include <Common/OptimizedRegularExpression.h>
 #include <Common/AlignedBuffer.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>

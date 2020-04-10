@@ -1,7 +1,14 @@
 #pragma once
+#include <Common/OptimizedRegularExpression.h>
 
 namespace DB
 {
+
+class IAggregateFunction;
+using AggregateFunctionPtr = std::shared_ptr<IAggregateFunction>;
+
+}
+
 /** Intended for implementation of "rollup" - aggregation (rounding) of older data
   *  for a table with Graphite data (Graphite is the system for time series monitoring).
   *
@@ -87,8 +94,9 @@ namespace DB
   *     </default>
   * </graphite_rollup>
   */
-namespace Graphite
+namespace DB::Graphite
 {
+
 struct Retention
 {
     UInt32 age;
@@ -121,6 +129,5 @@ struct Params
 };
 
 using RollupRule = std::pair<const RetentionPattern *, const AggregationPattern *>;
-}
 
 }
