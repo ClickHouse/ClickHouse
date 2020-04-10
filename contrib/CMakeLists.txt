@@ -29,10 +29,6 @@ endif ()
 
 add_subdirectory (ryu-cmake)
 
-if (USE_INTERNAL_CITYHASH_LIBRARY)
-    add_subdirectory (cityhash102)
-endif ()
-
 if (USE_INTERNAL_FARMHASH_LIBRARY)
     add_subdirectory (libfarmhash)
 endif ()
