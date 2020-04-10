@@ -301,7 +301,8 @@ def write_redirect_html(out_path, to_url):
     except OSError:
         pass
     with open(out_path, 'w') as f:
-        f.write(f'''<!DOCTYPE HTML>
+        f.write(f'''<!-- Redirect: {to_url} -->
+<!DOCTYPE HTML>
 <html lang="en-US">
     <head>
         <meta charset="UTF-8">
