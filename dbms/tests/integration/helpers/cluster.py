@@ -407,6 +407,13 @@ class ClickHouseCluster:
             instance.ip_address = None
             instance.client = None
 
+    def pause_container(self, instance_name):
+        subprocess_check_call(self.base_cmd + ['pause', instance_name])
+    #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGSTOP', instance_name])
+
+    def unpause_container(self, instance_name):
+        subprocess_check_call(self.base_cmd + ['unpause', instance_name])
+    #    subprocess_check_call(self.base_cmd + ['kill', '-s SIGCONT', instance_name])
 
     def open_bash_shell(self, instance_name):
         os.system(' '.join(self.base_cmd + ['exec', instance_name, '/bin/bash']))
