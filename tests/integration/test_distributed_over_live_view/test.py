@@ -1,6 +1,3 @@
-# This test is a subset of the 01223_dist_on_dist.
-# (just in case, with real separate instances).
-
 from __future__ import print_function
 
 import sys
