@@ -87,7 +87,10 @@ void NO_INLINE Set::insertFromBlockImplCase(
         {
             if ((*null_map)[i])
             {
-                has_null = true;
+                if (transform_null_in)
+                {
+                    has_null = true;
+                }
 
                 if constexpr (build_filter)
                 {
@@ -180,7 +183,7 @@ bool Set::insertFromBlock(const Block & block)
 
     /// We will insert to the Set only keys, where all components are not NULL.
     ConstNullMapPtr null_map{};
-    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map);
+    ColumnPtr null_map_holder = extractNestedColumnsAndNullMap(key_columns, null_map, transform_null_in);
 
     /// Filter to extract distinct values from the block.
     ColumnUInt8::MutablePtr filter;
