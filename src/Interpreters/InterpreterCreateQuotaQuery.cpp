@@ -34,7 +34,7 @@ void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, 
             auto duration = query_limits.duration;
 
             auto it = boost::range::find_if(quota_all_limits, [&](const Quota::Limits & x) { return x.duration == duration; });
-            if (query_limits.unset_tracking)
+            if (query_limits.drop)
             {
                 if (it != quota_all_limits.end())
                     quota_all_limits.erase(it);
@@ -59,6 +59,8 @@ void updateQuotaFromQueryImpl(Quota & quota, const ASTCreateQuotaQuery & query, 
             {
                 if (query_limits.max[resource_type])
                     quota_limits.max[resource_type] = *query_limits.max[resource_type];
+                else
+                    quota_limits.max[resource_type] = Quota::UNLIMITED;
             }
         }
 

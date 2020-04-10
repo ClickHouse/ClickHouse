@@ -8,7 +8,7 @@ import yaml
 
 import util
 
-lang = 'zh'
+lang = 'ru'
 base_dir = os.path.join(os.path.dirname(__file__), '..')
 en_dir = os.path.join(base_dir, 'en')
 docs_dir = os.path.join(base_dir, lang)
