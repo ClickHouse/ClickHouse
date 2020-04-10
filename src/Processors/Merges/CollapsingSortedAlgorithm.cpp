@@ -128,7 +128,7 @@ IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
 
         /// if there are enough rows and the last one is calculated completely
         if (key_differs && merged_data.hasEnoughRows())
-            Status(merged_data.pull());
+            return Status(merged_data.pull());
 
         if (key_differs)
         {
