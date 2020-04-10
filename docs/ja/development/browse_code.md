@@ -7,7 +7,7 @@ toc_title: "ClickHouse\u306E\u30BD\u30FC\u30B9\u30B3\u30FC\u30C9\u3092\u53C2\u71
 
 # ClickHouseのソースコードを参照 {#browse-clickhouse-source-code}
 
-を使用することができ **Woboq** オンラインのコードブラウザをご利用 [ここに](https://clickhouse-test-reports.s3.yandex.net/codebrowser/html_report///ClickHouse/dbms/index.html). このコードナビゲーションや意味のハイライト表示、検索インデックス. コードのスナップショットは随時更新中です。
+を使用することができ **Woboq** オンラインのコードブラウザをご利用 [ここに](https://clickhouse.tech/codebrowser/html_report///ClickHouse/dbms/index.html). このコードナビゲーションや意味のハイライト表示、検索インデックス. コードのスナップショットは随時更新中です。
 
 また、ソースを閲覧することもできます [GitHub](https://github.com/ClickHouse/ClickHouse) いつものように
 
