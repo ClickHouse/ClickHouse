@@ -13,7 +13,8 @@ namespace ErrorCodes
     extern const int UNEXPECTED_AST_STRUCTURE;
 }
 
-bool isConstantField(const Field & field) {
+bool isConstantField(const Field & field)
+{
     return field.getType() == Field::Types::Int64 ||
            field.getType() == Field::Types::UInt64 ||
            field.getType() == Field::Types::Int128 ||
