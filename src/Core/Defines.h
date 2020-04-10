@@ -91,3 +91,7 @@
 #   define ASAN_UNPOISON_MEMORY_REGION(a, b)
 #   define ASAN_POISON_MEMORY_REGION(a, b)
 #endif
+
+/// Actually, there may be multiple acquisitions of different locks for a given table within one query.
+/// Check with IStorage class for the list of possible locks
+#define DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC 120
