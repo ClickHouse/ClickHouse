@@ -204,7 +204,8 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     bool aggressive,
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
-    String * out_disable_reason)
+    String * out_disable_reason,
+    const AllowedSingleMergePredicate & single_merge)
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
     const auto data_settings = data.getSettings();
@@ -225,6 +226,9 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     bool has_part_with_expired_ttl = false;
     for (const MergeTreeData::DataPartPtr & part : data_parts)
     {
+        if (!single_merge(part, nullptr))
+            continue;
+
         const String & partition_id = part->info.partition_id;
         if (!prev_partition_id || partition_id != *prev_partition_id || (prev_part && !can_merge_callback(*prev_part, part, nullptr)))
         {

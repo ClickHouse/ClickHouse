@@ -1781,6 +1781,40 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     return true;
 }
 
+bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const
+{
+    LOG_FATAL(&Poco::Logger::get("ReplicatedMergeTreeMergePredicate::operator()"), "begin");
+
+    if (part->name == inprogress_quorum_part)
+    {
+        LOG_FATAL(&Poco::Logger::get("ReplicatedMergeTreeMergePredicate"), "operator()");
+        if (out_reason)
+            *out_reason = "Quorum insert for part " + part->name + " is currently in progress";
+        return false;
+    }
+
+    if (prev_virtual_parts.getContainingPart(part->info).empty())
+    {
+        if (out_reason)
+            *out_reason = "Entry for part " + part->name + " hasn't been read from the replication log yet";
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(queue.state_mutex);
+
+    /// We look for containing parts in queue.virtual_parts (and not in prev_virtual_parts) because queue.virtual_parts is newer
+    /// and it is guaranteed that it will contain all merges assigned before this object is constructed.
+    String containing_part = queue.virtual_parts.getContainingPart(part->info);
+    if (containing_part != part->name)
+    {
+        if (out_reason)
+            *out_reason = "Part " + part->name >+ " has already been assigned a merge into " + containing_part;
+        return false;
+    }
+
+    return true;
+}
+
 
 std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesiredMutationVersion(const MergeTreeData::DataPartPtr & part) const
 {

@@ -412,6 +412,8 @@ public:
         const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
         String * out_reason = nullptr) const;
 
+    bool canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const;
+
     /// Return nonempty optional of desired mutation version and alter version.
     /// If we have no alter (modify/drop) mutations in mutations queue, than we return biggest possible
     /// mutation version (and -1 as alter version). In other case, we return biggest mutation version with

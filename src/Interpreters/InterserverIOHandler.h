@@ -34,7 +34,7 @@ class InterserverIOEndpoint
 public:
     virtual std::string getId(const std::string & path) const = 0;
     virtual void processQuery(const Poco::Net::HTMLForm & params, ReadBuffer & body, WriteBuffer & out, Poco::Net::HTTPServerResponse & response) = 0;
-    virtual ~InterserverIOEndpoint() {}
+    virtual ~InterserverIOEndpoint() = default;
 
     /// You need to stop the data transfer if blocker is activated.
     ActionBlocker blocker;
@@ -53,8 +53,6 @@ public:
     void addEndpoint(const String & name, InterserverIOEndpointPtr endpoint)
     {
         std::lock_guard lock(mutex);
-        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), "anime addEndpoint()  " << name);
-        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), StackTrace().toString());
         bool inserted = endpoint_map.try_emplace(name, std::move(endpoint)).second;
         if (!inserted)
             throw Exception("Duplicate interserver IO endpoint: " + name, ErrorCodes::DUPLICATE_INTERSERVER_IO_ENDPOINT);
@@ -63,8 +61,6 @@ public:
     bool removeEndpointIfExists(const String & name)
     {
         std::lock_guard lock(mutex);
-        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), "anime removeEndpointIfExists()  " << name);
-        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), StackTrace().toString());
         return endpoint_map.erase(name);
     }
 
@@ -72,8 +68,6 @@ public:
     try
     {
         std::lock_guard lock(mutex);
-        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), "anime getEndpoint()  "  << name);
-        LOG_FATAL(&Poco::Logger::get("InterserverIOHandler"), StackTrace().toString());
         return endpoint_map.at(name);
     }
     catch (...)
