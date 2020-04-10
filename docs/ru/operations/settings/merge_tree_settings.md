@@ -1,6 +1,6 @@
 # Настройки MergeTree таблиц {#merge-tree-settings}
 
-Значения настроек merge-tree для (для всех MergeTree таблиц) можно посмотреть в таблице `system.merge_tree_settings`, их можно переопределить в `config.xml` в секции `merge_tree`, или задать в секции `SETTINGS` у каждой таблицы.
+Значения настроек merge-tree (для всех MergeTree таблиц) можно посмотреть в таблице `system.merge_tree_settings`, их можно переопределить в `config.xml` в секции `merge_tree`, или задать в секции `SETTINGS` у каждой таблицы.
 
 Пример переопределения в `config.xml`:
 ```text
@@ -20,7 +20,7 @@ ORDER BY tuple()
 SETTINGS max_suspicious_broken_parts = 500;
 ```
 
-Пример изменения настроек у таблицы командой `ALTER TABLE ... MODIFY SETTING`:
+Пример изменения настроек у конкретной таблицы командой `ALTER TABLE ... MODIFY SETTING`:
 ```sql
 ALTER TABLE foo
     MODIFY SETTING max_suspicious_broken_parts = 100;
