@@ -8,11 +8,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 MergingSortedTransform::MergingSortedTransform(
     const Block & header,
     size_t num_inputs,
@@ -24,9 +19,14 @@ MergingSortedTransform::MergingSortedTransform(
     bool use_average_block_sizes,
     bool have_all_inputs_)
     : IMergingTransform2(
-            MergingSortedAlgorithm(header, num_inputs, std::move(description_), max_block_size,
-                    limit_, out_row_sources_buf_, use_average_block_sizes),
-            num_inputs, header, header, have_all_inputs_)
+        num_inputs, header, header, have_all_inputs_,
+        header,
+        num_inputs,
+        std::move(description_),
+        max_block_size,
+        limit_,
+        out_row_sources_buf_,
+        use_average_block_sizes)
     , quiet(quiet_)
 {
 }

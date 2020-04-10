@@ -5,6 +5,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 MergingSortedAlgorithm::MergingSortedAlgorithm(
     const Block & header,
     size_t num_inputs,

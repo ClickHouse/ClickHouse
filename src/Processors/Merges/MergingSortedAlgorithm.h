@@ -19,8 +19,6 @@ public:
         WriteBuffer * out_row_sources_buf_,
         bool use_average_block_sizes);
 
-    MergingSortedAlgorithm(MergingSortedAlgorithm && other) = default;
-
     void addInput();
 
     void initialize(Chunks chunks) override;

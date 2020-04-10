@@ -24,8 +24,6 @@ public:
         bool use_average_block_sizes,
         Logger * log_);
 
-    CollapsingSortedAlgorithm(CollapsingSortedAlgorithm &&) = default;
-
     Status merge() override;
 
 private:
