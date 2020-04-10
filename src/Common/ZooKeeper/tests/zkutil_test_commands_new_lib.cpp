@@ -29,12 +29,12 @@ try
     splitInto<','>(hosts_strings, hosts_arg);
     ZooKeeper::Nodes nodes;
     nodes.reserve(hosts_strings.size());
-    for (auto & host_string : hosts_strings) {
+    for (auto & host_string : hosts_strings)
+    {
         bool secure = bool(startsWith(host_string, "secure://"));
 
-        if (secure) {
+        if (secure)
             host_string.erase(0, strlen("secure://"));
-        }
 
         nodes.emplace_back(ZooKeeper::Node{Poco::Net::SocketAddress{host_string},secure});
     }
