@@ -78,7 +78,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
     create.uuid = UUIDHelpers::Nil;
 
     std::stringstream stream;
-    formatAST(*create_query, stream, false, true);
+    formatAST(*create_query, stream, false, false);
     String res = stream.str();
 
     MutableColumnPtr column = ColumnString::create();

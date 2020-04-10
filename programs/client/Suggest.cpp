@@ -67,16 +67,19 @@ void Suggest::load(const ConnectionParameters & connection_parameters, size_t su
 Suggest::Suggest()
 {
     /// Keywords may be not up to date with ClickHouse parser.
-    words = {"CREATE",       "DATABASE", "IF",     "NOT",       "EXISTS",  "TEMPORARY",   "TABLE",    "ON",          "CLUSTER", "DEFAULT",
-             "MATERIALIZED", "ALIAS",    "ENGINE", "AS",        "VIEW",    "POPULATE",    "SETTINGS", "ATTACH",      "DETACH",  "DROP",
-             "RENAME",       "TO",       "ALTER",  "ADD",       "MODIFY",  "CLEAR",       "COLUMN",   "AFTER",       "COPY",    "PROJECT",
-             "PRIMARY",      "KEY",      "CHECK",  "PARTITION", "PART",    "FREEZE",      "FETCH",    "FROM",        "SHOW",    "INTO",
-             "OUTFILE",      "FORMAT",   "TABLES", "DATABASES", "LIKE",    "PROCESSLIST", "CASE",     "WHEN",        "THEN",    "ELSE",
-             "END",          "DESCRIBE", "DESC",   "USE",       "SET",     "OPTIMIZE",    "FINAL",    "DEDUPLICATE", "INSERT",  "VALUES",
-             "SELECT",       "DISTINCT", "SAMPLE", "ARRAY",     "JOIN",    "GLOBAL",      "LOCAL",    "ANY",         "ALL",     "INNER",
-             "LEFT",         "RIGHT",    "FULL",   "OUTER",     "CROSS",   "USING",       "PREWHERE", "WHERE",       "GROUP",   "BY",
-             "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE", "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
-             "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",   "TEST",        "BETWEEN",  "TRUNCATE"};
+    words = {"CREATE",       "DATABASE", "IF",     "NOT",       "EXISTS",   "TEMPORARY",   "TABLE",    "ON",          "CLUSTER", "DEFAULT",
+             "MATERIALIZED", "ALIAS",    "ENGINE", "AS",        "VIEW",     "POPULATE",    "SETTINGS", "ATTACH",      "DETACH",  "DROP",
+             "RENAME",       "TO",       "ALTER",  "ADD",       "MODIFY",   "CLEAR",       "COLUMN",   "AFTER",       "COPY",    "PROJECT",
+             "PRIMARY",      "KEY",      "CHECK",  "PARTITION", "PART",     "FREEZE",      "FETCH",    "FROM",        "SHOW",    "INTO",
+             "OUTFILE",      "FORMAT",   "TABLES", "DATABASES", "LIKE",     "PROCESSLIST", "CASE",     "WHEN",        "THEN",    "ELSE",
+             "END",          "DESCRIBE", "DESC",   "USE",       "SET",      "OPTIMIZE",    "FINAL",    "DEDUPLICATE", "INSERT",  "VALUES",
+             "SELECT",       "DISTINCT", "SAMPLE", "ARRAY",     "JOIN",     "GLOBAL",      "LOCAL",    "ANY",         "ALL",     "INNER",
+             "LEFT",         "RIGHT",    "FULL",   "OUTER",     "CROSS",    "USING",       "PREWHERE", "WHERE",       "GROUP",   "BY",
+             "WITH",         "TOTALS",   "HAVING", "ORDER",     "COLLATE",  "LIMIT",       "UNION",    "AND",         "OR",      "ASC",
+             "IN",           "KILL",     "QUERY",  "SYNC",      "ASYNC",    "TEST",        "BETWEEN",  "TRUNCATE",    "USER",    "ROLE",
+             "PROFILE",      "QUOTA",    "POLICY", "ROW",       "GRANT",    "REVOKE",      "OPTION",   "ADMIN",       "EXCEPT",  "REPLACE",
+             "IDENTIFIED",   "HOST",     "NAME",   "READONLY",  "WRITABLE", "PERMISSIVE",  "FOR",      "RESTRICTIVE", "FOR",     "RANDOMIZED",
+             "INTERVAL",     "LIMITS",   "ONLY",   "TRACKING",  "IP",       "REGEXP"};
 }
 
 void Suggest::loadImpl(Connection & connection, const ConnectionTimeouts & timeouts, size_t suggestion_limit)
