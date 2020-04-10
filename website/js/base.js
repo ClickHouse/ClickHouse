@@ -38,6 +38,16 @@
             window.history.replaceState('', document.title, dst);
         }
     });
+
+    var top_nav = $('#top-nav.sticky-top');
+    if (window.location.hash.length > 1 && top_nav.length) {
+        var offset = $(window.location.hash).offset().top - top_nav.height() * 1.5;
+        $('html, body').animate({
+            scrollTop: offset
+        }, 70);
+    }
+
+
     (function (d, w, c) {
         (w[c] = w[c] || []).push(function() {
             try {
