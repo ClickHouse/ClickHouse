@@ -4,11 +4,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int LOGICAL_ERROR;
-}
-
 ReplacingSortedAlgorithm::ReplacingSortedAlgorithm(
         const Block & header, size_t num_inputs,
         SortDescription description_, const String & version_column,
