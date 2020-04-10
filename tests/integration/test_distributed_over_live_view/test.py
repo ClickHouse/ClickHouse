@@ -67,6 +67,134 @@ def started_cluster():
 @pytest.mark.parametrize("node", NODES.values()[:1])
 @pytest.mark.parametrize("source", ["lv_over_distributed_table"])
 class TestLiveViewOverDistributedSuite:
+    def test_distributed_over_live_view_order_by_node(self, started_cluster, node, source):
+        log = sys.stdout
+        node0, node1 = NODES.values()
+
+        select_query = "SELECT * FROM distributed_over_lv ORDER BY node, key FORMAT CSV"
+
+        with client(name="client1> ", log=log, command=" ".join(node0.client.command)) as client1, \
+                client(name="client2> ", log=log, command=" ".join(node1.client.command)) as client2:
+            client1.expect(prompt)
+            client2.expect(prompt)
+
+            client1.send("DROP TABLE IF EXISTS distributed_over_lv")
+            client1.expect(prompt)
+            client1.send("CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
+            client1.expect(prompt)
+
+            client1.send(select_query)
+            client1.expect('"node1",0,0\r\n.*"node1",1,1\r\n.*"node2",0,10\r\n.*"node2",1,11\r\n')
+            client1.expect(prompt)
+
+            client1.send("INSERT INTO distributed_table VALUES ('node1', 1, 3), ('node1', 2, 3)")
+            client1.expect(prompt)
+            client2.send("INSERT INTO distributed_table VALUES ('node1', 3, 3)")
+            client2.expect(prompt)
+            time.sleep(2)
+            client1.send(select_query)
+            client1.expect('"node1",0,0\r\n.*"node1",1,1\r\n.*"node1",1,3\r\n.*"node1",2,3\r\n.*"node1",3,3\r\n.*"node2",0,10\r\n.*"node2",1,11\r\n')
+            client1.expect(prompt)
+
+    def test_distributed_over_live_view_order_by_key(self, started_cluster, node, source):
+        log = sys.stdout
+        node0, node1 = NODES.values()
+
+        select_query = "SELECT * FROM distributed_over_lv ORDER BY key, node FORMAT CSV"
+
+        with client(name="client1> ", log=log, command=" ".join(node0.client.command)) as client1, \
+                client(name="client2> ", log=log, command=" ".join(node1.client.command)) as client2:
+            client1.expect(prompt)
+            client2.expect(prompt)
+
+            client1.send("DROP TABLE IF EXISTS distributed_over_lv")
+            client1.expect(prompt)
+            client1.send("CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
+            client1.expect(prompt)
+
+            client1.send(select_query)
+            client1.expect('"node1",0,0\r\n"node2",0,10\r\n"node1",1,1\r\n.*"node2",1,11\r\n')
+            client1.expect(prompt)
+
+            client1.send("INSERT INTO distributed_table VALUES ('node1', 1, 3), ('node1', 2, 3)")
+            client1.expect(prompt)
+            client2.send("INSERT INTO distributed_table VALUES ('node1', 3, 3)")
+            client2.expect(prompt)
+            time.sleep(2)
+            client1.send(select_query)
+            client1.expect('"node1",0,0\r\n.*"node2",0,10.*\r\n"node1",1,1\r\n.*"node1",1,3\r\n.*"node2",1,11\r\n.*"node1",2,3\r\n.*"node1",3,3\r\n')
+            client1.expect(prompt)
+
+    def test_distributed_over_live_view_group_by_node(self, started_cluster, node, source):
+        log = sys.stdout
+        node0, node1 = NODES.values()
+
+        select_query = "SELECT node, SUM(value) FROM distributed_over_lv GROUP BY node ORDER BY node FORMAT CSV"
+
+        with client(name="client1> ", log=log, command=" ".join(node0.client.command)) as client1, \
+                client(name="client2> ", log=log, command=" ".join(node1.client.command)) as client2:
+            client1.expect(prompt)
+            client2.expect(prompt)
+
+            client1.send("DROP TABLE IF EXISTS distributed_over_lv")
+            client1.expect(prompt)
+            client1.send("CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
+            client1.expect(prompt)
+
+            client1.send(select_query)
+            client1.expect('"node1",1\r\n"node2",21\r\n')
+            client1.expect(prompt)
+
+            client2.send("INSERT INTO distributed_table VALUES ('node1', 2, 2)")
+            client2.expect(prompt)
+            time.sleep(2)
+            client1.send(select_query)
+            client1.expect('"node1",3\r\n.*"node2",21\r\n')
+            client1.expect(prompt)
+
+            client1.send("INSERT INTO distributed_table VALUES ('node1', 1, 3), ('node1', 3, 3)")
+            client1.expect(prompt)
+            client2.send("INSERT INTO distributed_table VALUES ('node1', 3, 3)")
+            client2.expect(prompt)
+            time.sleep(2)
+            client1.send(select_query)
+            client1.expect('"node1",12\r\n.*"node2",21\r\n')
+            client1.expect(prompt)
+
+    def test_distributed_over_live_view_group_by_key(self, started_cluster, node, source):
+        log = sys.stdout
+        node0, node1 = NODES.values()
+
+        select_query = "SELECT key, SUM(value) FROM distributed_over_lv GROUP BY key ORDER BY key FORMAT CSV"
+
+        with client(name="client1> ", log=log, command=" ".join(node0.client.command)) as client1, \
+                client(name="client2> ", log=log, command=" ".join(node1.client.command)) as client2:
+            client1.expect(prompt)
+            client2.expect(prompt)
+
+            client1.send("DROP TABLE IF EXISTS distributed_over_lv")
+            client1.expect(prompt)
+            client1.send("CREATE TABLE distributed_over_lv AS lv_over_base_table ENGINE = Distributed(test_cluster, default, lv_over_base_table)")
+            client1.expect(prompt)
+
+            client1.send(select_query)
+            client1.expect("0,10\r\n1,12\r\n")
+            client1.expect(prompt)
+
+            client2.send("INSERT INTO distributed_table VALUES ('node1', 2, 2)")
+            client2.expect(prompt)
+            time.sleep(2)
+            client1.send(select_query)
+            client1.expect("0,10\r\n1,12\r\n2,2\r\n")
+            client1.expect(prompt)
+
+            client2.send("INSERT INTO distributed_table VALUES ('node1', 1, 3), ('node1', 3, 3)")
+            client2.expect(prompt)
+            time.sleep(2)
+            client1.send(select_query)
+            client1.expect("0,10\r\n.*1,15\r\n.*2,2\r\n.*3,3\r\n")
+            client1.expect(prompt)
+
     def test_distributed_over_live_view_sum(self, started_cluster, node, source):
         log = sys.stdout
         node0, node1 = NODES.values()
@@ -87,7 +215,7 @@ class TestLiveViewOverDistributedSuite:
 
             client2.send("INSERT INTO distributed_table VALUES ('node1', 2, 2)")
             client2.expect(prompt)
-            
+
             time.sleep(2)
 
             client1.send("SELECT sum(value) FROM distributed_over_lv")
