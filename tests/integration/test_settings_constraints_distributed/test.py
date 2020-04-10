@@ -8,9 +8,9 @@ from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
-node1 = cluster.add_instance('node1', config_dir="configs")
-node2 = cluster.add_instance('node2', config_dir="configs")
-distributed = cluster.add_instance('distributed', config_dir="configs")
+node1 = cluster.add_instance('node1')
+node2 = cluster.add_instance('node2')
+distributed = cluster.add_instance('distributed', main_configs=["configs/remote_servers.xml"])
 
 
 @pytest.fixture(scope="module")

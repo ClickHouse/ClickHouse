@@ -219,7 +219,20 @@ def build_single_page_version(lang, args, nav, cfg):
                     os.path.join(site_temp, 'single'),
                     single_page_output_path
                 )
-                
+
+                single_page_index_html = os.path.join(single_page_output_path, 'index.html')
+                single_page_content_js = os.path.join(single_page_output_path, 'content.js')
+                with open(single_page_index_html, 'r') as f:
+                    sp_prefix, sp_js, sp_suffix = f.read().split('<!-- BREAK -->')
+                with open(single_page_index_html, 'w') as f:
+                    f.write(sp_prefix)
+                    f.write(sp_suffix)
+                with open(single_page_content_js, 'w') as f:
+                    if args.minify:
+                        import jsmin
+                        sp_js = jsmin.jsmin(sp_js)
+                    f.write(sp_js)
+
                 logging.info(f'Re-building single page for {lang} pdf/test')
                 with util.temp_dir() as test_dir:
                     extra['single_page'] = False
@@ -400,7 +413,7 @@ if __name__ == '__main__':
 
     from build import build
     build(args)
-    
+
     if args.livereload:
         new_args = [arg for arg in sys.argv if not arg.startswith('--livereload')]
         new_args = sys.executable + ' ' + ' '.join(new_args)
