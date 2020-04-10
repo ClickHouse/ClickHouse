@@ -21,7 +21,7 @@ $ sudo apt-get install git cmake python ninja-build
 
 Есть несколько способов сделать это.
 
-### Установка из PPA пакет  {#install-from-a-ppa-package}
+### Установка из PPA пакет {#install-from-a-ppa-package}
 
 ``` bash
 $ sudo apt-get install software-properties-common
