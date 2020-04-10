@@ -51,7 +51,9 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
                 return Status(merged_data.pull());
 
             /// Write the data for the previous primary key.
-            insertRow();
+            if (!selected_row.empty())
+                insertRow();
+
             selected_row.clear();
         }
 
