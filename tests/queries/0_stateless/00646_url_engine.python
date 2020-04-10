@@ -2,6 +2,7 @@
 from __future__ import print_function
 import csv
 import sys
+import time
 import tempfile
 import threading
 import os, urllib
@@ -187,6 +188,7 @@ if __name__ == "__main__":
             break
         except Exception as ex:
             exception_text = str(ex)
+            time.sleep(0.1)
 
     if exception_text:
         print("Exception: {}".format(exception_text), file=sys.stderr)
