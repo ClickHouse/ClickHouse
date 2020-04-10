@@ -408,9 +408,10 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
     static const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
     static const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
     static const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
+    static const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
     if (readonly_)
-        merged_access->revoke(write_table_access | table_and_dictionary_ddl | AccessType::SYSTEM | AccessType::KILL_QUERY | AccessType::ACCESS_MANAGEMENT);
+        merged_access->revoke(write_table_access | table_and_dictionary_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY);
 
     if (readonly_ == 1)
     {

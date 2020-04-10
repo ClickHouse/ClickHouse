@@ -12,10 +12,12 @@ class ASTExtendedRoleSet;
 
 /** CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+  *     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   *
   * ALTER SETTINGS PROFILE [IF EXISTS] name
   *     [RENAME TO new_name]
   *     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [READONLY|WRITABLE] | PROFILE 'profile_name'] [,...]
+  *     [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   */
 class ASTCreateSettingsProfileQuery : public IAST, public ASTQueryWithOnCluster
 {
