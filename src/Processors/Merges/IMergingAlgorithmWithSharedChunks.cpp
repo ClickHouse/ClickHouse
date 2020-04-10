@@ -10,8 +10,8 @@ IMergingAlgorithmWithSharedChunks::IMergingAlgorithmWithSharedChunks(
     size_t max_row_refs)
     : description(std::move(description_))
     , chunk_allocator(num_inputs + max_row_refs)
-    , source_chunks(num_inputs)
     , cursors(num_inputs)
+    , source_chunks(num_inputs)
     , out_row_sources_buf(out_row_sources_buf_)
 {
 }
