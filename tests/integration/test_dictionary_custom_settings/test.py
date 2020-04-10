@@ -50,7 +50,7 @@ def test_work(start_cluster):
 
     caught_exception = ''
     try:
-        instance.query("CREATE TABLE source (id UInt64, first String, second String, third String) ENGINE=File(CSVWithNames);")
+        instance.query("CREATE TABLE source (id UInt64, first String, second String, third String) ENGINE=TinyLog;")
         instance.query("INSERT INTO default.source VALUES (1, 'aaa', 'bbb', 'cccc'), (2, 'ddd', 'eee', 'fff')")
         instance.query("SELECT dictGetString('test_clickhouse', 'second', toUInt64(1))")
     except Exception as e:
