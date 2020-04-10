@@ -29,7 +29,7 @@ static bool supportsRenameat2Impl()
     if (uname(&sysinfo))
         return false;
     char * point = nullptr;
-    long v_major = strtol(sysinfo.release, &point, 10);
+    auto v_major = strtol(sysinfo.release, &point, 10);
 
     errno = 0;
     if (errno || *point != '.' || v_major < 3)
@@ -38,7 +38,7 @@ static bool supportsRenameat2Impl()
         return true;
 
     errno = 0;
-    long v_minor = strtol(point + 1, nullptr, 10);
+    auto v_minor = strtol(point + 1, nullptr, 10);
     return !errno && 15 <= v_minor;
 #else
     return false;
