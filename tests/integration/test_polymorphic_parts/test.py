@@ -90,6 +90,8 @@ def test_polymorphic_parts_basics(start_cluster, first_node, second_node):
     first_node.query("SYSTEM STOP MERGES")
     second_node.query("SYSTEM STOP MERGES")
 
+    print(first_node.query("SELECT * FROM system.settings where name='insert_quorum' format Vertical"))
+
     for size in [300, 300, 600]:
         insert_random_data('polymorphic_table', first_node, size)
     second_node.query("SYSTEM SYNC REPLICA polymorphic_table", timeout=20)
