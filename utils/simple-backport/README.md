@@ -2,7 +2,7 @@
 
 Это упрощённый скрипт для бекпортирования. Он определяет, какие пулреквесты ещё не бекпортировали из мастера в указанную ветку. Запускать скрипт нужно из папки, где он лежит, указав ему название ветки. Он предполагает, что ваш апстримный remote называется origin.
 ```
-cd my-clickhouse-repo/simple-backport
+cd my-clickhouse-repo/utils/simple-backport
 git fetch origin
 time GITHUB_TOKEN=<my github token> ./backport.sh 20.1
 ```
