@@ -40,7 +40,45 @@ SELECT count() == 3 FROM null_in WHERE i global not in (1, 3);
 SELECT count() == 3 FROM null_in WHERE i global not in range(4);
 SELECT count() == 3 FROM null_in WHERE s global not in ('1', '3');
 
+DROP TABLE IF EXISTS test_set;
+CREATE TABLE test_set (i Nullable(int)) ENGINE = Set();
+INSERT INTO test_set VALUES (1), (NULL);
+
+SET transform_null_in = 0;
+
+SELECT count() == 1 FROM null_in WHERE i in test_set;
+SELECT count() == 2 FROM null_in WHERE i not in test_set;
+SELECT count() == 1 FROM null_in WHERE i global in test_set;
+SELECT count() == 2 FROM null_in WHERE i global not in test_set;
+
+SET transform_null_in = 1;
+
+SELECT count() == 3 FROM null_in WHERE i in test_set;
+SELECT count() == 2 FROM null_in WHERE i not in test_set;
+SELECT count() == 3 FROM null_in WHERE i global in test_set;
+SELECT count() == 2 FROM null_in WHERE i global not in test_set;
+
+-- Create with transform_null_in
+CREATE TABLE test_set2 (i Nullable(int)) ENGINE = Set();
+INSERT INTO test_set2 VALUES (1), (NULL);
+
+SET transform_null_in = 0;
+
+SELECT count() == 1 FROM null_in WHERE i in test_set2;
+SELECT count() == 2 FROM null_in WHERE i not in test_set2;
+SELECT count() == 1 FROM null_in WHERE i global in test_set2;
+SELECT count() == 2 FROM null_in WHERE i global not in test_set2;
+
+SET transform_null_in = 1;
+
+SELECT count() == 3 FROM null_in WHERE i in test_set2;
+SELECT count() == 2 FROM null_in WHERE i not in test_set2;
+SELECT count() == 3 FROM null_in WHERE i global in test_set2;
+SELECT count() == 2 FROM null_in WHERE i global not in test_set2;
+
+DROP TABLE IF EXISTS test_set;
 DROP TABLE IF EXISTS null_in;
+
 
 DROP TABLE IF EXISTS null_in_subquery;
 CREATE TABLE null_in_subquery (dt DateTime, idx int, i Nullable(UInt64)) ENGINE = MergeTree() PARTITION BY dt ORDER BY idx;
