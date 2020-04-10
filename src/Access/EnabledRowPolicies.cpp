@@ -1,7 +1,5 @@
 #include <Access/EnabledRowPolicies.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTExpressionList.h>
-#include <boost/smart_ptr/make_shared.hpp>
+#include <Parsers/makeASTForLogicalFunction.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 
@@ -35,19 +33,17 @@ ASTPtr EnabledRowPolicies::getCondition(const String & database, const String & 
 
 ASTPtr EnabledRowPolicies::getCondition(const String & database, const String & table_name, ConditionType type, const ASTPtr & extra_condition) const
 {
-    ASTPtr main_condition = getCondition(database, table_name, type);
-    if (!main_condition)
-        return extra_condition;
-    if (!extra_condition)
-        return main_condition;
-    auto function = std::make_shared<ASTFunction>();
-    auto exp_list = std::make_shared<ASTExpressionList>();
-    function->name = "and";
-    function->arguments = exp_list;
-    function->children.push_back(exp_list);
-    exp_list->children.push_back(main_condition);
-    exp_list->children.push_back(extra_condition);
-    return function;
+    ASTPtr condition = getCondition(database, table_name, type);
+    if (condition && extra_condition)
+        condition = makeASTForLogicalAnd({condition, extra_condition});
+    else if (!condition)
+        condition = extra_condition;
+
+    bool value;
+    if (tryGetLiteralBool(condition.get(), value) && value)
+        condition = nullptr;  /// The condition is always true, no need to check it.
+
+    return condition;
 }
 
 

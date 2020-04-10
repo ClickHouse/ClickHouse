@@ -1,6 +1,6 @@
 # MySQL-интерфейс {#mysql-interface}
 
-ClickHouse поддерживает взаимодействие по протоколу MySQL. Данная функция включается настройкой [mysql\_port](../operations/server_settings/settings.md#server_settings-mysql_port) в конфигурационном файле:
+ClickHouse поддерживает взаимодействие по протоколу MySQL. Данная функция включается настройкой [mysql\_port](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-mysql_port) в конфигурационном файле:
 
 ``` xml
 <mysql_port>9004</mysql_port>

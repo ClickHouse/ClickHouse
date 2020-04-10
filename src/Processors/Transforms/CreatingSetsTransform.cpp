@@ -5,7 +5,7 @@
 #include <DataStreams/IBlockOutputStream.h>
 
 #include <Interpreters/Set.h>
-#include <Interpreters/Join.h>
+#include <Interpreters/IJoin.h>
 #include <Storages/IStorage.h>
 
 #include <iomanip>

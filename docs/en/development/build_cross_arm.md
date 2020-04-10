@@ -3,7 +3,7 @@ toc_priority: 67
 toc_title: How to Build ClickHouse on Linux for AARCH64 (ARM64)
 ---
 
-# How to Build ClickHouse on Linux for AARCH64 (ARM64) architecture {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
+# How to Build ClickHouse on Linux for AARCH64 (ARM64) Architecture {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
 
 This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on another Linux machine with AARCH64 CPU architecture. This is intended for continuous integration checks that run on Linux servers.
 

@@ -75,5 +75,7 @@ void ASTDropAccessEntityQuery::formatImpl(const FormatSettings & settings, Forma
             settings.ostr << ' ' << backQuoteIfNeed(name);
         }
     }
+
+    formatOnCluster(settings);
 }
 }

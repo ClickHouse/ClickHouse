@@ -134,6 +134,9 @@ namespace
                 args.context,
                 bridge_helper);
 
+        },
+        {
+            .source_access_type = BridgeHelperMixin::getSourceAccessType(),
         });
     }
 }

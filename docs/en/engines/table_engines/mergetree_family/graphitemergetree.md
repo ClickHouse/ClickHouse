@@ -3,7 +3,7 @@ toc_priority: 38
 toc_title: GraphiteMergeTree
 ---
 
-# Graphitemergetree {#graphitemergetree}
+# GraphiteMergeTree {#graphitemergetree}
 
 This engine is designed for thinning and aggregating/averaging (rollup) [Graphite](http://graphite.readthedocs.io/en/latest/index.html) data. It may be helpful to developers who want to use ClickHouse as a data store for Graphite.
 
