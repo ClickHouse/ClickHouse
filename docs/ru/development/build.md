@@ -1,26 +1,27 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
 ---
 
-# How to Build ClickHouse for Development {#how-to-build-clickhouse-for-development}
+# Как построить ClickHouse для развития {#how-to-build-clickhouse-for-development}
 
-The following tutorial is based on the Ubuntu Linux system.
-With appropriate changes, it should also work on any other Linux distribution.
-Supported platforms: x86\_64 and AArch64. Support for Power9 is experimental.
+Следующий учебник основан на системе Ubuntu Linux.
+С соответствующими изменениями он также должен работать на любом другом дистрибутиве Linux.
+Поддерживаемые платформы: x86\_64 и AArch64. Поддержка Power9 является экспериментальной.
 
-## Install Git, CMake, Python and Ninja {#install-git-cmake-python-and-ninja}
+## Установите Git, CMake, Python и Ninja {#install-git-cmake-python-and-ninja}
 
 ``` bash
 $ sudo apt-get install git cmake python ninja-build
 ```
 
-Or cmake3 instead of cmake on older systems.
+Или cmake3 вместо cmake на старых системах.
 
-## Install GCC 9 {#install-gcc-9}
+## Установка GCC 9 {#install-gcc-9}
 
-There are several ways to do this.
+Есть несколько способов сделать это.
 
-### Install from a PPA Package {#install-from-a-ppa-package}
+### Установка из PPA пакет {#install-from-a-ppa-package}
 
 ``` bash
 $ sudo apt-get install software-properties-common
@@ -29,30 +30,30 @@ $ sudo apt-get update
 $ sudo apt-get install gcc-9 g++-9
 ```
 
-### Install from Sources {#install-from-sources}
+### Установка из источников {#install-from-sources}
 
-Look at [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
+Смотреть на [utils/ci/build-gcc-from-sources.sh](https://github.com/ClickHouse/ClickHouse/blob/master/utils/ci/build-gcc-from-sources.sh)
 
-## Use GCC 9 for Builds {#use-gcc-9-for-builds}
+## Использовать GCC для сборки 9 {#use-gcc-9-for-builds}
 
 ``` bash
 $ export CC=gcc-9
 $ export CXX=g++-9
 ```
 
-## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
+## Проверка Источников ClickHouse {#checkout-clickhouse-sources}
 
 ``` bash
 $ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 ```
 
-or
+или
 
 ``` bash
 $ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 ```
 
-## Build ClickHouse {#build-clickhouse}
+## Построить ClickHouse {#build-clickhouse}
 
 ``` bash
 $ cd ClickHouse
@@ -63,23 +64,23 @@ $ ninja
 $ cd ..
 ```
 
-To create an executable, run `ninja clickhouse`.
-This will create the `programs/clickhouse` executable, which can be used with `client` or `server` arguments.
+Чтобы создать исполняемый файл, выполните команду `ninja clickhouse`.
+Это позволит создать `programs/clickhouse` исполняемый файл, который может быть использован с `client` или `server` аргументы.
 
-# How to Build ClickHouse on Any Linux {#how-to-build-clickhouse-on-any-linux}
+# Как построить ClickHouse на любом Linux {#how-to-build-clickhouse-on-any-linux}
 
-The build requires the following components:
+Для сборки требуются следующие компоненты:
 
--   Git (is used only to checkout the sources, it’s not needed for the build)
--   CMake 3.10 or newer
--   Ninja (recommended) or Make
--   C++ compiler: gcc 9 or clang 8 or newer
--   Linker: lld or gold (the classic GNU ld won’t work)
--   Python (is only used inside LLVM build and it is optional)
+-   Git (используется только для проверки исходных текстов, он не нужен для сборки)
+-   CMake 3.10 или новее
+-   Ниндзя (рекомендуется) или сделать
+-   Компилятор C++: gcc 9 или clang 8 или новее
+-   Компоновщик: lld или gold (классический GNU ld не будет работать)
+-   Python (используется только внутри сборки LLVM и является необязательным)
 
-If all the components are installed, you may build in the same way as the steps above.
+Если все компоненты установлены, Вы можете построить их так же, как и описанные выше шаги.
 
-Example for Ubuntu Eoan:
+Пример для Ubuntu Eoan:
 
     sudo apt update
     sudo apt install git cmake ninja-build g++ python
@@ -88,7 +89,7 @@ Example for Ubuntu Eoan:
     cmake ../ClickHouse
     ninja
 
-Example for OpenSUSE Tumbleweed:
+Пример для OpenSUSE перекати-поле:
 
     sudo zypper install git cmake ninja gcc-c++ python lld
     git clone --recursive https://github.com/ClickHouse/ClickHouse.git
@@ -96,7 +97,7 @@ Example for OpenSUSE Tumbleweed:
     cmake ../ClickHouse
     ninja
 
-Example for Fedora Rawhide:
+Пример для сыромятной кожи Fedora:
 
     sudo yum update
     yum --nogpg install git cmake make gcc-c++ python2
@@ -105,34 +106,34 @@ Example for Fedora Rawhide:
     cmake ../ClickHouse
     make -j $(nproc)
 
-# You Don’t Have to Build ClickHouse {#you-dont-have-to-build-clickhouse}
+# Вам не нужно строить ClickHouse {#you-dont-have-to-build-clickhouse}
 
-ClickHouse is available in pre-built binaries and packages. Binaries are portable and can be run on any Linux flavour.
+ClickHouse доступен в готовых двоичных файлах и пакетах. Двоичные файлы являются портативными и могут быть запущены на любом вкусе Linux.
 
-They are built for stable, prestable and testing releases as long as for every commit to master and for every pull request.
+Они созданы для стабильных, предустановленных и тестовых релизов до тех пор, пока для каждого коммита к мастеру и для каждого запроса на вытягивание.
 
-To find the freshest build from `master`, go to [commits page](https://github.com/ClickHouse/ClickHouse/commits/master), click on the first green checkmark or red cross near commit, and click to the “Details” link right after “ClickHouse Build Check”.
+Чтобы найти самую свежую сборку из `master`, обратиться [совершает страницы](https://github.com/ClickHouse/ClickHouse/commits/master), нажмите на первую зеленую галочку или красный крестик рядом с фиксацией и нажмите на кнопку «Details» ссылка сразу после этого «ClickHouse Build Check».
 
-# How to Build ClickHouse Debian Package {#how-to-build-clickhouse-debian-package}
+# Как создать пакет ClickHouse Debian {#how-to-build-clickhouse-debian-package}
 
-## Install Git and Pbuilder {#install-git-and-pbuilder}
+## Установите Git и Pbuilder {#install-git-and-pbuilder}
 
 ``` bash
 $ sudo apt-get update
 $ sudo apt-get install git python pbuilder debhelper lsb-release fakeroot sudo debian-archive-keyring debian-keyring
 ```
 
-## Checkout ClickHouse Sources {#checkout-clickhouse-sources-1}
+## Проверка Источников ClickHouse {#checkout-clickhouse-sources-1}
 
 ``` bash
 $ git clone --recursive --branch master https://github.com/ClickHouse/ClickHouse.git
 $ cd ClickHouse
 ```
 
-## Run Release Script {#run-release-script}
+## Запустить Сценарий Выпуска {#run-release-script}
 
 ``` bash
 $ ./release
 ```
 
-[Original article](https://clickhouse.tech/docs/en/development/build/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/en/development/build/) <!--hide-->

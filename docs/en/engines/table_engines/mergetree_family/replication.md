@@ -186,7 +186,7 @@ An alternative recovery option is to delete information about the lost replica f
 
 There is no restriction on network bandwidth during recovery. Keep this in mind if you are restoring many replicas at once.
 
-## Converting From Mergetree To Replicatedmergetree {#converting-from-mergetree-to-replicatedmergetree}
+## Converting From MergeTree To ReplicatedMergeTree {#converting-from-mergetree-to-replicatedmergetree}
 
 We use the term `MergeTree` to refer to all table engines in the `MergeTree family`, the same as for `ReplicatedMergeTree`.
 
@@ -198,7 +198,7 @@ Rename the existing MergeTree table, then create a `ReplicatedMergeTree` table w
 Move the data from the old table to the `detached` subdirectory inside the directory with the new table data (`/var/lib/clickhouse/data/db_name/table_name/`).
 Then run `ALTER TABLE ATTACH PARTITION` on one of the replicas to add these data parts to the working set.
 
-## Converting From Replicatedmergetree To Mergetree {#converting-from-replicatedmergetree-to-mergetree}
+## Converting From ReplicatedMergeTree To MergeTree {#converting-from-replicatedmergetree-to-mergetree}
 
 Create a MergeTree table with a different name. Move all the data from the directory with the `ReplicatedMergeTree` table data to the new table’s data directory. Then delete the `ReplicatedMergeTree` table and restart the server.
 

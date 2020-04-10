@@ -72,4 +72,21 @@ void ASTExtendedRoleSet::formatImpl(const FormatSettings & settings, FormatState
         }
     }
 }
+
+
+void ASTExtendedRoleSet::replaceCurrentUserTagWithName(const String & current_user_name)
+{
+    if (current_user)
+    {
+        names.push_back(current_user_name);
+        current_user = false;
+    }
+
+    if (except_current_user)
+    {
+        except_names.push_back(current_user_name);
+        except_current_user = false;
+    }
+}
+
 }

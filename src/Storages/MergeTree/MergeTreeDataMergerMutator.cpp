@@ -29,10 +29,13 @@
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
 #include <Common/typeid_cast.h>
+#include <Common/escapeForFileName.h>
 #include <cmath>
 #include <numeric>
 #include <iomanip>
 
+
+#include <boost/algorithm/string/replace.hpp>
 
 namespace ProfileEvents
 {
@@ -1001,6 +1004,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames);
 
+
     UInt64 watch_prev_elapsed = 0;
     MergeStageProgress stage_progress(1.0);
 
@@ -1069,7 +1073,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         auto indices_to_recalc = getIndicesToRecalculate(in, storage_from_source_part, updated_header.getNamesAndTypesList(), context);
 
         NameSet files_to_skip = collectFilesToSkip(updated_header, indices_to_recalc, mrk_extension);
-        NameSet files_to_remove = collectFilesToRemove(source_part, for_file_renames, mrk_extension);
+        NameToNameMap files_to_rename = collectFilesForRenames(source_part, for_file_renames, mrk_extension);
 
         if (need_remove_expired_values)
             files_to_skip.insert("ttl.txt");
@@ -1077,10 +1081,21 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         /// Create hardlinks for unchanged files
         for (auto it = disk->iterateDirectory(source_part->getFullRelativePath()); it->isValid(); it->next())
         {
-            if (files_to_skip.count(it->name()) || files_to_remove.count(it->name()))
+            if (files_to_skip.count(it->name()))
                 continue;
 
-            String destination = new_part_tmp_path + "/" + it->name();
+            String destination = new_part_tmp_path + "/";
+            auto rename_it = files_to_rename.find(it->name());
+            if (rename_it != files_to_rename.end())
+            {
+                if (rename_it->second.empty())
+                    continue;
+                destination += rename_it->second;
+            }
+            else
+            {
+                destination += it->name();
+            }
 
             disk->createHardLink(it->path(), destination);
         }
@@ -1103,9 +1118,19 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
                 need_remove_expired_values);
         }
 
-        for (const String & removed_file : files_to_remove)
-            if (new_data_part->checksums.files.count(removed_file))
-                new_data_part->checksums.files.erase(removed_file);
+        for (const auto & [rename_from, rename_to] : files_to_rename)
+        {
+            if (rename_to.empty() && new_data_part->checksums.files.count(rename_from))
+            {
+                new_data_part->checksums.files.erase(rename_from);
+            }
+            else if (new_data_part->checksums.files.count(rename_from))
+            {
+                new_data_part->checksums.files[rename_to] = new_data_part->checksums.files[rename_from];
+
+                new_data_part->checksums.files.erase(rename_from);
+            }
+        }
 
         finalizeMutatedPart(source_part, new_data_part, need_remove_expired_values);
     }
@@ -1249,6 +1274,20 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         {
             removed_columns_from_compact_part.emplace(command.column_name);
         }
+        else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+        {
+            if (is_compact_part)
+            {
+                for_interpreter.push_back(
+                {
+                    .type = MutationCommand::Type::READ_COLUMN,
+                    .column_name = command.rename_to,
+                });
+                already_changed_columns.emplace(command.column_name);
+            }
+            else
+                for_file_renames.push_back(command);
+        }
         else
         {
             for_file_renames.push_back(command);
@@ -1261,7 +1300,8 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         /// we just don't read dropped columns
         for (const auto & column : part->getColumns())
         {
-            if (!removed_columns_from_compact_part.count(column.name) && !already_changed_columns.count(column.name))
+            if (!removed_columns_from_compact_part.count(column.name)
+                && !already_changed_columns.count(column.name))
             {
                 for_interpreter.emplace_back(MutationCommand
                 {
@@ -1275,7 +1315,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
 }
 
 
-NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
+NameToNameMap MergeTreeDataMergerMutator::collectFilesForRenames(
     MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension)
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
@@ -1290,14 +1330,14 @@ NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
             {});
     }
 
-    NameSet remove_files;
+    NameToNameMap rename_map;
     /// Remove old indices
     for (const auto & command : commands_for_removes)
     {
         if (command.type == MutationCommand::Type::DROP_INDEX)
         {
-            remove_files.emplace("skp_idx_" + command.column_name + ".idx");
-            remove_files.emplace("skp_idx_" + command.column_name + mrk_extension);
+            rename_map.emplace("skp_idx_" + command.column_name + ".idx", "");
+            rename_map.emplace("skp_idx_" + command.column_name + mrk_extension, "");
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
@@ -1307,8 +1347,8 @@ NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
                 /// Delete files if they are no longer shared with another column.
                 if (--stream_counts[stream_name] == 0)
                 {
-                    remove_files.emplace(stream_name + ".bin");
-                    remove_files.emplace(stream_name + mrk_extension);
+                    rename_map.emplace(stream_name + ".bin", "");
+                    rename_map.emplace(stream_name + mrk_extension, "");
                 }
             };
 
@@ -1317,9 +1357,31 @@ NameSet MergeTreeDataMergerMutator::collectFilesToRemove(
             if (column)
                 column->type->enumerateStreams(callback, stream_path);
         }
+        else if (command.type == MutationCommand::Type::RENAME_COLUMN)
+        {
+            String escaped_name_from = escapeForFileName(command.column_name);
+            String escaped_name_to = escapeForFileName(command.rename_to);
+
+            IDataType::StreamCallback callback = [&](const IDataType::SubstreamPath & substream_path)
+            {
+                String stream_from = IDataType::getFileNameForStream(command.column_name, substream_path);
+
+                String stream_to = boost::replace_first_copy(stream_from, escaped_name_from, escaped_name_to);
+
+                if (stream_from != stream_to)
+                {
+                    rename_map.emplace(stream_from + ".bin", stream_to + ".bin");
+                    rename_map.emplace(stream_from + mrk_extension, stream_to + mrk_extension);
+                }
+            };
+            IDataType::SubstreamPath stream_path;
+            auto column = source_part->getColumns().tryGetByName(command.column_name);
+            if (column)
+                column->type->enumerateStreams(callback, stream_path);
+        }
     }
 
-    return remove_files;
+    return rename_map;
 }
 
 NameSet MergeTreeDataMergerMutator::collectFilesToSkip(
@@ -1357,10 +1419,13 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     const MutationCommands & commands_for_removes)
 {
     NameSet removed_columns;
+    NameToNameMap renamed_columns;
     for (const auto & command : commands_for_removes)
     {
         if (command.type == MutationCommand::DROP_COLUMN)
             removed_columns.insert(command.column_name);
+        if (command.type == MutationCommand::RENAME_COLUMN)
+            renamed_columns.emplace(command.rename_to, command.column_name);
     }
     Names source_column_names = source_part->getColumns().getNames();
     NameSet source_columns_name_set(source_column_names.begin(), source_column_names.end());
@@ -1374,6 +1439,10 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
             ++it;
         }
         else if (source_columns_name_set.count(it->name) && !removed_columns.count(it->name))
+        {
+            ++it;
+        }
+        else if (renamed_columns.count(it->name) && source_columns_name_set.count(renamed_columns[it->name]))
         {
             ++it;
         }

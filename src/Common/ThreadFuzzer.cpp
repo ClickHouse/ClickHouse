@@ -2,12 +2,13 @@
 #include <time.h>
 #include <sys/time.h>
 #if defined(OS_LINUX)
-    #include <sys/sysinfo.h>
+#   include <sys/sysinfo.h>
 #endif
 #include <sched.h>
 
 #include <random>
 
+#include <common/defines.h>
 #include <common/sleep.h>
 #include <common/getThreadId.h>
 
@@ -18,11 +19,18 @@
 
 #include <Common/ThreadFuzzer.h>
 
+
 /// We will also wrap some thread synchronization functions to inject sleep/migration before or after.
-#if defined(OS_LINUX)
-#define FOR_EACH_WRAPPED_FUNCTION(M) \
-    M(int, pthread_mutex_lock, pthread_mutex_t * arg) \
-    M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
+#if defined(OS_LINUX) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
+    #define THREAD_FUZZER_WRAP_PTHREAD 1
+#else
+    #define THREAD_FUZZER_WRAP_PTHREAD 0
+#endif
+
+#if THREAD_FUZZER_WRAP_PTHREAD
+#    define FOR_EACH_WRAPPED_FUNCTION(M) \
+        M(int, pthread_mutex_lock, pthread_mutex_t * arg) \
+        M(int, pthread_mutex_unlock, pthread_mutex_t * arg)
 #endif
 
 namespace DB
@@ -66,21 +74,21 @@ static void initFromEnv(std::atomic<T> & what, const char * name)
 
 static std::atomic<int> num_cpus = 0;
 
-#if defined(OS_LINUX)
-#define DEFINE_WRAPPER_PARAMS(RET, NAME, ...) \
-    static std::atomic<double> NAME ## _before_yield_probability = 0; \
-    static std::atomic<double> NAME ## _before_migrate_probability = 0; \
-    static std::atomic<double> NAME ## _before_sleep_probability = 0; \
-    static std::atomic<double> NAME ## _before_sleep_time_us = 0; \
-    \
-    static std::atomic<double> NAME ## _after_yield_probability = 0; \
-    static std::atomic<double> NAME ## _after_migrate_probability = 0; \
-    static std::atomic<double> NAME ## _after_sleep_probability = 0; \
-    static std::atomic<double> NAME ## _after_sleep_time_us = 0; \
+#if THREAD_FUZZER_WRAP_PTHREAD
+#    define DEFINE_WRAPPER_PARAMS(RET, NAME, ...) \
+        static std::atomic<double> NAME##_before_yield_probability = 0; \
+        static std::atomic<double> NAME##_before_migrate_probability = 0; \
+        static std::atomic<double> NAME##_before_sleep_probability = 0; \
+        static std::atomic<double> NAME##_before_sleep_time_us = 0; \
+\
+        static std::atomic<double> NAME##_after_yield_probability = 0; \
+        static std::atomic<double> NAME##_after_migrate_probability = 0; \
+        static std::atomic<double> NAME##_after_sleep_probability = 0; \
+        static std::atomic<double> NAME##_after_sleep_time_us = 0;
 
 FOR_EACH_WRAPPED_FUNCTION(DEFINE_WRAPPER_PARAMS)
 
-#undef DEFINE_WRAPPER_PARAMS
+#    undef DEFINE_WRAPPER_PARAMS
 #endif
 
 void ThreadFuzzer::initConfiguration()
@@ -97,42 +105,50 @@ void ThreadFuzzer::initConfiguration()
     initFromEnv(sleep_probability, "THREAD_FUZZER_SLEEP_PROBABILITY");
     initFromEnv(sleep_time_us, "THREAD_FUZZER_SLEEP_TIME_US");
 
-#if defined(OS_LINUX)
-#define INIT_WRAPPER_PARAMS(RET, NAME, ...) \
-    initFromEnv(NAME ## _before_yield_probability, "THREAD_FUZZER_" #NAME "_BEFORE_YIELD_PROBABILITY"); \
-    initFromEnv(NAME ## _before_migrate_probability, "THREAD_FUZZER_" #NAME "_BEFORE_MIGRATE_PROBABILITY"); \
-    initFromEnv(NAME ## _before_sleep_probability, "THREAD_FUZZER_" #NAME "_BEFORE_SLEEP_PROBABILITY"); \
-    initFromEnv(NAME ## _before_sleep_time_us, "THREAD_FUZZER_" #NAME "_BEFORE_SLEEP_TIME_US"); \
-    \
-    initFromEnv(NAME ## _after_yield_probability, "THREAD_FUZZER_" #NAME "_AFTER_YIELD_PROBABILITY"); \
-    initFromEnv(NAME ## _after_migrate_probability, "THREAD_FUZZER_" #NAME "_AFTER_MIGRATE_PROBABILITY"); \
-    initFromEnv(NAME ## _after_sleep_probability, "THREAD_FUZZER_" #NAME "_AFTER_SLEEP_PROBABILITY"); \
-    initFromEnv(NAME ## _after_sleep_time_us, "THREAD_FUZZER_" #NAME "_AFTER_SLEEP_TIME_US"); \
+#if THREAD_FUZZER_WRAP_PTHREAD
+#    define INIT_WRAPPER_PARAMS(RET, NAME, ...) \
+        initFromEnv(NAME##_before_yield_probability, "THREAD_FUZZER_" #NAME "_BEFORE_YIELD_PROBABILITY"); \
+        initFromEnv(NAME##_before_migrate_probability, "THREAD_FUZZER_" #NAME "_BEFORE_MIGRATE_PROBABILITY"); \
+        initFromEnv(NAME##_before_sleep_probability, "THREAD_FUZZER_" #NAME "_BEFORE_SLEEP_PROBABILITY"); \
+        initFromEnv(NAME##_before_sleep_time_us, "THREAD_FUZZER_" #NAME "_BEFORE_SLEEP_TIME_US"); \
+\
+        initFromEnv(NAME##_after_yield_probability, "THREAD_FUZZER_" #NAME "_AFTER_YIELD_PROBABILITY"); \
+        initFromEnv(NAME##_after_migrate_probability, "THREAD_FUZZER_" #NAME "_AFTER_MIGRATE_PROBABILITY"); \
+        initFromEnv(NAME##_after_sleep_probability, "THREAD_FUZZER_" #NAME "_AFTER_SLEEP_PROBABILITY"); \
+        initFromEnv(NAME##_after_sleep_time_us, "THREAD_FUZZER_" #NAME "_AFTER_SLEEP_TIME_US");
 
     FOR_EACH_WRAPPED_FUNCTION(INIT_WRAPPER_PARAMS)
 
-#undef INIT_WRAPPER_PARAMS
+#    undef INIT_WRAPPER_PARAMS
 #endif
 }
 
 
 bool ThreadFuzzer::isEffective() const
 {
-#if defined(OS_LINUX)
-#define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
-    if (NAME ## _before_yield_probability.load(std::memory_order_relaxed)) return true; \
-    if (NAME ## _before_migrate_probability.load(std::memory_order_relaxed)) return true; \
-    if (NAME ## _before_sleep_probability.load(std::memory_order_relaxed)) return true; \
-    if (NAME ## _before_sleep_time_us.load(std::memory_order_relaxed)) return true; \
-    \
-    if (NAME ## _after_yield_probability.load(std::memory_order_relaxed)) return true; \
-    if (NAME ## _after_migrate_probability.load(std::memory_order_relaxed)) return true; \
-    if (NAME ## _after_sleep_probability.load(std::memory_order_relaxed)) return true; \
-    if (NAME ## _after_sleep_time_us.load(std::memory_order_relaxed)) return true; \
+#if THREAD_FUZZER_WRAP_PTHREAD
+#    define CHECK_WRAPPER_PARAMS(RET, NAME, ...) \
+        if (NAME##_before_yield_probability.load(std::memory_order_relaxed)) \
+            return true; \
+        if (NAME##_before_migrate_probability.load(std::memory_order_relaxed)) \
+            return true; \
+        if (NAME##_before_sleep_probability.load(std::memory_order_relaxed)) \
+            return true; \
+        if (NAME##_before_sleep_time_us.load(std::memory_order_relaxed)) \
+            return true; \
+\
+        if (NAME##_after_yield_probability.load(std::memory_order_relaxed)) \
+            return true; \
+        if (NAME##_after_migrate_probability.load(std::memory_order_relaxed)) \
+            return true; \
+        if (NAME##_after_sleep_probability.load(std::memory_order_relaxed)) \
+            return true; \
+        if (NAME##_after_sleep_time_us.load(std::memory_order_relaxed)) \
+            return true;
 
     FOR_EACH_WRAPPED_FUNCTION(CHECK_WRAPPER_PARAMS)
 
-#undef INIT_WRAPPER_PARAMS
+#    undef INIT_WRAPPER_PARAMS
 #endif
 
     return cpu_time_period_us != 0
@@ -228,31 +244,30 @@ void ThreadFuzzer::setup()
 /// We expect that for every function like pthread_mutex_lock there is the same function with two underscores prefix.
 /// NOTE We cannot use dlsym(... RTLD_NEXT), because it will call pthread_mutex_lock and it will lead to infinite recursion.
 
-#if defined(OS_LINUX)
-#define MAKE_WRAPPER(RET, NAME, ...) \
-    extern "C" RET __ ## NAME(__VA_ARGS__); /* NOLINT */ \
-    extern "C" RET NAME(__VA_ARGS__) /* NOLINT */ \
-    { \
-        injection( \
-            NAME ## _before_yield_probability.load(std::memory_order_relaxed), \
-            NAME ## _before_migrate_probability.load(std::memory_order_relaxed), \
-            NAME ## _before_sleep_probability.load(std::memory_order_relaxed), \
-            NAME ## _before_sleep_time_us.load(std::memory_order_relaxed)); \
-        \
-        auto && ret{__ ## NAME(arg)}; \
-        \
-        injection( \
-            NAME ## _after_yield_probability.load(std::memory_order_relaxed), \
-            NAME ## _after_migrate_probability.load(std::memory_order_relaxed), \
-            NAME ## _after_sleep_probability.load(std::memory_order_relaxed), \
-            NAME ## _after_sleep_time_us.load(std::memory_order_relaxed)); \
-        \
-        return ret; \
-    } \
+#if THREAD_FUZZER_WRAP_PTHREAD
+#    define MAKE_WRAPPER(RET, NAME, ...) \
+        extern "C" RET __##NAME(__VA_ARGS__); /* NOLINT */ \
+        extern "C" RET NAME(__VA_ARGS__) /* NOLINT */ \
+        { \
+            injection( \
+                NAME##_before_yield_probability.load(std::memory_order_relaxed), \
+                NAME##_before_migrate_probability.load(std::memory_order_relaxed), \
+                NAME##_before_sleep_probability.load(std::memory_order_relaxed), \
+                NAME##_before_sleep_time_us.load(std::memory_order_relaxed)); \
+\
+            auto && ret{__##NAME(arg)}; \
+\
+            injection( \
+                NAME##_after_yield_probability.load(std::memory_order_relaxed), \
+                NAME##_after_migrate_probability.load(std::memory_order_relaxed), \
+                NAME##_after_sleep_probability.load(std::memory_order_relaxed), \
+                NAME##_after_sleep_time_us.load(std::memory_order_relaxed)); \
+\
+            return ret; \
+        }
 
-    FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER)
+FOR_EACH_WRAPPED_FUNCTION(MAKE_WRAPPER)
 
-#undef MAKE_WRAPPER
+#    undef MAKE_WRAPPER
 #endif
-
 }

@@ -109,7 +109,7 @@ namespace
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NAME REGEXP " << (settings.hilite ? IAST::hilite_none : "");
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "REGEXP " << (settings.hilite ? IAST::hilite_none : "");
             bool need_comma2 = false;
             for (const auto & host_regexp : name_regexps)
             {
@@ -184,6 +184,8 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
 
     format.ostr << " " << backQuoteIfNeed(name);
 
+    formatOnCluster(format);
+
     if (!new_name.empty())
         formatRenameTo(new_name, format);
 
@@ -195,7 +197,7 @@ void ASTCreateUserQuery::formatImpl(const FormatSettings & format, FormatState &
     if (add_hosts)
         formatHosts("ADD", *add_hosts, format);
     if (remove_hosts)
-        formatHosts("REMOVE", *remove_hosts, format);
+        formatHosts("DROP", *remove_hosts, format);
 
     if (default_roles)
         formatDefaultRoles(*default_roles, format);

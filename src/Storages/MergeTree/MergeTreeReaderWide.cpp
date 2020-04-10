@@ -42,16 +42,27 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     try
     {
         for (const NameAndTypePair & column_from_part : data_part->getColumns())
-        {
             columns_from_part[column_from_part.name] = column_from_part.type;
-        }
 
         for (const NameAndTypePair & column : columns)
         {
             if (columns_from_part.count(column.name))
+            {
                 addStreams(column.name, *columns_from_part[column.name], profile_callback_, clock_type_);
+            }
             else
-                addStreams(column.name, *column.type, profile_callback_, clock_type_);
+            {
+                if (alter_conversions.isColumnRenamed(column.name))
+                {
+                    String old_name = alter_conversions.getColumnOldName(column.name);
+                    if (columns_from_part.count(old_name))
+                        addStreams(old_name, *columns_from_part[old_name], profile_callback_, clock_type_);
+                }
+                else
+                {
+                    addStreams(column.name, *column.type, profile_callback_, clock_type_);
+                }
+            }
         }
     }
     catch (...)
@@ -82,7 +93,14 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            String & name = name_and_type->name;
+            String name = name_and_type->name;
+            if (alter_conversions.isColumnRenamed(name))
+            {
+                String original_name = alter_conversions.getColumnOldName(name);
+                if (!columns_from_part.count(name) && columns_from_part.count(original_name))
+                    name = original_name;
+            }
+
             DataTypePtr type;
             if (columns_from_part.count(name))
                 type = columns_from_part[name];

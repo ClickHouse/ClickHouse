@@ -1,25 +1,28 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_priority: 52
+toc_title: "\u7CFB\u7EDF\u8868"
 ---
 
-# System tables {#system-tables}
+# 系统表 {#system-tables}
 
-System tables are used for implementing part of the system’s functionality, and for providing access to information about how the system is working.
-You can’t delete a system table (but you can perform DETACH).
-System tables don’t have files with data on the disk or files with metadata. The server creates all the system tables when it starts.
-System tables are read-only.
-They are located in the ‘system’ database.
+系统表用于实现系统的部分功能，并提供对有关系统如何工作的信息的访问。
+您无法删除系统表（但可以执行分离）。
+系统表没有包含磁盘上数据的文件或包含元数据的文件。 服务器在启动时创建所有系统表。
+系统表是只读的。
+它们位于 ‘system’ 数据库。
 
-## system.asynchronous\_metrics {#system_tables-asynchronous_metrics}
+## 系统。asynchronous\_metrics {#system_tables-asynchronous_metrics}
 
-Contains metrics that are calculated periodically in the background. For example, the amount of RAM in use.
+包含在后台定期计算的指标。 例如，在使用的RAM量。
 
-Columns:
+列:
 
--   `metric` ([String](../data_types/string.md)) — Metric name.
--   `value` ([Float64](../data_types/float.md)) — Metric value.
+-   `metric` ([字符串](../sql_reference/data_types/string.md)) — Metric name.
+-   `value` ([Float64](../sql_reference/data_types/float.md)) — Metric value.
 
-**Example**
+**示例**
 
 ``` sql
 SELECT * FROM system.asynchronous_metrics LIMIT 10
@@ -40,18 +43,18 @@ SELECT * FROM system.asynchronous_metrics LIMIT 10
 └─────────────────────────────────────────┴────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
--   [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
--   [system.events](#system_tables-events) — Contains a number of events that have occurred.
--   [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [监测](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [系统。指标](#system_tables-metrics) — Contains instantly calculated metrics.
+-   [系统。活动](#system_tables-events) — Contains a number of events that have occurred.
+-   [系统。metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
 
-## system.clusters {#system-clusters}
+## 系统。集群 {#system-clusters}
 
-Contains information about clusters available in the config file and the servers in them.
+包含有关配置文件中可用的集群及其中的服务器的信息。
 
-Columns:
+列:
 
 -   `cluster` (String) — The cluster name.
 -   `shard_num` (UInt32) — The shard number in the cluster, starting from 1.
@@ -61,30 +64,30 @@ Columns:
 -   `host_address` (String) — The host IP address obtained from DNS.
 -   `port` (UInt16) — The port to use for connecting to the server.
 -   `user` (String) — The name of the user for connecting to the server.
--   `errors_count` (UInt32) - number of times this host failed to reach replica.
--   `estimated_recovery_time` (UInt32) - seconds left until replica error count is zeroed and it is considered to be back to normal.
+-   `errors_count` (UInt32)-此主机无法到达副本的次数。
+-   `estimated_recovery_time` (UInt32)-剩下的秒数，直到副本错误计数归零，它被认为是恢复正常。
 
-Please note that `errors_count` is updated once per query to the cluster, but `estimated_recovery_time` is recalculated on-demand. So there could be a case of non-zero `errors_count` and zero `estimated_recovery_time`, that next query will zero `errors_count` and try to use replica as if it has no errors.
+请注意 `errors_count` 每个查询集群更新一次，但 `estimated_recovery_time` 按需重新计算。 所以有可能是非零的情况 `errors_count` 和零 `estimated_recovery_time`，下一个查询将为零 `errors_count` 并尝试使用副本，就好像它没有错误。
 
-**See also**
+**另请参阅**
 
--   [Table engine Distributed](table_engines/distributed.md)
--   [distributed\_replica\_error\_cap setting](settings/settings.md#settings-distributed_replica_error_cap)
--   [distributed\_replica\_error\_half\_life setting](settings/settings.md#settings-distributed_replica_error_half_life)
+-   [表引擎分布式](../engines/table_engines/special/distributed.md)
+-   [distributed\_replica\_error\_cap设置](settings/settings.md#settings-distributed_replica_error_cap)
+-   [distributed\_replica\_error\_half\_life设置](settings/settings.md#settings-distributed_replica_error_half_life)
 
-## system.columns {#system-columns}
+## 系统。列 {#system-columns}
 
-Contains information about columns in all the tables.
+包含有关所有表中列的信息。
 
-You can use this table to get information similar to the [DESCRIBE TABLE](../query_language/misc.md#misc-describe-table) query, but for multiple tables at once.
+您可以使用此表获取类似于以下内容的信息 [DESCRIBE TABLE](../sql_reference/statements/misc.md#misc-describe-table) 查询，但对于多个表一次。
 
-The `system.columns` table contains the following columns (the column type is shown in brackets):
+该 `system.columns` 表包含以下列（列类型显示在括号中):
 
 -   `database` (String) — Database name.
 -   `table` (String) — Table name.
 -   `name` (String) — Column name.
 -   `type` (String) — Column type.
--   `default_kind` (String) — Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`) for the default value, or an empty string if it is not defined.
+-   `default_kind` (String) — Expression type (`DEFAULT`, `MATERIALIZED`, `ALIAS`)为默认值，如果没有定义，则为空字符串。
 -   `default_expression` (String) — Expression for the default value, or an empty string if it is not defined.
 -   `data_compressed_bytes` (UInt64) — The size of compressed data, in bytes.
 -   `data_uncompressed_bytes` (UInt64) — The size of decompressed data, in bytes.
@@ -95,15 +98,15 @@ The `system.columns` table contains the following columns (the column type is sh
 -   `is_in_primary_key` (UInt8) — Flag that indicates whether the column is in the primary key expression.
 -   `is_in_sampling_key` (UInt8) — Flag that indicates whether the column is in the sampling key expression.
 
-## system.contributors {#system-contributors}
+## 系统。贡献者 {#system-contributors}
 
-Contains information about contributors. All constributors in random order. The order is random at query execution time.
+包含有关贡献者的信息。 按随机顺序排列所有构造。 该顺序在查询执行时是随机的。
 
-Columns:
+列:
 
 -   `name` (String) — Contributor (author) name from git log.
 
-**Example**
+**示例**
 
 ``` sql
 SELECT * FROM system.contributors LIMIT 10
@@ -124,7 +127,7 @@ SELECT * FROM system.contributors LIMIT 10
 └──────────────────┘
 ```
 
-To find out yourself in the table, use a query:
+要在表中找出自己，请使用查询:
 
 ``` sql
 SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
@@ -136,21 +139,21 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 └──────────────────┘
 ```
 
-## system.databases {#system-databases}
+## 系统。数据库 {#system-databases}
 
-This table contains a single String column called ‘name’ – the name of a database.
-Each database that the server knows about has a corresponding entry in the table.
-This system table is used for implementing the `SHOW DATABASES` query.
+此表包含一个名为"字符串"的列 ‘name’ – the name of a database.
+服务器知道的每个数据库在表中都有相应的条目。
+该系统表用于实现 `SHOW DATABASES` 查询。
 
-## system.detached\_parts {#system_tables-detached_parts}
+## 系统。detached\_parts {#system_tables-detached_parts}
 
-Contains information about detached parts of [MergeTree](table_engines/mergetree.md) tables. The `reason` column specifies why the part was detached. For user-detached parts, the reason is empty. Such parts can be attached with [ALTER TABLE ATTACH PARTITION\|PART](../query_language/query_language/alter/#alter_attach-partition) command. For the description of other columns, see [system.parts](#system_tables-parts). If part name is invalid, values of some columns may be `NULL`. Such parts can be deleted with [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
+包含有关分离部分的信息 [MergeTree](../engines/table_engines/mergetree_family/mergetree.md) 桌子 该 `reason` 列指定分离部件的原因。 对于用户分离的部件，原因是空的。 这些部件可以附加 [ALTER TABLE ATTACH PARTITION\|PART](../sql_reference/statements/alter.md#alter_attach-partition) 指挥部 有关其他列的说明，请参阅 [系统。零件](#system_tables-parts). 如果部件名称无效，某些列的值可能为 `NULL`. 这些部分可以删除 [ALTER TABLE DROP DETACHED PART](../sql_reference/statements/alter.md#alter_drop-detached).
 
-## system.dictionaries {#system-dictionaries}
+## 系统。字典 {#system-dictionaries}
 
-Contains information about external dictionaries.
+包含有关外部字典的信息。
 
-Columns:
+列:
 
 -   `name` (String) — Dictionary name.
 -   `type` (String) — Dictionary type: Flat, Hashed, Cache.
@@ -163,22 +166,22 @@ Columns:
 -   `element_count` (UInt64) — The number of items stored in the dictionary.
 -   `load_factor` (Float64) — The percentage filled in the dictionary (for a hashed dictionary, the percentage filled in the hash table).
 -   `creation_time` (DateTime) — The time when the dictionary was created or last successfully reloaded.
--   `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn’t be created.
+-   `last_exception` (String) — Text of the error that occurs when creating or reloading the dictionary if the dictionary couldn't be created.
 -   `source` (String) — Text describing the data source for the dictionary.
 
-Note that the amount of memory used by the dictionary is not proportional to the number of items stored in it. So for flat and cached dictionaries, all the memory cells are pre-assigned, regardless of how full the dictionary actually is.
+请注意，字典使用的内存量与其中存储的项目数量不成正比。 因此，对于平面和缓存字典，所有的内存单元都是预先分配的，而不管字典实际上有多满。
 
-## system.events {#system_tables-events}
+## 系统。活动 {#system_tables-events}
 
-Contains information about the number of events that have occurred in the system. For example, in the table, you can find how many `SELECT` queries were processed since the ClickHouse server started.
+包含有关系统中发生的事件数的信息。 例如，在表中，您可以找到多少 `SELECT` 自ClickHouse服务器启动以来已处理查询。
 
-Columns:
+列:
 
--   `event` ([String](../data_types/string.md)) — Event name.
--   `value` ([UInt64](../data_types/int_uint.md)) — Number of events occurred.
--   `description` ([String](../data_types/string.md)) — Event description.
+-   `event` ([字符串](../sql_reference/data_types/string.md)) — Event name.
+-   `value` ([UInt64](../sql_reference/data_types/int_uint.md)) — Number of events occurred.
+-   `description` ([字符串](../sql_reference/data_types/string.md)) — Event description.
 
-**Example**
+**示例**
 
 ``` sql
 SELECT * FROM system.events LIMIT 5
@@ -194,43 +197,43 @@ SELECT * FROM system.events LIMIT 5
 └───────────────────────────────────────┴───────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
--   [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
--   [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [系统。asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [系统。指标](#system_tables-metrics) — Contains instantly calculated metrics.
+-   [系统。metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [监测](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## system.functions {#system-functions}
+## 系统。功能 {#system-functions}
 
-Contains information about normal and aggregate functions.
+包含有关正常函数和聚合函数的信息。
 
-Columns:
+列:
 
 -   `name`(`String`) – The name of the function.
 -   `is_aggregate`(`UInt8`) — Whether the function is aggregate.
 
-## system.graphite\_retentions {#system-graphite-retentions}
+## 系统。graphite\_retentions {#system-graphite-retentions}
 
-Contains information about parameters [graphite\_rollup](server_settings/settings.md#server_settings-graphite_rollup) which are used in tables with [\*GraphiteMergeTree](table_engines/graphitemergetree.md) engines.
+包含有关参数的信息 [graphite\_rollup](server_configuration_parameters/settings.md#server_configuration_parameters-graphite_rollup) 这是在表中使用 [\*GraphiteMergeTree](../engines/table_engines/mergetree_family/graphitemergetree.md) 引擎
 
-Columns:
+列:
 
--   `config_name` (String) - `graphite_rollup` parameter name.
--   `regexp` (String) - A pattern for the metric name.
--   `function` (String) - The name of the aggregating function.
--   `age` (UInt64) - The minimum age of the data in seconds.
--   `precision` (UInt64) - How precisely to define the age of the data in seconds.
--   `priority` (UInt16) - Pattern priority.
--   `is_default` (UInt8) - Whether the pattern is the default.
--   `Tables.database` (Array(String)) - Array of names of database tables that use the `config_name` parameter.
--   `Tables.table` (Array(String)) - Array of table names that use the `config_name` parameter.
+-   `config_name` (字符串) - `graphite_rollup` 参数名称。
+-   `regexp` (String)-指标名称的模式。
+-   `function` (String)-聚合函数的名称。
+-   `age` (UInt64)-以秒为单位的数据的最小期限。
+-   `precision` （UInt64）-如何精确地定义以秒为单位的数据的年龄。
+-   `priority` (UInt16)-模式优先级。
+-   `is_default` (UInt8)-模式是否为默认值。
+-   `Tables.database` (Array(String))-使用数据库表名称的数组 `config_name` 参数。
+-   `Tables.table` (Array(String))-使用表名称的数组 `config_name` 参数。
 
-## system.merges {#system-merges}
+## 系统。合并 {#system-merges}
 
-Contains information about merges and part mutations currently in process for tables in the MergeTree family.
+包含有关MergeTree系列中表当前正在进行的合并和部件突变的信息。
 
-Columns:
+列:
 
 -   `database` (String) — The name of the database the table is in.
 -   `table` (String) — Table name.
@@ -238,7 +241,7 @@ Columns:
 -   `progress` (Float64) — The percentage of completed work from 0 to 1.
 -   `num_parts` (UInt64) — The number of pieces to be merged.
 -   `result_part_name` (String) — The name of the part that will be formed as the result of merging.
--   `is_mutation` (UInt8) - 1 if this process is a part mutation.
+-   `is_mutation` (UInt8)-1如果这个过程是一个部分突变.
 -   `total_size_bytes_compressed` (UInt64) — The total size of the compressed data in the merged chunks.
 -   `total_size_marks` (UInt64) — The total number of marks in the merged parts.
 -   `bytes_read_uncompressed` (UInt64) — Number of bytes read, uncompressed.
@@ -246,19 +249,19 @@ Columns:
 -   `bytes_written_uncompressed` (UInt64) — Number of bytes written, uncompressed.
 -   `rows_written` (UInt64) — Number of rows written.
 
-## system.metrics {#system_tables-metrics}
+## 系统。指标 {#system_tables-metrics}
 
-Contains metrics which can be calculated instantly, or have a current value. For example, the number of simultaneously processed queries or the current replica delay. This table is always up to date.
+包含可以立即计算或具有当前值的指标。 例如，同时处理的查询的数量或当前副本的延迟。 此表始终是最新的。
 
-Columns:
+列:
 
--   `metric` ([String](../data_types/string.md)) — Metric name.
--   `value` ([Int64](../data_types/int_uint.md)) — Metric value.
--   `description` ([String](../data_types/string.md)) — Metric description.
+-   `metric` ([字符串](../sql_reference/data_types/string.md)) — Metric name.
+-   `value` ([Int64](../sql_reference/data_types/int_uint.md)) — Metric value.
+-   `description` ([字符串](../sql_reference/data_types/string.md)) — Metric description.
 
-The list of supported metrics you can find in the [dbms/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/Common/CurrentMetrics.cpp) source file of ClickHouse.
+支持的指标列表，您可以在 [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp) ClickHouse的源文件。
 
-**Example**
+**示例**
 
 ``` sql
 SELECT * FROM system.metrics LIMIT 10
@@ -279,17 +282,17 @@ SELECT * FROM system.metrics LIMIT 10
 └────────────────────────────┴───────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**See Also**
+**另请参阅**
 
--   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
--   [system.events](#system_tables-events) — Contains a number of events that occurred.
--   [system.metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [系统。asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [系统。活动](#system_tables-events) — Contains a number of events that occurred.
+-   [系统。metric\_log](#system_tables-metric_log) — Contains a history of metrics values from tables `system.metrics` и `system.events`.
+-   [监测](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## system.metric\_log {#system_tables-metric_log}
+## 系统。metric\_log {#system_tables-metric_log}
 
-Contains history of metrics values from tables `system.metrics` and `system.events`, periodically flushed to disk.
-To turn on metrics history collection on `system.metric_log`, create `/etc/clickhouse-server/config.d/metric_log.xml` with following content:
+包含表中度量值的历史记录 `system.metrics` 和 `system.events`，定期刷新到磁盘。
+打开指标历史记录收集 `system.metric_log`,创建 `/etc/clickhouse-server/config.d/metric_log.xml` 具有以下内容:
 
 ``` xml
 <yandex>
@@ -302,7 +305,7 @@ To turn on metrics history collection on `system.metric_log`, create `/etc/click
 </yandex>
 ```
 
-**Example**
+**示例**
 
 ``` sql
 SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
@@ -335,50 +338,50 @@ CurrentMetric_ReplicatedChecks:                             0
 ...
 ```
 
-**See also**
+**另请参阅**
 
--   [system.asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
--   [system.events](#system_tables-events) — Contains a number of events that occurred.
--   [system.metrics](#system_tables-metrics) — Contains instantly calculated metrics.
--   [Monitoring](monitoring.md) — Base concepts of ClickHouse monitoring.
+-   [系统。asynchronous\_metrics](#system_tables-asynchronous_metrics) — Contains periodically calculated metrics.
+-   [系统。活动](#system_tables-events) — Contains a number of events that occurred.
+-   [系统。指标](#system_tables-metrics) — Contains instantly calculated metrics.
+-   [监测](monitoring.md) — Base concepts of ClickHouse monitoring.
 
-## system.numbers {#system-numbers}
+## 系统。数字 {#system-numbers}
 
-This table contains a single UInt64 column named ‘number’ that contains almost all the natural numbers starting from zero.
-You can use this table for tests, or if you need to do a brute force search.
-Reads from this table are not parallelized.
+此表包含一个名为UInt64的列 ‘number’ 它包含几乎所有从零开始的自然数。
+您可以使用此表进行测试，或者如果您需要进行暴力搜索。
+从此表中读取的内容不是并行的。
 
-## system.numbers\_mt {#system-numbers-mt}
+## 系统。numbers\_mt {#system-numbers-mt}
 
-The same as ‘system.numbers’ but reads are parallelized. The numbers can be returned in any order.
-Used for tests.
+一样的 ‘system.numbers’ 但读取是并行的。 这些数字可以以任何顺序返回。
+用于测试。
 
-## system.one {#system-one}
+## 系统。一 {#system-one}
 
-This table contains a single row with a single ‘dummy’ UInt8 column containing the value 0.
-This table is used if a SELECT query doesn’t specify the FROM clause.
-This is similar to the DUAL table found in other DBMSs.
+此表包含一行，其中包含一行 ‘dummy’ UInt8列包含值0。
+如果SELECT查询未指定FROM子句，则使用此表。
+这与其他Dbms中的双表类似。
 
-## system.parts {#system_tables-parts}
+## 系统。零件 {#system_tables-parts}
 
-Contains information about parts of [MergeTree](table_engines/mergetree.md) tables.
+包含有关的部分信息 [MergeTree](../engines/table_engines/mergetree_family/mergetree.md) 桌子
 
-Each row describes one data part.
+每行描述一个数据部分。
 
-Columns:
+列:
 
--   `partition` (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../query_language/alter.md#query_language_queries_alter) query.
+-   `partition` (String) – The partition name. To learn what a partition is, see the description of the [ALTER](../sql_reference/statements/alter.md#query_language_queries_alter) 查询。
 
-    Formats:
+    格式:
 
-    -   `YYYYMM` for automatic partitioning by month.
-    -   `any_string` when partitioning manually.
+    -   `YYYYMM` 用于按月自动分区。
+    -   `any_string` 手动分区时。
 
 -   `name` (`String`) – Name of the data part.
 
--   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it’s used in a table. Otherwise, it’s deleted. Inactive data parts remain after merging.
+-   `active` (`UInt8`) – Flag that indicates whether the data part is active. If a data part is active, it's used in a table. Otherwise, it's deleted. Inactive data parts remain after merging.
 
--   `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` by the index granularity (usually 8192) (this hint doesn’t work for adaptive granularity).
+-   `marks` (`UInt64`) – The number of marks. To get the approximate number of rows in a data part, multiply `marks` 通过索引粒度（通常为8192）（此提示不适用于自适应粒度）。
 
 -   `rows` (`UInt64`) – The number of rows.
 
@@ -418,7 +421,7 @@ Columns:
 
 -   `primary_key_bytes_in_memory_allocated` (`UInt64`) – The amount of memory (in bytes) reserved for primary key values.
 
--   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn’t exist. For more details, see [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition)
+-   `is_frozen` (`UInt8`) – Flag that shows that a partition data backup exists. 1, the backup exists. 0, the backup doesn't exist. For more details, see [FREEZE PARTITION](../sql_reference/statements/alter.md#alter_freeze-partition)
 
 -   `database` (`String`) – Name of the database.
 
@@ -430,29 +433,29 @@ Columns:
 
 -   `disk` (`String`) – Name of a disk that stores the data part.
 
--   `hash_of_all_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of compressed files.
+-   `hash_of_all_files` (`String`) – [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) 的压缩文件。
 
--   `hash_of_uncompressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of uncompressed files (files with marks, index file etc.).
+-   `hash_of_uncompressed_files` (`String`) – [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) 未压缩的文件（带标记的文件，索引文件等。).
 
--   `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) of data in the compressed files as if they were uncompressed.
+-   `uncompressed_hash_of_compressed_files` (`String`) – [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) 压缩文件中的数据，就好像它们是未压缩的。
 
 -   `bytes` (`UInt64`) – Alias for `bytes_on_disk`.
 
 -   `marks_size` (`UInt64`) – Alias for `marks_bytes`.
 
-## system.part\_log {#system_tables-part-log}
+## 系统。part\_log {#system_tables-part-log}
 
-The `system.part_log` table is created only if the [part\_log](server_settings/settings.md#server_settings-part-log) server setting is specified.
+该 `system.part_log` 表只有当创建 [part\_log](server_configuration_parameters/settings.md#server_configuration_parameters-part-log) 指定了服务器设置。
 
-This table contains information about events that occurred with [data parts](table_engines/custom_partitioning_key.md) in the [MergeTree](table_engines/mergetree.md) family tables, such as adding or merging data.
+此表包含与以下情况发生的事件有关的信息 [数据部分](../engines/table_engines/mergetree_family/custom_partitioning_key.md) 在 [MergeTree](../engines/table_engines/mergetree_family/mergetree.md) 家庭表，例如添加或合并数据。
 
-The `system.part_log` table contains the following columns:
+该 `system.part_log` 表包含以下列:
 
 -   `event_type` (Enum) — Type of the event that occurred with the data part. Can have one of the following values:
     -   `NEW_PART` — Inserting of a new data part.
     -   `MERGE_PARTS` — Merging of data parts.
     -   `DOWNLOAD_PART` — Downloading a data part.
-    -   `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
+    -   `REMOVE_PART` — Removing or detaching a data part using [DETACH PARTITION](../sql_reference/statements/alter.md#alter_detach-partition).
     -   `MUTATE_PART` — Mutating of a data part.
     -   `MOVE_PART` — Moving the data part from the one disk to another one.
 -   `event_date` (Date) — Event date.
@@ -461,7 +464,7 @@ The `system.part_log` table contains the following columns:
 -   `database` (String) — Name of the database the data part is in.
 -   `table` (String) — Name of the table the data part is in.
 -   `part_name` (String) — Name of the data part.
--   `partition_id` (String) — ID of the partition that the data part was inserted to. The column takes the ‘all’ value if the partitioning is by `tuple()`.
+-   `partition_id` (String) — ID of the partition that the data part was inserted to. The column takes the ‘all’ 值，如果分区是由 `tuple()`.
 -   `rows` (UInt64) — The number of rows in the data part.
 -   `size_in_bytes` (UInt64) — Size of the data part in bytes.
 -   `merged_from` (Array(String)) — An array of names of the parts which the current part was made up from (after the merge).
@@ -471,36 +474,36 @@ The `system.part_log` table contains the following columns:
 -   `error` (UInt16) — The code number of the occurred error.
 -   `exception` (String) — Text message of the occurred error.
 
-The `system.part_log` table is created after the first inserting data to the `MergeTree` table.
+该 `system.part_log` 表的第一个插入数据到后创建 `MergeTree` 桌子
 
-## system.processes {#system_tables-processes}
+## 系统。流程 {#system_tables-processes}
 
-This system table is used for implementing the `SHOW PROCESSLIST` query.
+该系统表用于实现 `SHOW PROCESSLIST` 查询。
 
-Columns:
+列:
 
--   `user` (String) – The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the `default` user. The field contains the username for a specific query, not for a query that this query initiated.
--   `address` (String) – The IP address the request was made from. The same for distributed processing. To track where a distributed query was originally made from, look at `system.processes` on the query requestor server.
+-   `user` (String) – The user who made the query. Keep in mind that for distributed processing, queries are sent to remote servers under the `default` 用户。 该字段包含特定查询的用户名，而不是此查询启动的查询的用户名。
+-   `address` (String) – The IP address the request was made from. The same for distributed processing. To track where a distributed query was originally made from, look at `system.processes` 查询请求者服务器上。
 -   `elapsed` (Float64) – The time in seconds since request execution started.
 -   `rows_read` (UInt64) – The number of rows read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 -   `bytes_read` (UInt64) – The number of uncompressed bytes read from the table. For distributed processing, on the requestor server, this is the total for all remote servers.
 -   `total_rows_approx` (UInt64) – The approximation of the total number of rows that should be read. For distributed processing, on the requestor server, this is the total for all remote servers. It can be updated during request processing, when new sources to process become known.
--   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max\_memory\_usage](../operations/settings/query_complexity.md#settings_max_memory_usage) setting.
--   `query` (String) – The query text. For `INSERT`, it doesn’t include the data to insert.
+-   `memory_usage` (UInt64) – Amount of RAM the request uses. It might not include some types of dedicated memory. See the [max\_memory\_usage](../operations/settings/query_complexity.md#settings_max_memory_usage) 设置。
+-   `query` (String) – The query text. For `INSERT`，它不包括要插入的数据。
 -   `query_id` (String) – Query ID, if defined.
 
-## system.text\_log {#system-tables-text-log}
+## 系统。text\_log {#system-tables-text-log}
 
-Contains logging entries. Logging level which goes to this table can be limited with `text_log.level` server setting.
+包含日志记录条目。 进入该表的日志记录级别可以通过以下方式进行限制 `text_log.level` 服务器设置。
 
-Columns:
+列:
 
--   `event_date` (`Date`) - Date of the entry.
--   `event_time` (`DateTime`) - Time of the entry.
--   `microseconds` (`UInt32`) - Microseconds of the entry.
+-   `event_date` (`Date`)-条目的日期。
+-   `event_time` (`DateTime`)-条目的时间。
+-   `microseconds` (`UInt32`）-条目的微秒。
 -   `thread_name` (String) — Name of the thread from which the logging was done.
 -   `thread_id` (UInt64) — OS thread ID.
--   `level` (`Enum8`) - Entry level.
+-   `level` (`Enum8`）-入门级。
     -   `'Fatal' = 1`
     -   `'Critical' = 2`
     -   `'Error' = 3`
@@ -509,30 +512,30 @@ Columns:
     -   `'Information' = 6`
     -   `'Debug' = 7`
     -   `'Trace' = 8`
--   `query_id` (`String`) - ID of the query.
+-   `query_id` (`String`)-查询的ID。
 -   `logger_name` (`LowCardinality(String)`) - Name of the logger (i.e. `DDLWorker`)
--   `message` (`String`) - The message itself.
--   `revision` (`UInt32`) - ClickHouse revision.
--   `source_file` (`LowCardinality(String)`) - Source file from which the logging was done.
--   `source_line` (`UInt64`) - Source line from which the logging was done.
+-   `message` (`String`）-消息本身。
+-   `revision` (`UInt32`)-ClickHouse修订。
+-   `source_file` (`LowCardinality(String)`)-从中完成日志记录的源文件。
+-   `source_line` (`UInt64`)-从中完成日志记录的源代码行。
 
-## system.query\_log {#system_tables-query_log}
+## 系统。query\_log {#system_tables-query_log}
 
-Contains information about execution of queries. For each query, you can see processing start time, duration of processing, error messages and other information.
+包含有关查询执行的信息。 对于每个查询，您可以看到处理开始时间，处理持续时间，错误消息和其他信息。
 
-!!! note "Note"
-    The table doesn’t contain input data for `INSERT` queries.
+!!! note "注"
+    该表不包含以下内容的输入数据 `INSERT` 查询。
 
-ClickHouse creates this table only if the [query\_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+ClickHouse仅在以下情况下创建此表 [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) 指定服务器参数。 此参数设置日志记录规则，例如日志记录间隔或将记录查询的表的名称。
 
-To enable query logging, set the [log\_queries](settings/settings.md#settings-log-queries) parameter to 1. For details, see the [Settings](settings/settings.md) section.
+要启用查询日志记录，请设置 [log\_queries](settings/settings.md#settings-log-queries) 参数为1。 有关详细信息，请参阅 [设置](settings/settings.md) 科。
 
-The `system.query_log` table registers two kinds of queries:
+该 `system.query_log` 表注册两种查询:
 
-1.  Initial queries that were run directly by the client.
-2.  Child queries that were initiated by other queries (for distributed query execution). For these types of queries, information about the parent queries is shown in the `initial_*` columns.
+1.  客户端直接运行的初始查询。
+2.  由其他查询启动的子查询（用于分布式查询执行）。 对于这些类型的查询，有关父查询的信息显示在 `initial_*` 列。
 
-Columns:
+列:
 
 -   `type` (`Enum8`) — Type of event that occurred when executing the query. Values:
     -   `'QueryStart' = 1` — Successful start of query execution.
@@ -545,8 +548,8 @@ Columns:
 -   `query_duration_ms` (UInt64) — Duration of query execution.
 -   `read_rows` (UInt64) — Number of read rows.
 -   `read_bytes` (UInt64) — Number of read bytes.
--   `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
--   `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
+-   `written_rows` (UInt64) — For `INSERT` 查询，写入的行数。 对于其他查询，列值为0。
+-   `written_bytes` (UInt64) — For `INSERT` 查询时，写入的字节数。 对于其他查询，列值为0。
 -   `result_rows` (UInt64) — Number of rows in the result.
 -   `result_bytes` (UInt64) — Number of bytes in the result.
 -   `memory_usage` (UInt64) — Memory consumption by the query.
@@ -567,50 +570,50 @@ Columns:
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
--   `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
--   `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
--   `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
+-   `os_user` (String) — OS's username who runs [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md).
+-   `client_hostname` (String) — Hostname of the client machine where the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或者运行另一个TCP客户端。
+-   `client_name` (String) — The [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端名称。
+-   `client_revision` (UInt32) — Revision of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端。
+-   `client_version_major` (UInt32) — Major version of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端。
+-   `client_version_minor` (UInt32) — Minor version of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端。
+-   `client_version_patch` (UInt32) — Patch component of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端版本。
 -   `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     -   0 — The query was launched from the TCP interface.
-    -   1 — `GET` method was used.
-    -   2 — `POST` method was used.
--   `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
--   `quota_key` (String) — The “quota key” specified in the [quotas](quotas.md) setting (see `keyed`).
+    -   1 — `GET` 方法被使用。
+    -   2 — `POST` 方法被使用。
+-   `http_user_agent` (String) — The `UserAgent` http请求中传递的标头。
+-   `quota_key` (String) — The “quota key” 在指定 [配额](quotas.md) 设置（见 `keyed`).
 -   `revision` (UInt32) — ClickHouse revision.
 -   `thread_numbers` (Array(UInt32)) — Number of threads that are participating in query execution.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [system.events](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` column.
--   `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` parameter to 1.
--   `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` column.
+-   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics. The description of them could be found in the table [系统。活动](#system_tables-events)
+-   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics that are listed in the `ProfileEvents.Names` 列。
+-   `Settings.Names` (Array(String)) — Names of settings that were changed when the client ran the query. To enable logging changes to settings, set the `log_query_settings` 参数为1。
+-   `Settings.Values` (Array(String)) — Values of settings that are listed in the `Settings.Names` 列。
 
-Each query creates one or two rows in the `query_log` table, depending on the status of the query:
+每个查询创建一个或两个行中 `query_log` 表，具体取决于查询的状态:
 
-1.  If the query execution is successful, two events with types 1 and 2 are created (see the `type` column).
-2.  If an error occurred during query processing, two events with types 1 and 4 are created.
-3.  If an error occurred before launching the query, a single event with type 3 is created.
+1.  如果查询执行成功，将创建两个类型为1和2的事件（请参阅 `type` 列）。
+2.  如果在查询处理过程中发生错误，将创建两个类型为1和4的事件。
+3.  如果在启动查询之前发生错误，将创建类型为3的单个事件。
 
-By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_log](server_settings/settings.md#server_settings-query-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+默认情况下，日志以7.5秒的间隔添加到表中。 您可以在设置此时间间隔 [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) 服务器设置（请参阅 `flush_interval_milliseconds` 参数）。 要强制将日志从内存缓冲区刷新到表中，请使用 `SYSTEM FLUSH LOGS` 查询。
 
-When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
+当手动删除表时，它将自动动态创建。 请注意，所有以前的日志将被删除。
 
-!!! note "Note"
-    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+!!! note "注"
+    日志的存储周期是无限的。 日志不会自动从表中删除。 您需要自己组织删除过时的日志。
 
-You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server_settings/settings.md#server_settings-query-log) server setting (see the `partition_by` parameter).
+您可以指定一个任意的分区键 `system.query_log` 表中的 [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) 服务器设置（请参阅 `partition_by` 参数）。
 
-## system.query\_thread\_log {#system_tables-query-thread-log}
+## 系统。query\_thread\_log {#system_tables-query-thread-log}
 
-The table contains information about each query execution thread.
+该表包含有关每个查询执行线程的信息。
 
-ClickHouse creates this table only if the [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+ClickHouse仅在以下情况下创建此表 [query\_thread\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) 指定服务器参数。 此参数设置日志记录规则，例如日志记录间隔或将记录查询的表的名称。
 
-To enable query logging, set the [log\_query\_threads](settings/settings.md#settings-log-query-threads) parameter to 1. For details, see the [Settings](settings/settings.md) section.
+要启用查询日志记录，请设置 [log\_query\_threads](settings/settings.md#settings-log-query-threads) 参数为1。 有关详细信息，请参阅 [设置](settings/settings.md) 科。
 
-Columns:
+列:
 
 -   `event_date` (Date) — the date when the thread has finished execution of the query.
 -   `event_time` (DateTime) — the date and time when the thread has finished execution of the query.
@@ -618,8 +621,8 @@ Columns:
 -   `query_duration_ms` (UInt64) — Duration of query execution.
 -   `read_rows` (UInt64) — Number of read rows.
 -   `read_bytes` (UInt64) — Number of read bytes.
--   `written_rows` (UInt64) — For `INSERT` queries, the number of written rows. For other queries, the column value is 0.
--   `written_bytes` (UInt64) — For `INSERT` queries, the number of written bytes. For other queries, the column value is 0.
+-   `written_rows` (UInt64) — For `INSERT` 查询，写入的行数。 对于其他查询，列值为0。
+-   `written_bytes` (UInt64) — For `INSERT` 查询时，写入的字节数。 对于其他查询，列值为0。
 -   `memory_usage` (Int64) — The difference between the amount of allocated and freed memory in context of this thread.
 -   `peak_memory_usage` (Int64) — The maximum difference between the amount of allocated and freed memory in context of this thread.
 -   `thread_name` (String) — Name of the thread.
@@ -641,62 +644,62 @@ Columns:
 -   `interface` (UInt8) — Interface that the query was initiated from. Possible values:
     -   1 — TCP.
     -   2 — HTTP.
--   `os_user` (String) — OS’s username who runs [clickhouse-client](../interfaces/cli.md).
--   `client_hostname` (String) — Hostname of the client machine where the [clickhouse-client](../interfaces/cli.md) or another TCP client is run.
--   `client_name` (String) — The [clickhouse-client](../interfaces/cli.md) or another TCP client name.
--   `client_revision` (UInt32) — Revision of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_major` (UInt32) — Major version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_minor` (UInt32) — Minor version of the [clickhouse-client](../interfaces/cli.md) or another TCP client.
--   `client_version_patch` (UInt32) — Patch component of the [clickhouse-client](../interfaces/cli.md) or another TCP client version.
+-   `os_user` (String) — OS's username who runs [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md).
+-   `client_hostname` (String) — Hostname of the client machine where the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或者运行另一个TCP客户端。
+-   `client_name` (String) — The [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端名称。
+-   `client_revision` (UInt32) — Revision of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端。
+-   `client_version_major` (UInt32) — Major version of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端。
+-   `client_version_minor` (UInt32) — Minor version of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端。
+-   `client_version_patch` (UInt32) — Patch component of the [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 或另一个TCP客户端版本。
 -   `http_method` (UInt8) — HTTP method that initiated the query. Possible values:
     -   0 — The query was launched from the TCP interface.
-    -   1 — `GET` method was used.
-    -   2 — `POST` method was used.
--   `http_user_agent` (String) — The `UserAgent` header passed in the HTTP request.
--   `quota_key` (String) — The “quota key” specified in the [quotas](quotas.md) setting (see `keyed`).
+    -   1 — `GET` 方法被使用。
+    -   2 — `POST` 方法被使用。
+-   `http_user_agent` (String) — The `UserAgent` http请求中传递的标头。
+-   `quota_key` (String) — The “quota key” 在指定 [配额](quotas.md) 设置（见 `keyed`).
 -   `revision` (UInt32) — ClickHouse revision.
--   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [system.events](#system_tables-events)
--   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` column.
+-   `ProfileEvents.Names` (Array(String)) — Counters that measure different metrics for this thread. The description of them could be found in the table [系统。活动](#system_tables-events)
+-   `ProfileEvents.Values` (Array(UInt64)) — Values of metrics for this thread that are listed in the `ProfileEvents.Names` 列。
 
-By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+默认情况下，日志以7.5秒的间隔添加到表中。 您可以在设置此时间间隔 [query\_thread\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) 服务器设置（请参阅 `flush_interval_milliseconds` 参数）。 要强制将日志从内存缓冲区刷新到表中，请使用 `SYSTEM FLUSH LOGS` 查询。
 
-When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
+当手动删除表时，它将自动动态创建。 请注意，所有以前的日志将被删除。
 
-!!! note "Note"
-    The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
+!!! note "注"
+    日志的存储周期是无限的。 日志不会自动从表中删除。 您需要自己组织删除过时的日志。
 
-You can specify an arbitrary partitioning key for the `system.query_thread_log` table in the [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) server setting (see the `partition_by` parameter).
+您可以指定一个任意的分区键 `system.query_thread_log` 表中的 [query\_thread\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) 服务器设置（请参阅 `partition_by` 参数）。
 
-## system.trace\_log {#system_tables-trace_log}
+## 系统。trace\_log {#system_tables-trace_log}
 
-Contains stack traces collected by the sampling query profiler.
+包含采样查询探查器收集的堆栈跟踪。
 
-ClickHouse creates this table when the [trace\_log](server_settings/settings.md#server_settings-trace_log) server configuration section is set. Also the [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
+ClickHouse创建此表时 [trace\_log](server_configuration_parameters/settings.md#server_configuration_parameters-trace_log) 服务器配置部分被设置。 也是 [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) 和 [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) 应设置设置。
 
-To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` introspection functions.
+要分析日志，请使用 `addressToLine`, `addressToSymbol` 和 `demangle` 内省功能。
 
-Columns:
+列:
 
--   `event_date`([Date](../data_types/date.md)) — Date of sampling moment.
+-   `event_date`([日期](../sql_reference/data_types/date.md)) — Date of sampling moment.
 
--   `event_time`([DateTime](../data_types/datetime.md)) — Timestamp of sampling moment.
+-   `event_time`([日期时间](../sql_reference/data_types/datetime.md)) — Timestamp of sampling moment.
 
--   `revision`([UInt32](../data_types/int_uint.md)) — ClickHouse server build revision.
+-   `revision`([UInt32](../sql_reference/data_types/int_uint.md)) — ClickHouse server build revision.
 
-    When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
+    通过以下方式连接到服务器 `clickhouse-client`，你看到的字符串类似于 `Connected to ClickHouse server version 19.18.1 revision 54429.`. 该字段包含 `revision`，但不是 `version` 的服务器。
 
--   `timer_type`([Enum8](../data_types/enum.md)) — Timer type:
+-   `timer_type`([枚举8](../sql_reference/data_types/enum.md)) — Timer type:
 
-    -   `Real` represents wall-clock time.
-    -   `CPU` represents CPU time.
+    -   `Real` 表示挂钟时间。
+    -   `CPU` 表示CPU时间。
 
--   `thread_number`([UInt32](../data_types/int_uint.md)) — Thread identifier.
+-   `thread_number`([UInt32](../sql_reference/data_types/int_uint.md)) — Thread identifier.
 
--   `query_id`([String](../data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
+-   `query_id`([字符串](../sql_reference/data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) 系统表.
 
--   `trace`([Array(UInt64)](../data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace`([数组(UInt64)](../sql_reference/data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
-**Example**
+**示例**
 
 ``` sql
 SELECT * FROM system.trace_log LIMIT 1 \G
@@ -714,12 +717,12 @@ query_id:      acc4d61f-5bd1-4a3e-bc91-2180be37c915
 trace:         [94222141367858,94222152240175,94222152325351,94222152329944,94222152330796,94222151449980,94222144088167,94222151682763,94222144088167,94222151682763,94222144088167,94222144058283,94222144059248,94222091840750,94222091842302,94222091831228,94222189631488,140509950166747,140509942945935]
 ```
 
-## system.replicas {#system_tables-replicas}
+## 系统。副本 {#system_tables-replicas}
 
-Contains information and status for replicated tables residing on the local server.
-This table can be used for monitoring. The table contains a row for every Replicated\* table.
+包含驻留在本地服务器上的复制表的信息和状态。
+此表可用于监视。 该表对于每个已复制的\*表都包含一行。
 
-Example:
+示例:
 
 ``` sql
 SELECT *
@@ -763,46 +766,46 @@ total_replicas:             2
 active_replicas:            2
 ```
 
-Columns:
+列:
 
--   `database` (`String`) - Database name
--   `table` (`String`) - Table name
--   `engine` (`String`) - Table engine name
--   `is_leader` (`UInt8`) - Whether the replica is the leader.
-    Only one replica at a time can be the leader. The leader is responsible for selecting background merges to perform.
-    Note that writes can be performed to any replica that is available and has a session in ZK, regardless of whether it is a leader.
--   `can_become_leader` (`UInt8`) - Whether the replica can be elected as a leader.
--   `is_readonly` (`UInt8`) - Whether the replica is in read-only mode.
-    This mode is turned on if the config doesn’t have sections with ZooKeeper, if an unknown error occurred when reinitializing sessions in ZooKeeper, and during session reinitialization in ZooKeeper.
--   `is_session_expired` (`UInt8`) - the session with ZooKeeper has expired. Basically the same as `is_readonly`.
--   `future_parts` (`UInt32`) - The number of data parts that will appear as the result of INSERTs or merges that haven’t been done yet.
--   `parts_to_check` (`UInt32`) - The number of data parts in the queue for verification. A part is put in the verification queue if there is suspicion that it might be damaged.
--   `zookeeper_path` (`String`) - Path to table data in ZooKeeper.
--   `replica_name` (`String`) - Replica name in ZooKeeper. Different replicas of the same table have different names.
--   `replica_path` (`String`) - Path to replica data in ZooKeeper. The same as concatenating ‘zookeeper\_path/replicas/replica\_path’.
--   `columns_version` (`Int32`) - Version number of the table structure. Indicates how many times ALTER was performed. If replicas have different versions, it means some replicas haven’t made all of the ALTERs yet.
--   `queue_size` (`UInt32`) - Size of the queue for operations waiting to be performed. Operations include inserting blocks of data, merges, and certain other actions. It usually coincides with `future_parts`.
--   `inserts_in_queue` (`UInt32`) - Number of inserts of blocks of data that need to be made. Insertions are usually replicated fairly quickly. If this number is large, it means something is wrong.
--   `merges_in_queue` (`UInt32`) - The number of merges waiting to be made. Sometimes merges are lengthy, so this value may be greater than zero for a long time.
--   `part_mutations_in_queue` (`UInt32`) - The number of mutations waiting to be made.
--   `queue_oldest_time` (`DateTime`) - If `queue_size` greater than 0, shows when the oldest operation was added to the queue.
--   `inserts_oldest_time` (`DateTime`) - See `queue_oldest_time`
--   `merges_oldest_time` (`DateTime`) - See `queue_oldest_time`
--   `part_mutations_oldest_time` (`DateTime`) - See `queue_oldest_time`
+-   `database` (`String`)-数据库名称
+-   `table` (`String`)-表名
+-   `engine` (`String`)-表引擎名称
+-   `is_leader` (`UInt8`)-副本是否是领导者。
+    一次只有一个副本可以成为领导者。 领导者负责选择要执行的后台合并。
+    请注意，可以对任何可用且在ZK中具有会话的副本执行写操作，而不管该副本是否为leader。
+-   `can_become_leader` (`UInt8`)-副本是否可以当选为领导者。
+-   `is_readonly` (`UInt8`)-副本是否处于只读模式。
+    如果配置没有ZooKeeper的部分，如果在ZooKeeper中重新初始化会话时发生未知错误，以及在ZooKeeper中重新初始化会话时发生未知错误，则此模式将打开。
+-   `is_session_expired` (`UInt8`)-与ZooKeeper的会话已经过期。 基本上一样 `is_readonly`.
+-   `future_parts` (`UInt32`)-由于尚未完成的插入或合并而显示的数据部分的数量。
+-   `parts_to_check` (`UInt32`)-队列中用于验证的数据部分的数量。 如果怀疑零件可能已损坏，则将其放入验证队列。
+-   `zookeeper_path` (`String`)-在ZooKeeper中的表数据路径。
+-   `replica_name` (`String`)-在动物园管理员副本名称. 同一表的不同副本具有不同的名称。
+-   `replica_path` (`String`)-在ZooKeeper中的副本数据的路径。 与连接相同 ‘zookeeper\_path/replicas/replica\_path’.
+-   `columns_version` (`Int32`)-表结构的版本号。 指示执行ALTER的次数。 如果副本有不同的版本，这意味着一些副本还没有做出所有的改变。
+-   `queue_size` (`UInt32`)-等待执行的操作的队列大小。 操作包括插入数据块、合并和某些其他操作。 它通常与 `future_parts`.
+-   `inserts_in_queue` (`UInt32`)-需要插入数据块的数量。 插入通常复制得相当快。 如果这个数字很大，这意味着有什么不对劲。
+-   `merges_in_queue` (`UInt32`)-等待进行合并的数量。 有时合并时间很长，因此此值可能长时间大于零。
+-   `part_mutations_in_queue` (`UInt32`）-等待进行的突变的数量。
+-   `queue_oldest_time` (`DateTime`)-如果 `queue_size` 大于0，显示何时将最旧的操作添加到队列中。
+-   `inserts_oldest_time` (`DateTime`）-看 `queue_oldest_time`
+-   `merges_oldest_time` (`DateTime`）-看 `queue_oldest_time`
+-   `part_mutations_oldest_time` (`DateTime`）-看 `queue_oldest_time`
 
-The next 4 columns have a non-zero value only where there is an active session with ZK.
+接下来的4列只有在有ZK活动会话的情况下才具有非零值。
 
--   `log_max_index` (`UInt64`) - Maximum entry number in the log of general activity.
--   `log_pointer` (`UInt64`) - Maximum entry number in the log of general activity that the replica copied to its execution queue, plus one. If `log_pointer` is much smaller than `log_max_index`, something is wrong.
--   `last_queue_update` (`DateTime`) - When the queue was updated last time.
--   `absolute_delay` (`UInt64`) - How big lag in seconds the current replica has.
--   `total_replicas` (`UInt8`) - The total number of known replicas of this table.
--   `active_replicas` (`UInt8`) - The number of replicas of this table that have a session in ZooKeeper (i.e., the number of functioning replicas).
+-   `log_max_index` (`UInt64`)-一般活动日志中的最大条目数。
+-   `log_pointer` (`UInt64`)-副本复制到其执行队列的常规活动日志中的最大条目数加一。 如果 `log_pointer` 比 `log_max_index`，有点不对劲。
+-   `last_queue_update` (`DateTime`)-上次更新队列时。
+-   `absolute_delay` (`UInt64`）-当前副本有多大滞后秒。
+-   `total_replicas` (`UInt8`)-此表的已知副本总数。
+-   `active_replicas` (`UInt8`)-在ZooKeeper中具有会话的此表的副本的数量（即正常运行的副本的数量）。
 
-If you request all the columns, the table may work a bit slowly, since several reads from ZooKeeper are made for each row.
-If you don’t request the last 4 columns (log\_max\_index, log\_pointer, total\_replicas, active\_replicas), the table works quickly.
+如果您请求所有列，表可能会工作得有点慢，因为每行都会从ZooKeeper进行几次读取。
+如果您没有请求最后4列（log\_max\_index，log\_pointer，total\_replicas，active\_replicas），表工作得很快。
 
-For example, you can check that everything is working correctly like this:
+例如，您可以检查一切是否正常工作，如下所示:
 
 ``` sql
 SELECT
@@ -834,31 +837,60 @@ WHERE
     OR active_replicas < total_replicas
 ```
 
-If this query doesn’t return anything, it means that everything is fine.
+如果这个查询没有返回任何东西，这意味着一切都很好。
 
-## system.settings {#system-settings}
+## 系统。设置 {#system-tables-system-settings}
 
-Contains information about settings that are currently in use.
-I.e. used for executing the query you are using to read from the system.settings table.
+包含有关当前用户的会话设置的信息。
 
-Columns:
+列:
 
--   `name` (String) — Setting name.
--   `value` (String) — Setting value.
--   `description` (String) — Setting description.
--   `type` (String) — Setting type (implementation specific string value).
--   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
--   `min` (Nullable(String)) — Get minimum allowed value (if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
--   `max` (Nullable(String)) — Get maximum allowed value (if any is set via [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
--   `readonly` (UInt8) — Can user change this setting (for more info, look into [constraints](settings/constraints_on_settings.md#constraints-on-settings)).
+-   `name` ([字符串](../sql_reference/data_types/string.md)) — Setting name.
+-   `value` ([字符串](../sql_reference/data_types/string.md)) — Setting value.
+-   `changed` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — Shows whether a setting is changed from its default value.
+-   `description` ([字符串](../sql_reference/data_types/string.md)) — Short setting description.
+-   `min` ([可为空](../sql_reference/data_types/nullable.md)([字符串](../sql_reference/data_types/string.md))) — Minimum value of the setting, if any is set via [制约因素](settings/constraints_on_settings.md#constraints-on-settings). 如果设置没有最小值，则包含 [NULL](../sql_reference/syntax.md#null-literal).
+-   `max` ([可为空](../sql_reference/data_types/nullable.md)([字符串](../sql_reference/data_types/string.md))) — Maximum value of the setting, if any is set via [制约因素](settings/constraints_on_settings.md#constraints-on-settings). 如果设置没有最大值，则包含 [NULL](../sql_reference/syntax.md#null-literal).
+-   `readonly` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — Shows whether the current user can change the setting:
+    -   `0` — Current user can change the setting.
+    -   `1` — Current user can't change the setting.
 
-Example:
+**示例**
+
+下面的示例演示如何获取有关名称包含的设置的信息 `min_i`.
 
 ``` sql
-SELECT name, value
+SELECT *
 FROM system.settings
-WHERE changed
+WHERE name LIKE '%min_i%'
 ```
+
+``` text
+┌─name────────────────────────────────────────┬─value─────┬─changed─┬─description───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┐
+│ min_insert_block_size_rows                  │ 1048576   │       0 │ Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.                                                                         │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ min_insert_block_size_bytes                 │ 268435456 │       0 │ Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+│ read_backoff_min_interval_between_events_ms │ 1000      │       0 │ Settings to reduce the number of threads in case of slow reads. Do not pay attention to the event, if the previous one has passed less than a certain amount of time. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
+└─────────────────────────────────────────────┴───────────┴─────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┘
+```
+
+使用 `WHERE changed` 可以是有用的，例如，当你想检查:
+
+-   配置文件中的设置是否正确加载并正在使用。
+-   在当前会话中更改的设置。
+
+<!-- -->
+
+``` sql
+SELECT * FROM system.settings WHERE changed AND name='load_balancing'
+```
+
+**另请参阅**
+
+-   [设置](settings/index.md#settings)
+-   [查询权限](settings/permissions_for_queries.md#settings_readonly)
+-   [对设置的限制](settings/constraints_on_settings.md)
+
+## 系统。表\_engines {#system.table_engines}
 
 ``` text
 ┌─name───────────────────┬─value───────┐
@@ -869,11 +901,11 @@ WHERE changed
 └────────────────────────┴─────────────┘
 ```
 
-## system.merge\_tree\_settings {#system-merge_tree_settings}
+## 系统。merge\_tree\_settings {#system-merge_tree_settings}
 
-Contains information about settings for `MergeTree` tables.
+包含有关以下设置的信息 `MergeTree` 桌子
 
-Columns:
+列:
 
 -   `name` (String) — Setting name.
 -   `value` (String) — Setting value.
@@ -881,21 +913,21 @@ Columns:
 -   `type` (String) — Setting type (implementation specific string value).
 -   `changed` (UInt8) — Whether the setting was explicitly defined in the config or explicitly changed.
 
-## system.table\_engines {#system-table-engines}
+## 系统。表\_engines {#system-table-engines}
 
-Contains description of table engines supported by server and their feature support information.
+包含服务器支持的表引擎的描述及其功能支持信息。
 
-This table contains the following columns (the column type is shown in brackets):
+此表包含以下列（列类型显示在括号中):
 
 -   `name` (String) — The name of table engine.
--   `supports_settings` (UInt8) — Flag that indicates if table engine supports `SETTINGS` clause.
--   `supports_skipping_indices` (UInt8) — Flag that indicates if table engine supports [skipping indices](table_engines/mergetree/#table_engine-mergetree-data_skipping-indexes).
--   `supports_ttl` (UInt8) — Flag that indicates if table engine supports [TTL](table_engines/mergetree/#table_engine-mergetree-ttl).
--   `supports_sort_order` (UInt8) — Flag that indicates if table engine supports clauses `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` and `SAMPLE_BY`.
--   `supports_replication` (UInt8) — Flag that indicates if table engine supports [data replication](table_engines/replication/).
+-   `supports_settings` (UInt8) — Flag that indicates if table engine supports `SETTINGS` 条款
+-   `supports_skipping_indices` (UInt8) — Flag that indicates if table engine supports [跳过索引](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-data_skipping-indexes).
+-   `supports_ttl` (UInt8) — Flag that indicates if table engine supports [TTL](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-ttl).
+-   `supports_sort_order` (UInt8) — Flag that indicates if table engine supports clauses `PARTITION_BY`, `PRIMARY_KEY`, `ORDER_BY` 和 `SAMPLE_BY`.
+-   `supports_replication` (UInt8) — Flag that indicates if table engine supports [数据复制](../engines/table_engines/mergetree_family/replication.md).
 -   `supports_duduplication` (UInt8) — Flag that indicates if table engine supports data deduplication.
 
-Example:
+示例:
 
 ``` sql
 SELECT *
@@ -911,56 +943,72 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 └───────────────────────────────┴───────────────────┴───────────────────────────┴─────────────────────┴──────────────┴──────────────────────┴────────────────────────┘
 ```
 
-**See also**
+**另请参阅**
 
--   MergeTree family [query clauses](table_engines/mergetree.md#mergetree-query-clauses)
--   Kafka [settings](table_engines/kafka.md#table_engine-kafka-creating-a-table)
--   Join [settings](table_engines/join.md#join-limitations-and-settings)
+-   梅树家族 [查询子句](../engines/table_engines/mergetree_family/mergetree.md#mergetree-query-clauses)
+-   卡夫卡 [设置](../engines/table_engines/integrations/kafka.md#table_engine-kafka-creating-a-table)
+-   加入我们 [设置](../engines/table_engines/special/join.md#join-limitations-and-settings)
 
-## system.tables {#system-tables}
+## 系统。表 {#system-tables}
 
-Contains metadata of each table that the server knows about. Detached tables are not shown in `system.tables`.
+包含服务器知道的每个表的元数据。 分离的表不显示在 `system.tables`.
 
-This table contains the following columns (the column type is shown in brackets):
+此表包含以下列（列类型显示在括号中):
 
 -   `database` (String) — The name of the database the table is in.
+
 -   `name` (String) — Table name.
+
 -   `engine` (String) — Table engine name (without parameters).
--   `is_temporary` (UInt8) - Flag that indicates whether the table is temporary.
--   `data_path` (String) - Path to the table data in the file system.
--   `metadata_path` (String) - Path to the table metadata in the file system.
--   `metadata_modification_time` (DateTime) - Time of latest modification of the table metadata.
--   `dependencies_database` (Array(String)) - Database dependencies.
--   `dependencies_table` (Array(String)) - Table dependencies ([MaterializedView](table_engines/materializedview.md) tables based on the current table).
--   `create_table_query` (String) - The query that was used to create the table.
--   `engine_full` (String) - Parameters of the table engine.
--   `partition_key` (String) - The partition key expression specified in the table.
--   `sorting_key` (String) - The sorting key expression specified in the table.
--   `primary_key` (String) - The primary key expression specified in the table.
--   `sampling_key` (String) - The sampling key expression specified in the table.
--   `storage_policy` (String) - The storage policy:
 
-      - [MergeTree](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes)
-      - [Distributed](table_engines/distributed.md#distributed)
+-   `is_temporary` (UInt8)-指示表是否是临时的标志。
 
--   `total_rows` (Nullable(UInt64)) - Total number of rows, if it is possible to quickly determine exact number of rows in the table, otherwise `Null` (including underying `Buffer` table).
--   `total_bytes` (Nullable(UInt64)) - Total number of bytes, if it is possible to quickly determine exact number of bytes for the table on storage, otherwise `Null` (**does not** includes any underlying storage).
+-   `data_path` (String)-文件系统中表数据的路径。
 
-      - If the table stores data on disk, returns used space on disk (i.e. compressed).
-      - If the table stores data in memory, returns approximated number of used bytes in memory.
+-   `metadata_path` (String)-文件系统中表元数据的路径。
 
-The `system.tables` table is used in `SHOW TABLES` query implementation.
+-   `metadata_modification_time` (DateTime)-表元数据的最新修改时间。
 
-## system.zookeeper {#system-zookeeper}
+-   `dependencies_database` (数组(字符串))-数据库依赖关系.
 
-The table does not exist if ZooKeeper is not configured. Allows reading data from the ZooKeeper cluster defined in the config.
-The query must have a ‘path’ equality condition in the WHERE clause. This is the path in ZooKeeper for the children that you want to get data for.
+-   `dependencies_table` （数组（字符串））-表依赖关系 ([MaterializedView](../engines/table_engines/special/materializedview.md) 基于当前表的表）。
 
-The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
-To output data for all root nodes, write path = ‘/’.
-If the path specified in ‘path’ doesn’t exist, an exception will be thrown.
+-   `create_table_query` (String)-用于创建表的查询。
 
-Columns:
+-   `engine_full` (String)-表引擎的参数。
+
+-   `partition_key` (String)-表中指定的分区键表达式。
+
+-   `sorting_key` (String)-表中指定的排序键表达式。
+
+-   `primary_key` (String)-表中指定的主键表达式。
+
+-   `sampling_key` (String)-表中指定的采样键表达式。
+
+-   `storage_policy` (字符串)-存储策略:
+
+    -   [MergeTree](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes)
+    -   [分布](../engines/table_engines/special/distributed.md#distributed)
+
+-   `total_rows` (Nullable(UInt64))-总行数，如果可以快速确定表中的确切行数，否则 `Null` （包括内衣 `Buffer` 表）。
+
+-   `total_bytes` (Nullable(UInt64))-总字节数，如果可以快速确定存储表的确切字节数，否则 `Null` (**不** 包括任何底层存储）。
+
+    -   If the table stores data on disk, returns used space on disk (i.e. compressed).
+    -   如果表在内存中存储数据,返回在内存中使用的近似字节数.
+
+该 `system.tables` 表中使用 `SHOW TABLES` 查询实现。
+
+## 系统。动物园管理员 {#system-zookeeper}
+
+如果未配置ZooKeeper，则表不存在。 允许从配置中定义的ZooKeeper集群读取数据。
+查询必须具有 ‘path’ WHERE子句中的平等条件。 这是ZooKeeper中您想要获取数据的孩子的路径。
+
+查询 `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` 输出对所有孩子的数据 `/clickhouse` 节点。
+要输出所有根节点的数据，write path= ‘/’.
+如果在指定的路径 ‘path’ 不存在，将引发异常。
+
+列:
 
 -   `name` (String) — The name of the node.
 -   `path` (String) — The path to the node.
@@ -977,7 +1025,7 @@ Columns:
 -   `aversion` (Int32) — Number of changes to the ACL.
 -   `ephemeralOwner` (Int64) — For ephemeral nodes, the ID of the session that owns this node.
 
-Example:
+示例:
 
 ``` sql
 SELECT *
@@ -1022,57 +1070,57 @@ pzxid:          987021252247
 path:           /clickhouse/tables/01-08/visits/replicas
 ```
 
-## system.mutations {#system_tables-mutations}
+## 系统。突变 {#system_tables-mutations}
 
-The table contains information about [mutations](../query_language/alter.md#alter-mutations) of MergeTree tables and their progress. Each mutation command is represented by a single row. The table has the following columns:
+该表包含以下信息 [突变](../sql_reference/statements/alter.md#alter-mutations) MergeTree表及其进展。 每个突变命令由一行表示。 该表具有以下列:
 
-**database**, **table** - The name of the database and table to which the mutation was applied.
+**数据库**, **表** -应用突变的数据库和表的名称。
 
-**mutation\_id** - The ID of the mutation. For replicated tables these IDs correspond to znode names in the `<table_path_in_zookeeper>/mutations/` directory in ZooKeeper. For unreplicated tables the IDs correspond to file names in the data directory of the table.
+**mutation\_id** -变异的ID 对于复制的表，这些Id对应于znode中的名称 `<table_path_in_zookeeper>/mutations/` 动物园管理员的目录。 对于未复制的表，Id对应于表的数据目录中的文件名。
 
-**command** - The mutation command string (the part of the query after `ALTER TABLE [db.]table`).
+**命令** -Mutation命令字符串（查询后的部分 `ALTER TABLE [db.]table`).
 
-**create\_time** - When this mutation command was submitted for execution.
+**create\_time** -当这个突变命令被提交执行。
 
-**block\_numbers.partition\_id**, **block\_numbers.number** - A nested column. For mutations of replicated tables, it contains one record for each partition: the partition ID and the block number that was acquired by the mutation (in each partition, only parts that contain blocks with numbers less than the block number acquired by the mutation in that partition will be mutated). In non-replicated tables, block numbers in all partitions form a single sequence. This means that for mutations of non-replicated tables, the column will contain one record with a single block number acquired by the mutation.
+**block\_numbers.partition\_id**, **block\_numbers.编号** -嵌套列。 对于复制表的突变，它包含每个分区的一条记录：分区ID和通过突变获取的块编号（在每个分区中，只有包含编号小于该分区中突变获取的块编号的块的 在非复制表中，所有分区中的块编号形成一个序列。 这意味着对于非复制表的突变，该列将包含一条记录，其中包含由突变获取的单个块编号。
 
-**parts\_to\_do** - The number of data parts that need to be mutated for the mutation to finish.
+**parts\_to\_do** -为了完成突变，需要突变的数据部分的数量。
 
-**is\_done** - Is the mutation done? Note that even if `parts_to_do = 0` it is possible that a mutation of a replicated table is not done yet because of a long-running INSERT that will create a new data part that will need to be mutated.
+**is\_done** -变异完成了?？ 请注意，即使 `parts_to_do = 0` 由于长时间运行的INSERT将创建需要突变的新数据部分，因此可能尚未完成复制表的突变。
 
-If there were problems with mutating some parts, the following columns contain additional information:
+如果在改变某些部分时出现问题，以下列将包含其他信息:
 
-**latest\_failed\_part** - The name of the most recent part that could not be mutated.
+**latest\_failed\_part** -不能变异的最新部分的名称。
 
-**latest\_fail\_time** - The time of the most recent part mutation failure.
+**latest\_fail\_time** -最近的部分突变失败的时间。
 
-**latest\_fail\_reason** - The exception message that caused the most recent part mutation failure.
+**latest\_fail\_reason** -导致最近部件变异失败的异常消息。
 
-## system.disks {#system_tables-disks}
+## 系统。磁盘 {#system_tables-disks}
 
-Contains information about disks defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+包含有关在定义的磁盘信息 [服务器配置](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
-Columns:
+列:
 
--   `name` ([String](../data_types/string.md)) — Name of a disk in the server configuration.
--   `path` ([String](../data_types/string.md)) — Path to the mount point in the file system.
--   `free_space` ([UInt64](../data_types/int_uint.md)) — Free space on disk in bytes.
--   `total_space` ([UInt64](../data_types/int_uint.md)) — Disk volume in bytes.
--   `keep_free_space` ([UInt64](../data_types/int_uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` parameter of disk configuration.
+-   `name` ([字符串](../sql_reference/data_types/string.md)) — Name of a disk in the server configuration.
+-   `path` ([字符串](../sql_reference/data_types/string.md)) — Path to the mount point in the file system.
+-   `free_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Free space on disk in bytes.
+-   `total_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Disk volume in bytes.
+-   `keep_free_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — Amount of disk space that should stay free on disk in bytes. Defined in the `keep_free_space_bytes` 磁盘配置参数。
 
-## system.storage\_policies {#system_tables-storage_policies}
+## 系统。storage\_policies {#system_tables-storage_policies}
 
-Contains information about storage policies and volumes defined in the [server configuration](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+包含有关存储策略和卷中定义的信息 [服务器配置](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
-Columns:
+列:
 
--   `policy_name` ([String](../data_types/string.md)) — Name of the storage policy.
--   `volume_name` ([String](../data_types/string.md)) — Volume name defined in the storage policy.
--   `volume_priority` ([UInt64](../data_types/int_uint.md)) — Volume order number in the configuration.
--   `disks` ([Array(String)](../data_types/array.md)) — Disk names, defined in the storage policy.
--   `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
--   `move_factor` ([Float64](../data_types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
+-   `policy_name` ([字符串](../sql_reference/data_types/string.md)) — Name of the storage policy.
+-   `volume_name` ([字符串](../sql_reference/data_types/string.md)) — Volume name defined in the storage policy.
+-   `volume_priority` ([UInt64](../sql_reference/data_types/int_uint.md)) — Volume order number in the configuration.
+-   `disks` ([数组（字符串)](../sql_reference/data_types/array.md)) — Disk names, defined in the storage policy.
+-   `max_data_part_size` ([UInt64](../sql_reference/data_types/int_uint.md)) — Maximum size of a data part that can be stored on volume disks (0 — no limit).
+-   `move_factor` ([Float64](../sql_reference/data_types/float.md)) — Ratio of free disk space. When the ratio exceeds the value of configuration parameter, ClickHouse start to move data to the next volume in order.
 
-If the storage policy contains more then one volume, then information for each volume is stored in the individual row of the table.
+如果存储策略包含多个卷，则每个卷的信息将存储在表的单独行中。
 
-[Original article](https://clickhouse.tech/docs/en/operations/system_tables/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/system_tables/) <!--hide-->
