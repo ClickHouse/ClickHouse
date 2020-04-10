@@ -49,7 +49,6 @@ private:
     SortingHeap<SortCursor> queue_without_collation;
     SortingHeap<SortCursorWithCollation> queue_with_collation;
 
-    void updateCursor(size_t source_num);
     Status insertFromChunk(size_t source_num);
 
     template <typename TSortingHeap>

@@ -1,4 +1,5 @@
-#include <Processors/Merges/CollapsingSortedTransform.h>
+#include <Processors/Merges/CollapsingSortedAlgorithm.h>
+
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldVisitors.h>
 #include <IO/WriteBuffer.h>
@@ -16,70 +17,27 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-CollapsingSortedTransform::CollapsingSortedTransform(
+CollapsingSortedAlgorithm::CollapsingSortedAlgorithm(
     const Block & header,
     size_t num_inputs,
     SortDescription description_,
     const String & sign_column,
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
-    bool use_average_block_sizes)
-    : IMergingTransform(num_inputs, header, header, true)
+    bool use_average_block_sizes,
+    Logger * log_)
+    : IMergingAlgorithmWithSharedChunks(num_inputs, std::move(description_), out_row_sources_buf_, max_row_refs)
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
-    , description(std::move(description_))
     , sign_column_number(header.getPositionByName(sign_column))
-    , out_row_sources_buf(out_row_sources_buf_)
-    , chunk_allocator(num_inputs + max_row_refs)
-    , source_chunks(num_inputs)
-    , cursors(num_inputs)
+    , log(log_)
 {
 }
 
-void CollapsingSortedTransform::initializeInputs()
+void CollapsingSortedAlgorithm::reportIncorrectData()
 {
-    queue = SortingHeap<SortCursor>(cursors);
-    is_queue_initialized = true;
-}
+    if (!log)
+        return;
 
-void CollapsingSortedTransform::consume(Chunk chunk, size_t input_number)
-{
-    updateCursor(std::move(chunk), input_number);
-
-    if (is_queue_initialized)
-        queue.push(cursors[input_number]);
-}
-
-void CollapsingSortedTransform::updateCursor(Chunk chunk, size_t source_num)
-{
-    auto num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    for (auto & column : columns)
-        column = column->convertToFullColumnIfConst();
-
-    chunk.setColumns(std::move(columns), num_rows);
-
-    auto & source_chunk = source_chunks[source_num];
-
-    if (source_chunk)
-    {
-        source_chunk = chunk_allocator.alloc(std::move(chunk));
-        cursors[source_num].reset(source_chunk->getColumns(), {});
-    }
-    else
-    {
-        if (cursors[source_num].has_collation)
-            throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
-
-        source_chunk = chunk_allocator.alloc(std::move(chunk));
-        cursors[source_num] = SortCursorImpl(source_chunk->getColumns(), description, source_num);
-    }
-
-    source_chunk->all_columns = cursors[source_num].all_columns;
-    source_chunk->sort_columns = cursors[source_num].sort_columns;
-}
-
-void CollapsingSortedTransform::reportIncorrectData()
-{
     std::stringstream s;
     s << "Incorrect data: number of rows with sign = 1 (" << count_positive
       << ") differs with number of rows with sign = -1 (" << count_negative
@@ -102,12 +60,12 @@ void CollapsingSortedTransform::reportIncorrectData()
     LOG_WARNING(log, s.rdbuf());
 }
 
-void CollapsingSortedTransform::insertRow(RowRef & row)
+void CollapsingSortedAlgorithm::insertRow(RowRef & row)
 {
     merged_data.insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
 }
 
-void CollapsingSortedTransform::insertRows()
+void CollapsingSortedAlgorithm::insertRows()
 {
     if (count_positive == 0 && count_negative == 0)
     {
@@ -150,13 +108,7 @@ void CollapsingSortedTransform::insertRows()
                 current_row_sources.size() * sizeof(RowSourcePart));
 }
 
-void CollapsingSortedTransform::work()
-{
-    merge();
-    prepareOutputChunk(merged_data);
-}
-
-void CollapsingSortedTransform::merge()
+IMergingAlgorithm::Status CollapsingSortedAlgorithm::merge()
 {
     /// Take rows in required order and put them into `merged_data`, while the rows are no more than `max_block_size`
     while (queue.isValid())
@@ -174,7 +126,7 @@ void CollapsingSortedTransform::merge()
 
         /// if there are enough rows and the last one is calculated completely
         if (key_differs && merged_data.hasEnoughRows())
-            return;
+            Status(merged_data.pull());
 
         if (key_differs)
         {
@@ -229,13 +181,12 @@ void CollapsingSortedTransform::merge()
         {
             /// We take next block from the corresponding source, if there is one.
             queue.removeTop();
-            requestDataForInput(current.impl->order);
-            return;
+            return Status(current.impl->order);
         }
     }
 
     insertRows();
-    is_finished = true;
+    return Status(merged_data.pull(), true);
 }
 
 }
