@@ -116,14 +116,15 @@ template <typename Algorithm>
 class IMergingTransform2 : public IMergingTransformBase
 {
 public:
+    template <typename ... Args>
     IMergingTransform2(
-        Algorithm && algorithm_,
         size_t num_inputs,
         const Block & input_header,
         const Block & output_header,
-        bool have_all_inputs_)
+        bool have_all_inputs_,
+        Args && ... args)
         : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_)
-        , algorithm(std::forward<Algorithm>(algorithm_))
+        , algorithm(std::forward<Args>(args) ...)
     {
     }
 

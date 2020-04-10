@@ -3,14 +3,6 @@
 #include <Processors/Merges/IMergingTransform.h>
 #include <Processors/Merges/CollapsingSortedAlgorithm.h>
 
-#include <Processors/Merges/RowRef.h>
-#include <Processors/Merges/MergedData.h>
-#include <Core/SortDescription.h>
-#include <Core/SortCursor.h>
-#include <DataStreams/ColumnGathererStream.h>
-
-#include <common/logger_useful.h>
-
 namespace DB
 {
 
@@ -38,16 +30,15 @@ public:
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false)
         : IMergingTransform2(
-            CollapsingSortedAlgorithm(
-                header,
-                num_inputs,
-                std::move(description_),
-                sign_column,
-                max_block_size,
-                out_row_sources_buf_,
-                use_average_block_sizes,
-                &Logger::get("CollapsingSortedTransform")),
-            num_inputs, header, header, true)
+            num_inputs, header, header, true,
+            header,
+            num_inputs,
+            std::move(description_),
+            sign_column,
+            max_block_size,
+            out_row_sources_buf_,
+            use_average_block_sizes,
+            &Logger::get("CollapsingSortedTransform"))
     {
     }
 
