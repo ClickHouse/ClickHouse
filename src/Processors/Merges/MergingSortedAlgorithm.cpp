@@ -48,12 +48,6 @@ static void prepareChunk(Chunk & chunk)
     chunk.setColumns(std::move(columns), num_rows);
 }
 
-void MergingSortedAlgorithm::updateCursor(size_t source_num)
-{
-    auto & source_chunk = source_chunks[source_num];
-    cursors[source_num].reset(source_chunk.getColumns(), {});
-}
-
 void MergingSortedAlgorithm::initialize(Chunks chunks)
 {
     source_chunks = std::move(chunks);
