@@ -40,23 +40,20 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
     {
         SortCursor current = queue.current();
 
-        if (last_row.empty())
-            setRowRef(last_row, current);
-
         RowRef current_row;
         setRowRef(current_row, current);
 
-        bool key_differs = !current_row.hasEqualSortColumnsWith(last_row);
-
-        /// if there are enough rows and the last one is calculated completely
-        if (key_differs && merged_data.hasEnoughRows())
-            return Status(merged_data.pull());
-
+        bool key_differs = selected_row.empty() || !current_row.hasEqualSortColumnsWith(selected_row);
         if (key_differs)
         {
+            selected_row.clear();
+
+            /// if there are enough rows and the last one is calculated completely
+            if (merged_data.hasEnoughRows())
+                return Status(merged_data.pull());
+
             /// Write the data for the previous primary key.
             insertRow();
-            last_row.swap(current_row);
         }
 
         /// Initially, skip all rows. Unskip last on insert.
