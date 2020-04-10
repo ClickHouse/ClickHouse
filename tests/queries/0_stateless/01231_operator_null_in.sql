@@ -90,4 +90,16 @@ SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(2, NULL), (NULL, '3')] FRO
 SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(1, '1'), (NULL, NULL)] FROM null_in_tuple WHERE t global in ((1, '1'), (NULL, NULL));
 SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(2, NULL), (NULL, '3')] FROM null_in_tuple WHERE t global not in ((1, '1'), (NULL, NULL));
 
-DROP TABLE IF EXISTS null_in_subquery;
+SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(1, '1')] FROM null_in_tuple WHERE t in ((1, '1'), (1, NULL));
+SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(1, '1')] FROM null_in_tuple WHERE t in ((1, '1'), (NULL, '1'));
+SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(1, '1'), (2, NULL)] FROM null_in_tuple WHERE t in ((1, '1'), (NULL, '1'), (2, NULL));
+SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(1, '1'), (NULL, '3')] FROM null_in_tuple WHERE t in ((1, '1'), (1, NULL), (NULL, '3'));
+SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(1, '1'), (2, NULL), (NULL, '3'), (NULL, NULL)] FROM null_in_tuple WHERE t in ((1, '1'), (1, NULL), (2, NULL), (NULL, '3'), (NULL, NULL));
+
+SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(2, NULL), (NULL, '3'), (NULL, NULL)] FROM null_in_tuple WHERE t not in ((1, '1'), (1, NULL));
+SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(2, NULL), (NULL, '3'), (NULL, NULL)] FROM null_in_tuple WHERE t not in ((1, '1'), (NULL, '1'));
+SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(NULL, '3'), (NULL, NULL)] FROM null_in_tuple WHERE t not in ((1, '1'), (NULL, '1'), (2, NULL));
+SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [(2, NULL), (NULL, NULL)] FROM null_in_tuple WHERE t not in ((1, '1'), (1, NULL), (NULL, '3'));
+SELECT arraySort(x -> (x.1, x.2), groupArray(t)) == [] FROM null_in_tuple WHERE t not in ((1, '1'), (1, NULL), (2, NULL), (NULL, '3'), (NULL, NULL));
+
+DROP TABLE IF EXISTS null_in_tuple;
