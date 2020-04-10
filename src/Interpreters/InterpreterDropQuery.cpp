@@ -11,6 +11,7 @@
 #include <Common/escapeForFileName.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+#include <Databases/DatabaseAtomic.h>
 
 
 namespace DB
@@ -233,6 +234,10 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
                 String current_dictionary = iterator->name();
                 executeToDictionary(database_name, current_dictionary, kind, false, false, false);
             }
+
+            auto database_atomic = typeid_cast<DatabaseAtomic *>(database.get());
+            if (!drop && database_atomic)
+                database_atomic->assertCanBeDetached(true);
 
             /// DETACH or DROP database itself
             DatabaseCatalog::instance().detachDatabase(database_name, drop);

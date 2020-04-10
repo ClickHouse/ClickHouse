@@ -17,6 +17,7 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_ASSIGN_ALTER;
+    extern const int DATABASE_NOT_EMPTY;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
@@ -117,23 +118,23 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
 
-    auto detach = [this](DatabaseAtomic & db, const String & table_name_)
+    auto detach = [](DatabaseAtomic & db, const String & table_name_)
     {
         auto table_data_path_saved = db.table_name_to_path.find(table_name_)->second;
         db.tables.erase(table_name_);
         db.table_name_to_path.erase(table_name_);
-        tryRemoveSymlink(table_name_);
+        db.tryRemoveSymlink(table_name_);
         return table_data_path_saved;
     };
 
-    auto attach = [this](DatabaseAtomic & db, const String & table_name_, const String & table_data_path_, const StoragePtr & table_)
+    auto attach = [](DatabaseAtomic & db, const String & table_name_, const String & table_data_path_, const StoragePtr & table_)
     {
         db.tables.emplace(table_name_, table_);
         db.table_name_to_path.emplace(table_name_, table_data_path_);
-        tryCreateSymlink(table_name_, table_data_path_);
+        db.tryCreateSymlink(table_name_, table_data_path_);
     };
 
-    auto assertCanMoveMatView = [&](const StoragePtr & table_)
+    auto assertCanMoveMatView = [inside_database](const StoragePtr & table_)
     {
         if (inside_database)
             return;
@@ -254,6 +255,22 @@ DatabaseAtomic::DetachedTables DatabaseAtomic::cleenupDetachedTables()
             ++it;
     }
     return not_in_use;
+}
+
+void DatabaseAtomic::assertCanBeDetached(bool cleenup)
+{
+    if (cleenup)
+    {
+        DetachedTables not_in_use;
+        {
+            std::lock_guard lock(mutex);
+            not_in_use = cleenupDetachedTables();
+        }
+    }
+    std::lock_guard lock(mutex);
+    if (!detached_tables.empty())
+        throw Exception("Database " + backQuoteIfNeed(database_name) + " cannot be detached, "
+                        "because some tables are still in use. Retry later.", ErrorCodes::DATABASE_NOT_EMPTY);
 }
 
 DatabaseTablesIteratorPtr DatabaseAtomic::getTablesIterator(const IDatabase::FilterByNameFunction & filter_by_table_name)

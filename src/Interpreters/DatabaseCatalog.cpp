@@ -262,8 +262,15 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
         assertDatabaseExistsUnlocked(database_name);
         db = databases.find(database_name)->second;
 
-        if (check_empty && !db->empty(*global_context))
-            throw Exception("New table appeared in database being dropped or detached. Try again.", ErrorCodes::DATABASE_NOT_EMPTY);
+        if (check_empty)
+        {
+            if (!db->empty(*global_context))
+                throw Exception("New table appeared in database being dropped or detached. Try again.",
+                                ErrorCodes::DATABASE_NOT_EMPTY);
+            auto database_atomic = typeid_cast<DatabaseAtomic *>(db.get());
+            if (!drop && database_atomic)
+                database_atomic->assertCanBeDetached(false);
+        }
 
         databases.erase(database_name);
     }

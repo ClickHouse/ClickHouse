@@ -38,6 +38,8 @@ public:
 
     void loadStoredObjects(Context & context, bool has_force_restore_data_flag) override;
 
+    void assertCanBeDetached(bool cleenup);
+
 private:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
