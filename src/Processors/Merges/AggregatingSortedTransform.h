@@ -5,6 +5,7 @@
 #include <Processors/Merges/RowRef.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Columns/ColumnAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
