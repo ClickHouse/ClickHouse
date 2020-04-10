@@ -1,30 +1,31 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
 ---
 
-# How to Build ClickHouse on Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
+# Как построить ClickHouse на Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
-Build should work on Mac OS X 10.15 (Catalina)
+Сборка должна работать на Mac OS X 10.15 (Catalina)
 
-## Install Homebrew {#install-homebrew}
+## Установите Homebrew {#install-homebrew}
 
 ``` bash
 $ /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 ```
 
-## Install Required Compilers, Tools, and Libraries {#install-required-compilers-tools-and-libraries}
+## Установите необходимые компиляторы, инструменты и библиотеки {#install-required-compilers-tools-and-libraries}
 
 ``` bash
 $ brew install cmake ninja libtool gettext
 ```
 
-## Checkout ClickHouse Sources {#checkout-clickhouse-sources}
+## Проверка Источников ClickHouse {#checkout-clickhouse-sources}
 
 ``` bash
 $ git clone --recursive git@github.com:ClickHouse/ClickHouse.git
 ```
 
-or
+или
 
 ``` bash
 $ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
@@ -32,7 +33,7 @@ $ git clone --recursive https://github.com/ClickHouse/ClickHouse.git
 $ cd ClickHouse
 ```
 
-## Build ClickHouse {#build-clickhouse}
+## Построить ClickHouse {#build-clickhouse}
 
 ``` bash
 $ mkdir build
@@ -42,16 +43,16 @@ $ ninja
 $ cd ..
 ```
 
-## Caveats {#caveats}
+## Предостережения {#caveats}
 
-If you intend to run clickhouse-server, make sure to increase the system’s maxfiles variable.
+Если вы собираетесь запустить clickhouse-сервер, убедитесь в том, чтобы увеличить параметром maxfiles системная переменная.
 
-!!! info "Note"
-    You’ll need to use sudo.
+!!! info "Примечание"
+    Вам нужно будет использовать sudo.
 
-To do so, create the following file:
+Для этого создайте следующий файл:
 
-/Library/LaunchDaemons/limit.maxfiles.plist:
+/Библиотека / LaunchDaemons / limit.параметром maxfiles.файл plist:
 
 ``` xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -77,14 +78,14 @@ To do so, create the following file:
 </plist>
 ```
 
-Execute the following command:
+Выполните следующую команду:
 
 ``` bash
 $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 ```
 
-Reboot.
+Перезагрузить.
 
-To check if it’s working, you can use `ulimit -n` command.
+Чтобы проверить, работает ли он, вы можете использовать `ulimit -n` команда.
 
-[Original article](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->
+[Оригинальная статья](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->

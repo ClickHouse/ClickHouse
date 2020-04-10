@@ -2,7 +2,6 @@
 
 #include <Storages/StorageXDBC.h>
 #include <TableFunctions/ITableFunction.h>
-#include <Access/AccessFlags.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/XDBCBridgeHelper.h>
 #include <Common/config.h>
@@ -22,8 +21,6 @@ private:
     virtual BridgeHelperPtr createBridgeHelper(Context & context,
         const Poco::Timespan & http_timeout_,
         const std::string & connection_string_) const = 0;
-
-    virtual AccessType getRequiredAccessType() const = 0;
 };
 
 class TableFunctionJDBC : public ITableFunctionXDBC
@@ -43,7 +40,7 @@ private:
         return std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(context, http_timeout_, connection_string_);
     }
 
-    AccessType getRequiredAccessType() const override { return AccessType::jdbc; }
+    const char * getStorageTypeName() const override { return "JDBC"; }
 };
 
 class TableFunctionODBC : public ITableFunctionXDBC
@@ -63,6 +60,6 @@ private:
         return std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(context, http_timeout_, connection_string_);
     }
 
-    AccessType getRequiredAccessType() const override { return AccessType::odbc; }
+    const char * getStorageTypeName() const override { return "ODBC"; }
 };
 }

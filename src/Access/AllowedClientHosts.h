@@ -91,7 +91,7 @@ public:
 
     /// Allows IP addresses or host names using LIKE pattern.
     /// This pattern can contain % and _ wildcard characters.
-    /// For example, addLikePattern("@") will allow all addresses.
+    /// For example, addLikePattern("%") will allow all addresses.
     void addLikePattern(const String & pattern);
     void removeLikePattern(const String & like_pattern);
     const std::vector<String> & getLikePatterns() const { return like_patterns; }
@@ -298,7 +298,7 @@ inline void AllowedClientHosts::addLikePattern(const String & pattern)
 {
     if (boost::iequals(pattern, "localhost") || (pattern == "127.0.0.1") || (pattern == "::1"))
         local_host = true;
-    else if ((pattern == "@") || (pattern == "0.0.0.0/0") || (pattern == "::/0"))
+    else if ((pattern == "%") || (pattern == "0.0.0.0/0") || (pattern == "::/0"))
         any_host = true;
     else if (boost::range::find(like_patterns, pattern) == name_regexps.end())
         like_patterns.push_back(pattern);
@@ -308,7 +308,7 @@ inline void AllowedClientHosts::removeLikePattern(const String & pattern)
 {
     if (boost::iequals(pattern, "localhost") || (pattern == "127.0.0.1") || (pattern == "::1"))
         local_host = false;
-    else if ((pattern == "@") || (pattern == "0.0.0.0/0") || (pattern == "::/0"))
+    else if ((pattern == "%") || (pattern == "0.0.0.0/0") || (pattern == "::/0"))
         any_host = false;
     else
         boost::range::remove_erase(like_patterns, pattern);

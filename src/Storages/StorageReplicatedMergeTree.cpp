@@ -246,6 +246,11 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
 
         createTableIfNotExists();
 
+        /// We have to check granularity on other replicas. If it's fixed we
+        /// must create our new replica with fixed granularity and store this
+        /// information in /replica/metadata.
+        other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+
         checkTableStructure(zookeeper_path);
 
         Coordination::Stat metadata_stat;
@@ -256,6 +261,18 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
     else
     {
+
+        /// In old tables this node may missing or be empty
+        String replica_metadata;
+        bool replica_metadata_exists = current_zookeeper->tryGet(replica_path + "/metadata", replica_metadata);
+        if (!replica_metadata_exists || replica_metadata.empty())
+        {
+            /// We have to check shared node granularity before we create ours.
+            other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
+            ReplicatedMergeTreeTableMetadata current_metadata(*this);
+            current_zookeeper->createOrUpdate(replica_path + "/metadata", current_metadata.toString(), zkutil::CreateMode::Persistent);
+        }
+
         checkTableStructure(replica_path);
         checkParts(skip_sanity_checks);
 
@@ -263,8 +280,13 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
         {
             metadata_version = parse<int>(current_zookeeper->get(replica_path + "/metadata_version"));
         }
-        else /// This replica was created on old version, so we have to take version of global node
+        else
         {
+            /// This replica was created with old clickhouse version, so we have
+            /// to take version of global node. If somebody will alter our
+            /// table, then we will fill /metadata_version node in zookeeper.
+            /// Otherwise on the next restart we can again use version from
+            /// shared metadata node because it was not changed.
             Coordination::Stat metadata_stat;
             current_zookeeper->get(zookeeper_path + "/metadata", &metadata_stat);
             metadata_version = metadata_stat.version;
@@ -277,7 +299,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     createNewZooKeeperNodes();
 
 
-    other_replicas_fixed_granularity = checkFixedGranualrityInZookeeper();
 }
 
 
@@ -447,7 +468,6 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
     }
 }
 
-
 void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
@@ -497,7 +517,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
     setProperties(metadata);
-    setTTLExpressions(new_columns.getColumnTTLs(), metadata.ttl_for_table_ast);
+    setTTLExpressions(new_columns, metadata.ttl_for_table_ast);
 }
 
 
@@ -5293,32 +5313,8 @@ bool StorageReplicatedMergeTree::canUseAdaptiveGranularity() const
 }
 
 
-StorageInMemoryMetadata
-StorageReplicatedMergeTree::getMetadataFromSharedZookeeper(const String & metadata_str, const String & columns_str) const
+MutationCommands StorageReplicatedMergeTree::getFirtsAlterMutationCommandsForPart(const DataPartPtr & part) const
 {
-    auto replicated_metadata = ReplicatedMergeTreeTableMetadata::parse(metadata_str);
-    StorageInMemoryMetadata result = getInMemoryMetadata();
-    result.columns = ColumnsDescription::parse(columns_str);
-    result.constraints = ConstraintsDescription::parse(replicated_metadata.constraints);
-    result.indices = IndicesDescription::parse(replicated_metadata.skip_indices);
-
-    ParserExpression expression_p;
-
-    /// The only thing, that can be changed is ttl expression
-    if (replicated_metadata.primary_key.empty())
-        throw Exception("Primary key cannot be empty" , ErrorCodes::LOGICAL_ERROR);
-
-    if (!replicated_metadata.sorting_key.empty())
-    {
-        result.order_by_ast = parseQuery(expression_p, "(" + replicated_metadata.sorting_key + ")", 0);
-        result.primary_key_ast = parseQuery(expression_p, "(" + replicated_metadata.primary_key + ")", 0);
-    }
-    else
-    {
-        result.order_by_ast = parseQuery(expression_p, "(" + replicated_metadata.primary_key + ")", 0);
-    }
-    return result;
-
+    return queue.getFirstAlterMutationCommandsForPart(part);
 }
-
 }

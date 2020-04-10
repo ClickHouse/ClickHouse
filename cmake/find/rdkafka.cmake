@@ -1,5 +1,5 @@
 # Freebsd: contrib/cppkafka/include/cppkafka/detail/endianness.h:53:23: error: 'betoh16' was not declared in this scope
-if (NOT ARCH_ARM AND NOT ARCH_32 AND NOT OS_FREEBSD AND OPENSSL_FOUND)
+if (NOT ARCH_ARM AND NOT OS_FREEBSD AND OPENSSL_FOUND)
     option (ENABLE_RDKAFKA "Enable kafka" ${ENABLE_LIBRARIES})
 endif ()
 
