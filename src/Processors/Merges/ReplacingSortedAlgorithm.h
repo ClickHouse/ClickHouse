@@ -29,8 +29,7 @@ private:
     ssize_t version_column_number = -1;
 
     using RowRef = detail::RowRefWithOwnedChunk;
-    static constexpr size_t max_row_refs = 3; /// last, current, selected.
-    RowRef last_row;
+    static constexpr size_t max_row_refs = 2; /// last, current.
     RowRef selected_row; /// Last row with maximum version for current primary key.
     size_t max_pos = 0; /// The position (into current_row_sources) of the row with the highest version.
 
