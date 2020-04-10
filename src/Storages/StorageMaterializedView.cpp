@@ -330,33 +330,28 @@ void StorageMaterializedView::mutate(const MutationCommands & commands, const Co
 void StorageMaterializedView::renameInMemory(const StorageID & new_table_id)
 {
     auto old_table_id = getStorageID();
+    bool from_atomic_to_atomic_database = old_table_id.hasUUID() && new_table_id.hasUUID();
 
-    if (has_inner_table && tryGetTargetTable())
+    if (has_inner_table && tryGetTargetTable() && !from_atomic_to_atomic_database)
     {
-        auto old_target_table_name = generateInnerTableName(old_table_id);
         auto new_target_table_name = generateInnerTableName(new_table_id);
-        if (old_table_id.database_name != new_table_id.database_name ||
-            old_target_table_name != new_target_table_name)
-        {
+        auto rename = std::make_shared<ASTRenameQuery>();
 
-            auto rename = std::make_shared<ASTRenameQuery>();
+        ASTRenameQuery::Table from;
+        from.database = target_table_id.database_name;
+        from.table = target_table_id.table_name;
 
-            ASTRenameQuery::Table from;
-            from.database = target_table_id.database_name;
-            from.table = target_table_id.table_name;
+        ASTRenameQuery::Table to;
+        to.database = target_table_id.database_name;
+        to.table = new_target_table_name;
 
-            ASTRenameQuery::Table to;
-            to.database = target_table_id.database_name;
-            to.table = new_target_table_name;
+        ASTRenameQuery::Element elem;
+        elem.from = from;
+        elem.to = to;
+        rename->elements.emplace_back(elem);
 
-            ASTRenameQuery::Element elem;
-            elem.from = from;
-            elem.to = to;
-            rename->elements.emplace_back(elem);
-
-            InterpreterRenameQuery(rename, global_context).execute();
-            target_table_id.table_name = new_target_table_name;
-        }
+        InterpreterRenameQuery(rename, global_context).execute();
+        target_table_id.table_name = new_target_table_name;
     }
 
     IStorage::renameInMemory(new_table_id);
