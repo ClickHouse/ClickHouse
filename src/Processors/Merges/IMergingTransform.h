@@ -117,13 +117,13 @@ class IMergingTransform2 : public IMergingTransformBase
 {
 public:
     IMergingTransform2(
-        Algorithm algorithm_,
+        Algorithm && algorithm_,
         size_t num_inputs,
         const Block & input_header,
         const Block & output_header,
         bool have_all_inputs_)
         : IMergingTransformBase(num_inputs, input_header, output_header, have_all_inputs_)
-        , algorithm(std::move(algorithm_))
+        , algorithm(std::forward<Algorithm>(algorithm_))
     {
     }
 
