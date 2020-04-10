@@ -180,7 +180,14 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except:
+    exception_text = ''
+    for i in range(1, 5):
+        try:
+            main()
+            break
+        except Exception as ex:
+            exception_text = str(ex)
+
+    if exception_text:
+        print("Exception: {}".format(exception_text), file=sys.stderr)
         os._exit(1)
