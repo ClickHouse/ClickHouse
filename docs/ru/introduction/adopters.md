@@ -3,7 +3,7 @@ machine_translated: true
 machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
 ---
 
-# Усыновители ClickHouse {#clickhouse-adopters}
+# Пользователи ClickHouse {#clickhouse-adopters}
 
 !!! warning "Оговорка"
     Следующий список компаний, использующих ClickHouse, и их истории успеха собраны из открытых источников, поэтому они могут отличаться от текущей реальности. Мы были бы очень признательны, если бы вы поделились историей принятия ClickHouse в свою компанию и [добавьте его в список](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/introduction/adopters.md), но, пожалуйста, убедитесь, что у вас не будет никаких проблем с NDA, сделав это. Предоставление обновлений с публикациями от других компаний также полезно.
