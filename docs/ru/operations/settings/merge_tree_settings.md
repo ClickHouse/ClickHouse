@@ -79,7 +79,7 @@ delay_milliseconds = pow(max_delay_to_insert * 1000, k / max_k)
 
 Т.е. если в партиции уже 299 кусков и parts_to_throw_insert = 300, parts_to_delay_insert = 150, max_delay_to_insert = 1, `INSERT` замедлится на `pow( 1 * 1000, (1 + 299 - 150) / (300 - 150) ) = 1000` миллисекунд.
 
-## old_parts_lifetime {#old_parts_lifetime}
+## old_parts_lifetime {#old-parts-lifetime}
 
 Время (в секундах) хранения неактивных кусков, для защиты от потери данных при спонтанной перезагрузке сервера или О.С.
 
