@@ -24,12 +24,13 @@ private:
     /// Allocator must be destroyed after source_chunks.
     detail::SharedChunkAllocator chunk_allocator;
 
-    /// Chunks currently being merged.
-    using SourceChunks = std::vector<detail::SharedChunkPtr>;
-    SourceChunks source_chunks;
     SortCursorImpls cursors;
 
 protected:
+    /// Chunks currently being merged.
+    using SourceChunks = std::vector<detail::SharedChunkPtr>;
+    SourceChunks source_chunks;
+
     SortingHeap<SortCursor> queue;
 
     /// Used in Vertical merge algorithm to gather non-PK/non-index columns (on next step)
