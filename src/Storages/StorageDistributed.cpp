@@ -14,6 +14,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
 
+#include <Columns/ColumnConst.h>
+
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
