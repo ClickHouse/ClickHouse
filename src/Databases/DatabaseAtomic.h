@@ -36,19 +36,26 @@ public:
     DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name) override;
     DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const FilterByNameFunction & filter_by_dictionary_name) override;
 
+    void loadStoredObjects(Context & context, bool has_force_restore_data_flag) override;
+
 private:
     void commitAlterTable(const StorageID & table_id, const String & table_metadata_tmp_path, const String & table_metadata_path) override;
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                            const String & table_metadata_tmp_path, const String & table_metadata_path) override;
 
     void assertDetachedTableNotInUse(const UUID & uuid);
-    typedef std::map<UUID, StoragePtr> DetachedTables;
+    typedef std::unordered_map<UUID, StoragePtr> DetachedTables;
     DetachedTables cleenupDetachedTables();
 
+    void tryCreateSymlink(const String & table_name, const String & actual_data_path);
+    void tryRemoveSymlink(const String & table_name);
+
     //TODO store path in DatabaseWithOwnTables::tables
-    std::map<String, String> table_name_to_path;
+    typedef std::unordered_map<String, String> NameToPathMap;
+    NameToPathMap table_name_to_path;
 
     DetachedTables detached_tables;
+    const String path_to_table_symlinks;
 };
 
 }
