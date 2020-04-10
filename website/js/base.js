@@ -47,6 +47,12 @@
         }, 70);
     }
 
+    $('img').each(function() {
+        var src = $(this).attr('data-src');
+        if (src) {
+            $(this).attr('src', src);
+        }
+    });
 
     (function (d, w, c) {
         (w[c] = w[c] || []).push(function() {
