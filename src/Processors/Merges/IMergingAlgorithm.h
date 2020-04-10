@@ -24,6 +24,7 @@ public:
     virtual void consume(Chunk chunk, size_t source_num) = 0;
     virtual Status merge() = 0;
 
+    IMergingAlgorithm(const IMergingAlgorithm &) = default;
     IMergingAlgorithm(IMergingAlgorithm &&) = default;
     virtual ~IMergingAlgorithm() = default;
 };
