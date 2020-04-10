@@ -291,16 +291,15 @@ public:
     using Mapped = JoinStuff::MappedOne;
     using FindResult = ColumnsHashing::columns_hashing_impl::FindResultImpl<Mapped>;
 
-    KeyGetterForDict(const ColumnRawPtrs & key_columns_, const Sizes & key_sizes_, void *)
+    KeyGetterForDict(const ColumnRawPtrs & key_columns_, const Sizes &, void *)
         : key_columns(key_columns_)
-        , key_sizes(key_sizes_)
     {}
 
     FindResult findKey(const DictionaryReader & reader, size_t i, const Arena &)
     {
         if (!read_result)
         {
-            reader.readKeys(*key_columns[0], key_sizes[0], read_result, found, positions);
+            reader.readKeys(*key_columns[0], key_columns[0]->size(), read_result, found, positions);
             result.block = &read_result;
             /// TODO: check types and correct nullability
         }
@@ -311,7 +310,6 @@ public:
 
 private:
     const ColumnRawPtrs & key_columns;
-    const Sizes & key_sizes;
     Block read_result;
     Mapped result;
     ColumnVector<UInt8>::Container found;
