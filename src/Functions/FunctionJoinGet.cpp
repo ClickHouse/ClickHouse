@@ -3,7 +3,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Join.h>
+#include <Interpreters/HashJoin.h>
+#include <Columns/ColumnString.h>
 #include <Storages/StorageJoin.h>
 
 

@@ -3,13 +3,13 @@ toc_priority: 54
 toc_title: Testing Hardware
 ---
 
-# How To Test Your Hardware With ClickHouse {#how-to-test-your-hardware-with-clickhouse}
+# How to Test Your Hardware with ClickHouse {#how-to-test-your-hardware-with-clickhouse}
 
 With this instruction you can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
 
 1.  Go to “commits” page: https://github.com/ClickHouse/ClickHouse/commits/master
 
-2.  Click on the first green check mark or red cross with green “ClickHouse Build Check” and click on the “Details” link near “ClickHouse Build Check”.
+2.  Click on the first green check mark or red cross with green “ClickHouse Build Check” and click on the “Details” link near “ClickHouse Build Check”. There is no such link in some commits, for example commits with documentation. In this case, choose the nearest commit having this link.
 
 3.  Copy the link to “clickhouse” binary for amd64 or aarch64.
 
@@ -24,7 +24,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
       # Then do:
       chmod a+x clickhouse
 
-5.  Download configs:
+1.  Download configs:
 
 <!-- -->
 
@@ -34,7 +34,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/path.xml -O config.d/path.xml
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
 
-6.  Download benchmark files:
+1.  Download benchmark files:
 
 <!-- -->
 
@@ -42,7 +42,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
       chmod a+x benchmark-new.sh
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 
-7.  Download test data according to the [Yandex.Metrica dataset](../getting_started/example_datasets/metrica.md) instruction (“hits” table containing 100 million rows).
+1.  Download test data according to the [Yandex.Metrica dataset](../getting_started/example_datasets/metrica.md) instruction (“hits” table containing 100 million rows).
 
 <!-- -->
 
@@ -50,31 +50,31 @@ With this instruction you can run basic ClickHouse performance test on any serve
       tar xvf hits_100m_obfuscated_v1.tar.xz -C .
       mv hits_100m_obfuscated_v1/* .
 
-8.  Run the server:
+1.  Run the server:
 
 <!-- -->
 
       ./clickhouse server
 
-9.  Check the data: ssh to the server in another terminal
+1.  Check the data: ssh to the server in another terminal
 
 <!-- -->
 
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-10.  Edit the benchmark-new.sh, change “clickhouse-client” to “./clickhouse client” and add “–max\_memory\_usage 100000000000” parameter.
+1.  Edit the benchmark-new.sh, change “clickhouse-client” to “./clickhouse client” and add “–max\_memory\_usage 100000000000” parameter.
 
 <!-- -->
 
       mcedit benchmark-new.sh
 
-11.  Run the benchmark:
+1.  Run the benchmark:
 
 <!-- -->
 
       ./benchmark-new.sh hits_100m_obfuscated
 
-12.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
+1.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
 
-All the results are published here: https://clickhouse.tech/benchmark_hardware.html
+All the results are published here: https://clickhouse.tech/benchmark\_hardware.html

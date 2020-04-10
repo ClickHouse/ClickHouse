@@ -99,7 +99,7 @@ BlockIO InterpreterDropQuery::executeToTable(
         }
         else if (kind == ASTDropQuery::Kind::Truncate)
         {
-            context.checkAccess(table->isView() ? AccessType::TRUNCATE_VIEW : AccessType::TRUNCATE_TABLE, table_id);
+            context.checkAccess(AccessType::TRUNCATE, table_id);
             table->checkTableCanBeDropped();
 
             /// If table was already dropped by anyone, an exception will be thrown
@@ -318,7 +318,7 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
         if (drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW, drop.database, drop.table);
         else if (drop.kind == ASTDropQuery::Kind::Truncate)
-            required_access.emplace_back(AccessType::TRUNCATE_TABLE | AccessType::TRUNCATE_VIEW, drop.database, drop.table);
+            required_access.emplace_back(AccessType::TRUNCATE, drop.database, drop.table);
         else if (drop.kind == ASTDropQuery::Kind::Detach)
             required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW, drop.database, drop.table);
     }

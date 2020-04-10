@@ -152,35 +152,35 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
     {
         case ASTAlterCommand::UPDATE:
         {
-            required_access.emplace_back(AccessType::UPDATE, database, table, column_names_from_update_assignments());
+            required_access.emplace_back(AccessType::ALTER_UPDATE, database, table, column_names_from_update_assignments());
             break;
         }
         case ASTAlterCommand::DELETE:
         {
-            required_access.emplace_back(AccessType::DELETE, database, table);
+            required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
             break;
         }
         case ASTAlterCommand::ADD_COLUMN:
         {
-            required_access.emplace_back(AccessType::ADD_COLUMN, database, table, column_name_from_col_decl());
+            required_access.emplace_back(AccessType::ALTER_ADD_COLUMN, database, table, column_name_from_col_decl());
             break;
         }
         case ASTAlterCommand::DROP_COLUMN:
         {
             if (command.clear_column)
-                required_access.emplace_back(AccessType::CLEAR_COLUMN, database, table, column_name());
+                required_access.emplace_back(AccessType::ALTER_CLEAR_COLUMN, database, table, column_name());
             else
-                required_access.emplace_back(AccessType::DROP_COLUMN, database, table, column_name());
+                required_access.emplace_back(AccessType::ALTER_DROP_COLUMN, database, table, column_name());
             break;
         }
         case ASTAlterCommand::MODIFY_COLUMN:
         {
-            required_access.emplace_back(AccessType::MODIFY_COLUMN, database, table, column_name_from_col_decl());
+            required_access.emplace_back(AccessType::ALTER_MODIFY_COLUMN, database, table, column_name_from_col_decl());
             break;
         }
         case ASTAlterCommand::COMMENT_COLUMN:
         {
-            required_access.emplace_back(AccessType::COMMENT_COLUMN, database, table, column_name());
+            required_access.emplace_back(AccessType::ALTER_COMMENT_COLUMN, database, table, column_name());
             break;
         }
         case ASTAlterCommand::MODIFY_ORDER_BY:
@@ -190,45 +190,45 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         }
         case ASTAlterCommand::ADD_INDEX:
         {
-            required_access.emplace_back(AccessType::ADD_INDEX, database, table);
+            required_access.emplace_back(AccessType::ALTER_ADD_INDEX, database, table);
             break;
         }
         case ASTAlterCommand::DROP_INDEX:
         {
             if (command.clear_index)
-                required_access.emplace_back(AccessType::CLEAR_INDEX, database, table);
+                required_access.emplace_back(AccessType::ALTER_CLEAR_INDEX, database, table);
             else
-                required_access.emplace_back(AccessType::DROP_INDEX, database, table);
+                required_access.emplace_back(AccessType::ALTER_DROP_INDEX, database, table);
             break;
         }
         case ASTAlterCommand::MATERIALIZE_INDEX:
         {
-            required_access.emplace_back(AccessType::MATERIALIZE_INDEX, database, table);
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_INDEX, database, table);
             break;
         }
         case ASTAlterCommand::ADD_CONSTRAINT:
         {
-            required_access.emplace_back(AccessType::ADD_CONSTRAINT, database, table);
+            required_access.emplace_back(AccessType::ALTER_ADD_CONSTRAINT, database, table);
             break;
         }
         case ASTAlterCommand::DROP_CONSTRAINT:
         {
-            required_access.emplace_back(AccessType::DROP_CONSTRAINT, database, table);
+            required_access.emplace_back(AccessType::ALTER_DROP_CONSTRAINT, database, table);
             break;
         }
         case ASTAlterCommand::MODIFY_TTL:
         {
-            required_access.emplace_back(AccessType::MODIFY_TTL, database, table);
+            required_access.emplace_back(AccessType::ALTER_TTL, database, table);
             break;
         }
         case ASTAlterCommand::MATERIALIZE_TTL:
         {
-            required_access.emplace_back(AccessType::MATERIALIZE_TTL, database, table);
+            required_access.emplace_back(AccessType::ALTER_MATERIALIZE_TTL, database, table);
             break;
         }
         case ASTAlterCommand::MODIFY_SETTING:
         {
-            required_access.emplace_back(AccessType::MODIFY_SETTING, database, table);
+            required_access.emplace_back(AccessType::ALTER_SETTINGS, database, table);
             break;
         }
         case ASTAlterCommand::ATTACH_PARTITION:
@@ -239,7 +239,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::DROP_PARTITION: [[fallthrough]];
         case ASTAlterCommand::DROP_DETACHED_PARTITION:
         {
-            required_access.emplace_back(AccessType::DELETE, database, table);
+            required_access.emplace_back(AccessType::ALTER_DELETE, database, table);
             break;
         }
         case ASTAlterCommand::MOVE_PARTITION:
@@ -247,11 +247,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
             if ((command.move_destination_type == PartDestinationType::DISK)
                 || (command.move_destination_type == PartDestinationType::VOLUME))
             {
-                required_access.emplace_back(AccessType::MOVE_PARTITION, database, table);
+                required_access.emplace_back(AccessType::ALTER_MOVE_PARTITION, database, table);
             }
             else if (command.move_destination_type == PartDestinationType::TABLE)
             {
-                required_access.emplace_back(AccessType::SELECT | AccessType::DELETE, database, table);
+                required_access.emplace_back(AccessType::SELECT | AccessType::ALTER_DELETE, database, table);
                 required_access.emplace_back(AccessType::INSERT, command.to_database, command.to_table);
             }
             break;
@@ -259,28 +259,33 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(const AS
         case ASTAlterCommand::REPLACE_PARTITION:
         {
             required_access.emplace_back(AccessType::SELECT, command.from_database, command.from_table);
-            required_access.emplace_back(AccessType::DELETE | AccessType::INSERT, database, table);
+            required_access.emplace_back(AccessType::ALTER_DELETE | AccessType::INSERT, database, table);
             break;
         }
         case ASTAlterCommand::FETCH_PARTITION:
         {
-            required_access.emplace_back(AccessType::FETCH_PARTITION, database, table);
+            required_access.emplace_back(AccessType::ALTER_FETCH_PARTITION, database, table);
             break;
         }
         case ASTAlterCommand::FREEZE_PARTITION: [[fallthrough]];
         case ASTAlterCommand::FREEZE_ALL:
         {
-            required_access.emplace_back(AccessType::FREEZE_PARTITION, database, table);
+            required_access.emplace_back(AccessType::ALTER_FREEZE_PARTITION, database, table);
             break;
         }
         case ASTAlterCommand::MODIFY_QUERY:
         {
-            required_access.emplace_back(AccessType::MODIFY_VIEW_QUERY, database, table);
+            required_access.emplace_back(AccessType::ALTER_VIEW_MODIFY_QUERY, database, table);
             break;
         }
         case ASTAlterCommand::LIVE_VIEW_REFRESH:
         {
-            required_access.emplace_back(AccessType::REFRESH_VIEW, database, table);
+            required_access.emplace_back(AccessType::ALTER_VIEW_REFRESH, database, table);
+            break;
+        }
+        case ASTAlterCommand::RENAME_COLUMN:
+        {
+            required_access.emplace_back(AccessType::ALTER_RENAME_COLUMN, database, table, column_name());
             break;
         }
         case ASTAlterCommand::NO_TYPE: break;
