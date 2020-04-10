@@ -1,17 +1,15 @@
 # Настройки MergeTree таблиц {#merge-tree-settings}
 
-Значения по умолчанию (для всех таблиц) задаются в config.xml в секции merge_tree.
+Значения по умолчанию (для всех таблиц) можно посмотреть в таблице `system.merge_tree_settings`, их можно переопределить в config.xml в секции merge_tree, или задать в секции `SETTINGS` у каждой таблицы.
 
-Пример:
+Пример переопределения в `config.xml`:
 ```text
 <merge_tree>
     <max_suspicious_broken_parts>5</max_suspicious_broken_parts>
 </merge_tree>
 ```
 
-Эти значения можно задать (перекрыть) у таблиц в секции `SETTINGS` у команды `CREATE TABLE`.
-
-Пример:
+Пример для определения в `SETTINGS` у конкретной таблицы:
 ```sql
 CREATE TABLE foo
 (
