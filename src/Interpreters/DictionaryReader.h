@@ -29,21 +29,21 @@ public:
         ColumnNumbers arg_positions;
         size_t result_pos = 0;
 
-        FunctionWrapper(const IFunctionOverloadResolver & resolver, const ColumnsWithTypeAndName & arguments, Block & block,
+        FunctionWrapper(FunctionOverloadResolverPtr resolver, const ColumnsWithTypeAndName & arguments, Block & block,
                         const ColumnNumbers & arg_positions_, const String & column_name, TypeIndex expected_type)
             : arg_positions(arg_positions_)
+            , result_pos(block.columns())
         {
-            FunctionBasePtr prepare_function = resolver.build(arguments);
-            result_pos = block.columns();
+            FunctionBasePtr prepared_function = resolver->build(arguments);
 
             ColumnWithTypeAndName result;
             result.name = "get_" + column_name;
-            result.type = prepare_function->getReturnType();
+            result.type = prepared_function->getReturnType();
             if (result.type->getTypeId() != expected_type)
                 throw Exception("Type mismatch in dictionary reader for: " + column_name, ErrorCodes::TYPE_MISMATCH);
             block.insert(result);
 
-            function = prepare_function->prepare(block, arg_positions, result_pos);
+            function = prepared_function->prepare(block, arg_positions, result_pos);
         }
 
         void execute(Block & block, size_t rows) const
@@ -59,9 +59,6 @@ public:
     {
         if (src_column_names.size() != result_columns.size())
             throw Exception("Columns number mismatch in dictionary reader", ErrorCodes::NUMBER_OF_COLUMNS_DOESNT_MATCH);
-
-        FunctionOverloadResolverPtr dict_has(FunctionFactory::instance().get("dictHas", context));
-        FunctionOverloadResolverPtr dict_get(FunctionFactory::instance().get("dictGet", context));
 
         ColumnWithTypeAndName dict_name;
         ColumnWithTypeAndName key;
@@ -106,8 +103,8 @@ public:
         sample_block.insert(key);
 
         ColumnNumbers positions_has{0, key_position};
-        function_has = std::make_unique<FunctionWrapper>(
-            *dict_has, arguments_has, sample_block, positions_has, "has", DataTypeUInt8().getTypeId());
+        function_has = std::make_unique<FunctionWrapper>(FunctionFactory::instance().get("dictHas", context),
+                                                         arguments_has, sample_block, positions_has, "has", DataTypeUInt8().getTypeId());
         functions_get.reserve(result_header.columns());
 
         for (size_t i = 0; i < result_header.columns(); ++i)
@@ -116,8 +113,9 @@ public:
             auto & column = result_header.getByPosition(i);
             arguments_get[1].column = DataTypeString().createColumnConst(1, src_column_names[i]);
             ColumnNumbers positions_get{0, column_name_pos, key_position};
-            functions_get.emplace_back(FunctionWrapper(
-                *dict_get, arguments_get, sample_block, positions_get, column.name, column.type->getTypeId()));
+            functions_get.emplace_back(
+                FunctionWrapper(FunctionFactory::instance().get("dictGet", context),
+                                arguments_get, sample_block, positions_get, column.name, column.type->getTypeId()));
         }
     }
 

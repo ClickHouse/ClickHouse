@@ -3,14 +3,15 @@ SET any_join_distinct_right_table_keys = 1;
 USE test;
 
 DROP TABLE IF EXISTS join;
-CREATE TABLE join (UserID UInt64, loyalty Int8) ENGINE = Join(ANY, INNER, UserID);
+CREATE TABLE join (UserID UInt64, loyalty Int8) ENGINE = Join(ANY, INNER, UserID)
+SETTINGS any_join_distinct_right_table_keys = 1;
 
 INSERT INTO join
 SELECT
     UserID,
     toInt8(if((sum(SearchEngineID = 2) AS yandex) > (sum(SearchEngineID = 3) AS google),
-	yandex / (yandex + google), 
-	-google / (yandex + google)) * 10) AS loyalty
+    yandex / (yandex + google), 
+    -google / (yandex + google)) * 10) AS loyalty
 FROM hits
 WHERE (SearchEngineID = 2) OR (SearchEngineID = 3)
 GROUP BY UserID
