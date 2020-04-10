@@ -155,7 +155,8 @@ def minify_website(args):
                 with open(path, 'rb') as f:
                     content = f.read().decode('utf-8')
                 if filename.endswith('.html'):
-                    content = htmlmin.minify(content, remove_empty_space=False)
+                    if not content.startswith('<!-- Redirect: '):
+                        content = htmlmin.minify(content, remove_empty_space=False)
                     content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
                     content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
                 elif filename.endswith('.css'):
