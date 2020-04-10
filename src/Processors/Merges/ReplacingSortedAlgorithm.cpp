@@ -46,14 +46,13 @@ IMergingAlgorithm::Status ReplacingSortedAlgorithm::merge()
         bool key_differs = selected_row.empty() || !current_row.hasEqualSortColumnsWith(selected_row);
         if (key_differs)
         {
-            selected_row.clear();
-
             /// if there are enough rows and the last one is calculated completely
             if (merged_data.hasEnoughRows())
                 return Status(merged_data.pull());
 
             /// Write the data for the previous primary key.
             insertRow();
+            selected_row.clear();
         }
 
         /// Initially, skip all rows. Unskip last on insert.
