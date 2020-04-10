@@ -26,7 +26,7 @@ std::pair<ASTs, ASTs> tryGetConst(std::string & name, ASTs & arguments)
     ASTs const_num;
     ASTs not_const;
 
-    for (const auto &arg: arguments)
+    for (const auto & arg : arguments)
     {
         if (const auto * literal = arg->as<ASTLiteral>())
         {
@@ -95,9 +95,7 @@ std::pair<ASTs, ASTs> findAllConsts(ASTFunction * func_node, std::string & inter
         else
             throw Exception("did not expect that", ErrorCodes::UNEXPECTED_AST_STRUCTURE);
         return ans;
-
     }
-
 }
 
 /// rebuilds tree, all scalar values now outside the main func
@@ -108,7 +106,7 @@ void buildTree(ASTFunction * old_tree, std::string& func_name, std::string& intr
     ASTs non_cons = tree_comp.second;
 
     old_tree->name = intro_func;
-    for (auto & i: cons_val)
+    for (auto & i : cons_val)
     {
         old_tree->arguments->children = {};
         old_tree->arguments->children.push_back(i);
@@ -191,14 +189,14 @@ void minOptimize(ASTFunction * f_n)
         if (nodes.first.empty())
             return;
 
-        for (const auto &ar: nodes.first)
+        for (const auto & arg : nodes.first)
         {
-            auto num = ar->as<ASTLiteral>()->value.get<Int128>();
+            auto num = arg->as<ASTLiteral>()->value.get<Int128>();
 
             /// if multiplication is negative, min function becomes max
 
-            if ((ar->as<ASTLiteral>()->value.getType() == Field::Types::Int64 ||
-                 ar->as<ASTLiteral>()->value.getType() == Field::Types::Int128) && static_cast<int64_t>(num) < 0)
+            if ((arg->as<ASTLiteral>()->value.getType() == Field::Types::Int64 ||
+                 arg->as<ASTLiteral>()->value.getType() == Field::Types::Int128) && static_cast<int64_t>(num) < 0)
                 tp *= -1;
         }
 
@@ -275,10 +273,8 @@ void ArithmeticOperationsInAgrFuncVisitor::visit(ASTPtr & current_ast)
 
         if (function_node->name == "sum")
             sumOptimize(function_node);
-
         else if (function_node->name == "min")
             minOptimize(function_node);
-
         else if (function_node->name == "max")
             maxOptimize(function_node);
     }
