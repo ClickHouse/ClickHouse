@@ -1,83 +1,25 @@
-#include <Processors/Merges/VersionedCollapsingTransform.h>
-#include <IO/WriteBuffer.h>
+#include <Processors/Merges/VersionedCollapsingAlgorithm.h>
 #include <Columns/ColumnsNumber.h>
+#include <IO/WriteBuffer.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 static const size_t MAX_ROWS_IN_MULTIVERSION_QUEUE = 8192;
 
-VersionedCollapsingTransform::VersionedCollapsingTransform(
+VersionedCollapsingAlgorithm::VersionedCollapsingAlgorithm(
     const Block & header, size_t num_inputs,
     SortDescription description_, const String & sign_column_,
     size_t max_block_size,
     WriteBuffer * out_row_sources_buf_,
     bool use_average_block_sizes)
-    : IMergingTransform(num_inputs, header, header, true)
+    : IMergingAlgorithmWithSharedChunks(
+            num_inputs, std::move(description_), out_row_sources_buf_, MAX_ROWS_IN_MULTIVERSION_QUEUE)
     , merged_data(header.cloneEmptyColumns(), use_average_block_sizes, max_block_size)
-    , description(std::move(description_))
-    , out_row_sources_buf(out_row_sources_buf_)
     , max_rows_in_queue(MAX_ROWS_IN_MULTIVERSION_QUEUE - 1)  /// -1 for +1 in FixedSizeDequeWithGaps's internal buffer
-    , chunk_allocator(num_inputs + max_rows_in_queue + 1) /// +1 just in case (for current_row)
-    , source_chunks(num_inputs)
-    , cursors(num_inputs)
     , current_keys(max_rows_in_queue)
 {
     sign_column_number = header.getPositionByName(sign_column_);
-}
-
-void VersionedCollapsingTransform::initializeInputs()
-{
-    queue = SortingHeap<SortCursor>(cursors);
-    is_queue_initialized = true;
-}
-
-void VersionedCollapsingTransform::consume(Chunk chunk, size_t input_number)
-{
-    updateCursor(std::move(chunk), input_number);
-
-    if (is_queue_initialized)
-        queue.push(cursors[input_number]);
-}
-
-void VersionedCollapsingTransform::updateCursor(Chunk chunk, size_t source_num)
-{
-    auto num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    for (auto & column : columns)
-        column = column->convertToFullColumnIfConst();
-
-    chunk.setColumns(std::move(columns), num_rows);
-
-    auto & source_chunk = source_chunks[source_num];
-
-    if (source_chunk)
-    {
-        source_chunk = chunk_allocator.alloc(std::move(chunk));
-        cursors[source_num].reset(source_chunk->getColumns(), {});
-    }
-    else
-    {
-        if (cursors[source_num].has_collation)
-            throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
-
-        source_chunk = chunk_allocator.alloc(std::move(chunk));
-        cursors[source_num] = SortCursorImpl(source_chunk->getColumns(), description, source_num);
-    }
-
-    source_chunk->all_columns = cursors[source_num].all_columns;
-    source_chunk->sort_columns = cursors[source_num].sort_columns;
-}
-
-void VersionedCollapsingTransform::work()
-{
-    merge();
-    prepareOutputChunk(merged_data);
 }
 
 inline ALWAYS_INLINE static void writeRowSourcePart(WriteBuffer & buffer, RowSourcePart row_source)
@@ -88,7 +30,7 @@ inline ALWAYS_INLINE static void writeRowSourcePart(WriteBuffer & buffer, RowSou
         buffer.write(reinterpret_cast<const char *>(&row_source), sizeof(RowSourcePart));
 }
 
-void VersionedCollapsingTransform::insertGap(size_t gap_size)
+void VersionedCollapsingAlgorithm::insertGap(size_t gap_size)
 {
     if (out_row_sources_buf)
     {
@@ -100,7 +42,7 @@ void VersionedCollapsingTransform::insertGap(size_t gap_size)
     }
 }
 
-void VersionedCollapsingTransform::insertRow(size_t skip_rows, const RowRef & row)
+void VersionedCollapsingAlgorithm::insertRow(size_t skip_rows, const RowRef & row)
 {
     merged_data.insertRow(*row.all_columns, row.row_num, row.owned_chunk->getNumRows());
 
@@ -114,7 +56,7 @@ void VersionedCollapsingTransform::insertRow(size_t skip_rows, const RowRef & ro
     }
 }
 
-void VersionedCollapsingTransform::merge()
+IMergingAlgorithm::Status VersionedCollapsingAlgorithm::merge()
 {
     /// Take rows in correct order and put them into `merged_columns` until the rows no more than `max_block_size`
     while (queue.isValid())
@@ -153,7 +95,7 @@ void VersionedCollapsingTransform::merge()
 
             /// It's ok to return here, because we didn't affect queue.
             if (merged_data.hasEnoughRows())
-                return;
+                return Status(merged_data.pull());
         }
 
         if (current_keys.empty())
@@ -183,8 +125,7 @@ void VersionedCollapsingTransform::merge()
         {
             /// We take next block from the corresponding source, if there is one.
             queue.removeTop();
-            requestDataForInput(current.impl->order);
-            return;
+            return Status(current.impl->order);
         }
     }
 
@@ -197,13 +138,12 @@ void VersionedCollapsingTransform::merge()
         current_keys.popFront();
 
         if (merged_data.hasEnoughRows())
-            return;
+            return Status(merged_data.pull());
     }
 
     /// Write information about last collapsed rows.
     insertGap(current_keys.frontGap());
-    is_finished = true;
+    return Status(merged_data.pull(), true);
 }
-
 
 }
