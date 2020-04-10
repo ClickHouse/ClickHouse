@@ -87,10 +87,7 @@ void NO_INLINE Set::insertFromBlockImplCase(
         {
             if ((*null_map)[i])
             {
-                if (transform_null_in)
-                {
-                    has_null = true;
-                }
+                has_null = true;
 
                 if constexpr (build_filter)
                 {
@@ -397,7 +394,7 @@ void NO_INLINE Set::executeImplCase(
     {
         if (has_null_map && (*null_map)[i])
         {
-            if (has_null)
+            if (transform_null_in && has_null)
                 vec_res[i] = !negative;
             else
                 vec_res[i] = negative;
