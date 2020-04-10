@@ -244,7 +244,8 @@ protected:
                     if (need_lock_structure)
                     {
                         table = tables_it->table();
-                        lock = table->lockStructureForShare(false, context.getCurrentQueryId());
+                        lock = table->lockStructureForShare(
+                                false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                     }
                 }
                 catch (const Exception & e)
