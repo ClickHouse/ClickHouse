@@ -11,6 +11,22 @@ T1=table_1017_merge
 ${CLICKHOUSE_CLIENT} -n -q "
     DROP TABLE IF EXISTS $R1;
     DROP TABLE IF EXISTS $R2;
+    DROP TABLE IF EXISTS $T1;
+
+    DROP TABLE IF EXISTS lookup_table;
+    DROP TABLE IF EXISTS table_for_dict;
+    DROP DICTIONARY IF EXISTS dict1;
+
+    CREATE TABLE table_for_dict (y UInt64, y_new UInt32) ENGINE = Log;
+    INSERT INTO table_for_dict VALUES (3, 3003),(4,4004);
+
+    CREATE DICTIONARY dict1( y UInt64 DEFAULT 0, y_new UInt32 DEFAULT 0 ) PRIMARY KEY y
+    SOURCE(CLICKHOUSE(HOST 'localhost' PORT 9000 USER 'default' TABLE 'table_for_dict' PASSWORD '' DB '${CLICKHOUSE_DATABASE}'))
+    LIFETIME(MIN 1 MAX 10)
+    LAYOUT(FLAT());
+
+    CREATE TABLE lookup_table (y UInt32, y_new UInt32) ENGINE = Join(ANY, LEFT, y);
+    INSERT INTO lookup_table VALUES(1,1001),(2,1002);
 
     CREATE TABLE $R1 (x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_DATABASE}.table_1017', 'r1') ORDER BY x;
     CREATE TABLE $R2 (x UInt32, y UInt32) ENGINE ReplicatedMergeTree('/clickhouse/tables/${CLICKHOUSE_DATABASE}.table_1017', 'r2') ORDER BY x;
@@ -35,9 +51,21 @@ ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $T1 DELETE WHERE rand() = 0" 2>&1 > /d
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $T1 UPDATE y = y + rand() % 1 WHERE not ignore()" 2>&1 > /dev/null \
 && echo 'OK' || echo 'FAIL'
 
+# hm... it looks like joinGet condidered determenistic
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = joinGet('${CLICKHOUSE_DATABASE}.lookup_table', 'y_new', y) WHERE x=1" 2>&1 \
+| echo 'OK' || echo 'FAIL'
+
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE dictHas('${CLICKHOUSE_DATABASE}.dict1', toUInt64(x))" 2>&1 \
+| fgrep -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
+
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE dictHas('${CLICKHOUSE_DATABASE}.dict1', toUInt64(x))" --allow_nondeterministic_mutations=1 2>&1 \
+&& echo 'OK' || echo 'FAIL'
 
 ${CLICKHOUSE_CLIENT} -n -q "
     DROP TABLE IF EXISTS $R2;
     DROP TABLE IF EXISTS $R1;
     DROP TABLE IF EXISTS $T1;
+    DROP TABLE IF EXISTS lookup_table;
+    DROP TABLE IF EXISTS table_for_dict;
+    DROP DICTIONARY IF EXISTS dict1;
 "
