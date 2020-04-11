@@ -44,16 +44,11 @@ then
     if [[ ! -z "${CLOUDFLARE_TOKEN}" ]]
     then
         sleep 1m
-        git diff --stat="9999,9999" --diff-filter=M HEAD~1 | grep '|' | awk '$1 ~ /\.html$/ { if ($3>4) { url="https://'${BASE_DOMAIN}'/"$1; sub(/\/index.html/, "/", url); print "\""url"\""; }}' | split -l 25 /dev/stdin PURGE
-        for FILENAME in $(ls PURGE*)
-        do
-            POST_DATA=$(cat "${FILENAME}" | sed -n -e 'H;${x;s/\n/,/g;s/^,//;p;}' | awk '{print "{\"files\":["$0"]}";}')
-            sleep 3s
-            set +x
-            curl -X POST "https://api.cloudflare.com/client/v4/zones/4fc6fb1d46e87851605aa7fa69ca6fe0/purge_cache" -H "Authorization: Bearer ${CLOUDFLARE_TOKEN}" -H "Content-Type:application/json" --data "${POST_DATA}"
-            set -x
-            rm "${FILENAME}"
-        done
+        # https://api.cloudflare.com/#zone-purge-all-files
+        POST_DATA='{"purge_everything":true}'
+        set +x
+        curl -X POST "https://api.cloudflare.com/client/v4/zones/4fc6fb1d46e87851605aa7fa69ca6fe0/purge_cache" -H "Authorization: Bearer ${CLOUDFLARE_TOKEN}" -H "Content-Type:application/json" --data "${POST_DATA}"
+        set -x
     fi
     cd "${BUILD_DIR}"
     DOCKER_HASH=$(head -c 16 < /dev/urandom | xxd -p)
