@@ -124,14 +124,20 @@ private:
     void setUser(const UserPtr & user_) const;
     void setRolesInfo(const CurrentRolesInfoPtr & roles_info_) const;
 
+    template <int mode, bool grant_option>
+    bool checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags) const;
+
     template <int mode, bool grant_option, typename... Args>
-    bool checkAccessImpl(Poco::Logger * log_, const AccessFlags & access, const Args &... args) const;
+    bool checkAccessImpl(Poco::Logger * log_, const AccessFlags & access, const std::string_view & database, const Args &... args) const;
 
     template <int mode, bool grant_option>
     bool checkAccessImpl(Poco::Logger * log_, const AccessRightsElement & element) const;
 
     template <int mode, bool grant_option>
     bool checkAccessImpl(Poco::Logger * log_, const AccessRightsElements & elements) const;
+
+    template <int mode, bool grant_option, typename... Args>
+    bool calculateResultAccessAndCheck(Poco::Logger * log_, const AccessFlags & flags, const Args &... args) const;
 
     boost::shared_ptr<const AccessRights> calculateResultAccess(bool grant_option) const;
     boost::shared_ptr<const AccessRights> calculateResultAccess(bool grant_option, UInt64 readonly_, bool allow_ddl_, bool allow_introspection_) const;

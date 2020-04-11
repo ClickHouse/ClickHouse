@@ -204,7 +204,7 @@ bool AccessRightsContext::isClientHostAllowed() const
 
 
 template <int mode, bool grant_option, typename... Args>
-bool AccessRightsContext::checkAccessImpl(Poco::Logger * log_, const AccessFlags & access, const Args &... args) const
+bool AccessRightsContext::calculateResultAccessAndCheck(Poco::Logger * log_, const AccessFlags & access, const Args &... args) const
 {
     auto result_access = calculateResultAccess(grant_option);
     bool is_granted = result_access->isGranted(access, args...);
@@ -276,6 +276,22 @@ bool AccessRightsContext::checkAccessImpl(Poco::Logger * log_, const AccessFlags
 
 
 template <int mode, bool grant_option>
+bool AccessRightsContext::checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags) const
+{
+    return calculateResultAccessAndCheck<mode, grant_option>(log_, flags);
+}
+
+template <int mode, bool grant_option, typename... Args>
+bool AccessRightsContext::checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags, const std::string_view & database, const Args &... args) const
+{
+    if (database.empty())
+        return calculateResultAccessAndCheck<mode, grant_option>(log_, flags, params.current_database, args...);
+    else
+        return calculateResultAccessAndCheck<mode, grant_option>(log_, flags, database, args...);
+}
+
+
+template <int mode, bool grant_option>
 bool AccessRightsContext::checkAccessImpl(Poco::Logger * log_, const AccessRightsElement & element) const
 {
     if (element.any_database)
@@ -284,24 +300,15 @@ bool AccessRightsContext::checkAccessImpl(Poco::Logger * log_, const AccessRight
     }
     else if (element.any_table)
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database);
     }
     else if (element.any_column)
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database, element.table);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table);
     }
     else
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database, element.table, element.columns);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table, element.columns);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table, element.columns);
     }
 }
 
