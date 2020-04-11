@@ -41,17 +41,10 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 {
     try
     {
-        for (const NameAndTypePair & column_from_part : data_part->getColumns())
-        {
-            columns_from_part[column_from_part.name] = column_from_part.type;
-        }
-
         for (const NameAndTypePair & column : columns)
         {
-            if (columns_from_part.count(column.name))
-                addStreams(column.name, *columns_from_part[column.name], profile_callback_, clock_type_);
-            else
-                addStreams(column.name, *column.type, profile_callback_, clock_type_);
+            auto column_from_part = getColumnFromPart(column);
+            addStreams(column_from_part.name, *column_from_part.type, profile_callback_, clock_type_);
         }
     }
     catch (...)
@@ -82,12 +75,7 @@ size_t MergeTreeReaderWide::readRows(size_t from_mark, bool continue_reading, si
         auto name_and_type = columns.begin();
         for (size_t pos = 0; pos < num_columns; ++pos, ++name_and_type)
         {
-            String & name = name_and_type->name;
-            DataTypePtr type;
-            if (columns_from_part.count(name))
-                type = columns_from_part[name];
-            else
-                type = name_and_type->type;
+            auto [name, type] = getColumnFromPart(*name_and_type);
 
             /// The column is already present in the block so we will append the values to the end.
             bool append = res_columns[pos] != nullptr;

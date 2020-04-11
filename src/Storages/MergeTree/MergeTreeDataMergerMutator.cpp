@@ -771,6 +771,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergedBlockOutputStream to{
         new_data_part,
         merging_columns,
+        data.skip_indices,
         compression_codec,
         merged_column_to_size,
         data_settings->min_merge_bytes_to_use_direct_io,
@@ -1051,11 +1052,13 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         if (need_remove_expired_values)
             in = std::make_shared<TTLBlockInputStream>(in, data, new_data_part, time_of_mutation, true);
 
+        auto part_indices = getIndicesForNewDataPart(data.skip_indices, for_file_renames);
         IMergeTreeDataPart::MinMaxIndex minmax_idx;
 
         MergedBlockOutputStream out{
             new_data_part,
             all_columns,
+            part_indices,
             compression_codec};
 
         in->readPrefix();
@@ -1351,6 +1354,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         else if (is_compact_part && command.type == MutationCommand::Type::DROP_COLUMN)
         {
             removed_columns_from_compact_part.emplace(command.column_name);
+            for_file_renames.push_back(command);
         }
         else
         {
@@ -1477,6 +1481,22 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     return all_columns;
 }
 
+MergeTreeIndices MergeTreeDataMergerMutator::getIndicesForNewDataPart(
+    const MergeTreeIndices & all_indices,
+    const MutationCommands & commands_for_removes)
+{
+    NameSet removed_indices;
+    for (const auto & command : commands_for_removes)
+        if (command.type == MutationCommand::DROP_INDEX)
+            removed_indices.insert(command.column_name);
+
+    MergeTreeIndices new_indices;
+    for (const auto & index : all_indices)
+        if (!removed_indices.count(index->name))
+            new_indices.push_back(index);
+
+    return new_indices;
+}
 
 bool MergeTreeDataMergerMutator::shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const
 {
