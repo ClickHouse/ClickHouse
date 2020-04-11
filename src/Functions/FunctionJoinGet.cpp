@@ -3,7 +3,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/Join.h>
+#include <Interpreters/HashJoin.h>
+#include <Columns/ColumnString.h>
 #include <Storages/StorageJoin.h>
 
 
@@ -65,7 +66,8 @@ FunctionBaseImplPtr JoinGetOverloadResolver::build(const ColumnsWithTypeAndName 
     auto join = storage_join->getJoin();
     DataTypes data_types(arguments.size());
 
-    auto table_lock = storage_join->lockStructureForShare(false, context.getInitialQueryId());
+    auto table_lock = storage_join->lockStructureForShare(
+            false, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
     for (size_t i = 0; i < arguments.size(); ++i)
         data_types[i] = arguments[i].type;
 

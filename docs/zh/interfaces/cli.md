@@ -1,3 +1,4 @@
+
 # 命令行客户端 {#ming-ling-xing-ke-hu-duan}
 
 通过命令行来访问 ClickHouse，您可以使用 `clickhouse-client`
@@ -48,7 +49,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 命令行客户端是基于 `replxx`。换句话说，它可以使用我们熟悉的快捷键方式来操作以及保留历史命令。
 历史命令会写入在 `~/.clickhouse-client-history` 中。
 
-默认情况下，输出的格式是 `PrettyCompact`。您可以通过 FORMAT 设置根据不同查询来修改格式，或者通过在查询末尾指定 `\G` 字符，或通过在命令行中使用 `--format` or `--vertical` 参数，或使用客户端的配置文件。
+默认情况下，输出的格式是 `PrettyCompact`。您可以通过 FORMAT 设置根据不同查询来修改格式，或者通过在查询末尾指定 `\G` 字符，或通过在命令行中使用 `--format` 或 `--vertical` 参数，或使用客户端的配置文件。
 
 若要退出客户端，使用 Ctrl+D （或 Ctrl+C），或者输入以下其中一个命令：`exit`, `quit`, `logout`, `учше`, `йгше`, `дщпщге`, `exit;`, `quit;`, `logout;`, `учшеж`, `йгшеж`, `дщпщгеж`, `q`, `й`, `q`, `Q`, `:q`, `й`, `Й`, `Жй`
 
@@ -61,7 +62,7 @@ cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMA
 
 您可以通过 Ctrl+C 来取消一个长时间的查询。然而，您依然需要等待服务端来中止请求。在某个阶段去取消查询是不可能的。如果您不等待并再次按下 Ctrl + C，客户端将会退出。
 
-命令行客户端允许通过外部数据 （外部临时表） 来查询。更多相关信息，请参考 «[外部数据查询处理](../operations/table_engines/external_data.md)».
+命令行客户端允许通过外部数据 （外部临时表） 来查询。更多相关信息，请参考 «[外部数据查询处理](../engines/table_engines/special/external_data.md)».
 
 ## 配置 {#interfaces_cli_configuration}
 

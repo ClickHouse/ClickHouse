@@ -1,6 +1,4 @@
-if (NOT ARCH_32)
-    option (USE_INTERNAL_LIBGSASL_LIBRARY "Set to FALSE to use system libgsasl library instead of bundled" ${NOT_UNBUNDLED})
-endif ()
+option (USE_INTERNAL_LIBGSASL_LIBRARY "Set to FALSE to use system libgsasl library instead of bundled" ${NOT_UNBUNDLED})
 
 if (NOT EXISTS "${ClickHouse_SOURCE_DIR}/contrib/libgsasl/src/gsasl.h")
     if (USE_INTERNAL_LIBGSASL_LIBRARY)
@@ -16,7 +14,7 @@ if (NOT USE_INTERNAL_LIBGSASL_LIBRARY)
 endif ()
 
 if (LIBGSASL_LIBRARY AND LIBGSASL_INCLUDE_DIR)
-elseif (NOT MISSING_INTERNAL_LIBGSASL_LIBRARY AND NOT ARCH_32)
+elseif (NOT MISSING_INTERNAL_LIBGSASL_LIBRARY)
     set (LIBGSASL_INCLUDE_DIR ${ClickHouse_SOURCE_DIR}/contrib/libgsasl/src ${ClickHouse_SOURCE_DIR}/contrib/libgsasl/linux_x86_64/include)
     set (USE_INTERNAL_LIBGSASL_LIBRARY 1)
     set (LIBGSASL_LIBRARY libgsasl)

@@ -1,3 +1,4 @@
+
 # AMPLab 大数据基准测试 {#amplab-da-shu-ju-ji-zhun-ce-shi}
 
 参考 https://amplab.cs.berkeley.edu/benchmark/
@@ -119,4 +120,4 @@ ORDER BY totalRevenue DESC
 LIMIT 1
 ```
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
