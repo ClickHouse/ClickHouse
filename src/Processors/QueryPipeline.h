@@ -99,7 +99,7 @@ public:
     void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
     void addPipe(Processors pipe);
     void addTotalsHavingTransform(ProcessorPtr transform);
-    void addExtremesTransform(ProcessorPtr transform);
+    void addExtremesTransform();
     void addCreatingSetsTransform(ProcessorPtr transform);
     void setOutput(ProcessorPtr output);
 

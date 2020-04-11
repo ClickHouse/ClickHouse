@@ -23,6 +23,10 @@ public:
     BlockInputStreamPtr & getStream() { return stream; }
 
     void addTotalsPort();
+    void addExtremesPort();
+
+    OutputPort * getTotalsPort() const { return totals_port; }
+    OutputPort * getExtremesPort() const { return extremes_port; }
 
     void setRowsBeforeLimitCounter(RowsBeforeLimitCounterPtr counter) { rows_before_limit.swap(counter); }
 
@@ -44,8 +48,12 @@ private:
     RowsBeforeLimitCounterPtr rows_before_limit;
 
     Chunk totals;
-    bool has_totals_port = false;
+    OutputPort * totals_port = nullptr;
     bool has_totals = false;
+
+    Chunk extremes;
+    OutputPort * extremes_port = nullptr;
+    bool has_extremes = false;
 
     bool is_generating_finished = false;
     bool is_stream_finished = false;
