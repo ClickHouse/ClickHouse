@@ -8,10 +8,15 @@ merge_base=$(git merge-base origin/master "origin/$branch")
 # we'll get weird things like seeing older master that was merged into a PR branch
 # that was then merged into master.
 git log "$merge_base..origin/master" --first-parent --oneline > master-log.txt
-sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p" master-log.txt | sort -rn > master-prs.txt
-
 git log "$merge_base..origin/$branch" --first-parent --oneline > "$branch-log.txt"
-sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p" "$branch-log.txt" | sort -rn > "$branch-prs.txt"
+
+# Search for PR numbers in commit messages. First variant is normal merge, and second
+# variant is squashed.
+find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
+                  s/^.*(#\([[:digit:]]\+\))$/\1/p")
+
+"${find_prs[@]}" master-log.txt | sort -rn > master-prs.txt
+"${find_prs[@]}" "$branch-log.txt" | sort -rn > "$branch-prs.txt"
 
 # Find all master PRs that are not in branch by calculating differences of two PR lists.
 grep -f "$branch-prs.txt" -F -x -v master-prs.txt > "$branch-diff-prs.txt"
@@ -39,7 +44,7 @@ do
 
     if ! [ "$pr" == "$(jq -r .number "$file")" ]
     then
-        >&2 echo "File $file is broken (no PR number)."
+        >&2 echo "Got wrong data for PR #$pr (please check and remove '$file')."
         continue
     fi
 
@@ -92,4 +97,3 @@ do
     fi
 done
 
-wait
