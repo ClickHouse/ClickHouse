@@ -627,7 +627,7 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
         // With the help of https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
         const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
                 '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
-        // Every bit represents if `haystack` character is in the ranges (1) or not(0)
+        // Every bit represents if `haystack` character is in the ranges (1) or not (0)
         const int result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
 #else
         // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
