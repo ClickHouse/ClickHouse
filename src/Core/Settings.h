@@ -398,6 +398,7 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, partial_revokes, false, "Makes it possible to revoke privileges partially.", 0) \
     M(SettingBool, deduplicate_blocks_in_dependent_materialized_views, false, "Should deduplicate blocks for materialized views if the block is not a duplicate for the table. Use true to always deduplicate in dependent tables.", 0) \
     M(SettingBool, use_compact_format_in_distributed_parts_names, false, "Changes format of directories names for distributed table insert parts.", 0) \
+    M(SettingBool, allow_nondeterministic_mutations, false, "Allow non-deterministic functions in ALTER UPDATE/ALTER DELETE statements", 0) \
     \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \
@@ -411,7 +412,6 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingUInt64, mark_cache_min_lifetime, 0, "Obsolete setting, does nothing. Will be removed after 2020-05-31", 0) \
     M(SettingUInt64, max_parser_depth, 1000, "Maximum parser depth.", 0) \
     M(SettingSeconds, temporary_live_view_timeout, DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC, "Timeout after which temporary live view is deleted.", 0) \
-
 
     DECLARE_SETTINGS_COLLECTION(LIST_OF_SETTINGS)
 
