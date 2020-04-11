@@ -37,7 +37,7 @@ You can find metrics in the [system.metrics](../operations/system_tables.md#syst
 
 You can configure ClickHouse to export metrics to [Graphite](https://github.com/graphite-project). See the [Graphite section](server_configuration_parameters/settings.md#server_configuration_parameters-graphite) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Graphite by following their official [guide](https://graphite.readthedocs.io/en/latest/install.html).
 
-You can configure ClickHouse to export metrics to [Prometheus](https://prometheus.io). See the [Prometheus section](server_settings/settings.md#server_settings-prometheus) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Prometheus by following their official [guide](https://prometheus.io/docs/prometheus/latest/installation/).
+You can configure ClickHouse to export metrics to [Prometheus](https://prometheus.io). See the [Prometheus section](server_configuration_parameters/settings.md#server_configuration_parameters-prometheus) in the ClickHouse server configuration file. Before configuring export of metrics, you should set up Prometheus by following their official [guide](https://prometheus.io/docs/prometheus/latest/installation/).
 
 Additionally, you can monitor server availability through the HTTP API. Send the `HTTP GET` request to `/ping`. If the server is available, it responds with `200 OK`.
 
