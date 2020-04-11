@@ -139,12 +139,12 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={},
+    def add_instance(self, name, config_dir=None, main_configs=None, user_configs=None, macros=None,
                      with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False,
-                     hostname=None, env_variables={}, image="yandex/clickhouse-integration-test",
-                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=[]):
+                     hostname=None, env_variables=None, image="yandex/clickhouse-integration-test",
+                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -161,13 +161,14 @@ class ClickHouseCluster:
             raise Exception("Can\'t add instance `%s': there is already an instance with the same name!" % name)
 
         instance = ClickHouseInstance(
-            self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
+            self, self.base_dir, name, config_dir, main_configs or [], user_configs or [], macros or {},
+            with_zookeeper,
             self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio,
             self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
-            env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
+            env_variables=env_variables or {}, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
-            with_installed_binary=with_installed_binary, tmpfs=tmpfs)
+            with_installed_binary=with_installed_binary, tmpfs=tmpfs or [])
 
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
@@ -580,17 +581,17 @@ class ClickHouseInstance:
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
             with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio,
             base_configs_dir, server_bin_path, odbc_bridge_bin_path,
-            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={},
+            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=[]):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
 
         self.name = name
-        self.base_cmd = cluster.base_cmd[:]
+        self.base_cmd = cluster.base_cmd
         self.docker_id = cluster.get_instance_docker_id(self.name)
         self.cluster = cluster
         self.hostname = hostname if hostname is not None else self.name
 
-        self.tmpfs = tmpfs[:]
+        self.tmpfs = tmpfs or []
         self.custom_config_dir = p.abspath(p.join(base_path, custom_config_dir)) if custom_config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
@@ -611,7 +612,7 @@ class ClickHouseInstance:
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
-        self.env_variables = env_variables
+        self.env_variables = env_variables or {}
         if with_odbc_drivers:
             self.odbc_ini_path = os.path.dirname(self.docker_compose_path) + "/odbc.ini:/etc/odbc.ini"
             self.with_mysql = True
