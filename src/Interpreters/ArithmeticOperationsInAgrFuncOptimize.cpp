@@ -65,7 +65,10 @@ std::pair<ASTs, ASTs> findAllConsts(ASTFunction * func_node, std::string & inter
             (func_node->arguments->children.size() == 2 && func_node->arguments->children[1]->as<ASTFunction>() &&
             inter_func_name != func_node->arguments->children[1]->as<ASTFunction>()->name))
     {
-        return {};
+        if (func_node->arguments->children[0]->as<ASTFunction>())
+            return {{func_node->arguments->children[1]}, {func_node->arguments->children[0]}};
+        else
+            return {{func_node->arguments->children[0]}, {func_node->arguments->children[1]}};
     }
     else
     {
@@ -122,7 +125,7 @@ void buildTree(ASTFunction * old_tree, std::string& func_name, std::string& intr
         old_tree->name = func_name;
 
     if (non_cons.empty())
-        throw Exception("Aggregate function" + func_name + "requires single argument",
+        throw Exception("Aggregate function " + func_name + " requires single argument",
                         ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
     if (non_cons.size() == 1)
