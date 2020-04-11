@@ -1309,6 +1309,21 @@ ReplicatedMergeTreeMergePredicate ReplicatedMergeTreeQueue::getMergePredicate(zk
 }
 
 
+MutationCommands ReplicatedMergeTreeQueue::getFirstAlterMutationCommandsForPart(const MergeTreeData::DataPartPtr & part) const
+{
+    std::lock_guard lock(state_mutex);
+    auto in_partition = mutations_by_partition.find(part->info.partition_id);
+    if (in_partition == mutations_by_partition.end())
+        return MutationCommands{};
+
+    Int64 part_version = part->info.getDataVersion();
+    for (auto [mutation_version, mutation_status] : in_partition->second)
+        if (mutation_version > part_version && mutation_status->entry->alter_version != -1)
+            return mutation_status->entry->commands;
+
+    return MutationCommands{};
+}
+
 MutationCommands ReplicatedMergeTreeQueue::getMutationCommands(
     const MergeTreeData::DataPartPtr & part, Int64 desired_mutation_version) const
 {
@@ -1743,7 +1758,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
         {
             if (out_reason)
                 *out_reason = "There are " + toString(covered.size()) + " parts (from " + covered.front()
-                    + " to " + covered.back() + ") that are still not present or beeing processed by "
+                    + " to " + covered.back() + ") that are still not present or being processed by "
                     + " other background process on this replica between " + left->name + " and " + right->name;
             return false;
         }
@@ -1776,7 +1791,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     /// the part (checked by querying queue.virtual_parts), we can confidently assign a mutation to
     /// version X for this part.
 
-    /// We cannot mutate part if it's beeing inserted with quorum and it's not
+    /// We cannot mutate part if it's being inserted with quorum and it's not
     /// already reached.
     if (part->name == inprogress_quorum_part)
         return {};

@@ -25,6 +25,8 @@ class StorageDictionary final : public ext::shared_ptr_helper<StorageDictionary>
 public:
     std::string getName() const override { return "Dictionary"; }
 
+    void checkTableCanBeDropped() const override;
+
     Pipes read(const Names & column_names,
         const SelectQueryInfo & query_info,
         const Context & context,

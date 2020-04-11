@@ -1,17 +1,21 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_priority: 67
+toc_title: "\u5982\u4F55\u5728Linux\u4E0A\u6784\u5EFAClickHouse for AARCH64\uFF08\
+  ARM64)"
 ---
 
-# How to Build ClickHouse on Linux for AARCH64 (ARM64) architecture {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
+# 如何在Linux上为AARCH64（ARM64）架构构建ClickHouse {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
 
-This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on another Linux machine with AARCH64 CPU architecture. This is intended for continuous integration checks that run on Linux servers.
+这是当你有Linux机器，并希望使用它来构建的情况下 `clickhouse` 二进制文件将运行在另一个Linux机器上与AARCH64CPU架构。 这适用于在Linux服务器上运行的持续集成检查。
 
-The cross-build for AARCH64 is based on the [Build instructions](build.md), follow them first.
+Aarch64的交叉构建基于 [构建说明](build.md) 先跟着他们
 
-# Install Clang-8 {#install-clang-8}
+# 安装Clang-8 {#install-clang-8}
 
-Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
-For example, in Ubuntu Bionic you can use the following commands:
+按照以下说明操作https://apt.llvm.org/为您的Ubuntu或Debian设置.
+例如，在Ubuntu Bionic中，您可以使用以下命令:
 
 ``` bash
 echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" | sudo tee /etc/apt/sources.list.d/llvm.list
@@ -19,7 +23,7 @@ sudo apt-get update
 sudo apt-get install clang-8
 ```
 
-# Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
+# 安装交叉编译工具集 {#install-cross-compilation-toolset}
 
 ``` bash
 cd ClickHouse
@@ -28,7 +32,7 @@ wget 'https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel
 tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build-aarch64/cmake/toolchain/linux-aarch64 --strip-components=1
 ```
 
-# Build ClickHouse {#build-clickhouse}
+# 建立ClickHouse {#build-clickhouse}
 
 ``` bash
 cd ClickHouse
@@ -37,4 +41,4 @@ CC=clang-8 CXX=clang++-8 cmake . -Bbuild-arm64 -DCMAKE_TOOLCHAIN_FILE=cmake/linu
 ninja -C build-arm64
 ```
 
-The resulting binary will run only on Linux with the AARCH64 CPU architecture.
+生成的二进制文件将仅在具有AARCH64CPU体系结构的Linux上运行。

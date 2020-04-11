@@ -17,7 +17,7 @@
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
-#include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
@@ -535,7 +535,7 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 }
 
 /// Find the columns that are obtained by JOIN.
-void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & select_query,
+void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & select_query,
                           const std::vector<TableWithColumnNames> & tables, const Aliases & aliases)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
@@ -810,7 +810,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     const auto & settings = context.getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
-    result.analyzed_join = std::make_shared<AnalyzedJoin>(settings, context.getTemporaryVolume());
+    result.analyzed_join = std::make_shared<TableJoin>(settings, context.getTemporaryVolume());
 
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);

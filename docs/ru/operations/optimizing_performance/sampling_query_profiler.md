@@ -1,0 +1,1 @@
+../../../en/operations/optimizing_performance/sampling_query_profiler.md
