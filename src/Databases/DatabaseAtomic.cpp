@@ -15,9 +15,9 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TABLE;
     extern const int TABLE_ALREADY_EXISTS;
-    extern const int FILE_DOESNT_EXIST;
     extern const int CANNOT_ASSIGN_ALTER;
     extern const int DATABASE_NOT_EMPTY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 class AtomicDatabaseTablesSnapshotIterator final : public DatabaseTablesSnapshotIterator
@@ -134,7 +134,7 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
         db.tryCreateSymlink(table_name_, table_data_path_);
     };
 
-    auto assertCanMoveMatView = [inside_database](const StoragePtr & table_)
+    auto assert_can_move_mat_view = [inside_database](const StoragePtr & table_)
     {
         if (inside_database)
             return;
@@ -165,12 +165,12 @@ void DatabaseAtomic::renameTable(const Context & context, const String & table_n
     }
 
     StoragePtr table = getTableUnlocked(table_name);
-    assertCanMoveMatView(table);
+    assert_can_move_mat_view(table);
     StoragePtr other_table;
     if (exchange)
     {
         other_table = other_db.getTableUnlocked(to_table_name);
-        assertCanMoveMatView(other_table);
+        assert_can_move_mat_view(other_table);
     }
 
     if (exchange)
