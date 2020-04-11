@@ -30,7 +30,10 @@ static void checkProcessorHasSingleOutput(IProcessor * processor)
 
 /// Check tree invariants (described in TreeExecutor.h).
 /// Collect sources with progress.
-static void validateTree(const Processors & processors, IProcessor * root, IProcessor * totals_root, std::vector<ISourceWithProgress *> & sources)
+static void validateTree(
+    const Processors & processors,
+    IProcessor * root, IProcessor * totals_root, IProcessor * extremes_root,
+    std::vector<ISourceWithProgress *> & sources)
 {
     std::unordered_map<IProcessor *, size_t> index;
 
@@ -49,6 +52,8 @@ static void validateTree(const Processors & processors, IProcessor * root, IProc
     stack.push(root);
     if (totals_root)
         stack.push(totals_root);
+    if (extremes_root)
+        stack.push(extremes_root);
 
     while (!stack.empty())
     {
@@ -104,11 +109,15 @@ void TreeExecutorBlockInputStream::init()
 
     root = &output_port.getProcessor();
     IProcessor * totals_root = nullptr;
+    IProcessor * extremes_root = nullptr;
 
     if (totals_port)
         totals_root = &totals_port->getProcessor();
 
-    validateTree(processors, root, totals_root, sources_with_progress);
+    if (extremes_port)
+        extremes_root = &extremes_port->getProcessor();
+
+    validateTree(processors, root, totals_root, extremes_root, sources_with_progress);
 
     input_port = std::make_unique<InputPort>(getHeader(), root);
     connect(output_port, *input_port);
@@ -121,15 +130,24 @@ void TreeExecutorBlockInputStream::init()
         input_totals_port->setNeeded();
     }
 
+    if (extremes_port)
+    {
+        input_extremes_port = std::make_unique<InputPort>(extremes_port->getHeader(), root);
+        connect(*extremes_port, *input_extremes_port);
+        input_extremes_port->setNeeded();
+    }
+
     initRowsBeforeLimit();
 }
 
-void TreeExecutorBlockInputStream::execute(bool on_totals)
+void TreeExecutorBlockInputStream::execute(bool on_totals, bool on_extremes)
 {
     std::stack<IProcessor *> stack;
 
     if (on_totals)
         stack.push(&totals_port->getProcessor());
+    else if (on_extremes)
+        stack.push(&extremes_port->getProcessor());
     else
         stack.push(root);
 
@@ -283,9 +301,16 @@ Block TreeExecutorBlockInputStream::readImpl()
         {
             if (totals_port && !input_totals_port->isFinished())
             {
-                execute(true);
+                execute(true, false);
                 if (input_totals_port->hasData())
                     totals = getHeader().cloneWithColumns(input_totals_port->pull().detachColumns());
+            }
+
+            if (extremes_port && !input_extremes_port->isFinished())
+            {
+                execute(false, true);
+                if (input_extremes_port->hasData())
+                    extremes = getHeader().cloneWithColumns(input_extremes_port->pull().detachColumns());
             }
 
             if (rows_before_limit_at_least && rows_before_limit_at_least->hasAppliedLimit())
@@ -311,7 +336,7 @@ Block TreeExecutorBlockInputStream::readImpl()
             return block;
         }
 
-        execute(false);
+        execute(false, false);
     }
 }
 
