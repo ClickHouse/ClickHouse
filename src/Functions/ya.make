@@ -5,12 +5,12 @@ ADDINCL(
 )
 
 PEERDIR(
-    clickhouse/contrib/libdivide
     clickhouse/src/Common
     clickhouse/src/Dictionaries
     contrib/libs/farmhash
     contrib/libs/fastops/fastops
     contrib/libs/hyperscan
+    contrib/libs/libdivide
     contrib/libs/metrohash
     contrib/libs/rapidjson
     contrib/libs/xxhash

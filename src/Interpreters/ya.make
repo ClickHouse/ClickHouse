@@ -3,9 +3,9 @@ LIBRARY()
 NO_COMPILER_WARNINGS()
 
 PEERDIR(
-    clickhouse/contrib/libdivide
-    clickhouse/contrib/pdqsort
     clickhouse/src/Common
+    contrib/libs/libdivide
+    contrib/libs/pdqsort
 )
 
 SRCS(

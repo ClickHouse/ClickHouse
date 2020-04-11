@@ -1,16 +1,16 @@
 LIBRARY()
 
 ADDINCL(
-    clickhouse/contrib/cityhash
+    clickhouse/base/cityhash
     contrib/libs/libunwind/include
 )
 
 PEERDIR(
+    clickhouse/base/cityhash
     clickhouse/base/common
-    clickhouse/contrib/cityhash
-    clickhouse/contrib/pcg-random
+    clickhouse/base/pcg-random
+    clickhouse/base/widecharwidth
     clickhouse/contrib/ryu
-    clickhouse/contrib/widecharwidth
     contrib/libs/libcpuid
     contrib/libs/re2
 )

@@ -3,7 +3,7 @@ LIBRARY()
 ADDINCL(
     # public
     GLOBAL clickhouse/base
-    GLOBAL clickhouse/contrib/cityhash
+    GLOBAL clickhouse/base/cityhash
     GLOBAL clickhouse/src
 
     # private

@@ -1,7 +1,7 @@
 LIBRARY()
 
 PEERDIR(
-    clickhouse/contrib/pcg-random
+    clickhouse/base/pcg-random
     clickhouse/src/Common
 )
 
