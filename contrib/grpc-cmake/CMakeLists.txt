@@ -104,6 +104,7 @@ set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib-ng)
 set(ZLIB_ROOT_DIR ${GRPC_SOURCE_DIR}/third_party/zlib)
 >>>>>>> zlib
 include_directories("${ZLIB_ROOT_DIR}")
+<<<<<<< HEAD
 # add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
 <<<<<<< HEAD
 set(_gRPC_ZLIB_LIBRARIES zlibstatic)
@@ -134,6 +135,9 @@ endif()
 >>>>>>> zlib
 =======
 =======
+=======
+## add_subdirectory(${ZLIB_ROOT_DIR} ${ZLIB_ROOT_DIR})
+>>>>>>> build problems
 if(TARGET zlibstatic)
   set(_gRPC_ZLIB_LIBRARIES zlibstatic)
   set(_gRPC_ZLIB_INCLUDE_DIR "${ZLIB_ROOT_DIR}" "${GRPC_SOURCE_DIR}/third_party/zlib")
