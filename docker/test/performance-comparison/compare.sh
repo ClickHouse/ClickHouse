@@ -107,7 +107,7 @@ function run_tests
         # and not always correct (e.g. when the reference SHA is really old and
         # has some other differences to the tested SHA, besides the one introduced
         # by the PR).
-        test_files_override=$(sed "s/dbms\/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
+        test_files_override=$(sed "s/tests\/performance/${test_prefix//\//\\/}/" changed-tests.txt)
         if [ "$test_files_override" != "" ]
         then
             test_files=$test_files_override
@@ -148,7 +148,7 @@ function run_tests
 
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
         # the grep is to filter out set -x output and keep only time output
-        { time "$script_dir/perf.py" "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" || continue
+        { time "$script_dir/perf.py" --host localhost localhost --port 9001 9002 -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" || continue
 
         # The test completed with zero status, so we treat stderr as warnings
         mv "$test_name-err.log" "$test_name-warn.log"
@@ -406,7 +406,7 @@ unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
-grep -H -m2 '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
 }
 
 case "$stage" in

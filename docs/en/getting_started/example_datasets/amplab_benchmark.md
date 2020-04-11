@@ -1,3 +1,8 @@
+---
+toc_priority: 17
+toc_title: AMPLab Big Data Benchmark
+---
+
 # AMPLab Big Data Benchmark {#amplab-big-data-benchmark}
 
 See https://amplab.cs.berkeley.edu/benchmark/
