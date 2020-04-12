@@ -1164,12 +1164,7 @@ DataTypePtr HashJoin::joinGetReturnType(const String & column_name, bool or_null
         throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::LOGICAL_ERROR);
     auto elem = sample_block_with_columns_to_add.getByName(column_name);
     if (or_null)
-    {
-        if (!elem.type->canBeInsideNullable())
-            throw Exception("Type " + elem.type->getName() + " cannot be inside Nullable", ErrorCodes::LOGICAL_ERROR);
-        else
-            elem.type = makeNullable(elem.type);
-    }
+        elem.type = makeNullable(elem.type);
     return elem.type;
 }
 
