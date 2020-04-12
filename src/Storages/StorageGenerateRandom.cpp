@@ -205,7 +205,10 @@ ColumnPtr fillColumnWithRandomData(
         {
             auto column = ColumnUInt16::create();
             column->getData().resize(limit);
-            fillBufferWithRandomData(reinterpret_cast<char *>(column->getData().data()), limit * sizeof(UInt16), rng);
+
+            for (size_t i = 0; i < limit; ++i)
+                column->getData()[i] = rng() % (DATE_LUT_MAX_DAY_NUM + 1);   /// Slow
+
             return column;
         }
         case TypeIndex::UInt32: [[fallthrough]];
