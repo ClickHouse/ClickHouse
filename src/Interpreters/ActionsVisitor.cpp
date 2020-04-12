@@ -64,7 +64,7 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
 }
 
 template<typename Collection>
-static Block createBlockFromCollection(const Collection & collection, const DataTypes & types)
+static Block createBlockFromCollection(const Collection & collection, const DataTypes & types, const Context & context)
 {
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
@@ -77,7 +77,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
         if (columns_num == 1)
         {
             auto field = convertFieldToType(value, *types[0]);
-            if (!field.isNull())
+            if (!field.isNull() || context.getSettingsRef().transform_null_in)
                 columns[0]->insert(std::move(field));
         }
         else
@@ -100,7 +100,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             for (; i < tuple_size; ++i)
             {
                 tuple_values[i] = convertFieldToType(tuple[i], *types[i]);
-                if (tuple_values[i].isNull())
+                if (tuple_values[i].isNull() && !context.getSettingsRef().transform_null_in)
                     break;
             }
 
@@ -170,23 +170,23 @@ SetPtr makeExplicitSet(
     if (left_type_depth == right_type_depth)
     {
         Array array{right_arg_value};
-        block = createBlockFromCollection(array, set_element_types);
+        block = createBlockFromCollection(array, set_element_types, context);
     }
     /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
     else if (left_type_depth + 1 == right_type_depth)
     {
         auto type_index = right_arg_type->getTypeId();
         if (type_index == TypeIndex::Tuple)
-            block = createBlockFromCollection(DB::get<const Tuple &>(right_arg_value), set_element_types);
+            block = createBlockFromCollection(DB::get<const Tuple &>(right_arg_value), set_element_types, context);
         else if (type_index == TypeIndex::Array)
-            block = createBlockFromCollection(DB::get<const Array &>(right_arg_value), set_element_types);
+            block = createBlockFromCollection(DB::get<const Array &>(right_arg_value), set_element_types, context);
         else
             throw_unsupported_type(right_arg_type);
     }
     else
         throw_unsupported_type(right_arg_type);
 
-    SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set);
+    SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
 
     set->setHeader(block);
     set->insertFromBlock(block);
@@ -654,7 +654,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
             return subquery_for_set.set;
         }
 
-        SetPtr set = std::make_shared<Set>(data.set_size_limit, false);
+        SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
 
         /** The following happens for GLOBAL INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,

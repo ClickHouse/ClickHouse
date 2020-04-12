@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -166,7 +167,19 @@ private:
     {
         if (func.name == "globalIn" || func.name == "globalNotIn")
         {
-            data.addExternalStorage(func.arguments->children[1]);
+            ASTPtr & ast = func.arguments->children[1];
+
+            /// Literal can use regular IN
+            if (ast->as<ASTLiteral>())
+            {
+                if (func.name == "globalIn")
+                    func.name = "in";
+                else
+                    func.name = "notIn";
+                return;
+            }
+
+            data.addExternalStorage(ast);
             data.has_global_subqueries = true;
         }
     }

@@ -87,7 +87,6 @@
 #include <Processors/Transforms/MergingSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
-#include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
@@ -2542,8 +2541,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
     if (!context->getSettingsRef().extremes)
         return;
 
-    auto transform = std::make_shared<ExtremesTransform>(pipeline.getHeader());
-    pipeline.addExtremesTransform(std::move(transform));
+    pipeline.addExtremesTransform();
 }
 
 
