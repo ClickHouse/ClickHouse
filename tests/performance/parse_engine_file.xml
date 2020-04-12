@@ -34,6 +34,7 @@
                 <value>RowBinary</value>
                 <value>Native</value>
                 <value>Avro</value>
+                <value>MsgPack</value>
             </values>
         </substitution>
     </substitutions>
