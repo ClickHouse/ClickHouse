@@ -638,12 +638,8 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
     /// We calculate required_source_columns with source_columns modifications and swap them on exit
     required_source_columns = source_columns;
 
-    std::cerr << queryToString(query) << "\n";
-
     RequiredSourceColumnsVisitor::Data columns_context;
     RequiredSourceColumnsVisitor(columns_context).visit(query);
-
-    std::cerr << columns_context << "\n";
 
     NameSet source_column_names;
     for (const auto & column : source_columns)
@@ -925,9 +921,6 @@ void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     QueryAliasesVisitor(aliases).visit(query);
-
-    for (const auto & alias : aliases)
-        std::cerr << "Alias: " << alias.first << ": " << queryToString(alias.second) << "\n";
 
     /// Mark table ASTIdentifiers with not a column marker
     MarkTableIdentifiersVisitor::Data identifiers_data{aliases};

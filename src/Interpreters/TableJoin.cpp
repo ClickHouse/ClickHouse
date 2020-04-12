@@ -1,5 +1,3 @@
-#include <iostream>
-
 #include <Interpreters/TableJoin.h>
 
 #include <Parsers/ASTExpressionList.h>
@@ -163,8 +161,6 @@ NamesWithAliases TableJoin::getRequiredColumns(const Block & sample, const Names
 
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
-    std::cerr << "Adding " << joined_column.name << "\n";
-
     if (join_use_nulls && isLeftOrFull(table_join.kind))
     {
         auto type = joined_column.type->canBeInsideNullable() ? makeNullable(joined_column.type) : joined_column.type;
