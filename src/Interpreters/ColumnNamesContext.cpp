@@ -89,7 +89,7 @@ std::ostream & operator << (std::ostream & os, const ColumnNamesContext & cols)
             os << "/'" << alias << "'";
         os << ", ";
     }
-    os << " source_tables: ";
+    os << "source_tables: ";
     for (const auto & x : cols.tables)
     {
         auto alias = x.alias();
