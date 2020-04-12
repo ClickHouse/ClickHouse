@@ -233,6 +233,10 @@ public:
         onCancel();
     }
 
+    /// Additional method which is called in case if ports were updated while work() method.
+    /// May be used to stop execution in rare cases.
+    virtual void onUpdatePorts() {};
+
     virtual ~IProcessor() = default;
 
     auto & getInputs() { return inputs; }
