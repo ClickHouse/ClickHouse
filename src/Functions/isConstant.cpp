@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Returns 1 if and only if the argument is constant expression.
-/// This function is exists for development, debugging and demonstration purposes.
+/// This function exists for development, debugging and demonstration purposes.
 class FunctionIsConstant : public IFunction
 {
 public:
