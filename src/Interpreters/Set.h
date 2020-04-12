@@ -231,6 +231,8 @@ public:
 
     size_t size() const { return ordered_set.at(0)->size(); }
 
+    bool hasMonotonicFunctionsChain() const;
+
     BoolMask checkInRange(const std::vector<Range> & key_ranges, const DataTypes & data_types);
 
 private:
