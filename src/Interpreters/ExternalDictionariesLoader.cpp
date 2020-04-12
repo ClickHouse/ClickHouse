@@ -1,5 +1,6 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Dictionaries/DictionaryFactory.h>
+#include <Dictionaries/DictionaryStructure.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -32,6 +33,19 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     bool dictionary_from_database = !repository_name.empty();
     return DictionaryFactory::instance().create(name, config, key_in_config, context, dictionary_from_database);
 }
+
+
+DictionaryStructure
+ExternalDictionariesLoader::getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config)
+{
+    return {config, key_in_config + ".structure"};
+}
+
+DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const ObjectConfig & config)
+{
+    return getDictionaryStructure(*config.config, config.key_in_config);
+}
+
 
 void ExternalDictionariesLoader::resetAll()
 {
