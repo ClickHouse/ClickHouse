@@ -41,7 +41,7 @@ public:
     void onUpdatePorts() override
     {
         if (getPort().isFinished())
-            onCancel();
+            cancel();
     }
 
 protected:
