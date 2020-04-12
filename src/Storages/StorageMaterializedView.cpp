@@ -221,6 +221,7 @@ static void executeDropQuery(ASTDropQuery::Kind kind, Context & global_context, 
         drop_query->database = target_table_id.database_name;
         drop_query->table = target_table_id.table_name;
         drop_query->kind = kind;
+        drop_query->no_delay = true;
         ASTPtr ast_drop_query = drop_query;
         InterpreterDropQuery drop_interpreter(ast_drop_query, global_context);
         drop_interpreter.execute();
