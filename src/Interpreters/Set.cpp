@@ -596,6 +596,14 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<Range> & key_ranges, 
     };
 }
 
+bool MergeTreeSetIndex::hasMonotonicFunctionsChain() const
+{
+    for (const auto & mapping : indexes_mapping)
+        if (!mapping.functions.empty())
+            return true;
+    return false;
+}
+
 void ValueWithInfinity::update(const Field & x)
 {
     /// Keep at most one element in column.
@@ -607,8 +615,11 @@ void ValueWithInfinity::update(const Field & x)
 
 const IColumn & ValueWithInfinity::getColumnIfFinite() const
 {
+#ifndef NDEBUG
     if (type != NORMAL)
         throw Exception("Trying to get column of infinite type", ErrorCodes::LOGICAL_ERROR);
+#endif
+
     return *column;
 }
 
