@@ -10,8 +10,6 @@
 #include <Storages/StorageMemory.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <Parsers/formatAST.h>
-#include <boost/algorithm/string.hpp>
-#include <boost/algorithm/string/split.hpp>
 #include <IO/ReadHelpers.h>
 #include <Poco/DirectoryIterator.h>
 
@@ -501,18 +499,25 @@ void DatabaseCatalog::loadMarkedAsDroppedTables()
             continue;
 
         /// Process .sql files with metadata of tables which were marked as dropped
-        String full_path = path + it.name();
-
-        Strings name_parts;
-        boost::split(name_parts, it.name(), boost::is_any_of(".")); // NOLINT: LLVM Bug 41141
-        if (name_parts.size() != 4)     /// Unexpected file
-            continue;
-
         StorageID dropped_id = StorageID::createEmpty();
-        dropped_id.database_name = unescapeForFileName(name_parts[0]);
-        dropped_id.table_name = unescapeForFileName(name_parts[1]);
-        dropped_id.uuid = parse<UUID>(name_parts[2]);
+        size_t dot_pos = it.name().find('.');
+        if (dot_pos == std::string::npos)
+            continue;
+        dropped_id.database_name = unescapeForFileName(it.name().substr(0, dot_pos));
 
+        size_t prev_dot_pos = dot_pos;
+        dot_pos = it.name().find('.', prev_dot_pos + 1);
+        if (dot_pos == std::string::npos)
+            continue;
+        dropped_id.table_name = unescapeForFileName(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+
+        prev_dot_pos = dot_pos;
+        dot_pos = it.name().find('.', prev_dot_pos + 1);
+        if (dot_pos == std::string::npos)
+            continue;
+        dropped_id.uuid = parse<UUID>(it.name().substr(prev_dot_pos + 1, dot_pos - prev_dot_pos - 1));
+
+        String full_path = path + it.name();
         dropped_metadata.emplace(std::move(full_path), std::move(dropped_id));
     }
 

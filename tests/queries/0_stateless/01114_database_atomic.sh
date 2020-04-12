@@ -8,7 +8,7 @@ $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS test_01114_2"
 $CLICKHOUSE_CLIENT -q "DROP DATABASE IF EXISTS test_01114_3"
 
 
-$CLICKHOUSE_CLIENT -q "CREATE DATABASE test_01114_1 ENGINE=Atomic"
+$CLICKHOUSE_CLIENT --allow_experimental_database_atomic=1 -q "CREATE DATABASE test_01114_1 ENGINE=Atomic"
 $CLICKHOUSE_CLIENT --default_database_engine=Atomic --allow_experimental_database_atomic=1 -q "CREATE DATABASE test_01114_2"
 $CLICKHOUSE_CLIENT --default_database_engine=Ordinary -q "CREATE DATABASE test_01114_3"
 
@@ -29,13 +29,13 @@ $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_01114_3.mt_tmp"
 
 $CLICKHOUSE_CLIENT -q "DROP DATABASE test_01114_3"
 
-$CLICKHOUSE_CLIENT -q "CREATE TABLE test_01114_2.mt UUID '00001114-0000-4000-8000-000000000001' (n UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY (n % 5)"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE test_01114_2.mt UUID '00001114-0000-4000-8000-000000000002' (n UInt64) ENGINE=MergeTree() ORDER BY tuple() PARTITION BY (n % 5)"
 $CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE test_01114_2.mt"
 $CLICKHOUSE_CLIENT -q "SELECT name, uuid, create_table_query FROM system.tables WHERE database='test_01114_2'"
 
 
-$CLICKHOUSE_CLIENT -q "SELECT count(col), sum(col) FROM (SELECT n + sleepEachRow(1) AS col FROM test_01114_1.mt)" &     # 20s, result: 20, 190
-$CLICKHOUSE_CLIENT -q "INSERT INTO test_01114_2.mt SELECT number + sleepEachRow(1) FROM numbers(30)" &                  # 30s
+$CLICKHOUSE_CLIENT -q "SELECT count(col), sum(col) FROM (SELECT n + sleepEachRow(1.5) AS col FROM test_01114_1.mt)" &     # 30s, result: 20, 190
+$CLICKHOUSE_CLIENT -q "INSERT INTO test_01114_2.mt SELECT number + sleepEachRow(1.5) FROM numbers(30)" &                  # 45s
 sleep 1   # SELECT and INSERT should start before the following RENAMEs
 
 $CLICKHOUSE_CLIENT -q "RENAME TABLE test_01114_1.mt TO test_01114_1.mt_tmp"
@@ -46,7 +46,8 @@ $CLICKHOUSE_CLIENT -q "EXCHANGE TABLES test_01114_1.mt AND test_01114_2.mt"
 
 # Check that nothing changed
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM test_01114_1.mt"
-$CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE test_01114_1.mt"
+uuid_mt1=`$CLICKHOUSE_CLIENT -q "SELECT uuid FROM system.tables WHERE database='test_01114_1' AND name='mt'"`
+$CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE test_01114_1.mt" | sed "s/$uuid_mt1/00001114-0000-4000-8000-000000000001/g"
 $CLICKHOUSE_CLIENT -q "SHOW CREATE TABLE test_01114_2.mt"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_01114_1.mt"

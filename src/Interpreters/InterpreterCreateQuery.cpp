@@ -102,10 +102,6 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         engine->name = old_style_database ? "Ordinary" : "Atomic";
         storage->set(storage->engine, engine);
         create.set(create.storage, storage);
-
-        if (!context.getSettingsRef().allow_experimental_database_atomic)
-            throw Exception("Atomic is an experimental database engine. Enable allow_experimental_database_atomic to use it.",
-                            ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
     else if ((create.columns_list && create.columns_list->indices && !create.columns_list->indices->children.empty()))
     {
@@ -115,6 +111,9 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         throw Exception("Unknown database engine: " + ostr.str(), ErrorCodes::UNKNOWN_DATABASE_ENGINE);
     }
 
+    if (create.storage->engine->name == "Atomic" && !context.getSettingsRef().allow_experimental_database_atomic && !internal)
+        throw Exception("Atomic is an experimental database engine. Enable allow_experimental_database_atomic to use it.",
+                        ErrorCodes::UNKNOWN_DATABASE_ENGINE);
 
     String database_name_escaped = escapeForFileName(database_name);
     String path = context.getPath();
