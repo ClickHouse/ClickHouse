@@ -12,13 +12,12 @@
 #include <Storages/StorageView.h>
 #include <Storages/StorageFactory.h>
 
-#include <DataStreams/MaterializingBlockInputStream.h>
-
 #include <Common/typeid_cast.h>
 
 #include <Processors/Pipe.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Transforms/ConvertingTransform.h>
 
 
 namespace DB
@@ -78,7 +77,14 @@ Pipes StorageView::read(
     /// It's expected that the columns read from storage are not constant.
     /// Because method 'getSampleBlockForColumns' is used to obtain a structure of result in InterpreterSelectQuery.
     for (auto & pipe : pipes)
+    {
         pipe.addSimpleTransform(std::make_shared<MaterializingTransform>(pipe.getHeader()));
+
+        /// And also convert to expected structure.
+        pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
+            pipe.getHeader(), getSampleBlockForColumns(column_names),
+            ConvertingTransform::MatchColumnsMode::Name, context));
+    }
 
     return pipes;
 }
