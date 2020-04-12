@@ -1,3 +1,0 @@
-200
-400
-CREATE TABLE test.ttl_repl2 (`d` Date, `x` UInt32) ENGINE = ReplicatedMergeTree(\'/clickhouse/tables/test/ttl_repl\', \'2\') PARTITION BY toDayOfMonth(d) ORDER BY x TTL d + toIntervalDay(1) SETTINGS index_granularity = 8192

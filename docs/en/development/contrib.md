@@ -1,3 +1,8 @@
+---
+toc_priority: 70
+toc_title: Third-Party Libraries Used
+---
+
 # Third-Party Libraries Used {#third-party-libraries-used}
 
 | Library             | License                                                                                                                                      |

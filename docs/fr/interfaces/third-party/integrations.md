@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 27
+toc_title: "Int\xE9gration"
 ---
 
 # Bibliothèques d'intégration de développeurs tiers {#integration-libraries-from-third-party-developers}
@@ -39,7 +42,7 @@ machine_translated: true
         -   [graphouse](https://github.com/yandex/graphouse)
         -   [carbone-clickhouse](https://github.com/lomik/carbon-clickhouse) +
         -   [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
-        -   [graphite-CH-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimise les partitions calées dans [\* GraphiteMergeTree](../../operations/table_engines/graphitemergetree.md#graphitemergetree) si les règles de [configuration de cumul](../../operations/table_engines/graphitemergetree.md#rollup-configuration) pourrait être appliquée
+        -   [graphite-CH-optimizer](https://github.com/innogames/graphite-ch-optimizer) - optimise les partitions calées dans [\* GraphiteMergeTree](../../engines/table_engines/mergetree_family/graphitemergetree.md#graphitemergetree) si les règles de [configuration de cumul](../../engines/table_engines/mergetree_family/graphitemergetree.md#rollup-configuration) pourrait être appliquée
     -   [Grafana](https://grafana.com/)
         -   [clickhouse-grafana](https://github.com/Vertamedia/clickhouse-grafana)
     -   [Prometheus](https://prometheus.io/)
@@ -76,7 +79,7 @@ machine_translated: true
         -   [RClickhouse](https://github.com/IMSMWU/RClickhouse) (utiliser [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
-        -   [clickhouse-HDFS-chargeur](https://github.com/jaykelin/clickhouse-hdfs-loader) (utiliser [JDBC](../../query_language/table_functions/jdbc.md))
+        -   [clickhouse-HDFS-chargeur](https://github.com/jaykelin/clickhouse-hdfs-loader) (utiliser [JDBC](../../sql_reference/table_functions/jdbc.md))
 -   Scala
     -   [Akka](https://akka.io)
         -   [clickhouse-Scala-client](https://github.com/crobox/clickhouse-scala-client)

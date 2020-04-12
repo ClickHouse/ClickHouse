@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 17
+toc_title: Client De Ligne De Commande
 ---
 
 # Client de ligne de commande {#command-line-client}
@@ -86,7 +89,7 @@ Formatez une requête comme d'habitude, puis placez les valeurs que vous souhait
 ```
 
 -   `name` — Placeholder identifier. In the console client it should be used in app parameters as `--param_<name> = value`.
--   `data type` — [Type de données](../data_types/index.md) de l'application valeur de paramètre. Par exemple, une structure de données comme `(integer, ('string', integer))` peut avoir la `Tuple(UInt8, Tuple(String, UInt8))` type de données (vous pouvez également utiliser un autre [entier](../data_types/int_uint.md) type).
+-   `data type` — [Type de données](../sql_reference/data_types/index.md) de l'application valeur de paramètre. Par exemple, une structure de données comme `(integer, ('string', integer))` peut avoir la `Tuple(UInt8, Tuple(String, UInt8))` type de données (vous pouvez également utiliser un autre [entier](../sql_reference/data_types/int_uint.md) type).
 
 #### Exemple {#example}
 

@@ -1,0 +1,27 @@
+CREATE TABLE default.ipv4_test\n(\n    `ipv4_` IPv4\n)\nENGINE = Memory
+0.0.0.0	00
+8.8.8.8	08080808
+127.0.0.1	7F000001
+192.168.0.91	C0A8005B
+255.255.255.255	FFFFFFFF
+< 127.0.0.1	0.0.0.0
+< 127.0.0.1	8.8.8.8
+> 127.0.0.1	192.168.0.91
+> 127.0.0.1	255.255.255.255
+= 127.0.0.1	127.0.0.1
+euqality of IPv4-mapped IPv6 value and IPv4 promoted to IPv6 with function:	1
+CREATE TABLE default.ipv6_test\n(\n    `ipv6_` IPv6\n)\nENGINE = Memory
+::	00000000000000000000000000000000
+::	00000000000000000000000000000000
+::ffff:8.8.8.8	00000000000000000000FFFF08080808
+::ffff:127.0.0.1	00000000000000000000FFFF7F000001
+::ffff:193.252.17.10	00000000000000000000FFFFC1FC110A
+2001:db8:ac10:fe01:feed:babe:cafe:f00d	20010DB8AC10FE01FEEDBABECAFEF00D
+ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff	FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+< 127.0.0.1	::
+< 127.0.0.1	::
+< 127.0.0.1	::ffff:8.8.8.8
+> 127.0.0.1	::ffff:193.252.17.10
+> 127.0.0.1	2001:db8:ac10:fe01:feed:babe:cafe:f00d
+> 127.0.0.1	ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+= 127.0.0.1	::ffff:127.0.0.1
