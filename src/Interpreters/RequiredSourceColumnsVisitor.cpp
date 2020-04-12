@@ -88,12 +88,14 @@ void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
         visit(*t, ast, data);
         return;
     }
+
     if (auto * t = ast->as<ASTSelectQuery>())
     {
         data.addTableAliasIfAny(*ast);
         visit(*t, ast, data);
         return;
     }
+
     if (ast->as<ASTSubquery>())
     {
         data.addTableAliasIfAny(*ast);
