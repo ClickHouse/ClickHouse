@@ -14,10 +14,7 @@ from helpers.network import PartitionManager
 import json
 import subprocess
 
-import kafka # for rabbitmq
-
 from google.protobuf.internal.encoder import _VarintBytes
-
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
@@ -31,15 +28,6 @@ rabbitmq_id = ''
 # Helpers
 
 def check_rabbitmq_is_available():
-    # works but too many logs when connection fails
-    #try:
-    #    connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost', port=5672))
-    #    if connection.is_open:
-    #        connection.close()
-    #        return 1
-    #except:
-    #    return 0
-
     p = subprocess.Popen(('docker',
                           'exec',
                           '-i',
@@ -64,16 +52,6 @@ def wait_rabbitmq_is_available(max_retries=50):
             time.sleep(1)
 
 
-def rabbitmq_produce(channel, key, messages):
-    channel.exchange_declare(exchange='new_exch', exchange_type='direct')
-    for message in messages:
-        channel.basic_publish(exchange='new_exch', routing_key=key, body=message)
-
-
-def rabbitmq_consume(channel, queue_name):
-    channel.basic_consume(queue=queue_name, auto_ack=True)
-
-
 def rabbitmq_check_result(result, check=False, ref_file='test_rabbitmq_json.reference'):
     fpath = p.join(p.dirname(__file__), ref_file)
     with open(fpath) as reference:
@@ -81,6 +59,10 @@ def rabbitmq_check_result(result, check=False, ref_file='test_rabbitmq_json.refe
             assert TSV(result) == TSV(reference)
         else:
             return TSV(result) == TSV(reference)
+
+
+def callback(ch, method, properties, body):
+    assert 0 # means it worked!
 
 
 # Fixtures
@@ -105,15 +87,42 @@ def rabbitmq_setup_teardown():
     wait_rabbitmq_is_available()
     print("RabbitMQ is available - running test")
     yield  # run test
-    #instance.query('DROP TABLE IF EXISTS test.rabbitmq')
+    instance.query('DROP TABLE IF EXISTS test.rabbitmq')
 
 
 # Tests
 
-def callback(ch, method, properties, body):
-    print("%r:%r" % (method.routing_key, body))
-    assert 0
-
+#@pytest.mark.timeout(180)
+#def test_rabbitmq_basic_commands(rabbitmq_cluster):
+#    publisher_connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost', port=5672))
+#    consumer_connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost', port=5672))
+#
+#    consumer = consumer_connection.channel()
+#    consumer.exchange_declare(exchange='direct_exchange', exchange_type='direct')
+#    result = consumer.queue_declare(queue='')
+#    queue_name = result.method.queue
+#    consumer.queue_bind(exchange='direct_exchange', queue=queue_name, routing_key='new')
+#    consumer.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
+#
+#    messages = []
+#    for i in range(25):
+#        messages.append(json.dumps({'key': i, 'value': i}))
+#
+#    publisher = publisher_connection.channel()
+#    publisher.exchange_declare(exchange='direct_exchange', exchange_type='direct')
+#    for message in messages:
+#        publisher.basic_publish(exchange='direct_exchange', routing_key='new', body=message)
+#
+#    messages = []
+#    for i in range(25, 50):
+#        messages.append(json.dumps({'key': i, 'value': i}))
+#    for message in messages:
+#        publisher.basic_publish(exchange='direct_exchange', routing_key='new', body=message)
+#
+#    consumer.start_consuming()
+#    consumer_connection.close()
+#    publisher.connection.close()
+#
 
 @pytest.mark.timeout(180)
 def test_rabbitmq_settings_new_syntax(rabbitmq_cluster):
@@ -129,13 +138,6 @@ def test_rabbitmq_settings_new_syntax(rabbitmq_cluster):
 
     connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost', port=5672))
 
-    #channel_cons = connection.channel()
-    #channel_cons.exchange_declare(exchange='direct_exchange', exchange_type='direct')
-    #result = channel_cons.queue_declare(queue='', exclusive=True)
-    #queue_name = result.method.queue
-    #channel_cons.queue_bind(exchange='direct_exchange', queue=queue_name, routing_key='new')
-    #channel_cons.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
-
     messages = []
     for i in range(25):
         messages.append(json.dumps({'key': i, 'value': i}))
@@ -146,17 +148,11 @@ def test_rabbitmq_settings_new_syntax(rabbitmq_cluster):
     for message in messages:
         channel.basic_publish(exchange='direct_exchange', routing_key='new', body=message)
 
-    # Insert couple of malformed messages.
-#    rabbitmq_produce(channel, 'new', ['}{very_broken_message,'])
-#    rabbitmq_produce(channel, 'new', ['}another{very_broken_message,'])
-
     messages = []
     for i in range(25, 50):
         messages.append(json.dumps({'key': i, 'value': i}))
     for message in messages:
         channel.basic_publish(exchange='direct_exchange', routing_key='new', body=message)
-
-    #channel_cons.start_consuming()
 
     result = ''
     while True:
@@ -167,11 +163,9 @@ def test_rabbitmq_settings_new_syntax(rabbitmq_cluster):
             break
 
     connection.close()
-
     rabbitmq_check_result(result, True)
 
 
-@pytest.mark.timeout(180)
 def test_rabbitmq_select_empty(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)

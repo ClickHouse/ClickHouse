@@ -17,7 +17,6 @@ set(SRCS
         ${AMQPCPP_DIR}/src/receivedframe.cpp
         ${AMQPCPP_DIR}/src/table.cpp
         ${AMQPCPP_DIR}/src/watchable.cpp
-
         ${AMQPCPP_DIR}/src/basicackframe.h
         ${AMQPCPP_DIR}/src/basiccancelframe.h
         ${AMQPCPP_DIR}/src/basiccancelokframe.h
@@ -99,11 +98,32 @@ set(SRCS
         ${AMQPCPP_DIR}/src/transactionrollbackokframe.h
         ${AMQPCPP_DIR}/src/transactionselectframe.h
         ${AMQPCPP_DIR}/src/transactionselectokframe.h
-        )
 
+        ${AMQPCPP_DIR}/src/linux_tcp/addressinfo.h
+        ${AMQPCPP_DIR}/src/linux_tcp/function.h
+        ${AMQPCPP_DIR}/src/linux_tcp/includes.h
+        ${AMQPCPP_DIR}/src/linux_tcp/openssl.cpp
+        ${AMQPCPP_DIR}/src/linux_tcp/openssl.h
+        ${AMQPCPP_DIR}/src/linux_tcp/pipe.h
+        ${AMQPCPP_DIR}/src/linux_tcp/poll.h
+        ${AMQPCPP_DIR}/src/linux_tcp/sslconnected.h
+        ${AMQPCPP_DIR}/src/linux_tcp/sslcontext.h
+        ${AMQPCPP_DIR}/src/linux_tcp/sslhandshake.h
+        ${AMQPCPP_DIR}/src/linux_tcp/sslshutdown.h
+        ${AMQPCPP_DIR}/src/linux_tcp/sslwrapper.h
+        ${AMQPCPP_DIR}/src/linux_tcp/tcpclosed.h
+        ${AMQPCPP_DIR}/src/linux_tcp/tcpconnected.h
+        ${AMQPCPP_DIR}/src/linux_tcp/tcpconnection.cpp
+        ${AMQPCPP_DIR}/src/linux_tcp/tcpextstate.h
+        ${AMQPCPP_DIR}/src/linux_tcp/tcpinbuffer.h
+        ${AMQPCPP_DIR}/src/linux_tcp/tcpoutbuffer.h
+        ${AMQPCPP_DIR}/src/linux_tcp/tcpresolver.h
+        ${AMQPCPP_DIR}/src/linux_tcp/tcpstate.h
+        )
 
 add_library(AMQP-CPP ${SRCS})
 
 target_include_directories(AMQP-CPP PRIVATE ${AMQPCPP_DIR}/include/amqpcpp)
-target_include_directories(AMQP-CPP PRIVATE ${Boost_INCLUDE_DIRS})
+target_include_directories(AMQP-CPP PRIVATE ${AMQPCPP_DIR}/include/amqpcpp/linux_tcp)
 target_include_directories(AMQP-CPP SYSTEM PUBLIC ${AMQPCPP_DIR}/include)
+

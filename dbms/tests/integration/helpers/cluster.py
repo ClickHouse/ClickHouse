@@ -229,6 +229,7 @@ class ClickHouseCluster:
             self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_rabbitmq.yml')])
             self.base_rabbitmq_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                    self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_rabbitmq.yml')]
+            cmds.append(self.base_rabbitmq_cmd)
 
 
         if with_hdfs and not self.with_hdfs:
@@ -402,18 +403,6 @@ class ClickHouseCluster:
                 logging.warning("Can't connect to SchemaRegistry: %s", str(ex))
                 time.sleep(1)
 
-    def wait_rabbitmq_to_start(self, timeout=10):
-        start = time.time()
-        while time.time() - start < timeout:
-            try:
-                # connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost', port=5672))
-                # connection.close()
-                return
-            except Exception as ex:
-                print "Can't connect to RabbitMQ " + str(ex)
-                time.sleep(0.5)
-
-
     def start(self, destroy_dirs=True):
         if self.is_up:
             return
@@ -461,8 +450,7 @@ class ClickHouseCluster:
 
             if self.with_rabbitmq and self.base_rabbitmq_cmd:
                 subprocess_check_call(self.base_rabbitmq_cmd + common_opts + ['--renew-anon-volumes'])
-                self.rabbitmq_id = self.get_instance_docker_id('rabbitmq1')
-                self.wait_rabbitmq_to_start(120)
+                self.rabbitmq_docker_id = self.get_instance_docker_id('rabbitmq1')
 
             if self.with_hdfs and self.base_hdfs_cmd:
                 subprocess_check_call(self.base_hdfs_cmd + common_opts)

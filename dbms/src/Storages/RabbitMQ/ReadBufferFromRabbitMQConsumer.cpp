@@ -8,12 +8,12 @@ namespace DB
 {
 
 ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
-        ChannelPtr consumer_channel_,
+        ChannelPtr channel_,
         Poco::Logger * log_,
         size_t max_batch_size,
         const std::atomic<bool> & stopped_)
         : ReadBuffer(nullptr, 0)
-        , consumer_channel(std::move(consumer_channel_))
+        , consumer_channel(std::move(channel_))
         , log(log_)
         , batch_size(max_batch_size)
         , stopped(stopped_)
@@ -21,89 +21,28 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         , current(messages.begin())
 {
     messages.reserve(batch_size);
+
+    consumer_channel->confirmSelect()
+        .onSuccess([&]()
+        {
+            LOG_DEBUG(log, "Channel is successfully open");
+        })
+        .onError([&](const char * message)
+        {
+            LOG_ERROR(log, "Error with the consumer channel - " << message);
+
+            /// TODO: if a consumer needs to be restored, make a new channel here
+        })
+        .onFinalize([&]()
+        {
+            LOG_TRACE(log, "Channel is closed");
+        });
 }
 
 
 ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 {
     unsubscribe();
-}
-
-
-void ReadBufferFromRabbitMQConsumer::subscribe(const Names & routing_keys)
-{
-    //consumer_channel->setQos(batch_size, false);
-
-    /// Tell the RabbitMQ server that we're ready to consume messages from queue with the given key
-    for (auto & key : routing_keys)
-    {
-        LOG_DEBUG(log, "Subscribing to - " + key);
-
-        /// since we let the library generate consumerTag, this is the only way to access it
-        if (consumerTag == "")
-        {
-            /* queue.declare is an idempotent operation. So, if you run it once, twice, N times, the result
-             * will still be the same. We need to ensure that the queue exists before using it. */
-            consumer_channel->declareQueue(AMQP::exclusive)
-                .onSuccess([&](const std::string &queue_name, int /*msgcount*/, int /*consumercount*/)
-                        {
-                            LOG_TRACE(log, "Queue declared with the binding key - "+ key);
-
-                            consumer_channel->bindQueue("direct_exchange", "", key);
-                            consumer_channel->consume(queue_name, AMQP::noack)
-                            .onSuccess([&](const std::string &consumer)
-                                    {
-                                        LOG_DEBUG(log, "Successfully subscribed by key - " + key);
-
-                                        consumerTag = consumer;
-                                    })
-                            .onReceived([&](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
-                                    {
-                                        LOG_DEBUG(log, "Message reseived: " << message.body());
-
-                                        messages.push_back(RabbitMQMessage(const_cast<char *>(message.body()), message.bodySize(),
-                                        message.exchange(), message.routingkey(), deliveryTag, redelivered));
-                                        this->stalled = false; 
-                                    });
-
-                        });
-        }
-        else
-        {
-            consumer_channel->declareQueue(AMQP::exclusive)
-                .onSuccess([&](const std::string &queue_name, int /*msgcount*/, int /*consumercount*/)
-                        {
-                            consumer_channel->bindQueue("direct_exchange", "", key);
-                            consumer_channel->consume(queue_name, AMQP::noack)
-                            .onSuccess([&](const std::string & /* consumer */)
-                                    {
-                                        LOG_DEBUG(log, "Successfully subscribed by key - " + key);
-                                    })
-                            .onReceived([&](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
-                                    {
-                                        LOG_DEBUG(log, "Message reseived: " << message.body());
-
-                                        messages.push_back(RabbitMQMessage(const_cast<char *>(message.body()), message.bodySize(),
-                                        message.exchange(), message.routingkey(), deliveryTag, redelivered));
-                                        this->stalled = false; 
-                                    });
-
-                        });
-        }
-    }
-}
-
-
-void ReadBufferFromRabbitMQConsumer::unsubscribe()
-{
-    LOG_DEBUG(log, "Unsubscribe.");
-
-    if (consumer_channel->usable())
-    {
-        if (consumerTag != "")
-            consumer_channel->cancel(consumerTag);
-        consumer_channel->close();
-    }
 
     messages.clear();
     current = messages.begin();
@@ -111,6 +50,109 @@ void ReadBufferFromRabbitMQConsumer::unsubscribe()
 }
 
 
+void ReadBufferFromRabbitMQConsumer::subscribe(const String & exchange_name, const Names & routing_keys)
+{
+    // consumer_channel->setQos(batch_size, false);
+        
+    for (auto key : routing_keys)
+    {
+        LOG_DEBUG(log, "Attempt to subscribe to - " + key);
+
+        consumer_channel->declareExchange(exchange_name, AMQP::direct).onError([&](const char * message)
+        {
+            LOG_TRACE(log, "Exchange error - " << message);
+        });
+
+        /// since we let the library generate consumerTag, this is the only way to access it - we save it for the future
+        if (consumerTag == "")
+        {
+            /* queue.declare is an idempotent operation. So, if you run it once, twice, N times, the result
+             * will still be the same. We need to ensure that the queue exists before using it. */
+            consumer_channel->declareQueue(AMQP::exclusive)
+                .onSuccess([&](const std::string &queue_name, int /*msgcount*/, int /*consumercount*/)
+                {
+                    LOG_TRACE(log, "Queue declared with the binding key - "+ key);
+
+                    consumer_channel->bindQueue(exchange_name, "", key);
+                    consumer_channel->consume(queue_name, AMQP::noack)
+                    .onSuccess([&](const std::string &consumer)
+                    {
+                        LOG_TRACE(log, "Consumer is open and successfully subscribed by key - " + key);
+
+                        consumerTag = consumer;
+                    })
+                    .onReceived([&](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
+                    {
+                        LOG_DEBUG(log, "Message reseived: " << message.body());
+
+                        messages.push_back(RabbitMQMessage(const_cast<char *>(message.body()), message.bodySize(),
+                        message.exchange(), message.routingkey(), deliveryTag, redelivered));
+                        this->stalled = false; 
+                    })
+                    .onError([&](const char * message)
+                    {
+                        LOG_ERROR(log, "Failed to create consumer - " << message);
+                    });
+
+                })
+                .onError([&](const char *message)
+                {
+                    LOG_ERROR(log, "Failed to declare queue on the channel - " << message);
+                });
+        }
+        else
+        {
+            consumer_channel->declareQueue(AMQP::exclusive)
+                .onSuccess([&](const std::string &queue_name, int /*msgcount*/, int /*consumercount*/)
+                {
+                    consumer_channel->bindQueue(exchange_name, "", key);
+                    consumer_channel->consume(queue_name, AMQP::noack)
+                    .onSuccess([&](const std::string & /* consumer */)
+                    {
+                        LOG_TRACE(log, "Consumer is open and successfully subscribed by key - " + key);
+                    })
+                    .onReceived([&](const AMQP::Message & message, uint64_t deliveryTag, bool redelivered)
+                    {
+                        LOG_DEBUG(log, "Message reseived: " << message.body());
+
+                        messages.push_back(RabbitMQMessage(const_cast<char *>(message.body()), message.bodySize(),
+                        message.exchange(), message.routingkey(), deliveryTag, redelivered));
+                        this->stalled = false; 
+                    })
+                    .onError([&](const char *message)
+                    {
+                        LOG_ERROR(log, "Failed to create consumer - " << message);
+                    });
+                })
+                .onError([&](const char * message)
+                {
+                    LOG_ERROR(log, "Failed to declare queue on the channel - " << message);
+                });
+        }
+    }
+}
+
+
+void ReadBufferFromRabbitMQConsumer::unsubscribe()
+{
+    LOG_DEBUG(log, "Unsubscribing consumer");
+
+    if (consumer_channel->usable() && consumerTag != "")
+    {
+        consumer_channel->cancel(consumerTag);
+    }
+}
+
+
+void ReadBufferFromRabbitMQConsumer::start_consuming(RabbitMQHandler & handler)
+{
+    LOG_TRACE(log, "Consumer started consuming...");
+    handler.process();
+}
+
+
+///TODO:The methods below are not done yet
+//
 /* Having the server PUSH messages to the client is one of the two ways to get messages
 to the client, and also the preferred one. This is known as consuming messages via a subscription.
 (The alternative is for the client to poll for messages one at a time, over the channel, via a get method.)
@@ -124,13 +166,14 @@ void ReadBufferFromRabbitMQConsumer::commitNotSubscribed(const Names & routing_k
 
     for (auto & key : routing_keys)
     {
-        consumer_channel->consume(key, consumerTag, AMQP::noack).onReceived(
-                [](const AMQP::Message & /* message */, uint64_t /* deliveryTag */, bool /* redelivered */)
-                {
-                }).onError([this](const char * message)
-                {
-                    LOG_TRACE(log, message);
-                });
+        consumer_channel->consume(key, consumerTag, AMQP::noack)
+            .onReceived([](const AMQP::Message & /* message */, uint64_t /* deliveryTag */, bool /* redelivered */)
+            {
+                /// save messages
+            }).onError([this](const char * message)
+            {
+                LOG_TRACE(log, message);
+            });
     }
 
     stalled = false;
@@ -174,7 +217,7 @@ bool ReadBufferFromRabbitMQConsumer::nextImpl()
     Since messages are pushed and not pulled, Messages list would not normally be empty if at least one message was successfully sent */
     if (messages.empty())
     {
-        LOG_TRACE(log, "Stalled : no messages received. (in nextImpl().)");
+        LOG_TRACE(log, "Stalled");
         stalled = true;
         return false;
     }

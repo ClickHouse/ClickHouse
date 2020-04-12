@@ -47,8 +47,6 @@ Block RabbitMQBlockInputStream::getHeader() const
 
 void RabbitMQBlockInputStream::readPrefixImpl()
 {
-    LOG_DEBUG(log, "ReadPrefixImpl.\n");
-
     auto timeout = std::chrono::milliseconds(context.getSettingsRef().rabbitmq_max_wait_ms.totalMilliseconds());
 
     buffer = storage.popReadBuffer(timeout);
@@ -57,13 +55,11 @@ void RabbitMQBlockInputStream::readPrefixImpl()
     if (!buffer)
         return;
 
-    buffer->subscribe(storage.getRoutingKeys());
+    buffer->start_consuming(storage.getHandler());
 }
 
 Block RabbitMQBlockInputStream::readImpl()
 {
-    LOG_DEBUG(log, "ReadImpl.\n");
-
     if (!buffer)
         return Block();
 
@@ -167,34 +163,28 @@ Block RabbitMQBlockInputStream::readImpl()
 
 void RabbitMQBlockInputStream::readSuffixImpl()
 {
-    LOG_DEBUG(log, "ReadSuffixImpl.");
-    LOG_DEBUG(log, "Check for commit.");
     if (commit_in_suffix)
-    {
         commit();
-    }
 }
 
 void RabbitMQBlockInputStream::commit()
 {
-    LOG_DEBUG(log, "Commit.");
     if (!buffer)
         return;
 
-    LOG_DEBUG(log, "Commit is called: starting processing.");
-    /// startProcessing();
+    buffer->start_consuming(storage.getHandler());
 }
 
 void RabbitMQBlockInputStream::commitNotSubscribed(const Names & routing_keys)
 {
-    LOG_DEBUG(log, "CommitNotSubscribed.");
+    LOG_DEBUG(log, "Commit if not subbscribed");
 
     if (!buffer)
         return;
 
-    LOG_DEBUG(log, "Starting commit for not subscribed.");
     buffer->commitNotSubscribed(routing_keys);
-    /// startProcessing();
+    buffer->start_consuming(storage.getHandler());
 }
+
 
 }

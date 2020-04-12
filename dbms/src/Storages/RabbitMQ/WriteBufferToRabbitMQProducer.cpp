@@ -8,7 +8,8 @@ namespace DB
 {
 WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         ChannelPtr channel_,
-        const std::string & routing_key_,
+        const String & routing_key_,
+        const String & exchange_,
         std::optional<char> delimiter,
         size_t rows_per_message,
         size_t chunk_size_
@@ -16,6 +17,7 @@ WriteBufferToRabbitMQProducer::WriteBufferToRabbitMQProducer(
         : WriteBuffer(nullptr, 0)
         , channel(channel_)
         , routing_key(routing_key_)
+        , exchange_name(exchange_)
         , delim(delimiter)
         , max_rows(rows_per_message)
         , chunk_size(chunk_size_)
@@ -45,9 +47,9 @@ void WriteBufferToRabbitMQProducer::count_row()
 
         payload.append(last_chunk, 0, last_chunk_size);
 
-        channel->declareExchange("direct", AMQP::direct).onSuccess([&]()
+        channel->declareExchange(exchange_name, AMQP::direct).onSuccess([&]()
            {
-               channel->publish("direct", routing_key, payload).onError(
+               channel->publish(exchange_name, routing_key, payload).onError(
                        [](const char * /* messsage */)
                        {
                        });

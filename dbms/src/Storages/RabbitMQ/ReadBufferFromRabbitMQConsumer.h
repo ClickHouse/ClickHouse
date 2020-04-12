@@ -14,21 +14,22 @@ namespace Poco
 namespace DB
 {
 
-using ChannelPtr = std::shared_ptr<AMQP::TcpChannel>;
+using ChannelPtr = std::shared_ptr<AMQP::Channel>;
 
 class ReadBufferFromRabbitMQConsumer : public ReadBuffer
 {
 public:
     ReadBufferFromRabbitMQConsumer(
-            ChannelPtr consumer_,
+            ChannelPtr channel_,
             Poco::Logger * log_,
             size_t max_batch_size,
             const std::atomic<bool> & stopped_);
     ~ReadBufferFromRabbitMQConsumer() override;
 
     void allowNext() { allowed = true; } // Allow to read next message.
-    void subscribe(const Names & routing_keys);
+    void subscribe(const String & exchange_name, const Names & routing_keys);
     void unsubscribe();
+    void start_consuming(RabbitMQHandler & handler); // start process in the lib handler class
     void commitNotSubscribed(const Names & routing_keys);
     void commitViaGet(const Names & routing_keys);
 

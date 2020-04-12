@@ -1,36 +1,28 @@
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
-
 #include <DataStreams/IBlockInputStream.h>
 #include <DataStreams/LimitBlockInputStream.h>
 #include <DataStreams/UnionBlockInputStream.h>
 #include <DataStreams/copyData.h>
-
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
-
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/evaluateConstantExpression.h>
-
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
-
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
 #include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
 #include <Storages/RabbitMQ/RabbitMQBlockOutputStream.h>
 #include <Storages/RabbitMQ/WriteBufferToRabbitMQProducer.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
-
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
-
 #include <boost/algorithm/string/replace.hpp>
 #include <boost/algorithm/string/split.hpp>
 #include <boost/algorithm/string/trim.hpp>
-
 #include <Common/Exception.h>
 #include <Common/Macros.h>
 #include <Common/config_version.h>
@@ -39,10 +31,8 @@
 #include <common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Common/parseAddress.h>
-
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <amqpcpp.h>
-#include <amqpcpp/linux_tcp.h>
 
 namespace DB
 {
@@ -60,6 +50,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_SETTING;
     extern const int READONLY_SETTING;
 }
+
 
 StorageRabbitMQ::StorageRabbitMQ(
         const StorageID & table_id_,
@@ -90,46 +81,13 @@ StorageRabbitMQ::StorageRabbitMQ(
         , skip_broken(skip_broken_)
         , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
         , semaphore(0, num_consumers_)
-        , connection_handler(log)
-        , address(parseAddress(host_port, 15672).first, parseAddress(host_port, 15672).second, AMQP::Login(), "/")
-        , connection(&connection_handler, address)
+        , connection_handler(parseAddress(host_port, 5672), log)
+        , connection(&connection_handler,
+                     AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()), "/")
 {
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
-
-    if (num_consumers == 1)
-    {
-        consumer_channel = std::make_shared<AMQP::TcpChannel>(&connection);
-        consumer_channel->onReady([&]()
-                    {
-                        LOG_TRACE(log, "Created consumer channel.");
-                    });
-        initQueues(consumer_channel, routing_keys[0]);
-    }
-
-    LOG_TRACE(log, "connection ready? - " + std::to_string(connection.ready()));
-}
-
-/*
- * Messages are pushed to consumers (and not pulled by consumers), so if there is no queue binding from exchange
- * to any queue with a routing key of the message, then the message is not routed anywhere from the exchange and lost.
- */
-void StorageRabbitMQ::initQueues(ChannelPtr channel_, String routing_key)
-{
-    LOG_DEBUG(log, "Binding queues.");
-
-    channel_->declareExchange(exchange_name, AMQP::direct)
-        .onSuccess([&]()
-                {
-                    LOG_TRACE(log, "Exchange declared");
-                });
-    channel_->declareQueue(AMQP::exclusive)
-        .onSuccess([&](const std::string & queue_name, int /*msgcount*/, int /*consumercount*/)
-        {
-            LOG_TRACE(log, "Queue declared with the binding key - "+ routing_key);
-            channel_->bindQueue(exchange_name, queue_name, routing_key);
-        });
 }
 
 
@@ -149,21 +107,24 @@ Pipes StorageRabbitMQ::read(
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<RabbitMQBlockInputStream>(*this, context, column_names, 1, log)));
+        pipes.emplace_back(std::make_shared<SourceFromInputStream>(std::make_shared<RabbitMQBlockInputStream>(
+                        *this, context, column_names, 1, log)));
     }
 
     LOG_DEBUG(log, "Starting reading " << pipes.size() << " streams");
     return pipes;
 }
 
+
 BlockOutputStreamPtr StorageRabbitMQ::write(const ASTPtr &, const Context & context)
 {
     return std::make_shared<RabbitMQBlockOutputStream>(*this, context);
 }
 
+
 void StorageRabbitMQ::startup()
 {
-    LOG_DEBUG(log, "startup.");
+    LOG_DEBUG(log, "Starting consumers");
 
     for (size_t i = 0; i < num_consumers; ++i)
     {
@@ -179,24 +140,36 @@ void StorageRabbitMQ::startup()
     }
 
     task->activateAndSchedule();
+
+    LOG_DEBUG(log, "Available channels: " + std::to_string(connection.channels()));
+    LOG_DEBUG(log, "Has the connection failed? -" + std::to_string(connection.fail("Connection failed!")));
 }
+
 
 void StorageRabbitMQ::shutdown()
 {
-    LOG_DEBUG(log, "shutdown.");
+    LOG_DEBUG(log, "Closing consumers");
     stream_cancelled = true;
 
     for (size_t i = 0; i < num_created_consumers; ++i)
     {
-        LOG_DEBUG(log, "poping read buffer.");
         auto buffer = popReadBuffer();
     }
 
+    connection.close();
     task->deactivate();
 }
 
+
 void StorageRabbitMQ::pushReadBuffer(ConsumerBufferPtr buffer)
 {
+/*
+ * Messages are pushed to consumers (and not pulled by consumers), so if there is no queue binding from exchange
+ * to any queue with a routing key of the message, then the message is not routed anywhere from the exchange and lost.
+ * So we declare queues ans subscribe for messages here.
+ */
+    buffer->subscribe(exchange_name, routing_keys);
+
     std::lock_guard lock(mutex);
     buffers.push_back(buffer);
     semaphore.set();
@@ -216,7 +189,6 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
         semaphore.wait();
     else
     {
-        LOG_DEBUG(log, ":(");
         if (!semaphore.tryWait(timeout.count()))
             return nullptr;
     }
@@ -226,48 +198,55 @@ ConsumerBufferPtr StorageRabbitMQ::popReadBuffer(std::chrono::milliseconds timeo
     auto buffer = buffers.back();
     buffers.pop_back();
 
-    LOG_DEBUG(log, "Poping read buffer.");
+    LOG_DEBUG(log, "Poping a consumer buffer");
     return buffer;
 }
 
 
 ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
 {
-    LOG_DEBUG(log, "CreateWriteBuffer.");
-
     /// Sharing one channel between publishers
     if (!publishing_channel)
     {
-        publishing_channel = std::make_shared<AMQP::TcpChannel>(&connection);
+        publishing_channel = std::make_shared<AMQP::Channel>(&connection);
+
+        publishing_channel->confirmSelect()
+            .onSuccess([&]()
+            {
+                LOG_DEBUG(log, "Publishing channel is successfully open");
+            })
+            .onError([&](const char * message)
+            {
+                LOG_ERROR(log, "Error with the publishing channel - " << message);
+
+                ///TODO: Open a new one here if needed
+            })
+            .onFinalize([&]()
+            {
+                LOG_DEBUG(log, "Publishing channel is closed");
+            });
     }
 
-    return std::make_shared<WriteBufferToRabbitMQProducer>(
-            publishing_channel, routing_keys[0],
+    return std::make_shared<WriteBufferToRabbitMQProducer>(publishing_channel, routing_keys[0], exchange_name,
             row_delimiter ? std::optional<char>{row_delimiter} : std::nullopt, 1, 1024);
 }
 
 
 ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 {
-    LOG_DEBUG(log, "CreateReadBuffer.");
-
     const Settings & settings = global_context.getSettingsRef();
     size_t batch_size = max_block_size;
     if (!batch_size)
         batch_size = settings.max_block_size.value;
 
-    if (num_consumers != 1)
-        return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-                std::make_shared<AMQP::TcpChannel>(&connection), log, batch_size, stream_cancelled);
-    else
-        return std::make_shared<ReadBufferFromRabbitMQConsumer>(
-                consumer_channel, log, batch_size, stream_cancelled);
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(std::make_shared<AMQP::Channel>(&connection),
+            log, batch_size, stream_cancelled);
 }
 
 
 bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 {
-    LOG_DEBUG(log, "CheckDependencies.");
+    LOG_DEBUG(log, "Checking dependencies");
 
     // Check if all dependencies are attached
     auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
@@ -396,9 +375,8 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         /** Arguments of engine is following:
               * - RabbitMQ host:port (default: localhost:5672)
-              * - List of routing keys to bind producer->exchange->queue <-> consumer (default: "")
-              * optional for now:
-              *  - echxange name
+              * - List of routing keys to bind producer->exchange->queue <-> consumer
+              * - exchange name
               * - Number of consumers
               * - Message format (string)
               * - Row delimiter
