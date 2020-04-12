@@ -1162,15 +1162,15 @@ DataTypePtr HashJoin::joinGetReturnType(const String & column_name, bool or_null
 
     if (!sample_block_with_columns_to_add.has(column_name))
         throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::LOGICAL_ERROR);
-    auto ctn = sample_block_with_columns_to_add.getByName(column_name);
+    auto elem = sample_block_with_columns_to_add.getByName(column_name);
     if (or_null)
     {
         if (!ctn.type->canBeInsideNullable())
-            throw Exception("Type " + ctn.type->getName() + "cannot be inside Nullable", ErrorCodes::LOGICAL_ERROR);
+            throw Exception("Type " + elem.type->getName() + " cannot be inside Nullable", ErrorCodes::LOGICAL_ERROR);
         else
-            ctn.type = makeNullable(ctn.type);
+            elem.type = makeNullable(elem.type);
     }
-    return ctn.type;
+    return elem.type;
 }
 
 
