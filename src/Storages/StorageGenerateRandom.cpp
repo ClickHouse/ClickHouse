@@ -14,6 +14,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeFixedString.h>
+#include <DataTypes/NestedUtils.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnString.h>
@@ -57,7 +58,12 @@ void fillBufferWithRandomData(char * __restrict data, size_t size, pcg64 & rng)
 
 
 ColumnPtr fillColumnWithRandomData(
-    const DataTypePtr type, UInt64 limit, UInt64 max_array_length, UInt64 max_string_length, pcg64 & rng, const Context & context)
+    const DataTypePtr type,
+    UInt64 limit,
+    UInt64 max_array_length,
+    UInt64 max_string_length,
+    pcg64 & rng,
+    const Context & context)
 {
     TypeIndex idx = type->getTypeId();
 
@@ -340,14 +346,24 @@ public:
 protected:
     Chunk generate() override
     {
+        /// To support Nested types, we will collect them to single Array of Tuple.
+        auto names_and_types = Nested::collect(block_header.getNamesAndTypesList());
+
         Columns columns;
-        columns.reserve(block_header.columns());
-        DataTypes types = block_header.getDataTypes();
+        columns.reserve(names_and_types.size());
 
-        for (const auto & type : types)
-            columns.emplace_back(fillColumnWithRandomData(type, block_size, max_array_length, max_string_length, rng, context));
+        Block compact_block;
+        for (const auto & elem : names_and_types)
+        {
+            compact_block.insert(
+            {
+                fillColumnWithRandomData(elem.type, block_size, max_array_length, max_string_length, rng, context),
+                elem.type,
+                elem.name
+            });
+        }
 
-        return {std::move(columns), block_size};
+        return {Nested::flatten(compact_block).getColumns(), block_size};
     }
 
 private:
