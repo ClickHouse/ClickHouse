@@ -39,6 +39,7 @@
 #include <Storages/IStorage.h>
 
 #include <functional>
+#include <Functions/FunctionFactory.h>
 
 
 namespace DB
@@ -373,58 +374,84 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
         elems = std::move(unique_elems);
 }
 
-/// Remove duplicate ORDER BY from subquries.
-void optimizeDuplicateOrderBy(ASTPtr & current_ast,
-                              std::vector<std::pair<String, String>> & last_order_by,
-                              std::vector<int> & last_directions)
+/// Checks if ASTFunction or its arguments are stateful.
+bool isASTFunctionStateful(const ASTFunction * ast_function, const Context & context)
+{
+    const auto & function = FunctionFactory::instance().tryGet(ast_function->name, context);
+
+    if (function && function->isStateful())
+        return true;
+
+    if (ast_function->arguments)
+    {
+        ASTs args = ast_function->arguments->children;
+        for (const auto & elem : args)
+        {
+            if (const auto arg = elem->as<ASTFunction>())
+            {
+                if (arg && isASTFunctionStateful(arg, context))
+                    return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+/// Removes duplicate ORDER BY from subqueries.
+void optimizeDuplicateOrderByFromSubqueries(const ASTPtr & current_ast, const Context & context)
 {
     if (!current_ast)
         return;
-
-    for (auto & child : current_ast->children)
-    {
-        optimizeDuplicateOrderBy(child, last_order_by, last_directions);
-    }
 
     if (current_ast->getID() == "SelectQuery")
     {
         auto select_query = current_ast->as<ASTSelectQuery>();
 
-        if (select_query->orderBy())
+        if (select_query->orderBy() && !select_query->limitBy() && !select_query->limitByOffset() &&
+            !select_query->limitByLength() && !select_query->limitLength() && !select_query->limitOffset())
         {
-            std::vector<std::pair<String, String>> current_order_by;
-            ASTs elems = select_query->orderBy()->children;
-            std::vector<int> current_directions;
-
-            for (const auto & elem : elems)
-            {
-                String name = elem->children.front()->getColumnName();
-                const auto & order_by_elem = elem->as<ASTOrderByElement &>();
-
-                current_order_by.emplace_back(name, order_by_elem.collation ? order_by_elem.collation->getColumnName() : "");
-                current_directions.push_back(order_by_elem.direction);
-            }
-
-            if (current_order_by == last_order_by && current_directions == last_directions)
-            {
-                select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
-            }
-
-            last_order_by = std::move(current_order_by);
-            last_directions = std::move(current_directions);
+            select_query->setExpression(ASTSelectQuery::Expression::ORDER_BY, nullptr);
+        }
+    }
+    else
+    {
+        for (const auto & elem : current_ast->children)
+        {
+            optimizeDuplicateOrderByFromSubqueries(elem, context);
         }
     }
 }
 
-void optimizeDuplicateOrderBy(ASTPtr & current_ast)
+/// Checkss if duplicate ORDER BY from subqueries can be erased.
+void optimizeDuplicateOrderBy(const ASTPtr & current_ast, const Context & context)
 {
-    std::vector<std::pair<String, String>> last_order_by;
-    std::vector<int> direction;
-    optimizeDuplicateOrderBy(current_ast, last_order_by, direction);
+    for (const auto & elem : current_ast->children)
+        optimizeDuplicateOrderBy(elem, context);
+
+    auto select_query = current_ast->as<ASTSelectQuery>();
+
+    if (!select_query)
+        return;
+
+    if (select_query->orderBy() || select_query->groupBy())
+    {
+        const auto & expression_list = select_query->select();
+
+        for (const auto & ast_function : expression_list->children)
+        {
+            std::cerr << ast_function;
+            auto function = ast_function->as<ASTFunction>();
+            if (function && isASTFunctionStateful(function, context))
+                return;
+        }
+
+        optimizeDuplicateOrderByFromSubqueries(select_query->tables(), context);
+    }
 }
 
-/// Remove duplicate DISTINCT from subquries.
-void optimizeDuplicateDistinct(ASTPtr & current_ast,
+/// Removes duplicate DISTINCT from subquries.
+void optimizeDuplicateDistinct(const ASTPtr & current_ast,
                                bool & is_distinct,
                                std::vector<String> & last_ids)
 {
@@ -442,17 +469,16 @@ void optimizeDuplicateDistinct(ASTPtr & current_ast,
 
         if (select_query->distinct)
         {
-            ASTs elems = select_query->select()->children;
+            auto & expression_list = select_query->select();
             std::vector<String> current_ids;
 
-            for (const auto & elem : elems)
-            {
-                current_ids.push_back(elem->getColumnName());
-            }
+            for (const auto & id : expression_list->children)
+                current_ids.push_back(id->getColumnName());
 
             if (is_distinct && current_ids == last_ids)
             {
                 select_query->distinct = false;
+                std::cerr << "\nDISTINCT was removed\n\n";
             }
 
             is_distinct = true;
@@ -461,7 +487,7 @@ void optimizeDuplicateDistinct(ASTPtr & current_ast,
     }
 }
 
-void optimizeDuplicateDistinct(ASTPtr & current_ast)
+void optimizeDuplicateDistinct(const ASTPtr & current_ast)
 {
     std::vector<String> last_ids;
     bool is_distinct = false;
@@ -940,7 +966,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         optimizeOrderBy(select_query);
 
         /// Remove duplicate ORDER BY from subqueries.
-        optimizeDuplicateOrderBy(query);
+        optimizeDuplicateOrderBy(query, context);
 
         /// Remove duplicate DISTINCT from subqueries.
         optimizeDuplicateDistinct(query);
