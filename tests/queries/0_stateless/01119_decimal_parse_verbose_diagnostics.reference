@@ -1,0 +1,8 @@
+Code: 69, e.displayText() = DB::Exception: Decimal value is too big: (at row 2)
+
+Row 1:
+Column 0,   name: d, type: Decimal(18, 10), parsed text: "12345678"
+
+Row 2:
+Column 0,   name: d, type: Decimal(18, 10), parsed text: <EMPTY>ERROR
+
