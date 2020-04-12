@@ -144,7 +144,8 @@ class ClickHouseCluster:
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False,
                      hostname=None, env_variables=None, image="yandex/clickhouse-integration-test",
-                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
+                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
+                     zookeeper_docker_compose_path=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -179,10 +180,13 @@ class ClickHouseCluster:
 
         cmds = []
         if with_zookeeper and not self.with_zookeeper:
+            if not zookeeper_docker_compose_path:
+                zookeeper_docker_compose_path = p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')
+
             self.with_zookeeper = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')])
+            self.base_cmd.extend(['--file', zookeeper_docker_compose_path])
             self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')]
+                                       self.project_name, '--file', zookeeper_docker_compose_path]
             cmds.append(self.base_zookeeper_cmd)
 
         if with_mysql and not self.with_mysql:
