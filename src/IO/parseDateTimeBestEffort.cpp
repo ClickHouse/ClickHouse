@@ -89,7 +89,12 @@ struct DateTimeSubsecondPart
 };
 
 template <typename ReturnType>
-ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeSubsecondPart * fractional = nullptr)
+ReturnType parseDateTimeBestEffortImpl(
+    time_t & res,
+    ReadBuffer & in,
+    const DateLUTImpl & local_time_zone,
+    const DateLUTImpl & utc_time_zone,
+    DateTimeSubsecondPart * fractional)
 {
     auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
@@ -581,12 +586,12 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 
 void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    parseDateTimeBestEffortImpl<void>(res, in, local_time_zone, utc_time_zone);
+    parseDateTimeBestEffortImpl<void>(res, in, local_time_zone, utc_time_zone, nullptr);
 }
 
 bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    return parseDateTimeBestEffortImpl<bool>(res, in, local_time_zone, utc_time_zone);
+    return parseDateTimeBestEffortImpl<bool>(res, in, local_time_zone, utc_time_zone, nullptr);
 }
 
 void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
