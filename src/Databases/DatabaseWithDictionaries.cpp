@@ -26,6 +26,8 @@ namespace ErrorCodes
     extern const int TABLE_ALREADY_EXISTS;
     extern const int UNKNOWN_TABLE;
     extern const int DICTIONARY_ALREADY_EXISTS;
+    extern const int FILE_DOESNT_EXIST;
+    extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
 
@@ -165,7 +167,7 @@ void DatabaseWithDictionaries::removeDictionary(const Context & context, const S
     }
 }
 
-StoragePtr DatabaseWithDictionaries::tryGetTable(const Context & context, const String & table_name) const
+StoragePtr DatabaseWithDictionaries::tryGetTableImpl(const Context & context, const String & table_name, bool load) const
 {
     if (auto table_ptr = DatabaseWithOwnTablesBase::tryGetTable(context, table_name))
         return table_ptr;
@@ -173,9 +175,33 @@ StoragePtr DatabaseWithDictionaries::tryGetTable(const Context & context, const 
     if (isDictionaryExist(context, table_name))
         /// We don't need lock database here, because database doesn't store dictionary itself
         /// just metadata
-        return getDictionaryStorage(table_name);
+        return getDictionaryStorage(table_name, load);
 
     return {};
+}
+StoragePtr DatabaseWithDictionaries::tryGetTable(const Context & context, const String & table_name) const
+{
+    return tryGetTableImpl(context, table_name, true /*load*/);
+}
+
+ASTPtr DatabaseWithDictionaries::getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const
+{
+    ASTPtr ast;
+    bool has_table = tryGetTableImpl(context, table_name, false /*load*/) != nullptr;
+    auto table_metadata_path = getObjectMetadataPath(table_name);
+    try
+    {
+        ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
+    }
+    catch (const Exception & e)
+    {
+        if (!has_table && e.code() == ErrorCodes::FILE_DOESNT_EXIST && throw_on_error)
+            throw Exception{"Table " + backQuote(table_name) + " doesn't exist",
+                            ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY};
+        else if (throw_on_error)
+            throw;
+    }
+    return ast;
 }
 
 DatabaseTablesIteratorPtr DatabaseWithDictionaries::getTablesWithDictionaryTablesIterator(
@@ -195,7 +221,7 @@ DatabaseTablesIteratorPtr DatabaseWithDictionaries::getTablesWithDictionaryTable
     while (dictionaries_it && dictionaries_it->isValid())
     {
         auto table_name = dictionaries_it->name();
-        auto table_ptr = getDictionaryStorage(table_name);
+        auto table_ptr = getDictionaryStorage(table_name, false /*load*/);
         if (table_ptr)
             result.emplace(table_name, table_ptr);
         dictionaries_it->next();
@@ -223,11 +249,11 @@ bool DatabaseWithDictionaries::isDictionaryExist(const Context & /*context*/, co
     return dictionaries.find(dictionary_name) != dictionaries.end();
 }
 
-StoragePtr DatabaseWithDictionaries::getDictionaryStorage(const String & table_name) const
+StoragePtr DatabaseWithDictionaries::getDictionaryStorage(const String & table_name, bool load) const
 {
     auto dict_name = database_name + "." + table_name;
     const auto & external_loader = global_context.getExternalDictionariesLoader();
-    auto dict_ptr = external_loader.tryGetDictionary(dict_name);
+    auto dict_ptr = external_loader.tryGetDictionary(dict_name, load);
     if (dict_ptr)
     {
         const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();

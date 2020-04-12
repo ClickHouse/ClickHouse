@@ -71,8 +71,6 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
 {
     StoragePtr res;
-    if (dictionaries.count(table_name))
-        throw Exception("Cannot detach dictionary " + database_name + "." + table_name + " as table, use DETACH DICTIONARY query.", ErrorCodes::UNKNOWN_TABLE);
 
     auto it = tables.find(table_name);
     if (it == tables.end())

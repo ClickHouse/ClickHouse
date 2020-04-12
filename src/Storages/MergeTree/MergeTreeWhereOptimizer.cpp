@@ -202,10 +202,10 @@ void MergeTreeWhereOptimizer::optimize(ASTSelectQuery & select) const
         prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, cond_it);
         total_size_of_moved_conditions += cond_it->columns_size;
 
-        /// Move all other conditions that depend on the same set of columns.
+        /// Move all other viable conditions that depend on the same set of columns.
         for (auto jt = where_conditions.begin(); jt != where_conditions.end();)
         {
-            if (jt->columns_size == cond_it->columns_size && jt->identifiers == cond_it->identifiers)
+            if (jt->viable && jt->columns_size == cond_it->columns_size && jt->identifiers == cond_it->identifiers)
                 prewhere_conditions.splice(prewhere_conditions.end(), where_conditions, jt++);
             else
                 ++jt;

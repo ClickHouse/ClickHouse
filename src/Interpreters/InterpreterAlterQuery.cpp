@@ -82,7 +82,9 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!mutation_commands.empty())
     {
-        auto table_lock_holder = table->lockStructureForShare(false /* because mutation is executed asyncronously */, context.getCurrentQueryId());
+        auto table_lock_holder = table->lockStructureForShare(
+                false /* because mutation is executed asyncronously */,
+                context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
         MutationsInterpreter(table, mutation_commands, context, false).validate(table_lock_holder);
         table->mutate(mutation_commands, context);
     }
@@ -109,7 +111,8 @@ BlockIO InterpreterAlterQuery::execute()
 
     if (!alter_commands.empty())
     {
-        auto table_lock_holder = table->lockAlterIntention(context.getCurrentQueryId());
+        auto table_lock_holder = table->lockAlterIntention(
+                context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
         StorageInMemoryMetadata metadata = table->getInMemoryMetadata();
         alter_commands.validate(metadata, context);
         alter_commands.prepare(metadata);

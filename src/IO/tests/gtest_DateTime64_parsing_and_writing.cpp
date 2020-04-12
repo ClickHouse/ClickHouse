@@ -104,7 +104,7 @@ INSTANTIATE_TEST_SUITE_P(Basic,
             DateLUT::instance("Europe/Minsk")
         },
         {
-            "When scale is 0, subsecond part is 0 despite beeing present in string.",
+            "When scale is 0, subsecond part is 0 despite being present in string.",
             "2019-09-16 19:20:17.123",
             1568650817ULL,
             0,

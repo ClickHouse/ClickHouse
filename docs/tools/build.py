@@ -301,13 +301,14 @@ def write_redirect_html(out_path, to_url):
     except OSError:
         pass
     with open(out_path, 'w') as f:
-        f.write(f'''<!DOCTYPE HTML>
+        f.write(f'''<!-- Redirect: {to_url} -->
+<!DOCTYPE HTML>
 <html lang="en-US">
     <head>
         <meta charset="UTF-8">
         <meta http-equiv="refresh" content="0; url={to_url}">
         <script type="text/javascript">
-            window.location.href = "{to_url}"
+            window.location.href = "{to_url}";
         </script>
         <title>Page Redirection</title>
     </head>
@@ -318,9 +319,9 @@ def write_redirect_html(out_path, to_url):
 
 
 def build_redirect_html(args, from_path, to_path):
-    for lang in ['en', 'es', 'fr', 'ja', 'fa']: # TODO: args.lang.split(','):
+    for lang in args.lang.split(','):
         out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
-        version_prefix = args.version_prefix + '/' if args.version_prefix else '/'
+        version_prefix = f'/{args.version_prefix}/' if args.version_prefix else '/'
         target_path = to_path.replace('.md', '/')
         to_url = f'/docs{version_prefix}{lang}/{target_path}'
         to_url = to_url.strip()

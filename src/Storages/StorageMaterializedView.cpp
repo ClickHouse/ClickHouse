@@ -187,7 +187,9 @@ Pipes StorageMaterializedView::read(
     const unsigned num_streams)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockStructureForShare(false, context.getCurrentQueryId());
+    auto lock = storage->lockStructureForShare(
+            false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+
     if (query_info.order_by_optimizer)
         query_info.input_sorting_info = query_info.order_by_optimizer->getInputOrder(storage);
 
@@ -202,7 +204,8 @@ Pipes StorageMaterializedView::read(
 BlockOutputStreamPtr StorageMaterializedView::write(const ASTPtr & query, const Context & context)
 {
     auto storage = getTargetTable();
-    auto lock = storage->lockStructureForShare(true, context.getCurrentQueryId());
+    auto lock = storage->lockStructureForShare(
+            true, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto stream = storage->write(query, context);
     stream->addTableLock(lock);
     return stream;
@@ -260,7 +263,7 @@ void StorageMaterializedView::alter(
     const Context & context,
     TableStructureWriteLockHolder & table_lock_holder)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
