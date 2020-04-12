@@ -1,9 +1,13 @@
+#include <iostream>
+
 #include <Interpreters/TableJoin.h>
 
 #include <Parsers/ASTExpressionList.h>
 
 #include <Core/Settings.h>
 #include <Core/Block.h>
+
+#include <Common/StringUtils/StringUtils.h>
 
 #include <DataTypes/DataTypeNullable.h>
 
@@ -79,7 +83,9 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
         dedup_columns.push_back(column);
         auto & inserted = dedup_columns.back();
 
-        if (left_table_columns.count(column.name))
+        /// Also qualify unusual column names - that does not look like identifiers.
+
+        if (left_table_columns.count(column.name) || !isValidIdentifierBegin(column.name.at(0)))
             inserted.name = right_table_prefix + column.name;
 
         original_names[inserted.name] = column.name;
@@ -157,6 +163,8 @@ NamesWithAliases TableJoin::getRequiredColumns(const Block & sample, const Names
 
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
+    std::cerr << "Adding " << joined_column.name << "\n";
+
     if (join_use_nulls && isLeftOrFull(table_join.kind))
     {
         auto type = joined_column.type->canBeInsideNullable() ? makeNullable(joined_column.type) : joined_column.type;

@@ -24,6 +24,8 @@ bool ColumnNamesContext::addColumnAliasIfAny(const IAST & ast)
     if (required_names.count(alias))
         masked_columns.insert(alias);
 
+    std::cerr << "Alias: " << alias << "\n";
+
     complex_aliases.insert(alias);
     return true;
 }
@@ -32,6 +34,8 @@ void ColumnNamesContext::addColumnIdentifier(const ASTIdentifier & node)
 {
     if (!IdentifierSemantic::getColumnName(node))
         return;
+
+    std::cerr << "Identifier: " << node.name << "\n";
 
     /// There should be no complex cases after query normalization. Names to aliases: one-to-many.
     String alias = node.tryGetAlias();

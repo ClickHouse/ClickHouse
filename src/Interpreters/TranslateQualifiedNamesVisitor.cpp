@@ -5,6 +5,7 @@
 #include <Interpreters/AsteriskSemantic.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Core/Names.h>
 
 #include <Parsers/ASTIdentifier.h>
@@ -17,6 +18,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnsMatcher.h>
+#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -107,8 +109,9 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
             IdentifierSemantic::setMembership(identifier, table_pos);
 
             /// In case if column from the joined table are in source columns, change it's name to qualified.
+            /// Also always leave unusual identifiers qualified.
             auto & table = data.tables[table_pos].table;
-            if (table_pos && data.hasColumn(short_name))
+            if (table_pos && (data.hasColumn(short_name) || !isValidIdentifierBegin(short_name.at(0))))
                 IdentifierSemantic::setColumnLongName(identifier, table);
             else
                 IdentifierSemantic::setColumnShortName(identifier, table);
@@ -128,7 +131,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTFunction & node, const ASTPtr &, D
         func_arguments->children.clear();
 }
 
-void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk & , const ASTPtr & ast, Data & data)
+void TranslateQualifiedNamesMatcher::visit(const ASTQualifiedAsterisk &, const ASTPtr & ast, Data & data)
 {
     if (ast->children.size() != 1)
         throw Exception("Logical error: qualified asterisk must have exactly one child", ErrorCodes::LOGICAL_ERROR);
@@ -173,6 +176,8 @@ static void addIdentifier(ASTs & nodes, const DatabaseAndTableWithAlias & table,
 {
     String table_name = table.getQualifiedNamePrefix(false);
     auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{table_name, column_name});
+
+    std::cerr << "Expanded identifier: " << queryToString(identifier) << "\n";
 
     bool added = false;
     if (aliases && aliases->count(identifier->name))
