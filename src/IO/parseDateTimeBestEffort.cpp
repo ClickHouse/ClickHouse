@@ -69,7 +69,6 @@ template <typename T>
 inline void readDecimalNumber(T & res, size_t num_digits, const char * src)
 {
 #define READ_DECIMAL_NUMBER(N) do { res *= common::exp10_i32(N); readDecimalNumber<N>(res, src); src += (N); num_digits -= (N); } while (false)
-
     while (num_digits)
     {
         switch (num_digits)
@@ -80,7 +79,7 @@ inline void readDecimalNumber(T & res, size_t num_digits, const char * src)
             default: READ_DECIMAL_NUMBER(4); break;
         }
     }
-#undef DECIMAL_NUMBER_CASE
+#undef READ_DECIMAL_NUMBER
 }
 
 struct DateTimeSubsecondPart
