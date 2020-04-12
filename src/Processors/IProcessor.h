@@ -235,7 +235,7 @@ public:
 
     /// Additional method which is called in case if ports were updated while work() method.
     /// May be used to stop execution in rare cases.
-    virtual void onUpdatePorts() {};
+    virtual void onUpdatePorts() {}
 
     virtual ~IProcessor() = default;
 
