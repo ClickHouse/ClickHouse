@@ -85,10 +85,16 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             packer.pack_uint64(assert_cast<const DataTypeDateTime64::ColumnType &>(column).getElement(row_num));
             return;
         }
-        case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::String:
         {
             const StringRef & string = assert_cast<const ColumnString &>(column).getDataAt(row_num);
+            packer.pack_str(string.size);
+            packer.pack_str_body(string.data, string.size);
+            return;
+        }
+        case TypeIndex::FixedString:
+        {
+            const StringRef & string = assert_cast<const ColumnFixedString &>(column).getDataAt(row_num);
             packer.pack_str(string.size);
             packer.pack_str_body(string.data, string.size);
             return;
