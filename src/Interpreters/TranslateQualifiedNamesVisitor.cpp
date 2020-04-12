@@ -18,7 +18,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTColumnsMatcher.h>
-#include <Parsers/queryToString.h>
 
 
 namespace DB
@@ -176,8 +175,6 @@ static void addIdentifier(ASTs & nodes, const DatabaseAndTableWithAlias & table,
 {
     String table_name = table.getQualifiedNamePrefix(false);
     auto identifier = std::make_shared<ASTIdentifier>(std::vector<String>{table_name, column_name});
-
-    std::cerr << "Expanded identifier: " << queryToString(identifier) << "\n";
 
     bool added = false;
     if (aliases && aliases->count(identifier->name))

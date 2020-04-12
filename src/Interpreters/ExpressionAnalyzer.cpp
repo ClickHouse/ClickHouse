@@ -559,9 +559,6 @@ JoinPtr SelectQueryExpressionAnalyzer::makeTableJoin(const ASTTablesInSelectQuer
         /// Actions which need to be calculated on joined block.
         ExpressionActionsPtr joined_block_actions = createJoinedBlockActions(context, analyzedJoin());
 
-        std::cerr << "Joined block actions: " << joined_block_actions->getSampleBlock().dumpStructure()
-            << "\n\n" << toString(joined_block_actions->getRequiredColumns()) << "\n";
-
         if (!subquery_for_join.source)
         {
             NamesWithAliases required_columns_with_aliases =
