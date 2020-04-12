@@ -1165,7 +1165,7 @@ DataTypePtr HashJoin::joinGetReturnType(const String & column_name, bool or_null
     auto elem = sample_block_with_columns_to_add.getByName(column_name);
     if (or_null)
     {
-        if (!ctn.type->canBeInsideNullable())
+        if (!elem.type->canBeInsideNullable())
             throw Exception("Type " + elem.type->getName() + " cannot be inside Nullable", ErrorCodes::LOGICAL_ERROR);
         else
             elem.type = makeNullable(elem.type);
@@ -1194,15 +1194,15 @@ void HashJoin::joinGet(Block & block, const String & column_name, bool or_null) 
 
     checkTypeOfKey(block, right_table_keys);
 
-    auto ctn = sample_block_with_columns_to_add.getByName(column_name);
+    auto elem = sample_block_with_columns_to_add.getByName(column_name);
     if (or_null)
-        ctn.type = makeNullable(ctn.type);
-    ctn.column = ctn.type->createColumn();
+        elem.type = makeNullable(elem.type);
+    elem.column = elem.type->createColumn();
 
     if ((strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny) &&
         kind == ASTTableJoin::Kind::Left)
     {
-        joinGetImpl(block, {ctn}, std::get<MapsOne>(data->maps));
+        joinGetImpl(block, {elem}, std::get<MapsOne>(data->maps));
     }
     else
         throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::LOGICAL_ERROR);
