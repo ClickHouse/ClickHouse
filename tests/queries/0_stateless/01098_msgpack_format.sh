@@ -52,3 +52,11 @@ $CLICKHOUSE_CLIENT --query="SELECT * FROM msgpack";
 
 $CLICKHOUSE_CLIENT --query="DROP TABLE msgpack";
 
+$CLICKHOUSE_CLIENT --query="CREATE TABLE msgpack (date FixedString(10)) ENGINE = Memory";
+
+$CLICKHOUSE_CLIENT --query="INSERT INTO msgpack VALUES ('2020-01-01'), ('2020-01-02'), ('2020-01-02')";
+
+$CLICKHOUSE_CLIENT --query="SELECT * FROM msgpack";
+
+$CLICKHOUSE_CLIENT --query="DROP TABLE msgpack";
+
