@@ -94,7 +94,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             table->shutdown();
             TableStructureWriteLockHolder table_lock;
             if (database->getEngineName() != "Atomic")
-                table_lock = table->lockExclusively(context.getCurrentQueryId());
+                table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table from memory, don't touch data and metadata
             database->detachTable(table_id.table_name);
         }
@@ -103,7 +103,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             context.checkAccess(AccessType::TRUNCATE, table_id);
             table->checkTableCanBeDropped();
 
-            auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+            auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table data, don't touch metadata
             table->truncate(query_ptr, context, table_lock);
         }
@@ -116,7 +116,7 @@ BlockIO InterpreterDropQuery::executeToTable(
 
             TableStructureWriteLockHolder table_lock;
             if (database->getEngineName() != "Atomic")
-                table_lock = table->lockExclusively(context.getCurrentQueryId());
+                table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
             database->dropTable(context, table_id.table_name, query.no_delay);
         }
@@ -184,7 +184,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id);
             if (kind == ASTDropQuery::Kind::Truncate)
             {
-                auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+                auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                 /// Drop table data, don't touch metadata
                 table->truncate(query_ptr, context, table_lock);
             }
@@ -192,7 +192,7 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             {
                 context_handle.removeExternalTable(table_name);
                 table->shutdown();
-                auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+                auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                 /// Delete table data
                 table->drop();
                 table->is_dropped = true;

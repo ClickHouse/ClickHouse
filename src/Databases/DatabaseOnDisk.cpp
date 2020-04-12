@@ -271,7 +271,7 @@ void DatabaseOnDisk::renameTable(
     detachTable(table_name);
     try
     {
-        table_lock = table->lockExclusively(context.getCurrentQueryId());
+        table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
         table_metadata_path = getObjectMetadataPath(table_name);
         attach_query = parseQueryFromMetadata(log, context, table_metadata_path);

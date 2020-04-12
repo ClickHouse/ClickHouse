@@ -62,12 +62,12 @@ public:
         ColumnPtr databases_,
         ColumnPtr tables_,
         Storages storages_,
-        const std::shared_ptr<const ContextAccess> & access_,
-        String query_id_)
+        const Context & context)
         : SourceWithProgress(header_)
         , columns_mask(std::move(columns_mask_)), max_block_size(max_block_size_)
         , databases(std::move(databases_)), tables(std::move(tables_)), storages(std::move(storages_))
-        , query_id(std::move(query_id_)), total_tables(tables->size()), access(access_)
+        , total_tables(tables->size()), access(context.getAccess())
+        , query_id(context.getCurrentQueryId()), lock_acquire_timeout(context.getSettingsRef().lock_acquire_timeout)
     {
     }
 
@@ -103,7 +103,7 @@ protected:
 
                 try
                 {
-                    table_lock = storage->lockStructureForShare(false, query_id);
+                    table_lock = storage->lockStructureForShare(false, query_id, lock_acquire_timeout);
                 }
                 catch (const Exception & e)
                 {
@@ -227,10 +227,11 @@ private:
     ColumnPtr databases;
     ColumnPtr tables;
     Storages storages;
-    String query_id;
     size_t db_table_num = 0;
     size_t total_tables;
     std::shared_ptr<const ContextAccess> access;
+    String query_id;
+    SettingSeconds lock_acquire_timeout;
 };
 
 
@@ -331,8 +332,8 @@ Pipes StorageSystemColumns::read(
 
     pipes.emplace_back(std::make_shared<ColumnsSource>(
             std::move(columns_mask), std::move(header), max_block_size,
-            std::move(filtered_database_column), std::move(filtered_table_column), std::move(storages),
-            context.getAccess(), context.getCurrentQueryId()));
+            std::move(filtered_database_column), std::move(filtered_table_column),
+            std::move(storages), context));
 
     return pipes;
 }

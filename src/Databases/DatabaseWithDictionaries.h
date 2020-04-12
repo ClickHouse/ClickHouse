@@ -20,6 +20,8 @@ public:
 
     StoragePtr tryGetTable(const Context & context, const String & table_name) const override;
 
+    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const override;
+
     DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const FilterByNameFunction & filter_by_dictionary_name) override;
 
     DatabaseDictionariesIteratorPtr getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name) override;
@@ -37,7 +39,7 @@ protected:
     void attachToExternalDictionariesLoader(Context & context);
     void detachFromExternalDictionariesLoader();
 
-    StoragePtr getDictionaryStorage(const String & table_name) const;
+    StoragePtr getDictionaryStorage(const String & table_name, bool load) const;
 
     ASTPtr getCreateDictionaryQueryImpl(const Context & context,
                                         const String & dictionary_name,
@@ -45,6 +47,8 @@ protected:
 
 private:
     ext::scope_guard database_as_config_repo_for_external_loader;
+
+    StoragePtr tryGetTableImpl(const Context & context, const String & table_name, bool load) const;
 };
 
 }
