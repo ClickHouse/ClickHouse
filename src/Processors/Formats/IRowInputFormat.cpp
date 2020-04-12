@@ -18,6 +18,7 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_UUID;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int INCORRECT_NUMBER_OF_COLUMNS;
+    extern const int ARGUMENT_OUT_OF_BOUND;
 }
 
 
@@ -30,7 +31,8 @@ bool isParseError(int code)
         || code == ErrorCodes::CANNOT_READ_ARRAY_FROM_TEXT
         || code == ErrorCodes::CANNOT_PARSE_NUMBER
         || code == ErrorCodes::CANNOT_PARSE_UUID
-        || code == ErrorCodes::TOO_LARGE_STRING_SIZE;
+        || code == ErrorCodes::TOO_LARGE_STRING_SIZE
+        || code == ErrorCodes::ARGUMENT_OUT_OF_BOUND;
 }
 
 
