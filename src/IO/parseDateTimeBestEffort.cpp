@@ -372,7 +372,7 @@ ReturnType parseDateTimeBestEffortImpl(
             char c = *in.position();
 
             /// 'T' is a separator between date and time according to ISO 8601.
-            /// But don't skip it if we didn't read the date part yet, because 'T' is also a prefix or 'Tue' and 'Thu'.
+            /// But don't skip it if we didn't read the date part yet, because 'T' is also a prefix for 'Tue' and 'Thu'.
 
             if (c == ' ' || (c == 'T' && year && !has_time))
             {
