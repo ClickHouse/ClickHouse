@@ -1,33 +1,34 @@
-<div dir="rtl" markdown="1">
+---
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 17
+toc_title: "\u0645\u0639\u06CC\u0627\u0631 \u0628\u0632\u0631\u06AF \u062F\u0627\u062F\
+  \u0647 \u0647\u0627\u06CC \u062A\u0642\u0648\u06CC\u062A \u06A9\u0646\u0646\u062F\
+  \u0647"
+---
 
-# بنچمارک AMPLab Big Data
+# معیار بزرگ داده های تقویت کننده {#amplab-big-data-benchmark}
 
-ببینید <https://amplab.cs.berkeley.edu/benchmark/>
+ببینید https://amplab.cs.berkeley.edu/benchmark/
 
-با یک اکانت مجانی در <https://aws.amazon.com> ثبت نام کنید. شما نیاز به ایمیل، شماره تلفن و credit card دارید. یک Access key جدید از <https://console.aws.amazon.com/iam/home?nc2=h_m_sc#security_credential> دریافت کنید.
+ثبت نام برای یک حساب کاربری رایگان در https://aws.amazon.com. این نیاز به یک کارت اعتباری, پست الکترونیک, و شماره تلفن. یک کلید دسترسی جدید در https://console.aws.amazon.com/iam/home?nc2=h\_m\_sc\#security\_credential
 
-در کنسول این دستورات را وارد کنید:
+زیر را در کنسول اجرا کنید:
 
-</div>
-
-```bash
-sudo apt-get install s3cmd
-mkdir tiny; cd tiny;
-s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/tiny/ .
-cd ..
-mkdir 1node; cd 1node;
-s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/1node/ .
-cd ..
-mkdir 5nodes; cd 5nodes;
-s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/5nodes/ .
-cd ..
+``` bash
+$ sudo apt-get install s3cmd
+$ mkdir tiny; cd tiny;
+$ s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/tiny/ .
+$ cd ..
+$ mkdir 1node; cd 1node;
+$ s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/1node/ .
+$ cd ..
+$ mkdir 5nodes; cd 5nodes;
+$ s3cmd sync s3://big-data-benchmark/pavlo/text-deflate/5nodes/ .
+$ cd ..
 ```
 
-<div dir="rtl" markdown="1">
-
-این query های ClickHouse را اجرا کنید:
-
-</div>
+اجرای نمایش داده شد زیر کلیک:
 
 ``` sql
 CREATE TABLE rankings_tiny
@@ -91,26 +92,18 @@ CREATE TABLE uservisits_5nodes_on_single
 ) ENGINE = MergeTree(visitDate, visitDate, 8192);
 ```
 
-<div dir="rtl" markdown="1">
+بازگشت به کنسول:
 
-به کنسول برگردید و دستورات زیر را مجددا اجرا کنید:
-
-</div>
-
-```bash
-for i in tiny/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_tiny FORMAT CSV"; done
-for i in tiny/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_tiny FORMAT CSV"; done
-for i in 1node/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_1node FORMAT CSV"; done
-for i in 1node/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_1node FORMAT CSV"; done
-for i in 5nodes/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_5nodes_on_single FORMAT CSV"; done
-for i in 5nodes/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_5nodes_on_single FORMAT CSV"; done
+``` bash
+$ for i in tiny/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_tiny FORMAT CSV"; done
+$ for i in tiny/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_tiny FORMAT CSV"; done
+$ for i in 1node/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_1node FORMAT CSV"; done
+$ for i in 1node/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_1node FORMAT CSV"; done
+$ for i in 5nodes/rankings/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO rankings_5nodes_on_single FORMAT CSV"; done
+$ for i in 5nodes/uservisits/*.deflate; do echo $i; zlib-flate -uncompress < $i | clickhouse-client --host=example-perftest01j --query="INSERT INTO uservisits_5nodes_on_single FORMAT CSV"; done
 ```
 
-<div dir="rtl" markdown="1">
-
-query های گرفتن data sample
-
-</div>
+نمایش داده شد برای اخذ نمونه داده ها:
 
 ``` sql
 SELECT pageURL, pageRank FROM rankings_1node WHERE pageRank > 1000
@@ -135,4 +128,4 @@ ORDER BY totalRevenue DESC
 LIMIT 1
 ```
 
-[مقاله اصلی](https://clickhouse.tech/docs/fa/getting_started/example_datasets/amplab_benchmark/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/getting_started/example_datasets/amplab_benchmark/) <!--hide-->

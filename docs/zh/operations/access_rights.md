@@ -1,10 +1,11 @@
-# Access Rights
 
-Users and access rights are set up in the user config. This is usually `users.xml`.
+# 访问权限 {#access-rights}
 
-Users are recorded in the `users` section. Here is a fragment of the `users.xml` file:
+用户和访问权限在用户配置中设置。 这通常是 `users.xml`.
 
-```xml
+用户被记录在 `users` 科。 这里是一个片段 `users.xml` 文件:
+
+``` xml
 <!-- Users and ACL. -->
 <users>
     <!-- If the user name is not specified, the 'default' user is used. -->
@@ -59,17 +60,17 @@ Users are recorded in the `users` section. Here is a fragment of the `users.xml`
     </web>
 ```
 
-You can see a declaration from two users: `default`and`web`. We added the `web` user separately.
+您可以看到两个用户的声明: `default`和`web`. 我们添加了 `web` 用户分开。
 
-The `default` user is chosen in cases when the username is not passed. The `default` user is also used for distributed query processing, if the configuration of the server or cluster doesn't specify the `user` and `password` (see the section on the [Distributed](../operations/table_engines/distributed.md) engine).
+该 `default` 在用户名未通过的情况下选择用户。 该 `default` 如果服务器或群集的配置没有指定分布式查询处理，则user也用于分布式查询处理 `user` 和 `password` （见上的部分 [分布](../engines/table_engines/special/distributed.md) 发动机）。
 
 The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
 
-The password is specified in clear text (not recommended) or in SHA-256. The hash isn't salted. In this regard, you should not consider these passwords as providing security against potential malicious attacks. Rather, they are necessary for protection from employees.
+密码以明文（不推荐）或SHA-256形式指定。 哈希没有腌制。 在这方面，您不应将这些密码视为提供了针对潜在恶意攻击的安全性。 相反，他们是必要的保护员工。
 
-A list of networks is specified that access is allowed from. In this example, the list of networks for both users is loaded from a separate file (`/etc/metrika.xml`) containing the `networks` substitution. Here is a fragment of it:
+指定允许访问的网络列表。 在此示例中，将从单独的文件加载两个用户的网络列表 (`/etc/metrika.xml`）包含 `networks` 替代。 这里是它的一个片段:
 
-```xml
+``` xml
 <yandex>
     ...
     <networks>
@@ -81,22 +82,21 @@ A list of networks is specified that access is allowed from. In this example, th
 </yandex>
 ```
 
-You could define this list of networks directly in `users.xml`, or in a file in the `users.d` directory (for more information, see the section "[Configuration files](configuration_files.md#configuration_files)").
+您可以直接在以下内容中定义此网络列表 `users.xml`，或在文件中 `users.d` directory (for more information, see the section «[配置文件](configuration_files.md#configuration_files)»).
 
-The config includes comments explaining how to open access from everywhere.
+该配置包括解释如何从任何地方打开访问的注释。
 
-For use in production, only specify `ip` elements (IP addresses and their masks), since using `host` and `hoost_regexp` might cause extra latency.
+对于在生产中使用，仅指定 `ip` 元素（IP地址及其掩码），因为使用 `host` 和 `hoost_regexp` 可能会导致额外的延迟。
 
-Next the user settings profile is specified (see the section "[Settings profiles](settings/settings_profiles.md)"). You can specify the default profile, `default'`. The profile can have any name. You can specify the same profile for different users. The most important thing you can write in the settings profile is `readonly=1`, which ensures read-only access.
-Then specify the quota to be used (see the section "[Quotas](quotas.md#quotas)"). You can specify the default quota: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
+Next the user settings profile is specified (see the section «[设置配置文件](settings/settings_profiles.md)»). You can specify the default profile, `default'`. 配置文件可以有任何名称。 您可以为不同的用户指定相同的配置文件。 您可以在设置配置文件中编写的最重要的事情是 `readonly=1`，这确保只读访问。
+Then specify the quota to be used (see the section «[配额](quotas.md#quotas)»). You can specify the default quota: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
 
-In the optional `<allow_databases>` section, you can also specify a list of databases that the user can access. By default, all databases are available to the user. You can specify the `default` database. In this case, the user will receive access to the database by default.
+在可选 `<allow_databases>` 您还可以指定用户可以访问的数据库列表。 默认情况下，所有数据库都可供用户使用。 您可以指定 `default` 数据库。 在这种情况下，默认情况下，用户将接收对数据库的访问权限。
 
-Access to the `system` database is always allowed (since this database is used for processing queries).
+访问 `system` 始终允许数据库（因为此数据库用于处理查询）。
 
-The user can get a list of all databases and tables in them by using `SHOW` queries or system tables, even if access to individual databases isn't allowed.
+用户可以通过以下方式获取其中所有数据库和表的列表 `SHOW` 查询或系统表，即使不允许访问单个数据库。
 
-Database access is not related to the [readonly](settings/permissions_for_queries.md#settings_readonly) setting. You can't grant full access to one database and `readonly` access to another one.
+数据库访问是不相关的 [只读](settings/permissions_for_queries.md#settings_readonly) 设置。 您不能授予对一个数据库的完全访问权限，并 `readonly` 进入另一个。
 
-
-[Original article](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

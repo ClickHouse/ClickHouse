@@ -1,24 +1,25 @@
-# 如何在Linux中编译Mac OS X ClickHouse
 
-Linux机器也可以编译运行在OS X系统的`clickhouse`二进制包，这可以用于在Linux上跑持续集成测试。如果要在Mac OS X上直接构建ClickHouse，请参考另外一篇指南： https://clickhouse.tech/docs/zh/development/build_osx/
+# 如何在Linux中编译Mac OS X ClickHouse {#ru-he-zai-linuxzhong-bian-yi-mac-os-x-clickhouse}
+
+Linux机器也可以编译运行在OS X系统的`clickhouse`二进制包，这可以用于在Linux上跑持续集成测试。如果要在Mac OS X上直接构建ClickHouse，请参考另外一篇指南： https://clickhouse.tech/docs/zh/development/build\_osx/
 
 Mac OS X的交叉编译基于以下构建说明，请首先遵循它们。
 
-# Install Clang-8
+# 安装Clang-8 {#install-clang-8}
 
 按照https://apt.llvm.org/中的说明进行Ubuntu或Debian安装。
 例如，安装Bionic的命令如下：
 
-```bash
+``` bash
 sudo echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" >> /etc/apt/sources.list
 sudo apt-get install clang-8
 ```
 
-# 安装交叉编译工具集
+# 安装交叉编译工具集 {#an-zhuang-jiao-cha-bian-yi-gong-ju-ji}
 
 我们假设安装 `cctools` 在 ${CCTOOLS} 路径下
 
-```bash
+``` bash
 mkdir ${CCTOOLS}
 
 git clone https://github.com/tpoechtrager/apple-libtapi.git
@@ -37,9 +38,9 @@ wget https://github.com/phracker/MacOSX-SDKs/releases/download/10.14-beta4/MacOS
 tar xJf MacOSX10.14.sdk.tar.xz
 ```
 
-# 编译 ClickHouse
+# 编译 ClickHouse {#bian-yi-clickhouse}
 
-```bash
+``` bash
 cd ClickHouse
 mkdir build-osx
 CC=clang-8 CXX=clang++-8 cmake . -Bbuild-osx -DCMAKE_SYSTEM_NAME=Darwin \
