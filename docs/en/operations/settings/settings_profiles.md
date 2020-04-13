@@ -1,5 +1,9 @@
+---
+toc_priority: 61
+toc_title: Settings Profiles
+---
 
-# Settings profiles
+# Settings Profiles {#settings-profiles}
 
 A settings profile is a collection of settings grouped under the same name. Each ClickHouse user has a profile.
 To apply all the settings in a profile, set the `profile` setting.
@@ -16,7 +20,7 @@ Settings profiles are declared in the user config file. This is usually `users.x
 
 Example:
 
-```xml
+``` xml
 <!-- Settings profiles -->
 <profiles>
     <!-- Default settings -->
@@ -61,6 +65,5 @@ Example:
 The example specifies two profiles: `default` and `web`. The `default` profile has a special purpose: it must always be present and is applied when starting the server. In other words, the `default` profile contains default settings. The `web` profile is a regular profile that can be set using the `SET` query or using a URL parameter in an HTTP query.
 
 Settings profiles can inherit from each other. To use inheritance, indicate one or multiple `profile` settings before the other settings that are listed in the profile. In case when one setting is defined in different profiles, the latest defined is used.
-
 
 [Original article](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->

@@ -1,2 +1,0 @@
-CREATE TABLE default.mt_compact (`a` Int, `s` String) ENGINE = MergeTree PARTITION BY a ORDER BY a SETTINGS index_granularity_bytes = 0, index_granularity = 8192
-CREATE TABLE default.mt_compact (`a` Int, `s` String) ENGINE = MergeTree PARTITION BY a ORDER BY a SETTINGS index_granularity_bytes = 0, min_rows_for_wide_part = 0, index_granularity = 8192, parts_to_delay_insert = 300

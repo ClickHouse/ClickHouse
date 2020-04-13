@@ -23,8 +23,8 @@ report_stage_end('start')
 parser = argparse.ArgumentParser(description='Run performance test.')
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, help='test description file')
-parser.add_argument('--host', nargs='*', default=['127.0.0.1', '127.0.0.1'], help="Server hostname. Parallel to '--port'.")
-parser.add_argument('--port', nargs='*', default=[9001, 9002], help="Server port. Parallel to '--host'.")
+parser.add_argument('--host', nargs='*', default=['localhost'], help="Server hostname(s). Corresponds to '--port' options.")
+parser.add_argument('--port', nargs='*', default=[9000], help="Server port(s). Corresponds to '--host' options.")
 parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 7)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
 parser.add_argument('--no-long', type=bool, default=True, help='Skip the tests tagged as long.')
 args = parser.parse_args()
@@ -87,7 +87,6 @@ for c in connections:
         try:
             c.execute(q)
         except:
-            traceback.print_exc()
             pass
 
 report_stage_end('drop1')
@@ -105,7 +104,7 @@ tables = [e.text for e in root.findall('preconditions/table_exists')]
 for t in tables:
     for c in connections:
         try:
-            res = c.execute("show create table {}".format(t))
+            res = c.execute("select 1 from {} limit 1".format(t))
         except:
             print('skipped\t' + traceback.format_exception_only(*sys.exc_info()[:2])[-1])
             traceback.print_exc()
