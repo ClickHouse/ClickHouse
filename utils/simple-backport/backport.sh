@@ -58,10 +58,10 @@ do
 
     # Next, check the tag. They might override the decision. Checks are ordered by priority.
     labels="$(jq -r .labels[].name "$file")"
-    if echo "$labels" | grep "pr-must-backport\|v$branch-must-backport" > /dev/null; then action="backport"; fi
-    if echo "$labels" | grep "v$branch-conflicts" > /dev/null;                       then action="conflict"; fi
-    if echo "$labels" | grep "pr-no-backport\|v$branch-no-backport" > /dev/null;     then action="no-backport"; fi
-    if echo "$labels" | grep "v$branch\|v$branch-backported" > /dev/null;            then action="done"; fi
+    if echo "$labels" | grep -x "pr-must-backport\|v$branch-must-backport" > /dev/null; then action="backport"; fi
+    if echo "$labels" | grep -x "v$branch-conflicts" > /dev/null;                       then action="conflict"; fi
+    if echo "$labels" | grep -x "pr-no-backport\|v$branch-no-backport" > /dev/null;     then action="no-backport"; fi
+    if echo "$labels" | grep -x "v$branch\|v$branch-backported" > /dev/null;            then action="done"; fi
 
     # Find merge commit SHA for convenience
     merge_sha="$(jq -r .merge_commit_sha "$file")"
