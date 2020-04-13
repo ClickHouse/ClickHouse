@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/SystemLog.h>
+#include <Core/SettingsCollection.h>
 
 
 namespace ProfileEvents
@@ -22,13 +23,7 @@ namespace DB
 /// A struct which will be inserted as row into query_log table
 struct QueryLogElement
 {
-    enum Type : int8_t // Make it signed for compatibility with DataTypeEnum8
-    {
-        QUERY_START = 1,
-        QUERY_FINISH = 2,
-        EXCEPTION_BEFORE_START = 3,
-        EXCEPTION_WHILE_PROCESSING = 4,
-    };
+    using Type = QueryLogElementType;
 
     Type type = QUERY_START;
 

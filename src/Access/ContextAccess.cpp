@@ -196,7 +196,7 @@ bool ContextAccess::isClientHostAllowed() const
 
 
 template <int mode, bool grant_option, typename... Args>
-bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags, const Args &... args) const
+bool ContextAccess::calculateResultAccessAndCheck(Poco::Logger * log_, const AccessFlags & flags, const Args &... args) const
 {
     auto access = calculateResultAccess(grant_option);
     bool is_granted = access->isGranted(flags, args...);
@@ -268,6 +268,22 @@ bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & fla
 
 
 template <int mode, bool grant_option>
+bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags) const
+{
+    return calculateResultAccessAndCheck<mode, grant_option>(log_, flags);
+}
+
+template <int mode, bool grant_option, typename... Args>
+bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags, const std::string_view & database, const Args &... args) const
+{
+    if (database.empty())
+        return calculateResultAccessAndCheck<mode, grant_option>(log_, flags, params.current_database, args...);
+    else
+        return calculateResultAccessAndCheck<mode, grant_option>(log_, flags, database, args...);
+}
+
+
+template <int mode, bool grant_option>
 bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessRightsElement & element) const
 {
     if (element.any_database)
@@ -276,24 +292,15 @@ bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessRightsEleme
     }
     else if (element.any_table)
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database);
     }
     else if (element.any_column)
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database, element.table);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table);
     }
     else
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database, element.table, element.columns);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table, element.columns);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table, element.columns);
     }
 }
 
@@ -404,23 +411,20 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
     static const AccessFlags table_ddl = AccessType::CREATE_DATABASE | AccessType::CREATE_TABLE | AccessType::CREATE_VIEW
         | AccessType::ALTER_TABLE | AccessType::ALTER_VIEW | AccessType::DROP_DATABASE | AccessType::DROP_TABLE | AccessType::DROP_VIEW
         | AccessType::TRUNCATE;
+
     static const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
     static const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
     static const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
-    static const AccessFlags all_dcl = AccessType::CREATE_USER | AccessType::CREATE_ROLE | AccessType::CREATE_POLICY
-        | AccessType::CREATE_QUOTA | AccessType::CREATE_SETTINGS_PROFILE | AccessType::ALTER_USER | AccessType::ALTER_ROLE
-        | AccessType::ALTER_POLICY | AccessType::ALTER_QUOTA | AccessType::ALTER_SETTINGS_PROFILE | AccessType::DROP_USER
-        | AccessType::DROP_ROLE | AccessType::DROP_POLICY | AccessType::DROP_QUOTA | AccessType::DROP_SETTINGS_PROFILE
-        | AccessType::ROLE_ADMIN;
+    static const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
     if (readonly_)
-        merged_access->revoke(write_table_access | all_dcl | table_and_dictionary_ddl | AccessType::SYSTEM | AccessType::KILL_QUERY);
+        merged_access->revoke(write_table_access | table_and_dictionary_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY);
 
     if (readonly_ == 1)
     {
         /// Table functions are forbidden in readonly mode.
         /// For example, for readonly = 2 - allowed.
-        merged_access->revoke(AccessType::CREATE_TEMPORARY_TABLE | AccessType::TABLE_FUNCTIONS);
+        merged_access->revoke(AccessType::CREATE_TEMPORARY_TABLE);
     }
 
     if (!allow_ddl_ && !grant_option)

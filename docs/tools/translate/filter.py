@@ -36,7 +36,7 @@ def process_buffer(buffer, new_value, item=None, is_header=False):
         debug(f'Translate: "{text}" -> "{translated_text}"')
 
         if text and text[0].isupper() and not translated_text[0].isupper():
-            translated_text = translated_text.capitalize()
+            translated_text = translated_text[0].upper() + translated_text[1:]
 
         if text.startswith(' ') and not translated_text.startswith(' '):
             translated_text = ' ' + translated_text
@@ -44,12 +44,22 @@ def process_buffer(buffer, new_value, item=None, is_header=False):
         if text.endswith(' ') and not translated_text.endswith(' '):
             translated_text = translated_text + ' '
 
-        title_case = False # is_header and translate.default_target_language == 'en' and text[0].isupper()
-        title_case_whitelist = {'a', 'an', 'the', 'and', 'or'}
+        if is_header and translated_text.endswith('.'):
+            translated_text = translated_text.rstrip('.')
+
+        title_case = is_header and translate.default_target_language == 'en' and text[0].isupper()
+        title_case_whitelist = {
+            'a', 'an', 'the', 'and', 'or', 'that',
+            'of', 'on', 'for', 'from', 'with', 'to', 'in'
+        }
+        is_first_iteration = True
         for token in translated_text.split(' '):
-            if title_case and not token.isupper():
-                if token not in title_case_whitelist:
-                    token = token.capitalize()
+            if title_case and token.isascii() and not token.isupper():
+                if len(token) > 1 and token.lower() not in title_case_whitelist:
+                    token = token[0].upper() + token[1:]
+                elif not is_first_iteration:
+                    token = token.lower()
+            is_first_iteration = False
 
             new_value.append(pandocfilters.Str(token))
             new_value.append(pandocfilters.Space())

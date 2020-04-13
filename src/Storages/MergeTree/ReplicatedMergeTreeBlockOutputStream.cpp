@@ -147,11 +147,11 @@ void ReplicatedMergeTreeBlockOutputStream::write(const Block & block)
             /// That is, do not insert the same data to the same partition twice.
             block_id = part->info.partition_id + "_" + toString(hash_value.words[0]) + "_" + toString(hash_value.words[1]);
 
-            LOG_DEBUG(log, "Wrote block with ID '" << block_id << "', " << block.rows() << " rows");
+            LOG_DEBUG(log, "Wrote block with ID '" << block_id << "', " << current_block.block.rows() << " rows");
         }
         else
         {
-            LOG_DEBUG(log, "Wrote block with " << block.rows() << " rows");
+            LOG_DEBUG(log, "Wrote block with " << current_block.block.rows() << " rows");
         }
 
         try
