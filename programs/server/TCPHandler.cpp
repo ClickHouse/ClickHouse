@@ -147,10 +147,6 @@ void TCPHandler::runImpl()
         if (server.isCancelled() || in->eof())
             break;
 
-        /// receiveHello() has set the default settings for the current user,
-        /// but this default itself could change while we were waiting for a packet from the client.
-        connection_context.resetSettingsToDefault();
-
         /// Set context of request.
         query_context = connection_context;
 

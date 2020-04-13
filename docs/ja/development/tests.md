@@ -13,15 +13,15 @@ toc_title: "ClickHouse\u30C6\u30B9\u30C8\u3092\u5B9F\u884C\u3059\u308B\u65B9\u6C
 
 各機能テストは、実行中のclickhouseサーバーに一つまたは複数のクエリを送信し、参照と結果を比較します。
 
-テストは `testsies` ディレクトリ。 つのサブディレクトリがあります: `stateless` と `stateful`. ステートレステストでは、プリロードされたテストデータを使用せずにクエリを実行します。 ステートフルテストでは、Yandexのテストデータが必要です。メトリカと一般市民には利用できません。 我々は唯一の使用する傾向があります `stateless` テストと新しい追加を避ける `stateful` テスト
+テストは `queries` ディレクトリ。 つのサブディレクトリがあります: `stateless` と `stateful`. ステートレステストでは、プリロードされたテストデータを使用せずにクエリを実行します。 ステートフルテストでは、Yandexのテストデータが必要です。メトリカと一般市民には利用できません。 我々は唯一の使用する傾向があります `stateless` テストと新しい追加を避ける `stateful` テスト
 
 それぞれの試験できるの種類: `.sql` と `.sh`. `.sql` testは、パイプ処理される単純なSQLスクリプトです `clickhouse-client --multiquery --testmode`. `.sh` テストは、単独で実行されるスクリプトです。
 
-すべてのテストを実行するには、 `testskhouse-test` ツール。 見て！ `--help` 可能なオプションのリストについて。 できるだけ実行すべての試験または実行のサブセットの試験フィルター部分文字列の試験名: `./clickhouse-test substring`.
+すべてのテストを実行するには、 `clickhouse-test` ツール。 見て！ `--help` 可能なオプションのリストについて。 できるだけ実行すべての試験または実行のサブセットの試験フィルター部分文字列の試験名: `./clickhouse-test substring`.
 
 機能テストを呼び出す最も簡単な方法は、コピーすることです `clickhouse-client` に `/usr/bin/`、実行 `clickhouse-server` そして、実行 `./clickhouse-test` 独自のディレクトリから。
 
-新しいテストを追加するには、 `.sql` または `.sh` ファイル `testsies/0_stateless` ディレクトリは、手動でチェックしてから生成 `.reference` 次の方法でファイル: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` または `./00000_test.sh > ./00000_test.reference`.
+新しいテストを追加するには、 `.sql` または `.sh` ファイル `queries/0_stateless` ディレクトリは、手動でチェックしてから生成 `.reference` 次の方法でファイル: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` または `./00000_test.sh > ./00000_test.reference`.
 
 テストでは、（create、dropなど）テーブルのみを使用する必要があります `test` テストでは一時テーブルを使用することもできます。
 
@@ -36,13 +36,13 @@ toc_title: "ClickHouse\u30C6\u30B9\u30C8\u3092\u5B9F\u884C\u3059\u308B\u65B9\u6C
 
 ## 既知のバグ {#known-bugs}
 
-機能テストで簡単に再現できるいくつかのバグを知っていれば、準備された機能テストを `testsies/bugs` ディレクトリ。 これらのテストはに移動されます `teststests_stateless` バグが修正されたとき。
+機能テストで簡単に再現できるいくつかのバグを知っていれば、準備された機能テストを `tests/queries/bugs` ディレクトリ。 これらのテストはに移動されます `tests/queries/0_stateless` バグが修正されたとき。
 
 ## 統合テスト {#integration-tests}
 
 統合テストでは、クラスター化された設定でclickhouseをテストし、mysql、postgres、mongodbのような他のサーバーとのclickhouseの相互作用を可能にします。 それらはネットワークの割れ目、包みの低下、等を競争して有用である。 これらの試験する方向に作用しdockerを複数の容器を様々なソフトウェアです。
 
-見る `testsgration/README.md` これらのテストを実行する方法について。
+見る `tests/integration/README.md` これらのテストを実行する方法について。
 
 ClickHouseとサードパーティドライバの統合はテストされていません。 また、現在、JDBCおよびODBCドライバとの統合テストはありません。
 

@@ -122,7 +122,7 @@ namespace
 
 String ASTCreateRowPolicyQuery::getID(char) const
 {
-    return "CREATE POLICY or ALTER POLICY query";
+    return "CREATE ROW POLICY or ALTER ROW POLICY query";
 }
 
 
@@ -136,11 +136,11 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
 {
     if (attach)
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH POLICY";
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << "ATTACH ROW POLICY";
     }
     else
     {
-        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER POLICY" : "CREATE POLICY")
+        settings.ostr << (settings.hilite ? hilite_keyword : "") << (alter ? "ALTER ROW POLICY" : "CREATE ROW POLICY")
                       << (settings.hilite ? hilite_none : "");
     }
 
@@ -157,6 +157,8 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
     settings.ostr << " " << backQuoteIfNeed(policy_name) << (settings.hilite ? hilite_keyword : "") << " ON "
                   << (settings.hilite ? hilite_none : "") << (database.empty() ? String{} : backQuoteIfNeed(database) + ".") << table_name;
 
+    formatOnCluster(settings);
+
     if (!new_policy_name.empty())
         formatRenameTo(new_policy_name, settings);
 
@@ -167,5 +169,12 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
 
     if (roles && (!roles->empty() || alter))
         formatToRoles(*roles, settings);
+}
+
+
+void ASTCreateRowPolicyQuery::replaceCurrentUserTagWithName(const String & current_user_name)
+{
+    if (roles)
+        roles->replaceCurrentUserTagWithName(current_user_name);
 }
 }
