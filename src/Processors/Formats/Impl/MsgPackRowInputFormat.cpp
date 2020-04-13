@@ -119,8 +119,8 @@ void MsgPackRowInputFormat::insertObject(IColumn & column, DataTypePtr data_type
         case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::String:
         {
-            String str = object.as<String>();
-            column.insertData(str.data(), str.size());
+            msgpack::object_str obj_str = object.via.str;
+            column.insertData(obj_str.ptr, obj_str.size);
             return;
         }
         case TypeIndex::Array:
