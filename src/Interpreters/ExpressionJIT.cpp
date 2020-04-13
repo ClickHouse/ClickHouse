@@ -21,6 +21,10 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #pragma GCC diagnostic ignored "-Wnon-virtual-dtor"
 
+#if defined(__clang_major__) && __clang_major__ >= 10
+#pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
+#endif
+
 #include <llvm/Analysis/TargetTransformInfo.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DataLayout.h>

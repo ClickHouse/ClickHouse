@@ -623,8 +623,7 @@ private:
             || executeNumberNumber<T, Int32>(block, arguments, result)
             || executeNumberNumber<T, Int64>(block, arguments, result)
             || executeNumberNumber<T, Float32>(block, arguments, result)
-            || executeNumberNumber<T, Float64>(block, arguments, result)
-            || executeNumberNumber<T, Null>(block, arguments, result);
+            || executeNumberNumber<T, Float64>(block, arguments, result);
     }
 
     template <typename T, typename U>

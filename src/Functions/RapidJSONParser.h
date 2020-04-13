@@ -7,6 +7,10 @@
 #include <Common/Exception.h>
 #include <Core/Types.h>
 
+#if defined(__clang_major__) && __clang_major__ >= 10
+#pragma clang diagnostic ignored "-Wambiguous-reversed-operator"
+#endif
+
 #include <rapidjson/document.h>
 
 

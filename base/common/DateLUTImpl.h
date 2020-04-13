@@ -95,7 +95,7 @@ private:
 
         /// UTC offset is from -12 to +14 in all known time zones. This requires checking only three indices.
 
-        if ((guess == 0 || t >= lut[guess].date) && t < lut[DayNum(guess + 1)].date)
+        if ((guess == DayNum(0) || t >= lut[guess].date) && t < lut[DayNum(guess + 1)].date)
             return guess;
 
         /// Time zones that have offset 0 from UTC do daylight saving time change (if any) towards increasing UTC offset (example: British Standard Time).
@@ -240,7 +240,7 @@ public:
     {
         DayNum index = findIndex(t);
 
-        if (unlikely(index == 0))
+        if (unlikely(index == DayNum(0)))
             return t + offset_at_start_of_epoch;
 
         time_t res = t - lut[index].date;
@@ -257,7 +257,7 @@ public:
 
         /// If it is not 1970 year (findIndex found nothing appropriate),
         ///  than limit number of hours to avoid insane results like 1970-01-01 89:28:15
-        if (unlikely(index == 0))
+        if (unlikely(index == DayNum(0)))
             return static_cast<unsigned>((t + offset_at_start_of_epoch) / 3600) % 24;
 
         time_t res = t - lut[index].date;
