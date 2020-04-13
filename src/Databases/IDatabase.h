@@ -141,6 +141,8 @@ public:
         const Context & context,
         const String & name) const = 0;
 
+    virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
+
     using FilterByNameFunction = std::function<bool(const String &)>;
 
     /// Get an iterator that allows you to pass through all the tables.

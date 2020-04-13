@@ -19,7 +19,7 @@ namespace DB
 class DatabaseMemory final : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseMemory(const String & name_);
+    DatabaseMemory(const String & name_, const Context & global_context_);
 
     String getEngineName() const override { return "Memory"; }
 
@@ -44,7 +44,10 @@ public:
     String getTableDataPath(const String & table_name) const override { return data_path + escapeForFileName(table_name) + "/"; }
     String getTableDataPath(const ASTCreateQuery & query) const override { return getTableDataPath(query.table); }
 
+    UUID tryGetTableUUID(const String & table_name) const override;
+
 private:
+    const Context & global_context;
     String data_path;
     using NameToASTCreate = std::unordered_map<String, ASTPtr>;
     NameToASTCreate create_queries;

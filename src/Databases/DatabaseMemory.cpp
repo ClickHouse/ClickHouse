@@ -1,6 +1,7 @@
 #include <common/logger_useful.h>
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabasesCommon.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Storages/IStorage.h>
 #include <Poco/File.h>
@@ -14,8 +15,9 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseMemory::DatabaseMemory(const String & name_)
+DatabaseMemory::DatabaseMemory(const String & name_, const Context & global_context_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")")
+    , global_context(global_context_.getGlobalContext())
     , data_path("data/" + escapeForFileName(database_name) + "/")
 {}
 
@@ -74,6 +76,13 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const Context &, const String & t
             return {};
     }
     return it->second;
+}
+
+UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
+{
+    if (auto table = tryGetTable(global_context, table_name))
+        return table->getStorageID().uuid;
+    return UUIDHelpers::Nil;
 }
 
 }

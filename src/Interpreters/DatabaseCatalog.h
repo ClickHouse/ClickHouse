@@ -135,7 +135,7 @@ public:
 
     StoragePtr getTable(const StorageID & table_id) const;
     StoragePtr tryGetTable(const StorageID & table_id) const;
-    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id) const { return getTableImpl(table_id, *global_context); }
+    DatabaseAndTable getDatabaseAndTable(const StorageID & table_id) const;
     DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id) const;
     DatabaseAndTable getTableImpl(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception = nullptr) const;
 
