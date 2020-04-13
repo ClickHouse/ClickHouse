@@ -80,6 +80,7 @@ add_subdirectory (compressor)
 add_subdirectory (copier)
 add_subdirectory (format)
 add_subdirectory (obfuscator)
+add_subdirectory (myrepl-client)
 
 if (ENABLE_CLICKHOUSE_ODBC_BRIDGE)
     add_subdirectory (odbc-bridge)
