@@ -129,6 +129,7 @@ if bad_commits and not args.login:
 # TODO: check backports.
 if need_backporting:
     re_vlabel = re.compile(r'^v\d+\.\d+$')
+    re_vlabel_backported = re.compile(r'^v\d+\.\d+-backported$')
     re_vlabel_conflicts = re.compile(r'^v\d+\.\d+-conflicts$')
 
     print('\nPull-requests need to be backported:')
@@ -146,8 +147,8 @@ if need_backporting:
                 # FIXME: compatibility logic - check for a manually set label, that indicates status 'backported'.
                 # FIXME: O(n²) - no need to iterate all labels for every `stable`
                 for label in github.get_labels(pull_request):
-                    if re_vlabel.match(label['name']):
-                        if f'v{stable[0]}' == label['name']:
+                    if re_vlabel.match(label['name']) or re_vlabel_backported.match(label['name']):
+                        if f'v{stable[0]}' == label['name'] or f'v{stable[0]}-backported' == label['name']:
                             backport_labeled.add(stable[0])
                     if re_vlabel_conflicts.match(label['name']):
                         if f'v{stable[0]}-conflicts' == label['name']:
