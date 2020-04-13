@@ -2,11 +2,6 @@
 
 #include <Processors/Merges/IMergingAlgorithmWithDelayedChunk.h>
 #include <Processors/Merges/MergedData.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/AlignedBuffer.h>
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <Columns/ColumnAggregateFunction.h>
-#include <Common/Arena.h>
 
 namespace DB
 {

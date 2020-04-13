@@ -1,5 +1,7 @@
 #include <Processors/Merges/AggregatingSortedAlgorithm.h>
 
+#include <Columns/ColumnAggregateFunction.h>
+#include <Common/AlignedBuffer.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -136,8 +138,9 @@ static MutableColumns getMergedColumns(const Block & header, const AggregatingSo
 
     for (auto & desc : def.columns_to_simple_aggregate)
     {
-        auto & type = header.getByPosition(desc.column_number).type;
-        columns[desc.column_number] = recursiveRemoveLowCardinality(type)->createColumn();
+        auto & type = desc.nested_type ? desc.nested_type
+                                       : desc.real_type;
+        columns[desc.column_number] = type->createColumn();
     }
 
     for (size_t i = 0; i < columns.size(); ++i)
@@ -147,7 +150,8 @@ static MutableColumns getMergedColumns(const Block & header, const AggregatingSo
     return columns;
 }
 
-static void prepareChunk(Chunk & chunk, const AggregatingSortedAlgorithm::ColumnsDefinition & def)
+/// Remove constants and LowCardinality for SimpleAggregateFunction
+static void preprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::ColumnsDefinition & def)
 {
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
@@ -160,6 +164,25 @@ static void prepareChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Column
             columns[desc.column_number] = recursiveRemoveLowCardinality(columns[desc.column_number]);
 
     chunk.setColumns(std::move(columns), num_rows);
+}
+
+/// Return back LowCardinality for SimpleAggregateFunction
+static void postprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::ColumnsDefinition & def)
+{
+    size_t num_rows = chunk.getNumRows();
+    auto columns_ = chunk.detachColumns();
+
+    for (auto & desc : def.columns_to_simple_aggregate)
+    {
+        if (desc.nested_type)
+        {
+            auto & from_type = desc.nested_type;
+            auto & to_type = desc.real_type;
+            columns_[desc.column_number] = recursiveTypeConversion(columns_[desc.column_number], from_type, to_type);
+        }
+    }
+
+    chunk.setColumns(std::move(columns_), num_rows);
 }
 
 
@@ -226,21 +249,8 @@ Chunk AggregatingSortedAlgorithm::AggregatingMergedData::pull()
         throw Exception("Can't pull chunk because group was not finished.", ErrorCodes::LOGICAL_ERROR);
 
     auto chunk = MergedData::pull();
+    postprocessChunk(chunk, def);
 
-    size_t num_rows = chunk.getNumRows();
-    auto columns_ = chunk.detachColumns();
-
-    for (auto & desc : def.columns_to_simple_aggregate)
-    {
-        if (desc.nested_type)
-        {
-            auto & from_type = desc.nested_type;
-            auto & to_type = desc.real_type;
-            columns_[desc.column_number] = recursiveTypeConversion(columns_[desc.column_number], from_type, to_type);
-        }
-    }
-
-    chunk.setColumns(std::move(columns_), num_rows);
     initAggregateDescription();
 
     return chunk;
@@ -269,14 +279,14 @@ void AggregatingSortedAlgorithm::initialize(Chunks chunks)
 {
     for (auto & chunk : chunks)
         if (chunk)
-            prepareChunk(chunk, columns_definition);
+            preprocessChunk(chunk, columns_definition);
 
     initializeQueue(std::move(chunks));
 }
 
 void AggregatingSortedAlgorithm::consume(Chunk chunk, size_t source_num)
 {
-    prepareChunk(chunk, columns_definition);
+    preprocessChunk(chunk, columns_definition);
     updateCursor(std::move(chunk), source_num);
 }
 
