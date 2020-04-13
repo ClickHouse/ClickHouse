@@ -72,7 +72,7 @@ private:
             /// TODO: sum_blocks_granularity += block_size;
         }
 
-        Chunk pull(ColumnsDefinition & def, const Block & header_)
+        Chunk pull(ColumnsDefinition & def)
         {
             auto chunk = pull();
 
@@ -81,10 +81,10 @@ private:
 
             for (auto & desc : def.columns_to_simple_aggregate)
             {
-                if (desc.inner_type)
+                if (desc.nested_type)
                 {
-                    auto & from_type = desc.inner_type;
-                    auto & to_type = header_.getByPosition(desc.column_number).type;
+                    auto & from_type = desc.nested_type;
+                    auto & to_type = desc.real_type;
                     columns_[desc.column_number] = recursiveTypeConversion(columns_[desc.column_number], from_type, to_type);
                 }
             }
@@ -111,8 +111,6 @@ private:
         using MergedData::pull;
     };
 
-    Block header;
-
     ColumnsDefinition columns_definition;
     AggregatingMergedData merged_data;
 
@@ -134,13 +132,19 @@ public:
 
         size_t column_number = 0;
         IColumn * column = nullptr;
-        const DataTypePtr inner_type;
+
+        /// For LowCardinality, convert is converted to nested type. nested_type is nullptr if no conversion needed.
+        const DataTypePtr nested_type; /// Nested type for LowCardinality, if it is.
+        const DataTypePtr real_type; /// Type in header.
 
         AlignedBuffer state;
         bool created = false;
 
-        SimpleAggregateDescription(AggregateFunctionPtr function_, const size_t column_number_, DataTypePtr type)
-                : function(std::move(function_)), column_number(column_number_), inner_type(std::move(type))
+        SimpleAggregateDescription(
+            AggregateFunctionPtr function_, const size_t column_number_,
+            DataTypePtr nested_type_, DataTypePtr real_type_)
+            : function(std::move(function_)), column_number(column_number_)
+            , nested_type(std::move(nested_type_)), real_type(std::move(real_type_))
         {
             add_function = function->getAddressOfAddFunction();
             state.reset(function->sizeOfData(), function->alignOfData());
