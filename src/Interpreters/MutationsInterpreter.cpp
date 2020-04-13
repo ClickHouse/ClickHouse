@@ -59,9 +59,8 @@ public:
 
         if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
         {
-            /// Lambda functions also may be non-deterministic. But we skip them for simplicity.
-            /// Replication will work correctly even if non-deterministic function is used, 
-            ///  it will select any of the results and discard other.
+            /// Property of being deterministic for lambda expression is completely determined
+            /// by the contents of its definition, so we just proceed to it.
             if (function->name != "lambda")
             {
                 const auto func = FunctionFactory::instance().get(function->name, data.context);
@@ -76,7 +75,7 @@ using FirstNonDeterministicFuncFinder = InDepthNodeVisitor<FirstNonDeterministic
 
 std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & command, const Context & context)
 {
-    FirstNonDeterministicFuncMatcher::Data finder_data{context};
+    FirstNonDeterministicFuncMatcher::Data finder_data{context, std::nullopt};
 
     switch (command.type)
     {
