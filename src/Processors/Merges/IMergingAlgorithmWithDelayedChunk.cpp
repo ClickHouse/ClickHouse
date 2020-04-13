@@ -19,14 +19,14 @@ IMergingAlgorithmWithDelayedChunk::IMergingAlgorithmWithDelayedChunk(
 
 void IMergingAlgorithmWithDelayedChunk::initializeQueue(Chunks chunks)
 {
-    source_chunks.resize(chunks.size());
+    source_chunks = std::move(chunks);
 
     for (size_t source_num = 0; source_num < source_chunks.size(); ++source_num)
     {
-        if (!chunks[source_num])
+        if (!source_chunks[source_num])
             continue;
 
-        source_chunks[source_num] = std::move(chunks[source_num]);
+        source_chunks[source_num] = std::move(source_chunks[source_num]);
         cursors[source_num] = SortCursorImpl(source_chunks[source_num].getColumns(), description, source_num);
     }
 
