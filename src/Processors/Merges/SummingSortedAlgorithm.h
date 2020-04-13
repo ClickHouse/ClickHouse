@@ -25,13 +25,7 @@ public:
     Status merge() override;
 
     struct AggregateDescription;
-
-    /// Stores numbers of key-columns and value-columns.
-    struct MapDescription
-    {
-        std::vector<size_t> key_col_nums;
-        std::vector<size_t> val_col_nums;
-    };
+    struct MapDescription;
 
     /// This structure define columns into one of three types:
     /// * columns which values not needed to be aggregated
@@ -39,6 +33,10 @@ public:
     /// * mapping for nested columns
     struct ColumnsDefinition
     {
+        ColumnsDefinition(); /// Is needed because destructor is defined.
+        ColumnsDefinition(ColumnsDefinition &&) noexcept; /// Is needed because destructor is defined.
+        ~ColumnsDefinition(); /// Is needed because otherwise std::vector's destructor uses incomplete types.
+
         /// Columns with which values should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
         /// Columns which should be aggregated.
@@ -46,6 +44,10 @@ public:
         /// Mapping for nested columns.
         std::vector<MapDescription> maps_to_sum;
 
+        /// Names of columns from header.
+        Names column_names;
+
+        /// It's not the same as column_names.size()
         size_t getNumColumns() const { return column_numbers_not_to_aggregate.size() + columns_to_aggregate.size(); }
     };
 
@@ -54,108 +56,37 @@ public:
     {
     private:
         using MergedData::pull;
+        using MergedData::insertRow;
 
     public:
-        using MergedData::MergedData;
+        SummingMergedData(MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_);
 
-        SummingMergedData(MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_)
-            : MergedData(std::move(columns_), false, max_block_size_)
-            , def(def_)
-        {
-        }
+        void startGroup(ColumnRawPtrs & raw_columns, size_t row);
+        void finishGroup();
 
-        void insertRow(const Row & row, const ColumnNumbers & column_numbers)
-        {
-            size_t next_column = columns.size() - column_numbers.size();
-            for (auto column_number : column_numbers)
-            {
-                columns[next_column]->insert(row[column_number]);
-                ++next_column;
-            }
+        bool isGroupStarted() const { return is_group_started; }
+        void addRow(ColumnRawPtrs & raw_columns, size_t row); /// Possible only when group was started.
 
-            ++total_merged_rows;
-            ++merged_rows;
-            /// TODO: sum_blocks_granularity += block_size;
-        }
-
-        /// Initialize aggregate descriptions with columns.
-        void initAggregateDescription(std::vector<AggregateDescription> & columns_to_aggregate)
-        {
-            size_t num_columns = columns_to_aggregate.size();
-            for (size_t column_number = 0; column_number < num_columns; ++column_number)
-                columns_to_aggregate[column_number].merged_column = columns[column_number].get();
-        }
-
-        Chunk pull(size_t num_result_columns);
+        Chunk pull();
 
     private:
         ColumnsDefinition & def;
+
+        bool is_group_started = false;
+
+        Row current_row;
+        bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
+
+        void addRowImpl(ColumnRawPtrs & raw_columns, size_t row);
+
+        /// Initialize aggregate descriptions with columns.
+        void initAggregateDescription();
     };
 
 private:
-    Row current_row;
-    bool current_row_is_zero = true;    /// Are all summed columns zero (or empty)? It is updated incrementally.
-
+    /// Order between members is important because merged_data has reference to columns_definition.
     ColumnsDefinition columns_definition;
     SummingMergedData merged_data;
-
-    Names column_names;
-
-    void addRow(SortCursor & cursor);
-    void insertCurrentRowIfNeeded();
-
-public:
-    /// Stores aggregation function, state, and columns to be used as function arguments.
-    struct AggregateDescription
-    {
-        /// An aggregate function 'sumWithOverflow' or 'sumMapWithOverflow' for summing.
-        AggregateFunctionPtr function;
-        IAggregateFunction::AddFunc add_function = nullptr;
-        std::vector<size_t> column_numbers;
-        IColumn * merged_column = nullptr;
-        AlignedBuffer state;
-        bool created = false;
-
-        /// In case when column has type AggregateFunction: use the aggregate function from itself instead of 'function' above.
-        bool is_agg_func_type = false;
-
-        void init(const char * function_name, const DataTypes & argument_types)
-        {
-            function = AggregateFunctionFactory::instance().get(function_name, argument_types);
-            add_function = function->getAddressOfAddFunction();
-            state.reset(function->sizeOfData(), function->alignOfData());
-        }
-
-        void createState()
-        {
-            if (created)
-                return;
-            if (is_agg_func_type)
-                merged_column->insertDefault();
-            else
-                function->create(state.data());
-            created = true;
-        }
-
-        void destroyState()
-        {
-            if (!created)
-                return;
-            if (!is_agg_func_type)
-                function->destroy(state.data());
-            created = false;
-        }
-
-        /// Explicitly destroy aggregation state if the stream is terminated
-        ~AggregateDescription()
-        {
-            destroyState();
-        }
-
-        AggregateDescription() = default;
-        AggregateDescription(AggregateDescription &&) = default;
-        AggregateDescription(const AggregateDescription &) = delete;
-    };
 };
 
 }
