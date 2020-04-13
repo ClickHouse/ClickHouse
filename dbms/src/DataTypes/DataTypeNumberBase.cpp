@@ -258,10 +258,14 @@ template class DataTypeNumberBase<UInt16>;
 template class DataTypeNumberBase<UInt32>;
 template class DataTypeNumberBase<UInt64>;
 template class DataTypeNumberBase<UInt128>;
+template class DataTypeNumberBase<bUInt128>;
+template class DataTypeNumberBase<bUInt256>;
 template class DataTypeNumberBase<Int8>;
 template class DataTypeNumberBase<Int16>;
 template class DataTypeNumberBase<Int32>;
 template class DataTypeNumberBase<Int64>;
+template class DataTypeNumberBase<bInt128>;
+template class DataTypeNumberBase<bInt256>;
 template class DataTypeNumberBase<Float32>;
 template class DataTypeNumberBase<Float64>;
 

@@ -126,7 +126,7 @@ public:
         return DecimalUtils::getFractionalPart(x, scale);
     }
 
-    T maxWholeValue() const { return getScaleMultiplier(maxPrecision() - scale) - T(1); }
+    T maxWholeValue() const { return getScaleMultiplier(maxPrecision() - scale) - 1; }
 
     bool canStoreWhole(T x) const
     {

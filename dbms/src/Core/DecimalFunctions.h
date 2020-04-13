@@ -25,6 +25,7 @@ template <typename T> T scaleMultiplier(UInt32 scale);
 template <> inline Int32 scaleMultiplier<Int32>(UInt32 scale) { return common::exp10_i32(scale); }
 template <> inline Int64 scaleMultiplier<Int64>(UInt32 scale) { return common::exp10_i64(scale); }
 template <> inline Int128 scaleMultiplier<Int128>(UInt32 scale) { return common::exp10_i128(scale); }
+template <> inline bInt128 scaleMultiplier<bInt128>(UInt32 scale) { return common::exp10_i128(scale); }
 template <> inline bInt256 scaleMultiplier<bInt256>(UInt32 scale) { return common::exp10_i256(scale); }
 
 /** Components of DecimalX value:
