@@ -13,8 +13,6 @@
 #include <utility>
 #include <shared_mutex>
 #include <Poco/Net/HTMLForm.h>
-#include <Poco/Logger.h>
-#include <common/logger_useful.h>
 
 namespace Poco { namespace Net { class HTTPServerResponse; } }
 

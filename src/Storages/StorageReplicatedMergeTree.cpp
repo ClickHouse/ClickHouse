@@ -2188,15 +2188,14 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
             FutureMergedMutatedPart future_merged_part;
+            auto merge_pred_for_single_part =
+                [&merge_pred] (const MergeTreeData::DataPartPtr & part, String * explain) -> bool
+                {
+                    return merge_pred.canMergeSinglePart(part, explain);
+                };
             if (max_source_parts_size_for_merge > 0 &&
-                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, nullptr,
-                                                  [&merge_pred](const MergeTreeData::DataPartPtr & part, String * explain) -> bool { return merge_pred.canMergeSinglePart(part, explain); }))
+                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, nullptr, merge_pred_for_single_part))
             {
-                /// We have to exclude parts, that are currently being writted with quorum. (check .../quorum/status node)
-                /// Also we have to exclude last parts written with quorum (check .../quorum/last_part node)
-//                if (global_context.getSettingsRef().insert_quorum)
-//                    excludeSomePartsFromMerge(future_merged_part);
-
                 success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
                     future_merged_part.name, future_merged_part.type, deduplicate, force_ttl);
             }
@@ -2673,53 +2672,6 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 }
 
 
-void StorageReplicatedMergeTree::deletePartFromPendingQuorum(const String & part_name)
-{
-    auto zookeeper = getZooKeeper();
-    /// Information on which replicas a part has been added, if the quorum has not yet been reached.
-    const String quorum_status_path = zookeeper_path + "/quorum/status";
-
-    /// Delete "status" node if required.
-
-    String value;
-    Coordination::Stat stat;
-
-    /// If there is no node, then all quorum INSERTs have already reached the quorum, and nothing is needed.
-    while (zookeeper->tryGet(quorum_status_path, value, &stat))
-    {
-        ReplicatedMergeTreeQuorumEntry quorum_entry;
-        quorum_entry.fromString(value);
-
-        if (quorum_entry.part_name != part_name)
-        {
-            /// There is no information about interested part in this node.
-            break;
-        }
-
-        /// Since that we are sure that interested part is being involved in insert with quorum.
-        /// Our goal is to delete "status" node and information from "last_part" node.
-
-        auto code = zookeeper->tryRemove(quorum_status_path, stat.version);
-
-        if (code == Coordination::ZOK)
-        {
-            break;
-        }
-        else if (code == Coordination::ZNONODE)
-        {
-            /// The quorum has already been achieved.
-            break;
-        }
-        else if (code == Coordination::ZBADVERSION)
-        {
-            /// Node was updated meanwhile. We must re-read it and repeat all the actions.
-            continue;
-        }
-        else
-            throw Coordination::Exception(code, quorum_status_path);
-    }
-}
-
 void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id, const String & part_name)
 {
     auto zookeeper = getZooKeeper();
@@ -2752,7 +2704,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id, 
         }
 
         /// De Morgan's law
-        if (part_name == "" || parts_with_quorum.added_parts[partition_id] == part_name)
+        if (part_name.empty() || parts_with_quorum.added_parts[partition_id] == part_name)
             parts_with_quorum.added_parts.erase(partition_id);
         else
             break;
@@ -2777,32 +2729,6 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id, 
         }
         else
             throw Coordination::Exception(code, quorum_last_part_path);
-    }
-}
-
-
-void StorageReplicatedMergeTree::excludeSomePartsFromMerge(FutureMergedMutatedPart & future_part)
-{
-    LOG_FATAL(&Poco::Logger::get("excludeSomePartsFromMerge"), "BEGIN!");
-
-    auto zookeeper = getZooKeeper();
-    /// Information on which replicas a part has been added, if the quorum has not yet been reached.
-    const String quorum_status_path = zookeeper_path + "/quorum/status";
-
-    String value;
-    Coordination::Stat stat;
-
-    if (zookeeper->tryGet(quorum_status_path, value, &stat)) {
-        ReplicatedMergeTreeQuorumEntry quorum_entry;
-        quorum_entry.fromString(value);
-
-        MergeTreeData::DataPartsVector & parts_to_merge = future_part.parts;
-
-        parts_to_merge.erase(
-            std::remove_if(
-                parts_to_merge.begin(), parts_to_merge.end(),
-                [&quorum_entry](const MergeTreeData::DataPartPtr & part_to_merge) { return part_to_merge->name == quorum_entry.part_name; }),
-            parts_to_merge.end());
     }
 }
 
@@ -5057,10 +4983,10 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
     }
 }
 
-void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & context)
+void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context)
 {
-    auto lock1 = lockStructureForShare(false, context.getCurrentQueryId());
-    auto lock2 = dest_table->lockStructureForShare(false, context.getCurrentQueryId());
+    auto lock1 = lockStructureForShare(false, query_context.getCurrentQueryId());
+    auto lock2 = dest_table->lockStructureForShare(false, query_context.getCurrentQueryId());
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(dest_table);
     if (!dest_table_storage)
@@ -5075,7 +5001,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     Stopwatch watch;
     MergeTreeData & src_data = dest_table_storage->checkStructureAndGetMergeTreeData(*this);
     auto src_data_id = src_data.getStorageID();
-    String partition_id = getPartitionIDFromQuery(partition, context);
+    String partition_id = getPartitionIDFromQuery(partition, query_context);
 
     DataPartsVector src_all_parts = src_data.getDataPartsVectorInPartition(MergeTreeDataPartState::Committed, partition_id);
     DataPartsVector src_parts;
@@ -5231,7 +5157,7 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     parts_to_remove.clear();
     cleanup_thread.wakeup();
 
-    if (context.getSettingsRef().replication_alter_partitions_sync > 1)
+    if (query_context.getSettingsRef().replication_alter_partitions_sync > 1)
     {
         lock2.release();
         dest_table_storage->waitForAllReplicasToProcessLogEntry(entry);
@@ -5246,7 +5172,10 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.back()).path_created;
     entry_delete.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-    if (context.getSettingsRef().replication_alter_partitions_sync > 1)
+    if (query_context.getSettingsRef().insert_quorum)
+        cleanLastPartNode(partition_id);
+
+    if (query_context.getSettingsRef().replication_alter_partitions_sync > 1)
     {
         lock1.release();
         waitForAllReplicasToProcessLogEntry(entry_delete);
@@ -5320,10 +5249,10 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
         return merger_mutator.ttl_merges_blocker.cancel();
 
     if (action_type == ActionLocks::PartsFetch)
-      return fetcher.blocker.cancel();
+        return fetcher.blocker.cancel();
 
     if (action_type == ActionLocks::PartsSend)
-      return data_parts_exchange_endpoint ? data_parts_exchange_endpoint->blocker.cancel() : ActionLock();
+        return data_parts_exchange_endpoint ? data_parts_exchange_endpoint->blocker.cancel() : ActionLock();
 
     if (action_type == ActionLocks::ReplicationQueue)
         return queue.actions_blocker.cancel();
