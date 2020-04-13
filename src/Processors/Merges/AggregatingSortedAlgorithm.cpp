@@ -1,4 +1,4 @@
-#include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/AggregatingSortedAlgorithm.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -8,17 +8,12 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int LOGICAL_ERROR;
-}
-
 namespace
 {
-    AggregatingSortedTransform::ColumnsDefinition defineColumns(
+    AggregatingSortedAlgorithm::ColumnsDefinition defineColumns(
         const Block & header, const SortDescription & description)
     {
-        AggregatingSortedTransform::ColumnsDefinition def = {};
+        AggregatingSortedAlgorithm::ColumnsDefinition def = {};
         size_t num_columns = header.columns();
 
         /// Fill in the column numbers that need to be aggregated.
@@ -53,7 +48,7 @@ namespace
                     type = nullptr;
 
                 // simple aggregate function
-                AggregatingSortedTransform::SimpleAggregateDescription desc(simple_aggr->getFunction(), i, type);
+                AggregatingSortedAlgorithm::SimpleAggregateDescription desc(simple_aggr->getFunction(), i, type);
                 if (desc.function->allocatesMemoryInArena())
                     def.allocates_memory_in_arena = true;
 
@@ -69,7 +64,7 @@ namespace
         return def;
     }
 
-    MutableColumns getMergedColumns(const Block & header, const AggregatingSortedTransform::ColumnsDefinition & def)
+    MutableColumns getMergedColumns(const Block & header, const AggregatingSortedAlgorithm::ColumnsDefinition & def)
     {
         MutableColumns columns;
         columns.resize(header.columns());
@@ -88,34 +83,17 @@ namespace
     }
 }
 
-AggregatingSortedTransform::AggregatingSortedTransform(
-    const Block & header, size_t num_inputs,
+AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
+    const Block & header_, size_t num_inputs,
     SortDescription description_, size_t max_block_size)
-    : IMergingTransform(num_inputs, header, header, true)
+    : IMergingAlgorithmWithDelayedChunk(num_inputs, std::move(description_))
+    , header(header_)
     , columns_definition(defineColumns(header, description_))
-    , merged_data(getMergedColumns(header, columns_definition), false, max_block_size)
-    , description(std::move(description_))
-    , source_chunks(num_inputs)
-    , cursors(num_inputs)
+    , merged_data(getMergedColumns(header, columns_definition), max_block_size, columns_definition)
 {
-    merged_data.initAggregateDescription(columns_definition);
 }
 
-void AggregatingSortedTransform::initializeInputs()
-{
-    queue = SortingHeap<SortCursor>(cursors);
-    is_queue_initialized = true;
-}
-
-void AggregatingSortedTransform::consume(Chunk chunk, size_t input_number)
-{
-    updateCursor(std::move(chunk), input_number);
-
-    if (is_queue_initialized)
-        queue.push(cursors[input_number]);
-}
-
-void AggregatingSortedTransform::updateCursor(Chunk chunk, size_t source_num)
+void AggregatingSortedAlgorithm::prepareChunk(Chunk & chunk) const
 {
     auto num_rows = chunk.getNumRows();
     auto columns = chunk.detachColumns();
@@ -128,56 +106,24 @@ void AggregatingSortedTransform::updateCursor(Chunk chunk, size_t source_num)
             columns[desc.column_number] = recursiveRemoveLowCardinality(columns[desc.column_number]);
 
     chunk.setColumns(std::move(columns), num_rows);
-
-    auto & source_chunk = source_chunks[source_num];
-
-    if (source_chunk)
-    {
-        /// Extend lifetime of last chunk.
-        last_chunk = std::move(source_chunk);
-        last_chunk_sort_columns = std::move(cursors[source_num].sort_columns);
-
-        source_chunk = std::move(chunk);
-        cursors[source_num].reset(source_chunk.getColumns(), {});
-    }
-    else
-    {
-        if (cursors[source_num].has_collation)
-            throw Exception("Logical error: " + getName() + " does not support collations", ErrorCodes::LOGICAL_ERROR);
-
-        source_chunk = std::move(chunk);
-        cursors[source_num] = SortCursorImpl(source_chunk.getColumns(), description, source_num);
-    }
 }
 
-void AggregatingSortedTransform::work()
+void AggregatingSortedAlgorithm::initialize(Chunks chunks)
 {
-    merge();
-    prepareOutputChunk(merged_data);
+    for (auto & chunk : chunks)
+        if (chunk)
+            prepareChunk(chunk);
 
-    if (has_output_chunk)
-    {
-        size_t num_rows = output_chunk.getNumRows();
-        auto columns = output_chunk.detachColumns();
-        auto & header = getOutputs().back().getHeader();
-
-        for (auto & desc : columns_definition.columns_to_simple_aggregate)
-        {
-            if (desc.inner_type)
-            {
-                auto & from_type = desc.inner_type;
-                auto & to_type = header.getByPosition(desc.column_number).type;
-                columns[desc.column_number] = recursiveTypeConversion(columns[desc.column_number], from_type, to_type);
-            }
-        }
-
-        output_chunk.setColumns(std::move(columns), num_rows);
-
-        merged_data.initAggregateDescription(columns_definition);
-    }
+    initializeQueue(std::move(chunks));
 }
 
-void AggregatingSortedTransform::merge()
+void AggregatingSortedAlgorithm::consume(Chunk chunk, size_t source_num)
+{
+    prepareChunk(chunk);
+    updateCursor(std::move(chunk), source_num);
+}
+
+IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
 {
     /// We take the rows in the correct order and put them in `merged_block`, while the rows are no more than `max_block_size`
     while (queue.isValid())
@@ -213,7 +159,7 @@ void AggregatingSortedTransform::merge()
             if (merged_data.hasEnoughRows())
             {
                 last_key.reset();
-                return;
+                Status(merged_data.pull(columns_definition, header));
             }
 
             /// We will write the data for the group. We copy the values of ordinary columns.
@@ -242,8 +188,7 @@ void AggregatingSortedTransform::merge()
         {
             /// We get the next block from the corresponding source, if there is one.
             queue.removeTop();
-            requestDataForInput(current.impl->order);
-            return;
+            return Status(current.impl->order);
         }
     }
 
@@ -255,10 +200,10 @@ void AggregatingSortedTransform::merge()
     }
 
     last_chunk_sort_columns.clear();
-    is_finished = true;
+    return Status(merged_data.pull(columns_definition, header), true);
 }
 
-void AggregatingSortedTransform::addRow(SortCursor & cursor)
+void AggregatingSortedAlgorithm::addRow(SortCursor & cursor)
 {
     for (auto & desc : columns_definition.columns_to_aggregate)
         desc.column->insertMergeFrom(*cursor->all_columns[desc.column_number], cursor->pos);
@@ -270,7 +215,7 @@ void AggregatingSortedTransform::addRow(SortCursor & cursor)
     }
 }
 
-void AggregatingSortedTransform::insertSimpleAggregationResult()
+void AggregatingSortedAlgorithm::insertSimpleAggregationResult()
 {
     for (auto & desc : columns_definition.columns_to_simple_aggregate)
     {
@@ -278,5 +223,6 @@ void AggregatingSortedTransform::insertSimpleAggregationResult()
         desc.destroyState();
     }
 }
+
 
 }

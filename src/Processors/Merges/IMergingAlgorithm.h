@@ -25,12 +25,11 @@ public:
     virtual Status merge() = 0;
 
     IMergingAlgorithm() = default;
-    IMergingAlgorithm(IMergingAlgorithm &&) = default;
     virtual ~IMergingAlgorithm() = default;
 };
 
 // TODO: use when compile with clang which could support it
 // template <class T>
-// concept MergingAlgorithm = std::is_base_of<IMergingAlgorithm, T>::value && std::is_move_constructible<T>::value;
+// concept MergingAlgorithm = std::is_base_of<IMergingAlgorithm, T>::value;
 
 }
