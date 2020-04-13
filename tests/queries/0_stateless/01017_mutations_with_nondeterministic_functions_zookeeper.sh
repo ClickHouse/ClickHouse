@@ -43,6 +43,12 @@ ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 DELETE WHERE ignore(rand())" 2>&1 
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = y + rand() % 1 WHERE not ignore()" 2>&1 \
 | fgrep -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
 
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = x + arrayCount(x -> (x + y) % 2, range(y)) WHERE not ignore()" 2>&1 > /dev/null \
+&& echo 'OK' || echo 'FAIL'
+
+${CLICKHOUSE_CLIENT} --query "ALTER TABLE $R1 UPDATE y = x + arrayCount(x -> (rand() + x) % 2, range(y)) WHERE not ignore()" 2>&1 \
+| fgrep -q "must use only deterministic functions" && echo 'OK' || echo 'FAIL'
+
 
 # For regular tables we do not enforce deterministic functions
 ${CLICKHOUSE_CLIENT} --query "ALTER TABLE $T1 DELETE WHERE rand() = 0" 2>&1 > /dev/null \
