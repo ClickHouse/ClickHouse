@@ -46,9 +46,6 @@ public:
 
         /// Names of columns from header.
         Names column_names;
-
-        /// It's not the same as column_names.size()
-        size_t getNumColumns() const { return column_numbers_not_to_aggregate.size() + columns_to_aggregate.size(); }
     };
 
     /// Specialization for SummingSortedTransform. Inserts only data for non-aggregated columns.

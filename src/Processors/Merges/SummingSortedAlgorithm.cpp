@@ -38,7 +38,8 @@ struct SummingSortedAlgorithm::AggregateDescription
     AlignedBuffer state;
     bool created = false;
 
-    /// In case when column has type AggregateFunction: use the aggregate function from itself instead of 'function' above.
+    /// In case when column has type AggregateFunction:
+    /// use the aggregate function from itself instead of 'function' above.
     bool is_agg_func_type = false;
 
     void init(const char * function_name, const DataTypes & argument_types)
@@ -333,12 +334,13 @@ static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
 
 static MutableColumns getMergedDataColumns(
     const Block & header,
-    const SummingSortedAlgorithm::ColumnsDefinition & columns_definition)
+    const SummingSortedAlgorithm::ColumnsDefinition & def)
 {
     MutableColumns columns;
-    columns.reserve(columns_definition.getNumColumns());
+    size_t num_columns = def.column_numbers_not_to_aggregate.size() + def.columns_to_aggregate.size();
+    columns.reserve(num_columns);
 
-    for (auto & desc : columns_definition.columns_to_aggregate)
+    for (auto & desc : def.columns_to_aggregate)
     {
         // Wrap aggregated columns in a tuple to match function signature
         if (!desc.is_agg_func_type && isTuple(desc.function->getReturnType()))
@@ -354,7 +356,7 @@ static MutableColumns getMergedDataColumns(
             columns.emplace_back(header.safeGetByPosition(desc.column_numbers[0]).column->cloneEmpty());
     }
 
-    for (auto & column_number : columns_definition.column_numbers_not_to_aggregate)
+    for (auto & column_number : def.column_numbers_not_to_aggregate)
         columns.emplace_back(header.safeGetByPosition(column_number).type->createColumn());
 
     return columns;
@@ -496,12 +498,14 @@ void SummingSortedAlgorithm::SummingMergedData::finishGroup()
                     if (desc.column_numbers.size() == 1)
                     {
                         // Flag row as non-empty if at least one column number if non-zero
-                        current_row_is_zero = current_row_is_zero && desc.merged_column->isDefaultAt(desc.merged_column->size() - 1);
+                        current_row_is_zero = current_row_is_zero
+                                              && desc.merged_column->isDefaultAt(desc.merged_column->size() - 1);
                     }
                     else
                     {
                         /// It is sumMapWithOverflow aggregate function.
-                        /// Assume that the row isn't empty in this case (just because it is compatible with previous version)
+                        /// Assume that the row isn't empty in this case
+                        ///   (just because it is compatible with previous version)
                         current_row_is_zero = false;
                     }
                 }
@@ -574,11 +578,11 @@ void SummingSortedAlgorithm::SummingMergedData::addRowImpl(ColumnRawPtrs & raw_c
             else
             {
                 // Gather all source columns into a vector
-                ColumnRawPtrs columns(desc.column_numbers.size());
+                ColumnRawPtrs column_ptrs(desc.column_numbers.size());
                 for (size_t i = 0; i < desc.column_numbers.size(); ++i)
-                    columns[i] = raw_columns[desc.column_numbers[i]];
+                    column_ptrs[i] = raw_columns[desc.column_numbers[i]];
 
-                desc.add_function(desc.function.get(), desc.state.data(), columns.data(), row, nullptr);
+                desc.add_function(desc.function.get(), desc.state.data(), column_ptrs.data(), row, nullptr);
             }
         }
     }
