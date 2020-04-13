@@ -26,7 +26,6 @@ void IMergingAlgorithmWithDelayedChunk::initializeQueue(Chunks chunks)
         if (!source_chunks[source_num])
             continue;
 
-        source_chunks[source_num] = std::move(source_chunks[source_num]);
         cursors[source_num] = SortCursorImpl(source_chunks[source_num].getColumns(), description, source_num);
     }
 
