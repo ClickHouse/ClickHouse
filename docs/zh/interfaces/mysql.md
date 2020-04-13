@@ -1,22 +1,25 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_priority: 20
+toc_title: "MySQL\u63A5\u53E3"
 ---
 
-# MySQL interface {#mysql-interface}
+# MySQL接口 {#mysql-interface}
 
-ClickHouse supports MySQL wire protocol. It can be enabled by [mysql\_port](../operations/server_settings/settings.md#server_settings-mysql_port) setting in configuration file:
+ClickHouse支持MySQL线协议。 它可以通过启用 [mysql\_port](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-mysql_port) 在配置文件中设置:
 
 ``` xml
 <mysql_port>9004</mysql_port>
 ```
 
-Example of connecting using command-line tool `mysql`:
+使用命令行工具连接的示例 `mysql`:
 
 ``` bash
 $ mysql --protocol tcp -u default -P 9004
 ```
 
-Output if a connection succeeded:
+如果连接成功，则输出:
 
 ``` text
 Welcome to the MySQL monitor.  Commands end with ; or \g.
@@ -34,13 +37,13 @@ Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
 mysql>
 ```
 
-For compatibility with all MySQL clients, it is recommended to specify user password with [double SHA1](../operations/settings/settings_users.md#password_double_sha1_hex) in configuration file.
-If user password is specified using [SHA256](../operations/settings/settings_users.md#password_sha256_hex), some clients won’t be able to authenticate (mysqljs and old versions of command-line tool mysql).
+为了与所有MySQL客户端兼容，建议使用以下命令指定用户密码 [双SHA1](../operations/settings/settings_users.md#password_double_sha1_hex) 在配置文件中。
+如果使用用户密码指定 [SHA256](../operations/settings/settings_users.md#password_sha256_hex)，一些客户端将无法进行身份验证（mysqljs和旧版本的命令行工具mysql）。
 
-Restrictions:
+限制:
 
--   prepared queries are not supported
+-   不支持准备好的查询
 
--   some data types are sent as strings
+-   某些数据类型以字符串形式发送
 
-[Original article](https://clickhouse.tech/docs/en/interfaces/mysql/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/interfaces/mysql/) <!--hide-->

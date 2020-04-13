@@ -665,12 +665,10 @@ String Context::getUserName() const
     return access->getUserName();
 }
 
-UUID Context::getUserID() const
+std::optional<UUID> Context::getUserID() const
 {
     auto lock = getLock();
-    if (!user_id)
-        throw Exception("No current user", ErrorCodes::LOGICAL_ERROR);
-    return *user_id;
+    return user_id;
 }
 
 
@@ -909,7 +907,6 @@ void Context::setSettings(const Settings & settings_)
     auto old_allow_introspection_functions = settings.allow_introspection_functions;
 
     settings = settings_;
-    active_default_settings = nullptr;
 
     if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
         calculateAccessRights();
@@ -919,7 +916,6 @@ void Context::setSettings(const Settings & settings_)
 void Context::setSetting(const StringRef & name, const String & value)
 {
     auto lock = getLock();
-    active_default_settings = nullptr;
     if (name == "profile")
     {
         setProfile(value);
@@ -935,7 +931,6 @@ void Context::setSetting(const StringRef & name, const String & value)
 void Context::setSetting(const StringRef & name, const Field & value)
 {
     auto lock = getLock();
-    active_default_settings = nullptr;
     if (name == "profile")
     {
         setProfile(value.safeGet<String>());
@@ -959,20 +954,6 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     auto lock = getLock();
     for (const SettingChange & change : changes)
         applySettingChange(change);
-}
-
-
-void Context::resetSettingsToDefault()
-{
-    auto lock = getLock();
-    auto default_settings = getAccess()->getDefaultSettings();
-    if (default_settings && (default_settings == active_default_settings))
-        return;
-    if (default_settings)
-        setSettings(*default_settings);
-    else
-        setSettings(Settings{});
-    active_default_settings = default_settings;
 }
 
 

@@ -6,7 +6,6 @@
 #include <TableFunctions/ITableFunction.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
-#include <Access/AccessFlags.h>
 #include <TableFunctions/TableFunctionMerge.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -67,8 +66,6 @@ StoragePtr TableFunctionMerge::executeImpl(const ASTPtr & ast_function, const Co
 
     String source_database = args[0]->as<ASTLiteral &>().value.safeGet<String>();
     String table_name_regexp = args[1]->as<ASTLiteral &>().value.safeGet<String>();
-
-    context.checkAccess(AccessType::merge, source_database);
 
     auto res = StorageMerge::create(
         StorageID(getDatabaseName(), table_name),

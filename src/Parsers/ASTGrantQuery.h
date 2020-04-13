@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST.h>
 #include <Access/AccessRightsElement.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 
 
 namespace DB
@@ -15,7 +16,7 @@ class ASTExtendedRoleSet;
   * GRANT role [,...] TO {user_name | role_name | CURRENT_USER} [,...] [WITH ADMIN OPTION]
   * REVOKE [ADMIN OPTION FOR] role [,...] FROM {user_name | role_name | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
   */
-class ASTGrantQuery : public IAST
+class ASTGrantQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     enum class Kind
@@ -34,5 +35,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void replaceCurrentUserTagWithName(const String & current_user_name);
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTGrantQuery>(clone()); }
 };
 }

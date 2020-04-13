@@ -403,7 +403,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table});
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
-        as_storage_lock = as_storage->lockStructureForShare(false, context.getCurrentQueryId());
+        as_storage_lock = as_storage->lockStructureForShare(
+                false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
         properties.columns = as_storage->getColumns();
 
         /// Secondary indices make sense only for MergeTree family of storage engines.
@@ -765,7 +766,14 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
 
     if (!create.to_table.empty())
-        required_access.emplace_back(AccessType::INSERT, create.to_database, create.to_table);
+        required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, create.to_database, create.to_table);
+
+    if (create.storage && create.storage->engine)
+    {
+        auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
+        if (source_access_type != AccessType::NONE)
+            required_access.emplace_back(source_access_type);
+    }
 
     return required_access;
 }

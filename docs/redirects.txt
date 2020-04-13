@@ -98,6 +98,7 @@ functions/ym_dict_functions.md query_language/functions/ym_dict_functions.md
 interfaces/http_interface.md interfaces/http.md
 interfaces/third-party_client_libraries.md interfaces/third-party/client_libraries.md
 interfaces/third-party_gui.md interfaces/third-party/gui.md
+introduction/features_considered_disadvantages.md introduction/distinctive_features.md
 introduction/possible_silly_questions.md faq/general.md
 introduction/ya_metrika_task.md introduction/history.md
 operations/performance/sampling_query_profiler.md operations/optimizing_performance/sampling_query_profiler.md

@@ -134,7 +134,7 @@ Default value: 0.
 
 ## max\_http\_get\_redirects {#setting-max_http_get_redirects}
 
-Limits the maximum number of HTTP GET redirect hops for [URL](../../engines/table_engines/special/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../query_language/create/#create-table-query) query and by the [url](../../sql_reference/table_functions/url.md) table function.
+Limits the maximum number of HTTP GET redirect hops for [URL](../../engines/table_engines/special/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../sql_reference/statements/create.md#create-table-query) query and by the [url](../../sql_reference/table_functions/url.md) table function.
 
 Possible values:
 
@@ -505,6 +505,24 @@ Example:
 
 ``` text
 log_queries=1
+```
+
+## log\_queries\_min\_type {#settings-log-queries-min-type}
+
+`query_log` minimal type to log.
+
+Possible values:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Default value: `QUERY_START`.
+
+Can be used to limit which entiries will goes to `query_log`, say you are interesting only in errors, then you can use `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
 ```
 
 ## log\_query\_threads {#settings-log-query-threads}

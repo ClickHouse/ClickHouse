@@ -42,9 +42,11 @@ function configure
     rm db0/metadata/system/* -rf ||:
 
     # Make copies of the original db for both servers. Use hardlinks instead
-    # of copying.
+    # of copying. Be careful to remove preprocessed configs or it can lead to
+    # weird effects.
     rm -r left/db ||:
     rm -r right/db ||:
+    rm -r db0/preprocessed_configs ||:
     cp -al db0/ left/db/
     cp -al db0/ right/db/
 }
@@ -148,7 +150,7 @@ function run_tests
 
         TIMEFORMAT=$(printf "$test_name\t%%3R\t%%3U\t%%3S\n")
         # the grep is to filter out set -x output and keep only time output
-        { time "$script_dir/perf.py" --host=localhost --port=9001 --host=localhost --port=9002 "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" || continue
+        { time "$script_dir/perf.py" --host localhost localhost --port 9001 9002 -- "$test" > "$test_name-raw.tsv" 2> "$test_name-err.log" ; } 2>&1 >/dev/null | grep -v ^+ >> "wall-clock-times.tsv" || continue
 
         # The test completed with zero status, so we treat stderr as warnings
         mv "$test_name-err.log" "$test_name-warn.log"
