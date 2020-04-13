@@ -59,6 +59,9 @@ public:
 
         if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
         {
+            /// Lambda functions also may be non-deterministic. But we skip them for simplicity.
+            /// Replication will work correctly even if non-deterministic function is used, 
+            ///  it will select any of the results and discard other.
             if (function->name != "lambda")
             {
                 const auto func = FunctionFactory::instance().get(function->name, data.context);
