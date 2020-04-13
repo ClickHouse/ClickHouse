@@ -30,16 +30,16 @@ SHOW CREATE USER test_user_01075;
 ALTER USER test_user_01075 HOST LIKE '@.somesite.com';
 SHOW CREATE USER test_user_01075;
 
-ALTER USER test_user_01075 HOST NAME REGEXP '.*\.anothersite\.com';
+ALTER USER test_user_01075 HOST REGEXP '.*\.anothersite\.com';
 SHOW CREATE USER test_user_01075;
 
-ALTER USER test_user_01075 HOST NAME REGEXP '.*\.anothersite\.com', '.*\.anothersite\.org';
+ALTER USER test_user_01075 HOST REGEXP '.*\.anothersite\.com', '.*\.anothersite\.org';
 SHOW CREATE USER test_user_01075;
 
-ALTER USER test_user_01075 HOST NAME REGEXP '.*\.anothersite2\.com', NAME REGEXP '.*\.anothersite2\.org';
+ALTER USER test_user_01075 HOST REGEXP '.*\.anothersite2\.com', REGEXP '.*\.anothersite2\.org';
 SHOW CREATE USER test_user_01075;
 
-ALTER USER test_user_01075 HOST NAME REGEXP '.*\.anothersite3\.com' HOST NAME REGEXP '.*\.anothersite3\.org';
+ALTER USER test_user_01075 HOST REGEXP '.*\.anothersite3\.com' HOST REGEXP '.*\.anothersite3\.org';
 SHOW CREATE USER test_user_01075;
 
 DROP USER test_user_01075;
