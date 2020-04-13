@@ -31,6 +31,8 @@ public:
     /// * simple aggregate functions, which store states into ordinary columns
     struct ColumnsDefinition
     {
+        ColumnsDefinition();
+        ColumnsDefinition(ColumnsDefinition &&) noexcept;
         ~ColumnsDefinition();
 
         /// Columns with which numbers should not be aggregated.
