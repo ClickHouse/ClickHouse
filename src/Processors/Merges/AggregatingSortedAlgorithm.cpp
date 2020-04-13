@@ -7,11 +7,13 @@
 namespace DB
 {
 
+AggregatingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
+
 /// Stores information for aggregation of AggregateFunction columns
 struct AggregatingSortedAlgorithm::AggregateDescription
 {
     ColumnAggregateFunction * column = nullptr;
-    const size_t column_number = 0;
+    const size_t column_number = 0; /// Position in header.
 
     AggregateDescription() = default;
     explicit AggregateDescription(size_t col_number) : column_number(col_number) {}

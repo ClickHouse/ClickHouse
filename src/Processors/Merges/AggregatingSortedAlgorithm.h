@@ -31,6 +31,8 @@ public:
     /// * simple aggregate functions, which store states into ordinary columns
     struct ColumnsDefinition
     {
+        ~ColumnsDefinition();
+
         /// Columns with which numbers should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
         std::vector<AggregateDescription> columns_to_aggregate;
@@ -51,13 +53,16 @@ private:
     public:
         AggregatingMergedData(MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_);
 
+        /// Group is a group of rows with the same sorting key. It represents single row in result.
+        /// Algorithm is: start group, add several rows, finish group.
+        /// Then pull chunk when enough groups were added.
         void startGroup(const ColumnRawPtrs & raw_columns, size_t row);
         void finishGroup();
 
         bool isGroupStarted() const { return is_group_started; }
-        void addRow(SortCursor & cursor);
+        void addRow(SortCursor & cursor); /// Possible only when group was started.
 
-        Chunk pull();
+        Chunk pull(); /// Possible only if group was finished.
 
     private:
         ColumnsDefinition & def;
