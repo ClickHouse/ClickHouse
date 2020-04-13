@@ -1,10 +1,7 @@
-SET any_join_distinct_right_table_keys = 1;
-
 USE test;
 
 DROP TABLE IF EXISTS join;
-CREATE TABLE join (UserID UInt64, loyalty Int8) ENGINE = Join(ANY, INNER, UserID)
-SETTINGS any_join_distinct_right_table_keys = 1;
+CREATE TABLE join (UserID UInt64, loyalty Int8) ENGINE = Join(SEMI, LEFT, UserID);
 
 INSERT INTO join
 SELECT
@@ -20,17 +17,17 @@ HAVING (yandex + google) > 10;
 SELECT
     loyalty,
     count()
-FROM hits ANY INNER JOIN join USING UserID
+FROM hits SEMI LEFT JOIN join USING UserID
 GROUP BY loyalty
 ORDER BY loyalty ASC;
 
 DETACH TABLE join;
-ATTACH TABLE join (UserID UInt64, loyalty Int8) ENGINE = Join(ANY, INNER, UserID);
+ATTACH TABLE join (UserID UInt64, loyalty Int8) ENGINE = Join(SEMI, LEFT, UserID);
 
 SELECT
     loyalty,
     count()
-FROM hits ANY INNER JOIN join USING UserID
+FROM hits SEMI LEFT JOIN join USING UserID
 GROUP BY loyalty
 ORDER BY loyalty ASC;
 

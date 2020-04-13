@@ -295,17 +295,22 @@ public:
         : key_columns(key_columns_)
     {}
 
-    FindResult findKey(const DictionaryReader & reader, size_t i, const Arena &)
+    FindResult findKey(const TableJoin & table_join, size_t row, const Arena &)
     {
+        const DictionaryReader & reader = *table_join.dictionary_reader;
         if (!read_result)
         {
             reader.readKeys(*key_columns[0], key_columns[0]->size(), read_result, found, positions);
             result.block = &read_result;
-            /// TODO: check types and correct nullability
+
+            if (table_join.forceNullableRight())
+                for (auto & column : read_result)
+                    if (table_join.rightBecomeNullable(column.type))
+                        JoinCommon::convertColumnToNullable(column);
         }
 
-        result.row_num = positions[i];
-        return FindResult(&result, found[i]);
+        result.row_num = positions[row];
+        return FindResult(&result, found[row]);
     }
 
 private:
@@ -985,14 +990,14 @@ IColumn::Filter switchJoinRightColumns(const Maps & maps_, AddedColumns & added_
 }
 
 template <ASTTableJoin::Kind KIND, ASTTableJoin::Strictness STRICTNESS>
-IColumn::Filter dictionaryJoinRightColumns(const DictionaryReader & reader, AddedColumns & added_columns, const ConstNullMapPtr & null_map)
+IColumn::Filter dictionaryJoinRightColumns(const TableJoin & table_join, AddedColumns & added_columns, const ConstNullMapPtr & null_map)
 {
     if constexpr (KIND == ASTTableJoin::Kind::Left &&
         (STRICTNESS == ASTTableJoin::Strictness::Any ||
         STRICTNESS == ASTTableJoin::Strictness::Semi ||
         STRICTNESS == ASTTableJoin::Strictness::Anti))
     {
-        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(reader, added_columns, null_map);
+        return joinRightColumnsSwitchNullability<KIND, STRICTNESS, KeyGetterForDict>(table_join, added_columns, null_map);
     }
 
     throw Exception("Logical error: wrong JOIN combination", ErrorCodes::LOGICAL_ERROR);
@@ -1059,7 +1064,7 @@ void HashJoin::joinBlockImpl(
     added_columns.need_filter = need_filter || has_required_right_keys;
 
     IColumn::Filter row_filter = overDictionary() ?
-        dictionaryJoinRightColumns<KIND, STRICTNESS>(*table_join->dictionary_reader, added_columns, null_map) :
+        dictionaryJoinRightColumns<KIND, STRICTNESS>(*table_join, added_columns, null_map) :
         switchJoinRightColumns<KIND, STRICTNESS>(maps_, added_columns, data->type, null_map);
 
     for (size_t i = 0; i < added_columns.size(); ++i)

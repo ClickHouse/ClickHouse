@@ -122,6 +122,8 @@ public:
     size_t rightKeyInclusion(const String & name) const;
     NameSet requiredRightKeys() const;
 
+    bool leftBecomeNullable(const DataTypePtr & column_type) const;
+    bool rightBecomeNullable(const DataTypePtr & column_type) const;
     void addJoinedColumn(const NameAndTypePair & joined_column);
     void addJoinedColumnsAndCorrectNullability(Block & sample_block) const;
 
