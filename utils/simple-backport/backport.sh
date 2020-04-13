@@ -10,10 +10,13 @@ merge_base=$(git merge-base origin/master "origin/$branch")
 git log "$merge_base..origin/master" --first-parent > master-log.txt
 git log "$merge_base..origin/$branch" --first-parent > "$branch-log.txt"
 
+# NOTE keep in sync with ./changelog.sh.
 # Search for PR numbers in commit messages. First variant is normal merge, and second
-# variant is squashed.
+# variant is squashed. Next are some backport message variants.
 find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
-                  s/^.*(#\([[:digit:]]\+\))$/\1/p")
+                  s/^.*(#\([[:digit:]]\+\))$/\1/p;
+                  s/^.*back[- ]*port[ ]*#\([[:digit:]]\+\).*$/\1/Ip;
+                  s/^.*cherry[- ]*pick[ ]*#\([[:digit:]]\+\).*$/\1/Ip")
 
 "${find_prs[@]}" master-log.txt | sort -rn > master-prs.txt
 "${find_prs[@]}" "$branch-log.txt" | sort -rn > "$branch-prs.txt"
@@ -39,7 +42,7 @@ do
             rm "$file"
             break
         fi
-        sleep 0.5
+        sleep 0.1
     fi
 
     if ! [ "$pr" == "$(jq -r .number "$file")" ]
@@ -61,7 +64,12 @@ do
     if echo "$labels" | grep -x "pr-must-backport\|v$branch-must-backport" > /dev/null; then action="backport"; fi
     if echo "$labels" | grep -x "v$branch-conflicts" > /dev/null;                       then action="conflict"; fi
     if echo "$labels" | grep -x "pr-no-backport\|v$branch-no-backport" > /dev/null;     then action="no-backport"; fi
-    if echo "$labels" | grep -x "v$branch\|v$branch-backported" > /dev/null;            then action="done"; fi
+    # FIXME Ignore "backported" labels for now. If we can't find the backport commit,
+    # this means that the changelog script also won't be able to. An alternative
+    # way to mark PR as backported is to add an empty commit with text like
+    # "backported #12345", so that it can be found between tags and put in proper
+    # place in changelog.
+    #if echo "$labels" | grep -x "v$branch\|v$branch-backported" > /dev/null;            then action="done"; fi
 
     # Find merge commit SHA for convenience
     merge_sha="$(jq -r .merge_commit_sha "$file")"
