@@ -1,0 +1,23 @@
+<test>
+    <stop_conditions>
+        <all_of>
+            <total_time_ms>20000</total_time_ms>
+        </all_of>
+        <any_of>
+            <total_time_ms>40000</total_time_ms>
+        </any_of>
+    </stop_conditions>
+
+
+    <substitutions>
+        <substitution>
+           <name>table</name>
+           <values>
+               <value>numbers(100000000)</value>
+           </values>
+        </substitution>
+    </substitutions>
+
+    <query>SELECT rand() FROM {table} </query>
+    <query>SELECT rand64() FROM {table} </query>
+</test>

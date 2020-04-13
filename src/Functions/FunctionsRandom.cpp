@@ -8,21 +8,15 @@
 namespace DB
 {
 
+DECLARE_MULTITARGET_CODE(
+
 namespace
 {
-    /// NOTE Probably
-    ///    http://www.pcg-random.org/
-    /// or http://www.math.sci.hiroshima-u.ac.jp/~m-mat/MT/SFMT/
-    /// or http://docs.yeppp.info/c/group__yep_random___w_e_l_l1024a.html
-    /// could go better.
-
     struct LinearCongruentialGenerator
     {
-        /// Constants from `man lrand48_r`.
         static constexpr UInt64 a = 0x5DEECE66D;
         static constexpr UInt64 c = 0xB;
 
-        /// And this is from `head -c8 /dev/urandom | xxd -p`
         UInt64 current = 0x09826f4a081cee35ULL;
 
         void seed(UInt64 value)
@@ -63,7 +57,8 @@ void RandImpl::execute(char * output, size_t size)
         unalignedStore<UInt32>(output + 12, generator3.next());
     }
 
-    /// It is guaranteed (by PaddedPODArray) that we can overwrite up to 15 bytes after end.
 }
+
+) //DECLARE_MULTITARGET_CODE
 
 }

@@ -5,7 +5,10 @@
 #include <Functions/IFunctionImpl.h>
 #include <IO/WriteHelpers.h>
 
-
+#include <Functions/TargetSpecific.h>
+#include <Functions/PerformanceAdaptors.h>
+// #include "TargetSpecific.h"
+// #include "PerformanceAdaptors.h"
 namespace DB
 {
 
@@ -34,9 +37,10 @@ namespace ErrorCodes
   * This means that the timer must be of sufficient resolution to give different values to each block.
   */
 
+DECLARE_MULTITARGET_CODE(
+
 struct RandImpl
 {
-    /// Fill memory with random data. The memory region must be 15-bytes padded.
     static void execute(char * output, size_t size);
 };
 
@@ -46,7 +50,6 @@ class FunctionRandom : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRandom>(); }
 
     String getName() const override
     {
@@ -80,6 +83,23 @@ public:
         RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
 
         block.getByPosition(result).column = std::move(col_to);
+    }
+};
+
+) // DECLARE_MULTITARGET_CODE
+
+template <typename ToType, typename Name>
+class FunctionRandom : public FunctionPerformanceAdaptor<TargetSpecific::Default::FunctionRandom<ToType, Name>>
+{
+public:
+    FunctionRandom() {
+        registerImplementation<TargetSpecific::SSE4::FunctionRandom<ToType, Name>>(TargetArch::SSE4);
+        registerImplementation<TargetSpecific::AVX::FunctionRandom<ToType, Name>>(TargetArch::AVX);
+        registerImplementation<TargetSpecific::AVX2::FunctionRandom<ToType, Name>>(TargetArch::AVX2);
+        registerImplementation<TargetSpecific::AVX512::FunctionRandom<ToType, Name>>(TargetArch::AVX512);
+    }
+    static FunctionPtr create(const Context &) {
+        return std::make_shared<FunctionRandom<ToType, Name>>();
     }
 };
 
