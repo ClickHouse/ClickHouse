@@ -304,7 +304,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
 
                 InterpreterInsertQuery interp(query_ast, *job.local_context);
                 auto block_io = interp.execute();
-                assertBlocksHaveEqualStructure(block_io.out->getHeader(), shard_block, "flushing shard block for " + storage.getStorageID().getNameForLogs());
+                assertBlocksHaveEqualStructure(block_io.out->getHeader(), shard_block, "flushing shard block for " + storage.getName());
                 job.stream = block_io.out;
                 job.stream->writePrefix();
             }
@@ -545,7 +545,7 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 
     auto block_io = interp.execute();
 
-    assertBlocksHaveEqualStructure(block_io.out->getHeader(), block, "flushing " + storage.getStorageID().getNameForLogs());
+    assertBlocksHaveEqualStructure(block_io.out->getHeader(), block, "flushing " + storage.getName());
 
     block_io.out->writePrefix();
 
