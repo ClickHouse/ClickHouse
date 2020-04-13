@@ -251,6 +251,15 @@ enum class JoinAlgorithm
 };
 using SettingJoinAlgorithm = SettingEnum<JoinAlgorithm>;
 
+
+enum class SpecialSort
+{
+    NOT_SPECIFIED = 0,
+    OPENCL_BITONIC,
+};
+using SettingSpecialSort = SettingEnum<SpecialSort>;
+
+
 /// Which rows should be included in TOTALS.
 enum class TotalsMode
 {
