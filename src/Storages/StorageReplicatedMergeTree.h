@@ -464,13 +464,9 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
-    /// Delete particular part name not to track it in future.
-    void deletePartFromPendingQuorum(const String & part_name);
-
-
+    /// Deletes info from quorum/last_part node for particular partition_id.
+    /// If part_name if specified, deletes only if last_part == part_name.
     void cleanLastPartNode(const String & partition_id, const String & part_name = "");
-
-    void excludeSomePartsFromMerge(FutureMergedMutatedPart & future_part);
 
     /// Creates new block number if block with such block_id does not exist
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(

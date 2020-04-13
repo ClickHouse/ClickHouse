@@ -51,10 +51,7 @@ class MergeTreeDataMergerMutator
 public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)>;
     using AllowedSingleMergePredicate = std::function<bool (const MergeTreeData::DataPartPtr &, String *)>;
-//    template <class... T>
-//    using AllowedMergingPredicate = std::function<bool (T... args)>;
 
-public:
     MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size);
 
     /** Get maximum total size of parts to do merge, at current moment of time.
