@@ -2052,8 +2052,6 @@ void StorageReplicatedMergeTree::mutationsUpdatingTask()
 
 BackgroundProcessingPoolTaskResult StorageReplicatedMergeTree::queueTask()
 {
-    LOG_FATAL(&Poco::Logger::get("queueTask()"), "begin");
-
     /// If replication queue is stopped exit immediately as we successfully executed the task
     if (queue.actions_blocker.isCancelled())
     {
@@ -2583,7 +2581,6 @@ String StorageReplicatedMergeTree::findReplicaHavingCoveringPart(
   */
 void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 {
-    LOG_FATAL(&Poco::Logger::get("updateQuorum"), "BEGIN!");
     auto zookeeper = getZooKeeper();
 
     /// Information on which replicas a part has been added, if the quorum has not yet been reached.
@@ -3014,7 +3011,6 @@ void StorageReplicatedMergeTree::startup()
 
 void StorageReplicatedMergeTree::shutdown()
 {
-    LOG_FATAL(&Poco::Logger::get("shutdown"), "SHUTDOWN!");
     clearOldPartsFromFilesystem(true);
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
@@ -5324,17 +5320,10 @@ ActionLock StorageReplicatedMergeTree::getActionLock(StorageActionBlockType acti
         return merger_mutator.ttl_merges_blocker.cancel();
 
     if (action_type == ActionLocks::PartsFetch)
-    {
       return fetcher.blocker.cancel();
-    }
-
 
     if (action_type == ActionLocks::PartsSend)
-    {
-      LOG_FATAL(&Poco::Logger::get("ActionLock"), "Cancel PartsSend");
       return data_parts_exchange_endpoint ? data_parts_exchange_endpoint->blocker.cancel() : ActionLock();
-    }
-
 
     if (action_type == ActionLocks::ReplicationQueue)
         return queue.actions_blocker.cancel();
