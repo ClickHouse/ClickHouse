@@ -18,6 +18,7 @@ public:
     bool id_mode = false;  /// If true then `names` and `except_names` keeps UUIDs, not names.
 
     bool empty() const { return names.empty() && !current_user && !all; }
+    void replaceCurrentUserTagWithName(const String & current_user_name);
 
     String getID(char) const override { return "ExtendedRoleSet"; }
     ASTPtr clone() const override { return std::make_shared<ASTExtendedRoleSet>(*this); }

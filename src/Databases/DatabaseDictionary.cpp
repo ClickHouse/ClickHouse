@@ -64,7 +64,7 @@ StoragePtr DatabaseDictionary::tryGetTable(
     const Context & context,
     const String & table_name) const
 {
-    auto dict_ptr = context.getExternalDictionariesLoader().tryGetDictionary(table_name);
+    auto dict_ptr = context.getExternalDictionariesLoader().tryGetDictionary(table_name, true /*load*/);
     if (dict_ptr)
     {
         const DictionaryStructure & dictionary_structure = dict_ptr->getStructure();
@@ -94,7 +94,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
 
         const auto & dictionaries = context.getExternalDictionariesLoader();
         auto dictionary = throw_on_error ? dictionaries.getDictionary(table_name)
-                                         : dictionaries.tryGetDictionary(table_name);
+                                         : dictionaries.tryGetDictionary(table_name, true /*load*/);
         if (!dictionary)
             return {};
 

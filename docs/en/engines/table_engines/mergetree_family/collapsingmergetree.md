@@ -3,7 +3,7 @@ toc_priority: 36
 toc_title: CollapsingMergeTree
 ---
 
-# Collapsingmergetree {#table_engine-collapsingmergetree}
+# CollapsingMergeTree {#table_engine-collapsingmergetree}
 
 The engine inherits from [MergeTree](mergetree.md) and adds the logic of rows collapsing to data parts merge algorithm.
 

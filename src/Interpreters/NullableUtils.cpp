@@ -5,7 +5,7 @@
 namespace DB
 {
 
-ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map)
+ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map, bool exact_null)
 {
     ColumnPtr null_map_holder;
 
@@ -38,7 +38,12 @@ ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullM
                     PaddedPODArray<UInt8> & mutable_null_map = assert_cast<ColumnUInt8 &>(*mutable_null_map_holder).getData();
                     const PaddedPODArray<UInt8> & other_null_map = column_nullable->getNullMapData();
                     for (size_t i = 0, size = mutable_null_map.size(); i < size; ++i)
-                        mutable_null_map[i] |= other_null_map[i];
+                    {
+                        if (exact_null)
+                            mutable_null_map[i] &= other_null_map[i];
+                        else
+                            mutable_null_map[i] |= other_null_map[i];
+                    }
 
                     null_map_holder = std::move(mutable_null_map_holder);
                 }

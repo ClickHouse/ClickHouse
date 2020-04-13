@@ -108,7 +108,7 @@ Syntax for creating tables is way more complicated compared to databases (see [r
 
 1.  Name of table to create.
 2.  Table schema, i.e. list of columns and their [data types](../sql_reference/data_types/index.md).
-3.  [Table engine](../engines/table_engines/index.md) and it’s settings, which determines all the details on how queries to this table will be physically executed.
+3.  [Table engine](../engines/table_engines/index.md) and its settings, which determines all the details on how queries to this table will be physically executed.
 
 Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
 
@@ -484,7 +484,7 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-Optionally you can [OPTIMIZE](../query_language/misc/#misc_operations-optimize) the tables after import. Tables that are configured with an engine from MergeTree-family always do merges of data parts in the background to optimize data storage (or at least check if it makes sense). These queries force the table engine to do storage optimization right now instead of some time later:
+Optionally you can [OPTIMIZE](../sql_reference/statements/misc.md#misc_operations-optimize) the tables after import. Tables that are configured with an engine from MergeTree-family always do merges of data parts in the background to optimize data storage (or at least check if it makes sense). These queries force the table engine to do storage optimization right now instead of some time later:
 
 ``` bash
 clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"

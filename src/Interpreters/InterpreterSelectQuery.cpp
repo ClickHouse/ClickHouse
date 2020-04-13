@@ -48,8 +48,8 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
-#include <Interpreters/AnalyzedJoin.h>
-#include <Interpreters/Join.h>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 
@@ -87,7 +87,6 @@
 #include <Processors/Transforms/MergingSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
-#include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
@@ -255,7 +254,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
+        table_lock = storage->lockStructureForShare(
+                false, context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
     }
 
@@ -510,7 +510,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
     }
 
     if (storage && !options.only_analyze)
-        from_stage = storage->getQueryProcessingStage(*context, query_ptr);
+        from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_ptr);
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
@@ -897,7 +897,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                     if (join)
                     {
                         inflating_join = true;
-                        if (auto * hash_join = typeid_cast<Join *>(join.get()))
+                        if (auto * hash_join = typeid_cast<HashJoin *>(join.get()))
                             inflating_join = isCross(hash_join->getKind());
                     }
 
@@ -2541,8 +2541,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
     if (!context->getSettingsRef().extremes)
         return;
 
-    auto transform = std::make_shared<ExtremesTransform>(pipeline.getHeader());
-    pipeline.addExtremesTransform(std::move(transform));
+    pipeline.addExtremesTransform();
 }
 
 

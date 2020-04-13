@@ -31,6 +31,7 @@ public:
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     bool supportsFinal() const override { return getTargetTable()->supportsFinal(); }
     bool supportsIndexForIn() const override { return getTargetTable()->supportsIndexForIn(); }
+    bool supportsParallelInsert() const override { return getTargetTable()->supportsParallelInsert(); }
     bool mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const override
     {
         return getTargetTable()->mayBenefitFromIndexForIn(left_in_operand, query_context);
@@ -59,7 +60,7 @@ public:
     void checkTableCanBeDropped() const override;
     void checkPartitionCanBeDropped(const ASTPtr & partition) override;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context & context, const ASTPtr &) const override;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
 
     StoragePtr getTargetTable() const;
     StoragePtr tryGetTargetTable() const;

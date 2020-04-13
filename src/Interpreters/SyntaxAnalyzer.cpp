@@ -17,7 +17,7 @@
 #include <Interpreters/OptimizeIfWithConstantConditionVisitor.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/GetAggregatesVisitor.h>
-#include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Interpreters/ExpressionActions.h> /// getSmallestColumn()
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/OptimizeIfChains.h>
@@ -60,25 +60,40 @@ namespace
 
 using LogAST = DebugASTLog<false>; /// set to true to enable logs
 
-/// Select implementation of countDistinct based on settings.
+/// Select implementation of a function based on settings.
 /// Important that it is done as query rewrite. It means rewritten query
 ///  will be sent to remote servers during distributed query execution,
 ///  and on all remote servers, function implementation will be same.
+template <char const * func_name>
 struct CustomizeFunctionsData
 {
     using TypeToVisit = ASTFunction;
 
-    const String & count_distinct;
+    const String & customized_func_name;
 
     void visit(ASTFunction & func, ASTPtr &)
     {
-        if (Poco::toLower(func.name) == "countdistinct")
-            func.name = count_distinct;
+        if (Poco::toLower(func.name) == func_name)
+        {
+            func.name = customized_func_name;
+        }
     }
 };
 
-using CustomizeFunctionsMatcher = OneTypeMatcher<CustomizeFunctionsData>;
-using CustomizeFunctionsVisitor = InDepthNodeVisitor<CustomizeFunctionsMatcher, true>;
+char countdistinct[] = "countdistinct";
+using CustomizeFunctionsVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<countdistinct>>, true>;
+
+char in[] = "in";
+using CustomizeInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<in>>, true>;
+
+char notIn[] = "notin";
+using CustomizeNotInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<notIn>>, true>;
+
+char globalIn[] = "globalin";
+using CustomizeGlobalInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<globalIn>>, true>;
+
+char globalNotIn[] = "globalnotin";
+using CustomizeGlobalNotInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<globalNotIn>>, true>;
 
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
@@ -520,7 +535,7 @@ void setJoinStrictness(ASTSelectQuery & select_query, JoinStrictness join_defaul
 }
 
 /// Find the columns that are obtained by JOIN.
-void collectJoinedColumns(AnalyzedJoin & analyzed_join, const ASTSelectQuery & select_query,
+void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & select_query,
                           const std::vector<TableWithColumnNames> & tables, const Aliases & aliases)
 {
     const ASTTablesInSelectQueryElement * node = select_query.join();
@@ -795,7 +810,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     const auto & settings = context.getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
-    result.analyzed_join = std::make_shared<AnalyzedJoin>(settings, context.getTemporaryVolume());
+    result.analyzed_join = std::make_shared<TableJoin>(settings, context.getTemporaryVolume());
 
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
@@ -888,6 +903,21 @@ void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings
 {
     CustomizeFunctionsVisitor::Data data{settings.count_distinct_implementation};
     CustomizeFunctionsVisitor(data).visit(query);
+
+    if (settings.transform_null_in)
+    {
+        CustomizeInVisitor::Data data_null_in{"nullIn"};
+        CustomizeInVisitor(data_null_in).visit(query);
+
+        CustomizeNotInVisitor::Data data_not_null_in{"notNullIn"};
+        CustomizeNotInVisitor(data_not_null_in).visit(query);
+
+        CustomizeGlobalInVisitor::Data data_global_null_in{"globalNullIn"};
+        CustomizeGlobalInVisitor(data_global_null_in).visit(query);
+
+        CustomizeGlobalNotInVisitor::Data data_global_not_null_in{"globalNotNullIn"};
+        CustomizeGlobalNotInVisitor(data_global_not_null_in).visit(query);
+    }
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     QueryAliasesVisitor(aliases).visit(query);

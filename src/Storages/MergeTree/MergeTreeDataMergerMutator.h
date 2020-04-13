@@ -147,7 +147,7 @@ private:
 
     /// Apply commands to source_part i.e. remove some columns in source_part
     /// and return set of files, that have to be removed from filesystem and checksums
-    static NameSet collectFilesToRemove(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
+    static NameToNameMap collectFilesForRenames(MergeTreeData::DataPartPtr source_part, const MutationCommands & commands_for_removes, const String & mrk_extension);
 
     /// Files, that we don't need to remove and don't need to hardlink, for example columns.txt and checksums.txt.
     /// Because we will generate new versions of them after we perform mutation.
@@ -158,6 +158,11 @@ private:
         MergeTreeData::DataPartPtr source_part,
         const Block & updated_header,
         NamesAndTypesList all_columns,
+        const MutationCommands & commands_for_removes);
+
+    /// Get skip indcies, that should exists in the resulting data part.
+    static MergeTreeIndices getIndicesForNewDataPart(
+        const MergeTreeIndices & all_indices,
         const MutationCommands & commands_for_removes);
 
     bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
@@ -173,6 +178,7 @@ private:
     /// Override all columns of new part using mutating_stream
     void mutateAllPartColumns(
         MergeTreeData::MutableDataPartPtr new_data_part,
+        const MergeTreeIndices & skip_indices,
         BlockInputStreamPtr mutating_stream,
         time_t time_of_mutation,
         const CompressionCodecPtr & codec,
