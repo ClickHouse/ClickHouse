@@ -8,7 +8,7 @@ namespace DB
 {
 
 AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
-AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) = default;
+AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) noexcept = default;
 AggregatingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
 
 /// Stores information for aggregation of AggregateFunction columns
