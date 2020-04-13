@@ -6,6 +6,7 @@
 #include <Common/AlignedBuffer.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Common/Arena.h>
 
 namespace DB
 {
@@ -22,18 +23,14 @@ public:
     Status merge() override;
 
     struct SimpleAggregateDescription;
+    struct AggregateDescription;
 
+    /// This structure define columns into one of three types:
+    /// * columns which are not aggregate functions and not needed to be aggregated
+    /// * usual aggregate functions, which stores states into ColumnAggregateFunction
+    /// * simple aggregate functions, which store states into ordinary columns
     struct ColumnsDefinition
     {
-        struct AggregateDescription
-        {
-            ColumnAggregateFunction * column = nullptr;
-            const size_t column_number = 0;
-
-            AggregateDescription() = default;
-            explicit AggregateDescription(size_t col_number) : column_number(col_number) {}
-        };
-
         /// Columns with which numbers should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
         std::vector<AggregateDescription> columns_to_aggregate;
@@ -47,135 +44,37 @@ private:
     /// Specialization for AggregatingSortedAlgorithm.
     struct AggregatingMergedData : public MergedData
     {
+    private:
+        using MergedData::pull;
+        using MergedData::insertRow;
+
     public:
-        AggregatingMergedData(MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def)
-            : MergedData(std::move(columns_), false, max_block_size_)
-        {
-            initAggregateDescription(def);
-        }
+        AggregatingMergedData(MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_);
 
-        void initializeRow(const ColumnRawPtrs & raw_columns, size_t row, const ColumnNumbers & column_numbers)
-        {
-            for (auto column_number : column_numbers)
-                columns[column_number]->insertFrom(*raw_columns[column_number], row);
-
-            is_group_started = true;
-        }
+        void startGroup(const ColumnRawPtrs & raw_columns, size_t row);
+        void finishGroup();
 
         bool isGroupStarted() const { return is_group_started; }
+        void addRow(SortCursor & cursor);
 
-        void insertRow()
-        {
-            is_group_started = false;
-            ++total_merged_rows;
-            ++merged_rows;
-            /// TODO: sum_blocks_granularity += block_size;
-        }
-
-        Chunk pull(ColumnsDefinition & def)
-        {
-            auto chunk = pull();
-
-            size_t num_rows = chunk.getNumRows();
-            auto columns_ = chunk.detachColumns();
-
-            for (auto & desc : def.columns_to_simple_aggregate)
-            {
-                if (desc.nested_type)
-                {
-                    auto & from_type = desc.nested_type;
-                    auto & to_type = desc.real_type;
-                    columns_[desc.column_number] = recursiveTypeConversion(columns_[desc.column_number], from_type, to_type);
-                }
-            }
-
-            chunk.setColumns(std::move(columns_), num_rows);
-            initAggregateDescription(def);
-
-            return chunk;
-        }
+        Chunk pull();
 
     private:
+        ColumnsDefinition & def;
+
+        /// Memory pool for SimpleAggregateFunction
+        /// (only when allocates_memory_in_arena == true).
+        std::unique_ptr<Arena> arena;
+
         bool is_group_started = false;
 
         /// Initialize aggregate descriptions with columns.
-        void initAggregateDescription(ColumnsDefinition & def)
-        {
-            for (auto & desc : def.columns_to_simple_aggregate)
-                desc.column = columns[desc.column_number].get();
-
-            for (auto & desc : def.columns_to_aggregate)
-                desc.column = typeid_cast<ColumnAggregateFunction *>(columns[desc.column_number].get());
-        }
-
-        using MergedData::pull;
+        void initAggregateDescription();
     };
 
+    /// Order between members is important because merged_data has reference to columns_definition.
     ColumnsDefinition columns_definition;
     AggregatingMergedData merged_data;
-
-    /// Memory pool for SimpleAggregateFunction
-    /// (only when allocates_memory_in_arena == true).
-    std::unique_ptr<Arena> arena;
-
-    void prepareChunk(Chunk & chunk) const;
-    void addRow(SortCursor & cursor);
-    void insertSimpleAggregationResult();
-
-public:
-    /// Stores information for aggregation of SimpleAggregateFunction columns
-    struct SimpleAggregateDescription
-    {
-        /// An aggregate function 'anyLast', 'sum'...
-        AggregateFunctionPtr function;
-        IAggregateFunction::AddFunc add_function = nullptr;
-
-        size_t column_number = 0;
-        IColumn * column = nullptr;
-
-        /// For LowCardinality, convert is converted to nested type. nested_type is nullptr if no conversion needed.
-        const DataTypePtr nested_type; /// Nested type for LowCardinality, if it is.
-        const DataTypePtr real_type; /// Type in header.
-
-        AlignedBuffer state;
-        bool created = false;
-
-        SimpleAggregateDescription(
-            AggregateFunctionPtr function_, const size_t column_number_,
-            DataTypePtr nested_type_, DataTypePtr real_type_)
-            : function(std::move(function_)), column_number(column_number_)
-            , nested_type(std::move(nested_type_)), real_type(std::move(real_type_))
-        {
-            add_function = function->getAddressOfAddFunction();
-            state.reset(function->sizeOfData(), function->alignOfData());
-        }
-
-        void createState()
-        {
-            if (created)
-                return;
-            function->create(state.data());
-            created = true;
-        }
-
-        void destroyState()
-        {
-            if (!created)
-                return;
-            function->destroy(state.data());
-            created = false;
-        }
-
-        /// Explicitly destroy aggregation state if the stream is terminated
-        ~SimpleAggregateDescription()
-        {
-            destroyState();
-        }
-
-        SimpleAggregateDescription() = default;
-        SimpleAggregateDescription(SimpleAggregateDescription &&) = default;
-        SimpleAggregateDescription(const SimpleAggregateDescription &) = delete;
-    };
 };
 
 }
