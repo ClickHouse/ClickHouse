@@ -56,38 +56,12 @@ do
         action="backport"
     fi
 
-    # Next, check the tag. They might override the decision.
-    matched_labels=()
-    for label in $(jq -r .labels[].name "$file")
-    do
-        label_action=""
-        case "$label" in
-            pr-must-backport | "v$branch-must-backport")
-                label_action="backport"
-                ;;
-            pr-no-backport | "v$branch-no-backport")
-                label_action="no-backport"
-                ;;
-            "v$branch-conflicts")
-                label_action="conflict"
-                ;;
-            "v$branch" | "v$branch-backported")
-                label_action="done"
-                ;;
-        esac
-        if [ "$label_action" != "" ]
-        then
-            action="$label_action"
-            matched_labels+=("$label")
-        fi
-    done
-
-    # Show an error if there are conflicting labels.
-    if [ ${#matched_labels[@]} -gt 1 ]
-    then
-        >&2 echo "PR #$pr has conflicting labels: ${matched_labels[*]}"
-        continue
-    fi
+    # Next, check the tag. They might override the decision. Checks are ordered by priority.
+    labels="$(jq -r .labels[].name "$file")"
+    if echo "$labels" | grep "pr-must-backport\|v$branch-must-backport" > /dev/null; then action="backport"; fi
+    if echo "$labels" | grep "v$branch-conflicts" > /dev/null;                       then action="conflict"; fi
+    if echo "$labels" | grep "pr-no-backport\|v$branch-no-backport" > /dev/null;     then action="no-backport"; fi
+    if echo "$labels" | grep "v$branch\|v$branch-backported" > /dev/null;            then action="done"; fi
 
     # Find merge commit SHA for convenience
     merge_sha="$(jq -r .merge_commit_sha "$file")"
