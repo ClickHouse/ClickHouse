@@ -48,7 +48,7 @@ namespace
                     type = nullptr;
 
                 // simple aggregate function
-                AggregatingSortedAlgorithm::SimpleAggregateDescription desc(simple_aggr->getFunction(), i, type);
+                AggregatingSortedAlgorithm::SimpleAggregateDescription desc(simple_aggr->getFunction(), i, type, column.type);
                 if (desc.function->allocatesMemoryInArena())
                     def.allocates_memory_in_arena = true;
 
@@ -84,10 +84,9 @@ namespace
 }
 
 AggregatingSortedAlgorithm::AggregatingSortedAlgorithm(
-    const Block & header_, size_t num_inputs,
+    const Block & header, size_t num_inputs,
     SortDescription description_, size_t max_block_size)
     : IMergingAlgorithmWithDelayedChunk(num_inputs, std::move(description_))
-    , header(header_)
     , columns_definition(defineColumns(header, description_))
     , merged_data(getMergedColumns(header, columns_definition), max_block_size, columns_definition)
 {
@@ -102,7 +101,7 @@ void AggregatingSortedAlgorithm::prepareChunk(Chunk & chunk) const
         column = column->convertToFullColumnIfConst();
 
     for (auto & desc : columns_definition.columns_to_simple_aggregate)
-        if (desc.inner_type)
+        if (desc.nested_type)
             columns[desc.column_number] = recursiveRemoveLowCardinality(columns[desc.column_number]);
 
     chunk.setColumns(std::move(columns), num_rows);
@@ -159,7 +158,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
             if (merged_data.hasEnoughRows())
             {
                 last_key.reset();
-                Status(merged_data.pull(columns_definition, header));
+                Status(merged_data.pull(columns_definition));
             }
 
             /// We will write the data for the group. We copy the values of ordinary columns.
@@ -200,7 +199,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
     }
 
     last_chunk_sort_columns.clear();
-    return Status(merged_data.pull(columns_definition, header), true);
+    return Status(merged_data.pull(columns_definition), true);
 }
 
 void AggregatingSortedAlgorithm::addRow(SortCursor & cursor)
