@@ -39,6 +39,8 @@ public:
     String getName() const override { return "TreeExecutor"; }
     Block getHeader() const override { return root->getOutputs().front().getHeader(); }
 
+    void cancel(bool kill) override;
+
     /// This methods does not affect TreeExecutor as IBlockInputStream itself.
     /// They just passed to all SourceWithProgress processors.
     void setProgressCallback(const ProgressCallback & callback) final;
