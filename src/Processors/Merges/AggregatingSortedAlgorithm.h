@@ -5,11 +5,10 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/AlignedBuffer.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <Columns/ColumnAggregateFunction.h>
 
 namespace DB
 {
-
-class ColumnAggregateFunction;
 
 class AggregatingSortedAlgorithm final : public IMergingAlgorithmWithDelayedChunk
 {
@@ -78,7 +77,7 @@ private:
             auto chunk = pull();
 
             size_t num_rows = chunk.getNumRows();
-            auto columns = chunk.detachColumns();
+            auto columns_ = chunk.detachColumns();
 
             for (auto & desc : def.columns_to_simple_aggregate)
             {
@@ -86,12 +85,14 @@ private:
                 {
                     auto & from_type = desc.inner_type;
                     auto & to_type = header_.getByPosition(desc.column_number).type;
-                    columns[desc.column_number] = recursiveTypeConversion(columns[desc.column_number], from_type, to_type);
+                    columns_[desc.column_number] = recursiveTypeConversion(columns_[desc.column_number], from_type, to_type);
                 }
             }
 
-            chunk.setColumns(std::move(columns), num_rows);
+            chunk.setColumns(std::move(columns_), num_rows);
             initAggregateDescription(def);
+
+            return chunk;
         }
 
     private:
