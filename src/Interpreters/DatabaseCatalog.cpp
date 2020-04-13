@@ -108,7 +108,7 @@ void DatabaseCatalog::loadDatabases()
 {
     drop_delay_s = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_s", 60);
 
-    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE);
+    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, *global_context);
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 
     loadMarkedAsDroppedTables();
@@ -481,6 +481,15 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id) const
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id) const
 {
     return getTableImpl(table_id, *global_context, nullptr).second;
+}
+
+DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id) const
+{
+    std::optional<Exception> exc;
+    auto res = getTableImpl(table_id, *global_context, &exc);
+    if (!res.second)
+        throw Exception(*exc);
+    return res;
 }
 
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id) const

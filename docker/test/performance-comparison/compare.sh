@@ -309,7 +309,7 @@ create view addresses_src as select *
     from file('$version-addresses.tsv', TSVWithNamesAndTypes,
         '$(cat "$version-addresses.tsv.columns")');
 
-create table addresses_join engine Join(any, left, address) as
+create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
 
 create table unstable_query_runs engine File(TSVWithNamesAndTypes,
@@ -348,7 +348,7 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
         'unstable-run-traces.$version.rep') as
     select
         count() value,
-        joinGet(addresses_join, 'name', arrayJoin(trace)) metric,
+        joinGet(addresses_join_$version, 'name', arrayJoin(trace)) metric,
         unstable_query_runs.query_id,
         any(unstable_query_runs.query) query
     from unstable_query_runs
@@ -374,7 +374,7 @@ create table stacks engine File(TSV, 'stacks.$version.rep') as
     select
         query,
         arrayStringConcat(
-            arrayMap(x -> joinGet(addresses_join, 'name', x),
+            arrayMap(x -> joinGet(addresses_join_$version, 'name', x),
                 arrayReverse(trace)
             ),
             ';'

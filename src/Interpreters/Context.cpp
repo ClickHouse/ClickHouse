@@ -2037,7 +2037,9 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     }
     if (exc)
         throw Exception(*exc);
-    return DatabaseCatalog::instance().getTable(resolved)->getStorageID();
+    if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+        resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
+    return resolved;
 }
 
 StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace where) const
@@ -2050,9 +2052,13 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
         auto lock = getLock();
         resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
     }
-    if (auto table = DatabaseCatalog::instance().tryGetTable(resolved))
-        return table->getStorageID();
-    return StorageID::createEmpty();
+    if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
+        if (db)
+            resolved.uuid = db->tryGetTableUUID(resolved.table_name);
+    }
+    return resolved;
 }
 
 StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const

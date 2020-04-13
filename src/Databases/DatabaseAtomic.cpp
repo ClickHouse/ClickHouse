@@ -51,7 +51,6 @@ String DatabaseAtomic::getTableDataPath(const ASTCreateQuery & query) const
     auto tmp = data_path + DatabaseCatalog::getPathForUUID(query.uuid);
     assert(tmp != data_path && !tmp.empty());
     return tmp;
-
 }
 
 void DatabaseAtomic::drop(const Context &)
@@ -283,6 +282,13 @@ DatabaseTablesIteratorPtr DatabaseAtomic::getTablesWithDictionaryTablesIterator(
 {
     auto base_iter = DatabaseWithDictionaries::getTablesWithDictionaryTablesIterator(filter_by_dictionary_name);
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
+}
+
+UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
+{
+    if (auto table = tryGetTable(global_context, table_name))
+        return table->getStorageID().uuid;
+    return UUIDHelpers::Nil;
 }
 
 void DatabaseAtomic::loadStoredObjects(Context & context, bool has_force_restore_data_flag)
