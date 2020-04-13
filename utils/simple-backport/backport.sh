@@ -7,8 +7,8 @@ merge_base=$(git merge-base origin/master "origin/$branch")
 # Make lists of PRs that were merged into each branch. Use first parent here, or else
 # we'll get weird things like seeing older master that was merged into a PR branch
 # that was then merged into master.
-git log "$merge_base..origin/master" --first-parent --oneline > master-log.txt
-git log "$merge_base..origin/$branch" --first-parent --oneline > "$branch-log.txt"
+git log "$merge_base..origin/master" --first-parent > master-log.txt
+git log "$merge_base..origin/$branch" --first-parent > "$branch-log.txt"
 
 # Search for PR numbers in commit messages. First variant is normal merge, and second
 # variant is squashed.
@@ -89,11 +89,14 @@ do
         continue
     fi
 
+    # Find merge commit SHA for convenience
+    merge_sha="$(jq -r .merge_commit_sha "$file")"
+
     url="https://github.com/ClickHouse/ClickHouse/pull/$pr"
-    printf "%s\t%s\t%s\t%s\n" "$action" "$pr" "$url" "$file" >> "$branch-report.tsv"
+    printf "%s\t%s\t%s\t%s\t%s\n" "$action" "$pr" "$url" "$file" "$merge_sha" >> "$branch-report.tsv"
     if [ "$action" == "backport" ]
     then
-        printf "%s\t%s\n" "$action" "$url"
+        printf "%s\t%s\t%s\n" "$action" "$url" "$merge_sha"
     fi
 done
 
