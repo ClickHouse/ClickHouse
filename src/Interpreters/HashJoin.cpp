@@ -300,7 +300,7 @@ public:
         const DictionaryReader & reader = *table_join.dictionary_reader;
         if (!read_result)
         {
-            reader.readKeys(*key_columns[0], key_columns[0]->size(), read_result, found, positions);
+            reader.readKeys(*key_columns[0], read_result, found, positions);
             result.block = &read_result;
 
             if (table_join.forceNullableRight())
