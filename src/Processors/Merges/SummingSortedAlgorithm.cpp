@@ -448,6 +448,8 @@ SummingSortedAlgorithm::SummingMergedData::SummingMergedData(
 
 void SummingSortedAlgorithm::SummingMergedData::startGroup(ColumnRawPtrs & raw_columns, size_t row)
 {
+    is_group_started = true;
+
     setRow(current_row, raw_columns, row, def.column_names);
 
     /// Reset aggregation states for next row
