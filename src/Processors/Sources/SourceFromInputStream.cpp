@@ -176,6 +176,9 @@ Chunk SourceFromInputStream::generate()
         return {};
     }
 
+    if (isCancelled())
+        return {};
+
 #ifndef NDEBUG
     assertBlocksHaveEqualStructure(getPort().getHeader(), block, "SourceFromInputStream");
 #endif
