@@ -36,34 +36,44 @@ namespace ErrorCodes
 
 namespace
 {
-struct FirstNonDeterministicFuncData
+/// Helps to detect situations, where non-deterministic functions may be used in mutations of Replicated*MergeTree.
+class FirstNonDeterministicFuncMatcher
 {
-    using TypeToVisit = ASTFunction;
+public:
+    struct Data {
+        const Context & context;
+        std::optional<String> nondeterministic_function_name;
+    };
 
-    explicit FirstNonDeterministicFuncData(const Context & context_)
-        : context{context_}
-    {}
-
-    const Context & context;
-    std::optional<String> nondeterministic_function_name;
-
-    void visit(ASTFunction & function, ASTPtr &)
+public:
+    static bool needChildVisit(const ASTPtr & /*node*/, const ASTPtr & child)
     {
-        if (nondeterministic_function_name)
+        return child != nullptr;
+    }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (data.nondeterministic_function_name)
             return;
 
-        const auto func = FunctionFactory::instance().get(function.name, context);
-        if (!func->isDeterministic())
-            nondeterministic_function_name = func->getName();
+        if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
+        {
+            if (function->name != "lambda")
+            {
+                const auto func = FunctionFactory::instance().get(function->name, data.context);
+                if (!func->isDeterministic())
+                    data.nondeterministic_function_name = func->getName();
+            }
+        }
     }
 };
 
 using FirstNonDeterministicFuncFinder =
-        InDepthNodeVisitor<OneTypeMatcher<FirstNonDeterministicFuncData>, true>;
+        InDepthNodeVisitor<FirstNonDeterministicFuncMatcher, true>;
 
 std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & command, const Context & context)
 {
-    FirstNonDeterministicFuncData finder_data(context);
+    FirstNonDeterministicFuncMatcher::Data finder_data{context};
 
     switch (command.type)
     {
