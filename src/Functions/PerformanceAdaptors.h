@@ -215,6 +215,6 @@ public: \
     { \
         return std::make_shared<Function>(context); \
     } \
-}
+};
 
 } // namespace DB
