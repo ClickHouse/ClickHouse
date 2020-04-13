@@ -31,9 +31,9 @@ public:
     /// * simple aggregate functions, which store states into ordinary columns
     struct ColumnsDefinition
     {
-        ColumnsDefinition();
-        ColumnsDefinition(ColumnsDefinition &&) noexcept;
-        ~ColumnsDefinition();
+        ColumnsDefinition(); /// Is needed because destructor is defined.
+        ColumnsDefinition(ColumnsDefinition &&) noexcept; /// Is needed because destructor is defined.
+        ~ColumnsDefinition(); /// Is needed because otherwise std::vector's destructor uses incomplete types.
 
         /// Columns with which numbers should not be aggregated.
         ColumnNumbers column_numbers_not_to_aggregate;
