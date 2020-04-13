@@ -67,7 +67,7 @@ def create_table(cluster):
         ) ENGINE=ReplicatedMergeTree('/clickhouse/{cluster}/tables/test/s3', '{instance}')
         PARTITION BY dt
         ORDER BY (dt, id)
-        SETTINGS storage_policy = 's3'
+        SETTINGS storage_policy='s3'
         """
 
     for node in cluster.instances.values():
