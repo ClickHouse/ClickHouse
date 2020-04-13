@@ -16,6 +16,7 @@ public:
 
 protected:
     SortingHeap<SortCursor> queue;
+    SortDescription description;
 
     /// Previous row. May refer to last_chunk_sort_columns or row from source_chunks.
     detail::RowRef last_key;
@@ -26,8 +27,6 @@ protected:
     void updateCursor(Chunk chunk, size_t source_num);
 
 private:
-    SortDescription description;
-
     /// Chunks currently being merged.
     std::vector<Chunk> source_chunks;
     SortCursorImpls cursors;

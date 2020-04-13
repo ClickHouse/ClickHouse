@@ -385,7 +385,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     const Names & column_names_to_sum,
     size_t max_block_size)
     : IMergingAlgorithmWithDelayedChunk(num_inputs, std::move(description_))
-    , columns_definition(defineColumns(header, description_, column_names_to_sum))
+    , columns_definition(defineColumns(header, description, column_names_to_sum))
     , merged_data(getMergedDataColumns(header, columns_definition), max_block_size, columns_definition)
     , column_names(header.getNames())
 {
