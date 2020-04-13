@@ -1808,7 +1808,7 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(const MergeTreeData::
     if (containing_part != part->name)
     {
         if (out_reason)
-            *out_reason = "Part " + part->name >+ " has already been assigned a merge into " + containing_part;
+            *out_reason = "Part " + part->name + " has already been assigned a merge into " + containing_part;
         return false;
     }
 
