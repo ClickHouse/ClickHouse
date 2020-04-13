@@ -40,7 +40,8 @@ namespace
 class FirstNonDeterministicFuncMatcher
 {
 public:
-    struct Data {
+    struct Data
+    {
         const Context & context;
         std::optional<String> nondeterministic_function_name;
     };
@@ -68,8 +69,7 @@ public:
     }
 };
 
-using FirstNonDeterministicFuncFinder =
-        InDepthNodeVisitor<FirstNonDeterministicFuncMatcher, true>;
+using FirstNonDeterministicFuncFinder = InDepthNodeVisitor<FirstNonDeterministicFuncMatcher, true>;
 
 std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & command, const Context & context)
 {
