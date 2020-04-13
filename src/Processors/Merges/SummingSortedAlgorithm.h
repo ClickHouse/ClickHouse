@@ -58,6 +58,12 @@ public:
     public:
         using MergedData::MergedData;
 
+        SummingMergedData(MutableColumns columns_, UInt64 max_block_size_, ColumnsDefinition & def_)
+            : MergedData(std::move(columns_), false, max_block_size_)
+            , def(def_)
+        {
+        }
+
         void insertRow(const Row & row, const ColumnNumbers & column_numbers)
         {
             size_t next_column = columns.size() - column_numbers.size();
@@ -80,7 +86,10 @@ public:
                 columns_to_aggregate[column_number].merged_column = columns[column_number].get();
         }
 
-        Chunk pull(size_t num_result_columns, const ColumnsDefinition & def);
+        Chunk pull(size_t num_result_columns);
+
+    private:
+        ColumnsDefinition & def;
     };
 
 private:

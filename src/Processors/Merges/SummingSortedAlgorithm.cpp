@@ -369,10 +369,13 @@ static void setRow(Row & row, SortCursor & cursor, const Names & column_names)
 }
 
 
-Chunk SummingSortedAlgorithm::SummingMergedData::pull(size_t num_result_columns, const ColumnsDefinition & def)
+Chunk SummingSortedAlgorithm::SummingMergedData::pull(size_t num_result_columns)
 {
     auto chunk = MergedData::pull();
     postprocessChunk(chunk, num_result_columns, def);
+
+    initAggregateDescription(def.columns_to_aggregate);
+
     return chunk;
 }
 
@@ -383,7 +386,7 @@ SummingSortedAlgorithm::SummingSortedAlgorithm(
     size_t max_block_size)
     : IMergingAlgorithmWithDelayedChunk(num_inputs, std::move(description_))
     , columns_definition(defineColumns(header, description_, column_names_to_sum))
-    , merged_data(getMergedDataColumns(header, columns_definition), false, max_block_size)
+    , merged_data(getMergedDataColumns(header, columns_definition), max_block_size, columns_definition)
     , column_names(header.getNames())
 {
     current_row.resize(header.columns());
@@ -535,7 +538,7 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
             {
                 /// The block is now full and the last row is calculated completely.
                 last_key.reset();
-                return Status(merged_data.pull(column_names.size(), columns_definition));
+                return Status(merged_data.pull(column_names.size()));
             }
 
             setRow(current_row, current, column_names);
@@ -587,8 +590,7 @@ IMergingAlgorithm::Status SummingSortedAlgorithm::merge()
     /// If it is zero, and without it the output stream will be empty, we will write it anyway.
     insertCurrentRowIfNeeded();
     last_chunk_sort_columns.clear();
-    return Status(merged_data.pull(column_names.size(), columns_definition), true);
+    return Status(merged_data.pull(column_names.size()), true);
 }
-
 
 }
