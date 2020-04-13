@@ -13,9 +13,9 @@ IMergingAlgorithmWithDelayedChunk::IMergingAlgorithmWithDelayedChunk(
     SortDescription description_)
     : description(std::move(description_))
     , source_chunks(num_inputs)
+    , cursors(num_inputs)
 {
 }
-
 
 void IMergingAlgorithmWithDelayedChunk::initializeQueue(Chunks chunks)
 {
