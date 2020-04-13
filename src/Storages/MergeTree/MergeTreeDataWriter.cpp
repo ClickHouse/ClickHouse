@@ -294,7 +294,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
     ///  either default lz4 or compression method with zero thresholds on absolute and relative part size.
     auto compression_codec = data.global_context.chooseCompressionCodec(0, 0);
 
-    MergedBlockOutputStream out(new_data_part, columns, compression_codec);
+    MergedBlockOutputStream out(new_data_part, columns, data.skip_indices, compression_codec);
 
     out.writePrefix();
     out.writeWithPermutation(block, perm_ptr);

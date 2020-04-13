@@ -31,6 +31,8 @@ IMergeTreeReader::IMergeTreeReader(const MergeTreeData::DataPartPtr & data_part_
     , settings(settings_), storage(data_part_->storage)
     , all_mark_ranges(all_mark_ranges_)
 {
+    for (const NameAndTypePair & column_from_part : data_part->getColumns())
+        columns_from_part[column_from_part.name] = column_from_part.type;
 }
 
 IMergeTreeReader::~IMergeTreeReader() = default;
@@ -182,6 +184,15 @@ void IMergeTreeReader::evaluateMissingDefaults(Block additional_columns, Columns
     }
 }
 
+NameAndTypePair IMergeTreeReader::getColumnFromPart(const NameAndTypePair & required_column) const
+{
+    auto it = columns_from_part.find(required_column.name);
+    if (it != columns_from_part.end())
+        return {it->first, it->second};
+
+    return required_column;
+}
+
 void IMergeTreeReader::performRequiredConversions(Columns & res_columns)
 {
     try
@@ -208,10 +219,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns)
             if (res_columns[pos] == nullptr)
                 continue;
 
-            if (columns_from_part.count(name_and_type->name))
-                copy_block.insert({res_columns[pos], columns_from_part[name_and_type->name], name_and_type->name});
-            else
-                copy_block.insert({res_columns[pos], name_and_type->type, name_and_type->name});
+            copy_block.insert({res_columns[pos], getColumnFromPart(*name_and_type).type, name_and_type->name});
         }
 
         DB::performRequiredConversions(copy_block, columns, storage.global_context);

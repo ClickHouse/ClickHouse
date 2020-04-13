@@ -15,10 +15,11 @@ namespace ErrorCodes
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
     const NamesAndTypesList & columns_list_,
+    const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec,
     bool blocks_are_granules_size)
     : MergedBlockOutputStream(
-        data_part, columns_list_, default_codec, {},
+        data_part, columns_list_, skip_indices, default_codec, {},
         data_part->storage.global_context.getSettings().min_bytes_to_use_direct_io,
         blocks_are_granules_size)
 {
@@ -27,6 +28,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 MergedBlockOutputStream::MergedBlockOutputStream(
     const MergeTreeDataPartPtr & data_part,
     const NamesAndTypesList & columns_list_,
+    const MergeTreeIndices & skip_indices,
     CompressionCodecPtr default_codec,
     const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
     size_t aio_threshold,
@@ -49,7 +51,7 @@ MergedBlockOutputStream::MergedBlockOutputStream(
 
     disk->createDirectories(part_path);
 
-    writer = data_part->getWriter(columns_list, data_part->storage.getSkipIndices(), default_codec, writer_settings);
+    writer = data_part->getWriter(columns_list, skip_indices, default_codec, writer_settings);
     writer->initPrimaryIndex();
     writer->initSkipIndices();
 }

@@ -78,11 +78,9 @@ MergeTreeReaderCompact::MergeTreeReaderCompact(
     auto name_and_type = columns.begin();
     for (size_t i = 0; i < columns_num; ++i, ++name_and_type)
     {
-        const auto & [name, type] = *name_and_type;
+        const auto & [name, type] = getColumnFromPart(*name_and_type);
         auto position = data_part->getColumnPosition(name);
 
-        /// If array of Nested column is missing in part,
-        ///  we have to read it's offsets if they exists.
         if (!position && typeid_cast<const DataTypeArray *>(type.get()))
         {
             position = findColumnForOffsets(name);
@@ -111,7 +109,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
         bool append = res_columns[i] != nullptr;
         if (!append)
-            res_columns[i] = column_it->type->createColumn();
+            res_columns[i] = getColumnFromPart(*column_it).type->createColumn();
         mutable_columns[i] = res_columns[i]->assumeMutable();
     }
 
@@ -125,7 +123,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
             if (!res_columns[pos])
                 continue;
 
-            const auto & [name, type] = *name_and_type;
+            auto [name, type] = getColumnFromPart(*name_and_type);
             auto & column = mutable_columns[pos];
 
             try

@@ -156,10 +156,14 @@ private:
     /// Get the columns list of the resulting part in the same order as all_columns.
     NamesAndTypesList getColumnsForNewDataPart(MergeTreeData::DataPartPtr source_part, const Block & updated_header, NamesAndTypesList all_columns) const;
 
+    /// Get skip indcies, that should exists in the resulting data part.
+    static MergeTreeIndices getIndicesForNewDataPart(
+        const MergeTreeIndices & all_indices,
+        const MutationCommands & commands_for_removes);
+
     bool shouldExecuteTTL(const Names & columns, const MutationCommands & commands) const;
 
-
-public :
+public:
     /** Is used to cancel all merges and mutations. On cancel() call all currently running actions will throw exception soon.
       * All new attempts to start a merge or mutation will throw an exception until all 'LockHolder' objects will be destroyed.
       */
