@@ -8,7 +8,8 @@
 #include <cerrno>
 #endif
 
-namespace DB {
+namespace DB
+{
 
 #if defined(__linux__)
 
@@ -44,7 +45,6 @@ namespace DB {
             hardwareEvent(PERF_COUNT_HW_STALLED_CYCLES_FRONTEND, ProfileEvents::PERF_COUNT_HW_STALLED_CYCLES_FRONTEND),
             hardwareEvent(PERF_COUNT_HW_STALLED_CYCLES_BACKEND, ProfileEvents::PERF_COUNT_HW_STALLED_CYCLES_BACKEND),
             hardwareEvent(PERF_COUNT_HW_REF_CPU_CYCLES, ProfileEvents::PERF_COUNT_HW_REF_CPU_CYCLES),
-            
             // This reports the CPU clock, a high-resolution per-CPU timer.
             // a bit broken according to this: https://stackoverflow.com/a/56967896
 //            softwareEvent(PERF_COUNT_SW_CPU_CLOCK, ProfileEvents::PERF_COUNT_SW_CPU_CLOCK),
@@ -84,11 +84,13 @@ namespace DB {
         return 0;
     }
 
-    static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags) {
+    static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags)
+    {
         return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));
     }
 
-    static bool getPerfEventParanoid(int & result) {
+    static bool getPerfEventParanoid(int & result)
+    {
         // the longest possible variant: "-1\0"
         constexpr int MAX_LENGTH = 3;
 
@@ -112,7 +114,8 @@ namespace DB {
         return true;
     }
 
-    static void perfEventOpenDisabled(int perf_event_paranoid, int perf_event_type, int perf_event_config, int & event_file_descriptor) {
+    static void perfEventOpenDisabled(int perf_event_paranoid, int perf_event_type, int perf_event_config, int & event_file_descriptor)
+    {
         perf_event_attr pe = perf_event_attr();
         pe.type = perf_event_type;
         pe.size = sizeof(struct perf_event_attr);
@@ -125,7 +128,8 @@ namespace DB {
         event_file_descriptor = openPerfEvent(&pe, /* measure the calling thread */ 0, /* on any cpu */ -1, -1, 0);
     }
 
-    void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters) {
+    void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters & counters)
+    {
         if (counters.perf_events_recording)
             return;
 
@@ -159,7 +163,8 @@ namespace DB {
         counters.perf_events_recording = true;
     }
 
-    void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events) {
+    void PerfEventsCounters::finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events)
+    {
         if (!counters.perf_events_recording)
             return;
 

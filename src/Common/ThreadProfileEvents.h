@@ -144,13 +144,14 @@ struct RUsageCounters
 
 #if defined(__linux__)
 
-    struct PerfEventInfo {
-        // see perf_event.h/perf_type_id enum
-        int event_type;
-        // see configs in perf_event.h
-        int event_config;
-        ProfileEvents::Event profile_event;
-    };
+struct PerfEventInfo
+{
+    // see perf_event.h/perf_type_id enum
+    int event_type;
+    // see configs in perf_event.h
+    int event_config;
+    ProfileEvents::Event profile_event;
+};
 
 #endif
 
