@@ -11,12 +11,12 @@ toc_title: "\u5BFC\u8A00"
 本节介绍如何获取示例数据集并将其导入ClickHouse。
 对于某些数据集示例查询也可用。
 
--   [匿名Yandex的。梅里卡数据集](metrica.md)
--   [星型架构基准测试](star_schema.md)
--   [WikiStat](wikistat.md)
--   [来自Criteo的万兆字节点击日志](criteo.md)
--   [AMPLab大数据基准](amplab_benchmark.md)
+-   [脱敏的Yandex.Metrica数据集](metrica.md)
+-   [星型基准测试](star_schema.md)
+-   [维基访问数据](wikistat.md)
+-   [Criteo TB级别点击日志](criteo.md)
+-   [AMPLab大数据基准测试](amplab_benchmark.md)
 -   [纽约出租车数据](nyc_taxi.md)
--   [时间](ontime.md)
+-   [航班飞行数据](ontime.md)
 
 [原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets) <!--hide-->
