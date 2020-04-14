@@ -1,21 +1,13 @@
-#include <Interpreters/ColumnNamesContext.h>
+#include <Common/typeid_cast.h>
+#include <Interpreters/RequiredSourceColumnsData.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <DataTypes/NestedUtils.h>
+#include <Parsers/ASTIdentifier.h>
 
 namespace DB
 {
 
-bool ColumnNamesContext::addTableAliasIfAny(const IAST & ast)
-{
-    String alias = ast.tryGetAlias();
-    if (alias.empty())
-        return false;
-
-    table_aliases.insert(alias);
-    return true;
-}
-
-bool ColumnNamesContext::addColumnAliasIfAny(const IAST & ast)
+bool RequiredSourceColumnsData::addColumnAliasIfAny(const IAST & ast)
 {
     String alias = ast.tryGetAlias();
     if (alias.empty())
@@ -28,7 +20,7 @@ bool ColumnNamesContext::addColumnAliasIfAny(const IAST & ast)
     return true;
 }
 
-void ColumnNamesContext::addColumnIdentifier(const ASTIdentifier & node)
+void RequiredSourceColumnsData::addColumnIdentifier(const ASTIdentifier & node)
 {
     if (!IdentifierSemantic::getColumnName(node))
         return;
@@ -38,7 +30,7 @@ void ColumnNamesContext::addColumnIdentifier(const ASTIdentifier & node)
     required_names[node.name].addInclusion(alias);
 }
 
-bool ColumnNamesContext::addArrayJoinAliasIfAny(const IAST & ast)
+bool RequiredSourceColumnsData::addArrayJoinAliasIfAny(const IAST & ast)
 {
     String alias = ast.tryGetAlias();
     if (alias.empty())
@@ -48,12 +40,12 @@ bool ColumnNamesContext::addArrayJoinAliasIfAny(const IAST & ast)
     return true;
 }
 
-void ColumnNamesContext::addArrayJoinIdentifier(const ASTIdentifier & node)
+void RequiredSourceColumnsData::addArrayJoinIdentifier(const ASTIdentifier & node)
 {
     array_join_columns.insert(node.name);
 }
 
-size_t ColumnNamesContext::nameInclusion(const String & name) const
+size_t RequiredSourceColumnsData::nameInclusion(const String & name) const
 {
     auto it = required_names.find(name);
     if (it != required_names.end())
@@ -61,7 +53,7 @@ size_t ColumnNamesContext::nameInclusion(const String & name) const
     return 0;
 }
 
-NameSet ColumnNamesContext::requiredColumns() const
+NameSet RequiredSourceColumnsData::requiredColumns() const
 {
     NameSet required;
     for (const auto & pr : required_names)
@@ -79,7 +71,7 @@ NameSet ColumnNamesContext::requiredColumns() const
     return required;
 }
 
-std::ostream & operator << (std::ostream & os, const ColumnNamesContext & cols)
+std::ostream & operator << (std::ostream & os, const RequiredSourceColumnsData & cols)
 {
     os << "required_names: ";
     for (const auto & pr : cols.required_names)
@@ -89,21 +81,6 @@ std::ostream & operator << (std::ostream & os, const ColumnNamesContext & cols)
             os << "/'" << alias << "'";
         os << ", ";
     }
-    os << "source_tables: ";
-    for (const auto & x : cols.tables)
-    {
-        auto alias = x.alias();
-        auto name = x.name();
-        if (alias && name)
-            os << "'" << *alias << "'/'" << *name << "', ";
-        else if (alias)
-            os << "'" << *alias << "', ";
-        else if (name)
-            os << "'" << *name << "', ";
-    }
-    os << "table_aliases: ";
-    for (const auto & x : cols.table_aliases)
-        os << "'" << x << "', ";
     os << "complex_aliases: ";
     for (const auto & x : cols.complex_aliases)
         os << "'" << x << "', ";
