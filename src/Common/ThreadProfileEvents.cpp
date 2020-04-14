@@ -174,8 +174,15 @@ namespace DB
         for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
         {
             int fd = counters.events_descriptors[i];
-            if (fd != -1)
-                read(fd, &counters.raw_event_values[i], sizeof(long long));
+            if (fd == -1)
+                continue;
+
+            constexpr ssize_t bytesToRead = sizeof(counters.raw_event_values[0]);
+            if (read(fd, &counters.raw_event_values[i], bytesToRead) != bytesToRead)
+            {
+                LOG_WARNING(getLogger(), "Can't read event value from file descriptor: " << fd);
+                counters.raw_event_values[i] = 0;
+            }
         }
 
         // actually process counters' values and release resources
