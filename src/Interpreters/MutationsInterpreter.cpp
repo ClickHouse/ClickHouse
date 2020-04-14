@@ -36,34 +36,46 @@ namespace ErrorCodes
 
 namespace
 {
-struct FirstNonDeterministicFuncData
+/// Helps to detect situations, where non-deterministic functions may be used in mutations of Replicated*MergeTree.
+class FirstNonDeterministicFuncMatcher
 {
-    using TypeToVisit = ASTFunction;
-
-    explicit FirstNonDeterministicFuncData(const Context & context_)
-        : context{context_}
-    {}
-
-    const Context & context;
-    std::optional<String> nondeterministic_function_name;
-
-    void visit(ASTFunction & function, ASTPtr &)
+public:
+    struct Data
     {
-        if (nondeterministic_function_name)
+        const Context & context;
+        std::optional<String> nondeterministic_function_name;
+    };
+
+public:
+    static bool needChildVisit(const ASTPtr & /*node*/, const ASTPtr & child)
+    {
+        return child != nullptr;
+    }
+
+    static void visit(const ASTPtr & node, Data & data)
+    {
+        if (data.nondeterministic_function_name)
             return;
 
-        const auto func = FunctionFactory::instance().get(function.name, context);
-        if (!func->isDeterministic())
-            nondeterministic_function_name = func->getName();
+        if (const auto * function = typeid_cast<const ASTFunction *>(node.get()))
+        {
+            /// Property of being deterministic for lambda expression is completely determined
+            /// by the contents of its definition, so we just proceed to it.
+            if (function->name != "lambda")
+            {
+                const auto func = FunctionFactory::instance().get(function->name, data.context);
+                if (!func->isDeterministic())
+                    data.nondeterministic_function_name = func->getName();
+            }
+        }
     }
 };
 
-using FirstNonDeterministicFuncFinder =
-        InDepthNodeVisitor<OneTypeMatcher<FirstNonDeterministicFuncData>, true>;
+using FirstNonDeterministicFuncFinder = InDepthNodeVisitor<FirstNonDeterministicFuncMatcher, true>;
 
 std::optional<String> findFirstNonDeterministicFuncName(const MutationCommand & command, const Context & context)
 {
-    FirstNonDeterministicFuncData finder_data(context);
+    FirstNonDeterministicFuncMatcher::Data finder_data{context, std::nullopt};
 
     switch (command.type)
     {
@@ -661,9 +673,11 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
 
 void MutationsInterpreter::validate(TableStructureReadLockHolder &)
 {
+    const Settings & settings = context.getSettingsRef();
+
     /// For Replicated* storages mutations cannot employ non-deterministic functions
     /// because that produces inconsistencies between replicas
-    if (startsWith(storage->getName(), "Replicated"))
+    if (startsWith(storage->getName(), "Replicated") && !settings.allow_nondeterministic_mutations)
     {
         for (const auto & command : commands)
         {

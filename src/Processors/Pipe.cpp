@@ -1,5 +1,6 @@
 #include <Processors/Pipe.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Sources/SourceFromInputStream.h>
 
 namespace DB
 {
@@ -48,7 +49,7 @@ static void checkSource(const IProcessor & source)
         throw Exception("Source for pipe should have single output, but it doesn't have any",
                         ErrorCodes::LOGICAL_ERROR);
 
-    if (source.getOutputs().size() > 2)
+    if (source.getOutputs().size() > 1)
         throw Exception("Source for pipe should have single or two outputs, but " + source.getName() + " has " +
                         toString(source.getOutputs().size()) + " outputs.", ErrorCodes::LOGICAL_ERROR);
 }
@@ -56,18 +57,22 @@ static void checkSource(const IProcessor & source)
 
 Pipe::Pipe(ProcessorPtr source)
 {
-    checkSource(*source);
-    output_port = &source->getOutputs().front();
+    if (auto * source_from_input_stream = typeid_cast<SourceFromInputStream *>(source.get()))
+    {
+        totals = source_from_input_stream->getTotalsPort();
+        extremes = source_from_input_stream->getExtremesPort();
+    }
+    else if (source->getOutputs().size() != 1)
+        checkSource(*source);
 
-    if (source->getOutputs().size() > 1)
-        totals = &source->getOutputs().back();
+    output_port = &source->getOutputs().front();
 
     processors.emplace_back(std::move(source));
     max_parallel_streams = 1;
 }
 
-Pipe::Pipe(Processors processors_, OutputPort * output_port_, OutputPort * totals_)
-    : processors(std::move(processors_)), output_port(output_port_), totals(totals_)
+Pipe::Pipe(Processors processors_, OutputPort * output_port_, OutputPort * totals_, OutputPort * extremes_)
+    : processors(std::move(processors_)), output_port(output_port_), totals(totals_), extremes(extremes_)
 {
 }
 

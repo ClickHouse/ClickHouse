@@ -25,7 +25,8 @@ void ASTSettingsProfileElement::formatImpl(const FormatSettings & settings, Form
 {
     if (!parent_profile.empty())
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "PROFILE " << (settings.hilite ? IAST::hilite_none : "");
+        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << (use_inherit_keyword ? "INHERIT" : "PROFILE") << " "
+                      << (settings.hilite ? IAST::hilite_none : "");
         formatProfileNameOrID(parent_profile, id_mode, settings);
         return;
     }
@@ -83,6 +84,13 @@ void ASTSettingsProfileElements::formatImpl(const FormatSettings & settings, For
 
         element->format(settings);
     }
+}
+
+
+void ASTSettingsProfileElements::setUseInheritKeyword(bool use_inherit_keyword_)
+{
+    for (auto & element : elements)
+        element->use_inherit_keyword = use_inherit_keyword_;
 }
 
 }

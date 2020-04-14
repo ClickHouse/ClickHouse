@@ -278,11 +278,25 @@ def test_java_client(server_address, java_container):
     with open(os.path.join(SCRIPT_DIR, 'clients', 'java', '0.reference')) as fp:
         reference = fp.read()
 
+    # database not exists exception.
     code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
                                                        'abc'.format(host=server_address, port=server_port), demux=True)
     assert code == 1
 
+    # empty password passed.
     code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
+                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == reference
+
+    # non-empty password passed.
+    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user default --password 123 --database '
+                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == reference
+
+    # double-sha1 password passed.
+    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database '
                                                        'default'.format(host=server_address, port=server_port), demux=True)
     assert code == 0
     assert stdout == reference

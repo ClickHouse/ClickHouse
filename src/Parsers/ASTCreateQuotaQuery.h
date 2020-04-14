@@ -13,17 +13,16 @@ class ASTExtendedRoleSet;
 /** CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name
   *      [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
   *      [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
-  *       {[SET] MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] |
-  *        [SET] TRACKING} [,...]]
+  *       {MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number} [,...] |
+  *        NO LIMITS | TRACKING ONLY} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   *
   * ALTER QUOTA [IF EXISTS] name
   *      [RENAME TO new_name]
   *      [KEYED BY {'none' | 'user name' | 'ip address' | 'client key' | 'client key or user name' | 'client key or ip address'}]
   *      [FOR [RANDOMIZED] INTERVAL number {SECOND | MINUTE | HOUR | DAY}
-  *       {[SET] MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = {number | ANY} } [,...] |
-  *        [SET] TRACKING |
-  *        UNSET TRACKING} [,...]]
+  *       {MAX {{QUERIES | ERRORS | RESULT ROWS | RESULT BYTES | READ ROWS | READ BYTES | EXECUTION TIME} = number} [,...] |
+  *        NO LIMITS | TRACKING ONLY} [,...]]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   */
 class ASTCreateQuotaQuery : public IAST, public ASTQueryWithOnCluster
@@ -48,7 +47,7 @@ public:
     struct Limits
     {
         std::optional<ResourceAmount> max[MAX_RESOURCE_TYPE];
-        bool unset_tracking = false;
+        bool drop = false;
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;
     };

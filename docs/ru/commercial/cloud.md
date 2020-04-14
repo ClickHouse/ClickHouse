@@ -1,20 +1,16 @@
----
-en_copy: true
----
+# Поставщики облачных услуг ClickHouse {#clickhouse-cloud-service-providers}
 
-# ClickHouse Cloud Service Providers {#clickhouse-cloud-service-providers}
-
-!!! info "Info"
-    If you have launched a public cloud with managed ClickHouse service, feel free to [open a pull-request](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/commercial/cloud.md) adding it to the following list.
+!!! info "Инфо"
+    Если вы запустили публичный облачный сервис с управляемым ClickHouse, не стесняйтесь [открыть pull request](https://github.com/ClickHouse/ClickHouse/edit/master/docs/en/commercial/cloud.md) c добавлением его в последующий список.
 
 ## Yandex Cloud {#yandex-cloud}
 
-[Yandex Managed Service for ClickHouse](https://cloud.yandex.com/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) provides the following key features:
+[Yandex Managed Service for ClickHouse](https://cloud.yandex.ru/services/managed-clickhouse?utm_source=referrals&utm_medium=clickhouseofficialsite&utm_campaign=link3) предоставляет следующие ключевые возможности:
 
--   Fully managed ZooKeeper service for [ClickHouse replication](../operations/table_engines/replication.md)
--   Multiple storage type choices
--   Replicas in different availability zones
--   Encryption and isolation
--   Automated maintenance
+-   Полностью управляемый сервис ZooKeeper для [репликации ClickHouse](../engines/table_engines/mergetree_family/replication.md)
+-   Выбор типа хранилища
+-   Реплики в разных зонах доступности
+-   Шифрование и изоляция
+-   Автоматизированное техническое обслуживание
 
-{## [Original article](https://clickhouse.tech/docs/en/commercial/cloud/) ##}
+{## [Оригинальная статья](https://clickhouse.tech/docs/ru/commercial/cloud/) ##}

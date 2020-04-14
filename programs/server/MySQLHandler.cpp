@@ -284,15 +284,17 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
     }
     else
     {
-        String replacement_query = "select ''";
+        String replacement_query = "SELECT ''";
         bool should_replace = false;
         bool with_output = false;
 
         // Translate query from MySQL to ClickHouse.
-        // This is a temporary workaround until ClickHouse supports the syntax "@@var_name".
+        // Required parameters when setup:
+        // * max_allowed_packet, default 64MB, https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_max_allowed_packet
         if (isFederatedServerSetupSelectVarCommand(query))
         {
             should_replace = true;
+            replacement_query = "SELECT 67108864 AS max_allowed_packet";
         }
 
         // This is a workaround in order to support adding ClickHouse to MySQL using federated server.

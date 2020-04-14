@@ -87,7 +87,6 @@
 #include <Processors/Transforms/MergingSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
-#include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
@@ -255,7 +254,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
+        table_lock = storage->lockStructureForShare(
+                false, context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
     }
 
@@ -2541,8 +2541,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
     if (!context->getSettingsRef().extremes)
         return;
 
-    auto transform = std::make_shared<ExtremesTransform>(pipeline.getHeader());
-    pipeline.addExtremesTransform(std::move(transform));
+    pipeline.addExtremesTransform();
 }
 
 

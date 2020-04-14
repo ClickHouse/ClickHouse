@@ -42,9 +42,11 @@ function configure
     rm db0/metadata/system/* -rf ||:
 
     # Make copies of the original db for both servers. Use hardlinks instead
-    # of copying.
+    # of copying. Be careful to remove preprocessed configs or it can lead to
+    # weird effects.
     rm -r left/db ||:
     rm -r right/db ||:
+    rm -r db0/preprocessed_configs ||:
     cp -al db0/ left/db/
     cp -al db0/ right/db/
 }

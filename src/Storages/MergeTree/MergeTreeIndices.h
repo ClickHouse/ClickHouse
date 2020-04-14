@@ -125,7 +125,7 @@ public:
     size_t granularity;
 };
 
-using MergeTreeIndices = std::vector<MutableMergeTreeIndexPtr>;
+using MergeTreeIndices = std::vector<MergeTreeIndexPtr>;
 
 
 class MergeTreeIndexFactory : private boost::noncopyable
