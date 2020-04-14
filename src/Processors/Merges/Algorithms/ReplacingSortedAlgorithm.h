@@ -11,7 +11,11 @@ class Logger;
 namespace DB
 {
 
-class ReplacingSortedAlgorithm : public IMergingAlgorithmWithSharedChunks
+/** Merges several sorted inputs into one.
+  * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
+  *  keeps row with max `version` value.
+  */
+class ReplacingSortedAlgorithm final : public IMergingAlgorithmWithSharedChunks
 {
 public:
     ReplacingSortedAlgorithm(
