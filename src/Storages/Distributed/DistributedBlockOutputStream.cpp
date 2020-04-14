@@ -61,11 +61,11 @@ namespace ErrorCodes
     extern const int CANNOT_LINK;
 }
 
-static void writeBlockConvert(const Context & context, const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
+static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
 {
     if (!blocksHaveEqualStructure(out->getHeader(), block))
     {
-        ConvertingBlockInputStream convert(context,
+        ConvertingBlockInputStream convert(
             std::make_shared<OneBlockInputStream>(block),
             out->getHeader(),
             ConvertingBlockInputStream::MatchColumnsMode::Name);
@@ -333,7 +333,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 job.stream->writePrefix();
             }
 
-            writeBlockConvert(context, job.stream, shard_block, shard_info.getLocalNodeCount());
+            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount());
         }
 
         job.blocks_written += 1;
@@ -568,7 +568,7 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
     auto block_io = interp.execute();
 
     block_io.out->writePrefix();
-    writeBlockConvert(context, block_io.out, block, repeats);
+    writeBlockConvert(block_io.out, block, repeats);
     block_io.out->writeSuffix();
 }
 

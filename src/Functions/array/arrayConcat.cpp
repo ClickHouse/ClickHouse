@@ -26,8 +26,7 @@ class FunctionArrayConcat : public IFunction
 {
 public:
     static constexpr auto name = "arrayConcat";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionArrayConcat>(context); }
-    explicit FunctionArrayConcat(const Context & context_) : context(context_) {}
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionArrayConcat>(); }
 
     String getName() const override { return name; }
 
@@ -73,7 +72,7 @@ public:
             ColumnPtr preprocessed_column = arg.column;
 
             if (!arg.type->equals(*return_type))
-                preprocessed_column = castColumn(arg, return_type, context);
+                preprocessed_column = castColumn(arg, return_type);
 
             preprocessed_columns[i] = std::move(preprocessed_column);
         }
@@ -103,9 +102,6 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
-
-private:
-    const Context & context;
 };
 
 
