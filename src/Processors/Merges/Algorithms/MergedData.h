@@ -93,7 +93,8 @@ public:
         if (merged_rows == 0)
             return false;
 
-        return merged_rows * merged_rows >= sum_blocks_granularity;
+        size_t average = sum_blocks_granularity / merged_rows;
+        return merged_rows >= average;
     }
 
     UInt64 mergedRows() const { return merged_rows; }
