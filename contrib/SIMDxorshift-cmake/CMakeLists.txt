@@ -1,0 +1,12 @@
+set(SIMDXORSHIFT_INCLUDE_DIR "${ClickHouse_SOURCE_DIR}/contrib/SIMDxorshift/include")
+set(SIMDXORSHIFT_SRC_DIR "${SIMDXORSHIFT_INCLUDE_DIR}/../src")
+set(SIMDXORSHIFT_SRC
+    ${SIMDXORSHIFT_SRC_DIR}/xorshift128plus.c
+    ${SIMDXORSHIFT_SRC_DIR}/simdxorshift128plus.c
+)
+
+set(SIMDXORSHIFT_LIBRARY "simdxorshift")
+
+add_library(${SIMDXORSHIFT_LIBRARY} ${SIMDXORSHIFT_SRC})
+target_include_directories(${SIMDXORSHIFT_LIBRARY} PUBLIC "${SIMDXORSHIFT_INCLUDE_DIR}")
+target_compile_options(${SIMDXORSHIFT_LIBRARY} PRIVATE -mavx2)

@@ -4,7 +4,6 @@
 #include <Common/randomSeed.h>
 #include <common/unaligned.h>
 
-
 namespace DB
 {
 
