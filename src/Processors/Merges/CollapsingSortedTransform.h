@@ -6,18 +6,7 @@
 namespace DB
 {
 
-/** Merges several sorted ports to one.
-  * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
-  *  keeps no more than one row with the value of the column `sign_column = -1` ("negative row")
-  *  and no more than a row with the value of the column `sign_column = 1` ("positive row").
-  * That is, it collapses the records from the change log.
-  *
-  * If the number of positive and negative rows is the same, and the last row is positive, then the first negative and last positive rows are written.
-  * If the number of positive and negative rows is the same, and the last line is negative, it writes nothing.
-  * If the positive by 1 is greater than the negative rows, then only the last positive row is written.
-  * If negative by 1 is greater than positive rows, then only the first negative row is written.
-  * Otherwise, a logical error.
-  */
+/// Implementation of IMergingTransform via CollapsingSortedAlgorithm.
 class CollapsingSortedTransform final : public IMergingTransform<CollapsingSortedAlgorithm>
 {
 public:

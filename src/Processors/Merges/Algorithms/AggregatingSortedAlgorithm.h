@@ -6,6 +6,12 @@
 namespace DB
 {
 
+/** Merges several sorted inputs to one.
+  * During this for each group of consecutive identical values of the primary key (the columns by which the data is sorted),
+  * merges them into one row. When merging, the data is pre-aggregated - merge of states of aggregate functions,
+  * corresponding to a one value of the primary key. For columns that are not part of the primary key and which do not have the AggregateFunction type,
+  * when merged, the first value is selected.
+  */
 class AggregatingSortedAlgorithm final : public IMergingAlgorithmWithDelayedChunk
 {
 public:

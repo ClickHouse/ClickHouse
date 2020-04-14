@@ -7,6 +7,7 @@
 namespace DB
 {
 
+/// Merges several sorted inputs into one sorted output.
 class MergingSortedAlgorithm final : public IMergingAlgorithm
 {
 public:

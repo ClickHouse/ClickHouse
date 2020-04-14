@@ -5,18 +5,9 @@
 
 namespace DB
 {
-/** Merges several sorted ports into one.
-  *
-  * For each group of consecutive identical values of the `path` column,
-  *  and the same `time` values, rounded to some precision
-  *  (where rounding accuracy depends on the template set for `path`
-  *   and the amount of time elapsed from `time` to the specified time),
-  * keeps one line,
-  *  performing the rounding of time,
-  *  merge `value` values using the specified aggregate functions,
-  *  as well as keeping the maximum value of the `version` column.
-  */
-class GraphiteRollupSortedTransform : public IMergingTransform<GraphiteRollupSortedAlgorithm>
+
+/// Implementation of IMergingTransform via GraphiteRollupSortedAlgorithm.
+class GraphiteRollupSortedTransform final : public IMergingTransform<GraphiteRollupSortedAlgorithm>
 {
 public:
     GraphiteRollupSortedTransform(

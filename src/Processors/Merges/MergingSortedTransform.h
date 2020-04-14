@@ -7,7 +7,7 @@
 namespace DB
 {
 
-/// Merges several sorted inputs into one sorted output.
+/// Implementation of IMergingTransform via MergingSortedAlgorithm.
 class MergingSortedTransform final : public IMergingTransform<MergingSortedAlgorithm>
 {
 public:

@@ -7,6 +7,11 @@
 namespace DB
 {
 
+/** Merges several sorted inputs to one.
+  * For each group of consecutive identical values of the sorting key
+  *   (the columns by which the data is sorted, including specially specified version column),
+  *   merges any pair of consecutive rows with opposite sign.
+  */
 class VersionedCollapsingAlgorithm : public IMergingAlgorithmWithSharedChunks
 {
 public:
