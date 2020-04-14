@@ -19,9 +19,9 @@ namespace ErrorCodes
 
 MergingSortedBlockInputStream::MergingSortedBlockInputStream(
     const BlockInputStreams & inputs_, const SortDescription & description_,
-    size_t max_block_size_, UInt64 limit_, WriteBuffer * out_row_sources_buf_, bool quiet_, bool average_block_sizes_)
+    size_t max_block_size_, UInt64 limit_, WriteBuffer * out_row_sources_buf_, bool quiet_)
     : description(description_), max_block_size(max_block_size_), limit(limit_), quiet(quiet_)
-    , average_block_sizes(average_block_sizes_), source_blocks(inputs_.size())
+    , source_blocks(inputs_.size())
     , cursors(inputs_.size()), out_row_sources_buf(out_row_sources_buf_)
     , log(&Logger::get("MergingSortedBlockInputStream"))
 {
@@ -139,30 +139,15 @@ void MergingSortedBlockInputStream::fetchNextBlock(const TSortCursor & current, 
 }
 
 
-bool MergingSortedBlockInputStream::MergeStopCondition::checkStop() const
-{
-    if (!count_average)
-        return sum_rows_count == max_block_size;
-
-    if (sum_rows_count == 0)
-        return false;
-
-    size_t average = sum_blocks_granularity / sum_rows_count;
-    return sum_rows_count >= average;
-}
-
-
 template <typename TSortingHeap>
 void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSortingHeap & queue)
 {
     size_t merged_rows = 0;
 
-    MergeStopCondition stop_condition(average_block_sizes, max_block_size);
-
     /** Increase row counters.
       * Return true if it's time to finish generating the current data block.
       */
-    auto count_row_and_check_limit = [&, this](size_t current_granularity)
+    auto count_row_and_check_limit = [&, this]()
     {
         ++total_merged_rows;
         if (limit && total_merged_rows == limit)
@@ -174,8 +159,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
         }
 
         ++merged_rows;
-        stop_condition.addRowWithGranularity(current_granularity);
-        return stop_condition.checkStop();
+        return merged_rows >= max_block_size;
     };
 
     /// Take rows in required order and put them into `merged_columns`, while the number of rows are no more than `max_block_size`

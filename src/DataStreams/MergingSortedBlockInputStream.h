@@ -34,7 +34,7 @@ public:
       */
     MergingSortedBlockInputStream(
         const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
-        UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false, bool average_block_sizes_ = false);
+        UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
 
     String getName() const override { return "MergingSorted"; }
 
@@ -44,38 +44,6 @@ public:
     Block getHeader() const override { return header; }
 
 protected:
-    /// Simple class, which allows to check stop condition during merge process
-    /// in simple case it just compare amount of merged rows with max_block_size
-    /// in `count_average` case it compares amount of merged rows with linear combination
-    /// of block sizes from which these rows were taken.
-    struct MergeStopCondition
-    {
-        size_t sum_blocks_granularity = 0;
-        size_t sum_rows_count = 0;
-        bool count_average;
-        size_t max_block_size;
-
-        MergeStopCondition(bool count_average_, size_t max_block_size_)
-            : count_average(count_average_)
-            , max_block_size(max_block_size_)
-        {}
-
-        /// add single row from block size `granularity`
-        void addRowWithGranularity(size_t granularity)
-        {
-            sum_blocks_granularity += granularity;
-            sum_rows_count++;
-        }
-
-        /// check that sum_rows_count is enough
-        bool checkStop() const;
-
-        bool empty() const
-        {
-            return sum_blocks_granularity == 0;
-        }
-    };
-
     Block readImpl() override;
 
     void readSuffixImpl() override;
@@ -87,7 +55,6 @@ protected:
     template <typename TSortCursor>
     void fetchNextBlock(const TSortCursor & current, SortingHeap<TSortCursor> & queue);
 
-
     Block header;
 
     const SortDescription description;
@@ -98,7 +65,6 @@ protected:
     bool first = true;
     bool has_collation = false;
     bool quiet = false;
-    bool average_block_sizes = false;
 
     /// May be smaller or equal to max_block_size. To do 'reserve' for columns.
     size_t expected_block_size = 0;
