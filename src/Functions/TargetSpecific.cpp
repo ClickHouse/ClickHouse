@@ -1,6 +1,6 @@
 #include <Functions/TargetSpecific.h>
 
-#if defined(__GNUC__) || defined(__clang__)
+#if defined(__GNUC__)
 #   include <cpuid.h>
 #else
 #   error "Only CLANG and GCC compilers are supported for dynamic dispatch"
