@@ -18,7 +18,7 @@ namespace DB
   * If negative by 1 is greater than positive rows, then only the first negative row is written.
   * Otherwise, a logical error.
   */
-class CollapsingSortedTransform final : public IMergingTransform2<CollapsingSortedAlgorithm>
+class CollapsingSortedTransform final : public IMergingTransform<CollapsingSortedAlgorithm>
 {
 public:
     CollapsingSortedTransform(
@@ -29,7 +29,7 @@ public:
         size_t max_block_size,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false)
-        : IMergingTransform2(
+        : IMergingTransform(
             num_inputs, header, header, true,
             header,
             num_inputs,

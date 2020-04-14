@@ -18,7 +18,7 @@ MergingSortedTransform::MergingSortedTransform(
     bool quiet_,
     bool use_average_block_sizes,
     bool have_all_inputs_)
-    : IMergingTransform2(
+    : IMergingTransform(
         num_inputs, header, header, have_all_inputs_,
         header,
         num_inputs,

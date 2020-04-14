@@ -11,7 +11,7 @@ namespace DB
   *  collapses them into one row, summing all the numeric columns except the primary key.
   * If in all numeric columns, except for the primary key, the result is zero, it deletes the row.
   */
-class SummingSortedTransform final : public IMergingTransform2<SummingSortedAlgorithm>
+class SummingSortedTransform final : public IMergingTransform<SummingSortedAlgorithm>
 {
 public:
 
@@ -21,7 +21,7 @@ public:
         /// List of columns to be summed. If empty, all numeric columns that are not in the description are taken.
         const Names & column_names_to_sum,
         size_t max_block_size)
-        : IMergingTransform2(
+        : IMergingTransform(
             num_inputs, header, header, true,
             header,
             num_inputs,

@@ -12,7 +12,7 @@ namespace DB
   *   (the columns by which the data is sorted, including specially specified version column),
   *   merges any pair of consecutive rows with opposite sign.
   */
-class VersionedCollapsingTransform final : public IMergingTransform2<VersionedCollapsingAlgorithm>
+class VersionedCollapsingTransform final : public IMergingTransform<VersionedCollapsingAlgorithm>
 {
 public:
     /// Don't need version column. It's in primary key.
@@ -22,7 +22,7 @@ public:
         size_t max_block_size,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false)
-        : IMergingTransform2(
+        : IMergingTransform(
             num_inputs, header, header, true,
             header,
             num_inputs,
