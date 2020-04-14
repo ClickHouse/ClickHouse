@@ -16,6 +16,7 @@ To revoke privileges, use the [REVOKE](revoke.md) statement. Also you can list g
 ```sql
 GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION]
 ```
+
 - `privilege` — Type of privilege.
 - `role` — ClickHouse user role.
 - `user` — ClickHouse user account.
@@ -55,6 +56,8 @@ It means that `john` has the permission to perform:
 Also `john` has the `GRANT OPTION` privilege, so it can grant other users with privileges of the same or the smaller scope.
 
 Specifying privileges you can use asterisk (`*`) instead of a table or a database name. For example, the `GRANT SELECT ON db.* TO john` query allows `john` to perform the `SELECT` query over all the tables in `db` database. Also, you can omit database name. In this case privileges are granted for current database, for example: `GRANT SELECT ON * TO john` grants the privilege on all the tables in the current database, `GRANT SELECT ON mytable TO john` grants the privilege on the `mytable` table in the current database.
+
+Access to the `system` database is always allowed (since this database is used for processing queries).
 
 You can grant multiple privileges to multiple accounts in one query. The query `GRANT SELECT, INSERT ON *.* TO john, petya` allows accounts `john` and `petya` to perform the `INSERT` and `SELECT` queries over all the tables in all the databases on the server.
 
@@ -116,22 +119,7 @@ Allows to perform [INSERT](insert_into.md) queries.
 **Description**
 
 User granted with this privilege can perform `INSERT` queries over a specified list of columns in the specified table and database. If user includes other columns then specified a query doesn't insert any data. 
-
-Consider the following privilege:
-
-```sql
-GRANT INSERT(x,y) ON db.table TO john
-```
-
-This privilege allows `john` to perform any `SELECT` query that involves data from the `x` and/or `y` columns in `db.table`. For example, `SELECT x FROM db.table`. `john` can't perform `SELECT z FROM db.table`. The `SELECT * FROM db.table` also is not available. ClickHouse doesn't return any data, even `x` and `y`.
-
-### ALTER {#grant-alter}
-
-Allows to perform [ALTER](alter.md) queries corresponding to the following hierarchy of privileges:
-
-- `ALTER`
-    - `ALTER TABLE`
-        - `ALTER UPDATE`. Aliases: `UPDATE`
+ACCESS
         - `ALTER DELETE`. Aliases: `DELETE`
         - `ALTER COLUMN`
             - `ALTER ADD COLUMN`. Aliases: `ADD COLUMN`
@@ -275,8 +263,9 @@ Allows a user to perform queries that manage users, roles and row policies.
         - `SHOW_ROW_POLICIES`. Aliases: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
         - `SHOW_QUOTAS`. Aliases: `SHOW CREATE QUOTA`
         - `SHOW_SETTINGS_PROFILES`. Aliases: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
+    - `ROLE ADMIN`
 
-The `ROLE ADMIN` privilege allows to grant and revoke the roles which are not granted to the current user with admin option.
+The `ROLE ADMIN` privilege allows a user to grant and revoke any roles including those which are not granted to the user with the admin option.
 
 ### SYSTEM {#grant-system}
 
@@ -354,7 +343,8 @@ Some kinds of ClickHouse [dictionaries](../dictionaries/index.md) are not stored
 
 ### ALL {#grant-all}
 
-Grants all the privileges on regulated entity to a user account or a role._
+Grants all the privileges on regulated entity to a user account or a role.
+
 
 ### NONE {#grant-none}
 

@@ -308,9 +308,6 @@ For more information, see [External Dictionaries](../../sql_reference/dictionari
 
 Creates a [user account](../../operations/access_rights.md#user-account-management).
 
-!!! info "Note"
-    Some of the access control functionality is available through the [users.xml](../../operations/settings/settings_users.md) server configuration files, but we don't recommend using this way of user permissions management.
-
 ### Syntax {#create-user-syntax}
 
 ```sql
@@ -336,7 +333,7 @@ There are multiple ways of user identification:
 
 User host is a host from which a connection to ClickHouse server could be established. Host can be specified in the `HOST` section of query by the following ways:
 
-- `HOST IP 'ip_address_or_subnetwork'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). Examples: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`.
+- `HOST IP 'ip_address_or_subnetwork'` — User can connect to ClickHouse server only from the specified IP address or a [subnetwork](https://en.wikipedia.org/wiki/Subnetwork). Examples: `HOST IP '192.168.0.0/16'`, `HOST IP '2001:DB8::/32'`. For use in production, only specify `HOST IP` elements (IP addresses and their masks), since using `host` and `host_regexp` might cause extra latency.
 - `HOST ANY` — User can connect from any location. This is default option.
 - `HOST LOCAL` — User can connect only locally.
 - `HOST NAME 'fqdn'` — User host can be specified as FQDN. For example, `HOST NAME 'mysite.com'`.
@@ -385,10 +382,9 @@ ALTER USER john DEFAULT ROLE ALL EXCEPT role1, role2
 ```
 
 
-
 ## CREATE ROLE {#create-role-statement}
 
-Creates a role.
+Creates a [role](../../operations/access_rights.md#role-management).
 
 ### Syntax {#create-role-syntax}
 
@@ -433,7 +429,7 @@ SELECT * FROM db.*;
 
 ## CREATE ROW POLICY {#create-row-policy-statement}
 
-Creates a filter for rows, which a user can read from a table. Also, you can create row filters in the [user settings](../../operations/settings/settings_users.md#user-databases-settings).
+Creates a [filter for rows]((../../operations/access_rights.md#row-policy-management)), which a user can read from a table.
 
 ### Syntax {#create-row-policy-syntax}
 
@@ -469,7 +465,7 @@ Keyword `ALL` means all the ClickHouse users including current user. Keywords `A
 
 ## CREATE QUOTA {#create-quota-statement}
 
-Creates a [quota](../../operations/quotas.md) that can be assigned to a user of role.
+Creates a [quota]((../../operations/access_rights.md#quota-management)) that can be assigned to a user or a role.
 
 ### Syntax {#create-quota-syntax}
 
@@ -493,7 +489,7 @@ CREATE QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES 123 TO CURRENT_USER
 
 ## CREATE SETTINGS PROFILE {#create-settings-profile-statement}
 
-Creates a [settings profile](../../operations/settings/settings_profiles.md) that can be assigned to a user of role.
+Creates a [settings profile]((../../operations/access_rights.md#settings-profile-management)) that can be assigned to a user or a role.
 
 ### Syntax {#create-settings-profile-syntax}
 
