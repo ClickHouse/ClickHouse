@@ -60,7 +60,7 @@ private:
 
 private:
     NamesAndTypesList columns_list;
-
+    IMergeTreeDataPart::MinMaxIndex minmax_idx;
     size_t rows_count = 0;
 };
 

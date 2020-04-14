@@ -28,6 +28,7 @@
 #include <Parsers/queryToString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
 #include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
@@ -248,6 +249,12 @@ MergeTreeData::MergeTreeData(
     String reason;
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
         LOG_WARNING(log, reason + " Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored.");
+
+    if (settings->in_memory_parts_enable_wal)
+    {
+        auto disk = reserveSpace(0)->getDisk();
+        write_ahead_log = std::make_shared<MergeTreeWriteAheadLog>(*this, disk);
+    }
 }
 
 
@@ -894,17 +901,21 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 continue;
 
             part_names_with_disks.emplace_back(it->name(), disk_ptr);
+
+            if (startsWith(it->name(), MergeTreeWriteAheadLog::WAL_FILE_NAME))
+                loadDataPartsFromWAL(disk_ptr, it->name());
         }
     }
 
     auto part_lock = lockParts();
-    data_parts_indexes.clear();
+    // TODO: fix.
+    // data_parts_indexes.clear();
 
-    if (part_names_with_disks.empty())
-    {
-        LOG_DEBUG(log, "There is no data parts");
-        return;
-    }
+    // if (part_names_with_disks.empty())
+    // {
+    //     LOG_DEBUG(log, "There is no data parts");
+    //     return;
+    // }
 
     /// Parallel loading of data parts.
     size_t num_threads = std::min(size_t(settings->max_part_loading_threads), part_names_with_disks.size());
@@ -1104,6 +1115,21 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
     calculateColumnSizesImpl();
 
     LOG_DEBUG(log, "Loaded data parts (" << data_parts_indexes.size() << " items)");
+}
+
+void MergeTreeData::loadDataPartsFromWAL(const DiskPtr & disk, const String & file_name)
+{
+    MergeTreeWriteAheadLog wal(*this, disk, file_name);
+    auto parts = wal.restore();
+    for (auto & part : parts)
+    {
+        part->modification_time = time(nullptr);
+        /// Assume that all parts are Committed, covered parts will be detected and marked as Outdated later
+        part->state = DataPartState::Committed;
+
+        if (!data_parts_indexes.insert(part).second)
+            throw Exception("Part " + part->name + " already exists", ErrorCodes::DUPLICATE_DATA_PART);
+    }
 }
 
 
@@ -1549,6 +1575,21 @@ MergeTreeDataPartType MergeTreeData::choosePartType(size_t bytes_uncompressed, s
         return MergeTreeDataPartType::WIDE;
 
     const auto settings = getSettings();
+    if (bytes_uncompressed < settings->min_bytes_for_compact_part || rows_count < settings->min_rows_for_compact_part)
+        return MergeTreeDataPartType::IN_MEMORY;
+
+    if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
+        return MergeTreeDataPartType::COMPACT;
+
+    return MergeTreeDataPartType::WIDE;
+}
+
+MergeTreeDataPartType MergeTreeData::choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count) const
+{
+    if (!canUseAdaptiveGranularity())
+        return MergeTreeDataPartType::WIDE;
+
+    const auto settings = getSettings();
     if (bytes_uncompressed < settings->min_bytes_for_wide_part || rows_count < settings->min_rows_for_wide_part)
         return MergeTreeDataPartType::COMPACT;
 
@@ -1564,8 +1605,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeData::createPart(const String & name,
         return std::make_shared<MergeTreeDataPartCompact>(*this, name, part_info, disk, relative_path);
     else if (type == MergeTreeDataPartType::WIDE)
         return std::make_shared<MergeTreeDataPartWide>(*this, name, part_info, disk, relative_path);
+    else if (type == MergeTreeDataPartType::IN_MEMORY)
+        return std::make_shared<MergeTreeDataPartInMemory>(*this, name, part_info, disk, relative_path);
     else
-        throw Exception("Unknown type in part " + relative_path, ErrorCodes::UNKNOWN_PART_TYPE);
+        throw Exception("Unknown type of part " + relative_path, ErrorCodes::UNKNOWN_PART_TYPE);
 }
 
 static MergeTreeDataPartType getPartTypeFromMarkExtension(const String & mrk_ext)
@@ -1874,6 +1917,13 @@ void MergeTreeData::renameTempPartAndReplace(
 
         modifyPartState(part_it, DataPartState::Committed);
         addPartContributionToColumnSizes(part);
+    }
+
+    auto * part_in_memory = dynamic_cast<MergeTreeDataPartInMemory *>(part.get());
+    if (part_in_memory && getSettings()->in_memory_parts_enable_wal)
+    {
+        auto wal = getWriteAheadLog();
+        wal->write(part_in_memory->block, part_in_memory->name);
     }
 
     if (out_covered_parts)
@@ -2698,6 +2748,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVector(const DataPartS
                 (*out_states)[i] = res[i]->state;
         }
     }
+
+    LOG_DEBUG(log, "MergeTreeData::getDataPartsVector: " << res.size());
 
     return res;
 }
@@ -3616,4 +3668,11 @@ MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const 
 
     return result;
 }
+
+MergeTreeData::WriteAheadLogPtr MergeTreeData::getWriteAheadLog() const
+{
+    // std::lock_guard lock(wal_mutex);
+    return write_ahead_log;
+}
+
 }

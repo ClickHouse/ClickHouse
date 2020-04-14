@@ -248,4 +248,12 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns)
     }
 }
 
+void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read)
+{
+    if (num_columns_to_read != columns.size())
+        throw Exception("invalid number of columns passed to MergeTreeReader::readRows. "
+                        "Expected " + toString(columns.size()) + ", "
+                        "got " + toString(num_columns_to_read), ErrorCodes::LOGICAL_ERROR);
+}
+
 }

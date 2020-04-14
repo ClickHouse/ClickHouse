@@ -64,7 +64,6 @@ private:
     size_t part_index_in_query = 0;
 
     bool check_columns;
-    String path;
     bool is_first_task = true;
 
     Logger * log = &Logger::get("MergeTreeSelectProcessor");

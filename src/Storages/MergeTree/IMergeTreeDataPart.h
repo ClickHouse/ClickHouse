@@ -284,7 +284,7 @@ public:
     size_t getFileSizeOrZero(const String & file_name) const;
     String getFullRelativePath() const;
     String getFullPath() const;
-    void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = false) const;
+    virtual void renameTo(const String & new_relative_path, bool remove_new_dir_if_exists = false) const;
     void renameToDetached(const String & prefix) const;
     void makeCloneInDetached(const String & prefix) const;
 

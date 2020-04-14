@@ -72,6 +72,8 @@ size_t MergeTreeIndexGranularityInfo::getMarkSizeInBytes(size_t columns_num) con
         return is_adaptive ? getAdaptiveMrkSizeWide() : getNonAdaptiveMrkSizeWide();
     else if (type == MergeTreeDataPartType::COMPACT)
         return getAdaptiveMrkSizeCompact(columns_num);
+    else if (type == MergeTreeDataPartType::IN_MEMORY)
+        return 0;
     else
         throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
 }
@@ -88,6 +90,8 @@ std::string getAdaptiveMrkExtension(MergeTreeDataPartType part_type)
         return ".mrk2";
     else if (part_type == MergeTreeDataPartType::COMPACT)
         return ".mrk3";
+    else if (part_type == MergeTreeDataPartType::IN_MEMORY)
+        return "";
     else
         throw Exception("Unknown part type", ErrorCodes::UNKNOWN_PART_TYPE);
 }

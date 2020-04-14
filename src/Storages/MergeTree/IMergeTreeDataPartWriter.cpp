@@ -5,8 +5,11 @@ namespace DB
 
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeData & storage_,
+    const NamesAndTypesList & columns_list_,
     const MergeTreeWriterSettings & settings_)
-    : storage(storage_), settings(settings_) {}
+    : storage(storage_)
+    , columns_list(columns_list_)
+    , settings(settings_) {}
 
 IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeData & storage_,
