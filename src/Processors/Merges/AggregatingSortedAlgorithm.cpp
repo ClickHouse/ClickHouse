@@ -9,6 +9,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition() = default;
 AggregatingSortedAlgorithm::ColumnsDefinition::ColumnsDefinition(ColumnsDefinition &&) noexcept = default;
 AggregatingSortedAlgorithm::ColumnsDefinition::~ColumnsDefinition() = default;
