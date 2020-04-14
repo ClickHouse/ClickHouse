@@ -38,18 +38,9 @@ namespace std
 }
 #endif
 
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/CollapsingFinalBlockInputStream.h>
-#include <DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
-#include <DataStreams/MergingSortedBlockInputStream.h>
-#include <DataStreams/NullBlockInputStream.h>
-#include <DataStreams/SummingSortedBlockInputStream.h>
-#include <DataStreams/ReplacingSortedBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
-#include <DataStreams/AggregatingSortedBlockInputStream.h>
-#include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -59,6 +50,10 @@ namespace std
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/SummingSortedTransform.h>
+#include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/ReplacingSortedTransform.h>
+#include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/ConcatProcessor.h>
@@ -1096,16 +1091,14 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     };
 
     BlockInputStreamPtr merged;
+    ProcessorPtr merged_processor;
     switch (data.merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
         {
-            auto merged_processor =
-                    std::make_shared<MergingSortedTransform>(header, pipes.size(), sort_description, max_block_size);
-            Pipe pipe(std::move(pipes), std::move(merged_processor));
-            pipes = Pipes();
-            pipes.emplace_back(std::move(pipe));
-            return pipes;
+            merged_processor = std::make_shared<MergingSortedTransform>(header, pipes.size(),
+                    sort_description, max_block_size);
+            break;
         }
 
         case MergeTreeData::MergingParams::Collapsing:
@@ -1114,26 +1107,34 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             break;
 
         case MergeTreeData::MergingParams::Summing:
-            merged = std::make_shared<SummingSortedBlockInputStream>(streams_to_merge(),
+            merged_processor = std::make_shared<SummingSortedTransform>(header, pipes.size(),
                     sort_description, data.merging_params.columns_to_sum, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
-            merged = std::make_shared<AggregatingSortedBlockInputStream>(streams_to_merge(), sort_description, max_block_size);
+            merged_processor = std::make_shared<AggregatingSortedTransform>(header, pipes.size(),
+                    sort_description, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::Replacing:    /// TODO Make ReplacingFinalBlockInputStream
-            merged = std::make_shared<ReplacingSortedBlockInputStream>(streams_to_merge(),
+            merged_processor = std::make_shared<ReplacingSortedTransform>(header, pipes.size(),
                     sort_description, data.merging_params.version_column, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::VersionedCollapsing: /// TODO Make VersionedCollapsingFinalBlockInputStream
-            merged = std::make_shared<VersionedCollapsingSortedBlockInputStream>(
-                    streams_to_merge(), sort_description, data.merging_params.sign_column, max_block_size);
+            merged_processor = std::make_shared<VersionedCollapsingTransform>(header, pipes.size(),
+                    sort_description, data.merging_params.sign_column, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::Graphite:
             throw Exception("GraphiteMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    if (merged_processor)
+    {
+        Pipe pipe(std::move(pipes), std::move(merged_processor));
+        pipes = Pipes();
+        pipes.emplace_back(std::move(pipe));
     }
 
     if (merged)
