@@ -80,7 +80,7 @@ def test_ttl_many_columns(started_cluster):
     assert TSV(node2.query("SELECT id, a, _idx, _offset, _partition FROM test_ttl_2 ORDER BY id")) == TSV(expected)
  
  
-def test_ttl_table(started_cluster, delete_suffix):
+def test_ttl_table(started_cluster):
     drop_table([node1, node2], "test_ttl")
     for node in [node1, node2]:
         node.query(
