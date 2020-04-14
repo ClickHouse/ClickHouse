@@ -100,10 +100,7 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
 {
     if (!quit)
     {
-        {
-            quit = true;
-            std::lock_guard lock{mutex};
-        }
+        quit = true;
         cond.notify_one();
         thread.join();
     }
@@ -122,10 +119,7 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
 {
     if (!quit)
     {
-        {
-            quit = true;
-            std::lock_guard lock{mutex};
-        }
+        quit = true;
         cond.notify_one();
         thread.join();
     }
