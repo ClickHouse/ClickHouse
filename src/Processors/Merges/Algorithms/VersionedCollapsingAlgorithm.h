@@ -12,7 +12,7 @@ namespace DB
   *   (the columns by which the data is sorted, including specially specified version column),
   *   merges any pair of consecutive rows with opposite sign.
   */
-class VersionedCollapsingAlgorithm : public IMergingAlgorithmWithSharedChunks
+class VersionedCollapsingAlgorithm final : public IMergingAlgorithmWithSharedChunks
 {
 public:
     /// Don't need version column. It's in primary key.
