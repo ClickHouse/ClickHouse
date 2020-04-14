@@ -42,7 +42,7 @@ bool MsgPackRowInputFormat::readObject()
     PeekableReadBufferCheckpoint checkpoint{buf};
     std::unique_ptr<msgpack::zone> zone(new msgpack::zone);
     size_t offset;
-    while(!unpack(*zone, offset))
+    while (!unpack(*zone, offset))
     {
         buf.position() = buf.buffer().end();
         if (buf.eof())
