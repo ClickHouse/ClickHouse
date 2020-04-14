@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 46
+toc_title: "Soluci\xF3n de problemas"
+---
+
 # Solución de problemas {#troubleshooting}
 
 -   [Instalación](#troubleshooting-installation-errors)
@@ -7,7 +14,7 @@
 
 ## Instalación {#troubleshooting-installation-errors}
 
-### No puede obtener paquetes Deb del repositorio ClickHouse con apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+### No puede obtener paquetes Deb del repositorio de Clickhouse con Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Compruebe la configuración del firewall.
 -   Si no puede acceder al repositorio por cualquier motivo, descargue los paquetes como se describe en el [Primeros pasos](../getting_started/index.md) artículo e instálelos manualmente usando el `sudo dpkg -i <packages>` comando. También necesitará el `tzdata` paquete.
@@ -41,8 +48,8 @@ El registro principal de `clickhouse-server` está en `/var/log/clickhouse-serve
 
 Si el servidor se inició correctamente, debería ver las cadenas:
 
--   `<Information> Application: starting up.` — Servidor iniciado.
--   `<Information> Application: Ready for connections.` — El servidor se está ejecutando y listo para las conexiones.
+-   `<Information> Application: starting up.` — Server started.
+-   `<Information> Application: Ready for connections.` — Server is running and ready for connections.
 
 Si `clickhouse-server` error de inicio con un error de configuración, debería ver el `<Error>` cadena con una descripción de error. Por ejemplo:
 
@@ -74,7 +81,7 @@ Revision: 54413
 
 **Ver sistema.d registros**
 
-Si no encuentra ninguna información útil en `clickhouse-server` registros o no hay ningún registro, puede ver `system.d` comando el comando:
+Si no encuentra ninguna información útil en `clickhouse-server` registros o no hay registros, puede ver `system.d` registros usando el comando:
 
 ``` bash
 $ sudo journalctl -u clickhouse-server
@@ -98,7 +105,7 @@ Comprobar:
 
 -   Configuración del punto final.
 
-    Comprobar [listen\_host](server_settings/settings.md#server_settings-listen_host) y [Tcp\_port](server_settings/settings.md#server_settings-tcp_port) configuración.
+    Comprobar [listen\_host](server_configuration_parameters/settings.md#server_configuration_parameters-listen_host) y [Tcp\_port](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port) configuración.
 
     El servidor ClickHouse acepta conexiones localhost solo de forma predeterminada.
 
@@ -110,8 +117,8 @@ Comprobar:
 
     Comprobar:
 
-    -   El [Tcp\_port\_secure](server_settings/settings.md#server_settings-tcp_port_secure) configuración.
-    -   Ajustes para [Sertificados SSL](server_settings/settings.md#server_settings-openssl).
+    -   El [Tcp\_port\_secure](server_configuration_parameters/settings.md#server_configuration_parameters-tcp_port_secure) configuración.
+    -   Ajustes para [Sertificados SSL](server_configuration_parameters/settings.md#server_configuration_parameters-openssl).
 
     Utilice los parámetros adecuados mientras se conecta. Por ejemplo, utilice el `port_secure` parámetro con `clickhouse_client`.
 

@@ -38,7 +38,7 @@
 
 Максимальный возможный объём оперативной памяти для запросов пользователя на одном сервере.
 
-Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L288). По умолчанию размер не ограничен (`max_memory_usage_for_user = 0`).
+Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L288). По умолчанию размер не ограничен (`max_memory_usage_for_user = 0`).
 
 Смотрите также описание настройки [max\_memory\_usage](#settings_max_memory_usage).
 
@@ -46,7 +46,7 @@
 
 Максимальный возможный объём оперативной памяти для всех запросов на одном сервере.
 
-Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/dbms/src/Core/Settings.h#L289). По умолчанию размер не ограничен (`max_memory_usage_for_all_queries = 0`).
+Значения по умолчанию определены в файле [Settings.h](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.h#L289). По умолчанию размер не ограничен (`max_memory_usage_for_all_queries = 0`).
 
 Смотрите также описание настройки [max\_memory\_usage](#settings_max_memory_usage).
 
@@ -76,11 +76,11 @@
 
 ## max\_bytes\_before\_external\_group\_by {#settings-max_bytes_before_external_group_by}
 
-Включает или отключает выполнение секций `GROUP BY` во внешней памяти. Смотрите [GROUP BY во внешней памяти](../../query_language/select.md#select-group-by-in-external-memory).
+Включает или отключает выполнение секций `GROUP BY` во внешней памяти. Смотрите [GROUP BY во внешней памяти](../../sql_reference/statements/select.md#select-group-by-in-external-memory).
 
 Возможные значения:
 
--   Максимальный объём RAM (в байтах), который может использовать отдельная операция [GROUP BY](../../query_language/select.md#select-group-by-clause).
+-   Максимальный объём RAM (в байтах), который может использовать отдельная операция [GROUP BY](../../sql_reference/statements/select.md#select-group-by-clause).
 -   0 — `GROUP BY` во внешней памяти отключен.
 
 Значение по умолчанию — 0.
@@ -228,7 +228,7 @@ FORMAT Null;
 
 Ограничивает количество строк в хэш-таблице, используемой при соединении таблиц.
 
-Параметр применяется к операциям [SELECT… JOIN](../../query_language/select.md#select-join) и к движку таблиц [Join](../table_engines/join.md).
+Параметр применяется к операциям [SELECT… JOIN](../../sql_reference/statements/select.md#select-join) и к движку таблиц [Join](../../engines/table_engines/special/join.md).
 
 Если запрос содержит несколько `JOIN`, то ClickHouse проверяет значение настройки для каждого промежуточного результата.
 
@@ -245,7 +245,7 @@ FORMAT Null;
 
 Ограничивает размер (в байтах) хэш-таблицы, используемой при объединении таблиц.
 
-Параметр применяется к операциям [SELECT… JOIN](../../query_language/select.md#select-join) и к движку таблиц [Join](../table_engines/join.md).
+Параметр применяется к операциям [SELECT… JOIN](../../sql_reference/statements/select.md#select-join) и к движку таблиц [Join](../../engines/table_engines/special/join.md).
 
 Если запрос содержит несколько `JOIN`, то ClickHouse проверяет значение настройки для каждого промежуточного результата.
 
@@ -274,8 +274,8 @@ FORMAT Null;
 
 **Смотрите также**
 
--   [Секция JOIN](../../query_language/select.md#select-join)
--   [Движок таблиц Join](../table_engines/join.md)
+-   [Секция JOIN](../../sql_reference/statements/select.md#select-join)
+-   [Движоy таблиц Join](../../engines/table_engines/special/join.md)
 
 ## max\_partitions\_per\_insert\_block {#max-partitions-per-insert-block}
 

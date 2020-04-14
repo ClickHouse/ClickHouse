@@ -1,8 +1,0 @@
-{% set alt_langs = [['en', 'English'], ['ru', 'Russian'], ['zh', 'Chinese'], ['ja', 'Japanese'], ['fa', 'Farsi']] %}
-{% for alt_lang, alt_title in alt_langs %}
-  <a class="md-alt-lang{% if alt_lang == config.theme.language %} md-current-lang{% endif %}"
-     href="{{ base_url }}/../{{ alt_lang }}/{{ page.url or '' }}" class="md-flex__ellipsis md-header-nav__title"
-     title="{{ alt_title }}">
-    {% include "assets/flags/" + alt_lang + ".svg" %}
-  </a>
-{% endfor %}

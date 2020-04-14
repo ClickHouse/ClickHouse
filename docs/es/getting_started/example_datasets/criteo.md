@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 19
+toc_title: Registros de clics de Terabyte de Criteo
+---
+
 # Terabyte de registros de clics de Criteo {#terabyte-of-click-logs-from-criteo}
 
 Descargue los datos de http://labs.criteo.com/downloads/download-terabyte-click-logs/
@@ -71,4 +78,4 @@ INSERT INTO criteo SELECT date, clicked, int1, int2, int3, int4, int5, int6, int
 DROP TABLE criteo_log;
 ```
 
-[Artículo Original](https://clickhouse.tech/docs/es/getting_started/example_datasets/criteo/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/getting_started/example_datasets/criteo/) <!--hide-->

@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 48
+toc_title: Derechos de acceso
+---
+
 # Derechos de acceso {#access-rights}
 
 Los usuarios y los derechos de acceso se configuran en la configuración del usuario. Esto suele ser `users.xml`.
@@ -65,11 +72,11 @@ Los usuarios se registran en el `users` apartado. Aquí hay un fragmento de la `
 
 Puede ver una declaración de dos usuarios: `default`y`web`. Hemos añadido el `web` usuario por separado.
 
-El `default` usuario se elige en los casos en que no se pasa el nombre de usuario. El `default` usuario también se utiliza para el procesamiento de consultas distribuidas, si la configuración del servidor o clúster no `user` y `password` (véase la sección sobre el [Distribuido](../operations/table_engines/distributed.md) motor).
+El `default` usuario se elige en los casos en que no se pasa el nombre de usuario. El `default` usuario también se utiliza para el procesamiento de consultas distribuidas, si la configuración del servidor o clúster no `user` y `password` (véase la sección sobre el [Distribuido](../engines/table_engines/special/distributed.md) motor).
 
-El usuario que se utiliza para intercambiar información entre servidores combinados en un clúster no debe tener restricciones o cuotas sustanciales; de lo contrario, las consultas distribuidas fallarán.
+The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
 
-La contraseña se especifica en texto sin cifrar (no recomendado) o en SHA-256. El hash no es salado. En este sentido, no debe considerar estas contraseñas como proporcionar seguridad contra posibles ataques maliciosos. Más bien, son necesarios para la protección de los empleados.
+La contraseña se especifica en texto sin cifrar (no recomendado) o en SHA-256. El hash no está salado. En este sentido, no debe considerar estas contraseñas como proporcionar seguridad contra posibles ataques maliciosos. Más bien, son necesarios para la protección de los empleados.
 
 Se especifica una lista de redes desde las que se permite el acceso. En este ejemplo, la lista de redes para ambos usuarios se carga desde un archivo independiente (`/etc/metrika.xml`) que contiene el `networks` sustitución. Aquí hay un fragmento de eso:
 
@@ -91,7 +98,7 @@ La configuración incluye comentarios que explican cómo abrir el acceso desde t
 
 Para su uso en producción, sólo especifique `ip` elementos (direcciones IP y sus máscaras), ya que usan `host` y `hoost_regexp` podría causar latencia adicional.
 
-A continuación se especifica el perfil de configuración de usuario (consulte la sección “[Perfiles de configuración](settings/settings_profiles.md)”. Puede especificar el perfil predeterminado, `default'`. El perfil puede tener cualquier nombre. Puede especificar el mismo perfil para diferentes usuarios. Lo más importante que puede escribir en el perfil de configuración es `readonly=1`, que asegura el acceso de sólo lectura. A continuación, especifique la cuota que se utilizará (consulte la sección “[Cuota](quotas.md#quotas)”). Puede especificar la cuota predeterminada: `default`. Se establece en la configuración de forma predeterminada para contar solo el uso de recursos, sin restringirlo. La cuota puede tener cualquier nombre. Puede especificar la misma cuota para diferentes usuarios; en este caso, el uso de recursos se calcula para cada usuario individualmente.
+A continuación se especifica el perfil de configuración de usuario (consulte la sección “[Perfiles de configuración](settings/settings_profiles.md)”. Puede especificar el perfil predeterminado, `default'`. El perfil puede tener cualquier nombre. Puede especificar el mismo perfil para diferentes usuarios. Lo más importante que puede escribir en el perfil de configuración es `readonly=1`, que asegura el acceso de sólo lectura. A continuación, especifique la cuota que se utilizará (consulte la sección “[Cuota](quotas.md#quotas)”). Puede especificar la cuota predeterminada: `default`. It is set in the config by default to only count resource usage, without restricting it. The quota can have any name. You can specify the same quota for different users – in this case, resource usage is calculated for each user individually.
 
 En el opcional `<allow_databases>` sección, también puede especificar una lista de bases de datos a las que el usuario puede acceder. De forma predeterminada, todas las bases de datos están disponibles para el usuario. Puede especificar el `default` base. En este caso, el usuario recibirá acceso a la base de datos de forma predeterminada.
 
@@ -99,8 +106,8 @@ En el opcional `<allow_dictionaries>` sección, también puede especificar una l
 
 Acceso a la `system` base de datos siempre está permitida (ya que esta base de datos se utiliza para procesar consultas).
 
-El usuario puede obtener una lista de todas las bases de datos y tablas en ellos mediante el uso de `SHOW` Consultas o tablas del sistema, incluso si no se permite el acceso a bases de datos individuales.
+El usuario puede obtener una lista de todas las bases de datos y tablas en ellos mediante el uso de `SHOW` consultas o tablas del sistema, incluso si no se permite el acceso a bases de datos individuales.
 
 El acceso a la base de datos no está [sólo lectura](settings/permissions_for_queries.md#settings_readonly) configuración. No puede conceder acceso completo a una base de datos y `readonly` acceso a otro.
 
-[Artículo Original](https://clickhouse.tech/docs/es/operations/access_rights/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->

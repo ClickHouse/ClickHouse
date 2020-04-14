@@ -1,3 +1,8 @@
+---
+toc_priority: 64
+toc_title: How to Build ClickHouse on Linux
+---
+
 # How to Build ClickHouse for Development {#how-to-build-clickhouse-for-development}
 
 The following tutorial is based on the Ubuntu Linux system.
@@ -60,7 +65,7 @@ $ cd ..
 ```
 
 To create an executable, run `ninja clickhouse`.
-This will create the `dbms/programs/clickhouse` executable, which can be used with `client` or `server` arguments.
+This will create the `programs/clickhouse` executable, which can be used with `client` or `server` arguments.
 
 # How to Build ClickHouse on Any Linux {#how-to-build-clickhouse-on-any-linux}
 

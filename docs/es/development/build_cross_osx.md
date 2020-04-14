@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 66
+toc_title: "C\xF3mo construir ClickHouse en Linux para Mac OS X"
+---
+
 # Cómo construir ClickHouse en Linux para Mac OS X {#how-to-build-clickhouse-on-linux-for-mac-os-x}
 
 Esto es para el caso cuando tiene una máquina Linux y desea usarla para compilar `clickhouse` Esto está destinado a las comprobaciones de integración continuas que se ejecutan en servidores Linux. Si desea crear ClickHouse directamente en Mac OS X, continúe con [otra instrucción](build_osx.md).
@@ -16,7 +23,7 @@ sudo apt-get install clang-8
 
 # Instalar conjunto de herramientas de compilación cruzada {#install-cross-compilation-toolset}
 
-Recordemos la ruta donde instalamos `cctools` Como ${CCTOOLS}
+Recordemos la ruta donde instalamos `cctools` como ${CCTOOLS}
 
 ``` bash
 mkdir ${CCTOOLS}
