@@ -596,8 +596,7 @@ class FunctionRoundDown : public IFunction
 {
 public:
     static constexpr auto name = "roundDown";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionRoundDown>(context); }
-    FunctionRoundDown(const Context & context_) : context(context_) {}
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionRoundDown>(); }
 
 public:
     String getName() const override { return name; }
@@ -645,10 +644,10 @@ public:
         auto out = column_result.get();
 
         if (!in_type->equals(*return_type))
-            in_column = castColumn(block.getByPosition(arguments[0]), return_type, context);
+            in_column = castColumn(block.getByPosition(arguments[0]), return_type);
 
         if (!array_type->equals(*return_type))
-            array_column = castColumn(block.getByPosition(arguments[1]), std::make_shared<DataTypeArray>(return_type), context);
+            array_column = castColumn(block.getByPosition(arguments[1]), std::make_shared<DataTypeArray>(return_type));
 
         const auto in = in_column.get();
         auto boundaries = typeid_cast<const ColumnConst &>(*array_column).getValue<Array>();
@@ -764,9 +763,6 @@ private:
             }
         }
     }
-
-private:
-    const Context & context;
 };
 
 
