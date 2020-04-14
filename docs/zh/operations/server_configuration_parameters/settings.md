@@ -1,6 +1,4 @@
 ---
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 57
 toc_title: "\u670D\u52A1\u5668\u8BBE\u7F6E"
 ---
