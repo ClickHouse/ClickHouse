@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Processors/Merges/IMergingAlgorithm.h>
-#include <Processors/Merges/RowRef.h>
+#include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
+#include <Processors/Merges/Algorithms/RowRef.h>
 #include <Core/SortDescription.h>
 
 namespace DB

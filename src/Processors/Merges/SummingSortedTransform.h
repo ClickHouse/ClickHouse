@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/Merges/SummingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
 
 namespace DB
 {

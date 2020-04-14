@@ -1,4 +1,4 @@
-#include <Processors/Merges/MergingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <IO/WriteBuffer.h>
 

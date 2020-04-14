@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/Merges/ReplacingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 
 
 namespace DB

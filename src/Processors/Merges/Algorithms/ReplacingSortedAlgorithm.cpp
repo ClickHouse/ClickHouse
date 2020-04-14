@@ -1,4 +1,4 @@
-#include <Processors/Merges/ReplacingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/ReplacingSortedAlgorithm.h>
 #include <IO/WriteBuffer.h>
 
 namespace DB

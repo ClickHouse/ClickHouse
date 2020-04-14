@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/Merges/VersionedCollapsingAlgorithm.h>
+#include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 
 
 namespace DB

@@ -1,4 +1,4 @@
-#include <Processors/Merges/CollapsingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Common/FieldVisitors.h>

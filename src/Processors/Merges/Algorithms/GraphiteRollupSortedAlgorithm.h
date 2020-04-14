@@ -1,7 +1,7 @@
 #pragma once
-#include <Processors/Merges/IMergingAlgorithmWithSharedChunks.h>
-#include <Processors/Merges/Graphite.h>
-#include <Processors/Merges/MergedData.h>
+#include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
+#include <Processors/Merges/Algorithms/Graphite.h>
+#include <Processors/Merges/Algorithms/MergedData.h>
 #include <Common/AlignedBuffer.h>
 
 namespace DB

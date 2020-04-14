@@ -1,8 +1,4 @@
-//
-// Created by nik-kochetov on 4/13/20.
-//
-
-#include <Processors/Merges/IMergingAlgorithmWithDelayedChunk.h>
+#include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
 
 
 namespace DB
