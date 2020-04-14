@@ -57,7 +57,7 @@ def test_simple_add_replica(started_cluster):
 
     first.query("SYSTEM START FETCHES test_simple")
 
-    zero.query("SYSTEM SYNC REPLICA test_simple", timeout=20)
+    first.query("SYSTEM SYNC REPLICA test_simple", timeout=20)
 
     assert '1\t2011-01-01\n' == zero.query("SELECT * from test_simple")
     assert '1\t2011-01-01\n' == first.query("SELECT * from test_simple")
