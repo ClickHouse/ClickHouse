@@ -28,7 +28,7 @@ You can configure access entities using:
 
 ## Usage {#access-control-usage}
 
-By default, the ClickHouse server provides the user account `default` which is not allowed using SQL-driven access control and account management but have all the rights and permissions. The `default` user account is used in any cases when the username is not defined, for example, at login from client or in distributed queries. In distributed query processing a default user account is used, if the configuration of the server or cluster doesn’t specify the [user and password](../operations/table_engines/distributed.md) properties.
+By default, the ClickHouse server provides the user account `default` which is not allowed using SQL-driven access control and account management but have all the rights and permissions. The `default` user account is used in any cases when the username is not defined, for example, at login from client or in distributed queries. In distributed query processing a default user account is used, if the configuration of the server or cluster doesn’t specify the [user and password](../engines/table_engines/special/distributed.md) properties.
 
 If you just start using ClickHouse, you can use the following scenario:
 
@@ -139,7 +139,7 @@ Management queries:
 
 - Enable SQL-driven access control and account management for at least one user account.
 
-    By default SQL-driven access control and account management is turned of for all users. You need to configure at least one user in the `users.xml` configuration file and assign 1 to the [access_management](settings/settings-users.md#access_management-user-setting) setting.
+    By default SQL-driven access control and account management is turned of for all users. You need to configure at least one user in the `users.xml` configuration file and assign 1 to the [access_management](settings/settings_users.md#access_management-user-setting) setting.
 
 
 [Original article](https://clickhouse.tech/docs/en/operations/access_rights/) <!--hide-->
