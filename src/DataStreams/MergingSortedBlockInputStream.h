@@ -15,12 +15,6 @@ namespace Poco { class Logger; }
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int CORRUPTED_DATA;
-}
-
-
 /** Merges several sorted streams into one sorted stream.
   */
 class MergingSortedBlockInputStream : public IBlockInputStream
