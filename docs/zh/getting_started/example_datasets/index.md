@@ -1,6 +1,4 @@
 ---
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_folder_title: "\u793A\u4F8B\u6570\u636E\u96C6"
 toc_priority: 12
 toc_title: "\u5BFC\u8A00"
