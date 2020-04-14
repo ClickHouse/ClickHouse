@@ -177,7 +177,7 @@ struct PerfEventsCounters
 
     int events_descriptors[NUMBER_OF_RAW_EVENTS]{};
     // temp array just to not create it each time event processing finishes
-    long long raw_event_values[NUMBER_OF_RAW_EVENTS]{};
+    Int64 raw_event_values[NUMBER_OF_RAW_EVENTS]{};
     bool perf_events_recording = false;
 #endif
 
@@ -194,7 +194,7 @@ private:
 
     static Logger * getLogger();
 
-    [[nodiscard]] long long getRawValue(int event_type, int event_config) const;
+    [[nodiscard]] Int64 getRawValue(int event_type, int event_config) const;
 #endif
 };
 

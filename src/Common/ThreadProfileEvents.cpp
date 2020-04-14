@@ -73,7 +73,7 @@ namespace DB
         return &Logger::get("PerfEventsCounters");
     }
 
-    long long PerfEventsCounters::getRawValue(int event_type, int event_config) const
+    Int64 PerfEventsCounters::getRawValue(int event_type, int event_config) const
     {
         for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
         {
@@ -86,37 +86,37 @@ namespace DB
         return 0;
     }
 
-    static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, unsigned long flags)
+    static int openPerfEvent(perf_event_attr *hw_event, pid_t pid, int cpu, int group_fd, UInt64 flags)
     {
         return static_cast<int>(syscall(SYS_perf_event_open, hw_event, pid, cpu, group_fd, flags));
     }
 
-    static bool getPerfEventParanoid(int & result)
+    static bool getPerfEventParanoid(Int32 & result)
     {
         // the longest possible variant: "-1\0"
-        constexpr int MAX_LENGTH = 3;
+        constexpr Int32 max_length = 3;
 
         FILE * fp = fopen("/proc/sys/kernel/perf_event_paranoid", "r");
         if (fp == nullptr)
             return false;
 
-        char str[MAX_LENGTH];
-        char * res = fgets(str, MAX_LENGTH, fp);
+        char str[max_length];
+        char * res = fgets(str, max_length, fp);
         fclose(fp);
         if (res == nullptr)
             return false;
 
-        str[MAX_LENGTH - 1] = '\0';
-        long value = strtol(str, nullptr, 10);
+        str[max_length - 1] = '\0';
+        Int64 value = strtol(str, nullptr, 10);
         // the only way to be incorrect is to not be a number
         if (value == 0 && errno != 0)
             return false;
 
-        result = static_cast<int>(value);
+        result = static_cast<Int32>(value);
         return true;
     }
 
-    static void perfEventOpenDisabled(int perf_event_paranoid, bool has_cap_sys_admin, int perf_event_type, int perf_event_config, int & event_file_descriptor)
+    static void perfEventOpenDisabled(Int32 perf_event_paranoid, bool has_cap_sys_admin, int perf_event_type, int perf_event_config, int & event_file_descriptor)
     {
         perf_event_attr pe = perf_event_attr();
         pe.type = perf_event_type;
@@ -135,7 +135,7 @@ namespace DB
         if (counters.perf_events_recording)
             return;
 
-        int perf_event_paranoid = 0;
+        Int32 perf_event_paranoid = 0;
         bool is_pref_available = getPerfEventParanoid(perf_event_paranoid);
         if (!is_pref_available)
         {
@@ -193,8 +193,8 @@ namespace DB
             if (fd == -1)
                 continue;
 
-            constexpr ssize_t bytesToRead = sizeof(counters.raw_event_values[0]);
-            if (read(fd, &counters.raw_event_values[i], bytesToRead) != bytesToRead)
+            constexpr ssize_t bytes_to_read = sizeof(counters.raw_event_values[0]);
+            if (read(fd, &counters.raw_event_values[i], bytes_to_read) != bytes_to_read)
             {
                 LOG_WARNING(getLogger(), "Can't read event value from file descriptor: " << fd);
                 counters.raw_event_values[i] = 0;
@@ -220,13 +220,13 @@ namespace DB
         }
 
         // process custom events which depend on the raw ones
-        long long hw_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES);
-        long long hw_ref_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES);
+        Int64 hw_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES);
+        Int64 hw_ref_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES);
 
-        long long instructions_per_cpu_scaled = hw_cpu_cycles != 0
+        Int64 instructions_per_cpu_scaled = hw_cpu_cycles != 0
                 ? counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS) / hw_cpu_cycles
                 : 0;
-        long long instructions_per_cpu = hw_ref_cpu_cycles != 0
+        Int64 instructions_per_cpu = hw_ref_cpu_cycles != 0
                 ? counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS) / hw_ref_cpu_cycles
                 : 0;
 
