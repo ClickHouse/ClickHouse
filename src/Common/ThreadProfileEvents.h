@@ -187,8 +187,10 @@ struct PerfEventsCounters
 
 #if defined(__linux__)
 private:
-    // used to write information about perf event availability only once for all threads
-    static std::atomic<bool> events_availability_logged;
+    // used to write information about perf unavailability only once for all threads
+    static std::atomic<bool> perf_unavailability_logged;
+    // used to write information about particular perf events unavailability only once for all threads
+    static std::atomic<bool> particular_events_unavailability_logged;
 
     static Logger * getLogger();
 
