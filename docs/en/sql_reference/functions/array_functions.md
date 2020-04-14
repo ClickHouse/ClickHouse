@@ -1001,11 +1001,11 @@ arrayZip(arr1, arr2, ..., arrN)
 
 - `arrN` — [Array](../data_types/array.md).
 
-The function can take any number of arrays. All the input arrays must be of equal size.
+The function can take any number of arrays of different types. All the input arrays must be of equal size.
 
 **Returned value**
 
-- Array with elements from the source arrays grouped into [tuples](../data_types/tuple.md).
+- Array with elements from the source arrays grouped into [tuples](../data_types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed.
 
 Type: [Array](../data_types/array.md).
 
@@ -1014,15 +1014,15 @@ Type: [Array](../data_types/array.md).
 Query:
 
 ``` sql
-SELECT arrayZip(['a', 'b', 'c'], ['d', 'e', 'f']);
+SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1])
 ```
 
 Result:
 
 ``` text
-┌─arrayZip(['a', 'b', 'c'], ['d', 'e', 'f'])─┐
-│ [('a','d'),('b','e'),('c','f')]            │
-└────────────────────────────────────────────┘
+┌─arrayZip(['a', 'b', 'c'], [5, 2, 1])─┐
+│ [('a',5),('b',2),('c',1)]            │
+└──────────────────────────────────────┘
 ```
 
 
