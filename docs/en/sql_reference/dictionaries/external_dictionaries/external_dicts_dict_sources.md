@@ -40,7 +40,7 @@ For source types
 [Executable file](#dicts-external_dicts_dict_sources-executable),
 [HTTP(s)](#dicts-external_dicts_dict_sources-http),
 [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-optional format settings are available:
+optional settings are available:
 
 ``` xml
 <source>
