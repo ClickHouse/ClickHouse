@@ -33,8 +33,7 @@ class FunctionMultiIf final : public FunctionIfBase</*null_is_false=*/true>
 {
 public:
     static constexpr auto name = "multiIf";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionMultiIf>(context); }
-    explicit FunctionMultiIf(const Context & context_) : context(context_) {}
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionMultiIf>(); }
 
 public:
     String getName() const override { return name; }
@@ -176,7 +175,7 @@ public:
             else
             {
                 /// Cast all columns to result type.
-                converted_columns_holder.emplace_back(castColumn(source_col, return_type, context));
+                converted_columns_holder.emplace_back(castColumn(source_col, return_type));
                 instruction.source = converted_columns_holder.back().get();
             }
 
@@ -225,9 +224,6 @@ public:
 
         block.getByPosition(result).column = std::move(res);
     }
-
-private:
-    const Context & context;
 };
 
 void registerFunctionMultiIf(FunctionFactory & factory)
