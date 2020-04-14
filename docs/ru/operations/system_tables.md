@@ -12,8 +12,8 @@
 
 Столбцы:
 
--   `metric` ([String](../data_types/string.md)) — название метрики.
--   `value` ([Float64](../data_types/float.md)) — значение метрики.
+-   `metric` ([String](../sql_reference/data_types/string.md)) — название метрики.
+-   `value` ([Float64](../sql_reference/data_types/float.md)) — значение метрики.
 
 **Пример**
 
@@ -63,7 +63,7 @@ user String — имя пользователя, которого использ
 
 Содержит информацию о столбцах всех таблиц.
 
-С помощью этой таблицы можно получить информацию аналогично запросу [DESCRIBE TABLE](../query_language/misc.md#misc-describe-table), но для многих таблиц сразу.
+С помощью этой таблицы можно получить информацию аналогично запросу [DESCRIBE TABLE](../sql_reference/statements/misc.md#misc-describe-table), но для многих таблиц сразу.
 
 Таблица `system.columns` содержит столбцы (тип столбца указан в скобках):
 
@@ -131,47 +131,47 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 
 ## system.detached\_parts {#system_tables-detached_parts}
 
-Содержит информацию об отсоединённых кусках таблиц семейства [MergeTree](table_engines/mergetree.md). Столбец `reason` содержит причину, по которой кусок был отсоединён. Для кусов, отсоединённых пользователем, `reason` содержит пустую строку.
-Такие куски могут быть присоединены с помощью [ALTER TABLE ATTACH PARTITION\|PART](../query_language/query_language/alter/#alter_attach-partition). Остальные столбцы описаны в [system.parts](#system_tables-parts).
-Если имя куска некорректно, значения некоторых столбцов могут быть `NULL`. Такие куски могут быть удалены с помощью [ALTER TABLE DROP DETACHED PART](../query_language/query_language/alter/#alter_drop-detached).
+Содержит информацию об отсоединённых кусках таблиц семейства [MergeTree](../engines/table_engines/mergetree_family/mergetree.md). Столбец `reason` содержит причину, по которой кусок был отсоединён. Для кусов, отсоединённых пользователем, `reason` содержит пустую строку.
+Такие куски могут быть присоединены с помощью [ALTER TABLE ATTACH PARTITION\|PART](../sql_reference/alter/#alter_attach-partition). Остальные столбцы описаны в [system.parts](#system_tables-parts).
+Если имя куска некорректно, значения некоторых столбцов могут быть `NULL`. Такие куски могут быть удалены с помощью [ALTER TABLE DROP DETACHED PART](../sql_reference/alter/#alter_drop-detached).
 
 ## system.dictionaries {#system_tables-dictionaries}
 
-Содержит информацию о [внешних словарях](../query_language/dicts/external_dicts.md).
+Содержит информацию о [внешних словарях](../sql_reference/dictionaries/external_dictionaries/external_dicts.md).
 
 Столбцы:
 
-- `database` ([String](../data_types/string.md)) — Имя базы данных, в которой находится словарь, созданный с помощью DDL-запроса. Пустая строка для других словарей.
-- `name` ([String](../data_types/string.md)) — [Имя словаря](../query_language/dicts/external_dicts_dict.md).
-- `status` ([Enum8](../data_types/enum.md)) — Статус словаря. Возможные значения:
-     - `NOT_LOADED` — Словарь не загружен, потому что не использовался.
-     - `LOADED` — Словарь загружен успешно.
-     - `FAILED` — Словарь не загружен в результате ошибки.
-     - `LOADING` — Словарь в процессе загрузки.
-     - `LOADED_AND_RELOADING` — Словарь загружен успешно, сейчас перезагружается (частые причины: запрос [SYSTEM RELOAD DICTIONARY](../query_language/system.md#query_language-system-reload-dictionary), таймаут, изменение настроек словаря).
-     - `FAILED_AND_RELOADING` — Словарь не загружен в результате ошибки, сейчас перезагружается.
-- `origin` ([String](../data_types/string.md)) — Путь к конфигурационному файлу, описывающему словарь.
-- `type`  ([String](../data_types/string.md)) — Тип размещения словаря. [Хранение словарей в памяти](../query_language/dicts/external_dicts_dict_layout.md).
-- `key` — [Тип ключа](../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-key): Числовой ключ ([UInt64](../data_types/int_uint.md#uint-ranges)) или Составной ключ ([String](../data_types/string.md)) — строка вида "(тип 1, тип 2, ..., тип n)".
-- `attribute.names` ([Array](../data_types/array.md)([String](../data_types/string.md))) — Массив [имен атрибутов](../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
-- `attribute.types` ([Array](../data_types/array.md)([String](../data_types/string.md))) — Соответствующий массив [типов атрибутов](../query_language/dicts/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
-- `bytes_allocated` ([UInt64](../data_types/int_uint.md#uint-ranges)) — Объем оперативной памяти, используемый словарем.
-- `query_count` ([UInt64](../data_types/int_uint.md#uint-ranges)) — Количество запросов с момента загрузки словаря или с момента последней успешной перезагрузки.
-- `hit_rate` ([Float64](../data_types/float.md)) — Для cache-словарей — процент закэшированных значений.
-- `element_count` ([UInt64](../data_types/int_uint.md#uint-ranges))  — Количество элементов, хранящихся в словаре.
-- `load_factor` ([Float64](../data_types/float.md)) — Процент заполнения словаря (для хэшированного словаря  — процент заполнения хэш-таблицы).
-- `source` ([String](../data_types/string.md)) — Текст, описывающий [источник данных](../query_language/dicts/external_dicts_dict_sources.md) для словаря.
-- `lifetime_min` ([UInt64](../data_types/int_uint.md#uint-ranges)) — Минимальное [время обновления](../query_language/dicts/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах. 
-- `lifetime_max` ([UInt64](../data_types/int_uint.md#uint-ranges)) — Максимальное [время обновления](../query_language/dicts/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах.
-- `loading_start_time` ([DateTime](../data_types/datetime.md)) — Время начала загрузки словаря.
-- `loading_duration` ([Float32](../data_types/float.md)) — Время, затраченное на загрузку словаря.
-- `last_exception` ([String](../data_types/string.md)) — Текст ошибки, возникающей при создании или перезагрузке словаря, если словарь не удалось создать.
+-   `database` ([String](../sql_reference/data_types/string.md)) — Имя базы данных, в которой находится словарь, созданный с помощью DDL-запроса. Пустая строка для других словарей.
+-   `name` ([String](../sql_reference/data_types/string.md)) — [Имя словаря](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict.md).
+-   `status` ([Enum8](../sql_reference/data_types/enum.md)) — Статус словаря. Возможные значения:
+    -   `NOT_LOADED` — Словарь не загружен, потому что не использовался.
+    -   `LOADED` — Словарь загружен успешно.
+    -   `FAILED` — Словарь не загружен в результате ошибки.
+    -   `LOADING` — Словарь в процессе загрузки.
+    -   `LOADED_AND_RELOADING` — Словарь загружен успешно, сейчас перезагружается (частые причины: запрос [SYSTEM RELOAD DICTIONARY](../sql_reference/statements/system.md#query_language-system-reload-dictionary), таймаут, изменение настроек словаря).
+    -   `FAILED_AND_RELOADING` — Словарь не загружен в результате ошибки, сейчас перезагружается.
+-   `origin` ([String](../sql_reference/data_types/string.md)) — Путь к конфигурационному файлу, описывающему словарь.
+-   `type` ([String](../sql_reference/data_types/string.md)) — Тип размещения словаря. [Хранение словарей в памяти](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_layout.md).
+-   `key` — [Тип ключа](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-key): Числовой ключ ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) или Составной ключ ([String](../sql_reference/data_types/string.md)) — строка вида “(тип 1, тип 2, …, тип n)”.
+-   `attribute.names` ([Array](../sql_reference/data_types/array.md)([String](../sql_reference/data_types/string.md))) — Массив [имен атрибутов](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
+-   `attribute.types` ([Array](../sql_reference/data_types/array.md)([String](../sql_reference/data_types/string.md))) — Соответствующий массив [типов атрибутов](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
+-   `bytes_allocated` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Объем оперативной памяти, используемый словарем.
+-   `query_count` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Количество запросов с момента загрузки словаря или с момента последней успешной перезагрузки.
+-   `hit_rate` ([Float64](../sql_reference/data_types/float.md)) — Для cache-словарей — процент закэшированных значений.
+-   `element_count` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Количество элементов, хранящихся в словаре.
+-   `load_factor` ([Float64](../sql_reference/data_types/float.md)) — Процент заполнения словаря (для хэшированного словаря — процент заполнения хэш-таблицы).
+-   `source` ([String](../sql_reference/data_types/string.md)) — Текст, описывающий [источник данных](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md) для словаря.
+-   `lifetime_min` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Минимальное [время обновления](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах.
+-   `lifetime_max` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Максимальное [время обновления](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах.
+-   `loading_start_time` ([DateTime](../sql_reference/data_types/datetime.md)) — Время начала загрузки словаря.
+-   `loading_duration` ([Float32](../sql_reference/data_types/float.md)) — Время, затраченное на загрузку словаря.
+-   `last_exception` ([String](../sql_reference/data_types/string.md)) — Текст ошибки, возникающей при создании или перезагрузке словаря, если словарь не удалось создать.
 
 **Пример**
 
 Настройте словарь.
 
-```sql
+``` sql
 CREATE DICTIONARY dictdb.dict
 (
     `key` Int64 DEFAULT -1,
@@ -186,11 +186,11 @@ LAYOUT(FLAT())
 
 Убедитесь, что словарь загружен.
 
-```sql
+``` sql
 SELECT * FROM system.dictionaries
 ```
 
-```text
+``` text
 ┌─database─┬─name─┬─status─┬─origin──────┬─type─┬─key────┬─attribute.names──────────────────────┬─attribute.types─────┬─bytes_allocated─┬─query_count─┬─hit_rate─┬─element_count─┬───────────load_factor─┬─source─────────────────────┬─lifetime_min─┬─lifetime_max─┬──loading_start_time─┌──last_successful_update_time─┬──────loading_duration─┬─last_exception─┐
 │ dictdb   │ dict │ LOADED │ dictdb.dict │ Flat │ UInt64 │ ['value_default','value_expression'] │ ['String','String'] │           74032 │           0 │        1 │             1 │ 0.0004887585532746823 │ ClickHouse: dictdb.dicttbl │            0 │            1 │ 2020-03-04 04:17:34 │   2020-03-04 04:30:34        │                 0.002 │                │
 └──────────┴──────┴────────┴─────────────┴──────┴────────┴──────────────────────────────────────┴─────────────────────┴─────────────────┴─────────────┴──────────┴───────────────┴───────────────────────┴────────────────────────────┴──────────────┴──────────────┴─────────────────────┴──────────────────────────────┘───────────────────────┴────────────────┘
@@ -202,9 +202,9 @@ SELECT * FROM system.dictionaries
 
 Столбцы:
 
--   `event` ([String](../data_types/string.md)) — имя события.
--   `value` ([UInt64](../data_types/int_uint.md)) — количество произошедших событий.
--   `description` ([String](../data_types/string.md)) — описание события.
+-   `event` ([String](../sql_reference/data_types/string.md)) — имя события.
+-   `value` ([UInt64](../sql_reference/data_types/int_uint.md)) — количество произошедших событий.
+-   `description` ([String](../sql_reference/data_types/string.md)) — описание события.
 
 **Пример**
 
@@ -240,7 +240,7 @@ SELECT * FROM system.events LIMIT 5
 
 ## system.graphite\_retentions {#system-graphite-retentions}
 
-Содержит информацию о том, какие параметры [graphite\_rollup](server_settings/settings.md#server_settings-graphite_rollup) используются в таблицах с движками [\*GraphiteMergeTree](table_engines/graphitemergetree.md).
+Содержит информацию о том, какие параметры [graphite\_rollup](server_configuration_parameters/settings.md#server_configuration_parameters-graphite_rollup) используются в таблицах с движками [\*GraphiteMergeTree](../engines/table_engines/mergetree_family/graphitemergetree.md).
 
 Столбцы:
 
@@ -280,9 +280,9 @@ SELECT * FROM system.events LIMIT 5
 
 Столбцы:
 
--   `metric` ([String](../data_types/string.md)) — название метрики.
--   `value` ([Int64](../data_types/int_uint.md)) — значение метрики.
--   `description` ([String](../data_types/string.md)) — описание метрики.
+-   `metric` ([String](../sql_reference/data_types/string.md)) — название метрики.
+-   `value` ([Int64](../sql_reference/data_types/int_uint.md)) — значение метрики.
+-   `description` ([String](../sql_reference/data_types/string.md)) — описание метрики.
 
 Список поддержанных метрик смотрите в файле [src/Common/CurrentMetrics.cpp](https://github.com/ClickHouse/ClickHouse/blob/master/src/Common/CurrentMetrics.cpp).
 
@@ -389,13 +389,13 @@ CurrentMetric_ReplicatedChecks:                             0
 
 ## system.parts {#system_tables-parts}
 
-Содержит информацию о кусках данных таблиц семейства [MergeTree](table_engines/mergetree.md).
+Содержит информацию о кусках данных таблиц семейства [MergeTree](../engines/table_engines/mergetree_family/mergetree.md).
 
 Каждая строка описывает один кусок данных.
 
 Столбцы:
 
--   `partition` (`String`) – Имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../query_language/alter.md#query_language_queries_alter).
+-   `partition` (`String`) – Имя партиции. Что такое партиция можно узнать из описания запроса [ALTER](../sql_reference/statements/alter.md#sql_reference_queries_alter).
 
     Форматы:
 
@@ -446,7 +446,7 @@ CurrentMetric_ReplicatedChecks:                             0
 
 -   `primary_key_bytes_in_memory_allocated` (`UInt64`) – объём памяти (в байтах) выделенный для размещения первичных ключей.
 
--   `is_frozen` (`UInt8`) – Признак, показывающий существование бэкапа партиции. 1, бэкап есть. 0, бэкапа нет. Смотрите раздел [FREEZE PARTITION](../query_language/alter.md#alter_freeze-partition).
+-   `is_frozen` (`UInt8`) – Признак, показывающий существование бэкапа партиции. 1, бэкап есть. 0, бэкапа нет. Смотрите раздел [FREEZE PARTITION](../sql_reference/statements/alter.md#alter_freeze-partition).
 
 -   `database` (`String`) – имя базы данных.
 
@@ -458,11 +458,11 @@ CurrentMetric_ReplicatedChecks:                             0
 
 -   `disk` (`String`) – имя диска, на котором находится кусок данных.
 
--   `hash_of_all_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) для сжатых файлов.
+-   `hash_of_all_files` (`String`) – значение [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) для сжатых файлов.
 
--   `hash_of_uncompressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) несжатых файлов (файлы с засечками, первичным ключом и пр.)
+-   `hash_of_uncompressed_files` (`String`) – значение [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) несжатых файлов (файлы с засечками, первичным ключом и пр.)
 
--   `uncompressed_hash_of_compressed_files` (`String`) – значение [sipHash128](../query_language/functions/hash_functions.md#hash_functions-siphash128) данных в сжатых файлах как если бы они были разжатыми.
+-   `uncompressed_hash_of_compressed_files` (`String`) – значение [sipHash128](../sql_reference/functions/hash_functions.md#hash_functions-siphash128) данных в сжатых файлах как если бы они были разжатыми.
 
 -   `bytes` (`UInt64`) – алиас для `bytes_on_disk`.
 
@@ -470,9 +470,9 @@ CurrentMetric_ReplicatedChecks:                             0
 
 ## system.part\_log {#system_tables-part-log}
 
-Системная таблица `system.part_log` создается только в том случае, если задана серверная настройка [part\_log](server_settings/settings.md#server_settings-part-log).
+Системная таблица `system.part_log` создается только в том случае, если задана серверная настройка [part\_log](server_configuration_parameters/settings.md#server_configuration_parameters-part-log).
 
-Содержит информацию о всех событиях, произошедших с [кусками данных](table_engines/custom_partitioning_key.md) таблиц семейства [MergeTree](table_engines/mergetree.md) (например, события добавления, удаления или слияния данных).
+Содержит информацию о всех событиях, произошедших с [кусками данных](../engines/table_engines/mergetree_family/custom_partitioning_key.md) таблиц семейства [MergeTree](../engines/table_engines/mergetree_family/mergetree.md) (например, события добавления, удаления или слияния данных).
 
 Столбцы:
 
@@ -480,7 +480,7 @@ CurrentMetric_ReplicatedChecks:                             0
     -   `NEW_PART` — вставка нового куска.
     -   `MERGE_PARTS` — слияние кусков.
     -   `DOWNLOAD_PART` — загрузка с реплики.
-    -   `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../query_language/alter.md#alter_detach-partition).
+    -   `REMOVE_PART` — удаление или отсоединение из таблицы с помощью [DETACH PARTITION](../sql_reference/statements/alter.md#alter_detach-partition).
     -   `MUTATE_PART` — изменение куска.
     -   `MOVE_PART` — перемещение куска между дисками.
 -   `event_date` (Date) — дата события.
@@ -524,7 +524,7 @@ CurrentMetric_ReplicatedChecks:                             0
 !!! note "Внимание"
     Таблица не содержит входных данных для запросов `INSERT`.
 
-ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query\_log](server_settings/settings.md#server_settings-query-log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
+ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
 
 Чтобы включить логирование, задайте значение параметра [log\_queries](settings/settings.md#settings-log-queries) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md).
 
@@ -594,14 +594,14 @@ ClickHouse создаёт таблицу только в том случае, к
 2.  Если во время обработки запроса произошла ошибка, создаются два события с типами 1 и 4.
 3.  Если ошибка произошла до запуска запроса, создается одно событие с типом 3.
 
-По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_log](server_settings/settings.md#server_settings-query-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
+По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
 
 Если таблицу удалить вручную, она пересоздастся автоматически «на лету». При этом все логи на момент удаления таблицы будут удалены.
 
 !!! note "Примечание"
     Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
 
-Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_log](server_settings/settings.md#server_settings-query-log) (параметр `partition_by`).
+Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) (параметр `partition_by`).
 
 ## system.query\_log {#system_tables-query_log}
 
@@ -610,7 +610,7 @@ Contains information about execution of queries. For each query, you can see pro
 !!! note "Note"
     The table doesn’t contain input data for `INSERT` queries.
 
-ClickHouse creates this table only if the [query\_log](server_settings/settings.md#server_settings-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
+ClickHouse creates this table only if the [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) server parameter is specified. This parameter sets the logging rules, such as the logging interval or the name of the table the queries will be logged in.
 
 To enable query logging, set the [log\_queries](settings/settings.md#settings-log-queries) parameter to 1. For details, see the [Settings](settings/settings.md) section.
 
@@ -680,19 +680,19 @@ Each query creates one or two rows in the `query_log` table, depending on the st
 2.  If an error occurred during query processing, two events with types 1 and 4 are created.
 3.  If an error occurred before launching the query, a single event with type 3 is created.
 
-By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_log](server_settings/settings.md#server_settings-query-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
+By default, logs are added to the table at intervals of 7.5 seconds. You can set this interval in the [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) server setting (see the `flush_interval_milliseconds` parameter). To flush the logs forcibly from the memory buffer into the table, use the `SYSTEM FLUSH LOGS` query.
 
 When the table is deleted manually, it will be automatically created on the fly. Note that all the previous logs will be deleted.
 
 !!! note "Note"
     The storage period for logs is unlimited. Logs aren’t automatically deleted from the table. You need to organize the removal of outdated logs yourself.
 
-You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server_settings/settings.md#server_settings-query-log) server setting (see the `partition_by` parameter).
+You can specify an arbitrary partitioning key for the `system.query_log` table in the [query\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-log) server setting (see the `partition_by` parameter).
 \#\# system.query\_thread\_log {\#system\_tables-query-thread-log}
 
 Содержит информацию о каждом потоке выполняемых запросов.
 
-ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
+ClickHouse создаёт таблицу только в том случае, когда установлен конфигурационный параметр сервера [query\_thread\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log). Параметр задаёт правила ведения лога, такие как интервал логирования или имя таблицы, в которую будут логгироваться запросы.
 
 Чтобы включить логирование, задайте значение параметра [log\_query\_threads](settings/settings.md#settings-log-query-threads) равным 1. Подробности смотрите в разделе [Настройки](settings/settings.md).
 
@@ -743,43 +743,43 @@ ClickHouse создаёт таблицу только в том случае, к
 -   `ProfileEvents.Names` (Array(String)) — Счетчики для изменения различных метрик для данного потока. Описание метрик можно получить из таблицы [system.events](#system_tables-events)(\#system\_tables-events
 -   `ProfileEvents.Values` (Array(UInt64)) — метрики для данного потока, перечисленные в столбце `ProfileEvents.Names`.
 
-По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
+По умолчанию, строки добавляются в таблицу логирования с интервалом в 7,5 секунд. Можно задать интервал в конфигурационном параметре сервера [query\_thread\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) (смотрите параметр `flush_interval_milliseconds`). Чтобы принудительно записать логи из буффера памяти в таблицу, используйте запрос `SYSTEM FLUSH LOGS`.
 
 Если таблицу удалить вручную, она пересоздастся автоматически «на лету». При этом все логи на момент удаления таблицы будут удалены.
 
 !!! note "Примечание"
     Срок хранения логов не ограничен. Логи не удаляются из таблицы автоматически. Вам необходимо самостоятельно организовать удаление устаревших логов.
 
-Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_thread\_log](server_settings/settings.md#server_settings-query-thread-log) (параметр `partition_by`).
+Можно указать произвольный ключ партиционирования для таблицы `system.query_log` в конфигурации [query\_thread\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) (параметр `partition_by`).
 
 ## system.trace\_log {#system_tables-trace_log}
 
 Contains stack traces collected by the sampling query profiler.
 
-ClickHouse creates this table when the [trace\_log](server_settings/settings.md#server_settings-trace_log) server configuration section is set. Also the [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
+ClickHouse creates this table when the [trace\_log](server_configuration_parameters/settings.md#server_configuration_parameters-trace_log) server configuration section is set. Also the [query\_profiler\_real\_time\_period\_ns](settings/settings.md#query_profiler_real_time_period_ns) and [query\_profiler\_cpu\_time\_period\_ns](settings/settings.md#query_profiler_cpu_time_period_ns) settings should be set.
 
 To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` introspection functions.
 
 Columns:
 
--   `event_date`([Date](../data_types/date.md)) — Date of sampling moment.
+-   `event_date`([Date](../sql_reference/data_types/date.md)) — Date of sampling moment.
 
--   `event_time`([DateTime](../data_types/datetime.md)) — Timestamp of sampling moment.
+-   `event_time`([DateTime](../sql_reference/data_types/datetime.md)) — Timestamp of sampling moment.
 
--   `revision`([UInt32](../data_types/int_uint.md)) — ClickHouse server build revision.
+-   `revision`([UInt32](../sql_reference/data_types/int_uint.md)) — ClickHouse server build revision.
 
         When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
 
--   `timer_type`([Enum8](../data_types/enum.md)) — Timer type:
+-   `timer_type`([Enum8](../sql_reference/data_types/enum.md)) — Timer type:
 
         - `Real` represents wall-clock time.
         - `CPU` represents CPU time.
 
--   `thread_number`([UInt32](../data_types/int_uint.md)) — Thread identifier.
+-   `thread_number`([UInt32](../sql_reference/data_types/int_uint.md)) — Thread identifier.
 
--   `query_id`([String](../data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
+-   `query_id`([String](../sql_reference/data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
 
--   `trace`([Array(UInt64)](../data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace`([Array(UInt64)](../sql_reference/data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
 **Example**
 
@@ -921,33 +921,33 @@ WHERE
 
 Если этот запрос ничего не возвращает - значит всё хорошо.
 
-## system.settings  {#system-tables-system-settings}
+## system.settings {#system-tables-system-settings}
 
 Содержит информацию о сессионных настройках для текущего пользователя.
 
 Столбцы:
 
-- `name` ([String](../data_types/string.md)) — имя настройки.
-- `value` ([String](../data_types/string.md)) — значение настройки.
-- `changed` ([UInt8](../data_types/int_uint.md#uint-ranges)) — показывает, изменена ли настройка по отношению к значению по умолчанию.
-- `description` ([String](../data_types/string.md)) — краткое описание настройки. 
-- `min` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — минимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../query_language/syntax.md#null-literal). 
-- `max` ([Nullable](../data_types/nullable.md)([String](../data_types/string.md))) — максимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../query_language/syntax.md#null-literal). 
-- `readonly` ([UInt8](../data_types/int_uint.md#uint-ranges)) — Показывает, может ли пользователь изменять настройку:
-     - `0` — Текущий пользователь может изменять настройку.
-     - `1` — Текущий пользователь не может изменять настройку.
+-   `name` ([String](../sql_reference/data_types/string.md)) — имя настройки.
+-   `value` ([String](../sql_reference/data_types/string.md)) — значение настройки.
+-   `changed` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — показывает, изменена ли настройка по отношению к значению по умолчанию.
+-   `description` ([String](../sql_reference/data_types/string.md)) — краткое описание настройки.
+-   `min` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — минимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../sql_reference/syntax.md#null-literal).
+-   `max` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — максимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../sql_reference/syntax.md#null-literal).
+-   `readonly` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — Показывает, может ли пользователь изменять настройку:
+    -   `0` — Текущий пользователь может изменять настройку.
+    -   `1` — Текущий пользователь не может изменять настройку.
 
 **Пример**
 
 Пример показывает как получить информацию о настройках, имена которых содержат `min_i`.
 
-```sql
-SELECT * 
-FROM system.settings 
+``` sql
+SELECT *
+FROM system.settings
 WHERE name LIKE '%min_i%'
 ```
 
-```text
+``` text
 ┌─name────────────────────────────────────────┬─value─────┬─changed─┬─description───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┐
 │ min_insert_block_size_rows                  │ 1048576   │       0 │ Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.                                                                         │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
 │ min_insert_block_size_bytes                 │ 268435456 │       0 │ Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
@@ -957,21 +957,23 @@ WHERE name LIKE '%min_i%'
 
 Использование `WHERE changed` может быть полезно, например, если необходимо проверить:
 
-- Что настройки корректно загрузились из конфигурационного файла и используются.
-- Настройки, изменённые в текущей сессии.
+-   Что настройки корректно загрузились из конфигурационного файла и используются.
+-   Настройки, изменённые в текущей сессии.
 
-```sql
+<!-- -->
+
+``` sql
 SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 ```
 
-
 **Cм. также**
 
-- [Настройки](settings/index.md#settings)
-- [Разрешения для запросов](settings/permissions_for_queries.md#settings_readonly)
-- [Ограничения для значений настроек](settings/constraints_on_settings.md)
+-   [Настройки](settings/index.md#settings)
+-   [Разрешения для запросов](settings/permissions_for_queries.md#settings_readonly)
+-   [Ограничения для значений настроек](settings/constraints_on_settings.md)
 
-## system.table_engines
+## system.table\_engines {#system.table_engines}
+
 ``` text
 ┌─name───────────────────┬─value───────┬─changed─┐
 │ max_threads            │ 8           │       1 │
@@ -1013,9 +1015,9 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 
 **Смотрите также**
 
--   [Секции движка](table_engines/mergetree/#mergetree-query-clauses) семейства MergeTree
--   [Настройки](table_engines/kafka.md#table_engine-kafka-creating-a-table) Kafka
--   [Настройки](table_engines/join/#join-limitations-and-settings) Join
+-   [Секции движка](../engines/table_engines/mergetree_family/mergetree.md#mergetree-query-clauses) семейства MergeTree
+-   [Настройки](../engines/table_engines/integrations/kafka.md#table_engine-kafka-creating-a-table) Kafka
+-   [Настройки](../engines/table_engines/special/join.md#join-limitations-and-settings) Join
 
 ## system.tables {#system-tables}
 
@@ -1031,7 +1033,7 @@ WHERE name in ('Kafka', 'MergeTree', 'ReplicatedCollapsingMergeTree')
 -   `metadata_path` (String) — путь к табличным метаданным в файловой системе.
 -   `metadata_modification_time` (DateTime) — время последней модификации табличных метаданных.
 -   `dependencies_database` (Array(String)) — зависимости базы данных.
--   `dependencies_table` (Array(String)) — табличные зависимости (таблицы [MaterializedView](table_engines/materializedview.md), созданные на базе текущей таблицы).
+-   `dependencies_table` (Array(String)) — табличные зависимости (таблицы [MaterializedView](../engines/table_engines/special/materializedview.md), созданные на базе текущей таблицы).
 -   `create_table_query` (String) — запрос, которым создавалась таблица.
 -   `engine_full` (String) — параметры табличного движка.
 -   `partition_key` (String) — ключ партиционирования таблицы.
@@ -1114,7 +1116,7 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ## system.mutations {#system_tables-mutations}
 
-Таблица содержит информацию о ходе выполнения [мутаций](../query_language/alter.md#alter-mutations) MergeTree-таблиц. Каждой команде мутации соответствует одна строка. В таблице есть следующие столбцы:
+Таблица содержит информацию о ходе выполнения [мутаций](../sql_reference/statements/alter.md#alter-mutations) MergeTree-таблиц. Каждой команде мутации соответствует одна строка. В таблице есть следующие столбцы:
 
 **database**, **table** - имя БД и таблицы, к которой была применена мутация.
 
@@ -1140,28 +1142,28 @@ path:           /clickhouse/tables/01-08/visits/replicas
 
 ## system.disks {#system_tables-disks}
 
-Cодержит информацию о дисках, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+Cодержит информацию о дисках, заданных в [конфигурации сервера](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
 Столбцы:
 
--   `name` ([String](../data_types/string.md)) — имя диска в конфигурации сервера.
--   `path` ([String](../data_types/string.md)) — путь к точке монтирования в файловой системе.
--   `free_space` ([UInt64](../data_types/int_uint.md)) — свободное место на диске в байтах.
--   `total_space` ([UInt64](../data_types/int_uint.md)) — объём диска в байтах.
--   `keep_free_space` ([UInt64](../data_types/int_uint.md)) — место, которое должно остаться свободным на диске в байтах. Задаётся значением параметра `keep_free_space_bytes` конфигурации дисков.
+-   `name` ([String](../sql_reference/data_types/string.md)) — имя диска в конфигурации сервера.
+-   `path` ([String](../sql_reference/data_types/string.md)) — путь к точке монтирования в файловой системе.
+-   `free_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — свободное место на диске в байтах.
+-   `total_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — объём диска в байтах.
+-   `keep_free_space` ([UInt64](../sql_reference/data_types/int_uint.md)) — место, которое должно остаться свободным на диске в байтах. Задаётся значением параметра `keep_free_space_bytes` конфигурации дисков.
 
 ## system.storage\_policies {#system_tables-storage_policies}
 
-Содержит информацию о политиках хранения и томах, заданных в [конфигурации сервера](table_engines/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
+Содержит информацию о политиках хранения и томах, заданных в [конфигурации сервера](../engines/table_engines/mergetree_family/mergetree.md#table_engine-mergetree-multiple-volumes_configure).
 
 Столбцы:
 
--   `policy_name` ([String](../data_types/string.md)) — имя политики хранения.
--   `volume_name` ([String](../data_types/string.md)) — имя тома, который содержится в политике хранения.
--   `volume_priority` ([UInt64](../data_types/int_uint.md)) — порядковый номер тома согласно конфигурации.
--   `disks` ([Array(String)](../data_types/array.md)) — имена дисков, содержащихся в политике хранения.
--   `max_data_part_size` ([UInt64](../data_types/int_uint.md)) — максимальный размер куска данных, который может храниться на дисках тома (0 — без ограничений).
--   `move_factor` ([Float64](../data_types/float.md))\` — доля свободного места, при превышении которой данные начинают перемещаться на следующий том.
+-   `policy_name` ([String](../sql_reference/data_types/string.md)) — имя политики хранения.
+-   `volume_name` ([String](../sql_reference/data_types/string.md)) — имя тома, который содержится в политике хранения.
+-   `volume_priority` ([UInt64](../sql_reference/data_types/int_uint.md)) — порядковый номер тома согласно конфигурации.
+-   `disks` ([Array(String)](../sql_reference/data_types/array.md)) — имена дисков, содержащихся в политике хранения.
+-   `max_data_part_size` ([UInt64](../sql_reference/data_types/int_uint.md)) — максимальный размер куска данных, который может храниться на дисках тома (0 — без ограничений).
+-   `move_factor` ([Float64](../sql_reference/data_types/float.md))\` — доля свободного места, при превышении которой данные начинают перемещаться на следующий том.
 
 Если политика хранения содержит несколько томов, то каждому тому соответствует отдельная запись в таблице.
 

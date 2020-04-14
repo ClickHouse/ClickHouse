@@ -35,6 +35,8 @@ def build_nav_entry(root):
                 title = meta.get('toc_folder_title', 'hidden')
             prio = meta.get('toc_priority', 9999)
             logging.debug(f'Nav entry: {prio}, {title}, {path}')
+            if not content.strip():
+                title = 'hidden'
             result_items.append((prio, title, path))
     result_items = sorted(result_items, key=lambda x: (x[0], x[1]))
     result = collections.OrderedDict([(item[1], item[2]) for item in result_items])
@@ -45,8 +47,16 @@ def build_nav(lang, args):
     docs_dir = os.path.join(args.docs_dir, lang)
     _, _, nav = build_nav_entry(docs_dir)
     result = []
+    index_key = None
     for key, value in nav.items():
         if key and value:
+            if value == 'index.md':
+                index_key = key
+                continue
             result.append({key: value})
+    if index_key:
+        key = list(result[0].keys())[0]
+        result[0][key][index_key] = 'index.md'
+        result[0][key].move_to_end(index_key, last=False)
     print('result', result)
     return result
