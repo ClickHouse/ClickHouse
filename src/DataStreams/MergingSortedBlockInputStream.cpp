@@ -166,7 +166,6 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
     while (queue.isValid())
     {
         auto current = queue.current();
-        size_t current_block_granularity = current->rows;
 
         /** And what if the block is totally less or equal than the rest for the current cursor?
           * Or is there only one data source left in the queue? Then you can take the entire block on current cursor.
@@ -251,7 +250,7 @@ void MergingSortedBlockInputStream::merge(MutableColumns & merged_columns, TSort
             fetchNextBlock(current, queue);
         }
 
-        if (count_row_and_check_limit(current_block_granularity))
+        if (count_row_and_check_limit())
             return;
     }
 
