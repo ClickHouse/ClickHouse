@@ -1,6 +1,4 @@
 ---
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 21
 toc_title: "Yandex\u6885\u7279\u91CC\u5361\u6570\u636E"
 ---
