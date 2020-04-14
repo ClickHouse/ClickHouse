@@ -3,13 +3,13 @@ toc_priority: 54
 toc_title: Testing Hardware
 ---
 
-# How To Test Your Hardware With ClickHouse {#how-to-test-your-hardware-with-clickhouse}
+# How to Test Your Hardware with ClickHouse {#how-to-test-your-hardware-with-clickhouse}
 
 With this instruction you can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
 
 1.  Go to “commits” page: https://github.com/ClickHouse/ClickHouse/commits/master
 
-2.  Click on the first green check mark or red cross with green “ClickHouse Build Check” and click on the “Details” link near “ClickHouse Build Check”.
+2.  Click on the first green check mark or red cross with green “ClickHouse Build Check” and click on the “Details” link near “ClickHouse Build Check”. There is no such link in some commits, for example commits with documentation. In this case, choose the nearest commit having this link.
 
 3.  Copy the link to “clickhouse” binary for amd64 or aarch64.
 
@@ -63,7 +63,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-10.  Edit the benchmark-new.sh, change “clickhouse-client” to “./clickhouse client” and add “–max\_memory\_usage 100000000000” parameter.
+10.  Edit the benchmark-new.sh, change `clickhouse-client` to `./clickhouse client` and add `–-max_memory_usage 100000000000` parameter.
 
 <!-- -->
 

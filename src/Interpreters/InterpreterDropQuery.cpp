@@ -93,17 +93,17 @@ BlockIO InterpreterDropQuery::executeToTable(
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+            auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table from memory, don't touch data and metadata
             database->detachTable(table_name);
         }
         else if (kind == ASTDropQuery::Kind::Truncate)
         {
-            context.checkAccess(table->isView() ? AccessType::TRUNCATE_VIEW : AccessType::TRUNCATE_TABLE, table_id);
+            context.checkAccess(AccessType::TRUNCATE, table_id);
             table->checkTableCanBeDropped();
 
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+            auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table data, don't touch metadata
             table->truncate(query_ptr, context, table_lock);
         }
@@ -115,7 +115,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
 
-            auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+            auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
             const std::string metadata_file_without_extension = database->getMetadataPath() + escapeForFileName(table_id.table_name);
             const auto prev_metadata_name = metadata_file_without_extension + ".sql";
@@ -216,7 +216,8 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             if (kind == ASTDropQuery::Kind::Truncate)
             {
                 /// If table was already dropped by anyone, an exception will be thrown
-                auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+                auto table_lock =
+                        table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                 /// Drop table data, don't touch metadata
                 table->truncate(query_ptr, context, table_lock);
             }
@@ -225,7 +226,8 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
                 context_handle.removeExternalTable(table_name);
                 table->shutdown();
                 /// If table was already dropped by anyone, an exception will be thrown
-                auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+                auto table_lock =
+                        table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                 /// Delete table data
                 table->drop(table_lock);
                 table->is_dropped = true;
@@ -316,7 +318,7 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
         if (drop.kind == ASTDropQuery::Kind::Drop)
             required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW, drop.database, drop.table);
         else if (drop.kind == ASTDropQuery::Kind::Truncate)
-            required_access.emplace_back(AccessType::TRUNCATE_TABLE | AccessType::TRUNCATE_VIEW, drop.database, drop.table);
+            required_access.emplace_back(AccessType::TRUNCATE, drop.database, drop.table);
         else if (drop.kind == ASTDropQuery::Kind::Detach)
             required_access.emplace_back(AccessType::DROP_TABLE | AccessType::DROP_VIEW, drop.database, drop.table);
     }

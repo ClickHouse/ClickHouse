@@ -87,31 +87,32 @@ std::ostream & operator << (std::ostream & os, const ColumnNamesContext & cols)
         os << "'" << pr.first << "'";
         for (auto & alias : pr.second.aliases)
             os << "/'" << alias << "'";
+        os << ", ";
     }
-    os << " source_tables: ";
+    os << "source_tables: ";
     for (const auto & x : cols.tables)
     {
         auto alias = x.alias();
         auto name = x.name();
         if (alias && name)
-            os << "'" << *alias << "'/'" << *name << "' ";
+            os << "'" << *alias << "'/'" << *name << "', ";
         else if (alias)
-            os << "'" << *alias << "' ";
+            os << "'" << *alias << "', ";
         else if (name)
-            os << "'" << *name << "' ";
+            os << "'" << *name << "', ";
     }
     os << "table_aliases: ";
     for (const auto & x : cols.table_aliases)
-        os << "'" << x << "' ";
+        os << "'" << x << "', ";
     os << "complex_aliases: ";
     for (const auto & x : cols.complex_aliases)
-        os << "'" << x << "' ";
+        os << "'" << x << "', ";
     os << "masked_columns: ";
     for (const auto & x : cols.masked_columns)
-        os << "'" << x << "' ";
+        os << "'" << x << "', ";
     os << "array_join_columns: ";
     for (const auto & x : cols.array_join_columns)
-        os << "'" << x << "' ";
+        os << "'" << x << "', ";
     return os;
 }
 
