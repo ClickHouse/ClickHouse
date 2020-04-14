@@ -6,18 +6,18 @@ endif ()
 
 if (COMPILER_GCC)
     # Require minimum version of gcc
-    set (GCC_MINIMUM_VERSION 8)
+    set (GCC_MINIMUM_VERSION 9)
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${GCC_MINIMUM_VERSION} AND NOT CMAKE_VERSION VERSION_LESS 2.8.9)
         message (FATAL_ERROR "GCC version must be at least ${GCC_MINIMUM_VERSION}. For example, if GCC ${GCC_MINIMUM_VERSION} is available under gcc-${GCC_MINIMUM_VERSION}, g++-${GCC_MINIMUM_VERSION} names, do the following: export CC=gcc-${GCC_MINIMUM_VERSION} CXX=g++-${GCC_MINIMUM_VERSION}; rm -rf CMakeCache.txt CMakeFiles; and re run cmake or ./release.")
     endif ()
 elseif (COMPILER_CLANG)
     # Require minimum version of clang
-    set (CLANG_MINIMUM_VERSION 7)
+    set (CLANG_MINIMUM_VERSION 8)
     if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
         message (FATAL_ERROR "Clang version must be at least ${CLANG_MINIMUM_VERSION}.")
     endif ()
 else ()
-    message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang 6+ and GCC 7+.")
+    message (WARNING "You are using an unsupported compiler. Compilation has only been tested with Clang and GCC.")
 endif ()
 
 STRING(REGEX MATCHALL "[0-9]+" COMPILER_VERSION_LIST ${CMAKE_CXX_COMPILER_VERSION})
