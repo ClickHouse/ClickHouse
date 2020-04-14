@@ -10,7 +10,6 @@ def _convert_junit_to_html(junit_path, html_path):
         with open(junit_path) as junit_file:
             junit_xml = etree.parse(junit_file)
             transform = etree.XSLT(junit_to_html_xslt)
-            print transform(junit_xml)
             html = etree.tostring(transform(junit_xml), encoding="utf-8")
             html_dir = os.path.dirname(html_path)
             if not os.path.exists(html_dir):
