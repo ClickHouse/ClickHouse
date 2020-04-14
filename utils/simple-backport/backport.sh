@@ -7,13 +7,16 @@ merge_base=$(git merge-base origin/master "origin/$branch")
 # Make lists of PRs that were merged into each branch. Use first parent here, or else
 # we'll get weird things like seeing older master that was merged into a PR branch
 # that was then merged into master.
-git log "$merge_base..origin/master" --first-parent --oneline > master-log.txt
-git log "$merge_base..origin/$branch" --first-parent --oneline > "$branch-log.txt"
+git log "$merge_base..origin/master" --first-parent > master-log.txt
+git log "$merge_base..origin/$branch" --first-parent > "$branch-log.txt"
 
+# NOTE keep in sync with ./changelog.sh.
 # Search for PR numbers in commit messages. First variant is normal merge, and second
-# variant is squashed.
+# variant is squashed. Next are some backport message variants.
 find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
-                  s/^.*(#\([[:digit:]]\+\))$/\1/p")
+                  s/^.*(#\([[:digit:]]\+\))$/\1/p;
+                  s/^.*back[- ]*port[ed of]*#\([[:digit:]]\+\).*$/\1/Ip;
+                  s/^.*cherry[- ]*pick[ed of]*#\([[:digit:]]\+\).*$/\1/Ip")
 
 "${find_prs[@]}" master-log.txt | sort -rn > master-prs.txt
 "${find_prs[@]}" "$branch-log.txt" | sort -rn > "$branch-prs.txt"
@@ -39,7 +42,7 @@ do
             rm "$file"
             break
         fi
-        sleep 0.5
+        sleep 0.1
     fi
 
     if ! [ "$pr" == "$(jq -r .number "$file")" ]
@@ -56,44 +59,26 @@ do
         action="backport"
     fi
 
-    # Next, check the tag. They might override the decision.
-    matched_labels=()
-    for label in $(jq -r .labels[].name "$file")
-    do
-        label_action=""
-        case "$label" in
-            pr-must-backport | "v$branch-must-backport")
-                label_action="backport"
-                ;;
-            pr-no-backport | "v$branch-no-backport")
-                label_action="no-backport"
-                ;;
-            "v$branch-conflicts")
-                label_action="conflict"
-                ;;
-            "v$branch" | "v$branch-backported")
-                label_action="done"
-                ;;
-        esac
-        if [ "$label_action" != "" ]
-        then
-            action="$label_action"
-            matched_labels+=("$label")
-        fi
-    done
+    # Next, check the tag. They might override the decision. Checks are ordered by priority.
+    labels="$(jq -r .labels[].name "$file")"
+    if echo "$labels" | grep -x "pr-must-backport\|v$branch-must-backport" > /dev/null; then action="backport"; fi
+    if echo "$labels" | grep -x "v$branch-conflicts" > /dev/null;                       then action="conflict"; fi
+    if echo "$labels" | grep -x "pr-no-backport\|v$branch-no-backport" > /dev/null;     then action="no-backport"; fi
+    # FIXME Ignore "backported" labels for now. If we can't find the backport commit,
+    # this means that the changelog script also won't be able to. An alternative
+    # way to mark PR as backported is to add an empty commit with text like
+    # "backported #12345", so that it can be found between tags and put in proper
+    # place in changelog.
+    #if echo "$labels" | grep -x "v$branch\|v$branch-backported" > /dev/null;            then action="done"; fi
 
-    # Show an error if there are conflicting labels.
-    if [ ${#matched_labels[@]} -gt 1 ]
-    then
-        >&2 echo "PR #$pr has conflicting labels: ${matched_labels[*]}"
-        continue
-    fi
+    # Find merge commit SHA for convenience
+    merge_sha="$(jq -r .merge_commit_sha "$file")"
 
     url="https://github.com/ClickHouse/ClickHouse/pull/$pr"
-    printf "%s\t%s\t%s\t%s\n" "$action" "$pr" "$url" "$file" >> "$branch-report.tsv"
+    printf "%s\t%s\t%s\t%s\t%s\n" "$action" "$pr" "$url" "$file" "$merge_sha" >> "$branch-report.tsv"
     if [ "$action" == "backport" ]
     then
-        printf "%s\t%s\n" "$action" "$url"
+        printf "%s\t%s\t%s\n" "$action" "$url" "$merge_sha"
     fi
 done
 
