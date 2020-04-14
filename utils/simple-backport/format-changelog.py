@@ -9,7 +9,7 @@ import collections
 import re
 
 parser = argparse.ArgumentParser(description='Format changelog for given PRs.')
-parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, default=sys.stdin, help='File with PR numbers, one per line.')
+parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs='?', default=[sys.stdin], help='File with PR numbers, one per line.')
 args = parser.parse_args()
 
 # This function mirrors the PR description checks in ClickhousePullRequestTrigger.
