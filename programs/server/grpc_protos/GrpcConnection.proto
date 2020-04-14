@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package GRPCConnection;
+
+message HelloRequest {
+  string username = 1;
+}
+
+message HelloResponse {
+  string response = 1;
+}
+
+message QueryRequest {
+  string query = 1;
+  string user = 2;
+  string password = 3;
+  string quota_key = 4;
+  string query_id = 5;
+}
+
+message QueryResponse {
+  string query_id = 1;
+  string server_display_name = 2;
+  string content_type = 3;
+  string current_query_id = 4;
+}
+
+service GRPC {
+  rpc SayHello(HelloRequest) returns (HelloResponse) {}
+  rpc Query(QueryRequest) returns (QueryResponse) {}
+}
