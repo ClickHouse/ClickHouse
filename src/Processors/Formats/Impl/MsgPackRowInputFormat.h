@@ -20,10 +20,15 @@ public:
 private:
     bool readObject();
     void insertObject(IColumn & column, DataTypePtr type, const msgpack::object & object);
+    int unpack(msgpack::zone & zone, size_t & offset);
+
+    // msgpack makes a copy of object by default, this function tells unpacker not to copy.
+    static bool reference_func(msgpack::type::object_type, size_t, void *) { return true; }
 
     PeekableReadBuffer buf;
-    DataTypes data_types;
     msgpack::object_handle object_handle;
+    msgpack::v1::detail::context ctx;
+    DataTypes data_types;
 };
 
 }
