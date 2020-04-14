@@ -34,7 +34,7 @@ If you just start using ClickHouse, you can use the following scenario:
 
 1. [Enable](#enabling-access-control) SQL-driven access control and account management for the `default` user.
 2. Login under the `default` user account and create all the required users. Don't forget to create an administrator account (`GRANT ALL ON *.* WITH GRANT OPTION TO admin_user_account`).
-3. Change default user in the server configuration for the user with required permissions. The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
+3. Restrict permissions for the `default` user and disable SQL-driven access control and account management for it.
 
 ### Properties of Current Solution {#access-control-properties}
 
