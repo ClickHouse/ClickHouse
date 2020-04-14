@@ -900,6 +900,6 @@ Default value: `/var/lib/clickhouse/access/`.
 
 **See also**
 
-- [Access Control and Account Management](../access_rignts.md)
+- [Access Control and Account Management](../access_rights.md)
 
 [Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->

@@ -296,7 +296,7 @@ External dictionary structure consists of attributes. Dictionary attributes are 
 
 Depending on dictionary [layout](../../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_layout.md) one or more attributes can be specified as dictionary keys.
 
-For more information, see [External Dictionaries](../../sql_reference/dictionaries/external_dictionaries/external_dicts.md) section.
+For more information, see [External Dictionaries](../dictionaries/external_dictionaries/external_dicts.md) section.
 
 ## CREATE USER {#create-user-statement}
 
@@ -423,7 +423,7 @@ SELECT * FROM db.*;
 
 ## CREATE ROW POLICY {#create-row-policy-statement}
 
-Creates a [filter for rows]((../../operations/access_rights.md#row-policy-management)), which a user can read from a table.
+Creates a [filter for rows](../../operations/access_rights.md#row-policy-management), which a user can read from a table.
 
 ### Syntax {#create-row-policy-syntax}
 
@@ -459,7 +459,7 @@ Keyword `ALL` means all the ClickHouse users including current user. Keywords `A
 
 ## CREATE QUOTA {#create-quota-statement}
 
-Creates a [quota]((../../operations/access_rights.md#quota-management)) that can be assigned to a user or a role.
+Creates a [quota](../../operations/access_rights.md#quota-management) that can be assigned to a user or a role.
 
 ### Syntax {#create-quota-syntax}
 
@@ -483,7 +483,7 @@ CREATE QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES 123 TO CURRENT_USER
 
 ## CREATE SETTINGS PROFILE {#create-settings-profile-statement}
 
-Creates a [settings profile]((../../operations/access_rights.md#settings-profile-management)) that can be assigned to a user or a role.
+Creates a [settings profile](../../operations/access_rights.md#settings-profile-management) that can be assigned to a user or a role.
 
 ### Syntax {#create-settings-profile-syntax}
 
