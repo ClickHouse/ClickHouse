@@ -774,11 +774,11 @@ TCP端口，用于与客户端进行安全通信。 使用它与 [OpenSSL](#serv
 <users_config>users.xml</users_config>
 ```
 
-## 动物园管理员 {#server-settings_zookeeper}
+## zookeeper {#server-settings_zookeeper}
 
-包含允许ClickHouse与 [动物园管理员](http://zookeeper.apache.org/) 集群。
+包含允许ClickHouse与 [zookpeer](http://zookeeper.apache.org/) 集群。
 
-ClickHouse使用ZooKeeper在使用复制表时存储副本的元数据。 如果未使用复制的表，则可以省略此部分参数。
+ClickHouse使用ZooKeeper存储复制表副本的元数据。 如果未使用复制的表，则可以省略此部分参数。
 
 本节包含以下参数:
 
