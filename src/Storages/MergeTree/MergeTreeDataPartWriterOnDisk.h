@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -16,7 +17,7 @@ namespace DB
 
 /// Writes data part to disk in different formats.
 /// Calculates and serializes primary and skip indices if needed.
-class IMergeTreeDataPartWriter : private boost::noncopyable
+class MergeTreeDataPartWriterOnDisk : public IMergeTreeDataPartWriter
 {
 public:
     using WrittenOffsetColumns = std::set<std::string>;
@@ -60,7 +61,7 @@ public:
 
     using StreamPtr = std::unique_ptr<Stream>;
 
-    IMergeTreeDataPartWriter(
+    MergeTreeDataPartWriterOnDisk(
         DiskPtr disk,
         const String & part_path,
         const MergeTreeData & storage,
@@ -72,44 +73,22 @@ public:
         const MergeTreeIndexGranularity & index_granularity,
         bool need_finish_last_granule);
 
-    virtual ~IMergeTreeDataPartWriter();
-
-    virtual void write(
-        const Block & block, const IColumn::Permutation * permutation = nullptr,
-        /* Blocks with already sorted index columns */
-        const Block & primary_key_block = {}, const Block & skip_indexes_block = {}) = 0;
-
-    void calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows);
-    void calculateAndSerializeSkipIndices(const Block & skip_indexes_block, size_t rows);
-
-    /// Shift mark and offset to prepare read next mark.
-    /// You must call it after calling write method and optionally
-    ///  calling calculations of primary and skip indices.
-    void next();
+    void calculateAndSerializePrimaryIndex(const Block & primary_index_block) final;
+    void calculateAndSerializeSkipIndices(const Block & skip_indexes_block) final;
 
     /// Count index_granularity for block and store in `index_granularity`
-    void fillIndexGranularity(const Block & block);
+    void fillIndexGranularity(const Block & block) final;
 
-    const MergeTreeIndexGranularity & getIndexGranularity() const { return index_granularity; }
+    void initSkipIndices() final;
+    void initPrimaryIndex() final;
 
-    Columns releaseIndexColumns()
-    {
-        return Columns(std::make_move_iterator(index_columns.begin()), std::make_move_iterator(index_columns.end()));
-    }
+    virtual void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums) final;
+    virtual void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums) final;
 
     void setWrittenOffsetColumns(WrittenOffsetColumns * written_offset_columns_)
     {
         written_offset_columns = written_offset_columns_;
     }
-
-    const MergeTreeIndices & getSkipIndices() { return skip_indices; }
-
-    void initSkipIndices();
-    void initPrimaryIndex();
-
-    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) = 0;
-    void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums);
-    void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
 
 protected:
     using SerializationState = IDataType::SerializeBinaryBulkStatePtr;
@@ -117,29 +96,12 @@ protected:
 
     DiskPtr disk;
     String part_path;
-    const MergeTreeData & storage;
-    NamesAndTypesList columns_list;
     const String marks_file_extension;
-
-    MergeTreeIndexGranularity index_granularity;
-
     CompressionCodecPtr default_codec;
-
-    MergeTreeIndices skip_indices;
-
-    MergeTreeWriterSettings settings;
 
     bool compute_granularity;
     bool with_final_mark;
     bool need_finish_last_granule;
-
-    size_t current_mark = 0;
-
-    /// The offset to the first row of the block for which you want to write the index.
-    size_t index_offset = 0;
-
-    size_t next_mark = 0;
-    size_t next_index_offset = 0;
 
     /// Number of marsk in data from which skip indices have to start
     /// aggregation. I.e. it's data mark number, not skip indices mark.
@@ -151,7 +113,6 @@ protected:
 
     std::unique_ptr<WriteBufferFromFileBase> index_file_stream;
     std::unique_ptr<HashingWriteBuffer> index_stream;
-    MutableColumns index_columns;
     DataTypes index_types;
     /// Index columns values from the last row from the last block
     /// It's written to index file in the `writeSuffixAndFinalizePart` method

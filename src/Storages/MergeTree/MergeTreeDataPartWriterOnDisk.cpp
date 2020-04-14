@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 #include <utility>
 
@@ -14,20 +14,20 @@ namespace
     constexpr auto INDEX_FILE_EXTENSION = ".idx";
 }
 
-void IMergeTreeDataPartWriter::Stream::finalize()
+void MergeTreeDataPartWriterOnDisk::Stream::finalize()
 {
     compressed.next();
     plain_file->next();
     marks.next();
 }
 
-void IMergeTreeDataPartWriter::Stream::sync()
+void MergeTreeDataPartWriterOnDisk::Stream::sync()
 {
     plain_file->sync();
     marks_file->sync();
 }
 
-IMergeTreeDataPartWriter::Stream::Stream(
+MergeTreeDataPartWriterOnDisk::Stream::Stream(
     const String & escaped_column_name_,
     DiskPtr disk_,
     const String & data_path_,
@@ -47,7 +47,7 @@ IMergeTreeDataPartWriter::Stream::Stream(
 {
 }
 
-void IMergeTreeDataPartWriter::Stream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
+void MergeTreeDataPartWriterOnDisk::Stream::addToChecksums(MergeTreeData::DataPart::Checksums & checksums)
 {
     String name = escaped_column_name;
 
@@ -62,7 +62,7 @@ void IMergeTreeDataPartWriter::Stream::addToChecksums(MergeTreeData::DataPart::C
 }
 
 
-IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
+MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
     DiskPtr disk_,
     const String & part_path_,
     const MergeTreeData & storage_,
@@ -73,15 +73,13 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     const MergeTreeWriterSettings & settings_,
     const MergeTreeIndexGranularity & index_granularity_,
     bool need_finish_last_granule_)
-    : disk(std::move(disk_))
+    : IMergeTreeDataPartWriter(storage_,
+        columns_list_, indices_to_recalc_,
+        index_granularity_, settings_)
+    , disk(std::move(disk_))
     , part_path(part_path_)
-    , storage(storage_)
-    , columns_list(columns_list_)
     , marks_file_extension(marks_file_extension_)
-    , index_granularity(index_granularity_)
     , default_codec(default_codec_)
-    , skip_indices(indices_to_recalc_)
-    , settings(settings_)
     , compute_granularity(index_granularity.empty())
     , with_final_mark(storage.getSettings()->write_final_mark && settings.can_use_adaptive_granularity)
     , need_finish_last_granule(need_finish_last_granule_)
@@ -92,8 +90,6 @@ IMergeTreeDataPartWriter::IMergeTreeDataPartWriter(
     if (!disk->exists(part_path))
         disk->createDirectories(part_path);
 }
-
-IMergeTreeDataPartWriter::~IMergeTreeDataPartWriter() = default;
 
 static void fillIndexGranularityImpl(
     const Block & block,
@@ -155,7 +151,7 @@ static void fillIndexGranularityImpl(
     }
 }
 
-void IMergeTreeDataPartWriter::fillIndexGranularity(const Block & block)
+void MergeTreeDataPartWriterOnDisk::fillIndexGranularity(const Block & block)
 {
     const auto storage_settings = storage.getSettings();
     fillIndexGranularityImpl(
@@ -169,7 +165,7 @@ void IMergeTreeDataPartWriter::fillIndexGranularity(const Block & block)
         need_finish_last_granule);
 }
 
-void IMergeTreeDataPartWriter::initPrimaryIndex()
+void MergeTreeDataPartWriterOnDisk::initPrimaryIndex()
 {
     if (storage.hasPrimaryKey())
     {
@@ -180,13 +176,13 @@ void IMergeTreeDataPartWriter::initPrimaryIndex()
     primary_index_initialized = true;
 }
 
-void IMergeTreeDataPartWriter::initSkipIndices()
+void MergeTreeDataPartWriterOnDisk::initSkipIndices()
 {
     for (const auto & index : skip_indices)
     {
         String stream_name = index->getFileName();
         skip_indices_streams.emplace_back(
-                std::make_unique<IMergeTreeDataPartWriter::Stream>(
+                std::make_unique<MergeTreeDataPartWriterOnDisk::Stream>(
                         stream_name,
                         disk,
                         part_path + stream_name, INDEX_FILE_EXTENSION,
@@ -200,8 +196,9 @@ void IMergeTreeDataPartWriter::initSkipIndices()
     skip_indices_initialized = true;
 }
 
-void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & primary_index_block, size_t rows)
+void MergeTreeDataPartWriterOnDisk::calculateAndSerializePrimaryIndex(const Block & primary_index_block)
 {
+    size_t rows = primary_index_block.rows();
     if (!primary_index_initialized)
         throw Exception("Primary index is not initialized", ErrorCodes::LOGICAL_ERROR);
 
@@ -250,9 +247,9 @@ void IMergeTreeDataPartWriter::calculateAndSerializePrimaryIndex(const Block & p
     }
 }
 
-void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
-        const Block & skip_indexes_block, size_t rows)
+void MergeTreeDataPartWriterOnDisk::calculateAndSerializeSkipIndices(const Block & skip_indexes_block)
 {
+    size_t rows = skip_indexes_block.rows();
     if (!skip_indices_initialized)
         throw Exception("Skip indices are not initialized", ErrorCodes::LOGICAL_ERROR);
 
@@ -314,7 +311,7 @@ void IMergeTreeDataPartWriter::calculateAndSerializeSkipIndices(
     skip_index_data_mark = skip_index_current_data_mark;
 }
 
-void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums)
+void MergeTreeDataPartWriterOnDisk::finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums)
 {
     bool write_final_mark = (with_final_mark && data_written);
     if (write_final_mark && compute_granularity)
@@ -340,7 +337,7 @@ void IMergeTreeDataPartWriter::finishPrimaryIndexSerialization(MergeTreeData::Da
     }
 }
 
-void IMergeTreeDataPartWriter::finishSkipIndicesSerialization(
+void MergeTreeDataPartWriterOnDisk::finishSkipIndicesSerialization(
         MergeTreeData::DataPart::Checksums & checksums)
 {
     for (size_t i = 0; i < skip_indices.size(); ++i)
@@ -359,12 +356,6 @@ void IMergeTreeDataPartWriter::finishSkipIndicesSerialization(
     skip_indices_streams.clear();
     skip_indices_aggregators.clear();
     skip_index_filling.clear();
-}
-
-void IMergeTreeDataPartWriter::next()
-{
-    current_mark = next_mark;
-    index_offset = next_index_offset;
 }
 
 }

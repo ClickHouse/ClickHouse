@@ -1,10 +1,10 @@
-#include <Storages/MergeTree/IMergeTreeDataPartWriter.h>
+#include <Storages/MergeTree/MergeTreeDataPartWriterOnDisk.h>
 
 namespace DB
 {
 
 /// Writes data part in compact format.
-class MergeTreeDataPartWriterCompact : public IMergeTreeDataPartWriter
+class MergeTreeDataPartWriterCompact : public MergeTreeDataPartWriterOnDisk
 {
 public:
     MergeTreeDataPartWriterCompact(

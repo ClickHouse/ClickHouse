@@ -54,7 +54,7 @@ IMergeTreeDataPart::MergeTreeReaderPtr MergeTreeDataPartCompact::getReader(
 
 IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartCompact::getWriter(
     const NamesAndTypesList & columns_list,
-    const std::vector<MergeTreeIndexPtr> & indices_to_recalc,
+    const MergeTreeIndices & indices_to_recalc,
     const CompressionCodecPtr & default_codec,
     const MergeTreeWriterSettings & writer_settings,
     const MergeTreeIndexGranularity & computed_index_granularity) const
