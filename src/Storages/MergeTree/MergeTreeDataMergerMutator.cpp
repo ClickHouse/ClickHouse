@@ -84,7 +84,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_)
         sum_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
     }
 
-    auto future_part_type = parts_.front()->storage.choosePartType(sum_bytes_uncompressed, sum_rows);
+    auto future_part_type = parts_.front()->storage.choosePartTypeOnDisk(sum_bytes_uncompressed, sum_rows);
     assign(std::move(parts_), future_part_type);
 }
 
@@ -1039,7 +1039,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
         need_remove_expired_values = true;
 
     /// All columns from part are changed and may be some more that were missing before in part
-    if (isCompactPart(source_part) || source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
+    if (!isWidePart(source_part) || source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
     {
         auto part_indices = getIndicesForNewDataPart(data.skip_indices, for_file_renames);
         mutateAllPartColumns(
@@ -1231,7 +1231,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
 {
     NameSet removed_columns_from_compact_part;
     NameSet already_changed_columns;
-    bool is_compact_part = isCompactPart(part);
+    bool is_wide_part = isWidePart(part);
     for (const auto & command : commands)
     {
         if (command.type == MutationCommand::Type::DELETE
@@ -1257,14 +1257,14 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
                 for_file_renames.push_back(command);
 
         }
-        else if (is_compact_part && command.type == MutationCommand::Type::DROP_COLUMN)
+        else if (!is_wide_part && command.type == MutationCommand::Type::DROP_COLUMN)
         {
             removed_columns_from_compact_part.emplace(command.column_name);
             for_file_renames.push_back(command);
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
-            if (is_compact_part)
+            if (!is_wide_part)
             {
                 for_interpreter.push_back(
                 {
@@ -1282,7 +1282,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         }
     }
 
-    if (is_compact_part)
+    if (!is_wide_part)
     {
         /// If it's compact part than we don't need to actually remove files from disk
         /// we just don't read dropped columns
@@ -1558,9 +1558,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
         merge_entry->bytes_written_uncompressed += block.bytes();
     }
 
-
     new_data_part->minmax_idx = std::move(minmax_idx);
-
     mutating_stream->readSuffix();
     out.writeSuffixAndFinalizePart(new_data_part);
 }

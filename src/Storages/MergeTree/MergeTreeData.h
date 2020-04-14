@@ -18,6 +18,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
+#include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
 #include <Interpreters/PartLog.h>
 #include <Disks/DiskSpaceMonitor.h>
 
@@ -190,6 +191,7 @@ public:
     DataPartsLock lockParts() const { return DataPartsLock(data_parts_mutex); }
 
     MergeTreeDataPartType choosePartType(size_t bytes_uncompressed, size_t rows_count) const;
+    MergeTreeDataPartType choosePartTypeOnDisk(size_t bytes_uncompressed, size_t rows_count) const;
 
     /// After this method setColumns must be called
     MutableDataPartPtr createPart(const String & name,
@@ -389,6 +391,7 @@ public:
 
     /// Load the set of data parts from disk. Call once - immediately after the object is created.
     void loadDataParts(bool skip_sanity_checks);
+    void loadDataPartsFromWAL(const DiskPtr & disk, const String & file_name);
 
     String getLogName() const { return log_name; }
 
@@ -658,6 +661,9 @@ public:
 
     /// Return alter conversions for part which must be applied on fly.
     AlterConversions getAlterConversionsForPart(const MergeTreeDataPartPtr part) const;
+
+    using WriteAheadLogPtr = std::shared_ptr<MergeTreeWriteAheadLog>;
+    WriteAheadLogPtr getWriteAheadLog() const;
 
     MergeTreeDataFormatVersion format_version;
 
@@ -957,6 +963,9 @@ private:
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
     bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason);
+
+    WriteAheadLogPtr write_ahead_log;
+    // mutable std::mutex wal_mutex;
 };
 
 }

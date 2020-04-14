@@ -61,6 +61,8 @@ protected:
     /// Returns actual column type in part, which can differ from table metadata.
     NameAndTypePair getColumnFromPart(const NameAndTypePair & required_column) const;
 
+    void checkNumberOfColumns(size_t columns_num_to_read);
+
     /// avg_value_size_hints are used to reduce the number of reallocations when creating columns of variable size.
     ValueSizeMap avg_value_size_hints;
     /// Stores states for IDataType::deserializeBinaryBulk

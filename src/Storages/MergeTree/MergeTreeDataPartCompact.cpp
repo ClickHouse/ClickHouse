@@ -1,7 +1,6 @@
 #include "MergeTreeDataPartCompact.h"
 #include <Storages/MergeTree/MergeTreeReaderCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWriterCompact.h>
-#include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Poco/File.h>
 
 

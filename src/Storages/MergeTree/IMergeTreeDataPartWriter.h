@@ -19,7 +19,9 @@ namespace DB
 class IMergeTreeDataPartWriter : private boost::noncopyable
 {
 public:
-    IMergeTreeDataPartWriter(const MergeTreeData & storage_,
+    IMergeTreeDataPartWriter(
+        const MergeTreeData & storage_,
+        const NamesAndTypesList & columns_list_,
         const MergeTreeWriterSettings & settings_);
 
     IMergeTreeDataPartWriter(const MergeTreeData & storage_,
@@ -49,7 +51,7 @@ public:
     virtual void initSkipIndices() {}
     virtual void initPrimaryIndex() {}
 
-    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) = 0;
+    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) = 0;
     virtual void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & /* checksums */) {}
     virtual void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & /* checksums */) {}
 

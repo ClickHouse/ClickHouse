@@ -102,6 +102,7 @@ size_t MergeTreeReaderCompact::readRows(size_t from_mark, bool continue_reading,
 
     size_t read_rows = 0;
     size_t num_columns = columns.size();
+    checkNumberOfColumns(num_columns);
 
     MutableColumns mutable_columns(num_columns);
     auto column_it = columns.begin();

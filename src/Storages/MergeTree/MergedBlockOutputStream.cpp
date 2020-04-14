@@ -36,8 +36,11 @@ MergedBlockOutputStream::MergedBlockOutputStream(
     : IMergedBlockOutputStream(data_part)
     , columns_list(columns_list_)
 {
-    MergeTreeWriterSettings writer_settings(data_part->storage.global_context.getSettings(),
-        data_part->storage.canUseAdaptiveGranularity(), aio_threshold, blocks_are_granules_size);
+    MergeTreeWriterSettings writer_settings(
+        storage.global_context.getSettings(),
+        storage.canUseAdaptiveGranularity(),
+        aio_threshold,
+        blocks_are_granules_size);
 
     if (aio_threshold > 0 && !merged_column_to_size.empty())
     {
@@ -49,7 +52,8 @@ MergedBlockOutputStream::MergedBlockOutputStream(
         }
     }
 
-    disk->createDirectories(part_path);
+    if (!part_path.empty())
+        disk->createDirectories(part_path);
 
     writer = data_part->getWriter(columns_list, skip_indices, default_codec, writer_settings);
     writer->initPrimaryIndex();
@@ -107,7 +111,7 @@ void MergedBlockOutputStream::writeSuffixAndFinalizePart(
     new_part->checksums = checksums;
     new_part->setBytesOnDisk(checksums.getTotalSizeOnDisk());
     new_part->index_granularity = writer->getIndexGranularity();
-    new_part->calculateColumnsSizesOnDisk();
+    // new_part->calculateColumnsSizesOnDisk(); // TODO: Fix
 }
 
 void MergedBlockOutputStream::finalizePartOnDisk(
@@ -165,7 +169,7 @@ void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Perm
         return;
 
     std::unordered_set<String> skip_indexes_column_names_set;
-    for (const auto & index : storage.skip_indices)
+    for (const auto & index : writer->getSkipIndices())
         std::copy(index->columns.cbegin(), index->columns.cend(),
                 std::inserter(skip_indexes_column_names_set, skip_indexes_column_names_set.end()));
     Names skip_indexes_column_names(skip_indexes_column_names_set.begin(), skip_indexes_column_names_set.end());
