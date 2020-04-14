@@ -95,7 +95,7 @@ static bool isInPrimaryKey(const SortDescription & description, const std::strin
 
 /// Returns true if merge result is not empty
 static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
-                     Row & row, const ColumnRawPtrs & raw_columns, size_t row_num)
+                     Row & row, const ColumnRawPtrs & raw_columns, size_t row_number)
 {
     /// Strongly non-optimal.
 
@@ -103,10 +103,10 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
     Row right(left.size());
 
     for (size_t col_num : desc.key_col_nums)
-        right[col_num] = (*raw_columns[col_num])[row_num].template get<Array>();
+        right[col_num] = (*raw_columns[col_num])[row_number].template get<Array>();
 
     for (size_t col_num : desc.val_col_nums)
-        right[col_num] = (*raw_columns[col_num])[row_num].template get<Array>();
+        right[col_num] = (*raw_columns[col_num])[row_number].template get<Array>();
 
     auto at_ith_column_jth_row = [&](const Row & matrix, size_t i, size_t j) -> const Field &
     {
@@ -162,19 +162,19 @@ static bool mergeMap(const SummingSortedAlgorithm::MapDescription & desc,
     for (size_t col_num : desc.val_col_nums)
         row[col_num] = Array(merged.size());
 
-    size_t row_num_ = 0;
+    size_t row_num = 0;
     for (const auto & key_value : merged)
     {
         for (size_t col_num_index = 0, size = desc.key_col_nums.size(); col_num_index < size; ++col_num_index)
-            row[desc.key_col_nums[col_num_index]].get<Array>()[row_num_] = key_value.first[col_num_index];
+            row[desc.key_col_nums[col_num_index]].get<Array>()[row_num] = key_value.first[col_num_index];
 
         for (size_t col_num_index = 0, size = desc.val_col_nums.size(); col_num_index < size; ++col_num_index)
-            row[desc.val_col_nums[col_num_index]].get<Array>()[row_num_] = key_value.second[col_num_index];
+            row[desc.val_col_nums[col_num_index]].get<Array>()[row_num] = key_value.second[col_num_index];
 
-        ++row_num_;
+        ++row_num;
     }
 
-    return row_num_ != 0;
+    return row_num != 0;
 }
 
 static SummingSortedAlgorithm::ColumnsDefinition defineColumns(
