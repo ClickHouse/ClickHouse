@@ -83,6 +83,10 @@ if(USE_RAPIDJSON)
     target_include_directories(clickhouse_functions SYSTEM PRIVATE ${RAPIDJSON_INCLUDE_DIR})
 endif()
 
+
+target_link_libraries(clickhouse_functions PUBLIC "simdxorshift")
+message(STATUS "Using SIMDXORSHIFT ${SIMDXORSHIFT_LIBRARY}")
+
 add_subdirectory(GatherUtils)
 target_link_libraries(clickhouse_functions PRIVATE clickhouse_functions_gatherutils)
 

@@ -44,7 +44,6 @@ struct RandImpl
     static void execute(char * output, size_t size);
 };
 
-
 template <typename ToType, typename Name>
 class FunctionRandom : public IFunction
 {

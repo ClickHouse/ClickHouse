@@ -20,4 +20,5 @@
 
     <query>SELECT rand() FROM {table} </query>
     <query>SELECT rand64() FROM {table} </query>
+    <query>SELECT randxorshift() FROM {table} </query>
 </test>
