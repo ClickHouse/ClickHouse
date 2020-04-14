@@ -875,7 +875,7 @@ void SelectQueryExpressionAnalyzer::appendProjectResult(ExpressionActionsChain &
              * names and identifiers for columns. This code is a workaround for
              * a particular subclass of problems, and not a proper solution.
              */
-            if (auto as_literal = dynamic_cast<ASTLiteral *>(ast.get());
+            if (auto as_literal = ast->as<ASTLiteral>();
                 as_literal)
             {
                 source_name = as_literal->unique_column_name;

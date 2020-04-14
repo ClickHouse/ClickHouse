@@ -42,7 +42,6 @@ struct ScopeStack
 
     const Context & context;
 
-public:
     ScopeStack(const ExpressionActionsPtr & actions, const Context & context_);
 
     void pushLevel(const NamesAndTypesList & input_columns);
@@ -126,6 +125,26 @@ public:
         bool hasColumn(const String & columnName) const
         {
             return actions_stack.getSampleBlock().has(columnName);
+        }
+
+        /*
+         * Generate a column name that is not present in the sample block, using
+         * the given prefix and an optional numeric suffix.
+         */
+        String getUniqueName(const String & prefix)
+        {
+            const auto & block = getSampleBlock();
+            auto result = prefix;
+
+            // First, try the name without any suffix, because it is currently
+            // used both as a display name and a column id.
+            while (block.has(result))
+            {
+                result = prefix + "_" + toString(next_unique_suffix);
+                ++next_unique_suffix;
+            }
+
+            return result;
         }
     };
 
