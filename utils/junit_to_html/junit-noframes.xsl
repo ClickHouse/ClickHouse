@@ -34,6 +34,7 @@ under the License.
         <head>
             <title>Test Results</title>
     <style type="text/css">
+
       body {
         font:normal 68% verdana,arial,helvetica;
         color:#000000;
@@ -41,10 +42,10 @@ under the License.
       table.details tr th{
         font-weight: bold;
         text-align:left;
-        background:#a6caf0;
+        background:#ffcc00;
       }
       table.details tr td{
-        background:#eeeee0;
+        background:#eeeeef;
       }
       p {
         line-height:1.5em;
@@ -57,7 +58,7 @@ under the License.
         margin-top: 1em; margin-bottom: 0.5em; font: bold 125% verdana,arial,helvetica
       }
       h3 {
-        margin-bottom: 0.5em; font: bold 115% verdana,arial,helvetica
+        margin-bottom: 0.5em; color:#0077ff; font: bold 115% verdana,arial,helvetica
       }
       h4 {
         margin-bottom: 0.5em; font: bold 100% verdana,arial,helvetica
@@ -69,10 +70,10 @@ under the License.
         margin-bottom: 0.5em; font: bold 100% verdana,arial,helvetica
       }
       .Error {
-        font-weight:bold; color:red;
+        font-weight:bold; color:#ff3333;
       }
       .Failure {
-        font-weight:bold; color:purple;
+        font-weight:bold; color:#0077ff;
       }
       .Properties {
         text-align:right;
