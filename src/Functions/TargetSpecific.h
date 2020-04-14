@@ -68,7 +68,19 @@ enum class TargetArch : int {
 // Runtime detection.
 bool IsArchSupported(TargetArch arch);
 
-#if defined(__GNUC__)
+#if defined(__clang__)
+// TODO: There are lots of different AVX512 :(
+#   define BEGIN_AVX512_SPECIFIC_CODE \
+        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2\"))))")
+#   define BEGIN_AVX2_SPECIFIC_CODE \
+        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2\"))))")
+#   define BEGIN_AVX_SPECIFIC_CODE \
+        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx\"))))")
+#   define BEGIN_SSE4_SPECIFIC_CODE \
+        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx\"))))")
+#   define END_TARGET_SPECIFIC_CODE \
+        _Pragma("clang attribute pop")
+#elif defined(__GNUC__)
 // TODO: There are lots of different AVX512 :(
 #   define BEGIN_AVX512_SPECIFIC_CODE \
         _Pragma("GCC push_options") \
@@ -84,18 +96,6 @@ bool IsArchSupported(TargetArch arch);
         _Pragma("GCC target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,tune=native\")")
 #   define END_TARGET_SPECIFIC_CODE \
         _Pragma("GCC pop_options")
-#elif defined(__clang__)
-// TODO: There are lots of different AVX512 :(
-#   define BEGIN_AVX512_SPECIFIC_CODE \
-        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2\"))))")
-#   define BEGIN_AVX2_SPECIFIC_CODE \
-        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx,avx2\"))))")
-#   define BEGIN_AVX_SPECIFIC_CODE \
-        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx,avx\"))))")
-#   define BEGIN_SSE4_SPECIFIC_CODE \
-        _Pragma("clang attribute push (__attribute__((target(\"sse,sse2,sse3,ssse3,sse4,popcnt,abm,mmx\"))))")
-#   define END_TARGET_SPECIFIC_CODE \
-        _Pragma("clang attribute pop")
 #else
 #   error "Only CLANG and GCC compilers are supported for vectorized code generation"
 #endif

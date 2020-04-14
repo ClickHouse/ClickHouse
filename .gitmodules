@@ -160,3 +160,6 @@
 [submodule "contrib/fmtlib"]
 	path = contrib/fmtlib
 	url = https://github.com/fmtlib/fmt.git
+[submodule "contrib/SIMDxorshift"]
+	path = contrib/SIMDxorshift
+	url = https://github.com/lemire/SIMDxorshift
