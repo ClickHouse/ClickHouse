@@ -322,7 +322,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
             if (merged_data.hasEnoughRows())
             {
                 last_key.reset();
-                Status(merged_data.pull());
+                return Status(merged_data.pull());
             }
 
             merged_data.startGroup(current->all_columns, current->pos);
