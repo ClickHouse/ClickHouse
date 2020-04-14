@@ -35,7 +35,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 [Исполняемый файл](#dicts-external_dicts_dict_sources-executable),
 [HTTP(s)](#dicts-external_dicts_dict_sources-http),
 [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
-доступны дополнительные настройки форматирования:
+доступны дополнительные настройки:
 
 ``` xml
 <source>
