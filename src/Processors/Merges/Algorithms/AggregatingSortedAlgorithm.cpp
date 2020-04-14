@@ -175,7 +175,7 @@ static void preprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Col
 static void postprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::ColumnsDefinition & def)
 {
     size_t num_rows = chunk.getNumRows();
-    auto columns_ = chunk.detachColumns();
+    auto columns = chunk.detachColumns();
 
     for (auto & desc : def.columns_to_simple_aggregate)
     {
@@ -183,11 +183,11 @@ static void postprocessChunk(Chunk & chunk, const AggregatingSortedAlgorithm::Co
         {
             auto & from_type = desc.nested_type;
             auto & to_type = desc.real_type;
-            columns_[desc.column_number] = recursiveTypeConversion(columns_[desc.column_number], from_type, to_type);
+            columns[desc.column_number] = recursiveTypeConversion(columns[desc.column_number], from_type, to_type);
         }
     }
 
-    chunk.setColumns(std::move(columns_), num_rows);
+    chunk.setColumns(std::move(columns), num_rows);
 }
 
 
