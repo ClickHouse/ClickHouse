@@ -1758,7 +1758,7 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
         {
             if (out_reason)
                 *out_reason = "There are " + toString(covered.size()) + " parts (from " + covered.front()
-                    + " to " + covered.back() + ") that are still not present or beeing processed by "
+                    + " to " + covered.back() + ") that are still not present or being processed by "
                     + " other background process on this replica between " + left->name + " and " + right->name;
             return false;
         }
@@ -1825,7 +1825,7 @@ std::optional<std::pair<Int64, int>> ReplicatedMergeTreeMergePredicate::getDesir
     /// the part (checked by querying queue.virtual_parts), we can confidently assign a mutation to
     /// version X for this part.
 
-    /// We cannot mutate part if it's beeing inserted with quorum and it's not
+    /// We cannot mutate part if it's being inserted with quorum and it's not
     /// already reached.
     if (part->name == inprogress_quorum_part)
         return {};

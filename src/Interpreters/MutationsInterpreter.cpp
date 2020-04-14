@@ -661,9 +661,11 @@ BlockInputStreamPtr MutationsInterpreter::addStreamsForLaterStages(const std::ve
 
 void MutationsInterpreter::validate(TableStructureReadLockHolder &)
 {
+    const Settings & settings = context.getSettingsRef();
+
     /// For Replicated* storages mutations cannot employ non-deterministic functions
     /// because that produces inconsistencies between replicas
-    if (startsWith(storage->getName(), "Replicated"))
+    if (startsWith(storage->getName(), "Replicated") && !settings.allow_nondeterministic_mutations)
     {
         for (const auto & command : commands)
         {

@@ -98,8 +98,8 @@ void IMergeTreeDataPart::MinMaxIndex::update(const Block & block, const Names & 
 
     for (size_t i = 0; i < column_names.size(); ++i)
     {
-        Field min_value;
-        Field max_value;
+        FieldRef min_value;
+        FieldRef max_value;
         const ColumnWithTypeAndName & column = block.getByName(column_names[i]);
         column.column->getExtremes(min_value, max_value);
 
