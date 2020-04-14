@@ -6,6 +6,7 @@
 #include <syscall.h>
 #include <sys/ioctl.h>
 #include <cerrno>
+#include "hasLinuxCapability.h"
 #endif
 
 namespace DB
@@ -64,7 +65,8 @@ namespace DB
 
     static_assert(std::size(PerfEventsCounters::perf_raw_events_info) == PerfEventsCounters::NUMBER_OF_RAW_EVENTS);
 
-    std::atomic<bool> PerfEventsCounters::events_availability_logged = false;
+    std::atomic<bool> PerfEventsCounters::perf_unavailability_logged = false;
+    std::atomic<bool> PerfEventsCounters::particular_events_unavailability_logged = false;
 
     Logger * PerfEventsCounters::getLogger()
     {
@@ -114,7 +116,7 @@ namespace DB
         return true;
     }
 
-    static void perfEventOpenDisabled(int perf_event_paranoid, int perf_event_type, int perf_event_config, int & event_file_descriptor)
+    static void perfEventOpenDisabled(int perf_event_paranoid, bool has_cap_sys_admin, int perf_event_type, int perf_event_config, int & event_file_descriptor)
     {
         perf_event_attr pe = perf_event_attr();
         pe.type = perf_event_type;
@@ -122,8 +124,8 @@ namespace DB
         pe.config = perf_event_config;
         // disable by default to add as little extra time as possible
         pe.disabled = 1;
-        // can record kernel only when `perf_event_paranoid` <= 1
-        pe.exclude_kernel = perf_event_paranoid >= 2;
+        // can record kernel only when `perf_event_paranoid` <= 1 or have CAP_SYS_ADMIN
+        pe.exclude_kernel = perf_event_paranoid >= 2 && !has_cap_sys_admin;
 
         event_file_descriptor = openPerfEvent(&pe, /* measure the calling thread */ 0, /* on any cpu */ -1, -1, 0);
     }
@@ -136,16 +138,30 @@ namespace DB
         int perf_event_paranoid = 0;
         bool is_pref_available = getPerfEventParanoid(perf_event_paranoid);
         if (!is_pref_available)
+        {
+            bool expected_value = false;
+            if (perf_unavailability_logged.compare_exchange_strong(expected_value, true))
+                LOG_WARNING(getLogger(), "Perf events are unsupported");
             return;
+        }
+
+        bool has_cap_sys_admin = hasLinuxCapability(CAP_SYS_ADMIN);
+        if (perf_event_paranoid >= 3 && !has_cap_sys_admin)
+        {
+            bool expected_value = false;
+            if (perf_unavailability_logged.compare_exchange_strong(expected_value, true))
+                LOG_WARNING(getLogger(), "Not enough permissions to record perf events");
+            return;
+        }
 
         bool expected = false;
-        bool log_unsupported_event = events_availability_logged.compare_exchange_strong(expected, true);
+        bool log_unsupported_event = particular_events_unavailability_logged.compare_exchange_strong(expected, true);
         for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
         {
             counters.raw_event_values[i] = 0;
             const PerfEventInfo & event_info = perf_raw_events_info[i];
             int & fd = counters.events_descriptors[i];
-            perfEventOpenDisabled(perf_event_paranoid, event_info.event_type, event_info.event_config, fd);
+            perfEventOpenDisabled(perf_event_paranoid, has_cap_sys_admin, event_info.event_type, event_info.event_config, fd);
 
             if (fd == -1 && log_unsupported_event)
             {
