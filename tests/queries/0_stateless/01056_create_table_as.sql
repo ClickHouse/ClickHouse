@@ -15,6 +15,7 @@ CREATE TABLE t3 AS v; -- { serverError 80; }
 DROP TABLE v;
 
 -- dictionary
+DROP DICTIONARY IF EXISTS dict;
 DROP DATABASE if exists test_01056_dict_data;
 CREATE DATABASE test_01056_dict_data;
 CREATE TABLE test_01056_dict_data.dict_data (key Int, value UInt16) Engine=Memory();

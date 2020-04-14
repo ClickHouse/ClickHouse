@@ -1,6 +1,6 @@
 # Советы по эксплуатации {#sovety-po-ekspluatatsii}
 
-## CPU scaling governor {#cpu-scaling-governor}
+## CPU Scaling Governor {#cpu-scaling-governor}
 
 Всегда используйте `performance` scaling governor. `ondemand` scaling governor работает намного хуже при постоянно высоком спросе.
 
@@ -25,7 +25,7 @@ $ echo 'performance' | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_gov
 $ echo 0 | sudo tee /proc/sys/vm/overcommit_memory
 ```
 
-## Huge pages {#huge-pages}
+## Huge Pages {#huge-pages}
 
 Механизм прозрачных huge pages нужно отключить. Он мешает работе аллокаторов памяти, что приводит к значительной деградации производительности.
 

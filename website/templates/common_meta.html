@@ -19,3 +19,7 @@
       content="{% if description %}{{ description }}{% else %}{{ _('ClickHouse is an open source distributed column-oriented database management system that allows generating analytical data reports in real time using SQL queries. Сreated by Yandex ClickHouse manages extremely large volumes of data in a stable and sustainable manner.') }}{% endif %}"/>
 <meta name="keywords"
       content="ClickHouse, DBMS, OLAP, relational, analytics, analytical, big data, open-source, SQL, web-analytics" />
+
+{% for prefetch_item in prefetch_items %}
+<link rel="prefetch" href="{{ prefetch_item.0 }}" as="{{ prefetch_item.1 }}" />
+{% endfor %}
