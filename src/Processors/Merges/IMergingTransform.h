@@ -82,21 +82,32 @@ public:
             algorithm.initialize(std::move(state.init_chunks));
 
         if (state.input_chunk)
+        {
+            // std::cerr << "Consume chunk with " << state.input_chunk.getNumRows()
+            //           << " for input " << state.next_input_to_read << std::endl;
             algorithm.consume(std::move(state.input_chunk), state.next_input_to_read);
+        }
 
         IMergingAlgorithm::Status status = algorithm.merge();
 
         if (status.chunk && status.chunk.hasRows())
+        {
+            // std::cerr << "Got chunk with " << status.chunk.getNumRows() << " rows" << std::endl;
             state.output_chunk = std::move(status.chunk);
+        }
 
         if (status.required_source >= 0)
         {
+            // std::cerr << "Required data for input " << status.required_source << std::endl;
             state.next_input_to_read = status.required_source;
             state.need_data = true;
         }
 
         if (status.is_finished)
+        {
+            // std::cerr << "Finished" << std::endl;
             state.is_finished = true;
+        }
     }
 
 protected:
