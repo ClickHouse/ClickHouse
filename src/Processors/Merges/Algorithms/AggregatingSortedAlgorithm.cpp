@@ -1,4 +1,4 @@
-#include <Processors/Merges/AggregatingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/AggregatingSortedAlgorithm.h>
 
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/AlignedBuffer.h>

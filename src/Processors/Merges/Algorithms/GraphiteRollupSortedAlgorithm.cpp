@@ -1,4 +1,4 @@
-#include <Processors/Merges/GraphiteRollupSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <common/DateLUTImpl.h>
 #include <common/DateLUT.h>

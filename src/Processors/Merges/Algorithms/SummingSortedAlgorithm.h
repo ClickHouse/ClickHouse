@@ -1,11 +1,8 @@
 #pragma once
 
-#include <Processors/Merges/IMergingAlgorithmWithDelayedChunk.h>
-#include <Processors/Merges/MergedData.h>
+#include <Processors/Merges/Algorithms/IMergingAlgorithmWithDelayedChunk.h>
+#include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/Row.h>
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <Common/AlignedBuffer.h>
-#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 namespace DB
 {

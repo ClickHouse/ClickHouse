@@ -1,4 +1,4 @@
-#include <Processors/Merges/VersionedCollapsingAlgorithm.h>
+#include <Processors/Merges/Algorithms/VersionedCollapsingAlgorithm.h>
 #include <Columns/ColumnsNumber.h>
 #include <IO/WriteBuffer.h>
 

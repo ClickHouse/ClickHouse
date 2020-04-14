@@ -1,6 +1,6 @@
-#include <Processors/Merges/IMergingAlgorithmWithSharedChunks.h>
-#include <Processors/Merges/MergedData.h>
-#include <Processors/Merges/FixedSizeDequeWithGaps.h>
+#include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
+#include <Processors/Merges/Algorithms/MergedData.h>
+#include <Processors/Merges/Algorithms/FixedSizeDequeWithGaps.h>
 #include <DataStreams/ColumnGathererStream.h>
 #include <queue>
 

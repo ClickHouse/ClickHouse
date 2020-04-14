@@ -1,11 +1,14 @@
-#include <Processors/Merges/SummingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/SummingSortedAlgorithm.h>
+
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnTuple.h>
+#include <Common/AlignedBuffer.h>
 #include <Common/FieldVisitors.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
-#include <Common/StringUtils/StringUtils.h>
-#include <Columns/ColumnTuple.h>
 #include <IO/WriteHelpers.h>
-#include <Columns/ColumnAggregateFunction.h>
 
 namespace DB
 {

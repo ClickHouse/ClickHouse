@@ -1,6 +1,6 @@
 #pragma once
-#include <Processors/Merges/IMergingAlgorithm.h>
-#include <Processors/Merges/MergedData.h>
+#include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
+#include <Processors/Merges/Algorithms/MergedData.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
 

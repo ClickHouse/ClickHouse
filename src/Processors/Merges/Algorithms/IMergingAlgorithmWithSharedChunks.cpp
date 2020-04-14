@@ -1,4 +1,4 @@
-#include <Processors/Merges/IMergingAlgorithmWithSharedChunks.h>
+#include <Processors/Merges/Algorithms/IMergingAlgorithmWithSharedChunks.h>
 
 namespace DB
 {

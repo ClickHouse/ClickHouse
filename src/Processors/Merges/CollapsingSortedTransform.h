@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/Merges/CollapsingSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/CollapsingSortedAlgorithm.h>
 
 namespace DB
 {

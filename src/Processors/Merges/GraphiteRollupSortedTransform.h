@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Processors/Merges/IMergingTransform.h>
-#include <Processors/Merges/GraphiteRollupSortedAlgorithm.h>
+#include <Processors/Merges/Algorithms/GraphiteRollupSortedAlgorithm.h>
 
 namespace DB
 {
