@@ -16,14 +16,14 @@ namespace DB
   *  merge `value` values using the specified aggregate functions,
   *  as well as keeping the maximum value of the `version` column.
   */
-class GraphiteRollupSortedTransform : public IMergingTransform2<GraphiteRollupSortedAlgorithm>
+class GraphiteRollupSortedTransform : public IMergingTransform<GraphiteRollupSortedAlgorithm>
 {
 public:
     GraphiteRollupSortedTransform(
         const Block & header, size_t num_inputs,
         SortDescription description_, size_t max_block_size,
         Graphite::Params params_, time_t time_of_merge_)
-        : IMergingTransform2(
+        : IMergingTransform(
             num_inputs, header, header, true,
             header,
             num_inputs,

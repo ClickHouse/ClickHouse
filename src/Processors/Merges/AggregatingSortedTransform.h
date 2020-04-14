@@ -14,13 +14,13 @@ class ColumnAggregateFunction;
   * corresponding to a one value of the primary key. For columns that are not part of the primary key and which do not have the AggregateFunction type,
   * when merged, the first value is selected.
   */
-class AggregatingSortedTransform : public IMergingTransform2<AggregatingSortedAlgorithm>
+class AggregatingSortedTransform : public IMergingTransform<AggregatingSortedAlgorithm>
 {
 public:
     AggregatingSortedTransform(
         const Block & header, size_t num_inputs,
         SortDescription description_, size_t max_block_size)
-        : IMergingTransform2(
+        : IMergingTransform(
             num_inputs, header, header, true,
             header,
             num_inputs,

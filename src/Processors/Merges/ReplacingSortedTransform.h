@@ -11,7 +11,7 @@ namespace DB
   * For each group of consecutive identical values of the primary key (the columns by which the data is sorted),
   *  keeps row with max `version` value.
   */
-class ReplacingSortedTransform final : public IMergingTransform2<ReplacingSortedAlgorithm>
+class ReplacingSortedTransform final : public IMergingTransform<ReplacingSortedAlgorithm>
 {
 public:
     ReplacingSortedTransform(
@@ -20,7 +20,7 @@ public:
         size_t max_block_size,
         WriteBuffer * out_row_sources_buf_ = nullptr,
         bool use_average_block_sizes = false)
-        : IMergingTransform2(
+        : IMergingTransform(
             num_inputs, header, header, true,
             header,
             num_inputs,
