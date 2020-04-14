@@ -141,7 +141,7 @@ namespace DB
         {
             bool expected_value = false;
             if (perf_unavailability_logged.compare_exchange_strong(expected_value, true))
-                LOG_WARNING(getLogger(), "Perf events are unsupported");
+                LOG_INFO(getLogger(), "Perf events are unsupported");
             return;
         }
 
@@ -150,7 +150,7 @@ namespace DB
         {
             bool expected_value = false;
             if (perf_unavailability_logged.compare_exchange_strong(expected_value, true))
-                LOG_WARNING(getLogger(), "Not enough permissions to record perf events");
+                LOG_INFO(getLogger(), "Not enough permissions to record perf events");
             return;
         }
 
@@ -165,7 +165,7 @@ namespace DB
 
             if (fd == -1 && log_unsupported_event)
             {
-                LOG_WARNING(getLogger(), "Perf event is unsupported: event_type=" << event_info.event_type
+                LOG_INFO(getLogger(), "Perf event is unsupported: event_type=" << event_info.event_type
                             << ", event_config=" << event_info.event_config);
             }
         }
