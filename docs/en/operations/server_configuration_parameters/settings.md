@@ -867,4 +867,15 @@ The update is performed asynchronously, in a separate system thread.
 
 **Default value**: 15.
 
+
+## access_control_path {#access_control_path}
+
+Path to a folder where a ClickHouse server stores user and role configurations created by SQL commands.
+
+Default value: `/var/lib/clickhouse/access/`.
+
+**See also**
+
+- [Access Control and Account Management](../access_rignts.md)
+
 [Original article](https://clickhouse.tech/docs/en/operations/server_configuration_parameters/settings/) <!--hide-->
