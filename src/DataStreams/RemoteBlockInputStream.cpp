@@ -359,12 +359,17 @@ void RemoteBlockInputStream::sendQuery()
 
 void RemoteBlockInputStream::tryCancel(const char * reason)
 {
-    bool old_val = false;
-    if (!was_cancelled.compare_exchange_strong(old_val, true, std::memory_order_seq_cst, std::memory_order_relaxed))
-        return;
+    {
+        std::lock_guard guard(was_cancelled_mutex);
+
+        if (was_cancelled)
+            return;
+
+        was_cancelled = true;
+        multiplexed_connections->sendCancel();
+    }
 
     LOG_TRACE(log, "(" << multiplexed_connections->dumpAddresses() << ") " << reason);
-    multiplexed_connections->sendCancel();
 }
 
 bool RemoteBlockInputStream::isQueryPending() const
