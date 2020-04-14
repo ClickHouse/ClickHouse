@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Common/SharedBlockRowRef.h>
-
 #include <Core/Row.h>
 #include <Core/SortDescription.h>
 #include <Core/SortCursor.h>
@@ -33,7 +31,7 @@ public:
       * quiet - don't log profiling info
       */
     MergingSortedBlockInputStream(
-        const BlockInputStreams & inputs_, const SortDescription & description_, size_t max_block_size_,
+        const BlockInputStreams & inputs_, SortDescription description_, size_t max_block_size_,
         UInt64 limit_ = 0, WriteBuffer * out_row_sources_buf_ = nullptr, bool quiet_ = false);
 
     String getName() const override { return "MergingSorted"; }
@@ -71,7 +69,7 @@ protected:
 
     /// Blocks currently being merged.
     size_t num_columns = 0;
-    std::vector<SharedBlockPtr> source_blocks;
+    Blocks source_blocks;
 
     SortCursorImpls cursors;
 
