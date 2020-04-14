@@ -5,13 +5,13 @@ toc_priority: 57
 toc_title: "\u670D\u52A1\u5668\u8BBE\u7F6E"
 ---
 
-# 服务器设置 {#server-settings}
+# 服务器配置 {#server-settings}
 
 ## builtin\_dictionaries\_reload\_interval {#builtin-dictionaries-reload-interval}
 
-重新加载内置字典之前的时间间隔（以秒为单位）。
+重新加载内置字典的间隔时间（以秒为单位）。
 
-ClickHouse每x秒重新加载内置字典。 这使得编辑字典成为可能 “on the fly” 无需重新启动服务器。
+ClickHouse每x秒重新加载内置字典。 这使得编辑字典 “on the fly”，而无需重新启动服务器。
 
 默认值:3600.
 
@@ -23,7 +23,7 @@ ClickHouse每x秒重新加载内置字典。 这使得编辑字典成为可能 �
 
 ## 压缩 {#server-settings-compression}
 
-数据压缩设置 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)-发动机表。
+数据压缩配置 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)-引擎表。
 
 !!! warning "警告"
     如果您刚开始使用ClickHouse，请不要使用它。
@@ -41,7 +41,7 @@ ClickHouse每x秒重新加载内置字典。 这使得编辑字典成为可能 �
 </compression>
 ```
 
-`<case>` 字段:
+`<case>` 参数:
 
 -   `min_part_size` – The minimum size of a data part.
 -   `min_part_size_ratio` – The ratio of the data part size to the table size.
@@ -82,9 +82,9 @@ ClickHouse每x秒重新加载内置字典。 这使得编辑字典成为可能 �
 
 ## default\_profile {#default-profile}
 
-默认设置配置文件。
+默认配置文件。
 
-设置配置文件位于参数中指定的文件中 `user_config`.
+配置文件位于`user_config`参数指定的文件中 .
 
 **示例**
 
