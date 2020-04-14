@@ -195,20 +195,6 @@ SetPtr makeExplicitSet(
     return set;
 }
 
-static String getUniqueName(ActionsVisitor::Data & data, const String & prefix)
-{
-    auto & block = data.getSampleBlock();
-    auto result = prefix;
-
-    while (block.has(result))
-    {
-        result = prefix + "_" + toString(data.next_unique_suffix);
-        ++data.next_unique_suffix;
-    }
-
-    return result;
-}
-
 ScopeStack::ScopeStack(const ExpressionActionsPtr & actions, const Context & context_)
     : context(context_)
 {
@@ -464,7 +450,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
             ///  so that sets with the same literal representation do not fuse together (they can have different types).
             if (!prepared_set->empty())
-                column.name = getUniqueName(data, "__set");
+                column.name = data.getUniqueName("__set");
             else
                 column.name = child->getColumnName();
 
@@ -492,7 +478,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             ColumnWithTypeAndName column(
                 ColumnConst::create(std::move(column_string), 1),
                 std::make_shared<DataTypeString>(),
-                getUniqueName(data, "__joinGet"));
+                data.getUniqueName("__joinGet"));
             data.addAction(ExpressionAction::addColumn(column));
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
@@ -506,7 +492,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             // generated a unique column name for it. Use it instead of a generic
             // display name.
             auto child_column_name = child->getColumnName();
-            auto as_literal = dynamic_cast<const ASTLiteral *>(child.get());
+            auto as_literal = child->as<ASTLiteral>();
             if (as_literal)
             {
                 assert(!as_literal->unique_column_name.empty());
@@ -573,7 +559,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                 /// We can not name `getColumnName()`,
                 ///  because it does not uniquely define the expression (the types of arguments can be different).
-                String lambda_name = getUniqueName(data, "__lambda");
+                String lambda_name = data.getUniqueName("__lambda");
 
                 auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
                         lambda_actions, captured, lambda_arguments, result_type, result_name);
@@ -638,7 +624,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
         else
         {
             const_cast<ASTLiteral &>(literal).unique_column_name
-                = getUniqueName(data, default_name);
+                = data.getUniqueName(default_name);
         }
     }
 

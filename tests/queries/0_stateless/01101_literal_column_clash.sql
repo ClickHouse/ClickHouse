@@ -5,6 +5,7 @@ join (select '1' as sid) as t2 on t2.sid = cast(t1.iid as String);
 
 -- even simpler cases
 select cast(7 as String), * from (select 3 "'String'");
+select cast(7 as String), * from (select number "'String'" FROM numbers(2));
 SELECT concat('xyz', 'abc'), * FROM (SELECT 2 AS "'xyz'");
 with 3 as "1" select 1, "1";
 
