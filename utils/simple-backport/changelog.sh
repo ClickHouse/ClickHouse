@@ -11,8 +11,8 @@ git log "$from..$to" --first-parent > "changelog-log.txt"
 # variant is squashed. Next are some backport message variants.
 find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
                   s/^.*(#\([[:digit:]]\+\))$/\1/p;
-                  s/^.*back[- ]*port[ ]*#\([[:digit:]]\+\).*$/\1/Ip;
-                  s/^.*cherry[- ]*pick[ ]*#\([[:digit:]]\+\).*$/\1/Ip")
+                  s/^.*back[- ]*port[ed of]*#\([[:digit:]]\+\).*$/\1/Ip;
+                  s/^.*cherry[- ]*pick[ed of]*#\([[:digit:]]\+\).*$/\1/Ip")
 
 "${find_prs[@]}" "changelog-log.txt" | sort -rn > "changelog-prs.txt"
 

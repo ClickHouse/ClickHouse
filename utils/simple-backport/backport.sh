@@ -15,8 +15,8 @@ git log "$merge_base..origin/$branch" --first-parent > "$branch-log.txt"
 # variant is squashed. Next are some backport message variants.
 find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
                   s/^.*(#\([[:digit:]]\+\))$/\1/p;
-                  s/^.*back[- ]*port[ of]*#\([[:digit:]]\+\).*$/\1/Ip;
-                  s/^.*cherry[- ]*pick[ of]*#\([[:digit:]]\+\).*$/\1/Ip")
+                  s/^.*back[- ]*port[ed of]*#\([[:digit:]]\+\).*$/\1/Ip;
+                  s/^.*cherry[- ]*pick[ed of]*#\([[:digit:]]\+\).*$/\1/Ip")
 
 "${find_prs[@]}" master-log.txt | sort -rn > master-prs.txt
 "${find_prs[@]}" "$branch-log.txt" | sort -rn > "$branch-prs.txt"
