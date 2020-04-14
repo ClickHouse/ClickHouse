@@ -27,9 +27,7 @@ class FunctionNeighbor : public IFunction
 {
 public:
     static constexpr auto name = "neighbor";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionNeighbor>(context); }
-
-    explicit FunctionNeighbor(const Context & context_) : context(context_) {}
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionNeighbor>(); }
 
     /// Get the name of the function.
     String getName() const override { return name; }
@@ -83,14 +81,14 @@ public:
         const ColumnWithTypeAndName & offset_elem = block.getByPosition(arguments[1]);
         bool has_defaults = arguments.size() == 3;
 
-        ColumnPtr source_column_casted = castColumn(source_elem, result_type, context);
+        ColumnPtr source_column_casted = castColumn(source_elem, result_type);
         ColumnPtr offset_column = offset_elem.column;
 
         ColumnPtr default_column_casted;
         if (has_defaults)
         {
             const ColumnWithTypeAndName & default_elem = block.getByPosition(arguments[2]);
-            default_column_casted = castColumn(default_elem, result_type, context);
+            default_column_casted = castColumn(default_elem, result_type);
         }
 
         bool source_is_constant = isColumnConst(*source_column_casted);
@@ -181,9 +179,6 @@ public:
             block.getByPosition(result).column = std::move(result_column);
         }
     }
-
-private:
-    const Context & context;
 };
 
 void registerFunctionNeighbor(FunctionFactory & factory)

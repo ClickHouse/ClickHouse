@@ -505,14 +505,14 @@ void QueryPipeline::setOutput(ProcessorPtr output)
 }
 
 void QueryPipeline::unitePipelines(
-    std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context)
+    std::vector<QueryPipeline> && pipelines, const Block & common_header)
 {
     checkInitialized();
 
     addSimpleTransform([&](const Block & header)
     {
         return std::make_shared<ConvertingTransform>(
-                header, common_header, ConvertingTransform::MatchColumnsMode::Position, context);
+                header, common_header, ConvertingTransform::MatchColumnsMode::Position);
     });
 
     std::vector<OutputPort *> extremes;
@@ -531,13 +531,13 @@ void QueryPipeline::unitePipelines(
         pipeline.addSimpleTransform([&](const Block & header)
         {
            return std::make_shared<ConvertingTransform>(
-                   header, common_header, ConvertingTransform::MatchColumnsMode::Position, context);
+                   header, common_header, ConvertingTransform::MatchColumnsMode::Position);
         });
 
         if (pipeline.extremes_port)
         {
             auto converting = std::make_shared<ConvertingTransform>(
-                pipeline.current_header, common_header, ConvertingTransform::MatchColumnsMode::Position, context);
+                pipeline.current_header, common_header, ConvertingTransform::MatchColumnsMode::Position);
 
             connect(*pipeline.extremes_port, converting->getInputPort());
             extremes.push_back(&converting->getOutputPort());
@@ -548,7 +548,7 @@ void QueryPipeline::unitePipelines(
         if (pipeline.totals_having_port)
         {
             auto converting = std::make_shared<ConvertingTransform>(
-                pipeline.current_header, common_header, ConvertingTransform::MatchColumnsMode::Position, context);
+                pipeline.current_header, common_header, ConvertingTransform::MatchColumnsMode::Position);
 
             connect(*pipeline.totals_having_port, converting->getInputPort());
             totals.push_back(&converting->getOutputPort());

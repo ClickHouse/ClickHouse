@@ -1105,8 +1105,8 @@ private:
     {
         DataTypePtr common_type = getLeastSupertype({c0.type, c1.type});
 
-        ColumnPtr c0_converted = castColumn(c0, common_type, context);
-        ColumnPtr c1_converted = castColumn(c1, common_type, context);
+        ColumnPtr c0_converted = castColumn(c0, common_type);
+        ColumnPtr c1_converted = castColumn(c1, common_type);
 
         executeGenericIdenticalTypes(block, result, c0_converted.get(), c1_converted.get());
     }
