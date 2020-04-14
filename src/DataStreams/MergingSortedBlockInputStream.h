@@ -116,58 +116,6 @@ protected:
     /// If it is not nullptr then it should be populated during execution
     WriteBuffer * out_row_sources_buf;
 
-
-    /// These methods are used in Collapsing/Summing/Aggregating... SortedBlockInputStream-s.
-
-    /// Save the row pointed to by cursor in `row`.
-    template <typename TSortCursor>
-    void setRow(Row & row, TSortCursor & cursor)
-    {
-        for (size_t i = 0; i < num_columns; ++i)
-        {
-            try
-            {
-                cursor->all_columns[i]->get(cursor->pos, row[i]);
-            }
-            catch (...)
-            {
-                tryLogCurrentException(__PRETTY_FUNCTION__);
-
-                /// Find out the name of the column and throw more informative exception.
-
-                String column_name;
-                for (const auto & block : source_blocks)
-                {
-                    if (i < block->columns())
-                    {
-                        column_name = block->safeGetByPosition(i).name;
-                        break;
-                    }
-                }
-
-                throw Exception("MergingSortedBlockInputStream failed to read row " + toString(cursor->pos)
-                    + " of column " + toString(i) + (column_name.empty() ? "" : " (" + column_name + ")"),
-                    ErrorCodes::CORRUPTED_DATA);
-            }
-        }
-    }
-
-    template <typename TSortCursor>
-    void setRowRef(SharedBlockRowRef & row_ref, TSortCursor & cursor)
-    {
-        row_ref.row_num = cursor.impl->pos;
-        row_ref.shared_block = source_blocks[cursor.impl->order];
-        row_ref.columns = &row_ref.shared_block->all_columns;
-    }
-
-    template <typename TSortCursor>
-    void setPrimaryKeyRef(SharedBlockRowRef & row_ref, TSortCursor & cursor)
-    {
-        row_ref.row_num = cursor.impl->pos;
-        row_ref.shared_block = source_blocks[cursor.impl->order];
-        row_ref.columns = &row_ref.shared_block->sort_columns;
-    }
-
 private:
 
     /** We support two different cursors - with Collation and without.
