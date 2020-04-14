@@ -20,15 +20,6 @@ KIND, either express or implied.  See the License for the
 specific language governing permissions and limitations
 under the License.
 -->
-<!--
-  Копипаста из интернета.
-  Починен HTML, поправлен формат, упавшие тесты вынесены вперёд
- -->
-<!--
- Sample stylesheet to be used with Ant JUnitReport output.
- It creates a non-framed report that can be useful to send via
- e-mail or such.
--->
 <xsl:template match="testsuites">
     <html>
         <head>
