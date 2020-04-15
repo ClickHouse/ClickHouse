@@ -1,11 +1,9 @@
 ---
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
 toc_priority: 21
 toc_title: "Yandex\u6885\u7279\u91CC\u5361\u6570\u636E"
 ---
 
-# 匿名Yandex的。梅特里卡数据 {#anonymized-yandex-metrica-data}
+# 脱敏的Yandex.Metrica数据集 {#anonymized-yandex-metrica-data}
 
 Dataset由两个表组成，其中包含有关命中的匿名数据 (`hits_v1`）和访问 (`visits_v1`）的Yandex的。梅特里卡 你可以阅读更多关于Yandex的。梅特里卡 [ClickHouse历史](../../introduction/history.md) 科。
 
