@@ -75,7 +75,7 @@ Returns the following `String` type columns:
 
 Nested data structures are output in “expanded” format. Each column is shown separately, with the name after a dot.
 
-## DETACH {#detach}
+## DETACH {#detach-statement}
 
 Deletes information about the ‘name’ table from the server. The server stops knowing about the table’s existence.
 
@@ -315,13 +315,13 @@ SET DEFAULT ROLE {NONE | role [,...] | ALL | ALL EXCEPT role [,...]} TO {user|CU
 
 ### Examples {#set-default-role-examples}
 
-Assign multiple default roles to a user:
+Set multiple default roles to a user:
 
 ``` sql
 SET DEFAULT ROLE role1, role2, ... TO user
 ```
 
-Assign all the granted roles to a user:
+Set all the granted roles as default to a user:
 
 ``` sql
 SET DEFAULT ROLE ALL TO user
@@ -333,7 +333,7 @@ Purge default roles from a user:
 SET DEFAULT ROLE NONE TO user
 ```
 
-Assign all the granted roles excepting some of them:
+Set all the granted roles as default excepting some of them:
 
 ```sql
 SET DEFAULT ROLE ALL EXCEPT role1, role2 TO user

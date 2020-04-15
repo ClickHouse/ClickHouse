@@ -13,7 +13,7 @@ ClickHouse operations manual consists of the following major sections:
 -   [Troubleshooting](troubleshooting.md)
 -   [Usage Recommendations](tips.md)
 -   [Update Procedure](update.md)
--   [Access Rights](access_rights.md)
+-   [Access Rights](access_rights.md#access-control)
 -   [Data Backup](backup.md)
 -   [Configuration Files](configuration_files.md)
 -   [Quotas](quotas.md)
