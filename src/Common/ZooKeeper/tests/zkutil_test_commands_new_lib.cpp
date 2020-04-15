@@ -1,6 +1,7 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Event.h>
+#include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeperImpl.h>
 #include <Common/typeid_cast.h>
 #include <iostream>
@@ -23,15 +24,23 @@ try
     Poco::Logger::root().setChannel(channel);
     Poco::Logger::root().setLevel("trace");
 
-    std::string addresses_arg = argv[1];
-    std::vector<std::string> addresses_strings;
-    splitInto<','>(addresses_strings, addresses_arg);
-    ZooKeeper::Addresses addresses;
-    addresses.reserve(addresses_strings.size());
-    for (const auto & address_string : addresses_strings)
-        addresses.emplace_back(address_string);
+    std::string hosts_arg = argv[1];
+    std::vector<std::string> hosts_strings;
+    splitInto<','>(hosts_strings, hosts_arg);
+    ZooKeeper::Nodes nodes;
+    nodes.reserve(hosts_strings.size());
+    for (auto & host_string : hosts_strings)
+    {
+        bool secure = bool(startsWith(host_string, "secure://"));
 
-    ZooKeeper zk(addresses, {}, {}, {}, {5, 0}, {0, 50000}, {0, 50000});
+        if (secure)
+            host_string.erase(0, strlen("secure://"));
+
+        nodes.emplace_back(ZooKeeper::Node{Poco::Net::SocketAddress{host_string},secure});
+    }
+
+
+    ZooKeeper zk(nodes, {}, {}, {}, {5, 0}, {0, 50000}, {0, 50000});
 
     Poco::Event event(true);
 
