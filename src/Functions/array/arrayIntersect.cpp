@@ -88,7 +88,7 @@ private:
         ColumnsWithTypeAndName casted;
     };
 
-    CastArgumentsResult castColumns(Block & block, const ColumnNumbers & arguments,
+    static CastArgumentsResult castColumns(Block & block, const ColumnNumbers & arguments,
                         const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls) const;
     UnpackedArrays prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const;
 
