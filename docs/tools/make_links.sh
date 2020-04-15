@@ -6,7 +6,7 @@
 
 function do_make_links()
 {
-    langs=(en es zh fr ru ja fa)
+    langs=(en es zh fr ru ja tr fa)
     src_file="$1"
     for lang in "${langs[@]}"
     do
