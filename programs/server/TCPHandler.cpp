@@ -743,7 +743,6 @@ void TCPHandler::receiveHello()
     UInt64 packet_type = 0;
     String user = "default";
     String password;
-    String quota_key;
 
     readVarUInt(packet_type, *in);
     if (packet_type != Protocol::Client::Hello)
@@ -773,9 +772,6 @@ void TCPHandler::receiveHello()
     readStringBinary(user, *in);
     readStringBinary(password, *in);
 
-    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_PROVIDED_QUOTA_KEY)
-        readStringBinary(quota_key, *in);
-
     LOG_DEBUG(log, "Connected " << client_name
         << " version " << client_version_major
         << "." << client_version_minor
@@ -783,28 +779,24 @@ void TCPHandler::receiveHello()
         << ", revision: " << client_revision
         << (!default_database.empty() ? ", database: " + default_database : "")
         << (!user.empty() ? ", user: " + user : "")
-        << (!quota_key.empty() ? ", quota_key: " + quota_key : "")  /// quota key is not secret info.
         << ".");
 
-    connection_context.setUser(user, password, socket().peerAddress(), quota_key);
+    connection_context.setUser(user, password, socket().peerAddress());
 }
 
 
 void TCPHandler::receiveUnexpectedHello()
 {
     UInt64 skip_uint_64;
-    UInt64 client_revision;
     String skip_string;
 
     readStringBinary(skip_string, *in);
     readVarUInt(skip_uint_64, *in);
     readVarUInt(skip_uint_64, *in);
-    readVarUInt(client_revision, *in);
+    readVarUInt(skip_uint_64, *in);
     readStringBinary(skip_string, *in);
     readStringBinary(skip_string, *in);
     readStringBinary(skip_string, *in);
-    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_PROVIDED_QUOTA_KEY)
-        readStringBinary(skip_string, *in);
 
     throw NetException("Unexpected packet Hello received from client", ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
 }

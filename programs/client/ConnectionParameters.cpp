@@ -55,8 +55,6 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
             password = result;
     }
 
-    quota_key = config.getString("quota_key", "");
-
     compression = config.getBool("compression", true) ? Protocol::Compression::Enable : Protocol::Compression::Disable;
 
     timeouts = ConnectionTimeouts(
