@@ -13,7 +13,7 @@
 	url = https://github.com/edenhill/librdkafka.git
 [submodule "contrib/cctz"]
 	path = contrib/cctz
-	url = https://github.com/google/cctz.git
+	url = https://github.com/ClickHouse-Extras/cctz.git
 [submodule "contrib/zlib-ng"]
 	path = contrib/zlib-ng
 	url = https://github.com/ClickHouse-Extras/zlib-ng.git
