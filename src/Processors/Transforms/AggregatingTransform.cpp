@@ -413,9 +413,6 @@ AggregatingTransform::~AggregatingTransform() = default;
 
 IProcessor::Status AggregatingTransform::prepare()
 {
-    /// There are one or two input ports.
-    /// The first one is used at aggregation step, the second one - while reading merged data from ConvertingAggregated
-
     auto & output = outputs.front();
     /// Last output is current. All other outputs should already be closed.
     auto & input = inputs.back();
