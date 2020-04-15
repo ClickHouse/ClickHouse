@@ -2,7 +2,7 @@ add_executable(zkutil_test_commands zkutil_test_commands.cpp)
 target_link_libraries(zkutil_test_commands PRIVATE clickhouse_common_zookeeper)
 
 add_executable(zkutil_test_commands_new_lib zkutil_test_commands_new_lib.cpp)
-target_link_libraries(zkutil_test_commands_new_lib PRIVATE clickhouse_common_zookeeper)
+target_link_libraries(zkutil_test_commands_new_lib PRIVATE clickhouse_common_zookeeper string_utils)
 
 add_executable(zkutil_test_lock zkutil_test_lock.cpp)
 target_link_libraries(zkutil_test_lock PRIVATE clickhouse_common_zookeeper)

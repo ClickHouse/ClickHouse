@@ -83,7 +83,7 @@ Pipes StorageView::read(
         /// And also convert to expected structure.
         pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
             pipe.getHeader(), getSampleBlockForColumns(column_names),
-            ConvertingTransform::MatchColumnsMode::Name, context));
+            ConvertingTransform::MatchColumnsMode::Name));
     }
 
     return pipes;
