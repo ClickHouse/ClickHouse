@@ -401,13 +401,10 @@ bool isASTFunctionStateful(const ASTFunction * ast_function, const Context & con
 /// Removes duplicate ORDER BY from subqueries.
 void optimizeDuplicateOrderByFromSubqueries(const ASTPtr & current_ast, const Context & context)
 {
-    if (!current_ast)
-        return;
+    auto select_query = current_ast->as<ASTSelectQuery>();
 
-    if (current_ast->getID() == "SelectQuery")
+    if (select_query)
     {
-        auto select_query = current_ast->as<ASTSelectQuery>();
-
         if (select_query->orderBy() && !select_query->limitBy() && !select_query->limitByOffset() &&
             !select_query->limitByLength() && !select_query->limitLength() && !select_query->limitOffset())
         {
@@ -423,16 +420,22 @@ void optimizeDuplicateOrderByFromSubqueries(const ASTPtr & current_ast, const Co
     }
 }
 
-/// Checkss if duplicate ORDER BY from subqueries can be erased.
+/// Checks if duplicate ORDER BY from subqueries can be erased.
 void optimizeDuplicateOrderBy(const ASTPtr & current_ast, const Context & context)
 {
     for (const auto & elem : current_ast->children)
         optimizeDuplicateOrderBy(elem, context);
 
-    auto select_query = current_ast->as<ASTSelectQuery>();
+    const auto select_query = current_ast->as<ASTSelectQuery>();
 
     if (!select_query)
         return;
+
+    for (const auto & elem : select_query->children)
+    {
+        if (elem->getID() == "Set")
+            return;
+    }
 
     if (select_query->orderBy() || select_query->groupBy())
     {
@@ -440,7 +443,6 @@ void optimizeDuplicateOrderBy(const ASTPtr & current_ast, const Context & contex
 
         for (const auto & ast_function : expression_list->children)
         {
-            std::cerr << ast_function;
             auto function = ast_function->as<ASTFunction>();
             if (function && isASTFunctionStateful(function, context))
                 return;
@@ -450,7 +452,7 @@ void optimizeDuplicateOrderBy(const ASTPtr & current_ast, const Context & contex
     }
 }
 
-/// Removes duplicate DISTINCT from subquries.
+/// Removes duplicate DISTINCT from query if subquery has the same DISTINCT.
 void optimizeDuplicateDistinct(const ASTPtr & current_ast,
                                bool & is_distinct,
                                std::vector<String> & last_ids)
@@ -463,23 +465,44 @@ void optimizeDuplicateDistinct(const ASTPtr & current_ast,
         optimizeDuplicateDistinct(child, is_distinct, last_ids);
     }
 
-    if (current_ast->getID() == "SelectQuery")
+    const auto select_query = current_ast->as<ASTSelectQuery>();
+
+    if (select_query)
     {
-        auto select_query = current_ast->as<ASTSelectQuery>();
+        for (const auto & elem : select_query->children)
+        {
+            if (elem->getID() == "Set")
+            {
+                is_distinct = false;
+                last_ids = {};
+                return;
+            }
+        }
 
         if (select_query->distinct)
         {
             auto & expression_list = select_query->select();
             std::vector<String> current_ids;
 
+            auto asterisk_id = expression_list->children.front()->getID();
+
+            if (asterisk_id == "Asterisk" || asterisk_id == "QualifiedAsterisk")
+            {
+                auto table_expression = getTableExpression(*select_query, 0);
+                if (table_expression->database_and_table_name)
+                    current_ids.push_back(table_expression->database_and_table_name->getColumnName());
+                if (table_expression->table_function)
+                    current_ids.push_back(table_expression->table_function->getColumnName());
+                if (table_expression->subquery)
+                    current_ids.push_back(table_expression->subquery->getColumnName());
+            }
+
+            current_ids.reserve(expression_list->children.size());
             for (const auto & id : expression_list->children)
                 current_ids.push_back(id->getColumnName());
 
             if (is_distinct && current_ids == last_ids)
-            {
                 select_query->distinct = false;
-                std::cerr << "\nDISTINCT was removed\n\n";
-            }
 
             is_distinct = true;
             last_ids = std::move(current_ids);
@@ -968,7 +991,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
         /// Remove duplicate ORDER BY from subqueries.
         optimizeDuplicateOrderBy(query, context);
 
-        /// Remove duplicate DISTINCT from subqueries.
+        /// Remove duplicate DISTINCT from queries.
         optimizeDuplicateDistinct(query);
 
         /// Remove duplicated elements from LIMIT BY clause.
