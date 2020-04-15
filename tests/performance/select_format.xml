@@ -44,7 +44,7 @@
                 <value>ODBCDriver2</value>
                 <value>MySQLWire</value>
                 <value>Avro</value>
-                <value>MsgPack</value>
+<!--                <value>MsgPack</value> Does not work in performance test for unknown reason. -->
             </values>
         </substitution>
     </substitutions>
