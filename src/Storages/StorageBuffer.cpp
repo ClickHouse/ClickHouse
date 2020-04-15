@@ -168,7 +168,8 @@ Pipes StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        auto destination_lock = destination->lockStructureForShare(false, context.getCurrentQueryId());
+        auto destination_lock = destination->lockStructureForShare(
+                false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
@@ -224,7 +225,7 @@ Pipes StorageBuffer::read(
                             pipe.getHeader(), header_after_adding_defaults, getColumns().getDefaults(), context));
 
                     pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-                            pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name, context));
+                            pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name));
                 }
             }
         }
@@ -662,7 +663,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
                     << " have different type of column " << backQuoteIfNeed(column.name) << " ("
                     << dst_col.type->getName() << " != " << column.type->getName()
                     << "). Block of data is converted.");
-                column.column = castColumn(column, dst_col.type, global_context);
+                column.column = castColumn(column, dst_col.type);
                 column.type = dst_col.type;
             }
 
@@ -757,7 +758,7 @@ std::optional<UInt64> StorageBuffer::totalBytes() const
 
 void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
     auto table_id = getStorageID();
     checkAlterIsPossible(params, context.getSettingsRef());

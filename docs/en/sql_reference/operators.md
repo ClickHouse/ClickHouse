@@ -5,8 +5,7 @@ toc_title: Operators
 
 # Operators {#operators}
 
-All operators are transformed to their corresponding functions at the query parsing stage in accordance with their precedence and associativity.
-Groups of operators are listed in order of priority (the higher it is in the list, the earlier the operator is connected to its arguments).
+ClickHouse transforms operators to their corresponding functions at the query parsing stage according to their priority, precedence, and associativity.
 
 ## Access Operators {#access-operators}
 
@@ -78,7 +77,7 @@ Groups of operators are listed in order of priority (the higher it is in the lis
 EXTRACT(part FROM date);
 ```
 
-Extracts a part from a given date. For example, you can retrieve a month from a given date, or a second from a time.
+Extract parts from a given date. For example, you can retrieve a month from a given date, or a second from a time.
 
 The `part` parameter specifies which part of the date to retrieve. The following values are available:
 
@@ -151,7 +150,7 @@ Types of intervals:
 - `YEAR`
 
 !!! warning "Warning"
-    Intervals with different types can’t be combined. You can’t use expressions like `INTERVAL 4 DAY 1 HOUR`. Express intervals in units that are smaller or equal the the smallest unit of the interval, for example `INTERVAL 25 HOUR`. You can use consequtive operations like in the example below.
+    Intervals with different types can’t be combined. You can’t use expressions like `INTERVAL 4 DAY 1 HOUR`. Specify intervals in units that are smaller or equal to the smallest unit of the interval, for example, `INTERVAL 25 HOUR`. You can use consecutive operations, like in the example below.
 
 Example:
 
@@ -214,7 +213,7 @@ The `transform` function does not work with `NULL`.
 
 `x -> expr` – The `lambda(x, expr) function.`
 
-The following operators do not have a priority, since they are brackets:
+The following operators do not have a priority since they are brackets:
 
 ## Array Creation Operator {#array-creation-operator}
 
@@ -229,7 +228,7 @@ The following operators do not have a priority, since they are brackets:
 All binary operators have left associativity. For example, `1 + 2 + 3` is transformed to `plus(plus(1, 2), 3)`.
 Sometimes this doesn’t work the way you expect. For example, `SELECT 4 > 2 > 3` will result in 0.
 
-For efficiency, the `and` and `or` functions accept any number of arguments. The corresponding chains of `AND` and `OR` operators are transformed to a single call of these functions.
+For efficiency, the `and` and `or` functions accept any number of arguments. The corresponding chains of `AND` and `OR` operators are transformed into a single call of these functions.
 
 ## Checking for `NULL` {#checking-for-null}
 

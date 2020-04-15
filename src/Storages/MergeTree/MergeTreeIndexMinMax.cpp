@@ -100,8 +100,8 @@ void MergeTreeIndexAggregatorMinMax::update(const Block & block, size_t * pos, s
 
     size_t rows_read = std::min(limit, block.rows() - *pos);
 
-    Field field_min;
-    Field field_max;
+    FieldRef field_min;
+    FieldRef field_max;
     for (size_t i = 0; i < index.columns.size(); ++i)
     {
         const auto & column = block.getByName(index.columns[i]).column;

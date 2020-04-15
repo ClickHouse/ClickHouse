@@ -87,7 +87,6 @@
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
-#include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
@@ -255,7 +254,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
+        table_lock = storage->lockStructureForShare(
+                false, context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
     }
 
@@ -1550,7 +1550,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     auto header = stream->getHeader();
                     auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
                     if (!blocksHaveEqualStructure(first_header, header))
-                        stream = std::make_shared<ConvertingBlockInputStream>(*context, stream, first_header, mode);
+                        stream = std::make_shared<ConvertingBlockInputStream>(stream, first_header, mode);
                 }
             }
 
@@ -2541,8 +2541,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
     if (!context->getSettingsRef().extremes)
         return;
 
-    auto transform = std::make_shared<ExtremesTransform>(pipeline.getHeader());
-    pipeline.addExtremesTransform(std::move(transform));
+    pipeline.addExtremesTransform();
 }
 
 
@@ -2592,7 +2591,7 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
         auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
 
         if (!blocksHaveEqualStructure(header, stream_header))
-            stream = std::make_shared<ConvertingBlockInputStream>(*context, stream, header, mode);
+            stream = std::make_shared<ConvertingBlockInputStream>(stream, header, mode);
     }
 }
 

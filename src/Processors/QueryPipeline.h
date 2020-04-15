@@ -99,7 +99,7 @@ public:
     void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
     void addPipe(Processors pipe);
     void addTotalsHavingTransform(ProcessorPtr transform);
-    void addExtremesTransform(ProcessorPtr transform);
+    void addExtremesTransform();
     void addCreatingSetsTransform(ProcessorPtr transform);
     void setOutput(ProcessorPtr output);
 
@@ -121,7 +121,7 @@ public:
 
     void enableQuotaForCurrentStreams();
 
-    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context);
+    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header);
 
     PipelineExecutorPtr execute();
 

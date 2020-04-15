@@ -17,7 +17,7 @@ Les Tests sont situés dans `queries` répertoire. Il y a deux sous-répertoires
 
 Chaque test peut être de deux types: `.sql` et `.sh`. `.sql` test est le script SQL simple qui est canalisé vers `clickhouse-client --multiquery --testmode`. `.sh` test est un script qui est exécuté par lui-même.
 
-Pour exécuter tous les tests, utilisez `testskhouse-test` outil. Regarder `--help` pour la liste des options possibles. Vous pouvez simplement exécuter tous les tests ou exécuter un sous ensemble de tests filtrés par sous chaîne dans le nom du test: `./clickhouse-test substring`.
+Pour exécuter tous les tests, utilisez `clickhouse-test` outil. Regarder `--help` pour la liste des options possibles. Vous pouvez simplement exécuter tous les tests ou exécuter un sous ensemble de tests filtrés par sous chaîne dans le nom du test: `./clickhouse-test substring`.
 
 Le moyen le plus simple d'invoquer des tests fonctionnels est de copier `clickhouse-client` de `/usr/bin/`, exécuter `clickhouse-server` et puis exécutez `./clickhouse-test` à partir de son propre répertoire.
 
@@ -36,13 +36,13 @@ désactivez ces groupes de tests en utilisant `--no-zookeeper`, `--no-shard` et
 
 ## Bugs connus {#known-bugs}
 
-Si nous connaissons des bugs qui peuvent être facilement reproduits par des tests fonctionnels, nous plaçons des tests fonctionnels préparés dans `queries/bugs` répertoire. Ces tests seront déplacés à `teststests_stateless` quand les bugs sont corrigés.
+Si nous connaissons des bugs qui peuvent être facilement reproduits par des tests fonctionnels, nous plaçons des tests fonctionnels préparés dans `tests/queries/bugs` répertoire. Ces tests seront déplacés à `tests/queries/0_stateless` quand les bugs sont corrigés.
 
 ## Les Tests D'Intégration {#integration-tests}
 
 Les tests d'intégration permettent de tester ClickHouse en configuration cluster et clickhouse interaction avec D'autres serveurs comme MySQL, Postgres, MongoDB. Ils sont utiles pour émuler les splits réseau, les chutes de paquets, etc. Ces tests sont exécutés sous Docker et créent plusieurs conteneurs avec divers logiciels.
 
-Voir `testsgration/README.md` sur la façon d'exécuter ces tests.
+Voir `tests/integration/README.md` sur la façon d'exécuter ces tests.
 
 Notez que l'intégration de ClickHouse avec des pilotes tiers n'est pas testée. De plus, nous n'avons actuellement pas de tests d'intégration avec nos pilotes JDBC et ODBC.
 
