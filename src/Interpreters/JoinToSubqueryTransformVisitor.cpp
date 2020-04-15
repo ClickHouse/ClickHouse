@@ -11,6 +11,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ParserTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
@@ -120,6 +121,8 @@ private:
 /// Make aliases maps (alias -> column_name, column_name -> alias)
 struct ColumnAliasesMatcher
 {
+    using Visitor = ConstInDepthNodeVisitor<ColumnAliasesMatcher, true>;
+
     struct Data
     {
         const std::vector<DatabaseAndTableWithAlias> tables;
@@ -128,6 +131,7 @@ struct ColumnAliasesMatcher
         std::unordered_map<String, String> aliases;     /// alias -> long_name
         std::vector<std::pair<ASTIdentifier *, bool>> compound_identifiers;
         std::set<String> allowed_long_names;            /// original names allowed as aliases '--t.x as t.x' (select expressions only).
+        bool inside_function = false;
 
         Data(const std::vector<DatabaseAndTableWithAlias> && tables_)
             : tables(tables_)
@@ -183,6 +187,10 @@ struct ColumnAliasesMatcher
 
     static bool needChildVisit(const ASTPtr & node, const ASTPtr &)
     {
+        /// Do not go into subqueries. Function visits children itself.
+        if (node->as<ASTSubquery>() ||
+            node->as<ASTFunction>())
+            return false;
         return !node->as<ASTQualifiedAsterisk>();
     }
 
@@ -190,9 +198,22 @@ struct ColumnAliasesMatcher
     {
         if (auto * t = ast->as<ASTIdentifier>())
             visit(*t, ast, data);
+        else if (auto * f = ast->as<ASTFunction>())
+            visit(*f, ast, data);
 
-        if (ast->as<ASTAsterisk>() || ast->as<ASTQualifiedAsterisk>())
+        /// Do not allow asterisks but ignore them inside functions. I.e. allow 'count(*)'.
+        if (!data.inside_function && (ast->as<ASTAsterisk>() || ast->as<ASTQualifiedAsterisk>()))
             throw Exception("Multiple JOIN do not support asterisks for complex queries yet", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
+    static void visit(const ASTFunction &, const ASTPtr & ast, Data & data)
+    {
+        /// Grandchild case: Function -> (ExpressionList) -> Asterisk
+        data.inside_function = true;
+        Visitor visitor(data);
+        for (auto & child : ast->children)
+            visitor.visit(child);
+        data.inside_function = false;
     }
 
     static void visit(const ASTIdentifier & const_node, const ASTPtr &, Data & data)
@@ -358,7 +379,7 @@ using RewriteVisitor = InDepthNodeVisitor<RewriteMatcher, true>;
 using SetSubqueryAliasMatcher = OneTypeMatcher<SetSubqueryAliasVisitorData>;
 using SetSubqueryAliasVisitor = InDepthNodeVisitor<SetSubqueryAliasMatcher, true>;
 using ExtractAsterisksVisitor = ConstInDepthNodeVisitor<ExtractAsterisksMatcher, true>;
-using ColumnAliasesVisitor = ConstInDepthNodeVisitor<ColumnAliasesMatcher, true>;
+using ColumnAliasesVisitor = ColumnAliasesMatcher::Visitor;
 using AppendSemanticMatcher = OneTypeMatcher<AppendSemanticVisitorData>;
 using AppendSemanticVisitor = InDepthNodeVisitor<AppendSemanticMatcher, true>;
 
