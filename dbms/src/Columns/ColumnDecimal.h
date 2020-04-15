@@ -116,8 +116,8 @@ public:
     StringRef getRawData() const override { return StringRef(reinterpret_cast<const char*>(data.data()), data.size()); }
     StringRef getDataAt(size_t n) const override { return StringRef(reinterpret_cast<const char *>(&data[n]), sizeof(data[n])); }
     void get(size_t n, Field & res) const override { res = (*this)[n]; }
-    bool getBool(size_t n) const override { return bool(data[n]); }
-    Int64 getInt(size_t n) const override { return Int64(data[n] * scale); }
+    bool getBool(size_t n) const override { return bool(data[n].value); }
+    Int64 getInt(size_t n) const override;
     UInt64 get64(size_t n) const override;
     bool isDefaultAt(size_t n) const override { return data[n] == 0; }
 

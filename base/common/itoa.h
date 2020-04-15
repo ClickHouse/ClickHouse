@@ -32,8 +32,13 @@
 #include <type_traits>
 #include "likely.h"
 
+#include <boost/multiprecision/integer.hpp>
+
 using int128_t = __int128;
 using uint128_t = unsigned __int128;
+
+using uint256_t = boost::multiprecision::uint256_t;
+using int256_t = boost::multiprecision::int256_t;
 
 namespace impl
 {
@@ -408,3 +413,16 @@ inline char * itoa<int128_t>(int128_t i, char * p)
 {
     return impl::writeSIntText(i, p);
 }
+
+//template <>
+//inline char * itoa<uint128_t>(uint128_t i, char * p)
+//{
+//    return impl::writeUIntText(i, p);
+//}
+//
+//template <>
+//inline char * itoa<int128_t>(int128_t i, char * p)
+//{
+//    return impl::writeSIntText(i, p);
+//}
+

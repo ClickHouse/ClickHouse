@@ -12,12 +12,14 @@ using Int8 = int8_t;
 using Int16 = int16_t;
 using Int32 = int32_t;
 using Int64 = int64_t;
+using bInt128 = boost::multiprecision::int128_t;
 using bInt256 = boost::multiprecision::int256_t;
 
 using UInt8 = uint8_t;
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
+using bUInt128 = boost::multiprecision::uint128_t;
 using bUInt256 = boost::multiprecision::uint256_t;
 
 using String = std::string;
@@ -59,6 +61,18 @@ template <typename T>
 struct is_integral
 {
     static constexpr bool value = std::is_integral_v<T>;
+};
+
+template <>
+struct is_integral<bInt128>
+{
+    static constexpr bool value = true;
+};
+
+template <>
+struct is_integral<bUInt128>
+{
+    static constexpr bool value = true;
 };
 
 template <>

@@ -30,5 +30,4 @@ void writeIntText(T x, WriteBuffer & buf)
     else
         detail::writeUIntTextFallback(x, buf);
 }
-
 }

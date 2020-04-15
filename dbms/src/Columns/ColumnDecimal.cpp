@@ -52,6 +52,13 @@ const char * ColumnDecimal<T>::deserializeAndInsertFromArena(const char * pos)
 }
 
 template <typename T>
+Int64 ColumnDecimal<T>::getInt(size_t n) const {
+    if constexpr (sizeof(T) > sizeof(UInt64))
+        throw Exception(String("Method getInt is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
+    return Int64(data[n] * scale);
+}
+
+template <typename T>
 UInt64 ColumnDecimal<T>::get64(size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))

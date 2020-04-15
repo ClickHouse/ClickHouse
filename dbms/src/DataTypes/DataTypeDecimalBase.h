@@ -126,11 +126,11 @@ public:
         return DecimalUtils::getFractionalPart(x, scale);
     }
 
-    T maxWholeValue() const { return getScaleMultiplier(maxPrecision() - scale) - 1; }
+    T maxWholeValue() const { return getScaleMultiplier(maxPrecision() - scale) - T(1); }
 
     bool canStoreWhole(T x) const
     {
-        T max = maxWholeValue();
+        typename T::NativeType max = maxWholeValue();
         if (x > max || x < -max)
             return false;
         return true;
@@ -160,6 +160,25 @@ protected:
     const UInt32 precision;
     const UInt32 scale;
 };
+
+//template <>
+//Decimal256 DataTypeDecimalBase<Decimal256>::maxWholeValue() const
+//{
+//    // Where are operators implementations for other Decimals?
+//    auto x = getScaleMultiplier(maxPrecision() - scale);
+//    x -= 1;
+//    return x;
+//}
+//
+//template <>
+//bool DataTypeDecimalBase<Decimal256>::canStoreWhole(Decimal256 x) const
+//{
+//    // Where are operators implementations for other Decimals?
+//    Decimal256 max = maxWholeValue();
+//    if (x.value > max.value || x.value < -max.value)
+//        return false;
+//    return true;
+//}
 
 
 template <typename T, typename U, template <typename> typename DecimalType>

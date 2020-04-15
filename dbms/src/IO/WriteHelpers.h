@@ -882,13 +882,18 @@ inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x,
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
-inline void writeText(const bUInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
-inline void writeText(const bInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+//inline void writeText(const bUInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+//inline void writeText(const bInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+
+//String & operator+=(String & s, const bInt256 & x) {
+//    s += x.str();
+//    return s;
+//}
 
 template <typename T>
 void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
 {
-    if (value < Decimal<T>(0))
+    if (value < T(0))
     {
         value *= Decimal<T>(-1);
         writeChar('-', ostr); /// avoid crop leading minus when whole part is zero
@@ -900,20 +905,22 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
     if (scale)
     {
         writeChar('.', ostr);
-        String str_fractional(scale, '0');
+//        String str_fractional(scale, '0');
+//        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= Decimal<T>(10))
+//            str_fractional[pos] += value % Decimal<T>(10);
+//        ostr.write(str_fractional.data(), scale);
         for (Int32 pos = scale - 1; pos >= 0; --pos, value /= Decimal<T>(10))
-            str_fractional[pos] += value % Decimal<T>(10);
-        ostr.write(str_fractional.data(), scale);
+            writeIntText(value % Decimal<T>(10), ostr);
     }
 }
 
 
-template <>
-void writeText(Decimal<bInt256> value, UInt32 /*scale*/, WriteBuffer & ostr)
-{
-    // FIXME: operators do not work
-    writeText(value.value.str(), ostr);
-}
+//template <>
+//void writeText(Decimal<bInt256> value, UInt32 /*scale*/, WriteBuffer & ostr)
+//{
+//    // FIXME: operators do not work
+//    writeText(value.value.str(), ostr);
+//}
 
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
@@ -944,19 +951,19 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
     writeChar('\'', buf);
 }
 
-inline void writeQuoted(const bUInt256 & x, WriteBuffer & buf)
-{
-    writeChar('\'', buf);
-    writeText(x, buf);
-    writeChar('\'', buf);
-}
+//inline void writeQuoted(const bUInt256 & x, WriteBuffer & buf)
+//{
+//    writeChar('\'', buf);
+//    writeText(x, buf);
+//    writeChar('\'', buf);
+//}
 
-inline void writeQuoted(const bInt256 & x, WriteBuffer & buf)
-{
-    writeChar('\'', buf);
-    writeText(x, buf);
-    writeChar('\'', buf);
-}
+//inline void writeQuoted(const bInt256 & x, WriteBuffer & buf)
+//{
+//    writeChar('\'', buf);
+//    writeText(x, buf);
+//    writeChar('\'', buf);
+//}
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>
