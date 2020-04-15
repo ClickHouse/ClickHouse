@@ -88,8 +88,8 @@ private:
         ColumnsWithTypeAndName casted;
     };
 
-    CastArgumentsResult castColumns(Block & block, const ColumnNumbers & arguments,
-                        const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls) const;
+    static CastArgumentsResult castColumns(Block & block, const ColumnNumbers & arguments,
+                        const DataTypePtr & return_type, const DataTypePtr & return_type_with_nulls);
     UnpackedArrays prepareArrays(const ColumnsWithTypeAndName & columns, ColumnsWithTypeAndName & initial_columns) const;
 
     template <typename Map, typename ColumnType, bool is_numeric_column>
@@ -207,7 +207,7 @@ ColumnPtr FunctionArrayIntersect::castRemoveNullable(const ColumnPtr & column, c
 
 FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
         Block & block, const ColumnNumbers & arguments, const DataTypePtr & return_type,
-        const DataTypePtr & return_type_with_nulls) const
+        const DataTypePtr & return_type_with_nulls)
 {
     size_t num_args = arguments.size();
     ColumnsWithTypeAndName initial_columns(num_args);
@@ -245,7 +245,7 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
             {
                 if (!arg.type->equals(*return_type))
                 {
-                    column.column = castColumn(arg, return_type, context);
+                    column.column = castColumn(arg, return_type);
                     column.type = return_type;
                 }
             }
@@ -258,12 +258,12 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
                     ///  because cannot cast Nullable(T) to T.
                     if (static_cast<const DataTypeArray &>(*arg.type).getNestedType()->isNullable())
                     {
-                        column.column = castColumn(arg, nullable_return_type, context);
+                        column.column = castColumn(arg, nullable_return_type);
                         column.type = nullable_return_type;
                     }
                     else
                     {
-                        column.column = castColumn(arg, return_type, context);
+                        column.column = castColumn(arg, return_type);
                         column.type = return_type;
                     }
                 }
@@ -274,7 +274,7 @@ FunctionArrayIntersect::CastArgumentsResult FunctionArrayIntersect::castColumns(
             /// return_type_with_nulls is the most common subtype with possible nullable parts.
             if (!arg.type->equals(*return_type_with_nulls))
             {
-                column.column = castColumn(arg, return_type_with_nulls, context);
+                column.column = castColumn(arg, return_type_with_nulls);
                 column.type = return_type_with_nulls;
             }
         }

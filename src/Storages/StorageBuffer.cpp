@@ -225,7 +225,7 @@ Pipes StorageBuffer::read(
                             pipe.getHeader(), header_after_adding_defaults, getColumns().getDefaults(), context));
 
                     pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-                            pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name, context));
+                            pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name));
                 }
             }
         }
@@ -663,7 +663,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
                     << " have different type of column " << backQuoteIfNeed(column.name) << " ("
                     << dst_col.type->getName() << " != " << column.type->getName()
                     << "). Block of data is converted.");
-                column.column = castColumn(column, dst_col.type, global_context);
+                column.column = castColumn(column, dst_col.type);
                 column.type = dst_col.type;
             }
 
