@@ -1,5 +1,5 @@
 
-# ClickHouse的独特功能 {#clickhousede-du-te-gong-neng}
+# ClickHouse的特性 {#clickhouse-de-te-xing}
 
 ## 真正的列式数据库管理系统 {#zhen-zheng-de-lie-shi-shu-ju-ku-guan-li-xi-tong}
 
@@ -62,7 +62,7 @@ ClickHouse使用异步的多主复制技术。当数据被写入任何一个可�
 
 更多信息，参见 [数据复制](../engines/table_engines/mergetree_family/replication.md)。
 
-# 的限制 {#clickhouseke-yi-ren-wei-shi-que-dian-de-gong-neng}
+# 限制 {#clickhouseke-xian-zhi}
 
 1.  没有完整的事务支持。
 2.  缺少高频率，低延迟的修改或删除已存在数据的能力。仅能用于批量删除或修改数据，但这符合 [GDPR](https://gdpr-info.eu)。
