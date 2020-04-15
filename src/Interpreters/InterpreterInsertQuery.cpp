@@ -109,7 +109,8 @@ BlockIO InterpreterInsertQuery::execute()
     BlockIO res;
 
     StoragePtr table = getTable(query);
-    auto table_lock = table->lockStructureForShare(true, context.getInitialQueryId());
+    auto table_lock = table->lockStructureForShare(
+            true, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
     auto query_sample_block = getSampleBlock(query, table);
     if (!query.table_function)
@@ -251,7 +252,7 @@ BlockIO InterpreterInsertQuery::execute()
         for (auto & in_stream : in_streams)
         {
             in_stream = std::make_shared<ConvertingBlockInputStream>(
-                context, in_stream, out_streams.at(0)->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
+                in_stream, out_streams.at(0)->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
         }
 
         Block in_header = in_streams.at(0)->getHeader();

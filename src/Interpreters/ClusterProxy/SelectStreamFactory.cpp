@@ -11,7 +11,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <common/logger_useful.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -82,10 +81,19 @@ Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Con
         /// This flag means that pipeline must be tree-shaped,
         /// so we can't enable processors for InterpreterSelectQuery here.
         auto stream = interpreter.execute().in;
-        Pipe pipe(std::make_shared<SourceFromInputStream>(std::move(stream)));
+        auto source = std::make_shared<SourceFromInputStream>(std::move(stream));
+
+        bool add_totals_and_extremes_port = processed_stage == QueryProcessingStage::Complete;
+        if (add_totals_and_extremes_port)
+        {
+            source->addTotalsPort();
+            source->addExtremesPort();
+        }
+
+        Pipe pipe(std::move(source));
 
         pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-                pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name, context));
+                pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name));
 
         return pipe;
     }
@@ -95,7 +103,7 @@ Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Con
     pipeline.addSimpleTransform([&](const Block & source_header)
     {
         return std::make_shared<ConvertingTransform>(
-                source_header, header, ConvertingTransform::MatchColumnsMode::Name, context);
+                source_header, header, ConvertingTransform::MatchColumnsMode::Name);
     });
 
     /** Materialization is needed, since from remote servers the constants come materialized.
@@ -130,7 +138,7 @@ void SelectStreamFactory::createForShard(
     Pipes & res)
 {
     bool force_add_agg_info = processed_stage == QueryProcessingStage::WithMergeableState;
-    bool add_totals_port = processed_stage == QueryProcessingStage::Complete;
+    bool add_totals_and_extremes_port = processed_stage == QueryProcessingStage::Complete;
 
     auto modified_query_ast = query_ast->clone();
     if (has_virtual_shard_num_column)
@@ -153,8 +161,11 @@ void SelectStreamFactory::createForShard(
 
         auto source = std::make_shared<SourceFromInputStream>(std::move(stream), force_add_agg_info);
 
-        if (add_totals_port)
+        if (add_totals_and_extremes_port)
+        {
             source->addTotalsPort();
+            source->addExtremesPort();
+        }
 
         res.emplace_back(std::move(source));
     };
@@ -303,8 +314,11 @@ void SelectStreamFactory::createForShard(
         auto lazy_stream = std::make_shared<LazyBlockInputStream>("LazyShardWithLocalReplica", header, lazily_create_stream);
         auto source = std::make_shared<SourceFromInputStream>(std::move(lazy_stream), force_add_agg_info);
 
-        if (add_totals_port)
+        if (add_totals_and_extremes_port)
+        {
             source->addTotalsPort();
+            source->addExtremesPort();
+        }
 
         res.emplace_back(std::move(source));
     }
