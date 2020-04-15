@@ -3,7 +3,7 @@ toc_priority: 20
 toc_title: MySQL Interface
 ---
 
-# MySQL interface {#mysql-interface}
+# MySQL Interface {#mysql-interface}
 
 ClickHouse supports MySQL wire protocol. It can be enabled by [mysql\_port](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-mysql_port) setting in configuration file:
 

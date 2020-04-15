@@ -1,16 +1,19 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_priority: 21
+toc_title: "Yandex\u6885\u7279\u91CC\u5361\u6570\u636E"
 ---
 
-# Anonymized Yandex.Metrica Data {#anonymized-yandex-metrica-data}
+# 匿名Yandex的。梅特里卡数据 {#anonymized-yandex-metrica-data}
 
-Dataset consists of two tables containing anonymized data about hits (`hits_v1`) and visits (`visits_v1`) of Yandex.Metrica. You can read more about Yandex.Metrica in [ClickHouse history](../../introduction/history.md) section.
+Dataset由两个表组成，其中包含有关命中的匿名数据 (`hits_v1`）和访问 (`visits_v1`）的Yandex的。梅特里卡 你可以阅读更多关于Yandex的。梅特里卡 [ClickHouse历史](../../introduction/history.md) 科。
 
-The dataset consists of two tables, either of them can be downloaded as a compressed `tsv.xz` file or as prepared partitions. In addition to that, an extended version of the `hits` table containing 100 million rows is available as TSV at https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz and as prepared partitions at https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated_v1.tar.xz.
+数据集由两个表组成，其中任何一个都可以作为压缩表下载 `tsv.xz` 文件或作为准备的分区。 除此之外，该扩展版本 `hits` 包含1亿行的表可作为TSV在https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz 并作为准备的分区在https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
 
-## Obtaining Tables from Prepared Partitions {#obtaining-tables-from-prepared-partitions}
+## 从准备好的分区获取表 {#obtaining-tables-from-prepared-partitions}
 
-Download and import hits table:
+下载和导入点击表:
 
 ``` bash
 curl -O https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_v1.tar
@@ -20,7 +23,7 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-Download and import visits:
+下载和导入访问:
 
 ``` bash
 curl -O https://clickhouse-datasets.s3.yandex.net/visits/partitions/visits_v1.tar
@@ -30,9 +33,9 @@ sudo service clickhouse-server restart
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Obtaining Tables from Compressed TSV File {#obtaining-tables-from-compressed-tsv-file}
+## 从压缩TSV文件获取表 {#obtaining-tables-from-compressed-tsv-file}
 
-Download and import hits from compressed TSV file:
+从压缩的TSV文件下载并导入命中:
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
@@ -46,7 +49,7 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.hits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.hits_v1"
 ```
 
-Download and import visits from compressed tsv-file:
+从压缩tsv文件下载和导入访问:
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
@@ -60,8 +63,8 @@ clickhouse-client --query "OPTIMIZE TABLE datasets.visits_v1 FINAL"
 clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 ```
 
-## Example Queries {#example-queries}
+## 查询示例 {#example-queries}
 
-[ClickHouse tutorial](../../getting_started/tutorial.md) is based on Yandex.Metrica dataset and the recommended way to get started with this dataset is to just go through tutorial.
+[点击教程](../../getting_started/tutorial.md) 是基于Yandex的。Metrica数据集和开始使用此数据集的推荐方式是通过教程。
 
-Additional examples of queries to these tables can be found among [stateful tests](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) of ClickHouse (they are named `test.hists` and `test.visits` there).
+查询这些表的其他示例可以在 [有状态测试](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) ClickHouse的（它们被命名为 `test.hists` 和 `test.visits` 那里）。

@@ -1,17 +1,18 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: 1cd5f0028d917696daf71ac1c9ee849c99c1d5c8
 ---
 
-# How to Build ClickHouse on Linux for AARCH64 (ARM64) architecture {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
+# Как построить ClickHouse на Linux для архитектуры AArch64 (ARM64) {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
 
-This is for the case when you have Linux machine and want to use it to build `clickhouse` binary that will run on another Linux machine with AARCH64 CPU architecture. This is intended for continuous integration checks that run on Linux servers.
+Это для случая, когда у вас есть Linux-машина и вы хотите использовать ее для сборки `clickhouse` двоичный файл, который будет работать на другой машине Linux с архитектурой процессора AARCH64. Это предназначено для непрерывной проверки интеграции, которая выполняется на серверах Linux.
 
-The cross-build for AARCH64 is based on the [Build instructions](build.md), follow them first.
+Кросс-сборка для AARCH64 основана на следующих принципах: [Инструкции по сборке](build.md)- сначала следуйте за ними.
 
-# Install Clang-8 {#install-clang-8}
+# Установка Clang-8 {#install-clang-8}
 
-Follow the instructions from https://apt.llvm.org/ for your Ubuntu or Debian setup.
-For example, in Ubuntu Bionic you can use the following commands:
+Следуйте инструкциям от https://apt.llvm.org/ для вашей установки Ubuntu или Debian.
+Например, в Ubuntu Bionic вы можете использовать следующие команды:
 
 ``` bash
 echo "deb [trusted=yes] http://apt.llvm.org/bionic/ llvm-toolchain-bionic-8 main" | sudo tee /etc/apt/sources.list.d/llvm.list
@@ -19,7 +20,7 @@ sudo apt-get update
 sudo apt-get install clang-8
 ```
 
-# Install Cross-Compilation Toolset {#install-cross-compilation-toolset}
+# Установка Набора Инструментов Перекрестной Компиляции {#install-cross-compilation-toolset}
 
 ``` bash
 cd ClickHouse
@@ -28,7 +29,7 @@ wget 'https://developer.arm.com/-/media/Files/downloads/gnu-a/8.3-2019.03/binrel
 tar xJf gcc-arm-8.3-2019.03-x86_64-aarch64-linux-gnu.tar.xz -C build-aarch64/cmake/toolchain/linux-aarch64 --strip-components=1
 ```
 
-# Build ClickHouse {#build-clickhouse}
+# Построить ClickHouse {#build-clickhouse}
 
 ``` bash
 cd ClickHouse
@@ -37,4 +38,4 @@ CC=clang-8 CXX=clang++-8 cmake . -Bbuild-arm64 -DCMAKE_TOOLCHAIN_FILE=cmake/linu
 ninja -C build-arm64
 ```
 
-The resulting binary will run only on Linux with the AARCH64 CPU architecture.
+Полученный двоичный файл будет работать только в Linux с архитектурой процессора AARCH64.

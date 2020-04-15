@@ -74,12 +74,12 @@ UInt128 stringToUUID(const String & str)
 void NO_INLINE throwAtAssertionFailed(const char * s, ReadBuffer & buf)
 {
     WriteBufferFromOwnString out;
-    out << "Cannot parse input: expected " << escape << s;
+    out << "Cannot parse input: expected " << quote << s;
 
     if (buf.eof())
         out << " at end of stream.";
     else
-        out << " before: " << escape << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
+        out << " before: " << quote << String(buf.position(), std::min(SHOW_CHARS_ON_SYNTAX_ERROR, buf.buffer().end() - buf.position()));
 
     throw Exception(out.str(), ErrorCodes::CANNOT_PARSE_INPUT_ASSERTION_FAILED);
 }

@@ -13,7 +13,7 @@ Les tests fonctionnels sont les plus simples et pratiques à utiliser. La plupar
 
 Chaque test fonctionnel envoie une ou plusieurs requêtes au serveur clickhouse en cours d'exécution et compare le résultat avec la référence.
 
-Les Tests sont situés dans `testsies` répertoire. Il y a deux sous-répertoires: `stateless` et `stateful`. Les tests sans état exécutent des requêtes sans données de test préchargées - ils créent souvent de petits ensembles de données synthétiques à la volée, dans le test lui-même. Les tests avec État nécessitent des données de test préchargées de Yandex.Metrica et non disponible pour le grand public. Nous avons tendance à utiliser uniquement `stateless` tests et éviter d'ajouter de nouveaux `stateful` test.
+Les Tests sont situés dans `queries` répertoire. Il y a deux sous-répertoires: `stateless` et `stateful`. Les tests sans état exécutent des requêtes sans données de test préchargées - ils créent souvent de petits ensembles de données synthétiques à la volée, dans le test lui-même. Les tests avec État nécessitent des données de test préchargées de Yandex.Metrica et non disponible pour le grand public. Nous avons tendance à utiliser uniquement `stateless` tests et éviter d'ajouter de nouveaux `stateful` test.
 
 Chaque test peut être de deux types: `.sql` et `.sh`. `.sql` test est le script SQL simple qui est canalisé vers `clickhouse-client --multiquery --testmode`. `.sh` test est un script qui est exécuté par lui-même.
 
@@ -21,7 +21,7 @@ Pour exécuter tous les tests, utilisez `testskhouse-test` outil. Regarder `--he
 
 Le moyen le plus simple d'invoquer des tests fonctionnels est de copier `clickhouse-client` de `/usr/bin/`, exécuter `clickhouse-server` et puis exécutez `./clickhouse-test` à partir de son propre répertoire.
 
-Pour ajouter un nouveau test, créez un `.sql` ou `.sh` fichier dans `testsies/0_stateless` répertoire, vérifiez-le manuellement, puis générez `.reference` fichier de la façon suivante: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` ou `./00000_test.sh > ./00000_test.reference`.
+Pour ajouter un nouveau test, créez un `.sql` ou `.sh` fichier dans `queries/0_stateless` répertoire, vérifiez-le manuellement, puis générez `.reference` fichier de la façon suivante: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` ou `./00000_test.sh > ./00000_test.reference`.
 
 Les Tests doivent utiliser (create, drop, etc) uniquement des tables dans `test` base de données supposée être créée au préalable; les tests peuvent également utiliser des tables temporaires.
 
@@ -36,7 +36,7 @@ désactivez ces groupes de tests en utilisant `--no-zookeeper`, `--no-shard` et
 
 ## Bugs connus {#known-bugs}
 
-Si nous connaissons des bugs qui peuvent être facilement reproduits par des tests fonctionnels, nous plaçons des tests fonctionnels préparés dans `testsies/bugs` répertoire. Ces tests seront déplacés à `teststests_stateless` quand les bugs sont corrigés.
+Si nous connaissons des bugs qui peuvent être facilement reproduits par des tests fonctionnels, nous plaçons des tests fonctionnels préparés dans `queries/bugs` répertoire. Ces tests seront déplacés à `teststests_stateless` quand les bugs sont corrigés.
 
 ## Les Tests D'Intégration {#integration-tests}
 

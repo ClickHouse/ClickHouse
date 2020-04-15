@@ -57,7 +57,7 @@ def process_md_file(title, idx, original_path, proper_path):
     if original_path != proper_md_path:
         subprocess.check_call(f'git add {proper_md_path}', shell=True)
         if os.path.exists(original_path):
-            subprocess.check_call(f'git rm {original_path}', shell=True)
+            subprocess.check_call(f'rm {original_path}', shell=True)
 
 
 def process_toc_entry(entry, path, idx):
@@ -125,13 +125,13 @@ def sync_translation():
                 lang_meta, lang_content = util.read_md_file(lang_src)
                 en_meta.update(lang_meta)
 
-                for src, dst in redirects.items():
-                    lang_content = lang_content.replace('(' + src, '(' + dst)
-                    lang_content = lang_content.replace('../' + src, '../' + dst)
+                for src_link, dst_link in redirects.items():
+                    lang_content = lang_content.replace('(' + src_link, '(' + dst)
+                    lang_content = lang_content.replace('../' + src_link, '../' + dst)
                     
                 util.write_md_file(lang_dst, en_meta, lang_content)
                 subprocess.check_call(f'git add {lang_dst}', shell=True)
-                subprocess.check_call(f'git rm {lang_src}', shell=True)
+                subprocess.check_call(f'rm {lang_src}', shell=True)
 
 
 if __name__ == '__main__':

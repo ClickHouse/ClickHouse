@@ -1,6 +1,6 @@
 #include <Storages/StorageJoin.h>
 #include <Storages/StorageFactory.h>
-#include <Interpreters/Join.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/Context.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -9,7 +9,7 @@
 #include <DataStreams/IBlockInputStream.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/joinDispatch.h>
-#include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -57,8 +57,8 @@ StorageJoin::StorageJoin(
         if (!getColumns().hasPhysical(key))
             throw Exception{"Key column (" + key + ") does not exist in table declaration.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE};
 
-    table_join = std::make_shared<AnalyzedJoin>(limits, use_nulls, kind, strictness, key_names);
-    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns(), overwrite);
+    table_join = std::make_shared<TableJoin>(limits, use_nulls, kind, strictness, key_names);
+    join = std::make_shared<HashJoin>(table_join, getSampleBlock().sortColumns(), overwrite);
     restore();
 }
 
@@ -70,11 +70,11 @@ void StorageJoin::truncate(const ASTPtr &, const Context &, TableStructureWriteL
     Poco::File(path + "tmp/").createDirectories();
 
     increment = 0;
-    join = std::make_shared<Join>(table_join, getSampleBlock().sortColumns(), overwrite);
+    join = std::make_shared<HashJoin>(table_join, getSampleBlock().sortColumns(), overwrite);
 }
 
 
-HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) const
+HashJoinPtr StorageJoin::getJoin(std::shared_ptr<TableJoin> analyzed_join) const
 {
     if (!analyzed_join->sameStrictnessAndKind(strictness, kind))
         throw Exception("Table " + getStorageID().getNameForLogs() + " has incompatible type of JOIN.", ErrorCodes::INCOMPATIBLE_TYPE_OF_JOIN);
@@ -89,7 +89,7 @@ HashJoinPtr StorageJoin::getJoin(std::shared_ptr<AnalyzedJoin> analyzed_join) co
     /// Some HACK to remove wrong names qualifiers: table.column -> column.
     analyzed_join->setRightKeys(key_names);
 
-    HashJoinPtr join_clone = std::make_shared<Join>(analyzed_join, getSampleBlock().sortColumns());
+    HashJoinPtr join_clone = std::make_shared<HashJoin>(analyzed_join, getSampleBlock().sortColumns());
     join_clone->reuseJoinedData(*join);
     return join_clone;
 }
@@ -244,7 +244,7 @@ size_t rawSize(const StringRef & t)
 class JoinSource : public SourceWithProgress
 {
 public:
-    JoinSource(const Join & parent_, UInt64 max_block_size_, Block sample_block_)
+    JoinSource(const HashJoin & parent_, UInt64 max_block_size_, Block sample_block_)
         : SourceWithProgress(sample_block_)
         , parent(parent_)
         , lock(parent.data->rwlock)
@@ -287,7 +287,7 @@ protected:
     }
 
 private:
-    const Join & parent;
+    const HashJoin & parent;
     std::shared_lock<std::shared_mutex> lock;
     UInt64 max_block_size;
     Block sample_block;
@@ -326,7 +326,7 @@ private:
         switch (parent.data->type)
         {
 #define M(TYPE)                                           \
-    case Join::Type::TYPE:                                \
+    case HashJoin::Type::TYPE:                                \
         rows_added = fillColumns<KIND, STRICTNESS>(*maps.TYPE); \
         break;
             APPLY_FOR_JOIN_VARIANTS_LIMITED(M)

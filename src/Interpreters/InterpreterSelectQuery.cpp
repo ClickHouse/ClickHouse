@@ -48,8 +48,8 @@
 #include <Interpreters/getTableExpressions.h>
 #include <Interpreters/JoinToSubqueryTransformVisitor.h>
 #include <Interpreters/CrossToInnerJoinVisitor.h>
-#include <Interpreters/AnalyzedJoin.h>
-#include <Interpreters/Join.h>
+#include <Interpreters/TableJoin.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 
@@ -510,7 +510,7 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
     }
 
     if (storage && !options.only_analyze)
-        from_stage = storage->getQueryProcessingStage(*context, query_ptr);
+        from_stage = storage->getQueryProcessingStage(*context, options.to_stage, query_ptr);
 
     /// Do I need to perform the first part of the pipeline - running on remote servers during distributed processing.
     bool first_stage = from_stage < QueryProcessingStage::WithMergeableState
@@ -893,7 +893,13 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
                         default_totals = true;
                     }
 
-                    bool inflating_join = join && !typeid_cast<Join *>(join.get());
+                    bool inflating_join = false;
+                    if (join)
+                    {
+                        inflating_join = true;
+                        if (auto * hash_join = typeid_cast<HashJoin *>(join.get()))
+                            inflating_join = isCross(hash_join->getKind());
+                    }
 
                     pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType type)
                     {

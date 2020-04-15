@@ -47,6 +47,7 @@
     <path>/tmp/clickhouse/data/</path>
     <tmp_path>/tmp/clickhouse/tmp/</tmp_path>
     <users_config>users.xml</users_config>
+    <access_control_path>/tmp/clickhouse/data/access/</access_control_path>
     <mark_cache_size>5368709120</mark_cache_size>
     <default_profile>default</default_profile>
     <default_database>default</default_database>

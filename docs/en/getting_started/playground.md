@@ -32,7 +32,7 @@ You can make queries to playground using any HTTP client, for example [curl](htt
 More information about software products that support ClickHouse is available [here](../interfaces/index.md).
 
 | Parameter | Value                                 |
-|:------|:------------------------|
+|:----------|:--------------------------------------|
 | Endpoint  | https://play-api.clickhouse.tech:8443 |
 | User      | `playground`                          |
 | Password  | `clickhouse`                          |

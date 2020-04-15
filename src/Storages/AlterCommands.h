@@ -35,6 +35,7 @@ struct AlterCommand
         MODIFY_TTL,
         MODIFY_SETTING,
         MODIFY_QUERY,
+        RENAME_COLUMN,
     };
 
     Type type;
@@ -95,6 +96,9 @@ struct AlterCommand
 
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;
+
+    /// Target column name
+    String rename_to;
 
     static std::optional<AlterCommand> parse(const ASTAlterCommand * command);
 

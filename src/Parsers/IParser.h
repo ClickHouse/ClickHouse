@@ -126,7 +126,7 @@ public:
         return parse(pos, node, expected);
     }
 
-    virtual ~IParser() {}
+    virtual ~IParser() = default;
 };
 
 using ParserPtr = std::unique_ptr<IParser>;

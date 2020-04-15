@@ -1,58 +1,61 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_priority: 44
+toc_title: "\u8981\u6C42"
 ---
 
-# Requirements {#requirements}
+# 要求 {#requirements}
 
 ## CPU {#cpu}
 
-For installation from prebuilt deb packages, use a CPU with x86\_64 architecture and support for SSE 4.2 instructions. To run ClickHouse with processors that do not support SSE 4.2 or have AArch64 or PowerPC64LE architecture, you should build ClickHouse from sources.
+对于从预构建的deb包进行安装，请使用具有x86\_64架构并支持SSE4.2指令的CPU。 要使用不支持SSE4.2或具有AArch64或PowerPC64LE体系结构的处理器运行ClickHouse，您应该从源代码构建ClickHouse。
 
-ClickHouse implements parallel data processing and uses all the hardware resources available. When choosing a processor, take into account that ClickHouse works more efficiently at configurations with a large number of cores but a lower clock rate than at configurations with fewer cores and a higher clock rate. For example, 16 cores with 2600 MHz is preferable to 8 cores with 3600 MHz.
+ClickHouse实现并行数据处理并使用所有可用的硬件资源。 在选择处理器时，考虑到ClickHouse在具有大量内核但时钟速率较低的配置中的工作效率要高于具有较少内核和较高时钟速率的配置。 例如，具有2600MHz的16核心优于具有3600MHz的8核心。
 
-Use of **Turbo Boost** and **hyper-threading** technologies is recommended. It significantly improves performance with a typical load.
+建议使用 **涡轮增压** 和 **超线程** 技术。 它显着提高了典型工作负载的性能。
 
 ## RAM {#ram}
 
-We recommend to use a minimum of 4GB of RAM in order to perform non-trivial queries. The ClickHouse server can run with a much smaller amount of RAM, but it requires memory for processing queries.
+我们建议使用至少4GB的RAM来执行非平凡的查询。 ClickHouse服务器可以使用少得多的RAM运行，但它需要处理查询的内存。
 
-The required volume of RAM depends on:
+RAM所需的体积取决于:
 
--   The complexity of queries.
--   The amount of data that is processed in queries.
+-   查询的复杂性。
+-   在查询中处理的数据量。
 
-To calculate the required volume of RAM, you should estimate the size of temporary data for [GROUP BY](../query_language/select.md#select-group-by-clause), [DISTINCT](../query_language/select.md#select-distinct), [JOIN](../query_language/select.md#select-join) and other operations you use.
+要计算所需的RAM体积，您应该估计临时数据的大小 [GROUP BY](../sql_reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql_reference/statements/select.md#select-distinct), [JOIN](../sql_reference/statements/select.md#select-join) 和您使用的其他操作。
 
-ClickHouse can use external memory for temporary data. See [GROUP BY in External Memory](../query_language/select.md#select-group-by-in-external-memory) for details.
+ClickHouse可以使用外部存储器来存储临时数据。 看 [在外部存储器中分组](../sql_reference/statements/select.md#select-group-by-in-external-memory) 有关详细信息。
 
-## Swap File {#swap-file}
+## 交换文件 {#swap-file}
 
-Disable the swap file for production environments.
+禁用生产环境的交换文件。
 
-## Storage Subsystem {#storage-subsystem}
+## 存储子系统 {#storage-subsystem}
 
-You need to have 2GB of free disk space to install ClickHouse.
+您需要有2GB的可用磁盘空间来安装ClickHouse。
 
-The volume of storage required for your data should be calculated separately. Assessment should include:
+数据所需的存储量应单独计算。 评估应包括:
 
--   Estimation of the data volume.
+-   估计数据量。
 
-    You can take a sample of the data and get the average size of a row from it. Then multiply the value by the number of rows you plan to store.
+    您可以采取数据的样本并从中获取行的平均大小。 然后将该值乘以计划存储的行数。
 
--   The data compression coefficient.
+-   的数据压缩系数。
 
-    To estimate the data compression coefficient, load a sample of your data into ClickHouse and compare the actual size of the data with the size of the table stored. For example, clickstream data is usually compressed by 6-10 times.
+    要估计数据压缩系数，请将数据的样本加载到ClickHouse中，并将数据的实际大小与存储的表的大小进行比较。 例如，点击流数据通常被压缩6-10次。
 
-To calculate the final volume of data to be stored, apply the compression coefficient to the estimated data volume. If you plan to store data in several replicas, then multiply the estimated volume by the number of replicas.
+要计算要存储的最终数据量，请将压缩系数应用于估计的数据量。 如果计划将数据存储在多个副本中，则将估计的卷乘以副本数。
 
-## Network {#network}
+## 网络 {#network}
 
-If possible, use networks of 10G or higher class.
+如果可能的话，使用10G或更高级别的网络。
 
-The network bandwidth is critical for processing distributed queries with a large amount of intermediate data. In addition, network speed affects replication processes.
+网络带宽对于处理具有大量中间数据的分布式查询至关重要。 此外，网络速度会影响复制过程。
 
-## Software {#software}
+## 软件 {#software}
 
-ClickHouse is developed for the Linux family of operating systems. The recommended Linux distribution is Ubuntu. The `tzdata` package should be installed in the system.
+ClickHouse主要是为Linux系列操作系统开发的。 推荐的Linux发行版是Ubuntu。 该 `tzdata` 软件包应安装在系统中。
 
-ClickHouse can also work in other operating system families. See details in the [Getting started](../getting_started/index.md) section of the documentation.
+ClickHouse也可以在其他操作系统系列中工作。 查看详细信息 [开始](../getting_started/index.md) 文档的部分。

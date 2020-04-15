@@ -488,7 +488,7 @@ SOURCE(MYSQL(
 ))
 ```
 
-### Clickhouse {#dicts-external_dicts_dict_sources-clickhouse}
+### ClickHouse {#dicts-external_dicts_dict_sources-clickhouse}
 
 Example of settings:
 

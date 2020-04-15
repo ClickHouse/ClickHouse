@@ -151,3 +151,6 @@
 [submodule "website/images/feathericons"]
 	path = website/images/feathericons
 	url = https://github.com/feathericons/feather
+[submodule "contrib/msgpack-c"]
+	path = contrib/msgpack-c
+	url = https://github.com/msgpack/msgpack-c

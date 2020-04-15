@@ -109,7 +109,7 @@ bool ParserDictionaryRange::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
 bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
-    ParserFunctionWithKeyValueArguments key_value_func_p;
+    ParserFunctionWithKeyValueArguments key_value_func_p(/* brackets_can_be_omitted = */ true);
     ASTPtr ast_func;
     if (!key_value_func_p.parse(pos, ast_func, expected))
         return false;
@@ -121,10 +121,15 @@ bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         return false;
 
     res->layout_type = func.name;
+    res->has_brackets = func.has_brackets;
     const ASTExpressionList & type_expr_list = func.elements->as<const ASTExpressionList &>();
 
     /// there are no layout with more than 1 parameter
     if (type_expr_list.children.size() > 1)
+        return false;
+
+    /// if layout has params than brackets must be specified
+    if (!type_expr_list.children.empty() && !res->has_brackets)
         return false;
 
     if (type_expr_list.children.size() == 1)

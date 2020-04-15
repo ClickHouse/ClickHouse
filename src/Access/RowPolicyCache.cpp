@@ -1,97 +1,19 @@
 #include <Access/RowPolicyCache.h>
 #include <Access/EnabledRowPolicies.h>
 #include <Access/AccessControlManager.h>
-#include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/makeASTForLogicalFunction.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <ext/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
-#include <boost/range/algorithm/copy.hpp>
-#include <boost/range/algorithm_ext/erase.hpp>
 
 
 namespace DB
 {
 namespace
 {
-    bool tryGetLiteralBool(const IAST & ast, bool & value)
-    {
-        try
-        {
-            if (const ASTLiteral * literal = ast.as<ASTLiteral>())
-            {
-                value = !literal->value.isNull() && applyVisitor(FieldVisitorConvertToNumber<bool>(), literal->value);
-                return true;
-            }
-            return false;
-        }
-        catch (...)
-        {
-            return false;
-        }
-    }
-
-    ASTPtr applyFunctionAND(ASTs arguments)
-    {
-        bool const_arguments = true;
-        boost::range::remove_erase_if(arguments, [&](const ASTPtr & argument) -> bool
-        {
-            bool b;
-            if (!tryGetLiteralBool(*argument, b))
-                return false;
-            const_arguments &= b;
-            return true;
-        });
-
-        if (!const_arguments)
-            return std::make_shared<ASTLiteral>(Field{UInt8(0)});
-        if (arguments.empty())
-            return std::make_shared<ASTLiteral>(Field{UInt8(1)});
-        if (arguments.size() == 1)
-            return arguments[0];
-
-        auto function = std::make_shared<ASTFunction>();
-        auto exp_list = std::make_shared<ASTExpressionList>();
-        function->name = "and";
-        function->arguments = exp_list;
-        function->children.push_back(exp_list);
-        exp_list->children = std::move(arguments);
-        return function;
-    }
-
-
-    ASTPtr applyFunctionOR(ASTs arguments)
-    {
-        bool const_arguments = false;
-        boost::range::remove_erase_if(arguments, [&](const ASTPtr & argument) -> bool
-        {
-            bool b;
-            if (!tryGetLiteralBool(*argument, b))
-                return false;
-            const_arguments |= b;
-            return true;
-        });
-
-        if (const_arguments)
-            return std::make_shared<ASTLiteral>(Field{UInt8(1)});
-        if (arguments.empty())
-            return std::make_shared<ASTLiteral>(Field{UInt8(0)});
-        if (arguments.size() == 1)
-            return arguments[0];
-
-        auto function = std::make_shared<ASTFunction>();
-        auto exp_list = std::make_shared<ASTExpressionList>();
-        function->name = "or";
-        function->arguments = exp_list;
-        function->children.push_back(exp_list);
-        exp_list->children = std::move(arguments);
-        return function;
-    }
-
-
     using ConditionType = RowPolicy::ConditionType;
     constexpr size_t MAX_CONDITION_TYPE = RowPolicy::MAX_CONDITION_TYPE;
 
@@ -111,10 +33,16 @@ namespace
         ASTPtr getResult() &&
         {
             /// Process permissive conditions.
-            restrictions.push_back(applyFunctionOR(std::move(permissions)));
+            restrictions.push_back(makeASTForLogicalOr(std::move(permissions)));
 
             /// Process restrictive conditions.
-            return applyFunctionAND(std::move(restrictions));
+            auto condition = makeASTForLogicalAnd(std::move(restrictions));
+
+            bool value;
+            if (tryGetLiteralBool(condition.get(), value) && value)
+                condition = nullptr;  /// The condition is always true, no need to check it.
+
+            return condition;
         }
 
     private:

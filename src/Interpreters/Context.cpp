@@ -665,12 +665,10 @@ String Context::getUserName() const
     return access->getUserName();
 }
 
-UUID Context::getUserID() const
+std::optional<UUID> Context::getUserID() const
 {
     auto lock = getLock();
-    if (!user_id)
-        throw Exception("No current user", ErrorCodes::LOGICAL_ERROR);
-    return *user_id;
+    return user_id;
 }
 
 

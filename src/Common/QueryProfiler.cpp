@@ -23,7 +23,9 @@ namespace DB
 
 namespace
 {
+#if defined(OS_LINUX)
     thread_local size_t write_trace_iteration = 0;
+#endif
 
     void writeTraceInfo(TraceType trace_type, int /* sig */, siginfo_t * info, void * context)
     {
@@ -53,7 +55,6 @@ namespace
         }
 #else
         UNUSED(info);
-        UNUSED(write_trace_iteration);
 #endif
 
         const auto signal_context = *reinterpret_cast<ucontext_t *>(context);
@@ -110,7 +111,7 @@ QueryProfilerBase<ProfilerImpl>::QueryProfilerBase(const UInt64 thread_id, const
         sev.sigev_notify = SIGEV_THREAD_ID;
         sev.sigev_signo = pause_signal;
 
-#   if defined(__FreeBSD__)
+#   if defined(OS_FREEBSD)
         sev._sigev_un._threadid = thread_id;
 #   else
         sev._sigev_un._tid = thread_id;

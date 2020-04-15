@@ -83,14 +83,13 @@ namespace
             static constexpr char delete_op[] = "DELETE";
             std::vector<const char *> ops;
 
-            bool keyword_for = false;
             if (ParserKeyword{"FOR"}.ignore(pos, expected))
             {
-                keyword_for = true;
                 do
                 {
                     if (ParserKeyword{"SELECT"}.ignore(pos, expected))
                         ops.push_back(select_op);
+#if 0 /// INSERT, UPDATE, DELETE are not supported yet
                     else if (ParserKeyword{"INSERT"}.ignore(pos, expected))
                         ops.push_back(insert_op);
                     else if (ParserKeyword{"UPDATE"}.ignore(pos, expected))
@@ -100,6 +99,7 @@ namespace
                     else if (ParserKeyword{"ALL"}.ignore(pos, expected))
                     {
                     }
+#endif
                     else
                         return false;
                 }
@@ -109,9 +109,11 @@ namespace
             if (ops.empty())
             {
                 ops.push_back(select_op);
+#if 0 /// INSERT, UPDATE, DELETE are not supported yet
                 ops.push_back(insert_op);
                 ops.push_back(update_op);
                 ops.push_back(delete_op);
+#endif
             }
 
             std::optional<ASTPtr> filter;
@@ -123,14 +125,15 @@ namespace
                 if (!parseConditionalExpression(pos, expected, filter))
                     return false;
             }
+#if 0 /// INSERT, UPDATE, DELETE are not supported yet
             if (ParserKeyword{"WITH CHECK"}.ignore(pos, expected))
             {
                 keyword_with_check = true;
                 if (!parseConditionalExpression(pos, expected, check))
                     return false;
             }
-
-            if (!keyword_for && !keyword_using && !keyword_with_check)
+#endif
+            if (!keyword_using && !keyword_with_check)
                 return false;
 
             if (filter && !check && !alter)
@@ -200,6 +203,14 @@ namespace
             return true;
         });
     }
+
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+        });
+    }
 }
 
 
@@ -246,6 +257,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     String new_policy_name;
     std::optional<bool> is_restrictive;
     std::vector<std::pair<ConditionType, ASTPtr>> conditions;
+    String cluster;
 
     while (true)
     {
@@ -258,11 +270,17 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (parseMultipleConditions(pos, expected, alter, conditions))
             continue;
 
+        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
+            continue;
+
         break;
     }
 
     std::shared_ptr<ASTExtendedRoleSet> roles;
     parseToRoles(pos, expected, attach_mode, roles);
+
+    if (cluster.empty())
+        parseOnCluster(pos, expected, cluster);
 
     auto query = std::make_shared<ASTCreateRowPolicyQuery>();
     node = query;
@@ -272,6 +290,7 @@ bool ParserCreateRowPolicyQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
+    query->cluster = std::move(cluster);
     query->name_parts = std::move(name_parts);
     query->new_policy_name = std::move(new_policy_name);
     query->is_restrictive = is_restrictive;

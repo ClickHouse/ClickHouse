@@ -7,7 +7,7 @@ toc_title: "Examinar el c\xF3digo fuente de ClickHouse"
 
 # Examinar el código fuente de ClickHouse {#browse-clickhouse-source-code}
 
-Usted puede utilizar **Woboq** navegador de código en línea disponible [aqui](https://clickhouse-test-reports.s3.yandex.net/codebrowser/html_report///ClickHouse/src/index.html). Proporciona navegación de código y resaltado semántico, búsqueda e indexación. La instantánea de código se actualiza diariamente.
+Usted puede utilizar **Woboq** navegador de código en línea disponible [aqui](https://clickhouse.tech/codebrowser/html_report///ClickHouse/src/index.html). Proporciona navegación de código y resaltado semántico, búsqueda e indexación. La instantánea de código se actualiza diariamente.
 
 Además, puede navegar por las fuentes en [GitHub](https://github.com/ClickHouse/ClickHouse) como de costumbre.
 

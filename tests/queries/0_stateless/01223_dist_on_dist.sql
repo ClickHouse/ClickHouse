@@ -1,6 +1,11 @@
-create table if not exists data_01223 (key Int) Engine=Memory();
-create table if not exists dist_layer_01223 as data_01223 Engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01223);
-create table if not exists dist_01223 as data_01223 Engine=Distributed(test_cluster_two_shards, currentDatabase(), dist_layer_01223);
+drop table if exists merge_dist_01223;
+drop table if exists dist_01223;
+drop table if exists dist_layer_01223;
+drop table if exists data_01223;
+
+create table data_01223 (key Int) Engine=Memory();
+create table dist_layer_01223 as data_01223 Engine=Distributed(test_cluster_two_shards, currentDatabase(), data_01223);
+create table dist_01223 as data_01223 Engine=Distributed(test_cluster_two_shards, currentDatabase(), dist_layer_01223);
 
 select * from dist_01223;
 
@@ -53,6 +58,31 @@ group_by_two_level_threshold=1,
 group_by_two_level_threshold_bytes=1,
 distributed_aggregation_memory_efficient=1;
 
+select 'COUNT';
+select count() from dist_01223;
+select 'distributed_group_by_no_merge';
+select count() from dist_01223 settings distributed_group_by_no_merge=1;
+
+drop table dist_01223;
+drop table dist_layer_01223;
+
+-- only one shard in nested
+select 'only one shard in nested';
+create table dist_layer_01223 as data_01223 Engine=Distributed(test_shard_localhost, currentDatabase(), data_01223);
+create table dist_01223 as data_01223 Engine=Distributed(test_cluster_two_shards, currentDatabase(), dist_layer_01223);
+select count() from dist_01223;
+
+select 'distributed_group_by_no_merge';
+select count() from dist_01223 settings distributed_group_by_no_merge=1;
+
+-- wrap with merge()
+select 'merge()';
+create table merge_dist_01223 as dist_01223 engine=Merge(currentDatabase(), 'dist_01223');
+select count() from merge_dist_01223;
+select 'distributed_group_by_no_merge';
+select count() from merge_dist_01223 settings distributed_group_by_no_merge=1;
+
+drop table merge_dist_01223;
 drop table dist_01223;
 drop table dist_layer_01223;
 drop table data_01223;

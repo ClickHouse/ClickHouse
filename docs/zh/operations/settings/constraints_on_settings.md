@@ -1,11 +1,14 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_priority: 62
+toc_title: "\u5BF9\u8BBE\u7F6E\u7684\u9650\u5236"
 ---
 
-# Constraints on Settings {#constraints-on-settings}
+# 对设置的限制 {#constraints-on-settings}
 
-The constraints on settings can be defined in the `profiles` section of the `user.xml` configuration file and prohibit users from changing some of the settings with the `SET` query.
-The constraints are defined as the following:
+在设置的约束可以在定义 `profiles` 一节 `user.xml` 配置文件，并禁止用户更改一些设置与 `SET` 查询。
+约束定义如下:
 
 ``` xml
 <profiles>
@@ -29,10 +32,10 @@ The constraints are defined as the following:
 </profiles>
 ```
 
-If the user tries to violate the constraints an exception is thrown and the setting isn’t changed.
-There are supported three types of constraints: `min`, `max`, `readonly`. The `min` and `max` constraints specify upper and lower boundaries for a numeric setting and can be used in combination. The `readonly` constraint specifies that the user cannot change the corresponding setting at all.
+如果用户试图违反约束，将引发异常，并且设置不会更改。
+支持三种类型的约束: `min`, `max`, `readonly`. 该 `min` 和 `max` 约束指定数值设置的上边界和下边界，并且可以组合使用。 该 `readonly` constraint指定用户根本无法更改相应的设置。
 
-**Example:** Let `users.xml` includes lines:
+**示例:** 让 `users.xml` 包括行:
 
 ``` xml
 <profiles>
@@ -53,7 +56,7 @@ There are supported three types of constraints: `min`, `max`, `readonly`. The `m
 </profiles>
 ```
 
-The following queries all throw exceptions:
+以下查询都会引发异常:
 
 ``` sql
 SET max_memory_usage=20000000001;
@@ -67,6 +70,6 @@ Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not 
 Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
 ```
 
-**Note:** the `default` profile has special handling: all the constraints defined for the `default` profile become the default constraints, so they restrict all the users until they’re overridden explicitly for these users.
+**注:** 该 `default` 配置文件具有特殊的处理：所有定义的约束 `default` 配置文件成为默认约束，因此它们限制所有用户，直到为这些用户显式复盖它们。
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/constraints_on_settings/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/settings/constraints_on_settings/) <!--hide-->

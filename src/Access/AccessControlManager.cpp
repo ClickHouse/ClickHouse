@@ -23,7 +23,10 @@ namespace
         std::vector<std::unique_ptr<IAccessStorage>> list;
         list.emplace_back(std::make_unique<DiskAccessStorage>());
         list.emplace_back(std::make_unique<UsersConfigAccessStorage>());
+
+#if 0  /// Memory access storage is disabled.
         list.emplace_back(std::make_unique<MemoryAccessStorage>());
+#endif
         return list;
     }
 

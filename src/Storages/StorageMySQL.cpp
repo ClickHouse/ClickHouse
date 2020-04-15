@@ -248,6 +248,9 @@ void registerStorageMySQL(StorageFactory & factory)
             args.columns,
             args.constraints,
             args.context);
+    },
+    {
+        .source_access_type = AccessType::MYSQL,
     });
 }
 

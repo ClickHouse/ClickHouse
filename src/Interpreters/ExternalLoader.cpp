@@ -427,8 +427,6 @@ public:
         if (configs == new_configs)
             return;
 
-        LOG_TRACE(log, "Configuration of reloadable objects has changed");
-
         configs = new_configs;
 
         std::vector<String> removed_names;
@@ -437,7 +435,6 @@ public:
             auto new_config_it = new_configs->find(name);
             if (new_config_it == new_configs->end())
             {
-                LOG_TRACE(log, "Reloadable object '" << name << "' is removed");
                 removed_names.emplace_back(name);
             }
             else
@@ -448,8 +445,6 @@ public:
                 if (!config_is_same)
                 {
                     /// Configuration has been changed.
-                    LOG_TRACE(log, "Configuration has changed for reloadable "
-                        "object '" << info.name << "'");
                     info.object_config = new_config;
 
                     if (info.triedToLoad())
@@ -457,7 +452,7 @@ public:
                         /// The object has been tried to load before, so it is currently in use or was in use
                         /// and we should try to reload it with the new config.
                         LOG_TRACE(log, "Will reload '" << name << "'"
-                            " because its configuration has changed and"
+                            " because its configuration has been changed and"
                             " there were attempts to load it before");
                         startLoading(info, true);
                     }
@@ -473,7 +468,7 @@ public:
                 Info & info = infos.emplace(name, Info{name, config}).first->second;
                 if (always_load_everything)
                 {
-                    LOG_TRACE(log, "Will reload new object '" << name << "'"
+                    LOG_TRACE(log, "Will load '" << name << "'"
                         " because always_load_everything flag is set.");
                     startLoading(info);
                 }
@@ -482,7 +477,15 @@ public:
 
         /// Remove from the map those objects which were removed from the configuration.
         for (const String & name : removed_names)
-            infos.erase(name);
+        {
+            if (auto it = infos.find(name); it != infos.end())
+            {
+                const auto & info = it->second;
+                if (info.loaded() || info.isLoading())
+                    LOG_TRACE(log, "Unloading '" << name << "' because its configuration has been removed or detached");
+                infos.erase(it);
+            }
+        }
 
         /// Maybe we have just added new objects which require to be loaded
         /// or maybe we have just removed object which were been loaded,

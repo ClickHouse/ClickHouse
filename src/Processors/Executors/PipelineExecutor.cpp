@@ -96,7 +96,7 @@ bool PipelineExecutor::addEdges(UInt64 node)
         {
             const IProcessor * proc = &it->getOutputPort().getProcessor();
             auto output_port_number = proc->getOutputPortNumber(&it->getOutputPort());
-            add_edge(*it, proc, graph[node].backEdges, true, from_input, output_port_number, &graph[node].post_updated_input_ports);
+            add_edge(*it, proc, graph[node].backEdges, true, from_input, output_port_number, graph[node].post_updated_input_ports.get());
         }
     }
 
@@ -111,7 +111,7 @@ bool PipelineExecutor::addEdges(UInt64 node)
         {
             const IProcessor * proc = &it->getInputPort().getProcessor();
             auto input_port_number = proc->getInputPortNumber(&it->getInputPort());
-            add_edge(*it, proc, graph[node].directEdges, false, input_port_number, from_output, &graph[node].post_updated_output_ports);
+            add_edge(*it, proc, graph[node].directEdges, false, input_port_number, from_output, graph[node].post_updated_output_ports.get());
         }
     }
 
@@ -221,7 +221,7 @@ bool PipelineExecutor::expandPipeline(Stack & stack, UInt64 pid)
 
         if (addEdges(node))
         {
-            std::lock_guard guard(graph[node].status_mutex);
+            std::lock_guard guard(*graph[node].status_mutex);
 
             for (; num_back_edges < graph[node].backEdges.size(); ++num_back_edges)
                 graph[node].updated_input_ports.emplace_back(num_back_edges);
@@ -246,7 +246,7 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, Queue & queu
 
     auto & node = graph[edge.to];
 
-    std::unique_lock lock(node.status_mutex);
+    std::unique_lock lock(*node.status_mutex);
 
     ExecStatus status = node.status;
 
@@ -340,22 +340,22 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         }
 
         {
-            for (auto & edge_id : node.post_updated_input_ports)
+            for (auto & edge_id : *node.post_updated_input_ports)
             {
                 auto edge = static_cast<Edge *>(edge_id);
                 updated_back_edges.emplace_back(edge);
                 edge->update_info.trigger();
             }
 
-            for (auto & edge_id : node.post_updated_output_ports)
+            for (auto & edge_id : *node.post_updated_output_ports)
             {
                 auto edge = static_cast<Edge *>(edge_id);
                 updated_direct_edges.emplace_back(edge);
                 edge->update_info.trigger();
             }
 
-            node.post_updated_input_ports.clear();
-            node.post_updated_output_ports.clear();
+            node.post_updated_input_ports->clear();
+            node.post_updated_output_ports->clear();
         }
     }
 
@@ -402,7 +402,7 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         while (!stack.empty())
         {
             auto item = stack.top();
-            if (!prepareProcessor(item, thread_number, queue, std::unique_lock<std::mutex>(graph[item].status_mutex)))
+            if (!prepareProcessor(item, thread_number, queue, std::unique_lock<std::mutex>(*graph[item].status_mutex)))
                 return false;
 
             stack.pop();
@@ -519,7 +519,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
 
     auto prepare_processor = [&](UInt64 pid, Queue & queue)
     {
-        if (!prepareProcessor(pid, thread_num, queue, std::unique_lock<std::mutex>(graph[pid].status_mutex)))
+        if (!prepareProcessor(pid, thread_num, queue, std::unique_lock<std::mutex>(*graph[pid].status_mutex)))
             finish();
     };
 
@@ -729,7 +729,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
             UInt64 proc = stack.top();
             stack.pop();
 
-            prepareProcessor(proc, 0, queue, std::unique_lock<std::mutex>(graph[proc].status_mutex));
+            prepareProcessor(proc, 0, queue, std::unique_lock<std::mutex>(*graph[proc].status_mutex));
 
             while (!queue.empty())
             {

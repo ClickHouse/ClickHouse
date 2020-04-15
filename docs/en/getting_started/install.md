@@ -69,7 +69,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 You can also download and install packages manually from here: https://repo.clickhouse.tech/rpm/stable/x86\_64.
 
-### From tgz archives {#from-tgz-archives}
+### From Tgz Archives {#from-tgz-archives}
 
 It is recommended to use official pre-compiled `tgz` archives for all Linux distributions, where installation of `deb` or `rpm` packages is not possible.
 

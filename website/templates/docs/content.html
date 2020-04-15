@@ -17,11 +17,7 @@
         {% endif %}
 
         {% if single_page and page.content %}
-        <script async type="text/javascript">
-            {% for chunk in page.content|chunks %}
-            document.write({{ chunk|tojson|safe }});
-            {% endfor %}
-        </script>
+        <script type="text/javascript" src="content.js?{{ config.extra.rev_short }}"></script>
         {% endif %}
     </div>
 
@@ -32,3 +28,12 @@
     </div>
     {% endif %}
 </div>
+{% if single_page and page.content %}
+<!-- BREAK -->
+(function() {
+    {% for chunk in page.content|chunks %}
+    document.write({{ chunk|tojson|safe }});
+    {% endfor %}
+})();
+<!-- BREAK -->
+{% endif %}

@@ -16,6 +16,7 @@
 #include <IO/WriteBufferFromPocoSocket.h>
 #include <Storages/IStorage.h>
 #include <boost/algorithm/string/replace.hpp>
+#include <regex>
 
 #if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
@@ -268,7 +269,8 @@ void MySQLHandler::comPing()
     packet_sender->sendPacket(OK_Packet(0x0, client_capability_flags, 0, 0, 0), true);
 }
 
-static bool isFederatedServerSetupCommand(const String & query);
+static bool isFederatedServerSetupSetCommand(const String & query);
+static bool isFederatedServerSetupSelectVarCommand(const String & query);
 
 void MySQLHandler::comQuery(ReadBuffer & payload)
 {
@@ -276,7 +278,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
     // This is a workaround in order to support adding ClickHouse to MySQL using federated server.
     // As Clickhouse doesn't support these statements, we just send OK packet in response.
-    if (isFederatedServerSetupCommand(query))
+    if (isFederatedServerSetupSetCommand(query))
     {
         packet_sender->sendPacket(OK_Packet(0x00, client_capability_flags, 0, 0, 0), true);
     }
@@ -288,10 +290,11 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
 
         // Translate query from MySQL to ClickHouse.
         // This is a temporary workaround until ClickHouse supports the syntax "@@var_name".
-        if (query == "select @@version_comment limit 1")  // MariaDB client starts session with that query
+        if (isFederatedServerSetupSelectVarCommand(query))
         {
             should_replace = true;
         }
+
         // This is a workaround in order to support adding ClickHouse to MySQL using federated server.
         if (0 == strncasecmp("SHOW TABLE STATUS LIKE", query.c_str(), 22))
         {
@@ -358,11 +361,27 @@ void MySQLHandlerSSL::finishHandshakeSSL(size_t packet_size, char * buf, size_t 
 
 #endif
 
-static bool isFederatedServerSetupCommand(const String & query)
+static bool isFederatedServerSetupSetCommand(const String & query)
 {
-    return 0 == strncasecmp("SET NAMES", query.c_str(), 9) || 0 == strncasecmp("SET character_set_results", query.c_str(), 25)
-        || 0 == strncasecmp("SET FOREIGN_KEY_CHECKS", query.c_str(), 22) || 0 == strncasecmp("SET AUTOCOMMIT", query.c_str(), 14)
-        || 0 == strncasecmp("SET SESSION TRANSACTION ISOLATION LEVEL", query.c_str(), 39);
+    static const std::regex expr{
+        "(^(SET NAMES(.*)))"
+        "|(^(SET character_set_results(.*)))"
+        "|(^(SET FOREIGN_KEY_CHECKS(.*)))"
+        "|(^(SET AUTOCOMMIT(.*)))"
+        "|(^(SET sql_mode(.*)))"
+        "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))"
+        , std::regex::icase};
+    return 1 == std::regex_match(query, expr);
+}
+
+static bool isFederatedServerSetupSelectVarCommand(const String & query)
+{
+     static const std::regex expr{
+         "|(^(SELECT @@(.*)))"
+         "|(^((/\\*(.*)\\*/)([ \t]*)(SELECT([ \t]*)@@(.*))))"
+         "|(^((/\\*(.*)\\*/)([ \t]*)(SHOW VARIABLES(.*))))"
+         , std::regex::icase};
+     return 1 == std::regex_match(query, expr);
 }
 
 const String MySQLHandler::show_table_status_replacement_query("SELECT"

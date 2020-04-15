@@ -356,6 +356,8 @@ FormatFactory::FormatFactory()
     registerInputFormatProcessorTemplate(*this);
     registerOutputFormatProcessorTemplate(*this);
     registerInputFormatProcessorRegexp(*this);
+    registerInputFormatProcessorMsgPack(*this);
+    registerOutputFormatProcessorMsgPack(*this);
 
     registerFileSegmentationEngineTabSeparated(*this);
     registerFileSegmentationEngineCSV(*this);

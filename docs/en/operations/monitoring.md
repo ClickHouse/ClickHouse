@@ -22,7 +22,7 @@ It is highly recommended to set up monitoring for:
 
 -   Utilization of storage system, RAM and network.
 
-## Clickhouse Server Metrics {#clickhouse-server-metrics}
+## ClickHouse Server Metrics {#clickhouse-server-metrics}
 
 ClickHouse server has embedded instruments for self-state monitoring.
 

@@ -1,18 +1,21 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_priority: 54
+toc_title: "\u6D4B\u8BD5\u786C\u4EF6"
 ---
 
-# How To Test Your Hardware With ClickHouse {#how-to-test-your-hardware-with-clickhouse}
+# 如何使用ClickHouse测试您的硬件 {#how-to-test-your-hardware-with-clickhouse}
 
-With this instruction you can run basic ClickHouse performance test on any server without installation of ClickHouse packages.
+使用此指令，您可以在任何服务器上运行基本的ClickHouse性能测试，而无需安装ClickHouse软件包。
 
-1.  Go to “commits” page: https://github.com/ClickHouse/ClickHouse/commits/master
+1.  转到 “commits” 页数：https://github.com/ClickHouse/ClickHouse/commits/master
 
-2.  Click on the first green check mark or red cross with green “ClickHouse Build Check” and click on the “Details” link near “ClickHouse Build Check”.
+2.  点击第一个绿色复选标记或红色十字与绿色 “ClickHouse Build Check” 然后点击 “Details” 附近链接 “ClickHouse Build Check”. 在一些提交中没有这样的链接，例如与文档的提交。 在这种情况下，请选择具有此链接的最近提交。
 
-3.  Copy the link to “clickhouse” binary for amd64 or aarch64.
+3.  将链接复制到 “clickhouse” 二进制为amd64或aarch64.
 
-4.  ssh to the server and download it with wget:
+4.  ssh到服务器并使用wget下载它:
 
 <!-- -->
 
@@ -23,7 +26,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
       # Then do:
       chmod a+x clickhouse
 
-1.  Download configs:
+1.  下载配置:
 
 <!-- -->
 
@@ -33,7 +36,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/path.xml -O config.d/path.xml
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/programs/server/config.d/log_to_console.xml -O config.d/log_to_console.xml
 
-1.  Download benchmark files:
+1.  下载基准测试文件:
 
 <!-- -->
 
@@ -41,7 +44,7 @@ With this instruction you can run basic ClickHouse performance test on any serve
       chmod a+x benchmark-new.sh
       wget https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/benchmark/clickhouse/queries.sql
 
-1.  Download test data according to the [Yandex.Metrica dataset](../getting_started/example_datasets/metrica.md) instruction (“hits” table containing 100 million rows).
+1.  根据下载测试数据 [Yandex梅里卡数据集](../getting_started/example_datasets/metrica.md) 说明 (“hits” 表包含100万行）。
 
 <!-- -->
 
@@ -49,31 +52,31 @@ With this instruction you can run basic ClickHouse performance test on any serve
       tar xvf hits_100m_obfuscated_v1.tar.xz -C .
       mv hits_100m_obfuscated_v1/* .
 
-1.  Run the server:
+1.  运行服务器:
 
 <!-- -->
 
       ./clickhouse server
 
-1.  Check the data: ssh to the server in another terminal
+1.  检查数据：ssh到另一个终端中的服务器
 
 <!-- -->
 
       ./clickhouse client --query "SELECT count() FROM hits_100m_obfuscated"
       100000000
 
-1.  Edit the benchmark-new.sh, change “clickhouse-client” to “./clickhouse client” and add “–max\_memory\_usage 100000000000” parameter.
+1.  编辑benchmark-new.sh，改变 “clickhouse-client” 到 “./clickhouse client” 并添加 “–max\_memory\_usage 100000000000” 参数。
 
 <!-- -->
 
       mcedit benchmark-new.sh
 
-1.  Run the benchmark:
+1.  运行基准测试:
 
 <!-- -->
 
       ./benchmark-new.sh hits_100m_obfuscated
 
-1.  Send the numbers and the info about your hardware configuration to clickhouse-feedback@yandex-team.com
+1.  将有关硬件配置的编号和信息发送到clickhouse-feedback@yandex-team.com
 
-All the results are published here: https://clickhouse.tech/benchmark\_hardware.html
+所有结果都在这里公布：https://clickhouse.技术/benchmark\_hardware.html

@@ -51,25 +51,25 @@ ExtendedRoleSet::ExtendedRoleSet(const boost::container::flat_set<UUID> & ids_)
 
 ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast)
 {
-    init(ast, nullptr, nullptr);
+    init(ast, nullptr);
 }
 
-ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast, const UUID & current_user_id)
+ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast, const std::optional<UUID> & current_user_id)
 {
-    init(ast, nullptr, &current_user_id);
+    init(ast, nullptr, current_user_id);
 }
 
 ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast, const AccessControlManager & manager)
 {
-    init(ast, &manager, nullptr);
+    init(ast, &manager);
 }
 
-ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast, const AccessControlManager & manager, const UUID & current_user_id)
+ExtendedRoleSet::ExtendedRoleSet(const ASTExtendedRoleSet & ast, const AccessControlManager & manager, const std::optional<UUID> & current_user_id)
 {
-    init(ast, &manager, &current_user_id);
+    init(ast, &manager, current_user_id);
 }
 
-void ExtendedRoleSet::init(const ASTExtendedRoleSet & ast, const AccessControlManager * manager, const UUID * current_user_id)
+void ExtendedRoleSet::init(const ASTExtendedRoleSet & ast, const AccessControlManager * manager, const std::optional<UUID> & current_user_id)
 {
     all = ast.all;
 

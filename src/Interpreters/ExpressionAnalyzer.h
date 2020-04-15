@@ -123,7 +123,7 @@ protected:
     SyntaxAnalyzerResultPtr syntax;
 
     const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
-    const AnalyzedJoin & analyzedJoin() const { return *syntax->analyzed_join; }
+    const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
     NamesAndTypesList sourceWithJoinedColumns() const;

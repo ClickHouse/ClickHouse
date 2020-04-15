@@ -249,7 +249,7 @@ toc_title: '2020'
 -   Clickhouseテストスクリプトでハングクエリのチェックを更新 [\#8858](https://github.com/ClickHouse/ClickHouse/pull/8858) ([Alexander Kazakov](https://github.com/Akazz))
 -   リポジトリか [\#8843](https://github.com/ClickHouse/ClickHouse/pull/8843) ([alexey-milovidov](https://github.com/alexey-milovidov))
 -   から数学perftestsの変更タイプ `once` に `loop`. [\#8783](https://github.com/ClickHouse/ClickHouse/pull/8783) ([Nikolai Kochetov](https://github.com/KochetovNicolai))
--   追加docker画像を構築ィコードのブラウザのhtmlレポート当社のコードベース. [\#8781](https://github.com/ClickHouse/ClickHouse/pull/8781) ([alesapin](https://github.com/alesapin))見る [Woboqコードブラウザ](https://clickhouse-test-reports.s3.yandex.net/codebrowser/html_report///ClickHouse/dbms/src/index.html)
+-   追加docker画像を構築ィコードのブラウザのhtmlレポート当社のコードベース. [\#8781](https://github.com/ClickHouse/ClickHouse/pull/8781) ([alesapin](https://github.com/alesapin))見る [Woboqコードブラウザ](https://clickhouse.tech/codebrowser/html_report///ClickHouse/dbms/src/index.html)
 -   MSanの下でいくつかのテストの失敗を抑制. [\#8780](https://github.com/ClickHouse/ClickHouse/pull/8780) ([Alexander Kuzmenkov](https://github.com/akuzm))
 -   スピードアップ “exception while insert” テスト。 このテス [\#8711](https://github.com/ClickHouse/ClickHouse/pull/8711) ([alexey-milovidov](https://github.com/alexey-milovidov))
 -   更新 `libcxx` と `libcxxabi` マスターに。 準備のために [\#9304](https://github.com/ClickHouse/ClickHouse/issues/9304) [\#9308](https://github.com/ClickHouse/ClickHouse/pull/9308) ([alexey-milovidov](https://github.com/alexey-milovidov))

@@ -6,8 +6,8 @@ namespace DB
 {
 
 class Context;
-class Join;
-using HashJoinPtr = std::shared_ptr<Join>;
+class HashJoin;
+using HashJoinPtr = std::shared_ptr<HashJoin>;
 
 class ExecutableFunctionJoinGet final : public IExecutableFunctionImpl
 {

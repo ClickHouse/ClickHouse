@@ -1,6 +1,6 @@
 #include <Common/typeid_cast.h>
 #include <Interpreters/JoinSwitcher.h>
-#include <Interpreters/Join.h>
+#include <Interpreters/HashJoin.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/join_common.h>
 
@@ -17,13 +17,13 @@ static ColumnWithTypeAndName correctNullability(ColumnWithTypeAndName && column,
     return std::move(column);
 }
 
-JoinSwitcher::JoinSwitcher(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_)
+JoinSwitcher::JoinSwitcher(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
     : limits(table_join_->sizeLimits())
     , switched(false)
     , table_join(table_join_)
     , right_sample_block(right_sample_block_.cloneEmpty())
 {
-    join = std::make_shared<Join>(table_join, right_sample_block);
+    join = std::make_shared<HashJoin>(table_join, right_sample_block);
 
     if (!limits.hasLimits())
         limits.max_bytes = table_join->defaultMaxBytes();
@@ -50,7 +50,7 @@ bool JoinSwitcher::addJoinedBlock(const Block & block, bool)
 
 void JoinSwitcher::switchJoin()
 {
-    std::shared_ptr<Join::RightTableData> joined_data = static_cast<const Join &>(*join).getJoinedData();
+    std::shared_ptr<HashJoin::RightTableData> joined_data = static_cast<const HashJoin &>(*join).getJoinedData();
     BlocksList right_blocks = std::move(joined_data->blocks);
 
     /// Destroy old join & create new one. Early destroy for memory saving.

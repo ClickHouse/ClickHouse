@@ -3,7 +3,7 @@ toc_priority: 30
 toc_title: MergeTree
 ---
 
-# Mergetree {#table_engines-mergetree}
+# MergeTree {#table_engines-mergetree}
 
 The `MergeTree` engine and other engines of this family (`*MergeTree`) are the most robust ClickHouse table engines.
 

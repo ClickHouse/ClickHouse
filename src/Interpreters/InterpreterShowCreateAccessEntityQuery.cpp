@@ -7,6 +7,7 @@
 #include <Parsers/ASTCreateSettingsProfileQuery.h>
 #include <Parsers/ASTShowCreateAccessEntityQuery.h>
 #include <Parsers/ASTExtendedRoleSet.h>
+#include <Parsers/ASTSettingsProfileElement.h>
 #include <Parsers/ExpressionListParsers.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/parseQuery.h>
@@ -101,6 +102,8 @@ namespace
                 query->settings = profile.elements.toAST();
             else
                 query->settings = profile.elements.toASTWithNames(*manager);
+            if (query->settings)
+                query->settings->setUseInheritKeyword(true);
         }
 
         if (!profile.to_roles.empty())
@@ -133,7 +136,7 @@ namespace
             create_query_limits.duration = limits.duration;
             create_query_limits.randomize_interval = limits.randomize_interval;
             for (auto resource_type : ext::range(Quota::MAX_RESOURCE_TYPE))
-                if (limits.max[resource_type])
+                if (limits.max[resource_type] != Quota::UNLIMITED)
                     create_query_limits.max[resource_type] = limits.max[resource_type];
             query->all_limits.push_back(create_query_limits);
         }
@@ -256,6 +259,7 @@ BlockInputStreamPtr InterpreterShowCreateAccessEntityQuery::executeImpl()
 ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const ASTShowCreateAccessEntityQuery & show_query) const
 {
     const auto & access_control = context.getAccessControlManager();
+    context.checkAccess(getRequiredAccess());
 
     if (show_query.current_user)
     {
@@ -278,6 +282,22 @@ ASTPtr InterpreterShowCreateAccessEntityQuery::getCreateQuery(const ASTShowCreat
 
     auto entity = access_control.read(access_control.getID(type, show_query.name));
     return getCreateQueryImpl(*entity, &access_control);
+}
+
+
+AccessRightsElements InterpreterShowCreateAccessEntityQuery::getRequiredAccess() const
+{
+    const auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
+    AccessRightsElements res;
+    switch (show_query.kind)
+    {
+        case Kind::USER: res.emplace_back(AccessType::SHOW_USERS); break;
+        case Kind::ROLE: res.emplace_back(AccessType::SHOW_ROLES); break;
+        case Kind::ROW_POLICY: res.emplace_back(AccessType::SHOW_ROW_POLICIES); break;
+        case Kind::SETTINGS_PROFILE: res.emplace_back(AccessType::SHOW_SETTINGS_PROFILES); break;
+        case Kind::QUOTA: res.emplace_back(AccessType::SHOW_QUOTAS); break;
+    }
+    return res;
 }
 
 

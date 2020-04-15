@@ -1377,4 +1377,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
 }
 
 
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
+{
+    return executeDDLQueryOnCluster(query_ptr_, context, {});
+}
+
 }

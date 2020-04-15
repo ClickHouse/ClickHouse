@@ -2,6 +2,7 @@
 #include <memory>
 #include <Client/ConnectionPool.h>
 #include <DataStreams/RemoteBlockInputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Interpreters/executeQuery.h>
 #include <Common/isLocalAddress.h>
@@ -131,6 +132,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
     {
         BlockIO res = executeQuery(load_all_query, context, true);
         /// FIXME res.in may implicitly use some objects owned be res, but them will be destructed after return
+        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
         return res.in;
     }
     return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, sample_block, context);
@@ -140,7 +142,11 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadUpdatedAll()
 {
     std::string load_update_query = getUpdateFieldAndDate();
     if (is_local)
-        return executeQuery(load_update_query, context, true).in;
+    {
+        auto res = executeQuery(load_update_query, context, true);
+        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        return res.in;
+    }
     return std::make_shared<RemoteBlockInputStream>(pool, load_update_query, sample_block, context);
 }
 
@@ -183,7 +189,12 @@ std::string ClickHouseDictionarySource::toString() const
 BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(const std::string & query)
 {
     if (is_local)
-        return executeQuery(query, context, true).in;
+    {
+        auto res = executeQuery(query, context, true);
+        res.in = std::make_shared<ConvertingBlockInputStream>(
+            context, res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        return res.in;
+    }
 
     return std::make_shared<RemoteBlockInputStream>(pool, query, sample_block, context);
 }

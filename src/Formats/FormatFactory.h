@@ -171,7 +171,9 @@ void registerOutputFormatProcessorProtobuf(FormatFactory & factory);
 void registerInputFormatProcessorAvro(FormatFactory & factory);
 void registerOutputFormatProcessorAvro(FormatFactory & factory);
 void registerInputFormatProcessorTemplate(FormatFactory & factory);
-void registerOutputFormatProcessorTemplate(FormatFactory &factory);
+void registerOutputFormatProcessorTemplate(FormatFactory & factory);
+void registerInputFormatProcessorMsgPack(FormatFactory & factory);
+void registerOutputFormatProcessorMsgPack(FormatFactory & factory);
 
 /// File Segmentation Engines for parallel reading
 

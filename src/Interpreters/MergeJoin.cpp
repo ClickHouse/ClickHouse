@@ -4,7 +4,7 @@
 #include <Core/SortCursor.h>
 #include <Columns/ColumnNullable.h>
 #include <Interpreters/MergeJoin.h>
-#include <Interpreters/AnalyzedJoin.h>
+#include <Interpreters/TableJoin.h>
 #include <Interpreters/sortBlock.h>
 #include <Interpreters/join_common.h>
 #include <DataStreams/materializeBlock.h>
@@ -445,7 +445,7 @@ void MiniLSM::merge(std::function<void(const Block &)> callback)
 }
 
 
-MergeJoin::MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block_)
+MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block_)
     : table_join(table_join_)
     , size_limits(table_join->sizeLimits())
     , right_sample_block(right_sample_block_)

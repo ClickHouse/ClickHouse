@@ -1,10 +1,11 @@
 #include <Interpreters/InterpreterCreateUserQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSetRoleQuery.h>
+#include <Interpreters/DDLWorker.h>
 #include <Parsers/ASTCreateUserQuery.h>
+#include <Parsers/ASTExtendedRoleSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
-#include <Access/ExtendedRoleSet.h>
 #include <Access/ContextAccess.h>
 #include <boost/range/algorithm/copy.hpp>
 
@@ -67,7 +68,7 @@ namespace
 
 BlockIO InterpreterCreateUserQuery::execute()
 {
-    const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
+    auto & query = query_ptr->as<const ASTCreateUserQuery &>();
     auto & access_control = context.getAccessControlManager();
     auto access = context.getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);
@@ -82,6 +83,9 @@ BlockIO InterpreterCreateUserQuery::execute()
                 access->checkAdminOption(role);
         }
     }
+
+    if (!query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
 
     std::optional<SettingsProfileElements> settings_from_query;
     if (query.settings)

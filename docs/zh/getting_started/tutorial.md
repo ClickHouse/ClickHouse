@@ -1,18 +1,21 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_priority: 12
+toc_title: "\u6559\u7A0B"
 ---
 
-# ClickHouse Tutorial {#clickhouse-tutorial}
+# 点击教程 {#clickhouse-tutorial}
 
-## What to Expect from This Tutorial? {#what-to-expect-from-this-tutorial}
+## 从本教程中可以期待什么？ {#what-to-expect-from-this-tutorial}
 
-By going through this tutorial, you’ll learn how to set up a simple ClickHouse cluster. It’ll be small, but fault-tolerant and scalable. Then we will use one of the example datasets to fill it with data and execute some demo queries.
+通过本教程，您将学习如何设置一个简单的ClickHouse集群。 它会很小，但容错和可扩展。 然后，我们将使用其中一个示例数据集来填充数据并执行一些演示查询。
 
-## Single Node Setup {#single-node-setup}
+## 单节点设置 {#single-node-setup}
 
-To postpone the complexities of a distributed environment, we’ll start with deploying ClickHouse on a single server or virtual machine. ClickHouse is usually installed from [deb](index.md#install-from-deb-packages) or [rpm](index.md#from-rpm-packages) packages, but there are [alternatives](index.md#from-docker-image) for the operating systems that do no support them.
+为了推迟分布式环境的复杂性，我们将首先在单个服务器或虚拟机上部署ClickHouse。 ClickHouse通常是从安装 [黛布](index.md#install-from-deb-packages) 或 [rpm](index.md#from-rpm-packages) 包，但也有 [替代办法](index.md#from-docker-image) 对于不支持它们的操作系统。
 
-For example, you have chosen `deb` packages and executed:
+例如，您选择了 `deb` 包和执行:
 
 ``` bash
 sudo apt-get install dirmngr
@@ -24,48 +27,48 @@ sudo apt-get update
 sudo apt-get install -y clickhouse-server clickhouse-client
 ```
 
-What do we have in the packages that got installed:
+我们在安装的软件包中有什么:
 
--   `clickhouse-client` package contains [clickhouse-client](../interfaces/cli.md) application, interactive ClickHouse console client.
--   `clickhouse-common` package contains a ClickHouse executable file.
--   `clickhouse-server` package contains configuration files to run ClickHouse as a server.
+-   `clickhouse-client` 包包含 [ﾂ环板clientｮﾂ嘉ｯﾂ偲](../interfaces/cli.md) 应用程序，交互式ClickHouse控制台客户端。
+-   `clickhouse-common` 包包含一个ClickHouse可执行文件。
+-   `clickhouse-server` 包包含要作为服务器运行ClickHouse的配置文件。
 
-Server config files are located in `/etc/clickhouse-server/`. Before going further, please notice the `<path>` element in `config.xml`. Path determines the location for data storage, so it should be located on volume with large disk capacity; the default value is `/var/lib/clickhouse/`. If you want to adjust the configuration, it’s not handy to directly edit `config.xml` file, considering it might get rewritten on future package updates. The recommended way to override the config elements is to create [files in config.d directory](../operations/configuration_files.md) which serve as “patches” to config.xml.
+服务器配置文件位于 `/etc/clickhouse-server/`. 在进一步讨论之前，请注意 `<path>` 元素in `config.xml`. Path确定数据存储的位置，因此应该位于磁盘容量较大的卷上；默认值为 `/var/lib/clickhouse/`. 如果你想调整配置，直接编辑并不方便 `config.xml` 文件，考虑到它可能会在未来的软件包更新中被重写。 复盖配置元素的推荐方法是创建 [在配置文件。d目录](../operations/configuration_files.md) 它作为 “patches” 要配置。xml
 
-As you might have noticed, `clickhouse-server` is not launched automatically after package installation. It won’t be automatically restarted after updates, either. The way you start the server depends on your init system, usually, it is:
+你可能已经注意到了, `clickhouse-server` 安装包后不会自动启动。 它也不会在更新后自动重新启动。 您启动服务器的方式取决于您的init系统，通常情况下，它是:
 
 ``` bash
 sudo service clickhouse-server start
 ```
 
-or
+或
 
 ``` bash
 sudo /etc/init.d/clickhouse-server start
 ```
 
-The default location for server logs is `/var/log/clickhouse-server/`. The server is ready to handle client connections once it logs the `Ready for connections` message.
+服务器日志的默认位置是 `/var/log/clickhouse-server/`. 服务器已准备好处理客户端连接一旦它记录 `Ready for connections` 消息
 
-Once the `clickhouse-server` is up and running, we can use `clickhouse-client` to connect to the server and run some test queries like `SELECT "Hello, world!";`.
+一旦 `clickhouse-server` 正在运行我们可以利用 `clickhouse-client` 连接到服务器并运行一些测试查询，如 `SELECT "Hello, world!";`.
 
 <details markdown="1">
 
-<summary>Quick tips for clickhouse-client</summary>
-Interactive mode:
+<summary>Clickhouse-客户端的快速提示</summary>
+交互模式:
 
 ``` bash
 clickhouse-client
 clickhouse-client --host=... --port=... --user=... --password=...
 ```
 
-Enable multiline queries:
+启用多行查询:
 
 ``` bash
 clickhouse-client -m
 clickhouse-client --multiline
 ```
 
-Run queries in batch-mode:
+以批处理模式运行查询:
 
 ``` bash
 clickhouse-client --query='SELECT 1'
@@ -73,7 +76,7 @@ echo 'SELECT 1' | clickhouse-client
 clickhouse-client <<< 'SELECT 1'
 ```
 
-Insert data from a file in specified format:
+从指定格式的文件中插入数据:
 
 ``` bash
 clickhouse-client --query='INSERT INTO table VALUES' < data.txt
@@ -82,39 +85,39 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 </details>
 
-## Import Sample Dataset {#import-sample-dataset}
+## 导入示例数据集 {#import-sample-dataset}
 
-Now it’s time to fill our ClickHouse server with some sample data. In this tutorial, we’ll use the anonymized data of Yandex.Metrica, the first service that runs ClickHouse in production way before it became open-source (more on that in [history section](../introduction/history.md)). There are [multiple ways to import Yandex.Metrica dataset](example_datasets/metrica.md), and for the sake of the tutorial, we’ll go with the most realistic one.
+现在是时候用一些示例数据填充我们的ClickHouse服务器。 在本教程中，我们将使用Yandex的匿名数据。Metrica，在成为开源之前以生产方式运行ClickHouse的第一个服务（更多关于这一点 [历史科](../introduction/history.md)). 有 [多种导入Yandex的方式。梅里卡数据集](example_datasets/metrica.md)，为了本教程，我们将使用最现实的一个。
 
-### Download and Extract Table Data {#download-and-extract-table-data}
+### 下载并提取表数据 {#download-and-extract-table-data}
 
 ``` bash
 curl https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_v1.tsv.xz | unxz --threads=`nproc` > hits_v1.tsv
 curl https://clickhouse-datasets.s3.yandex.net/visits/tsv/visits_v1.tsv.xz | unxz --threads=`nproc` > visits_v1.tsv
 ```
 
-The extracted files are about 10GB in size.
+提取的文件大小约为10GB。
 
-### Create Tables {#create-tables}
+### 创建表 {#create-tables}
 
-As in most databases management systems, ClickHouse logically groups tables into “databases”. There’s a `default` database, but we’ll create a new one named `tutorial`:
+与大多数数据库管理系统一样，ClickHouse在逻辑上将表分组为 “databases”. 有一个 `default` 数据库，但我们将创建一个名为新的 `tutorial`:
 
 ``` bash
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 ```
 
-Syntax for creating tables is way more complicated compared to databases (see [reference](../query_language/create.md). In general `CREATE TABLE` statement has to specify three key things:
+与数据库相比，创建表的语法要复杂得多（请参阅 [参考资料](../sql_reference/statements/create.md). 一般 `CREATE TABLE` 声明必须指定三个关键的事情:
 
-1.  Name of table to create.
-2.  Table schema, i.e. list of columns and their [data types](../data_types/index.md).
-3.  [Table engine](../operations/table_engines/index.md) and it’s settings, which determines all the details on how queries to this table will be physically executed.
+1.  要创建的表的名称。
+2.  Table schema, i.e. list of columns and their [数据类型](../sql_reference/data_types/index.md).
+3.  [表引擎](../engines/table_engines/index.md) 它是settings，它决定了如何物理执行对此表的查询的所有细节。
 
-Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
+YandexMetrica是一个网络分析服务，样本数据集不包括其全部功能，因此只有两个表可以创建:
 
--   `hits` is a table with each action done by all users on all websites covered by the service.
--   `visits` is a table that contains pre-built sessions instead of individual actions.
+-   `hits` 是一个表格，其中包含所有用户在服务所涵盖的所有网站上完成的每个操作。
+-   `visits` 是一个包含预先构建的会话而不是单个操作的表。
 
-Let’s see and execute the real create table queries for these tables:
+让我们看看并执行这些表的实际创建表查询:
 
 ``` sql
 CREATE TABLE tutorial.hits_v1
@@ -457,22 +460,22 @@ SAMPLE BY intHash32(UserID)
 SETTINGS index_granularity = 8192
 ```
 
-You can execute those queries using the interactive mode of `clickhouse-client` (just launch it in a terminal without specifying a query in advance) or try some [alternative interface](../interfaces/index.md) if you want.
+您可以使用以下交互模式执行这些查询 `clickhouse-client` （只需在终端中启动它，而不需要提前指定查询）或尝试一些 [替代接口](../interfaces/index.md) 如果你愿意的话
 
-As we can see, `hits_v1` uses the [basic MergeTree engine](../operations/table_engines/mergetree.md), while the `visits_v1` uses the [Collapsing](../operations/table_engines/collapsingmergetree.md) variant.
+正如我们所看到的, `hits_v1` 使用 [基本MergeTree引擎](../engines/table_engines/mergetree_family/mergetree.md)，而 `visits_v1` 使用 [崩溃](../engines/table_engines/mergetree_family/collapsingmergetree.md) 变体。
 
-### Import Data {#import-data}
+### 导入数据 {#import-data}
 
-Data import to ClickHouse is done via [INSERT INTO](../query_language/insert_into.md) query like in many other SQL databases. However, data is usually provided in one of the [supported serialization formats](../interfaces/formats.md) instead of `VALUES` clause (which is also supported).
+数据导入到ClickHouse是通过以下方式完成的 [INSERT INTO](../sql_reference/statements/insert_into.md) 查询像许多其他SQL数据库。 然而，数据通常是在一个提供 [支持的序列化格式](../interfaces/formats.md) 而不是 `VALUES` 子句（也支持）。
 
-The files we downloaded earlier are in tab-separated format, so here’s how to import them via console client:
+我们之前下载的文件是以制表符分隔的格式，所以这里是如何通过控制台客户端导入它们:
 
 ``` bash
 clickhouse-client --query "INSERT INTO tutorial.hits_v1 FORMAT TSV" --max_insert_block_size=100000 < hits_v1.tsv
 clickhouse-client --query "INSERT INTO tutorial.visits_v1 FORMAT TSV" --max_insert_block_size=100000 < visits_v1.tsv
 ```
 
-ClickHouse has a lot of [settings to tune](../operations/settings/index.md) and one way to specify them in console client is via arguments, as we can see with `--max_insert_block_size`. The easiest way to figure out what settings are available, what do they mean and what the defaults are is to query the `system.settings` table:
+ClickHouse有很多 [要调整的设置](../operations/settings/index.md) 在控制台客户端中指定它们的一种方法是通过参数，我们可以看到 `--max_insert_block_size`. 找出可用的设置，它们意味着什么以及默认值的最简单方法是查询 `system.settings` 表:
 
 ``` sql
 SELECT name, value, changed, description
@@ -483,23 +486,23 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-Optionally you can [OPTIMIZE](../query_language/misc/#misc_operations-optimize) the tables after import. Tables that are configured with an engine from MergeTree-family always do merges of data parts in the background to optimize data storage (or at least check if it makes sense). These queries force the table engine to do storage optimization right now instead of some time later:
+您也可以 [OPTIMIZE](../sql_reference/statements/misc.md#misc_operations-optimize) 导入后的表。 使用MergeTree-family引擎配置的表总是在后台合并数据部分以优化数据存储（或至少检查是否有意义）。 这些查询强制表引擎立即进行存储优化，而不是稍后进行一段时间:
 
 ``` bash
 clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"
 clickhouse-client --query "OPTIMIZE TABLE tutorial.visits_v1 FINAL"
 ```
 
-These queries start an I/O and CPU intensive operation, so if the table consistently receives new data, it’s better to leave it alone and let merges run in the background.
+这些查询开始一个I/O和CPU密集型操作，所以如果表一直接收到新数据，最好不要管它，让合并在后台运行。
 
-Now we can check if the table import was successful:
+现在我们可以检查表导入是否成功:
 
 ``` bash
 clickhouse-client --query "SELECT COUNT(*) FROM tutorial.hits_v1"
 clickhouse-client --query "SELECT COUNT(*) FROM tutorial.visits_v1"
 ```
 
-## Example Queries {#example-queries}
+## 查询示例 {#example-queries}
 
 ``` sql
 SELECT
@@ -521,18 +524,18 @@ FROM tutorial.visits_v1
 WHERE (CounterID = 912887) AND (toYYYYMM(StartDate) = 201403) AND (domain(StartURL) = 'yandex.ru')
 ```
 
-## Cluster Deployment {#cluster-deployment}
+## 集群部署 {#cluster-deployment}
 
-ClickHouse cluster is a homogenous cluster. Steps to set up:
+ClickHouse集群是一个同质集群。 设置步骤:
 
-1.  Install ClickHouse server on all machines of the cluster
-2.  Set up cluster configs in configuration files
-3.  Create local tables on each instance
-4.  Create a [Distributed table](../operations/table_engines/distributed.md)
+1.  在群集的所有计算机上安装ClickHouse服务器
+2.  在配置文件中设置群集配置
+3.  在每个实例上创建本地表
+4.  创建一个 [分布式表](../engines/table_engines/special/distributed.md)
 
-[Distributed table](../operations/table_engines/distributed.md) is actually a kind of “view” to local tables of ClickHouse cluster. SELECT query from a distributed table executes using resources of all cluster’s shards. You may specify configs for multiple clusters and create multiple distributed tables providing views to different clusters.
+[分布式表](../engines/table_engines/special/distributed.md) 实际上是一种 “view” 到ClickHouse集群的本地表。 从分布式表中选择查询使用集群所有分片的资源执行。 您可以为多个集群指定configs，并创建多个分布式表，为不同的集群提供视图。
 
-Example config for a cluster with three shards, one replica each:
+具有三个分片的集群的示例配置，每个分片一个副本:
 
 ``` xml
 <remote_servers>
@@ -559,37 +562,37 @@ Example config for a cluster with three shards, one replica each:
 </remote_servers>
 ```
 
-For further demonstration, let’s create a new local table with the same `CREATE TABLE` query that we used for `hits_v1`, but different table name:
+为了进一步演示，让我们创建一个新的本地表 `CREATE TABLE` 我们用于查询 `hits_v1`，但不同的表名:
 
 ``` sql
 CREATE TABLE tutorial.hits_local (...) ENGINE = MergeTree() ...
 ```
 
-Creating a distributed table providing a view into local tables of the cluster:
+创建提供集群本地表视图的分布式表:
 
 ``` sql
 CREATE TABLE tutorial.hits_all AS tutorial.hits_local
 ENGINE = Distributed(perftest_3shards_1replicas, tutorial, hits_local, rand());
 ```
 
-A common practice is to create similar Distributed tables on all machines of the cluster. It allows running distributed queries on any machine of the cluster. Also there’s an alternative option to create temporary distributed table for a given SELECT query using [remote](../query_language/table_functions/remote.md) table function.
+常见的做法是在集群的所有计算机上创建类似的分布式表。 它允许在群集的任何计算机上运行分布式查询。 还有一个替代选项可以使用以下方法为给定的SELECT查询创建临时分布式表 [远程](../sql_reference/table_functions/remote.md) 表功能。
 
-Let’s run [INSERT SELECT](../query_language/insert_into.md) into the Distributed table to spread the table to multiple servers.
+我们走吧 [INSERT SELECT](../sql_reference/statements/insert_into.md) 将该表传播到多个服务器。
 
 ``` sql
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
-!!! warning "Notice"
-    This approach is not suitable for the sharding of large tables. There’s a separate tool [clickhouse-copier](../operations/utils/clickhouse-copier.md) that can re-shard arbitrary large tables.
+!!! warning "碌莽禄Notice:"
+    这种方法不适合大型表的分片。 有一个单独的工具 [ﾂ环板-ｮﾂ嘉ｯﾂ偲](../operations/utilities/clickhouse-copier.md) 这可以重新分片任意大表。
 
-As you could expect, computationally heavy queries run N times faster if they utilize 3 servers instead of one.
+正如您所期望的那样，如果计算量大的查询使用3台服务器而不是一个，则运行速度快N倍。
 
-In this case, we have used a cluster with 3 shards, and each contains a single replica.
+在这种情况下，我们使用了具有3个分片的集群，每个分片都包含一个副本。
 
-To provide resilience in a production environment, we recommend that each shard should contain 2-3 replicas spread between multiple availability zones or datacenters (or at least racks). Note that ClickHouse supports an unlimited number of replicas.
+为了在生产环境中提供弹性，我们建议每个分片应包含分布在多个可用区或数据中心（或至少机架）之间的2-3个副本。 请注意，ClickHouse支持无限数量的副本。
 
-Example config for a cluster of one shard containing three replicas:
+包含三个副本的一个分片集群的示例配置:
 
 ``` xml
 <remote_servers>
@@ -613,12 +616,12 @@ Example config for a cluster of one shard containing three replicas:
 </remote_servers>
 ```
 
-To enable native replication [ZooKeeper](http://zookeeper.apache.org/) is required. ClickHouse takes care of data consistency on all replicas and runs restore procedure after failure automatically. It’s recommended to deploy the ZooKeeper cluster on separate servers (where no other processes including ClickHouse are running).
+启用本机复制 [动物园管理员](http://zookeeper.apache.org/) 是必需的。 ClickHouse负责所有副本的数据一致性，并在失败后自动运行恢复过程。 建议将ZooKeeper集群部署在单独的服务器上（其中没有其他进程，包括ClickHouse正在运行）。
 
-!!! note "Note"
-    ZooKeeper is not a strict requirement: in some simple cases, you can duplicate the data by writing it into all the replicas from your application code. This approach is **not** recommended, in this case, ClickHouse won’t be able to guarantee data consistency on all replicas. Thus it becomes the responsibility of your application.
+!!! note "注"
+    ZooKeeper不是一个严格的requirement：在某些简单的情况下，您可以通过将数据写入应用程序代码中的所有副本来复制数据。 这种方法是 **不** 建议，在这种情况下，ClickHouse将无法保证所有副本上的数据一致性。 因此，它成为您的应用程序的责任。
 
-ZooKeeper locations are specified in the configuration file:
+ZooKeeper位置在配置文件中指定:
 
 ``` xml
 <zookeeper>
@@ -637,7 +640,7 @@ ZooKeeper locations are specified in the configuration file:
 </zookeeper>
 ```
 
-Also, we need to set macros for identifying each shard and replica which are used on table creation:
+此外，我们需要设置宏来识别每个用于创建表的分片和副本:
 
 ``` xml
 <macros>
@@ -646,7 +649,7 @@ Also, we need to set macros for identifying each shard and replica which are use
 </macros>
 ```
 
-If there are no replicas at the moment on replicated table creation, a new first replica is instantiated. If there are already live replicas, the new replica clones data from existing ones. You have an option to create all replicated tables first, and then insert data to it. Another option is to create some replicas and add the others after or during data insertion.
+如果在创建复制表时没有副本，则会实例化新的第一个副本。 如果已有实时副本，则新副本将克隆现有副本中的数据。 您可以选择首先创建所有复制的表，然后向其中插入数据。 另一种选择是创建一些副本，并在数据插入之后或期间添加其他副本。
 
 ``` sql
 CREATE TABLE tutorial.hits_replica (...)
@@ -657,12 +660,12 @@ ENGINE = ReplcatedMergeTree(
 ...
 ```
 
-Here we use [ReplicatedMergeTree](../operations/table_engines/replication.md) table engine. In parameters we specify ZooKeeper path containing shard and replica identifiers.
+在这里，我们使用 [ReplicatedMergeTree](../engines/table_engines/mergetree_family/replication.md) 表引擎。 在参数中，我们指定包含分片和副本标识符的ZooKeeper路径。
 
 ``` sql
 INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 ```
 
-Replication operates in multi-master mode. Data can be loaded into any replica, and the system then syncs it with other instances automatically. Replication is asynchronous so at a given moment, not all replicas may contain recently inserted data. At least one replica should be up to allow data ingestion. Others will sync up data and repair consistency once they will become active again. Note that this approach allows for the low possibility of a loss of recently inserted data.
+复制在多主机模式下运行。 数据可以加载到任何副本中，然后系统会自动将其与其他实例同步。 复制是异步的，因此在给定时刻，并非所有副本都可能包含最近插入的数据。 至少应有一个副本允许数据摄取。 其他人将同步数据和修复一致性，一旦他们将再次变得活跃。 请注意，这种方法允许最近插入的数据丢失的可能性很低。
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/tutorial/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/getting_started/tutorial/) <!--hide-->

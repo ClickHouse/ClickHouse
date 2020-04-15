@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
 #include <Access/RowPolicy.h>
 #include <utility>
 #include <vector>
@@ -25,7 +26,7 @@ class ASTExtendedRoleSet;
   *      [WITH CHECK {condition | NONE}] [,...]
   *      [TO {role [,...] | ALL | ALL EXCEPT role [,...]}]
   */
-class ASTCreateRowPolicyQuery : public IAST
+class ASTCreateRowPolicyQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
     bool alter = false;
@@ -47,5 +48,7 @@ public:
     String getID(char) const override;
     ASTPtr clone() const override;
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+    void replaceCurrentUserTagWithName(const String & current_user_name);
+    ASTPtr getRewrittenASTWithoutOnCluster(const std::string &) const override { return removeOnCluster<ASTCreateRowPolicyQuery>(clone()); }
 };
 }
