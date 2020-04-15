@@ -212,7 +212,7 @@ private:
     String generateFilterActions(ExpressionActionsPtr & actions, const ASTPtr & row_policy_filter, const Names & prerequisite_columns = {}) const;
 
     /// Add ConvertingBlockInputStream to specified header.
-    void unifyStreams(Pipeline & pipeline, Block header);
+    static void unifyStreams(Pipeline & pipeline, Block header);
 
     enum class Modificator
     {
