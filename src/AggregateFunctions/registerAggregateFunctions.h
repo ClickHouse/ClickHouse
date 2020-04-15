@@ -33,6 +33,7 @@ void registerAggregateFunctionMLMethod(AggregateFunctionFactory &);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory &);
 void registerAggregateFunctionSimpleLinearRegression(AggregateFunctionFactory &);
 void registerAggregateFunctionMoving(AggregateFunctionFactory &);
+void registerAggregateFunctionIncrementalClustering(AggregateFunctionFactory &);
 void registerAggregateFunctionCategoricalIV(AggregateFunctionFactory &);
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory &);
 

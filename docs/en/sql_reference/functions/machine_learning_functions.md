@@ -16,3 +16,7 @@ The [stochasticLinearRegression](../../sql_reference/aggregate_functions/referen
 ### Stochastic Logistic Regression {#stochastic-logistic-regression}
 
 The [stochasticLogisticRegression](../../sql_reference/aggregate_functions/reference.md#agg_functions-stochasticlogisticregression) aggregate function implements stochastic gradient descent method for binary classification problem. Uses `evalMLMethod` to predict on new data.
+
+### Incremental Clustering
+
+The [incrementalClustering](../agg_functions/reference.md#agg_functions-incrementalclustering) aggregate functions implement online clusterization of data. 

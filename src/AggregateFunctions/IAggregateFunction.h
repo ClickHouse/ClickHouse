@@ -114,8 +114,7 @@ public:
         Block & /*block*/,
         size_t /*offset*/,
         size_t /*limit*/,
-        const ColumnNumbers & /*arguments*/,
-        const Context & /*context*/) const
+        const ColumnNumbers & /*arguments*/) const
     {
         throw Exception("Method predictValues is not supported for " + getName(), ErrorCodes::NOT_IMPLEMENTED);
     }

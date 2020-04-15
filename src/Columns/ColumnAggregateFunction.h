@@ -122,7 +122,7 @@ public:
     const char * getFamilyName() const override { return "AggregateFunction"; }
 
     bool tryFinalizeAggregateFunction(MutableColumnPtr* res_) const;
-    MutableColumnPtr predictValues(Block & block, const ColumnNumbers & arguments, const Context & context) const;
+    MutableColumnPtr predictValues(Block & block, const ColumnNumbers & arguments) const;
 
     size_t size() const override
     {

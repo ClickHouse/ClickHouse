@@ -31,9 +31,9 @@ class FunctionEvalMLMethod : public IFunction
 {
 public:
     static constexpr auto name = "evalMLMethod";
-    static FunctionPtr create(const Context & context)
+    static FunctionPtr create(const Context & /* context */)
     {
-        return std::make_shared<FunctionEvalMLMethod>(context);
+        return std::make_shared<FunctionEvalMLMethod>();
     }
     explicit FunctionEvalMLMethod(const Context & context_) : context(context_)
     {}
@@ -81,10 +81,8 @@ public:
             throw Exception("Illegal column " + block.getByPosition(arguments[0]).column->getName()
                             + " of first argument of function " + getName(), ErrorCodes::ILLEGAL_COLUMN);
 
-        block.getByPosition(result).column = agg_function->predictValues(block, arguments, context);
+        block.getByPosition(result).column = agg_function->predictValues(block, arguments);
     }
-
-    const Context & context;
 };
 
 void registerFunctionEvalMLMethod(FunctionFactory & factory)

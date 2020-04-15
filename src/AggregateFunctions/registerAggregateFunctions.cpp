@@ -41,6 +41,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionEntropy(factory);
         registerAggregateFunctionSimpleLinearRegression(factory);
         registerAggregateFunctionMoving(factory);
+        registerAggregateFunctionIncrementalClustering(factory);
         registerAggregateFunctionCategoricalIV(factory);
         registerAggregateFunctionAggThrow(factory);
     }
