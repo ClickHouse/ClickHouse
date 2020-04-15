@@ -1197,7 +1197,9 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             query += " LIMIT " + limit;
 
         ParserQuery p_query(query.data() + query.size());
-        return parseQuery(p_query, query, 0);
+
+        const auto & settings = context.getSettingsRef();
+        return parseQuery(p_query, query, settings.max_query_size, settings.max_parser_depth);
     };
 
     /// Load balancing
@@ -1409,7 +1411,8 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
             query += "INSERT INTO " + getQuotedTable(split_table_for_current_piece) + " VALUES ";
 
             ParserQuery p_query(query.data() + query.size());
-            query_insert_ast = parseQuery(p_query, query, 0);
+            const auto & settings = context.getSettingsRef();
+            query_insert_ast = parseQuery(p_query, query, settings.max_query_size, settings.max_parser_depth);
 
             LOG_DEBUG(log, "Executing INSERT query: " << query);
         }
@@ -1634,7 +1637,8 @@ ASTPtr ClusterCopier::getCreateTableForPullShard(const ConnectionTimeouts & time
             &task_cluster->settings_pull);
 
     ParserCreateQuery parser_create_query;
-    return parseQuery(parser_create_query, create_query_pull_str, 0);
+    const auto & settings = context.getSettingsRef();
+    return parseQuery(parser_create_query, create_query_pull_str, settings.max_query_size, settings.max_parser_depth);
 }
 
 /// If it is implicitly asked to create split Distributed table for certain piece on current shard, we will do it.
@@ -1712,7 +1716,8 @@ std::set<String> ClusterCopier::getShardPartitions(const ConnectionTimeouts & ti
     }
 
     ParserQuery parser_query(query.data() + query.size());
-    ASTPtr query_ast = parseQuery(parser_query, query, 0);
+    const auto & settings = context.getSettingsRef();
+    ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
 
     LOG_DEBUG(log, "Computing destination partition set, executing query: " << query);
 
@@ -1759,7 +1764,8 @@ bool ClusterCopier::checkShardHasPartition(const ConnectionTimeouts & timeouts,
                                      << partition_quoted_name << " existence, executing query: " << query);
 
     ParserQuery parser_query(query.data() + query.size());
-    ASTPtr query_ast = parseQuery(parser_query, query, 0);
+const auto & settings = context.getSettingsRef();
+    ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
 
     Context local_context = context;
     local_context.setSettings(task_cluster->settings_pull);
@@ -1793,7 +1799,8 @@ bool ClusterCopier::checkPresentPartitionPiecesOnCurrentShard(const ConnectionTi
                    << "existence, executing query: " << query);
 
     ParserQuery parser_query(query.data() + query.size());
-    ASTPtr query_ast = parseQuery(parser_query, query, 0);
+    const auto & settings = context.getSettingsRef();
+    ASTPtr query_ast = parseQuery(parser_query, query, settings.max_query_size, settings.max_parser_depth);
 
     Context local_context = context;
     local_context.setSettings(task_cluster->settings_pull);
@@ -1826,7 +1833,8 @@ UInt64 ClusterCopier::executeQueryOnCluster(
     if (query_ast_ == nullptr)
     {
         ParserQuery p_query(query.data() + query.size());
-        query_ast = parseQuery(p_query, query, 0);
+        const auto & settings = context.getSettingsRef();
+        query_ast = parseQuery(p_query, query, settings.max_query_size, settings.max_parser_depth);
     }
     else
         query_ast = query_ast_;
