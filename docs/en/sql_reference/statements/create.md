@@ -447,13 +447,13 @@ Restrictive policies apply to rows that passed the permissive filters. If you se
 
 #### Section TO {#create-row-policy-to}
 
-In the section `TO` you can give a mixed list of roles and users, for example, `CREATE ROW POLICY ... TO accountant, vasya@localhost`.
+In the section `TO` you can give a mixed list of roles and users, for example, `CREATE ROW POLICY ... TO accountant, john@localhost`.
 
-Keyword `ALL` means all the ClickHouse users including current user. Keywords `ALL EXCEPT` allow to to exclude some users from the all users list, for example `CREATE ROW POLICY ... TO ALL EXCEPT accountant, vasya@localhost`
+Keyword `ALL` means all the ClickHouse users including current user. Keywords `ALL EXCEPT` allow to to exclude some users from the all users list, for example `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
 ### Examples
 
-- `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant, vasya@localhost`
+- `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO accountant, john@localhost`
 - `CREATE ROW POLICY filter ON mydb.mytable FOR SELECT USING a<1000 TO ALL EXCEPT mira`
 
 

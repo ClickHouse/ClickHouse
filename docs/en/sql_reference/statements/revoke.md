@@ -32,14 +32,14 @@ You can revoke a part of a privilege. For example, if a user has the `SELECT *.*
 
 ## Examples {#revoke-example}
 
-Grant a privilege to `john` to select data from all the tables and databases. Then revoke the privilege to select data from the `accounts` database:
+Grant the `john` user account with a privilege to select from all the databases excepting the `accounts` one:
 
 ``` sql
 GRANT SELECT ON *.* TO john;
 REVOKE SELECT ON accounts.* FROM john;
 ```
 
-Grant `mira` with a privilege to select from the `accounts.staff` table. Then revoke the privilege to select data from the `wage` column.
+Grant the `mira` user account with a privilege to select from all the columns of the `accounts.staff` table excepting the `wage` one.
 
 ``` sql
 GRANT SELECT ON accounts.staff TO mira;

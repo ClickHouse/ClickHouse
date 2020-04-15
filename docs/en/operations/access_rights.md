@@ -22,8 +22,7 @@ You can configure access entities using:
 
 - Server [configuration files](configuration_files.md) `users.xml` and `config.xml`.
 
-!!! info "Note"
-    Don't combine both methods of access control management, or it may cause exceptions.
+We recommend using SQL-driven workflow. Both of the configuration methods work simultaneously, so if you use the server configuration files for managing accounts and access rights, you can softly move to SQL-driven workflow.
 
 
 ## Usage {#access-control-usage}

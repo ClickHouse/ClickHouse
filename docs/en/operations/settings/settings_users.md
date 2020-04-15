@@ -7,6 +7,10 @@ toc_title: User Settings
 
 The `users` section of the `user.xml` configuration file contains user settings.
 
+!!! note "Information"
+    ClickHouse also supports [SQL-driven workflow](../access_rights.md#access-control) for managing users. We recommend using it.
+
+
 Structure of the `users` section:
 
 ``` xml
@@ -72,7 +76,7 @@ Password can be specified in plaintext or in SHA256 (hex format).
 
 ### access_management {#access_management-user-setting}
 
-This setting enables of disables using of SQL-driven [access control and account management](../access_rights.md) for the user.
+This setting enables of disables using of SQL-driven [access control and account management](../access_rights.md#access-control) for the user.
 
 Possible values:
 
