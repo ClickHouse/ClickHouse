@@ -190,7 +190,6 @@ Block KafkaBlockInputStream::readImpl()
         result_block.insert(column);
 
     return ConvertingBlockInputStream(
-               context,
                std::make_shared<OneBlockInputStream>(result_block),
                getHeader(),
                ConvertingBlockInputStream::MatchColumnsMode::Name)

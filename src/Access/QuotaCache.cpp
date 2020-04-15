@@ -167,7 +167,12 @@ QuotaCache::QuotaCache(const AccessControlManager & access_control_manager_)
 QuotaCache::~QuotaCache() = default;
 
 
-std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & user_id, const String & user_name, const std::vector<UUID> & enabled_roles, const Poco::Net::IPAddress & client_address, const String & client_key)
+std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
+    const UUID & user_id,
+    const String & user_name,
+    const std::vector<UUID> & enabled_roles,
+    const Poco::Net::IPAddress & client_address,
+    const String & client_key)
 {
     std::lock_guard lock{mutex};
     ensureAllQuotasRead();

@@ -204,7 +204,6 @@ The following operations with [partitions](../../engines/table_engines/mergetree
 -   [DETACH PARTITION](#alter_detach-partition) – Moves a partition to the `detached` directory and forget it.
 -   [DROP PARTITION](#alter_drop-partition) – Deletes a partition.
 -   [ATTACH PART\|PARTITION](#alter_attach-partition) – Adds a part or partition from the `detached` directory to the table.
--   [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another.
 -   [ATTACH PARTITION FROM](#alter_attach-partition-from) – Copies the data partition from one table to another and adds.
 -   [REPLACE PARTITION](#alter_replace-partition) - Copies the data partition from one table to another and replaces.
 -   [MOVE PARTITION TO TABLE](#alter_move_to_table-partition) (\#alter\_move\_to\_table-partition) - Move the data partition from one table to another.

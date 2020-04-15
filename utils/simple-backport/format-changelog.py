@@ -30,6 +30,11 @@ def parse_one_pull_request(item):
                 i += 1
                 if i >= len(lines):
                     break
+                # Can have one empty line between header and the category itself. Filter it out.
+                if not lines[i]:
+                    i += 1
+                    if i >= len(lines):
+                        break
                 category = re.sub(r'^[-*\s]*', '', lines[i])
                 i += 1
             elif re.match(r'(?i)^\**\s*(Short description|Change\s*log entry)', lines[i]):
@@ -91,7 +96,7 @@ def print_category(category):
         user_name = user["name"] if user["name"] else user["login"]
 
         # Substitute issue links
-        pr["entry"] = re.sub(r'#([0-9]{4,})', r'[#\1](https://github.com/ClickHouse/ClickHouse/issues/\1)', pr["entry"])
+        pr["entry"] = re.sub(r'([^[])#([0-9]{4,})', r'\1[#\2](https://github.com/ClickHouse/ClickHouse/issues/\2)', pr["entry"])
 
         print(f'* {pr["entry"]} [#{pr["number"]}]({pr["html_url"]}) ([{user_name}]({user["html_url"]})).')
 

@@ -68,7 +68,7 @@ ENGINE = Distributed(cluster, default, merge_for_alter, i)
 
 
     test_cluster.ddl_check_query(instance, "ALTER TABLE merge_for_alter ON CLUSTER cluster MODIFY COLUMN i Int64")
-    test_cluster.ddl_check_query(instance, "ALTER TABLE merge_for_alter ON CLUSTER cluster ADD COLUMN String s DEFAULT toString(i)")
+    test_cluster.ddl_check_query(instance, "ALTER TABLE merge_for_alter ON CLUSTER cluster ADD COLUMN s String DEFAULT toString(i)")
 
     assert TSV(instance.query("SELECT i, s FROM all_merge_64 ORDER BY i")) == TSV(''.join(['{}\t{}\n'.format(x,x) for x in xrange(4)]))
 
