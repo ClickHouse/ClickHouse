@@ -67,9 +67,6 @@
 /// Mininum revision supporting SettingsBinaryFormat::STRINGS.
 #define DBMS_MIN_REVISION_WITH_SETTINGS_SERIALIZED_AS_STRINGS 54429
 
-/// Minimum revision when client sends quota key.
-#define DBMS_MIN_REVISION_WITH_CLIENT_PROVIDED_QUOTA_KEY 54435
-
 /// Version of ClickHouse TCP protocol. Set to git tag with latest protocol change.
 #define DBMS_TCP_PROTOCOL_VERSION 54226
 

@@ -397,6 +397,10 @@ private:
             ignore_error = config().getBool("ignore-error", false);
         }
 
+        ClientInfo & client_info = context.getClientInfo();
+        client_info.setInitialQuery();
+        client_info.quota_key = config().getString("quota_key", "");
+
         connect();
 
         /// Initialize DateLUT here to avoid counting time spent here as query execution time.
@@ -588,9 +592,6 @@ private:
             "client",
             connection_parameters.compression,
             connection_parameters.security);
-
-        if (!connection_parameters.quota_key.empty())
-            connection->setQuotaKey(connection_parameters.quota_key);
 
         String server_name;
         UInt64 server_version_major = 0;
@@ -906,7 +907,7 @@ private:
                     query_id,
                     QueryProcessingStage::Complete,
                     &context.getSettingsRef(),
-                    nullptr,
+                    &context.getClientInfo(),
                     true);
 
                 sendExternalTables();
@@ -938,7 +939,15 @@ private:
         if (!parsed_insert_query.data && (is_interactive || (!stdin_is_a_tty && std_in.eof())))
             throw Exception("No data to insert", ErrorCodes::NO_DATA_TO_INSERT);
 
-        connection->sendQuery(connection_parameters.timeouts, query_without_data, query_id, QueryProcessingStage::Complete, &context.getSettingsRef(), nullptr, true);
+        connection->sendQuery(
+            connection_parameters.timeouts,
+            query_without_data,
+            query_id,
+            QueryProcessingStage::Complete,
+            &context.getSettingsRef(),
+            &context.getClientInfo(),
+            true);
+
         sendExternalTables();
 
         /// Receive description of table structure.

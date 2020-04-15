@@ -955,7 +955,7 @@ public:
 
         if (auth_response->empty())
         {
-            context.setUser(user_name, "", address, "");
+            context.setUser(user_name, "", address);
             return;
         }
 
@@ -978,7 +978,7 @@ public:
         {
             password_sha1[i] = digest[i] ^ static_cast<unsigned char>((*auth_response)[i]);
         }
-        context.setUser(user_name, password_sha1, address, "");
+        context.setUser(user_name, password_sha1, address);
     }
 private:
     String scramble;
@@ -1120,7 +1120,7 @@ public:
             password.pop_back();
         }
 
-        context.setUser(user_name, password, address, "");
+        context.setUser(user_name, password, address);
     }
 
 private:

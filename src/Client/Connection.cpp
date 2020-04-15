@@ -177,9 +177,6 @@ void Connection::sendHello()
     writeStringBinary(user, *out);
     writeStringBinary(password, *out);
 
-    if (client_revision >= DBMS_MIN_REVISION_WITH_CLIENT_PROVIDED_QUOTA_KEY)
-        writeStringBinary(quota_key, *out);
-
     out->next();
 }
 
@@ -404,9 +401,7 @@ void Connection::sendQuery(
         if (!client_info || client_info->empty())
         {
             /// No client info passed - means this query initiated by me.
-            client_info_to_send.query_kind = ClientInfo::QueryKind::INITIAL_QUERY;
-            client_info_to_send.fillOSUserHostNameAndVersionInfo();
-            client_info_to_send.client_name = (DBMS_NAME " ") + client_name;
+            client_info_to_send.setInitialQuery();
         }
         else
         {

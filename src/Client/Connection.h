@@ -104,11 +104,6 @@ public:
 
     virtual ~Connection() {}
 
-    void setQuotaKey(String quota_key_)
-    {
-        quota_key = std::move(quota_key_);
-    }
-
     /// Set throttler of network traffic. One throttler could be used for multiple connections to limit total traffic.
     void setThrottler(const ThrottlerPtr & throttler_)
     {
@@ -191,7 +186,6 @@ private:
     String default_database;
     String user;
     String password;
-    String quota_key;
 
     /// Address is resolved during the first connection (or the following reconnects)
     /// Use it only for logging purposes

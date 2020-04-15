@@ -409,6 +409,8 @@ static std::tuple<ASTPtr, BlockIO> executeQueryImpl(
 
             elem.client_info = context.getClientInfo();
 
+            std::cerr << "Quota key: " << elem.client_info.quota_key << "\n";
+
             bool log_queries = settings.log_queries && !internal;
 
             /// Log into system table start of query execution, if need.
