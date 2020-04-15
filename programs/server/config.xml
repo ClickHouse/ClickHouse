@@ -37,7 +37,7 @@
             <preferServerCiphers>true</preferServerCiphers>
         </server>
 
-        <client> <!-- Used for connecting to https dictionary source -->
+        <client> <!-- Used for connecting to https dictionary source and secured Zookeeper communication -->
             <loadDefaultCAFile>true</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>
             <disableProtocols>sslv2,sslv3</disableProtocols>

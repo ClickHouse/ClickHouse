@@ -1,5 +1,5 @@
 
-# 星型架构基准测试 {#star-schema-benchmark}
+# 星型基准测试 {#star-schema-benchmark}
 
 编译 dbgen:
 

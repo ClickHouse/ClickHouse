@@ -213,6 +213,49 @@ INSERT INTO datetime_t SELECT now()
 Ok.
 ```
 
+## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
+
+Включает или отключает попытку вычисления шаблона для выражений SQL в формате [Values](../../interfaces/formats.md#data-format-values). Это позволяет гораздо быстрее парсить и интерпретировать выражения в `Values`, если выражения в последовательных строках имеют одинаковую структуру. ClickHouse пытается вычислить шаблон выражения, распарсить следующие строки с помощью этого шаблона и вычислить выражение в пачке успешно проанализированных строк.
+
+Возможные значения:
+
+-   0 — Выключена.
+-   1 — Включена.
+
+Значение по умолчанию: 1.
+
+Для следующего запроса:
+
+``` sql
+INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
+```
+
+-   Если `input_format_values_interpret_expressions=1` и `format_values_deduce_templates_of_expressions=0`, выражения интерпретируются отдельно для каждой строки (это очень медленно для большого количества строк).
+-   Если `input_format_values_interpret_expressions=0` и `format_values_deduce_templates_of_expressions=1`, выражения в первой, второй и третьей строках парсятся с помощью шаблона `lower(String)` и интерпретируется вместе, выражение в четвертой строке парсится с другим шаблоном (`upper(String)`).
+-   Если `input_format_values_interpret_expressions=1` и `format_values_deduce_templates_of_expressions=1`, то же самое, что и в предыдущем случае, но также позволяет выполнять резервную интерпретацию выражений отдельно, если невозможно вычислить шаблон.
+
+## input\_format\_values\_accurate\_types\_of\_literals {#settings-input-format-values-accurate-types-of-literals}
+
+Эта настройка используется, только когда `input_format_values_deduce_templates_of_expressions = 1`. Выражения для некоторых столбцов могут иметь одинаковую структуру, но содержат числовые литералы разных типов, например:
+
+``` sql
+(..., abs(0), ...),             -- UInt64 literal
+(..., abs(3.141592654), ...),   -- Float64 literal
+(..., abs(-1), ...),            -- Int64 literal
+```
+
+Возможные значения:
+
+-   0 — Выключена.
+
+    В этом случае, ClickHouse может использовать более общий тип для некоторых литералов (например, `Float64` или `Int64` вместо `UInt64` для `42`), но это может привести к переполнению и проблемам с точностью.
+
+-   1 — Включена.
+
+    В этом случае, ClickHouse проверяет фактический тип литерала и использует шаблон выражения соответствующего типа. В некоторых случаях это может значительно замедлить оценку выажения в `Values`.
+
+Значение по умолчанию: 1.
+
 ## input\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
 При вставке данных запросом `INSERT`, заменяет пропущенные поля значениям по умолчанию для типа данных столбца.
