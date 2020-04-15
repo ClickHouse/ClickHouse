@@ -617,7 +617,7 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
             && existing_column->column
             && isColumnConst(*existing_column->column)
             && existing_column->column->size() == 1
-            && existing_column->column->get(0) == value)
+            && existing_column->column->operator[](0) == value)
         {
             const_cast<ASTLiteral &>(literal).unique_column_name = default_name;
         }
