@@ -18,12 +18,11 @@ namespace ErrorCodes
 
 static ColumnPtr castColumnWithDiagnostic(
     const ColumnWithTypeAndName & src_elem,
-    const ColumnWithTypeAndName & res_elem,
-    const Context & context)
+    const ColumnWithTypeAndName & res_elem)
 {
     try
     {
-        return castColumn(src_elem, res_elem.type, context);
+        return castColumn(src_elem, res_elem.type);
     }
     catch (Exception & e)
     {
@@ -36,10 +35,8 @@ static ColumnPtr castColumnWithDiagnostic(
 ConvertingTransform::ConvertingTransform(
     Block source_header_,
     Block result_header_,
-    MatchColumnsMode mode_,
-    const Context & context_)
+    MatchColumnsMode mode_)
     : ISimpleTransform(std::move(source_header_), std::move(result_header_), false)
-    , context(context_)
     , conversion(getOutputPort().getHeader().columns())
 {
     auto & source = getInputPort().getHeader();
@@ -91,7 +88,7 @@ ConvertingTransform::ConvertingTransform(
 
         /// Check conversion by dry run CAST function.
 
-        castColumnWithDiagnostic(src_elem, res_elem, context);
+        castColumnWithDiagnostic(src_elem, res_elem);
     }
 }
 
@@ -114,7 +111,7 @@ void ConvertingTransform::transform(Chunk & chunk)
         src_elem.column = src_columns[conversion[res_pos]];
         auto res_elem = result.getByPosition(res_pos);
 
-        ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem, context);
+        ColumnPtr converted = castColumnWithDiagnostic(src_elem, res_elem);
 
         if (!isColumnConst(*res_elem.column))
             converted = converted->convertToFullColumnIfConst();

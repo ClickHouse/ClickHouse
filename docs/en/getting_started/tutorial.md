@@ -108,7 +108,7 @@ Syntax for creating tables is way more complicated compared to databases (see [r
 
 1.  Name of table to create.
 2.  Table schema, i.e. list of columns and their [data types](../sql_reference/data_types/index.md).
-3.  [Table engine](../engines/table_engines/index.md) and it’s settings, which determines all the details on how queries to this table will be physically executed.
+3.  [Table engine](../engines/table_engines/index.md) and its settings, which determines all the details on how queries to this table will be physically executed.
 
 Yandex.Metrica is a web analytics service, and sample dataset doesn’t cover its full functionality, so there are only two tables to create:
 

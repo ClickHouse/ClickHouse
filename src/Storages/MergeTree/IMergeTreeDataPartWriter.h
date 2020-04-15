@@ -102,8 +102,7 @@ public:
         written_offset_columns = written_offset_columns_;
     }
 
-    using SkipIndices = std::vector<MergeTreeIndexPtr>;
-    const SkipIndices & getSkipIndices() { return skip_indices; }
+    const MergeTreeIndices & getSkipIndices() { return skip_indices; }
 
     void initSkipIndices();
     void initPrimaryIndex();
@@ -126,7 +125,7 @@ protected:
 
     CompressionCodecPtr default_codec;
 
-    std::vector<MergeTreeIndexPtr> skip_indices;
+    MergeTreeIndices skip_indices;
 
     MergeTreeWriterSettings settings;
 
