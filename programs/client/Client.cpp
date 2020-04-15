@@ -589,6 +589,9 @@ private:
             connection_parameters.compression,
             connection_parameters.security);
 
+        if (!connection_parameters.quota_key.empty())
+            connection->setQuotaKey(connection_parameters.quota_key);
+
         String server_name;
         UInt64 server_version_major = 0;
         UInt64 server_version_minor = 0;
@@ -605,9 +608,7 @@ private:
 
         server_version = toString(server_version_major) + "." + toString(server_version_minor) + "." + toString(server_version_patch);
 
-        if (
-            server_display_name = connection->getServerDisplayName(connection_parameters.timeouts);
-            server_display_name.length() == 0)
+        if (server_display_name = connection->getServerDisplayName(connection_parameters.timeouts); server_display_name.empty())
         {
             server_display_name = config().getString("host", "localhost");
         }
@@ -1705,6 +1706,7 @@ public:
               */
             ("password", po::value<std::string>()->implicit_value("\n", ""), "password")
             ("ask-password", "ask-password")
+            ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
             ("query_id", po::value<std::string>(), "query_id")
             ("query,q", po::value<std::string>(), "query")
             ("database,d", po::value<std::string>(), "database")
@@ -1840,6 +1842,8 @@ public:
             config().setString("password", options["password"].as<std::string>());
         if (options.count("ask-password"))
             config().setBool("ask-password", true);
+        if (options.count("quota_key"))
+            config().setString("quota_key", options["quota_key"].as<std::string>());
         if (options.count("multiline"))
             config().setBool("multiline", true);
         if (options.count("multiquery"))
