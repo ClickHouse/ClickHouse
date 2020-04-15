@@ -61,7 +61,7 @@ def choose_latest_releases(args):
 
 
 def process_release(args, callback, release):
-    name, (full_name, tarball_url,) = release
+    name, (full_name, tarball_url, is_lts,) = release
     logging.info(f'Building docs for {full_name}')
     buf = io.BytesIO(requests.get(tarball_url).content)
     tar = tarfile.open(mode='r:gz', fileobj=buf)
