@@ -43,7 +43,7 @@
         <table_exists>test.hits</table_exists>
     </preconditions>
 
-<query>SELECT * FROM table_{format}</query>
+<query>SELECT * FROM table_{format} FORMAT Null</query>
 
 <drop_query>DROP TABLE IF EXISTS table_{format}</drop_query>
 </test>
