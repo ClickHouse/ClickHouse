@@ -121,7 +121,7 @@ public:
 
     void enableQuotaForCurrentStreams();
 
-    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context);
+    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header);
 
     PipelineExecutorPtr execute();
 

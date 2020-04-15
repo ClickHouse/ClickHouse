@@ -2,7 +2,6 @@
 #include <DataStreams/narrowBlockInputStreams.h>
 #include <DataStreams/LazyBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
@@ -478,7 +477,7 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
                                           Pipe & pipe, QueryProcessingStage::Enum processed_stage)
 {
     Block before_block_header = pipe.getHeader();
-    pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(before_block_header, header, ConvertingTransform::MatchColumnsMode::Name, context));
+    pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(before_block_header, header, ConvertingTransform::MatchColumnsMode::Name));
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
 

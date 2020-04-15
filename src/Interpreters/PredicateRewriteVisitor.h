@@ -16,6 +16,14 @@ public:
 
     void visit(ASTSelectWithUnionQuery & union_select_query, ASTPtr &);
 
+    static bool needChild(const ASTPtr & node, const ASTPtr &)
+    {
+        if (node && node->as<TypeToVisit>())
+            return false;
+
+        return true;
+    }
+
     PredicateRewriteVisitorData(const Context & context_, const ASTs & predicates_, const Names & column_names_, bool optimize_final_);
 
 private:
@@ -31,6 +39,6 @@ private:
     bool rewriteSubquery(ASTSelectQuery & subquery, const Names & outer_columns, const Names & inner_columns);
 };
 
-using PredicateRewriteMatcher = OneTypeMatcher<PredicateRewriteVisitorData, false>;
+using PredicateRewriteMatcher = OneTypeMatcher<PredicateRewriteVisitorData, PredicateRewriteVisitorData::needChild>;
 using PredicateRewriteVisitor = InDepthNodeVisitor<PredicateRewriteMatcher, true>;
 }

@@ -63,8 +63,8 @@ def translate_toc(root, lang):
 
 def translate_po():
     import babel.messages.pofile
-    base_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'website', 'locale')
-    for lang in ['en', 'zh', 'es', 'fr', 'ru', 'ja', 'fa']:
+    base_dir = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'website', 'locale')
+    for lang in ['en', 'zh', 'es', 'fr', 'ru', 'ja', 'tr', 'fa']:
         po_path = os.path.join(base_dir, lang, 'LC_MESSAGES', 'messages.po')
         with open(po_path, 'r') as f:
             po_file = babel.messages.pofile.read_po(f, locale=lang, domain='messages')

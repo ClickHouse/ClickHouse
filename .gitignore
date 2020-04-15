@@ -16,8 +16,8 @@
 /docs/publish
 /docs/edit
 /docs/website
-/docs/venv/
-/docs/tools/venv/
+/docs/venv
+/docs/tools/venv
 /docs/tools/translate/venv
 /docs/tools/translate/output.md
 /docs/en/single.md

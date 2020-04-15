@@ -3,8 +3,9 @@ set -e
 
 from="$1"
 to="$2"
+log_command=(git log "$from..$to" --first-parent)
 
-git log "$from..$to" --first-parent > "changelog-log.txt"
+"${log_command[@]}" > "changelog-log.txt"
 
 # NOTE keep in sync with ./backport.sh.
 # Search for PR numbers in commit messages. First variant is normal merge, and second
@@ -14,10 +15,17 @@ find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
                   s/^.*back[- ]*port[ed of]*#\([[:digit:]]\+\).*$/\1/Ip;
                   s/^.*cherry[- ]*pick[ed of]*#\([[:digit:]]\+\).*$/\1/Ip")
 
-"${find_prs[@]}" "changelog-log.txt" | sort -rn > "changelog-prs.txt"
-
+"${find_prs[@]}" "changelog-log.txt" | sort -rn | uniq > "changelog-prs.txt"
 
 echo "$(wc -l < "changelog-prs.txt") PRs added between $from and $to."
+
+if "${log_command[@]}" --oneline --grep "Merge branch '" | grep ''
+then
+    # DO NOT ADD automated handling of diamond merges to this script.
+    # It is an unsustainable way to work with git, and it MUST be visible.
+    echo Warning: suspected diamond merges above.
+    echo Some commits will be missed, review these manually.
+fi
 
 function github_download()
 {
@@ -39,6 +47,7 @@ function github_download()
     fi
 }
 
+rm changelog-prs-filtered.txt &> /dev/null ||:
 for pr in $(cat "changelog-prs.txt")
 do
     # Download PR info from github.
@@ -48,6 +57,13 @@ do
     if ! [ "$pr" == "$(jq -r .number "$file")" ]
     then
         >&2 echo "Got wrong data for PR #$pr (please check and remove '$file')."
+        continue
+    fi
+
+    # Filter out PRs by bots.
+    user_login=$(jq -r .user.login "$file")
+    if echo "$user_login" | grep "\[bot\]$" > /dev/null
+    then
         continue
     fi
 
@@ -61,9 +77,11 @@ do
         >&2 echo "Got wrong data for user #$user_id (please check and remove '$user_file')."
         continue
     fi
+
+    echo "$pr" >> changelog-prs-filtered.txt
 done
 
 echo "### ClickHouse release $to FIXME as compared to $from
 " > changelog.md
-./format-changelog.py changelog-prs.txt >> changelog.md
+./format-changelog.py changelog-prs-filtered.txt >> changelog.md
 cat changelog.md
