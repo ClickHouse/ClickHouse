@@ -432,7 +432,12 @@ IProcessor::Status AggregatingTransform::prepare()
 
     /// Finish data processing, prepare to generating.
     if (is_consume_finished && !is_generate_initialized)
+    {
+        /// Close input port in case max_rows_to_group_by was reached but not all data was read.
+        inputs.front().close();
+
         return Status::Ready;
+    }
 
     if (is_generate_initialized && !is_pipeline_created && !processors.empty())
         return Status::ExpandPipeline;
