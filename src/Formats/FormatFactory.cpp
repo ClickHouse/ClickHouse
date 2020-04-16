@@ -377,6 +377,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
     registerOutputFormatProcessorMySQLWrite(*this);
+    registerOutputFormatProcessorMarkdown(*this);
 }
 
 FormatFactory & FormatFactory::instance()
