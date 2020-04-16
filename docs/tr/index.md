@@ -78,48 +78,6 @@ Farkı görüyor musunuz?
 
 Örneğin, sorgu “count the number of records for each advertising platform” bir okuma gerektirir “advertising platform ID” 1 bayt sıkıştırılmamış kadar alır sütun. Trafiğin çoğu reklam platformlarından değilse, bu sütunun en az 10 kat sıkıştırılmasını bekleyebilirsiniz. Hızlı bir sıkıştırma algoritması kullanırken, saniyede en az birkaç gigabayt sıkıştırılmamış veri hızında veri dekompresyonu mümkündür. Başka bir deyişle, bu sorgu, tek bir sunucuda saniyede yaklaşık birkaç milyar satır hızında işlenebilir. Bu hız aslında pratikte elde edilir.
 
-<details markdown="1">
-
-<summary>Örnek</summary>
-
-``` bash
-$ clickhouse-client
-ClickHouse client version 0.0.52053.
-Connecting to localhost:9000.
-Connected to ClickHouse server version 0.0.52053.
-```
-
-``` sql
-SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIMIT 20
-```
-
-``` text
-┌─CounterID─┬──count()─┐
-│    114208 │ 56057344 │
-│    115080 │ 51619590 │
-│      3228 │ 44658301 │
-│     38230 │ 42045932 │
-│    145263 │ 42042158 │
-│     91244 │ 38297270 │
-│    154139 │ 26647572 │
-│    150748 │ 24112755 │
-│    242232 │ 21302571 │
-│    338158 │ 13507087 │
-│     62180 │ 12229491 │
-│     82264 │ 12187441 │
-│    232261 │ 12148031 │
-│    146272 │ 11438516 │
-│    168777 │ 11403636 │
-│   4120072 │ 11227824 │
-│  10938808 │ 10519739 │
-│     74088 │  9047015 │
-│    115079 │  8837972 │
-│    337234 │  8205961 │
-└───────────┴──────────┘
-```
-
-</details>
-
 ### CPU {#cpu}
 
 Bir sorguyu yürütmek çok sayıda satırı işlemeyi gerektirdiğinden, ayrı satırlar yerine tüm vektörler için tüm işlemlerin gönderilmesine veya sorgu motorunun neredeyse hiç gönderim maliyeti olmaması için uygulanmasına yardımcı olur. Bunu yapmazsanız, yarı iyi bir disk alt sistemi ile, sorgu yorumlayıcısı kaçınılmaz olarak CPU'yu durdurur. Hem verileri sütunlarda depolamak hem de mümkün olduğunda sütunlarla işlemek mantıklıdır.
