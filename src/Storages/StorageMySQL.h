@@ -1,13 +1,16 @@
 #pragma once
 
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_MYSQL
 
-#include <ext/shared_ptr_helper.h>
+#    include <ext/shared_ptr_helper.h>
 
-#include <Storages/IStorage.h>
-#include <Interpreters/Context.h>
-#include <mysqlxx/Pool.h>
+#    include <Interpreters/Context.h>
+#    include <Storages/IStorage.h>
+#    include <mysqlxx/Pool.h>
 
 
 namespace DB

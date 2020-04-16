@@ -1,11 +1,15 @@
 #pragma once
 
-#include <Common/config.h>
 #include <Poco/Net/TCPServerConnectionFactory.h>
 #include <atomic>
 #include "IServer.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #if USE_SSL
-#include <openssl/rsa.h>
+#    include <openssl/rsa.h>
 #endif
 
 namespace DB

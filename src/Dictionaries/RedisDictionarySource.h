@@ -1,10 +1,12 @@
 #pragma once
 
-#include "config_core.h"
 #include <Core/Block.h>
 
-#if USE_POCO_REDIS
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
+#if USE_POCO_REDIS
 #    include "DictionaryStructure.h"
 #    include "IDictionarySource.h"
 
@@ -101,4 +103,5 @@ namespace ErrorCodes
     };
 
 }
+
 #endif
