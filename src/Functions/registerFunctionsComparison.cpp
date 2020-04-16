@@ -9,6 +9,7 @@ void registerFunctionLess(FunctionFactory & factory);
 void registerFunctionGreater(FunctionFactory & factory);
 void registerFunctionLessOrEquals(FunctionFactory & factory);
 void registerFunctionGreaterOrEquals(FunctionFactory & factory);
+void registerFunctionBitEquals(FunctionFactory & factory);
 
 
 void registerFunctionsComparison(FunctionFactory & factory)
@@ -19,6 +20,7 @@ void registerFunctionsComparison(FunctionFactory & factory)
     registerFunctionGreater(factory);
     registerFunctionLessOrEquals(factory);
     registerFunctionGreaterOrEquals(factory);
+    registerFunctionBitEquals(factory);
 }
 
 }
