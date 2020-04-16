@@ -1,8 +1,3 @@
----
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
----
-
 # 什么是ClickHouse？ {#shi-yao-shi-clickhouse}
 
 ClickHouse是一个用于联机分析(OLAP)的列式数据库管理系统(DBMS)。
