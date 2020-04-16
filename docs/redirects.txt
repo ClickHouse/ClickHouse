@@ -43,6 +43,7 @@ dicts/external_dicts_dict_sources.md query_language/dicts/external_dicts_dict_so
 dicts/external_dicts_dict_structure.md query_language/dicts/external_dicts_dict_structure.md
 dicts/index.md query_language/dicts/index.md
 dicts/internal_dicts.md query_language/dicts/internal_dicts.md
+extended_roadmap.md whats_new/extended_roadmap.md
 formats.md interfaces/formats.md
 formats/capnproto.md interfaces/formats.md
 formats/csv.md interfaces/formats.md
