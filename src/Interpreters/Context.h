@@ -128,6 +128,14 @@ struct IHostContext
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
 
+struct SharedContextHolder
+{
+    std::unique_ptr<ContextShared> shared;
+    ~SharedContextHolder();
+    SharedContextHolder();
+    SharedContextHolder(SharedContextHolder &&);
+};
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -193,7 +201,7 @@ public:
     /// Create initial Context with ContextShared and etc.
     static Context createGlobal();
     static Context createGlobal(ContextShared * shared);
-    static std::unique_ptr<ContextShared> createShared();
+    static SharedContextHolder createShared();
 
     Context(const Context &);
     Context & operator=(const Context &);
