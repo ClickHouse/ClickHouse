@@ -9,6 +9,7 @@
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
 #include <Core/Types.h>
+#include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
@@ -460,7 +461,7 @@ ASTPtr SystemLog<LogElement>::getCreateTableQuery()
     ParserStorage storage_parser;
     ASTPtr storage_ast = parseQuery(
         storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
-        "Storage to create table for " + LogElement::name(), 0);
+        "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     create->set(create->storage, storage_ast);
 
     return create;

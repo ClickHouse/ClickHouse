@@ -1,4 +1,5 @@
-#include <Disks/DiskSpaceMonitor.h>
+#include <Core/Defines.h>
+
 #include <Common/FieldVisitors.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -24,6 +25,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/VirtualColumnUtils.h>
+
+#include <Disks/DiskSpaceMonitor.h>
 
 #include <Databases/IDatabase.h>
 
@@ -479,7 +482,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         if (metadata_diff.sorting_key_changed)
         {
             ParserNotEmptyExpressionList parser(false);
-            auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
+            auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
             if (new_sorting_key_expr_list->children.size() == 1)
                 metadata.order_by_ast = new_sorting_key_expr_list->children[0];
@@ -507,7 +510,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         if (metadata_diff.ttl_table_changed)
         {
             ParserTTLExpressionList parser;
-            metadata.ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0);
+            metadata.ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         }
     }
 
