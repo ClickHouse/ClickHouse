@@ -252,7 +252,7 @@ BlockIO InterpreterInsertQuery::execute()
         for (auto & in_stream : in_streams)
         {
             in_stream = std::make_shared<ConvertingBlockInputStream>(
-                context, in_stream, out_streams.at(0)->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
+                in_stream, out_streams.at(0)->getHeader(), ConvertingBlockInputStream::MatchColumnsMode::Position);
         }
 
         Block in_header = in_streams.at(0)->getHeader();

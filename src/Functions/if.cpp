@@ -172,8 +172,7 @@ class FunctionIf : public FunctionIfBase</*null_is_false=*/false>
 {
 public:
     static constexpr auto name = "if";
-    static FunctionPtr create(const Context & context) { return std::make_shared<FunctionIf>(context); }
-    explicit FunctionIf(const Context & context_) : context(context_) {}
+    static FunctionPtr create(const Context &) { return std::make_shared<FunctionIf>(); }
 
 private:
     template <typename T0, typename T1>
@@ -591,7 +590,7 @@ private:
         return true;
     }
 
-    void executeGeneric(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    static void executeGeneric(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         /// Convert both columns to the common type (if needed).
 
@@ -600,8 +599,8 @@ private:
 
         DataTypePtr common_type = getLeastSupertype({arg1.type, arg2.type});
 
-        ColumnPtr col_then = castColumn(arg1, common_type, context);
-        ColumnPtr col_else = castColumn(arg2, common_type, context);
+        ColumnPtr col_then = castColumn(arg1, common_type);
+        ColumnPtr col_else = castColumn(arg2, common_type);
 
         MutableColumnPtr result_column = common_type->createColumn();
         result_column->reserve(input_rows_count);
@@ -988,8 +987,6 @@ public:
             executeGeneric(cond_col, block, arguments, result, input_rows_count);
         }
     }
-
-    const Context & context;
 };
 
 void registerFunctionIf(FunctionFactory & factory)

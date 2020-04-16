@@ -1,7 +1,11 @@
 from __future__ import print_function
 from helpers.cluster import ClickHouseCluster
+import helpers
 import pytest
 import time
+from tempfile import NamedTemporaryFile
+from os import path as p, unlink
+
 
 def test_chroot_with_same_root():
 
@@ -100,10 +104,58 @@ def test_identity():
         with pytest.raises(Exception):
             cluster_2.start(destroy_dirs=False)
             node2.query('''
-            CREATE TABLE simple (date Date, id UInt32) 
+            CREATE TABLE simple (date Date, id UInt32)
             ENGINE = ReplicatedMergeTree('/clickhouse/tables/0/simple', '1', date, id, 8192);
             ''')
 
     finally:
         cluster_1.shutdown()
         cluster_2.shutdown()
+
+
+def test_secure_connection():
+    # We need absolute path in zookeeper volumes. Generate it dynamically.
+    TEMPLATE = '''
+    zoo{zoo_id}:
+        image: zookeeper:3.5.6
+        restart: always
+        environment:
+            ZOO_TICK_TIME: 500
+            ZOO_MY_ID: {zoo_id}
+            ZOO_SERVERS: server.1=zoo1:2888:3888;2181 server.2=zoo2:2888:3888;2181 server.3=zoo3:2888:3888;2181
+            ZOO_SECURE_CLIENT_PORT: 2281
+        volumes:
+           - {helpers_dir}/zookeeper-ssl-entrypoint.sh:/zookeeper-ssl-entrypoint.sh
+           - {configs_dir}:/clickhouse-config
+        command: ["zkServer.sh", "start-foreground"]
+        entrypoint: /zookeeper-ssl-entrypoint.sh
+    '''
+    configs_dir = p.abspath(p.join(p.dirname(__file__), 'configs_secure'))
+    helpers_dir = p.abspath(p.dirname(helpers.__file__))
+
+    cluster = ClickHouseCluster(__file__, zookeeper_config_path='configs/zookeeper_config_with_ssl.xml')
+
+    docker_compose = NamedTemporaryFile(delete=False)
+
+    docker_compose.write(
+        "version: '2.2'\nservices:\n" +
+        TEMPLATE.format(zoo_id=1, configs_dir=configs_dir, helpers_dir=helpers_dir) +
+        TEMPLATE.format(zoo_id=2, configs_dir=configs_dir, helpers_dir=helpers_dir) +
+        TEMPLATE.format(zoo_id=3, configs_dir=configs_dir, helpers_dir=helpers_dir)
+    )
+    docker_compose.close()
+
+    node1 = cluster.add_instance('node1', config_dir='configs_secure', with_zookeeper=True,
+                                 zookeeper_docker_compose_path=docker_compose.name)
+    node2 = cluster.add_instance('node2', config_dir='configs_secure', with_zookeeper=True,
+                                 zookeeper_docker_compose_path=docker_compose.name)
+
+    try:
+        cluster.start()
+
+        assert node1.query("SELECT count() FROM system.zookeeper WHERE path = '/'") == '2\n'
+        assert node2.query("SELECT count() FROM system.zookeeper WHERE path = '/'") == '2\n'
+
+    finally:
+        cluster.shutdown()
+        unlink(docker_compose.name)

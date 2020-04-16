@@ -1,3 +1,8 @@
+---
+toc_priority: 34
+toc_title: INSERT INTO
+---
+
 ## INSERT {#insert}
 
 Добавление данных.

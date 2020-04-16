@@ -23,7 +23,7 @@ create_table_mysql_template = """
     """
 
 create_clickhouse_dictionary_table_template = """
-    CREATE TABLE IF NOT EXISTS `test`.`dict_table_{}` (`id` Int32, `value` String) ENGINE = Dictionary({})
+    CREATE TABLE IF NOT EXISTS `test`.`dict_table_{}` (`id` UInt64, `value` String) ENGINE = Dictionary({})
     """
 
 @pytest.fixture(scope="module")
@@ -31,18 +31,18 @@ def started_cluster():
     try:
         #time.sleep(30)
         cluster.start()
-        
+
         # Create a MySQL database
         mysql_connection = get_mysql_conn()
         create_mysql_db(mysql_connection, 'test')
         mysql_connection.close()
-        
+
         # Create database in ClickHouse
         instance.query("CREATE DATABASE IF NOT EXISTS test")
-    
+
         # Create database in ClickChouse using MySQL protocol (will be used for data insertion)
         instance.query("CREATE DATABASE clickhouse_mysql ENGINE = MySQL('mysql1:3306', 'test', 'root', 'clickhouse')")
-        
+
         yield cluster
 
     finally:
@@ -53,11 +53,11 @@ def test_load_mysql_dictionaries(started_cluster):
     # Load dictionaries
     query = instance.query
     query("SYSTEM RELOAD DICTIONARIES")
-    
+
     for n in range(0, 5):
         # Create MySQL tables, fill them and create CH dict tables
         prepare_mysql_table('test', str(n))
-    
+
     # Check dictionaries are loaded and have correct number of elements
     for n in range(0, 100):
         # Force reload of dictionaries (each 10 iteration)
@@ -73,7 +73,7 @@ def create_mysql_db(mysql_connection, name):
 
 def prepare_mysql_table(table_name, index):
     mysql_connection = get_mysql_conn()
-    
+
     # Create table
     create_mysql_table(mysql_connection, table_name + str(index))
 
@@ -82,8 +82,8 @@ def prepare_mysql_table(table_name, index):
     query("INSERT INTO `clickhouse_mysql`.{}(id, value) select number, concat('{} value ', toString(number)) from numbers(10000) ".format(table_name + str(index), table_name + str(index)))
     assert query("SELECT count() FROM `clickhouse_mysql`.{}".format(table_name + str(index))).rstrip() == '10000'
     mysql_connection.close()
-    
-    #Create CH Dictionary tables based on MySQL tables 
+
+    #Create CH Dictionary tables based on MySQL tables
     query(create_clickhouse_dictionary_table_template.format(table_name + str(index), 'dict' + str(index)))
 
 def get_mysql_conn():

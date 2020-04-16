@@ -137,7 +137,7 @@ String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & acti
     for (const auto & column_str : prerequisite_columns)
     {
         ParserExpression expr_parser;
-        expr_list->children.push_back(parseQuery(expr_parser, column_str, 0));
+        expr_list->children.push_back(parseQuery(expr_parser, column_str, 0, context->getSettingsRef().max_parser_depth));
     }
 
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
@@ -1551,7 +1551,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     auto header = stream->getHeader();
                     auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
                     if (!blocksHaveEqualStructure(first_header, header))
-                        stream = std::make_shared<ConvertingBlockInputStream>(*context, stream, first_header, mode);
+                        stream = std::make_shared<ConvertingBlockInputStream>(stream, first_header, mode);
                 }
             }
 
@@ -2592,7 +2592,7 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
         auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
 
         if (!blocksHaveEqualStructure(header, stream_header))
-            stream = std::make_shared<ConvertingBlockInputStream>(*context, stream, header, mode);
+            stream = std::make_shared<ConvertingBlockInputStream>(stream, header, mode);
     }
 }
 
