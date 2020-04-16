@@ -1,3 +1,14 @@
+details {
+    background: #444451;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    margin-top: 1rem;
+}
+
+summary {
+    font-weight: bold;
+}
+
 #sidebar {
     position: fixed;
     z-index: 50;
@@ -193,4 +204,3 @@
         color: #bbb;
     }
 }
-
