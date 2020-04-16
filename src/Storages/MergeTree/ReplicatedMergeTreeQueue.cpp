@@ -16,6 +16,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNFINISHED;
+    extern const int ABORTED;
 }
 
 
@@ -426,6 +427,8 @@ bool ReplicatedMergeTreeQueue::removeFromVirtualParts(const MergeTreePartInfo & 
 void ReplicatedMergeTreeQueue::pullLogsToQueue(zkutil::ZooKeeperPtr zookeeper, Coordination::WatchCallback watch_callback)
 {
     std::lock_guard lock(pull_logs_to_queue_mutex);
+    if (pull_log_blocker.isCancelled())
+        throw Exception("Log pulling is cancelled", ErrorCodes::ABORTED);
 
     String index_str = zookeeper->get(replica_path + "/log_pointer");
     UInt64 index;
