@@ -445,8 +445,21 @@ Context & Context::operator=(const Context &) = default;
 Context Context::createGlobal()
 {
     Context res;
-    res.shared = std::make_shared<ContextShared>();
+    res.shared_holder = std::make_shared<ContextShared>();
+    res.shared = res.shared_holder.get();
     return res;
+}
+
+Context Context::createGlobal(ContextShared * shared)
+{
+    Context res;
+    res.shared = shared;
+    return res;
+}
+
+std::unique_ptr<ContextShared> Context::createShared()
+{
+    return std::make_unique<ContextShared>();
 }
 
 Context::~Context() = default;
