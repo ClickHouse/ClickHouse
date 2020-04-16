@@ -19,9 +19,9 @@ class RWLockImpl;
 using RWLock = std::shared_ptr<RWLockImpl>;
 
 
-/// Provides Readers-Writers locking service with "Phase Fair" semantics,
+/// Implements Readers-Writers locking algorithm that serves requests in "Phase Fair" order.
 /// (Phase Fair RWLock as suggested in https://www.cs.unc.edu/~anderson/papers/rtsj10-for-web.pdf)
-/// that is used for synchronizing access to various objects on query level (i.e. Storages).
+/// It is used for synchronizing access to various objects on query level (i.e. Storages).
 ///
 /// In general, ClickHouse processes queries by multiple threads of execution in parallel.
 /// As opposed to the standard OS synchronization primitives (mutexes), this implementation allows
