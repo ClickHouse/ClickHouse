@@ -1649,9 +1649,6 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     const MergeTreeData::DataPartPtr & right,
     String * out_reason) const
 {
-    if (!left)
-        throw;
-
     if (left)
         return canMergeTwoParts(left, right, out_reason);
     else
@@ -1801,9 +1798,9 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
     String * out_reason) const
 {
+    LOG_FATAL(&Poco::Logger::get("ReplicatedMergeTreeMergePredicate"), "operator()");
     if (part->name == inprogress_quorum_part)
     {
-        LOG_FATAL(&Poco::Logger::get("ReplicatedMergeTreeMergePredicate"), "operator()");
         if (out_reason)
             *out_reason = "Quorum insert for part " + part->name + " is currently in progress";
         return false;
