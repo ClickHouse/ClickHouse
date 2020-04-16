@@ -968,13 +968,15 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
     auto finalizeChain = [&](ExpressionActionsChain & chain)
     {
+        chain.finalize();
+
         if (!finalized)
         {
-            chain.finalize();
             finalize(chain, context, where_step_num);
-            chain.clear();
+            finalized = true;
         }
-        finalized = true;
+
+        chain.clear();
     };
 
     {
