@@ -111,6 +111,7 @@ def build_for_lang(lang, args):
             'codehilite',
             'nl2br',
             'sane_lists',
+            'pymdownx.details',
             'pymdownx.magiclink',
             'pymdownx.superfences',
             'extra',
