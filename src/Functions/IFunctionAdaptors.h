@@ -96,6 +96,8 @@ public:
 
     bool isDeterministicInScopeOfQuery() const final { return impl->isDeterministicInScopeOfQuery(); }
 
+    bool isInjective(const Block & block) const final { return impl->isInjective(block); }
+
     bool isStateful() const final { return impl->isStateful(); }
 
     bool isVariadic() const final { return impl->isVariadic(); }
@@ -226,6 +228,7 @@ public:
 
     bool isDeterministic() const override { return function->isDeterministic(); }
     bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
+    bool isInjective(const Block &block) const override { return function->isInjective(block); }
 
     String getName() const override { return function->getName(); }
     bool isStateful() const override { return function->isStateful(); }

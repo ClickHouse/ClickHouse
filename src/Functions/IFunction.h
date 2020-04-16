@@ -186,6 +186,7 @@ public:
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const = 0;
     virtual bool isDeterministicInScopeOfQuery() const = 0;
+    virtual bool isInjective(const Block &) const = 0;
 
     /// Override and return true if function needs to depend on the state of the data.
     virtual bool isStateful() const = 0;
