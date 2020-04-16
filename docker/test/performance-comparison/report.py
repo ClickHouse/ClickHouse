@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import argparse
 import ast
 import collections
 import csv
@@ -7,6 +8,11 @@ import itertools
 import os
 import sys
 import traceback
+
+parser = argparse.ArgumentParser(description='Create performance test report')
+parser.add_argument('--report', default='main', choices=['main', 'all-queries'],
+    help='Which report to build')
+args = parser.parse_args()
 
 report_errors = []
 error_tests = 0
@@ -16,7 +22,7 @@ slower_queries = 0
 unstable_queries = 0
 very_unstable_queries = 0
 
-print("""
+header_template = """
 <!DOCTYPE html>
 <html>
   <style>
@@ -56,7 +62,7 @@ tr:nth-child(odd) td {{filter: brightness(95%);}}
 <div class="main">
 
 <h1>ClickHouse performance comparison</h1>
-""".format())
+"""
 
 table_anchor = 0
 row_anchor = 0
@@ -133,195 +139,252 @@ def printSimpleTable(caption, columns, rows):
         print(tableRow(row))
     print(tableEnd())
 
-printSimpleTable('Tested commits', ['Old', 'New'],
-    [['<pre>{}</pre>'.format(x) for x in
-        [open('left-commit.txt').read(),
-         open('right-commit.txt').read()]]])
+if args.report == 'main':
+    print(header_template.format())
 
-def print_changes():
-    rows = tsvRows('changed-perf.tsv')
-    if not rows:
-        return
+    printSimpleTable('Tested commits', ['Old', 'New'],
+        [['<pre>{}</pre>'.format(x) for x in
+            [open('left-commit.txt').read(),
+             open('right-commit.txt').read()]]])
 
-    global faster_queries, slower_queries
+    def print_changes():
+        rows = tsvRows('changed-perf.tsv')
+        if not rows:
+            return
 
-    print(tableStart('Changes in performance'))
-    columns = [
-        'Old, s',                                                        # 0
-        'New, s',                                                        # 1
-        'Relative difference (new&nbsp;-&nbsp;old)/old',                 # 2
-        'Randomization distribution quantiles \
-            [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',                         # 3
-        'Test',                                                          # 4
-        'Query',                                                         # 5
+        global faster_queries, slower_queries
+
+        print(tableStart('Changes in performance'))
+        columns = [
+            'Old, s',                                                        # 0
+            'New, s',                                                        # 1
+            'Relative difference (new&nbsp;-&nbsp;old)/old',                 # 2
+            'Randomization distribution quantiles \
+                [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',                         # 3
+            'Test',                                                          # 4
+            'Query',                                                         # 5
+            ]
+
+        print(tableHeader(columns))
+
+        attrs = ['' for c in columns]
+        for row in rows:
+            if float(row[2]) < 0.:
+                faster_queries += 1
+                attrs[2] = 'style="background: #adbdff"'
+            else:
+                slower_queries += 1
+                attrs[2] = 'style="background: #ffb0a0"'
+
+            print(tableRow(row, attrs))
+
+        print(tableEnd())
+
+    print_changes()
+
+    slow_on_client_rows = tsvRows('slow-on-client.tsv')
+    error_tests += len(slow_on_client_rows)
+    printSimpleTable('Slow on client',
+        ['Client time, s', 'Server time, s', 'Ratio', 'Query'],
+        slow_on_client_rows)
+
+    def print_unstable_queries():
+        global unstable_queries
+        global very_unstable_queries
+
+        unstable_rows = tsvRows('unstable-queries.tsv')
+        if not unstable_rows:
+            return
+
+        unstable_queries += len(unstable_rows)
+
+        columns = [
+            'Old, s', #0
+            'New, s', #1
+            'Relative difference (new&nbsp;-&nbsp;old)/old', #2
+            'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]', #3
+            'Test', #4
+            'Query' #5
         ]
 
-    print(tableHeader(columns))
+        print(tableStart('Unstable queries'))
+        print(tableHeader(columns))
 
-    attrs = ['' for c in columns]
-    for row in rows:
-        if float(row[2]) < 0.:
-            faster_queries += 1
-            attrs[2] = 'style="background: #adbdff"'
-        else:
-            slower_queries += 1
-            attrs[2] = 'style="background: #ffb0a0"'
+        attrs = ['' for c in columns]
+        for r in unstable_rows:
+            rd = ast.literal_eval(r[3])
+            # Note the zero-based array index, this is rd[3] in SQL.
+            if rd[2] > 0.2:
+                very_unstable_queries += 1
+                attrs[3] = 'style="background: #ffb0a0"'
+            else:
+                attrs[3] = ''
 
-        print(tableRow(row, attrs))
+            print(tableRow(r, attrs))
 
-    print(tableEnd())
+        print(tableEnd())
 
-print_changes()
+    print_unstable_queries()
 
-slow_on_client_rows = tsvRows('slow-on-client.tsv')
-error_tests += len(slow_on_client_rows)
-printSimpleTable('Slow on client',
-    ['Client time, s', 'Server time, s', 'Ratio', 'Query'],
-    slow_on_client_rows)
+    run_error_rows = tsvRows('run-errors.tsv')
+    error_tests += len(run_error_rows)
+    printSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
 
-def print_unstable_queries():
-    global unstable_queries
-    global very_unstable_queries
+    skipped_tests_rows = tsvRows('skipped-tests.tsv')
+    printSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
 
-    unstable_rows = tsvRows('unstable-queries.tsv')
-    if not unstable_rows:
-        return
+    printSimpleTable('Tests with most unstable queries',
+        ['Test', 'Unstable', 'Changed perf', 'Total not OK'],
+        tsvRows('bad-tests.tsv'))
 
-    unstable_queries += len(unstable_rows)
+    def print_test_times():
+        global slow_average_tests
+        rows = tsvRows('test-times.tsv')
+        if not rows:
+            return
 
-    columns = [
-        'Old, s', #0
-        'New, s', #1
-        'Relative difference (new&nbsp;-&nbsp;old)/old', #2
-        'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]', #3
-        'Test', #4
-        'Query' #5
-    ]
+        columns = [
+            'Test',                                          #0
+            'Wall clock time, s',                            #1
+            'Total client time, s',                          #2
+            'Total queries',                                 #3
+            'Ignored short queries',                         #4
+            'Longest query<br>(sum for all runs), s',        #5
+            'Avg wall clock time<br>(sum for all runs), s',  #6
+            'Shortest query<br>(sum for all runs), s',       #7
+            ]
 
-    print(tableStart('Unstable queries'))
-    print(tableHeader(columns))
+        print(tableStart('Test times'))
+        print(tableHeader(columns))
 
-    attrs = ['' for c in columns]
-    for r in unstable_rows:
-        rd = ast.literal_eval(r[3])
-        # Note the zero-based array index, this is rd[3] in SQL.
-        if rd[2] > 0.2:
-            very_unstable_queries += 1
-            attrs[3] = 'style="background: #ffb0a0"'
-        else:
-            attrs[3] = ''
+        attrs = ['' for c in columns]
+        for r in rows:
+            if float(r[6]) > 22:
+                # FIXME should be 15s max -- investigate parallel_insert
+                slow_average_tests += 1
+                attrs[6] = 'style="background: #ffb0a0"'
+            else:
+                attrs[6] = ''
 
-        print(tableRow(r, attrs))
+            if float(r[5]) > 30:
+                slow_average_tests += 1
+                attrs[5] = 'style="background: #ffb0a0"'
+            else:
+                attrs[5] = ''
 
-    print(tableEnd())
+            print(tableRow(r, attrs))
 
-print_unstable_queries()
+        print(tableEnd())
 
-run_error_rows = tsvRows('run-errors.tsv')
-error_tests += len(run_error_rows)
-printSimpleTable('Run errors', ['Test', 'Error'], run_error_rows)
+    print_test_times()
 
-skipped_tests_rows = tsvRows('skipped-tests.tsv')
-printSimpleTable('Skipped tests', ['Test', 'Reason'], skipped_tests_rows)
-
-printSimpleTable('Tests with most unstable queries',
-    ['Test', 'Unstable', 'Changed perf', 'Total not OK'],
-    tsvRows('bad-tests.tsv'))
-
-def print_test_times():
-    global slow_average_tests
-    rows = tsvRows('test-times.tsv')
-    if not rows:
-        return
-
-    columns = [
-        'Test',                                          #0
-        'Wall clock time, s',                            #1
-        'Total client time, s',                          #2
-        'Total queries',                                 #3
-        'Ignored short queries',                         #4
-        'Longest query<br>(sum for all runs), s',        #5
-        'Avg wall clock time<br>(sum for all runs), s',  #6
-        'Shortest query<br>(sum for all runs), s',       #7
-        ]
-
-    print(tableStart('Test times'))
-    print(tableHeader(columns))
-
-    attrs = ['' for c in columns]
-    for r in rows:
-        if float(r[6]) > 22:
-            # FIXME should be 15s max -- investigate parallel_insert
-            slow_average_tests += 1
-            attrs[6] = 'style="background: #ffb0a0"'
-        else:
-            attrs[6] = ''
-
-        if float(r[5]) > 30:
-            slow_average_tests += 1
-            attrs[5] = 'style="background: #ffb0a0"'
-        else:
-            attrs[5] = ''
-
-        print(tableRow(r, attrs))
-
-    print(tableEnd())
-
-print_test_times()
-
-# Add the errors reported by various steps of comparison script
-report_errors += [l.strip() for l in open('report-errors.rep')]
-if len(report_errors):
-    print(tableStart('Errors while building the report'))
-    print(tableHeader(['Error']))
-    for x in report_errors:
-        print(tableRow([x]))
-    print(tableEnd())
+    # Add the errors reported by various steps of comparison script
+    report_errors += [l.strip() for l in open('report-errors.rep')]
+    if len(report_errors):
+        print(tableStart('Errors while building the report'))
+        print(tableHeader(['Error']))
+        for x in report_errors:
+            print(tableRow([x]))
+        print(tableEnd())
 
 
-print("""
-<p class="links">
-<a href="output.7z">Test output</a>
-<a href="compare.log">Log</a>
-</p>
-</body>
-</html>
-""")
+    print("""
+    <p class="links">
+    <a href="output.7z">Test output</a>
+    <a href="all-queries.html">All queries</a>
+    <a href="compare.log">Log</a>
+    </p>
+    </body>
+    </html>
+    """)
 
-status = 'success'
-message = 'See the report'
-message_array = []
+    status = 'success'
+    message = 'See the report'
+    message_array = []
 
-if slow_average_tests:
-    status = 'failure'
-    message_array.append(str(slow_average_tests) + ' too long')
+    if slow_average_tests:
+        status = 'failure'
+        message_array.append(str(slow_average_tests) + ' too long')
 
-if faster_queries:
-    message_array.append(str(faster_queries) + ' faster')
+    if faster_queries:
+        message_array.append(str(faster_queries) + ' faster')
 
-if slower_queries:
-    status = 'failure'
-    message_array.append(str(slower_queries) + ' slower')
+    if slower_queries:
+        status = 'failure'
+        message_array.append(str(slower_queries) + ' slower')
 
-if unstable_queries:
-    message_array.append(str(unstable_queries) + ' unstable')
+    if unstable_queries:
+        message_array.append(str(unstable_queries) + ' unstable')
 
-if very_unstable_queries:
-    status = 'failure'
+    if very_unstable_queries:
+        status = 'failure'
 
-error_tests += slow_average_tests
-if error_tests:
-    status = 'failure'
-    message_array.append(str(error_tests) + ' errors')
+    error_tests += slow_average_tests
+    if error_tests:
+        status = 'failure'
+        message_array.append(str(error_tests) + ' errors')
 
-if message_array:
-    message = ', '.join(message_array)
+    if message_array:
+        message = ', '.join(message_array)
 
-if report_errors:
-    status = 'failure'
-    message = 'Errors while building the report.'
+    if report_errors:
+        status = 'failure'
+        message = 'Errors while building the report.'
 
-print("""
-<!--status: {status}-->
-<!--message: {message}-->
-""".format(status=status, message=message))
+    print("""
+    <!--status: {status}-->
+    <!--message: {message}-->
+    """.format(status=status, message=message))
+
+elif args.report == 'all-queries':
+
+    print(header_template.format())
+
+    printSimpleTable('Tested commits', ['Old', 'New'],
+        [['<pre>{}</pre>'.format(x) for x in
+            [open('left-commit.txt').read(),
+             open('right-commit.txt').read()]]])
+
+    def print_all_queries():
+        rows = tsvRows('all-queries.tsv')
+        if not rows:
+            return
+
+        columns = [
+            'Old, s', #0
+            'New, s', #1
+            'Relative difference (new&nbsp;-&nbsp;old)/old', #2
+            'Times speedup/slowdown',                 #3
+            'Randomization distribution quantiles \
+                [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',  #4
+            'Test',                                   #5
+            'Query',                                  #6
+            ]
+
+        print(tableStart('All query times'))
+        print(tableHeader(columns))
+
+        attrs = ['' for c in columns]
+        for r in rows:
+            if float(r[2]) > 0.05:
+                attrs[3] = 'style="background: #ffb0a0"'
+            elif float(r[2]) < -0.05:
+                attrs[3] = 'style="background: #adbdff"'
+            else:
+                attrs[3] = ''
+
+            print(tableRow(r, attrs))
+
+        print(tableEnd())
+
+    print_all_queries()
+
+    print("""
+    <p class="links">
+    <a href="output.7z">Test output</a>
+    <a href="report.html">Main report</a>
+    <a href="compare.log">Log</a>
+    </p>
+    </body>
+    </html>
+    """)

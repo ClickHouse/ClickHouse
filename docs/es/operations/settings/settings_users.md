@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 63
+toc_title: "Configuraci\xF3n del usuario"
 ---
 
 # Configuración del usuario {#user-settings}
@@ -67,23 +70,23 @@ La contraseña se puede especificar en texto sin formato o en SHA256 (formato he
 
     La primera línea del resultado es la contraseña. La segunda línea es el hash SHA1 doble correspondiente.
 
-### Nombre\_usuario/redes {#user-namenetworks}
+### user\_name/redes {#user-namenetworks}
 
 Lista de redes desde las que el usuario puede conectarse al servidor ClickHouse.
 
 Cada elemento de la lista puede tener una de las siguientes formas:
 
--   `<ip>` — Dirección IP o máscara de red.
+-   `<ip>` — IP address or network mask.
 
     Ejemplos: `213.180.204.3`, `10.0.0.1/8`, `10.0.0.1/255.255.255.0`, `2a02:6b8::3`, `2a02:6b8::3/64`, `2a02:6b8::3/ffff:ffff:ffff:ffff::`.
 
--   `<host>` — Nombre de host.
+-   `<host>` — Hostname.
 
     Ejemplo: `example01.host.ru`.
 
     Para comprobar el acceso, se realiza una consulta DNS y todas las direcciones IP devueltas se comparan con la dirección del mismo nivel.
 
--   `<host_regexp>` — Expresión regular para nombres de host.
+-   `<host_regexp>` — Regular expression for hostnames.
 
     Ejemplo, `^example\d\d-\d\d-\d\.host\.ru$`
 
@@ -100,7 +103,7 @@ Para abrir el acceso del usuario desde cualquier red, especifique:
 ```
 
 !!! warning "Advertencia"
-    Es inseguro abrir el acceso desde cualquier red a menos que tenga un firewall configurado correctamente o el servidor no esté conectado directamente a Internet.
+    No es seguro abrir el acceso desde cualquier red a menos que tenga un firewall configurado correctamente o el servidor no esté conectado directamente a Internet.
 
 Para abrir el acceso solo desde localhost, especifique:
 
@@ -109,11 +112,11 @@ Para abrir el acceso solo desde localhost, especifique:
 <ip>127.0.0.1</ip>
 ```
 
-### Nombre\_usuario/perfil {#user-nameprofile}
+### user\_name/perfil {#user-nameprofile}
 
 Puede asignar un perfil de configuración para el usuario. Los perfiles de configuración se configuran en una sección separada del `users.xml` file. Para obtener más información, consulte [Perfiles de configuración](settings_profiles.md).
 
-### Nombre\_usuario/cuota {#user-namequota}
+### user\_name/cuota {#user-namequota}
 
 Las cuotas le permiten realizar un seguimiento o limitar el uso de recursos durante un período de tiempo. Las cuotas se configuran en el `quotas`
 sección de la `users.xml` archivo de configuración.
@@ -126,7 +129,7 @@ En esta sección, puede limitar las filas devueltas por ClickHouse para `SELECT`
 
 **Ejemplo**
 
-La siguiente configuración obliga a que el usuario `user1` sólo puede ver las filas de `table1` como resultado de `SELECT` Consultas, donde el valor de la `id` campo es 1000.
+La siguiente configuración obliga a que el usuario `user1` sólo puede ver las filas de `table1` como resultado de `SELECT` consultas, donde el valor de la `id` campo es 1000.
 
 ``` xml
 <user1>
@@ -140,6 +143,6 @@ La siguiente configuración obliga a que el usuario `user1` sólo puede ver las 
 </user1>
 ```
 
-El `filter` puede ser cualquier expresión que resulte en un [UInt8](../../data_types/int_uint.md)-tipo de valor. Por lo general, contiene comparaciones y operadores lógicos. Filas de `database_name.table1` donde los resultados del filtro a 0 no se devuelven para este usuario. El filtrado es incompatible con `PREWHERE` operaciones y desactiva `WHERE→PREWHERE` optimización.
+El `filter` puede ser cualquier expresión que resulte en un [UInt8](../../sql_reference/data_types/int_uint.md)-tipo de valor. Por lo general, contiene comparaciones y operadores lógicos. Filas de `database_name.table1` donde los resultados del filtro a 0 no se devuelven para este usuario. El filtrado es incompatible con `PREWHERE` operaciones y desactiva `WHERE→PREWHERE` optimización.
 
-[Artículo Original](https://clickhouse.tech/docs/es/operations/settings/settings_users/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/operations/settings/settings_users/) <!--hide-->

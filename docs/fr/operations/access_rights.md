@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 48
+toc_title: "Les Droits D'Acc\xE8s"
 ---
 
 # Les Droits D'Accès {#access-rights}
@@ -69,7 +72,7 @@ Les utilisateurs sont enregistrés dans le `users` section. Voici un fragment de
 
 Vous pouvez voir une déclaration de deux utilisateurs: `default`et`web`. Nous avons ajouté l' `web` utilisateur séparément.
 
-Le `default` l'utilisateur est choisi dans les cas où le nom d'utilisateur n'est pas passé. Le `default` l'utilisateur est également utilisé pour le traitement des requêtes distribuées, si la configuration du serveur ou du cluster `user` et `password` (voir la section sur les [Distribué](../operations/table_engines/distributed.md) moteur).
+Le `default` l'utilisateur est choisi dans les cas où le nom d'utilisateur n'est pas passé. Le `default` l'utilisateur est également utilisé pour le traitement des requêtes distribuées, si la configuration du serveur ou du cluster `user` et `password` (voir la section sur les [Distribué](../engines/table_engines/special/distributed.md) moteur).
 
 The user that is used for exchanging information between servers combined in a cluster must not have substantial restrictions or quotas – otherwise, distributed queries will fail.
 

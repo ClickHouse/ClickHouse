@@ -38,7 +38,7 @@
 
 /* Implementation: */
 
-static int _libcpiud_errno = ERR_OK;
+_Thread_local int _libcpiud_errno = ERR_OK;
 
 int set_error(cpu_error_t err)
 {

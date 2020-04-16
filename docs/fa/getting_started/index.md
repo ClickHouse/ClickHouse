@@ -1,13 +1,17 @@
-<div markdown="1" markdown="1" dir="rtl">
+---
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_folder_title: Getting Started
+toc_hidden: true
+toc_priority: 8
+toc_title: "\u0645\u062E\u0641\u06CC"
+---
 
-# ﻥﺪﺷ ﻉﻭﺮﺷ
+# شروع کار {#getting-started}
 
-ﻖﯾﺮﻃ ﺯﺍ ﺪﯾﺎﺑ ﻪﻤﻫ ﺯﺍ ﻝﻭﺍ ، ﺪﯿﻨﮐ ﺱﺎﺴﺣﺍ ﺍﺭ ﻥﺁ ﺩﺮﮑﻠﻤﻋ ﺪﯿﻫﺍﻮﺧ ﯽﻣ ﻭ ﺪﯿﺘﺴﻫ ﺩﺭﺍﻭ ﻩﺯﺎﺗ[ﺐﺼﻧ ﻞﺣﺍﺮﻣ](install.md).
-ﺪﯿﻨﮐ ﺏﺎﺨﺘﻧﺍ ﺍﺭ ﺮﯾﺯ ﯼﺎﻫ ﻪﻨﯾﺰﮔ ﺯﺍ ﯽﮑﯾ ﺪﯿﻧﺍﻮﺗ ﯽﻣ ﻥﺁ ﺯﺍ ﺲﭘ:
+اگر شما تازه به تاتر هستند و می خواهید برای دریافت یک دست در احساس عملکرد خود را, اول از همه, شما نیاز به از طریق رفتن [مراحل نصب](install.md). بعد از که شما می توانید:
 
--   [ﺪﯿﻨﮐ ﯽﻃ ﺍﺭ ﻞﺼﻔﻣ ﺵﺯﻮﻣﺁ](tutorial.md)
--   [ﺪﯿﻨﮐ ﺶﯾﺎﻣﺯﺁ ﻪﻧﻮﻤﻧ ﯼﺎﻫ ﻩﺩﺍﺩ ﺎﺑ](example_datasets/ontime.md)
+-   [برو از طریق مفصل](tutorial.md)
+-   [تجربه با مجموعه داده های نمونه](example_datasets/ontime.md)
 
-[ﯽﻠﺻﺍ ﻪﻟﺎﻘﻣ](https://clickhouse.tech/docs/fa/getting_started/) <!--hide-->
-
-</div>
+[مقاله اصلی](https://clickhouse.tech/docs/en/getting_started/) <!--hide-->

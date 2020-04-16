@@ -1,3 +1,8 @@
+---
+toc_priority: 41
+toc_title: Applying CatBoost Models
+---
+
 # Applying a Catboost Model in ClickHouse {#applying-catboost-model-in-clickhouse}
 
 [CatBoost](https://catboost.ai) is a free and open-source gradient boosting library developed at [Yandex](https://yandex.com/company/) for machine learning.
@@ -109,7 +114,7 @@ FROM amazon_train
 
 +-count()-+
 |   65538 |
-+---------+
++-------+
 ```
 
 ## 3. Integrate CatBoost into ClickHouse {#integrate-catboost-into-clickhouse}
@@ -178,7 +183,7 @@ LIMIT 10
 ```
 
 !!! note "Note"
-    Function [modelEvaluate](../query_language/functions/other_functions.md#function-modelevaluate) returns tuple with per-class raw predictions for multiclass models.
+    Function [modelEvaluate](../sql_reference/functions/other_functions.md#function-modelevaluate) returns tuple with per-class raw predictions for multiclass models.
 
 Let’s predict the probability:
 
@@ -201,7 +206,7 @@ LIMIT 10
 ```
 
 !!! note "Note"
-    More info about [exp()](../query_language/functions/math_functions.md) function.
+    More info about [exp()](../sql_reference/functions/math_functions.md) function.
 
 Let’s calculate LogLoss on the sample:
 
@@ -227,6 +232,6 @@ FROM
 ```
 
 !!! note "Note"
-    More info about [avg()](../query_language/agg_functions/reference.md#agg_function-avg) and [log()](../query_language/functions/math_functions.md) functions.
+    More info about [avg()](../sql_reference/aggregate_functions/reference.md#agg_function-avg) and [log()](../sql_reference/functions/math_functions.md) functions.
 
 [Original article](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->

@@ -11,7 +11,6 @@ if (CMAKE_LIBRARY_ARCHITECTURE MATCHES "i386")
     set (ARCH_I386 1)
 endif ()
 if ((ARCH_ARM AND NOT ARCH_AARCH64) OR ARCH_I386)
-    set (ARCH_32 1)
     message (FATAL_ERROR "32bit platforms are not supported")
 endif ()
 

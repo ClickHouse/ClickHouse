@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 12
+toc_title: Tutoriel
 ---
 
 # Tutoriel ClickHouse {#clickhouse-tutorial}
@@ -103,11 +106,11 @@ Comme dans la plupart des systèmes de gestion de bases de données, clickhouse 
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 ```
 
-La syntaxe pour créer des tables est beaucoup plus compliquée par rapport aux bases de données (voir [référence](../query_language/create.md). En général `CREATE TABLE` déclaration doit spécifier trois choses clés:
+La syntaxe pour créer des tables est beaucoup plus compliquée par rapport aux bases de données (voir [référence](../sql_reference/statements/create.md). En général `CREATE TABLE` déclaration doit spécifier trois choses clés:
 
 1.  Nom de la table à créer.
-2.  Table schema, i.e. list of columns and their [types de données](../data_types/index.md).
-3.  [Tableau moteur](../operations/table_engines/index.md) et ce sont les paramètres, qui déterminent tous les détails sur la façon dont les requêtes à cette table seront physiquement exécutées.
+2.  Table schema, i.e. list of columns and their [types de données](../sql_reference/data_types/index.md).
+3.  [Tableau moteur](../engines/table_engines/index.md) et ce sont les paramètres, qui déterminent tous les détails sur la façon dont les requêtes à cette table seront physiquement exécutées.
 
 Yandex.Metrica est un service d'analyse web, et l'exemple de jeu de données ne couvre pas toutes ses fonctionnalités, il n'y a donc que deux tables à créer:
 
@@ -459,11 +462,11 @@ SETTINGS index_granularity = 8192
 
 Vous pouvez exécuter ces requêtes en utilisant le mode interactif de `clickhouse-client` (lancez - le simplement dans un terminal sans spécifier une requête à l'avance) ou essayez-en [interface de rechange](../interfaces/index.md) Si tu veux.
 
-Comme nous pouvons le voir, `hits_v1` utilise la [moteur MergeTree de base](../operations/table_engines/mergetree.md) tandis que le `visits_v1` utilise la [Effondrer](../operations/table_engines/collapsingmergetree.md) variante.
+Comme nous pouvons le voir, `hits_v1` utilise la [moteur MergeTree de base](../engines/table_engines/mergetree_family/mergetree.md) tandis que le `visits_v1` utilise la [Effondrer](../engines/table_engines/mergetree_family/collapsingmergetree.md) variante.
 
 ### Importer Des Données {#import-data}
 
-L'importation de données vers ClickHouse se fait via [INSERT INTO](../query_language/insert_into.md) requête comme dans de nombreuses autres bases de données SQL. Toutefois, les données sont généralement fournies dans l'une des [formats de sérialisation pris en charge](../interfaces/formats.md) plutôt `VALUES` clause (qui est également pris en charge).
+L'importation de données vers ClickHouse se fait via [INSERT INTO](../sql_reference/statements/insert_into.md) requête comme dans de nombreuses autres bases de données SQL. Toutefois, les données sont généralement fournies dans l'une des [formats de sérialisation pris en charge](../interfaces/formats.md) plutôt `VALUES` clause (qui est également pris en charge).
 
 Les fichiers que nous avons téléchargés plus tôt sont au format séparé par des onglets, alors voici comment les importer via le client console:
 
@@ -528,9 +531,9 @@ Clickhouse cluster est un cluster homogène. Étapes pour configurer:
 1.  Installer clickhouse server sur toutes les machines du cluster
 2.  Configurer les configurations de cluster dans les fichiers de configuration
 3.  Créer des tables locales sur chaque instance
-4.  Créer un [Distribué table](../operations/table_engines/distributed.md)
+4.  Créer un [Distribué table](../engines/table_engines/special/distributed.md)
 
-[Distribué table](../operations/table_engines/distributed.md) est en fait une sorte de “view” aux tables locales du cluster ClickHouse. SELECT query from a distributed table s'exécute à l'aide des ressources de tous les fragments du cluster. Vous pouvez spécifier des configurations pour plusieurs clusters et créer plusieurs tables distribuées fournissant des vues à différents clusters.
+[Distribué table](../engines/table_engines/special/distributed.md) est en fait une sorte de “view” aux tables locales du cluster ClickHouse. SELECT query from a distributed table s'exécute à l'aide des ressources de tous les fragments du cluster. Vous pouvez spécifier des configurations pour plusieurs clusters et créer plusieurs tables distribuées fournissant des vues à différents clusters.
 
 Exemple de configuration pour un cluster avec trois fragments, une réplique chacun:
 
@@ -572,16 +575,16 @@ CREATE TABLE tutorial.hits_all AS tutorial.hits_local
 ENGINE = Distributed(perftest_3shards_1replicas, tutorial, hits_local, rand());
 ```
 
-Une pratique courante consiste à créer des tables distribuées similaires sur toutes les machines du cluster. Il permet d'exécuter des requêtes distribuées sur n'importe quelle machine du cluster. Il existe également une autre option pour créer une table distribuée temporaire pour une requête SELECT donnée en utilisant [distant](../query_language/table_functions/remote.md) table de fonction.
+Une pratique courante consiste à créer des tables distribuées similaires sur toutes les machines du cluster. Il permet d'exécuter des requêtes distribuées sur n'importe quelle machine du cluster. Il existe également une autre option pour créer une table distribuée temporaire pour une requête SELECT donnée en utilisant [distant](../sql_reference/table_functions/remote.md) table de fonction.
 
-Passons à l'exécution de [INSERT SELECT](../query_language/insert_into.md) dans les Distribué table la table à plusieurs serveurs.
+Passons à l'exécution de [INSERT SELECT](../sql_reference/statements/insert_into.md) dans les Distribué table la table à plusieurs serveurs.
 
 ``` sql
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
 !!! warning "Avis"
-    Cette approche ne convient pas au sharding de grandes tables. Il y a un outil séparé [clickhouse-copieur](../operations/utils/clickhouse-copier.md) cela peut re-fragmenter de grandes tables arbitraires.
+    Cette approche ne convient pas au sharding de grandes tables. Il y a un outil séparé [clickhouse-copieur](../operations/utilities/clickhouse-copier.md) cela peut re-fragmenter de grandes tables arbitraires.
 
 Comme vous pouvez vous y attendre, les requêtes lourdes de calcul s'exécutent N fois plus vite si elles utilisent 3 serveurs au lieu d'un.
 
@@ -657,7 +660,7 @@ ENGINE = ReplcatedMergeTree(
 ...
 ```
 
-Ici, nous utilisons [ReplicatedMergeTree](../operations/table_engines/replication.md) tableau moteur. Dans les paramètres, nous spécifions le chemin Zookeeper contenant des identificateurs de fragments et de répliques.
+Ici, nous utilisons [ReplicatedMergeTree](../engines/table_engines/mergetree_family/replication.md) tableau moteur. Dans les paramètres, nous spécifions le chemin Zookeeper contenant des identificateurs de fragments et de répliques.
 
 ``` sql
 INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;

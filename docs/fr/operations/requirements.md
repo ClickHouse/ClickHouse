@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 44
+toc_title: Exigence
 ---
 
 # Exigence {#requirements}
@@ -21,9 +24,9 @@ Le volume de RAM requis dépend de:
 -   La complexité des requêtes.
 -   La quantité de données traitées dans les requêtes.
 
-Pour calculer le volume de RAM requis, vous devez estimer la taille des données temporaires pour [GROUP BY](../query_language/select.md#select-group-by-clause), [DISTINCT](../query_language/select.md#select-distinct), [JOIN](../query_language/select.md#select-join) et d'autres opérations que vous utilisez.
+Pour calculer le volume de RAM requis, vous devez estimer la taille des données temporaires pour [GROUP BY](../sql_reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql_reference/statements/select.md#select-distinct), [JOIN](../sql_reference/statements/select.md#select-join) et d'autres opérations que vous utilisez.
 
-ClickHouse peut utiliser la mémoire externe pour les données temporaires. Voir [Groupe par dans la mémoire externe](../query_language/select.md#select-group-by-in-external-memory) pour plus de détails.
+ClickHouse peut utiliser la mémoire externe pour les données temporaires. Voir [Groupe par dans la mémoire externe](../sql_reference/statements/select.md#select-group-by-in-external-memory) pour plus de détails.
 
 ## Fichier D'Échange {#swap-file}
 

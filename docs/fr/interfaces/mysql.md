@@ -1,10 +1,13 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 20
+toc_title: Interface MySQL
 ---
 
 # Interface MySQL {#mysql-interface}
 
-ClickHouse prend en charge le protocole de fil MySQL. Il peut être activé par [mysql\_port](../operations/server_settings/settings.md#server_settings-mysql_port) paramètre dans le fichier de configuration:
+ClickHouse prend en charge le protocole de fil MySQL. Il peut être activé par [mysql\_port](../operations/server_configuration_parameters/settings.md#server_configuration_parameters-mysql_port) paramètre dans le fichier de configuration:
 
 ``` xml
 <mysql_port>9004</mysql_port>

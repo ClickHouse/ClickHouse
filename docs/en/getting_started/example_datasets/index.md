@@ -1,3 +1,9 @@
+---
+toc_folder_title: Example Datasets
+toc_priority: 12
+toc_title: Introduction
+---
+
 # Example Datasets
 
 This section describes how to obtain example datasets and import them into ClickHouse.
