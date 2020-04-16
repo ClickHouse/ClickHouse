@@ -3,7 +3,7 @@
 
 namespace DB
 {
-    
+
 MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_, callback), format_settings(format_settings_) {}
 
