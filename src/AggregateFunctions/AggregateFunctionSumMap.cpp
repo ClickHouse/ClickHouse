@@ -56,6 +56,9 @@ SumMapArgs parseArguments(const std::string & name, const DataTypes & arguments)
 
     if (arguments.size() == 1)
     {
+        // sumMap is a transitive function, so it can be stored in SimpleAggregateFunction columns.
+        // There is a caveat: it must support sumMap(sumMap(...)), e.g. it must be able to accept its
+        // own output as an input. This is why we also support Tuple(keys, values) as an argument. 
         const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(arguments[0].get());
         if (!tuple_type)
             throw Exception("When function " + name + " gets one argument it must be a tuple",
