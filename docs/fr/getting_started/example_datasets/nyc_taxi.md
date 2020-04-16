@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 16
+toc_title: "New York Taxi Donn\xE9es"
 ---
 
 # New York Taxi Données {#new-york-taxi-data}

@@ -113,7 +113,7 @@ int mainImpl(int argc, char ** argv)
     for (int i = 0; argv[2][i]; ++i)
     {
         char c = argv[2][i];
-        switch(c)
+        switch (c)
         {
             case 'r':
                 mode |= MODE_READ;

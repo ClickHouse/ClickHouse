@@ -1,0 +1,24 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import os
+import sys
+import lxml.etree as etree
+
+def _convert_junit_to_html(junit_path, html_path):
+    with open(os.path.join(os.path.dirname(__file__), "junit-noframes.xsl")) as xslt_file:
+        junit_to_html_xslt = etree.parse(xslt_file)
+        with open(junit_path) as junit_file:
+            junit_xml = etree.parse(junit_file)
+            transform = etree.XSLT(junit_to_html_xslt)
+            html = etree.tostring(transform(junit_xml), encoding="utf-8")
+            html_dir = os.path.dirname(html_path)
+            if not os.path.exists(html_dir):
+                os.makedirs(html_dir)
+            with open(html_path, "w") as html_file:
+                html_file.write(html)
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        raise "Insufficient arguments: junit.xml result.html", level
+    junit_path, html_path = sys.argv[1] , sys.argv[2]
+    _convert_junit_to_html(junit_path, html_path)

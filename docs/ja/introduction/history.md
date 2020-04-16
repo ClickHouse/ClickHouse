@@ -1,3 +1,8 @@
+---
+toc_priority: 7
+toc_title: 歴史
+---
+
 # ClickHouseの歴史 {#clickhousenoli-shi}
 
 ClickHouseは元々、 [世界で2番目に大きなWeb分析プラットフォーム](http://w3techs.com/technologies/overview/traffic_analysis/all) である [Yandex.Metrica](https://metrica.yandex.com/)を強化するために開発されたもので、このシステムのコアコンポーネントであり続けています。データベースには13兆を超えるレコードがあり、毎日200億を超えるイベントが発生しますが、ClickHouseでは集計されていないデータから直接カスタムレポートを生成できます。この記事では、ClickHouseの開発の初期段階におけるClickHouseの目標について簡単に説明します。

@@ -38,15 +38,32 @@
             window.history.replaceState('', document.title, dst);
         }
     });
+
+    var top_nav = $('#top-nav.sticky-top');
+    if (window.location.hash.length > 1 && top_nav.length) {
+        var offset = $(window.location.hash).offset().top - top_nav.height() * 1.5;
+        $('html, body').animate({
+            scrollTop: offset
+        }, 70);
+    }
+
+    $('img').each(function() {
+        var src = $(this).attr('data-src');
+        if (src) {
+            $(this).attr('src', src);
+        }
+    });
+
     (function (d, w, c) {
         (w[c] = w[c] || []).push(function() {
+            var is_single_page = $('html').attr('data-single-page') === 'true';
             try {
                 w.yaCounter18343495 = new Ya.Metrika2({
-                    id:18343495,
-                    clickmap:true,
-                    trackLinks:true,
-                    accurateTrackBounce:true,
-                    webvisor:true
+                    id: 18343495,
+                    clickmap: !is_single_page,
+                    trackLinks: !is_single_page,
+                    accurateTrackBounce: !is_single_page,
+                    webvisor: !is_single_page
                 });
             } catch(e) { }
         });
@@ -62,12 +79,14 @@
             d.addEventListener("DOMContentLoaded", f, false);
         } else { f(); }
     })(document, window, "yandex_metrika_callbacks2");
+
     var beforePrint = function() {
         var details = document.getElementsByTagName("details");
         for (var i = 0; i < details.length; ++i) {
             details[i].open = 1;
         }
     };
+
     if (window.matchMedia) {
         window.matchMedia('print').addListener(function(q) {
             if (q.matches) {

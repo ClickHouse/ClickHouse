@@ -1,3 +1,4 @@
+import collections
 import contextlib
 import multiprocessing
 import os
@@ -6,6 +7,8 @@ import sys
 import socket
 import tempfile
 import threading
+
+import yaml
 
 
 @contextlib.contextmanager
@@ -57,3 +60,54 @@ def run_function_in_parallel(func, args_list, threads=False):
                 exit_code = process.exitcode
     if exit_code:
         sys.exit(exit_code)
+
+
+def read_md_file(path):
+    in_meta = False
+    meta = {}
+    meta_text = []
+    content = []
+    if os.path.exists(path):
+        with open(path, 'r') as f:
+            for line in f:
+                if line.startswith('---'):
+                    if in_meta:
+                        in_meta = False
+                        meta = yaml.full_load(''.join(meta_text))
+                    else:
+                        in_meta = True
+                else:
+                    if in_meta:
+                        meta_text.append(line)
+                    else:
+                        content.append(line)
+    return meta, ''.join(content)
+
+
+def write_md_file(path, meta, content):
+    dirname = os.path.dirname(path)
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
+    with open(path, 'w') as f:
+        if meta:
+            print('---', file=f)
+            yaml.dump(meta, f)
+            print('---', file=f)
+            if not content.startswith('\n'):
+                print('', file=f)
+        f.write(content)
+
+
+def represent_ordereddict(dumper, data):
+    value = []
+    for item_key, item_value in data.items():
+        node_key = dumper.represent_data(item_key)
+        node_value = dumper.represent_data(item_value)
+
+        value.append((node_key, node_value))
+
+    return yaml.nodes.MappingNode(u'tag:yaml.org,2002:map', value)
+
+
+yaml.add_representer(collections.OrderedDict, represent_ordereddict)

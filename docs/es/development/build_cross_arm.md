@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 67
+toc_title: "C\xF3mo construir ClickHouse en Linux para AARCH64 (ARM64)"
 ---
 
 # Cómo construir ClickHouse en Linux para la arquitectura AARCH64 (ARM64 {#how-to-build-clickhouse-on-linux-for-aarch64-arm64-architecture}
