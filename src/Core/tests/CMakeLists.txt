@@ -15,3 +15,6 @@ if (ENABLE_FUZZING)
     add_executable (names_and_types_fuzzer names_and_types_fuzzer.cpp)
     target_link_libraries (names_and_types_fuzzer PRIVATE dbms ${LIB_FUZZING_ENGINE})
 endif ()
+
+add_executable (mysql_client mysql_client.cpp)
+target_link_libraries (mysql_client PRIVATE dbms)
