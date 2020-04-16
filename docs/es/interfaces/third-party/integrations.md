@@ -26,7 +26,10 @@ toc_title: "Integraci\xF3n"
         -   [Método de codificación de datos:](https://github.com/zlzforever/ClickHouseMigrator)
 -   Colas de mensajes
     -   [Kafka](https://kafka.apache.org)
-        -   [Método de codificación de datos:](https://github.com/housepower/clickhouse_sinker) (utilizar [Ir cliente](https://github.com/kshvakov/clickhouse/))
+        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (usos [Go client](https://github.com/ClickHouse/clickhouse-go/))
+-   Procesamiento de flujo
+    -   [Flink](https://flink.apache.org)
+        -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
 -   Almacenamiento de objetos
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         -   [Haga clic en el botón de copia de seguridad](https://github.com/AlexAkulov/clickhouse-backup)

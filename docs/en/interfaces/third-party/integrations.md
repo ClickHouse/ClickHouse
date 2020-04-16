@@ -24,7 +24,10 @@ toc_title: Integrations
         -   [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
 -   Message queues
     -   [Kafka](https://kafka.apache.org)
-        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/kshvakov/clickhouse/))
+        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/ClickHouse/clickhouse-go/))
+-   Stream processing
+    -   [Flink](https://flink.apache.org)
+        -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
 -   Object storages
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         -   [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
