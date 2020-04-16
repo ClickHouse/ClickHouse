@@ -50,7 +50,6 @@ class MergeTreeDataMergerMutator
 {
 public:
     using AllowedMergingPredicate = std::function<bool (const MergeTreeData::DataPartPtr &, const MergeTreeData::DataPartPtr &, String *)>;
-    using AllowedSingleMergePredicate = std::function<bool (const MergeTreeData::DataPartPtr &, String *)>;
 
     MergeTreeDataMergerMutator(MergeTreeData & data_, size_t background_pool_size);
 
@@ -81,8 +80,7 @@ public:
         bool aggressive,
         size_t max_total_size_to_merge,
         const AllowedMergingPredicate & can_merge,
-        String * out_disable_reason = nullptr,
-        const AllowedSingleMergePredicate & single_merge = [](const MergeTreeData::DataPartPtr &, String *) -> bool { return true; });
+        String * out_disable_reason = nullptr);
 
 
     /** Select all the parts in the specified partition for merge, if possible.
