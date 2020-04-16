@@ -38,7 +38,7 @@ sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
 ```
 
-You can also download and install packages manually from here: https://repo.yandex.ru/clickhouse/deb/stable/main/.
+You can also download and install packages manually from [here](https://repo.yandex.ru/clickhouse/deb/stable/main/).
 
 #### Packages {#packages}
 
@@ -67,7 +67,7 @@ Then run these commands to install packages:
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-You can also download and install packages manually from here: https://repo.clickhouse.tech/rpm/stable/x86\_64.
+You can also download and install packages manually from [here](https://repo.clickhouse.tech/rpm/stable/x86_64).
 
 ### From Tgz Archives {#from-tgz-archives}
 
