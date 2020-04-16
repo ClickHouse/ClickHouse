@@ -75,6 +75,9 @@ toc_title: Integrations
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
+- PHP
+    -   [Doctrine](https://www.doctrine-project.org/)
+        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [dplyr](https://db.rstudio.com/dplyr/)
         -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))

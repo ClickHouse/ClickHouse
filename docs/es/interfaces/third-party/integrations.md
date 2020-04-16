@@ -77,6 +77,9 @@ toc_title: "Integraci\xF3n"
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (utilizar [InformaciónSistema abierto.](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
         -   [Pandahouse](https://github.com/kszucs/pandahouse)
+- PHP
+    -   [Doctrine](https://www.doctrine-project.org/)
+        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [Dplyr](https://db.rstudio.com/dplyr/)
         -   [Bienvenidos al Portal de LicitaciÃ³n ElectrÃ³nica de LicitaciÃ³n ElectrÃ³nica](https://github.com/IMSMWU/RClickhouse) (utilizar [Bienvenidos](https://github.com/artpaul/clickhouse-cpp))
