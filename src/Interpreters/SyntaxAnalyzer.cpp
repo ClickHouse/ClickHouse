@@ -375,23 +375,30 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 }
 
 /// Checks if ASTFunction or its arguments are stateful.
-bool isASTFunctionStateful(const ASTFunction * ast_function, const Context & context)
+bool isASTFunctionStateful(const ASTPtr & current_ast, const Context & context)
 {
-    const auto & function = FunctionFactory::instance().tryGet(ast_function->name, context);
-
-    if (function && function->isStateful())
-        return true;
-
-    if (ast_function->arguments)
+    if (auto ast_function = current_ast->as<ASTFunction>())
     {
-        ASTs args = ast_function->arguments->children;
-        for (const auto & elem : args)
+        if (ast_function->name == "any" || ast_function->name == "groupArray")
+            return true;
+
+        const auto & function = FunctionFactory::instance().tryGet(ast_function->name, context);
+
+        if (function && function->isStateful())
+            return true;
+
+        for (const auto & elem : ast_function->children)
         {
-            if (const auto arg = elem->as<ASTFunction>())
-            {
-                if (arg && isASTFunctionStateful(arg, context))
-                    return true;
-            }
+            if (isASTFunctionStateful(elem, context))
+                return true;
+        }
+    }
+    else if (auto ast_expression_list = current_ast->as<ASTExpressionList>())
+    {
+        for (const auto & elem : ast_expression_list->children)
+        {
+            if (isASTFunctionStateful(elem, context))
+                return true;
         }
     }
 
@@ -401,6 +408,9 @@ bool isASTFunctionStateful(const ASTFunction * ast_function, const Context & con
 /// Removes duplicate ORDER BY from subqueries.
 void optimizeDuplicateOrderByFromSubqueries(const ASTPtr & current_ast, const Context & context)
 {
+    if (!current_ast)
+        return;
+
     auto select_query = current_ast->as<ASTSelectQuery>();
 
     if (select_query)
@@ -414,9 +424,7 @@ void optimizeDuplicateOrderByFromSubqueries(const ASTPtr & current_ast, const Co
     else
     {
         for (const auto & elem : current_ast->children)
-        {
             optimizeDuplicateOrderByFromSubqueries(elem, context);
-        }
     }
 }
 
@@ -426,7 +434,7 @@ void optimizeDuplicateOrderBy(const ASTPtr & current_ast, const Context & contex
     for (const auto & elem : current_ast->children)
         optimizeDuplicateOrderBy(elem, context);
 
-    const auto select_query = current_ast->as<ASTSelectQuery>();
+    auto select_query = current_ast->as<ASTSelectQuery>();
 
     if (!select_query)
         return;
@@ -439,12 +447,9 @@ void optimizeDuplicateOrderBy(const ASTPtr & current_ast, const Context & contex
 
     if (select_query->orderBy() || select_query->groupBy())
     {
-        const auto & expression_list = select_query->select();
-
-        for (const auto & ast_function : expression_list->children)
+        for (const auto & elem : select_query->children)
         {
-            auto function = ast_function->as<ASTFunction>();
-            if (function && isASTFunctionStateful(function, context))
+            if (isASTFunctionStateful(elem, context))
                 return;
         }
 
@@ -497,7 +502,7 @@ void optimizeDuplicateDistinct(const ASTPtr & current_ast,
                     current_ids.push_back(table_expression->subquery->getColumnName());
             }
 
-            current_ids.reserve(expression_list->children.size());
+            current_ids.reserve(expression_list->children.size() + 1);
             for (const auto & id : expression_list->children)
                 current_ids.push_back(id->getColumnName());
 
