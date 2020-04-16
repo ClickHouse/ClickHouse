@@ -51,7 +51,7 @@ public:
 
     bool isSuitableForConstantFolding() const override;
 
-    bool isInjective(const Block & sample_block) override;
+    bool isInjective(const Block & sample_block) const override;
 
     bool hasInformationAboutMonotonicity() const override;
 

@@ -107,7 +107,7 @@ public:
     virtual bool isSuitableForConstantFolding() const { return true; }
     virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
 
-    virtual bool isInjective(const Block & /*sample_block*/) { return false; }
+    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool hasInformationAboutMonotonicity() const { return false; }
@@ -256,7 +256,7 @@ public:
     /// Properties from IFunctionBase (see IFunction.h)
     virtual bool isSuitableForConstantFolding() const { return true; }
     virtual ColumnPtr getResultIfAlwaysReturnsConstantAndHasArguments(const Block & /*block*/, const ColumnNumbers & /*arguments*/) const { return nullptr; }
-    virtual bool isInjective(const Block & /*sample_block*/) { return false; }
+    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
     virtual bool isDeterministic() const { return true; }
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isStateful() const { return false; }

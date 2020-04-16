@@ -131,7 +131,7 @@ public:
       *
       * sample_block should contain data types of arguments and values of constants, if relevant.
       */
-    virtual bool isInjective(const Block & /*sample_block*/) { return false; }
+    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
 
     /** Function is called "deterministic", if it returns same result for same values of arguments.
       * Most of functions are deterministic. Notable counterexample is rand().

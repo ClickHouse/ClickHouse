@@ -241,7 +241,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -763,7 +763,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -1328,7 +1328,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -1476,7 +1476,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -1617,7 +1617,7 @@ public:
 
 private:
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const Block & /*sample_block*/) override { return true; }
+    bool isInjective(const Block & /*sample_block*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
