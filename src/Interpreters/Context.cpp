@@ -317,6 +317,7 @@ struct ContextShared
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
+    std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
     std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
@@ -413,6 +414,7 @@ struct ContextShared
         embedded_dictionaries.reset();
         external_dictionaries_loader.reset();
         external_models_loader.reset();
+        buffer_flush_schedule_pool.reset();
         background_pool.reset();
         background_move_pool.reset();
         schedule_pool.reset();
@@ -1328,6 +1330,14 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
         shared->background_move_pool.emplace(settings.background_move_pool_size, pool_settings, "BackgroundMovePool", "BgMoveProcPool");
     }
     return *shared->background_move_pool;
+}
+
+BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->buffer_flush_schedule_pool)
+        shared->buffer_flush_schedule_pool.emplace(settings.background_buffer_flush_schedule_pool_size);
+    return *shared->buffer_flush_schedule_pool;
 }
 
 BackgroundSchedulePool & Context::getSchedulePool()
