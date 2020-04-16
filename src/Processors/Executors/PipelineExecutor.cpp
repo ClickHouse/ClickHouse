@@ -263,6 +263,8 @@ bool PipelineExecutor::tryAddProcessorToStackIfUpdated(Edge & edge, Queue & queu
         node.status = ExecStatus::Preparing;
         return prepareProcessor(edge.to, thread_number, queue, std::move(lock));
     }
+    else
+        graph[edge.to].processor->onUpdatePorts();
 
     return true;
 }

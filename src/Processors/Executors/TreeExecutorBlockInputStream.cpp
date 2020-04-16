@@ -164,7 +164,7 @@ void TreeExecutorBlockInputStream::execute(bool on_totals, bool on_extremes)
         }
     };
 
-    while (!stack.empty())
+    while (!stack.empty() && !is_cancelled)
     {
         IProcessor * node = stack.top();
 
@@ -295,7 +295,7 @@ void TreeExecutorBlockInputStream::initRowsBeforeLimit()
 
 Block TreeExecutorBlockInputStream::readImpl()
 {
-    while (true)
+    while (!is_cancelled)
     {
         if (input_port->isFinished())
         {
@@ -338,6 +338,8 @@ Block TreeExecutorBlockInputStream::readImpl()
 
         execute(false, false);
     }
+
+    return {};
 }
 
 void TreeExecutorBlockInputStream::setProgressCallback(const ProgressCallback & callback)
@@ -371,6 +373,14 @@ void TreeExecutorBlockInputStream::addTotalRowsApprox(size_t value)
     /// Add only for one source.
     if (!sources_with_progress.empty())
         sources_with_progress.front()->addTotalRowsApprox(value);
+}
+
+void TreeExecutorBlockInputStream::cancel(bool kill)
+{
+    IBlockInputStream::cancel(kill);
+
+    for (auto & processor : processors)
+        processor->cancel();
 }
 
 }

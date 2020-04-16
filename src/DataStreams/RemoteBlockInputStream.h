@@ -135,7 +135,8 @@ private:
       * - data size is already satisfactory (when using LIMIT, for example)
       * - an exception was thrown from client side
       */
-    std::atomic<bool> was_cancelled { false };
+    bool was_cancelled { false };
+    std::mutex was_cancelled_mutex;
 
     /** An exception from replica was received. No need in receiving more packets or
       * requesting to cancel query execution

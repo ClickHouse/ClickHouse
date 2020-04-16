@@ -12,7 +12,7 @@
 /// Table size is bigger than DATE_LUT_MAX_DAY_NUM to fill all indices within UInt16 range: this allows to remove extra check.
 #define DATE_LUT_SIZE 0x10000
 #define DATE_LUT_MIN_YEAR 1970
-#define DATE_LUT_MAX_YEAR 2105 /// Last supported year
+#define DATE_LUT_MAX_YEAR 2106 /// Last supported year (incomplete)
 #define DATE_LUT_YEARS (1 + DATE_LUT_MAX_YEAR - DATE_LUT_MIN_YEAR) /// Number of years in lookup table
 
 #if defined(__PPC__)

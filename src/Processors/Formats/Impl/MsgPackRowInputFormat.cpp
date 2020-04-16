@@ -24,34 +24,35 @@ namespace ErrorCodes
 }
 
 MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
-    : IRowInputFormat(header_, in_, std::move(params_)), buf(in_), data_types(header_.getDataTypes()) {}
+    : IRowInputFormat(header_, in_, std::move(params_)), buf(in), ctx(&reference_func, nullptr, msgpack::unpack_limit()), data_types(header_.getDataTypes()) {}
+
+int MsgPackRowInputFormat::unpack(msgpack::zone & zone, size_t & offset)
+{
+    offset = 0;
+    ctx.init();
+    ctx.user().set_zone(zone);
+    return ctx.execute(buf.position(), buf.buffer().end() - buf.position(), offset);
+}
 
 bool MsgPackRowInputFormat::readObject()
 {
     if (buf.eof())
         return false;
+
     PeekableReadBufferCheckpoint checkpoint{buf};
-    size_t offset = 0;
-    bool need_more_data = true;
-    while (need_more_data)
+    std::unique_ptr<msgpack::zone> zone(new msgpack::zone);
+    size_t offset;
+    while (!unpack(*zone, offset))
     {
-        offset = 0;
-        try
-        {
-            object_handle = msgpack::unpack(buf.position(), buf.buffer().end() - buf.position(), offset);
-            need_more_data = false;
-        }
-        catch (msgpack::insufficient_bytes &)
-        {
-            buf.position() = buf.buffer().end();
-            if (buf.eof())
-                throw Exception("Unexpected end of file while parsing msgpack object.", ErrorCodes::INCORRECT_DATA);
-            buf.position() = buf.buffer().end();
-            buf.makeContinuousMemoryFromCheckpointToPos();
-            buf.rollbackToCheckpoint();
-        }
+        buf.position() = buf.buffer().end();
+        if (buf.eof())
+            throw Exception("Unexpected end of file while parsing msgpack object.", ErrorCodes::INCORRECT_DATA);
+        buf.position() = buf.buffer().end();
+        buf.makeContinuousMemoryFromCheckpointToPos();
+        buf.rollbackToCheckpoint();
     }
     buf.position() += offset;
+    object_handle = msgpack::object_handle(ctx.data(), std::move(zone));
     return true;
 }
 
@@ -119,8 +120,8 @@ void MsgPackRowInputFormat::insertObject(IColumn & column, DataTypePtr data_type
         case TypeIndex::FixedString: [[fallthrough]];
         case TypeIndex::String:
         {
-            String str = object.as<String>();
-            column.insertData(str.data(), str.size());
+            msgpack::object_str obj_str = object.via.str;
+            column.insertData(obj_str.ptr, obj_str.size);
             return;
         }
         case TypeIndex::Array:

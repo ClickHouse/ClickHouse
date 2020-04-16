@@ -37,6 +37,13 @@ public:
     void setProgressCallback(const ProgressCallback & callback) final { stream->setProgressCallback(callback); }
     void addTotalRowsApprox(size_t value) final { stream->addTotalRowsApprox(value); }
 
+    /// Stop reading from stream if output port is finished.
+    void onUpdatePorts() override
+    {
+        if (getPort().isFinished())
+            cancel();
+    }
+
 protected:
     void onCancel() override { stream->cancel(false); }
 

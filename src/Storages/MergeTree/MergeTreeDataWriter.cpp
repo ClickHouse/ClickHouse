@@ -210,8 +210,8 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataWriter::writeTempPart(BlockWithPa
 
         const auto & date_lut = DateLUT::instance();
 
-        DayNum min_month = date_lut.toFirstDayNumOfMonth(DayNum(min_date));
-        DayNum max_month = date_lut.toFirstDayNumOfMonth(DayNum(max_date));
+        auto min_month = date_lut.toNumYYYYMM(min_date);
+        auto max_month = date_lut.toNumYYYYMM(max_date);
 
         if (min_month != max_month)
             throw Exception("Logical error: part spans more than one month.", ErrorCodes::LOGICAL_ERROR);

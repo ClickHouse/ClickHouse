@@ -1,3 +1,9 @@
+---
+toc_folder_title: Эксплуатация
+toc_priority: 41
+toc_title: Введение
+---
+
 # Эксплуатация {#ekspluatatsiia}
 
 Руководство по эксплуатации ClickHouse состоит из следующих основных разделов:
