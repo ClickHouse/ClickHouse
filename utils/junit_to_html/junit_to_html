@@ -3,22 +3,62 @@
 import os
 import sys
 import lxml.etree as etree
+import json
 
-def _convert_junit_to_html(junit_path, html_path):
+def export_testcases_json(report, path):
+    with open(os.path.join(path, "cases.jer"), "w") as testcases_file:
+        for testsuite in report.getroot():
+            for testcase in testsuite:
+                row = {}
+                row["hostname"] = testsuite.get("hostname")
+                row["hostname"] = testsuite.get("hostname")
+                row["timestamp"] = testsuite.get("timestamp")
+                row["testname"] = testcase.get("name")
+                row["classname"] = testcase.get("classname")
+                row["file"] = testcase.get("file")
+                row["line"] = testcase.get("line")
+                row["duration"] = testcase.get("time")
+                for el in testcase:
+                    if el.tag == "system-err":
+                        row["stderr"] = el.text
+                    if el.tag == "system-out":
+                        row["stdout"] = el.text
+                json.dump(row, testcases_file)
+
+def export_testsuites_json(report, path):
+    with open(os.path.join(path, "suites.jer"), "w") as testsuites_file:
+        for testsuite in report.getroot():
+            row = {}
+            row["name"] = testsuite.get("name")
+            row["errors"] = testsuite.get("errors")
+            row["failures"] = testsuite.get("failures")
+            row["hostname"] = testsuite.get("hostname")
+            row["skipped"] = testsuite.get("skipped")
+            row["duration"] = testsuite.get("time")
+            row["timestamp"] = testsuite.get("timestamp")
+            json.dump(row, testsuites_file)
+
+
+def _convert_junit_to_html(junit_path, result_path):
     with open(os.path.join(os.path.dirname(__file__), "junit-noframes.xsl")) as xslt_file:
         junit_to_html_xslt = etree.parse(xslt_file)
+        if not os.path.exists(result_path):
+            os.makedirs(result_path)
+
         with open(junit_path) as junit_file:
             junit_xml = etree.parse(junit_file)
+
+            export_testsuites_json(junit_xml, result_path)
+            export_testcases_json(junit_xml, result_path)
             transform = etree.XSLT(junit_to_html_xslt)
             html = etree.tostring(transform(junit_xml), encoding="utf-8")
-            html_dir = os.path.dirname(html_path)
-            if not os.path.exists(html_dir):
-                os.makedirs(html_dir)
-            with open(html_path, "w") as html_file:
+
+            with open(os.path.join(result_path, "result.html"), "w") as html_file:
                 html_file.write(html)
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        raise "Insufficient arguments: junit.xml result.html", level
-    junit_path, html_path = sys.argv[1] , sys.argv[2]
-    _convert_junit_to_html(junit_path, html_path)
+        raise "Insufficient arguments: junit.xml result_path ", level
+    junit_path, result_path = sys.argv[1] , sys.argv[2]
+    print "junit_path: {}, result_path: {}".format(junit_path, result_path)
+    _convert_junit_to_html(junit_path, result_path)
