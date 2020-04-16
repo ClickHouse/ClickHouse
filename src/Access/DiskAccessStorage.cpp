@@ -560,7 +560,7 @@ std::vector<UUID> DiskAccessStorage::findAllImpl(std::type_index type) const
 bool DiskAccessStorage::existsImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    return id_to_entry_map.contains(id);
+    return id_to_entry_map.count(id);
 }
 
 
@@ -709,7 +709,7 @@ void DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     if (name_changed)
     {
         const auto & name_to_id_map = name_to_id_maps.at(type);
-        if (name_to_id_map.contains(new_name))
+        if (name_to_id_map.count(new_name))
             throwNameCollisionCannotRename(type, String{old_name}, new_name);
         scheduleWriteLists(type);
     }
