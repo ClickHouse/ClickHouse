@@ -2213,13 +2213,8 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
             UInt64 max_source_part_size_for_mutation = merger_mutator.getMaxSourcePartSizeForMutation();
 
             FutureMergedMutatedPart future_merged_part;
-            auto merge_pred_for_single_part =
-                [&merge_pred] (const MergeTreeData::DataPartPtr & part, String * explain) -> bool
-                {
-                    return merge_pred.canMergeSinglePart(part, explain);
-                };
             if (max_source_parts_size_for_merge > 0 &&
-                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, nullptr, merge_pred_for_single_part))
+                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, nullptr))
             {
                 success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
                     future_merged_part.name, future_merged_part.type, deduplicate, force_ttl);
@@ -2708,9 +2703,6 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id, 
 
     while (true)
     {
-        Coordination::Requests ops;
-        Coordination::Responses responses;
-
         Coordination::Stat added_parts_stat;
         String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
 
@@ -2720,15 +2712,12 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id, 
             parts_with_quorum.fromString(old_added_parts);
 
         /// Delete information about particular partition.
-
-        /// Since c++20.
         if (!parts_with_quorum.added_parts.contains(partition_id))
         {
             /// There is no information about interested part.
             break;
         }
 
-        /// De Morgan's law
         if (part_name.empty() || parts_with_quorum.added_parts[partition_id] == part_name)
             parts_with_quorum.added_parts.erase(partition_id);
         else
@@ -3606,9 +3595,6 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
 
     String partition_id = getPartitionIDFromQuery(partition, query_context);
 
-    if (query_context.getSettingsRef().insert_quorum)
-        cleanLastPartNode(partition_id);
-
     LogEntry entry;
     if (dropPartsInPartition(*zookeeper, partition_id, entry, detach))
     {
@@ -3621,6 +3607,9 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
                 waitForAllReplicasToProcessLogEntry(entry);
         }
     }
+
+    /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
+    cleanLastPartNode(partition_id);
 }
 
 
@@ -5203,14 +5192,14 @@ void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_ta
     log_znode_path = dynamic_cast<const Coordination::CreateResponse &>(*op_results.back()).path_created;
     entry_delete.znode_name = log_znode_path.substr(log_znode_path.find_last_of('/') + 1);
 
-    if (query_context.getSettingsRef().insert_quorum)
-        cleanLastPartNode(partition_id);
-
     if (query_context.getSettingsRef().replication_alter_partitions_sync > 1)
     {
         lock1.release();
         waitForAllReplicasToProcessLogEntry(entry_delete);
     }
+
+    /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
+    cleanLastPartNode(partition_id);
 }
 
 void StorageReplicatedMergeTree::getCommitPartOps(

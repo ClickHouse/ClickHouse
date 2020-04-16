@@ -1645,8 +1645,24 @@ ReplicatedMergeTreeMergePredicate::ReplicatedMergeTreeMergePredicate(
 }
 
 bool ReplicatedMergeTreeMergePredicate::operator()(
-        const MergeTreeData::DataPartPtr & left, const MergeTreeData::DataPartPtr & right,
-        String * out_reason) const
+    const MergeTreeData::DataPartPtr & left,
+    const MergeTreeData::DataPartPtr & right,
+    String * out_reason) const
+{
+    if (!left)
+        throw;
+
+    if (left)
+        return canMergeTwoParts(left, right, out_reason);
+    else
+        return canMergeSinglePart(right, out_reason);
+}
+
+
+bool ReplicatedMergeTreeMergePredicate::canMergeTwoParts(
+    const MergeTreeData::DataPartPtr & left,
+    const MergeTreeData::DataPartPtr & right,
+    String * out_reason) const
 {
     /// A sketch of a proof of why this method actually works:
     ///
@@ -1781,10 +1797,10 @@ bool ReplicatedMergeTreeMergePredicate::operator()(
     return true;
 }
 
-bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(const MergeTreeData::DataPartPtr & part, String * out_reason) const
+bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
+    const MergeTreeData::DataPartPtr & part,
+    String * out_reason) const
 {
-    LOG_FATAL(&Poco::Logger::get("ReplicatedMergeTreeMergePredicate::operator()"), "begin");
-
     if (part->name == inprogress_quorum_part)
     {
         LOG_FATAL(&Poco::Logger::get("ReplicatedMergeTreeMergePredicate"), "operator()");

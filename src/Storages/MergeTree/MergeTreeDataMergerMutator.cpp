@@ -204,8 +204,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
     bool aggressive,
     size_t max_total_size_to_merge,
     const AllowedMergingPredicate & can_merge_callback,
-    String * out_disable_reason,
-    const AllowedSingleMergePredicate & single_merge)
+    String * out_disable_reason)
 {
     MergeTreeData::DataPartsVector data_parts = data.getDataPartsVector();
     const auto data_settings = data.getSettings();
@@ -233,7 +232,7 @@ bool MergeTreeDataMergerMutator::selectPartsToMerge(
             * So we have to check if this part is currently being inserted with quorum and so on and so forth.
             * Obviously we have to check it manually only for the first part
             * of each partition because it will be automatically checked for a pair of parts. */
-            if (!single_merge(part, nullptr))
+            if (!can_merge_callback(nullptr, part, nullptr))
                 continue;
 
         const String & partition_id = part->info.partition_id;
