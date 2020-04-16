@@ -10,3 +10,6 @@ target_link_libraries (move_field PRIVATE clickhouse_common_io)
 
 add_executable (string_ref_hash string_ref_hash.cpp)
 target_link_libraries (string_ref_hash PRIVATE clickhouse_common_io)
+
+add_executable (mysql_client mysql_client.cpp)
+target_link_libraries (mysql_client PRIVATE dbms)
