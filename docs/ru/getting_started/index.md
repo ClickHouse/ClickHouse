@@ -1,3 +1,10 @@
+---
+toc_folder_title: Начало работы
+toc_hidden: true
+toc_priority: 8
+toc_title: hidden
+---
+
 # Начало работы {#nachalo-raboty}
 
 Если вы новичок в ClickHouse и хотите вживую оценить его производительность, прежде всего нужно пройти через [процесс установки](install.md).
