@@ -8,6 +8,7 @@
 #include <Common/quoteString.h>
 #include <ext/range.h>
 #include <boost/smart_ptr/make_shared.hpp>
+#include <Core/Defines.h>
 
 
 namespace DB
@@ -77,7 +78,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
         try
         {
             ParserExpression parser;
-            parsed_conditions[type] = parseQuery(parser, condition, 0);
+            parsed_conditions[type] = parseQuery(parser, condition, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         }
         catch (...)
         {
