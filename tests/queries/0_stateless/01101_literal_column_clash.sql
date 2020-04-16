@@ -11,4 +11,13 @@ with 3 as "1" select 1, "1";
 
 -- https://github.com/ClickHouse/ClickHouse/issues/9953
 select 1, * from (select 2 x) a left join (select 1, 3 y) b on y = x;
+select 1, * from (select 2 x, 1) a right join (select 3 y) b on y = x;
+select null, isConstant(null), * from (select 2 x) a left join (select null, 3 y) b on y = x;
+select null, isConstant(null), * from (select 2 x, null) a right join (select 3 y) b on y = x;
+
+-- other cases with joins and constants
+
+select cast(1, 'UInt8') from (select arrayJoin([1, 2]) as a) t1 left join (select 1 as b) t2 on b = ignore('UInt8');
+
+select isConstant('UInt8'), toFixedString('hello', toUInt8(substring('UInt8', 5, 1))) from (select arrayJoin([1, 2]) as a) t1 left join (select 1 as b) t2 on b = ignore('UInt8');
 
