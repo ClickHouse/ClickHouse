@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/SyntaxAnalyzer.h>

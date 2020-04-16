@@ -132,7 +132,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
     {
         BlockIO res = executeQuery(load_all_query, context, true);
         /// FIXME res.in may implicitly use some objects owned be res, but them will be destructed after return
-        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        res.in = std::make_shared<ConvertingBlockInputStream>(res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
         return res.in;
     }
     return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, sample_block, context);
@@ -144,7 +144,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadUpdatedAll()
     if (is_local)
     {
         auto res = executeQuery(load_update_query, context, true);
-        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        res.in = std::make_shared<ConvertingBlockInputStream>(res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
         return res.in;
     }
     return std::make_shared<RemoteBlockInputStream>(pool, load_update_query, sample_block, context);
@@ -192,7 +192,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(con
     {
         auto res = executeQuery(query, context, true);
         res.in = std::make_shared<ConvertingBlockInputStream>(
-            context, res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+            res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
         return res.in;
     }
 

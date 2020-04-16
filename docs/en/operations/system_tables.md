@@ -709,7 +709,7 @@ When the table is deleted manually, it will be automatically created on the fly.
 
 You can specify an arbitrary partitioning key for the `system.query_thread_log` table in the [query\_thread\_log](server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) server setting (see the `partition_by` parameter).
 
-## system.trace\_log {#system_tables-trace_log}
+## system.trace_log {#system_tables-trace_log}
 
 Contains stack traces collected by the sampling query profiler.
 
@@ -719,24 +719,26 @@ To analyze logs, use the `addressToLine`, `addressToSymbol` and `demangle` intro
 
 Columns:
 
--   `event_date`([Date](../sql_reference/data_types/date.md)) — Date of sampling moment.
+-   `event_date` ([Date](../sql_reference/data_types/date.md)) — Date of sampling moment.
 
--   `event_time`([DateTime](../sql_reference/data_types/datetime.md)) — Timestamp of sampling moment.
+-   `event_time` ([DateTime](../sql_reference/data_types/datetime.md)) — Timestamp of the sampling moment.
 
--   `revision`([UInt32](../sql_reference/data_types/int_uint.md)) — ClickHouse server build revision.
+-   `timestamp_ns` ([UInt64](../sql_reference/data_types/int_uint.md)) — Timestamp of the sampling moment in nanoseconds.
+
+-   `revision` ([UInt32](../sql_reference/data_types/int_uint.md)) — ClickHouse server build revision.
 
     When connecting to server by `clickhouse-client`, you see the string similar to `Connected to ClickHouse server version 19.18.1 revision 54429.`. This field contains the `revision`, but not the `version` of a server.
 
--   `timer_type`([Enum8](../sql_reference/data_types/enum.md)) — Timer type:
+-   `timer_type` ([Enum8](../sql_reference/data_types/enum.md)) — Timer type:
 
     -   `Real` represents wall-clock time.
     -   `CPU` represents CPU time.
 
--   `thread_number`([UInt32](../sql_reference/data_types/int_uint.md)) — Thread identifier.
+-   `thread_number` ([UInt32](../sql_reference/data_types/int_uint.md)) — Thread identifier.
 
--   `query_id`([String](../sql_reference/data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
+-   `query_id` ([String](../sql_reference/data_types/string.md)) — Query identifier that can be used to get details about a query that was running from the [query\_log](#system_tables-query_log) system table.
 
--   `trace`([Array(UInt64)](../sql_reference/data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
+-   `trace` ([Array(UInt64)](../sql_reference/data_types/array.md)) — Stack trace at the moment of sampling. Each element is a virtual memory address inside ClickHouse server process.
 
 **Example**
 

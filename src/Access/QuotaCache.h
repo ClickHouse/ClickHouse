@@ -20,7 +20,13 @@ public:
     QuotaCache(const AccessControlManager & access_control_manager_);
     ~QuotaCache();
 
-    std::shared_ptr<const EnabledQuota> getEnabledQuota(const UUID & user_id, const String & user_name, const std::vector<UUID> & enabled_roles, const Poco::Net::IPAddress & address, const String & client_key);
+    std::shared_ptr<const EnabledQuota> getEnabledQuota(
+        const UUID & user_id,
+        const String & user_name,
+        const std::vector<UUID> & enabled_roles,
+        const Poco::Net::IPAddress & address,
+        const String & client_key);
+
     std::vector<QuotaUsageInfo> getUsageInfo() const;
 
 private:

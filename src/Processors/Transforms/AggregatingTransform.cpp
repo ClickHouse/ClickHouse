@@ -413,6 +413,9 @@ AggregatingTransform::~AggregatingTransform() = default;
 
 IProcessor::Status AggregatingTransform::prepare()
 {
+    /// There are one or two input ports.
+    /// The first one is used at aggregation step, the second one - while reading merged data from ConvertingAggregated
+
     auto & output = outputs.front();
     /// Last output is current. All other outputs should already be closed.
     auto & input = inputs.back();
@@ -432,7 +435,12 @@ IProcessor::Status AggregatingTransform::prepare()
 
     /// Finish data processing, prepare to generating.
     if (is_consume_finished && !is_generate_initialized)
+    {
+        /// Close input port in case max_rows_to_group_by was reached but not all data was read.
+        inputs.front().close();
+
         return Status::Ready;
+    }
 
     if (is_generate_initialized && !is_pipeline_created && !processors.empty())
         return Status::ExpandPipeline;

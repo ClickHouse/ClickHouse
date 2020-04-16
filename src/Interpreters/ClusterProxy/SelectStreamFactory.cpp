@@ -11,7 +11,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <common/logger_useful.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
 #include <Processors/Pipe.h>
 #include <Processors/Transforms/ConvertingTransform.h>
 #include <Processors/Sources/SourceFromInputStream.h>
@@ -94,7 +93,7 @@ Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Con
         Pipe pipe(std::move(source));
 
         pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-                pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name, context));
+                pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name));
 
         return pipe;
     }
@@ -104,7 +103,7 @@ Pipe createLocalStream(const ASTPtr & query_ast, const Block & header, const Con
     pipeline.addSimpleTransform([&](const Block & source_header)
     {
         return std::make_shared<ConvertingTransform>(
-                source_header, header, ConvertingTransform::MatchColumnsMode::Name, context);
+                source_header, header, ConvertingTransform::MatchColumnsMode::Name);
     });
 
     /** Materialization is needed, since from remote servers the constants come materialized.
