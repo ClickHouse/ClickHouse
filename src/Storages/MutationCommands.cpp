@@ -9,6 +9,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Common/typeid_cast.h>
 #include <Common/quoteString.h>
+#include <Core/Defines.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Parsers/queryToString.h>
 #include <common/logger_useful.h>
@@ -137,7 +138,7 @@ void MutationCommands::readText(ReadBuffer & in)
 
     ParserAlterCommandList p_alter_commands;
     auto commands_ast = parseQuery(
-        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0);
+        p_alter_commands, commands_str.data(), commands_str.data() + commands_str.length(), "mutation commands list", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     for (ASTAlterCommand * command_ast : commands_ast->as<ASTAlterCommandList &>().commands)
     {
         auto command = MutationCommand::parse(command_ast, true);

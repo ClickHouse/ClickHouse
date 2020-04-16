@@ -214,7 +214,7 @@ private:
     }
 };
 
-using CheckExpressionMatcher = ConstOneTypeMatcher<CheckExpressionVisitorData, false>;
+using CheckExpressionMatcher = ConstOneTypeMatcher<CheckExpressionVisitorData, NeedChild::none>;
 using CheckExpressionVisitor = ConstInDepthNodeVisitor<CheckExpressionMatcher, true>;
 
 

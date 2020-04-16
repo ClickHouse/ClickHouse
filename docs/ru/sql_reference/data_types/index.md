@@ -1,3 +1,9 @@
+---
+toc_folder_title: Типы данных
+toc_priority: 37
+toc_title: Введение
+---
+
 # Типы данных {#data_types}
 
 ClickHouse может сохранять в ячейках таблиц данные различных типов.

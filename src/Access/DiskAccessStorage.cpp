@@ -32,6 +32,7 @@
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Common/quoteString.h>
+#include <Core/Defines.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -93,7 +94,7 @@ namespace
         const char * end = begin + file_contents.size();
         while (pos < end)
         {
-            queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0));
+            queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH));
             while (isWhitespaceASCII(*pos) || *pos == ';')
                 ++pos;
         }

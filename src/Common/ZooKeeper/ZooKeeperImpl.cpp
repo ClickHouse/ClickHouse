@@ -11,6 +11,11 @@
 #include <Poco/Exception.h>
 #include <Poco/Net/NetException.h>
 
+#include <Common/config.h>
+#if USE_POCO_NETSSL
+#include <Poco/Net/SecureStreamSocket.h>
+#endif
+
 #include <array>
 
 
@@ -44,6 +49,13 @@ namespace CurrentMetrics
     extern const Metric ZooKeeperWatch;
 }
 
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int SUPPORT_IS_DISABLED;
+    }
+}
 
 /** ZooKeeper wire protocol.
 
@@ -817,7 +829,7 @@ ZooKeeper::~ZooKeeper()
 
 
 ZooKeeper::ZooKeeper(
-    const Addresses & addresses,
+    const Nodes & nodes,
     const String & root_path_,
     const String & auth_scheme,
     const String & auth_data,
@@ -851,7 +863,7 @@ ZooKeeper::ZooKeeper(
         default_acls.emplace_back(std::move(acl));
     }
 
-    connect(addresses, connection_timeout);
+    connect(nodes, connection_timeout);
 
     if (!auth_scheme.empty())
         sendAuth(auth_scheme, auth_data);
@@ -864,11 +876,11 @@ ZooKeeper::ZooKeeper(
 
 
 void ZooKeeper::connect(
-    const Addresses & addresses,
+    const Nodes & nodes,
     Poco::Timespan connection_timeout)
 {
-    if (addresses.empty())
-        throw Exception("No addresses passed to ZooKeeper constructor", ZBADARGUMENTS);
+    if (nodes.empty())
+        throw Exception("No nodes passed to ZooKeeper constructor", ZBADARGUMENTS);
 
     static constexpr size_t num_tries = 3;
     bool connected = false;
@@ -876,12 +888,25 @@ void ZooKeeper::connect(
     WriteBufferFromOwnString fail_reasons;
     for (size_t try_no = 0; try_no < num_tries; ++try_no)
     {
-        for (const auto & address : addresses)
+        for (const auto & node : nodes)
         {
             try
             {
-                socket = Poco::Net::StreamSocket();     /// Reset the state of previous attempt.
-                socket.connect(address, connection_timeout);
+                /// Reset the state of previous attempt.
+                if (node.secure)
+                {
+#if USE_POCO_NETSSL
+                    socket = Poco::Net::SecureStreamSocket();
+#else
+                    throw Exception{"Communication with ZooKeeper over SSL is disabled because poco library was built without NetSSL support.", ErrorCodes::SUPPORT_IS_DISABLED};
+#endif
+                }
+                else
+                {
+                    socket = Poco::Net::StreamSocket();
+                }
+
+                socket.connect(node.address, connection_timeout);
 
                 socket.setReceiveTimeout(operation_timeout);
                 socket.setSendTimeout(operation_timeout);
@@ -915,7 +940,7 @@ void ZooKeeper::connect(
             }
             catch (...)
             {
-                fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << address.toString();
+                fail_reasons << "\n" << getCurrentExceptionMessage(false) << ", " << node.address.toString();
             }
         }
 
@@ -926,15 +951,19 @@ void ZooKeeper::connect(
     if (!connected)
     {
         WriteBufferFromOwnString message;
-        message << "All connection tries failed while connecting to ZooKeeper. Addresses: ";
+        message << "All connection tries failed while connecting to ZooKeeper. nodes: ";
         bool first = true;
-        for (const auto & address : addresses)
+        for (const auto & node : nodes)
         {
             if (first)
                 first = false;
             else
                 message << ", ";
-            message << address.toString();
+
+            if (node.secure)
+                message << "secure://";
+
+            message << node.address.toString();
         }
 
         message << fail_reasons.str() << "\n";
