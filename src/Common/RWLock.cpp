@@ -211,7 +211,7 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
             /// Methods std::list<>::emplace_back() and std::unordered_map<>::emplace() provide strong exception safety
             /// We only need to roll back the changes to these objects: owner_queries and the readers/writers queue
             if (it_group->requests == 0)
-                eraseGroupAndSignalNext(it_group);  /// Rollback(SM1): nothrow
+                dropOwnerGroupAndPassOwnership(it_group);  /// Rollback(SM1): nothrow
 
             throw;
         }
@@ -259,11 +259,11 @@ void RWLockImpl::unlock(GroupsContainer::iterator group_it, const String & query
 
     /// If we are the last remaining referrer, remove this QNode and notify the next one
     if (--group_it->requests == 0)               /// SM: nothrow
-        eraseGroupAndSignalNext(group_it);
+        dropOwnerGroupAndPassOwnership(group_it);
 }
 
 
-void RWLockImpl::eraseGroupAndSignalNext(GroupsContainer::iterator group_it) noexcept
+void RWLockImpl::dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it) noexcept
 {
     rdlock_owner = readers_queue.end();
     wrlock_owner = writers_queue.end();
