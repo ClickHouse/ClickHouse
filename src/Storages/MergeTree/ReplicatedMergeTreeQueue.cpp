@@ -1798,7 +1798,6 @@ bool ReplicatedMergeTreeMergePredicate::canMergeSinglePart(
     const MergeTreeData::DataPartPtr & part,
     String * out_reason) const
 {
-    LOG_FATAL(&Poco::Logger::get("ReplicatedMergeTreeMergePredicate"), "operator()");
     if (part->name == inprogress_quorum_part)
     {
         if (out_reason)
