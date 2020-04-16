@@ -154,7 +154,7 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
         writers_queue.emplace_back(type);  /// SM1: may throw (nothing to roll back)
     }
     else if (readers_queue.empty() ||
-            (rdlock_owner == readers_queue.begin() && !writers_queue.empty()))
+            (rdlock_owner == readers_queue.begin() && readers_queue.size() == 1 && !writers_queue.empty()))
     {
         readers_queue.emplace_back(type);  /// SM1: may throw (nothing to roll back)
     }
