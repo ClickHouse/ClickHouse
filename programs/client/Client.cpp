@@ -959,11 +959,14 @@ private:
         ASTPtr res;
 
         const auto & settings = context.getSettingsRef();
+        size_t max_length = 0;
+        if (!allow_multi_statements)
+            max_length = settings.max_query_size;
 
         if (is_interactive || ignore_error)
         {
             String message;
-            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, settings.max_query_size, settings.max_parser_depth);
+            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
             if (!res)
             {
@@ -972,7 +975,7 @@ private:
             }
         }
         else
-            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, settings.max_query_size, settings.max_parser_depth);
+            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (is_interactive)
         {
