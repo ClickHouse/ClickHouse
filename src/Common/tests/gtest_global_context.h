@@ -4,7 +4,8 @@
 
 inline DB::Context createContext()
 {
-    auto context = DB::Context::createGlobal();
+    static DB::SharedContextHolder shared_context = DB::Context::createShared();
+    auto context = DB::Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
     context.setPath("./");
     return context;

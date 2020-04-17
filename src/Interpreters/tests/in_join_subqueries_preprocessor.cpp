@@ -1156,7 +1156,8 @@ static bool run()
 
 TestResult check(const TestEntry & entry)
 {
-    static DB::Context context = DB::Context::createGlobal();
+    static DB::SharedContextHolder shared_context = DB::Context::createShared();
+    static DB::Context context = DB::Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
 
     try

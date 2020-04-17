@@ -138,7 +138,8 @@ private:
 
     bool has_vertical_output_suffix = false; /// Is \G present at the end of the query string?
 
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
 
     /// Buffer that reads from stdin in batch mode.
     ReadBufferFromFileDescriptor std_in {STDIN_FILENO};

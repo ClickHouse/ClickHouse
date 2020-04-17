@@ -128,12 +128,18 @@ struct IHostContext
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
 
+/// A small class which owns ContextShared.
+/// We don't use something like unique_ptr directly to allow ContextShared type to be incomplete.
 struct SharedContextHolder
 {
-    std::unique_ptr<ContextShared> shared;
     ~SharedContextHolder();
-    SharedContextHolder();
-    SharedContextHolder(SharedContextHolder &&);
+    SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
+    SharedContextHolder(SharedContextHolder &&) noexcept;
+
+    ContextShared * get() const { return shared.get(); }
+
+private:
+    std::unique_ptr<ContextShared> shared;
 };
 
 /** A set of known objects that can be used in the query.
@@ -145,8 +151,6 @@ struct SharedContextHolder
 class Context
 {
 private:
-    using Shared = std::shared_ptr<ContextShared>;
-    Shared shared_holder;
     ContextShared * shared;
 
     ClientInfo client_info;
@@ -199,7 +203,6 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static Context createGlobal();
     static Context createGlobal(ContextShared * shared);
     static SharedContextHolder createShared();
 

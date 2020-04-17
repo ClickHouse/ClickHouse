@@ -56,7 +56,7 @@ protected:
     std::string getDefaultCorePath() const override;
 
 private:
-    std::unique_ptr<Context> global_context;
+    Context * global_context = nullptr;
 };
 
 }
