@@ -30,7 +30,7 @@ public:
     bool end_array();
 
     /// This function will be called if error occurs in parsing
-    void parse_error(size_t parsed_offset, size_t error_offset);
+    [[noreturn]] void parse_error(size_t parsed_offset, size_t error_offset);
 
     /// Update info_stack
     void set_info(IColumn & column, DataTypePtr type);
