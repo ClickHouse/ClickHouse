@@ -1,6 +1,6 @@
 ## ClickHouse release v20.3
 
-### ClickHouse release origin/20.3 FIXME as compared to v20.3.5.21-stable
+### ClickHouse release v20.3.6.40, 2020-04-16
 
 #### New Feature
 
