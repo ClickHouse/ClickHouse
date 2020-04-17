@@ -16,65 +16,80 @@ SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_b
 }
 
 
-SquashingTransform::Result SquashingTransform::add(MutableColumns && columns)
+Columns SquashingTransform::add(const Block & block)
 {
     /// End of input stream.
-    if (columns.empty())
-        return Result(std::move(accumulated_columns));
+    if (!block)
+    {
+        Columns to_return;
+        std::swap(to_return, accumulated_columns);
+        return to_return;
+    }
 
+    auto block_columns = block.getColumns();
     /// Just read block is already enough.
-    if (isEnoughSize(columns))
+    if (isEnoughSize(block_columns))
     {
         /// If no accumulated data, return just read block.
         if (accumulated_columns.empty())
-            return Result(std::move(columns));
+        {
+            return block_columns;
+        }
 
         /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
-        columns.swap(accumulated_columns);
-        return Result(std::move(columns));
+        block_columns.swap(accumulated_columns);
+        return block_columns;
     }
 
     /// Accumulated block is already enough.
-    if (!accumulated_columns.empty() && isEnoughSize(accumulated_columns))
+    if (isEnoughSize(accumulated_columns))
     {
         /// Return accumulated data and place new block to accumulated data.
-        columns.swap(accumulated_columns);
-        return Result(std::move(columns));
+        std::swap(block_columns, accumulated_columns);
+        return block_columns;
     }
 
-    append(std::move(columns));
+    append(std::move(block_columns));
 
     if (isEnoughSize(accumulated_columns))
     {
-        MutableColumns res;
-        res.swap(accumulated_columns);
-        return Result(std::move(res));
+        Columns to_return;
+        std::swap(to_return, accumulated_columns);
+        return to_return;
     }
 
     /// Squashed block is not ready.
-    return false;
+    return Columns();
 }
 
 
-void SquashingTransform::append(MutableColumns && columns)
+void SquashingTransform::append(Columns && block_columns)
 {
     if (accumulated_columns.empty())
     {
-        accumulated_columns = std::move(columns);
+        std::swap(accumulated_columns, block_columns);
         return;
     }
 
-    for (size_t i = 0, size = columns.size(); i < size; ++i)
+    assert(block_columns.size() == accumulated_columns.size());
+
+    for (size_t i = 0, size = block_columns.size(); i < size; ++i)
     {
-        auto & column = accumulated_columns[i];
+        auto mutable_column = std::move(*accumulated_columns[i]).mutate();
+
         if (reserve_memory)
-            column->reserve(min_block_size_bytes);
-        column->insertRangeFrom(*columns[i], 0, columns[i]->size());
+        {
+            mutable_column->reserve(min_block_size_bytes);
+        }
+        mutable_column->insertRangeFrom(*block_columns[i], 0,
+                                        block_columns[i]->size());
+
+        accumulated_columns[i] = std::move(mutable_column);
     }
 }
 
 
-bool SquashingTransform::isEnoughSize(const MutableColumns & columns)
+bool SquashingTransform::isEnoughSize(const Columns & columns)
 {
     size_t rows = 0;
     size_t bytes = 0;
