@@ -80,48 +80,6 @@ Vous voyez la différence?
 
 Par exemple, la requête “count the number of records for each advertising platform” nécessite la lecture d'un “advertising platform ID” colonne, qui prend 1 octet non compressé. Si la majeure partie du trafic ne provenait pas de plates-formes publicitaires, vous pouvez vous attendre à une compression d'au moins 10 fois de cette colonne. Lors de l'utilisation d'un algorithme de compression rapide, la décompression des données est possible à une vitesse d'au moins plusieurs gigaoctets de données non compressées par seconde. En d'autres termes, cette requête ne peut être traitée qu'à une vitesse d'environ plusieurs milliards de lignes par seconde sur un seul serveur. Cette vitesse est effectivement atteinte dans la pratique.
 
-<details markdown="1">
-
-<summary>Exemple</summary>
-
-``` bash
-$ clickhouse-client
-ClickHouse client version 0.0.52053.
-Connecting to localhost:9000.
-Connected to ClickHouse server version 0.0.52053.
-```
-
-``` sql
-SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIMIT 20
-```
-
-``` text
-┌─CounterID─┬──count()─┐
-│    114208 │ 56057344 │
-│    115080 │ 51619590 │
-│      3228 │ 44658301 │
-│     38230 │ 42045932 │
-│    145263 │ 42042158 │
-│     91244 │ 38297270 │
-│    154139 │ 26647572 │
-│    150748 │ 24112755 │
-│    242232 │ 21302571 │
-│    338158 │ 13507087 │
-│     62180 │ 12229491 │
-│     82264 │ 12187441 │
-│    232261 │ 12148031 │
-│    146272 │ 11438516 │
-│    168777 │ 11403636 │
-│   4120072 │ 11227824 │
-│  10938808 │ 10519739 │
-│     74088 │  9047015 │
-│    115079 │  8837972 │
-│    337234 │  8205961 │
-└───────────┴──────────┘
-```
-
-</details>
-
 ### CPU {#cpu}
 
 Étant donné que l'exécution d'une requête nécessite le traitement d'un grand nombre de lignes, il est utile de répartir toutes les opérations pour des vecteurs entiers au lieu de lignes séparées, ou d'implémenter le moteur de requête de sorte qu'il n'y ait presque aucun coût d'expédition. Si vous ne le faites pas, avec un sous-système de disque à moitié décent, l'interpréteur de requête bloque inévitablement le processeur. Il est logique de stocker des données dans des colonnes et de les traiter, si possible, par des colonnes.

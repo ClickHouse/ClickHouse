@@ -25,10 +25,13 @@
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
 #include <common/demangle.h>
-#include <common/config_common.h>
 #include <AggregateFunctions/AggregateFunctionArray.h>
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <Disks/DiskSpaceMonitor.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <common/config_common.h>
+#endif
 
 
 namespace ProfileEvents

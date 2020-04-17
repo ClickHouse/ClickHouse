@@ -111,6 +111,7 @@ def build_for_lang(lang, args):
             'codehilite',
             'nl2br',
             'sane_lists',
+            'pymdownx.details',
             'pymdownx.magiclink',
             'pymdownx.superfences',
             'extra',
@@ -384,7 +385,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')
     arg_parser.add_argument('--stable-releases-limit', type=int, default='4')
-    arg_parser.add_argument('--lts-releases-limit', type=int, default='1')
+    arg_parser.add_argument('--lts-releases-limit', type=int, default='2')
     arg_parser.add_argument('--version-prefix', type=str, default='')
     arg_parser.add_argument('--is-stable-release', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')

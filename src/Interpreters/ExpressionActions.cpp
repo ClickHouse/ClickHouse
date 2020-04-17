@@ -1,4 +1,3 @@
-#include "config_core.h"
 #include <Interpreters/Set.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -14,6 +13,10 @@
 #include <optional>
 #include <Columns/ColumnSet.h>
 #include <Functions/FunctionHelpers.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 
 namespace ProfileEvents

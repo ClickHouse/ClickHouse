@@ -1,12 +1,12 @@
+#include <Formats/FormatFactory.h>
+
 #include <algorithm>
-#include <Common/config.h>
 #include <Common/Exception.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <DataStreams/MaterializingBlockOutputStream.h>
 #include <DataStreams/ParallelParsingBlockInputStream.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFactory.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
 #include <Processors/Formats/OutputStreamToOutputFormat.h>
@@ -15,6 +15,10 @@
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
 #include <Poco/URI.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 namespace DB
 {
@@ -347,12 +351,14 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorJSONCompactEachRow(*this);
     registerInputFormatProcessorProtobuf(*this);
     registerOutputFormatProcessorProtobuf(*this);
+#if !defined(ARCADIA_BUILD)
     registerInputFormatProcessorCapnProto(*this);
     registerInputFormatProcessorORC(*this);
     registerInputFormatProcessorParquet(*this);
     registerOutputFormatProcessorParquet(*this);
     registerInputFormatProcessorAvro(*this);
     registerOutputFormatProcessorAvro(*this);
+#endif
     registerInputFormatProcessorTemplate(*this);
     registerOutputFormatProcessorTemplate(*this);
     registerInputFormatProcessorRegexp(*this);
@@ -377,6 +383,7 @@ FormatFactory::FormatFactory()
     registerOutputFormatProcessorODBCDriver2(*this);
     registerOutputFormatProcessorNull(*this);
     registerOutputFormatProcessorMySQLWrite(*this);
+    registerOutputFormatProcessorMarkdown(*this);
 }
 
 FormatFactory & FormatFactory::instance()
