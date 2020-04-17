@@ -9,8 +9,11 @@
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <IO/UncompressedCache.h>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadHelpers.h>
 #include <Databases/IDatabase.h>
 #include <chrono>
+
 
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
@@ -129,6 +132,23 @@ void AsynchronousMetrics::update()
 #endif
 
     set("Uptime", context.getUptimeSeconds());
+
+    /// Process memory usage according to OS
+#if defined(OS_LINUX)
+    {
+        char buf[1024];
+        ReadBufferFromFile in("/proc/self/statm", 1024, -1, buf);
+        size_t memory_virtual = 0;
+        size_t memory_resident = 0;
+        readIntText(memory_virtual, in);
+        skipWhitespaceIfAny(in);
+        readIntText(memory_resident, in);
+
+        static constexpr size_t PAGE_SIZE = 4096;
+        set("MemoryVirtual", memory_virtual * PAGE_SIZE);
+        set("MemoryResident", memory_resident * PAGE_SIZE);
+    }
+#endif
 
     {
         auto databases = DatabaseCatalog::instance().getDatabases();
