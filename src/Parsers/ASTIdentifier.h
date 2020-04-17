@@ -40,6 +40,8 @@ public:
     bool isShort() const { return name_parts.empty() || name == name_parts.back(); }
 
     void setShortName(const String & new_name);
+
+    /// Restore name field from name_parts in case it was cropped by analyzer but we need a full form for future (re)analyze.
     void restoreCompoundName();
 
     const String & shortName() const

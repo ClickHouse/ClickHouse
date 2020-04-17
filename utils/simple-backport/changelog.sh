@@ -7,6 +7,15 @@ log_command=(git log "$from..$to" --first-parent)
 
 "${log_command[@]}" > "changelog-log.txt"
 
+# Check for diamond merges.
+if "${log_command[@]}" --oneline --grep "Merge branch '" | grep ''
+then
+    # DO NOT ADD automated handling of diamond merges to this script.
+    # It is an unsustainable way to work with git, and it MUST be visible.
+    echo Warning: suspected diamond merges above.
+    echo Some commits will be missed, review these manually.
+fi
+
 # NOTE keep in sync with ./backport.sh.
 # Search for PR numbers in commit messages. First variant is normal merge, and second
 # variant is squashed. Next are some backport message variants.
@@ -19,14 +28,6 @@ find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
 
 echo "$(wc -l < "changelog-prs.txt") PRs added between $from and $to."
 
-if "${log_command[@]}" --oneline --grep "Merge branch '" | grep ''
-then
-    # DO NOT ADD automated handling of diamond merges to this script.
-    # It is an unsustainable way to work with git, and it MUST be visible.
-    echo Warning: suspected diamond merges above.
-    echo Some commits will be missed, review these manually.
-fi
-
 function github_download()
 {
     local url=${1}
@@ -37,9 +38,7 @@ function github_download()
                 -sSf "$url" \
                 > "$file"
         then
-            >&2 echo "Failed to download '$url' to '$file'. Contents: '"
-            >&2 cat "$file"
-            >&2 echo "'."
+            >&2 echo "Failed to download '$url' to '$file'. Contents: '$(cat "$file")'."
             rm "$file"
             return 1
         fi

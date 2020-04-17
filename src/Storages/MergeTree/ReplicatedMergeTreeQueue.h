@@ -356,6 +356,9 @@ public:
     /// A blocker that stops selects from the queue
     ActionBlocker actions_blocker;
 
+    /// A blocker that stops pulling entries from replication log to queue
+    ActionBlocker pull_log_blocker;
+
     /// Adds a subscriber
     SubscriberHandler addSubscriber(SubscriberCallBack && callback);
 

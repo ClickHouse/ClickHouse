@@ -1,5 +1,5 @@
 
-# AMPLab 大数据基准测试 {#amplab-da-shu-ju-ji-zhun-ce-shi}
+# AMPLab大数据基准测试 {#amplab-da-shu-ju-ji-zhun-ce-shi}
 
 参考 https://amplab.cs.berkeley.edu/benchmark/
 
