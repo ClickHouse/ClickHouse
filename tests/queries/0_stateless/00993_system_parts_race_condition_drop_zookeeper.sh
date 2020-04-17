@@ -72,28 +72,28 @@ timeout $TIMEOUT bash -c thread2 2> /dev/null &
 timeout $TIMEOUT bash -c thread3 2> /dev/null &
 timeout $TIMEOUT bash -c thread4 2> /dev/null &
 timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
+timeout $TIMEOUT bash -c thread6 2>&1 | grep "was not completely removed from ZooKeeper" &
 
 timeout $TIMEOUT bash -c thread1 2> /dev/null &
 timeout $TIMEOUT bash -c thread2 2> /dev/null &
 timeout $TIMEOUT bash -c thread3 2> /dev/null &
 timeout $TIMEOUT bash -c thread4 2> /dev/null &
 timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
+timeout $TIMEOUT bash -c thread6 2>&1 | grep "was not completely removed from ZooKeeper" &
 
 timeout $TIMEOUT bash -c thread1 2> /dev/null &
 timeout $TIMEOUT bash -c thread2 2> /dev/null &
 timeout $TIMEOUT bash -c thread3 2> /dev/null &
 timeout $TIMEOUT bash -c thread4 2> /dev/null &
 timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
+timeout $TIMEOUT bash -c thread6 2>&1 | grep "was not completely removed from ZooKeeper" &
 
 timeout $TIMEOUT bash -c thread1 2> /dev/null &
 timeout $TIMEOUT bash -c thread2 2> /dev/null &
 timeout $TIMEOUT bash -c thread3 2> /dev/null &
 timeout $TIMEOUT bash -c thread4 2> /dev/null &
 timeout $TIMEOUT bash -c thread5 2> /dev/null &
-timeout $TIMEOUT bash -c thread6 2> /dev/null &
+timeout $TIMEOUT bash -c thread6 2>&1 | grep "was not completely removed from ZooKeeper" &
 
 wait
 
