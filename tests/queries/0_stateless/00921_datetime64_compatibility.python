@@ -86,8 +86,7 @@ CAST(N as DateTime64(9, 'Europe/Minsk'))
 formatDateTime(N, '%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y %Y %%')
 """.splitlines()
 
-# Expanded later to cartesian product of all arguments.
-# NOTE: {N} to be turned into N after str.format() for keys (format string), but not for list of values!
+# Expanded later to cartesian product of all arguments, using format string.
 extra_ops = [
     # With same type:
     (
@@ -179,7 +178,7 @@ def escape_string(s):
 
 
 def execute_functions_for_types(functions, types):
-    # TODO: use string.Template here to allow lines that do not contain type, like: SELECT CAST(toDateTime64(1234567890), 'DateTime64')
+    # NOTE: use string.Template here to allow lines with missing keys, like type, e.g. SELECT CAST(toDateTime64(1234567890), 'DateTime64')
     for func in functions:
         print(("""SELECT 'SELECT {func}';""".format(func=escape_string(func))))
         for dt in types:
