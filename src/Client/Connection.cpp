@@ -19,16 +19,19 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/DNSResolver.h>
 #include <Common/StringUtils/StringUtils.h>
-#include <Common/config_version.h>
 #include <Interpreters/ClientInfo.h>
 #include <Compression/CompressionFactory.h>
 #include <Processors/Pipe.h>
 #include <Processors/ISink.h>
 #include <Processors/Executors/PipelineExecutor.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#    include <Common/config.h>
+#endif
+
 #if USE_POCO_NETSSL
-#include <Poco/Net/SecureStreamSocket.h>
+#    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
 namespace CurrentMetrics
