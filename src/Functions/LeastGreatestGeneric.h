@@ -1,6 +1,7 @@
 #pragma once
 
 #include <DataTypes/getLeastSupertype.h>
+#include <DataTypes/NumberTraits.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnsNumber.h>
 #include <Functions/IFunctionImpl.h>
@@ -123,6 +124,9 @@ public:
     {
         if (types.empty())
             throw Exception("Function " + getName() + " cannot be called without arguments", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+        if (types.size() == 2 && isNumber(types[0]) && isNumber(types[1]))
+            return SpecializedFunction::create(context)->getReturnTypeImpl(types);
 
         return getLeastSupertype(types);
     }
