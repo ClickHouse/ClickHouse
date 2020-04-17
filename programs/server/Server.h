@@ -35,7 +35,7 @@ public:
 
     Context & context() const override
     {
-        return *global_context;
+        return *global_context_ptr;
     }
 
     bool isCancelled() const override
@@ -56,7 +56,7 @@ protected:
     std::string getDefaultCorePath() const override;
 
 private:
-    Context * global_context = nullptr;
+    Context * global_context_ptr = nullptr;
 };
 
 }
