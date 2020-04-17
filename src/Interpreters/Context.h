@@ -137,7 +137,7 @@ struct SharedContextHolder
     SharedContextHolder(SharedContextHolder &&) noexcept;
 
     ContextShared * get() const { return shared.get(); }
-
+    void reset();
 private:
     std::unique_ptr<ContextShared> shared;
 };

@@ -446,6 +446,8 @@ SharedContextHolder::~SharedContextHolder() = default;
 SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextShared> shared_context)
     : shared(std::move(shared_context)) {}
 
+void SharedContextHolder::reset() { shared.reset(); }
+
 
 Context Context::createGlobal(ContextShared * shared)
 {

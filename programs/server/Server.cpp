@@ -228,12 +228,8 @@ int Server::main(const std::vector<std::string> & /*args*/)
       *  settings, available functions, data types, aggregate functions, databases...
       */
     auto shared_context = Context::createShared();
-    auto global_context_holder = Context::createGlobal(shared_context.get());
-
-    /// Global context is owned by Server only. Is is assumed that noboby can access context after server was stopped.
-    /// To check it, set global_context to nullptr at the and, to get explicit segfault if it is not true.
-    global_context = &global_context_holder;
-    SCOPE_EXIT(global_context = nullptr);
+    auto global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+    global_context_ptr = global_context.get();
 
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
@@ -331,7 +327,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
+        global_context_ptr = nullptr;
         global_context.reset();
+        shared_context.reset();
         LOG_DEBUG(log, "Destroyed global context.");
     });
 
