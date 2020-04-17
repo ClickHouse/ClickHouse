@@ -39,9 +39,6 @@ void MergeTreeDataPartWriterWide::addStreams(
 {
     IDataType::StreamCallback callback = [&] (const IDataType::SubstreamPath & substream_path)
     {
-        if (settings.skip_offsets && !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes)
-            return;
-
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
         /// Shared offsets for Nested type.
         if (column_streams.count(stream_name))
@@ -69,8 +66,6 @@ IDataType::OutputStreamGetter MergeTreeDataPartWriterWide::createStreamGetter(
     return [&, this] (const IDataType::SubstreamPath & substream_path) -> WriteBuffer *
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-        if (is_offsets && settings.skip_offsets)
-            return nullptr;
 
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
@@ -135,8 +130,6 @@ void MergeTreeDataPartWriterWide::writeSingleMark(
      type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
      {
          bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-         if (is_offsets && settings.skip_offsets)
-             return;
 
          String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
@@ -177,8 +170,6 @@ size_t MergeTreeDataPartWriterWide::writeSingleGranule(
     type.enumerateStreams([&] (const IDataType::SubstreamPath & substream_path)
     {
         bool is_offsets = !substream_path.empty() && substream_path.back().type == IDataType::Substream::ArraySizes;
-        if (is_offsets && settings.skip_offsets)
-            return;
 
         String stream_name = IDataType::getFileNameForStream(name, substream_path);
 
@@ -270,7 +261,7 @@ void MergeTreeDataPartWriterWide::writeColumn(
     next_index_offset = current_row - total_rows;
 }
 
-void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
+void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
 {
     const auto & global_settings = storage.global_context.getSettingsRef();
     IDataType::SerializeBinaryBulkSettings serialize_settings;
@@ -300,8 +291,6 @@ void MergeTreeDataPartWriterWide::finishDataSerialization(IMergeTreeDataPart::Ch
     for (auto & stream : column_streams)
     {
         stream.second->finalize();
-        if (sync)
-            stream.second->sync();
         stream.second->addToChecksums(checksums);
     }
 

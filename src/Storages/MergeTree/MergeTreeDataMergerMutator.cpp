@@ -876,9 +876,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             MergedColumnOnlyOutputStream column_to(
                 new_data_part,
                 column_gathered_stream.getHeader(),
-                false,
                 compression_codec,
-                false,
                 /// we don't need to recalc indices here
                 /// because all of them were already recalculated and written
                 /// as key part of vertical merge
@@ -1588,9 +1586,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     MergedColumnOnlyOutputStream out(
         new_data_part,
         mutation_header,
-        /* sync = */ false,
         compression_codec,
-        /* skip_offsets = */ false,
         std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
         nullptr,
         source_part->index_granularity,
