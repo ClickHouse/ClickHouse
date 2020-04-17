@@ -1,15 +1,17 @@
-#include "config_core.h"
-#if USE_MYSQL
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
-#include <vector>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnsNumber.h>
-#include <Common/assert_cast.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <ext/range.h>
-#include "MySQLBlockInputStream.h"
+#if USE_MYSQL
+#    include <vector>
+#    include <Columns/ColumnNullable.h>
+#    include <Columns/ColumnString.h>
+#    include <Columns/ColumnsNumber.h>
+#    include <IO/ReadHelpers.h>
+#    include <IO/WriteHelpers.h>
+#    include <Common/assert_cast.h>
+#    include <ext/range.h>
+#    include "MySQLBlockInputStream.h"
 
 
 namespace DB

@@ -3,12 +3,29 @@ set -e
 
 branch="$1"
 merge_base=$(git merge-base origin/master "origin/$branch")
+master_git_cmd=(git log "$merge_base..origin/master" --first-parent)
+branch_git_cmd=(git log "$merge_base..origin/$branch" --first-parent)
 
 # Make lists of PRs that were merged into each branch. Use first parent here, or else
 # we'll get weird things like seeing older master that was merged into a PR branch
 # that was then merged into master.
-git log "$merge_base..origin/master" --first-parent > master-log.txt
-git log "$merge_base..origin/$branch" --first-parent > "$branch-log.txt"
+"${master_git_cmd[@]}" > master-log.txt
+"${branch_git_cmd[@]}" > "$branch-log.txt"
+
+# Check for diamond merges.
+"${master_git_cmd[@]}" --oneline --grep "Merge branch '" | grep ''
+diamonds_in_master=$?
+
+"${branch_git_cmd[@]}" --oneline --grep "Merge branch '" | grep ''
+diamonds_in_branch=$?
+
+if [ "$diamonds_in_master" -eq 0 ] || [ "$diamonds_in_branch" -eq 0 ]
+then
+    # DO NOT ADD automated handling of diamond merges to this script.
+    # It is an unsustainable way to work with git, and it MUST be visible.
+    echo Warning: suspected diamond merges above.
+    echo Some commits will be missed, review these manually.
+fi
 
 # NOTE keep in sync with ./changelog.sh.
 # Search for PR numbers in commit messages. First variant is normal merge, and second
@@ -24,26 +41,32 @@ find_prs=(sed -n "s/^.*Merge pull request #\([[:digit:]]\+\).*$/\1/p;
 # Find all master PRs that are not in branch by calculating differences of two PR lists.
 grep -f "$branch-prs.txt" -F -x -v master-prs.txt > "$branch-diff-prs.txt"
 
-rm "$branch-report.tsv" ||:
-
 echo "$(wc -l < "$branch-diff-prs".txt) PRs differ between $branch and master."
 
+function github_download()
+{
+    local url=${1}
+    local file=${2}
+    if ! [ -f "$file" ]
+    then
+        if ! curl -H "Authorization: token $GITHUB_TOKEN" \
+                -sSf "$url" \
+                > "$file"
+        then
+            >&2 echo "Failed to download '$url' to '$file'. Contents: '$(cat "$file")'."
+            rm "$file"
+            return 1
+        fi
+        sleep 0.1
+    fi
+}
+
+rm "$branch-report.tsv" &> /dev/null ||:
 for pr in $(cat "$branch-diff-prs.txt")
 do
     # Download PR info from github.
     file="pr$pr.json"
-    if ! [ -f "$file" ]
-    then
-        if ! curl -H "Authorization: token $GITHUB_TOKEN" \
-                -sSf "https://api.github.com/repos/ClickHouse/ClickHouse/pulls/$pr" \
-                > "$file"
-        then
-            >&2 cat "$file"
-            rm "$file"
-            break
-        fi
-        sleep 0.1
-    fi
+    github_download "https://api.github.com/repos/ClickHouse/ClickHouse/pulls/$pr" "$file" || continue
 
     if ! [ "$pr" == "$(jq -r .number "$file")" ]
     then
@@ -82,3 +105,4 @@ do
     fi
 done
 
+echo "Done."

@@ -87,9 +87,6 @@ git -C ch diff --name-only "$SHA_TO_TEST" "$(git -C ch merge-base "$SHA_TO_TEST"
 # Set python output encoding so that we can print queries with Russian letters.
 export PYTHONIOENCODING=utf-8
 
-# Use a default number of runs if not told otherwise
-export CHPC_RUNS=${CHPC_RUNS:-7}
-
 # By default, use the main comparison script from the tested package, so that we
 # can change it in PRs.
 script_path="right/scripts"

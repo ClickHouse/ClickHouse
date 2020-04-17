@@ -590,7 +590,7 @@ private:
         return true;
     }
 
-    void executeGeneric(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+    static void executeGeneric(const ColumnUInt8 * cond_col, Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
     {
         /// Convert both columns to the common type (if needed).
 

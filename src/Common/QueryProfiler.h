@@ -1,10 +1,13 @@
 #pragma once
 
 #include <Core/Types.h>
-#include <Common/config.h>
-#include <common/config_common.h>
 #include <signal.h>
 #include <time.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#    include <common/config_common.h>
+#endif
 
 
 namespace Poco

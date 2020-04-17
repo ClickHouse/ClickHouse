@@ -77,5 +77,9 @@ toc_title: Adopters
 | [МКБ](https://mkb.ru/)                                                      | Bank                            | Web-system monitoring | —                                                          | —                                                                            | [Slides in Russian, September 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup28/mkb.pdf)                                                                                                |
 | [金数据](https://jinshuju.net)                                              | BI Analytics                    | Main product          | —                                                          | —                                                                            | [Slides in Chinese, October 2019](https://github.com/ClickHouse/clickhouse-presentations/blob/master/meetup24/3.%20金数据数据架构调整方案Public.pdf)                                                                    |
 | [Instana](https://www.instana.com)                                              | APM Platform                   | Main product          | —                                                          | —                                                                            | [Twitter post](https://twitter.com/mieldonkers/status/1248884119158882304)                                                                    |
+| [Wargaming](https://wargaming.com/en/) | Games | | — | — | [Interview](https://habr.com/en/post/496954/) |
+| [Crazypanda](https://crazypanda.ru/en/) | Games | | — | — | Live session on ClickHouse meetup |
+| [FunCorp](https://fun.co/rp) | Games | | — | — | [Article](https://www.altinity.com/blog/migrating-from-redshift-to-clickhouse) |
+
 
 [Original article](https://clickhouse.tech/docs/en/introduction/adopters/) <!--hide-->
