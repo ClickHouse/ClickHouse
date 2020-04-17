@@ -14,9 +14,12 @@
 #include <Poco/URI.h>
 #include <Poco/Version.h>
 #include <Common/DNSResolver.h>
-#include <Common/config.h>
 #include <common/logger_useful.h>
 #include <Poco/URIStreamFactory.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 
 #define DEFAULT_HTTP_READ_BUFFER_TIMEOUT 1800
@@ -302,4 +305,3 @@ public:
 };
 
 }
-

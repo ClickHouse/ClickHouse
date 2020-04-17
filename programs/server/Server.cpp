@@ -15,7 +15,6 @@
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
-#include <common/config_common.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <common/coverage.h>
@@ -26,7 +25,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include "config_core.h"
 #include <common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -59,19 +57,24 @@
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
-#include "Common/config_version.h"
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
+#if !defined(ARCADIA_BUILD)
+#    include <common/config_common.h>
+#    include "config_core.h"
+#    include "Common/config_version.h"
+#endif
+
 #if defined(OS_LINUX)
-#include <Common/hasLinuxCapability.h>
-#include <sys/mman.h>
+#    include <sys/mman.h>
+#    include <Common/hasLinuxCapability.h>
 #endif
 
 #if USE_POCO_NETSSL
-#include <Poco/Net/Context.h>
-#include <Poco/Net/SecureServerSocket.h>
+#    include <Poco/Net/Context.h>
+#    include <Poco/Net/SecureServerSocket.h>
 #endif
 
 namespace CurrentMetrics
@@ -251,7 +254,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     const auto memory_amount = getMemoryAmount();
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     if (executable_path.empty())
         executable_path = "/usr/bin/clickhouse";    /// It is used for information messages.
@@ -636,7 +639,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     if (!TaskStatsInfoGetter::checkPermissions())
     {
         LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."

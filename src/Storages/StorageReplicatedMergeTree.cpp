@@ -1,4 +1,5 @@
-#include <Disks/DiskSpaceMonitor.h>
+#include <Core/Defines.h>
+
 #include <Common/FieldVisitors.h>
 #include <Common/Macros.h>
 #include <Common/StringUtils/StringUtils.h>
@@ -24,6 +25,8 @@
 #include <Storages/MergeTree/ReplicatedMergeTreeQuorumAddedParts.h>
 #include <Storages/MergeTree/ReplicatedMergeTreePartHeader.h>
 #include <Storages/VirtualColumnUtils.h>
+
+#include <Disks/DiskSpaceMonitor.h>
 
 #include <Databases/IDatabase.h>
 
@@ -297,8 +300,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     createNewZooKeeperNodes();
-
-
 }
 
 
@@ -479,7 +480,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         if (metadata_diff.sorting_key_changed)
         {
             ParserNotEmptyExpressionList parser(false);
-            auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0);
+            auto new_sorting_key_expr_list = parseQuery(parser, metadata_diff.new_sorting_key, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
             if (new_sorting_key_expr_list->children.size() == 1)
                 metadata.order_by_ast = new_sorting_key_expr_list->children[0];
@@ -507,7 +508,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
         if (metadata_diff.ttl_table_changed)
         {
             ParserTTLExpressionList parser;
-            metadata.ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0);
+            metadata.ttl_for_table_ast = parseQuery(parser, metadata_diff.new_ttl_table, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         }
     }
 
@@ -2902,6 +2903,7 @@ void StorageReplicatedMergeTree::shutdown()
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
+    queue.pull_log_blocker.cancelForever();
 
     restarting_thread.shutdown();
 
@@ -3638,7 +3640,11 @@ void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
 
         LOG_INFO(log, "Removing replica " << replica_path);
         replica_is_active_node = nullptr;
+        /// It may left some garbage if replica_path subtree are concurently modified
         zookeeper->tryRemoveRecursive(replica_path);
+        if (zookeeper->exists(replica_path))
+            LOG_ERROR(log, "Replica was not completely removed from ZooKeeper, "
+                      << replica_path << " still exists and may contain some garbage.");
 
         /// Check that `zookeeper_path` exists: it could have been deleted by another replica after execution of previous line.
         Strings replicas;
@@ -3646,6 +3652,9 @@ void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
         {
             LOG_INFO(log, "Removing table " << zookeeper_path << " (this might take several minutes)");
             zookeeper->tryRemoveRecursive(zookeeper_path);
+            if (zookeeper->exists(zookeeper_path))
+                LOG_ERROR(log, "Table was not completely removed from ZooKeeper, "
+                          << zookeeper_path << " still exists and may contain some garbage.");
         }
     }
 

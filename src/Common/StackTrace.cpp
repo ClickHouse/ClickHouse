@@ -3,7 +3,6 @@
 #include <Common/Dwarf.h>
 #include <Common/Elf.h>
 #include <Common/SymbolIndex.h>
-#include <Common/config.h>
 #include <Common/MemorySanitizer.h>
 #include <common/SimpleCache.h>
 #include <common/demangle.h>
@@ -14,8 +13,12 @@
 #include <sstream>
 #include <unordered_map>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #if USE_UNWIND
-#   include <libunwind.h>
+#    include <libunwind.h>
 #endif
 
 std::string signalToErrorMessage(int sig, const siginfo_t & info, const ucontext_t & context)
