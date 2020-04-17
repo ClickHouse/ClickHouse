@@ -1,5 +1,14 @@
 ## ClickHouse release v20.3
 
+### ClickHouse release v20.3.7.46, 2020-04-17
+
+#### Bug Fix
+
+* Fix 'Logical error: CROSS JOIN has expressions' error for queries with comma and names joins mix. [#10311](https://github.com/ClickHouse/ClickHouse/pull/10311) ([Artem Zuikov](https://github.com/4ertus2)).
+* Fix queries with `max_bytes_before_external_group_by`. [#10302](https://github.com/ClickHouse/ClickHouse/pull/10302) ([Artem Zuikov](https://github.com/4ertus2)).
+* Fix move-to-prewhere optimization in presense of arrayJoin functions (in certain cases). This fixes [#10092](https://github.com/ClickHouse/ClickHouse/issues/10092). [#10195](https://github.com/ClickHouse/ClickHouse/pull/10195) ([alexey-milovidov](https://github.com/alexey-milovidov)).
+* Add the ability to relax the restriction on non-deterministic functions usage in mutations with `allow_nondeterministic_mutations` setting. [#10186](https://github.com/ClickHouse/ClickHouse/pull/10186) ([filimonov](https://github.com/filimonov)).
+
 ### ClickHouse release v20.3.6.40, 2020-04-16
 
 #### New Feature
