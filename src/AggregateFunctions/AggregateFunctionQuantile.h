@@ -138,6 +138,16 @@ public:
         this->data(place).deserialize(buf);
     }
 
+    bool isFinalizationNeeded() const override { return true; }
+    void finalize(AggregateDataPtr place) const override
+    {
+        auto & data = this->data(const_cast<AggregateDataPtr>(place));
+        if constexpr (returns_many)
+            data.finalize(levels.levels.data(), levels.permutation.data(), levels.size());
+        else
+            data.finalize(level);
+    }
+
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override
     {
         /// const_cast is required because some data structures apply finalizaton (like sorting) for obtain a result.

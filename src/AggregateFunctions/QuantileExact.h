@@ -64,18 +64,42 @@ struct QuantileExact
         buf.read(reinterpret_cast<char *>(array.data()), size * sizeof(array[0]));
     }
 
+    size_t getElementNumber(Float64 level) const
+    {
+        return level < 1 ? level * array.size()
+                         : (array.size() - 1);
+    }
+
+    void finalize(Float64 level)
+    {
+        if (!array.empty())
+        {
+            size_t n = getElementNumber(level);
+            std::nth_element(array.begin(), array.begin() + n, array.end());    /// NOTE You can think of the radix-select algorithm.
+        }
+    }
+
+    void finalize(const Float64 * levels, const size_t * indices, size_t size)
+    {
+        if (!array.empty())
+        {
+            size_t prev_n = 0;
+            for (size_t i = 0; i < size; ++i)
+            {
+                auto level = levels[indices[i]];
+                size_t n = getElementNumber(level);
+
+                std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+                prev_n = n;
+            }
+        }
+    }
+
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     Value get(Float64 level)
     {
         if (!array.empty())
-        {
-            size_t n = level < 1
-                ? level * array.size()
-                : (array.size() - 1);
-
-            std::nth_element(array.begin(), array.begin() + n, array.end());    /// NOTE You can think of the radix-select algorithm.
-            return array[n];
-        }
+            return array[getElementNumber(level)];
 
         return std::numeric_limits<Value>::quiet_NaN();
     }
@@ -86,19 +110,10 @@ struct QuantileExact
     {
         if (!array.empty())
         {
-            size_t prev_n = 0;
             for (size_t i = 0; i < size; ++i)
             {
                 auto level = levels[indices[i]];
-
-                size_t n = level < 1
-                    ? level * array.size()
-                    : (array.size() - 1);
-
-                std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
-
-                result[indices[i]] = array[n];
-                prev_n = n;
+                result[indices[i]] = array[getElementNumber(level)];
             }
         }
         else
@@ -115,6 +130,28 @@ struct QuantileExactExclusive : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
 
+    void finalize(Float64 level)
+    {
+        if (!array.empty())
+        {
+            if (level == 0. || level == 1.)
+                throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
+
+            Float64 h = level * (array.size() + 1);
+            auto n = static_cast<size_t>(h);
+
+            if (n >= array.size())
+                std::swap(*std::max_element(array.begin(), array.end()), array.back());
+            else if (n < 1)
+                std::swap(array.front(), *std::min_element(array.begin(), array.end()));
+            else
+            {
+                std::nth_element(array.begin(), array.begin() + n - 1, array.end());
+                std::swap(array[n], *std::min_element(array.begin() + n, array.end()));
+            }
+        }
+    }
+
     /// Get the value of the `level` quantile. The level must be between 0 and 1 excluding bounds.
     Float64 getFloat(Float64 level)
     {
@@ -127,20 +164,17 @@ struct QuantileExactExclusive : public QuantileExact<Value>
             auto n = static_cast<size_t>(h);
 
             if (n >= array.size())
-                return array[array.size() - 1];
+                return array.back();
             else if (n < 1)
-                return array[0];
+                return array.front();
 
-            std::nth_element(array.begin(), array.begin() + n - 1, array.end());
-            auto nth_element = std::min_element(array.begin() + n, array.end());
-
-            return array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
+            return array[n - 1] + (h - n) * (array[n] - array[n - 1]);
         }
 
         return std::numeric_limits<Float64>::quiet_NaN();
     }
 
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result)
+    void finalize(const Float64 * levels, const size_t * indices, size_t size)
     {
         if (!array.empty())
         {
@@ -155,17 +189,39 @@ struct QuantileExactExclusive : public QuantileExact<Value>
                 auto n = static_cast<size_t>(h);
 
                 if (n >= array.size())
-                    result[indices[i]] = array[array.size() - 1];
+                    std::swap(*std::max_element(array.begin(), array.end()), array.back());
                 else if (n < 1)
-                    result[indices[i]] = array[0];
+                    std::swap(array.front(), *std::min_element(array.begin(), array.end()));
                 else
                 {
                     std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
-                    auto nth_element = std::min_element(array.begin() + n, array.end());
+                    std::swap(array[n], *std::min_element(array.begin() + n, array.end()));
 
-                    result[indices[i]] = array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
                     prev_n = n - 1;
                 }
+            }
+        }
+    }
+
+    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result)
+    {
+        if (!array.empty())
+        {
+            for (size_t i = 0; i < size; ++i)
+            {
+                auto level = levels[indices[i]];
+                if (level == 0. || level == 1.)
+                    throw Exception("QuantileExactExclusive cannot interpolate for the percentiles 1 and 0", ErrorCodes::BAD_ARGUMENTS);
+
+                Float64 h = level * (array.size() + 1);
+                auto n = static_cast<size_t>(h);
+
+                if (n >= array.size())
+                    result[indices[i]] = array.back();
+                else if (n < 1)
+                    result[indices[i]] = array.front();
+                else
+                    result[indices[i]] = array[n - 1] + (h - n) * (array[n] - array[n - 1]);
             }
         }
         else
@@ -182,6 +238,25 @@ struct QuantileExactInclusive : public QuantileExact<Value>
 {
     using QuantileExact<Value>::array;
 
+    void finalize(Float64 level)
+    {
+        if (!array.empty())
+        {
+            Float64 h = level * (array.size() - 1) + 1;
+            auto n = static_cast<size_t>(h);
+
+            if (n >= array.size())
+                std::swap(*std::max_element(array.begin(), array.end()), array.back());
+            else if (n < 1)
+                std::swap(array.front(), *std::min_element(array.begin(), array.end()));
+            else
+            {
+                std::nth_element(array.begin(), array.begin() + n - 1, array.end());
+                std::swap(array[n], *std::min_element(array.begin() + n, array.end()));
+            }
+        }
+    }
+
     /// Get the value of the `level` quantile. The level must be between 0 and 1 including bounds.
     Float64 getFloat(Float64 level)
     {
@@ -191,20 +266,17 @@ struct QuantileExactInclusive : public QuantileExact<Value>
             auto n = static_cast<size_t>(h);
 
             if (n >= array.size())
-                return array[array.size() - 1];
+                return array.back();
             else if (n < 1)
-                return array[0];
+                return array.front();
 
-            std::nth_element(array.begin(), array.begin() + n - 1, array.end());
-            auto nth_element = std::min_element(array.begin() + n, array.end());
-
-            return array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
+            return array[n - 1] + (h - n) * (array[n] - array[n - 1]);
         }
 
         return std::numeric_limits<Float64>::quiet_NaN();
     }
 
-    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result)
+    void finalize(const Float64 * levels, const size_t * indices, size_t size)
     {
         if (!array.empty())
         {
@@ -217,17 +289,37 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                 auto n = static_cast<size_t>(h);
 
                 if (n >= array.size())
-                    result[indices[i]] = array[array.size() - 1];
+                    std::swap(*std::max_element(array.begin(), array.end()), array.back());
                 else if (n < 1)
-                    result[indices[i]] = array[0];
+                    std::swap(array.front(), *std::min_element(array.begin(), array.end()));
                 else
                 {
                     std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
-                    auto nth_element = std::min_element(array.begin() + n, array.end());
+                    std::swap(array[n], *std::min_element(array.begin() + n, array.end()));
 
-                    result[indices[i]] = array[n - 1] + (h - n) * (*nth_element - array[n - 1]);
                     prev_n = n - 1;
                 }
+            }
+        }
+    }
+
+    void getManyFloat(const Float64 * levels, const size_t * indices, size_t size, Float64 * result)
+    {
+        if (!array.empty())
+        {
+            for (size_t i = 0; i < size; ++i)
+            {
+                auto level = levels[indices[i]];
+
+                Float64 h = level * (array.size() - 1) + 1;
+                auto n = static_cast<size_t>(h);
+
+                if (n >= array.size())
+                    result[indices[i]] = array.back();
+                else if (n < 1)
+                    result[indices[i]] = array.front();
+                else
+                    result[indices[i]] = array[n - 1] + (h - n) * (array[n] - array[n - 1]);
             }
         }
         else
