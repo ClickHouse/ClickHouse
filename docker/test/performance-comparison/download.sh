@@ -2,7 +2,7 @@
 set -ex
 set -o pipefail
 trap "exit" INT TERM
-trap "kill $(jobs -pr) ||:" EXIT
+trap 'kill $(jobs -pr) ||:' EXIT
 
 mkdir db0 ||:
 
