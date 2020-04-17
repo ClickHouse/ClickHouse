@@ -300,8 +300,6 @@ StorageReplicatedMergeTree::StorageReplicatedMergeTree(
     }
 
     createNewZooKeeperNodes();
-
-
 }
 
 
@@ -2905,6 +2903,7 @@ void StorageReplicatedMergeTree::shutdown()
     fetcher.blocker.cancelForever();
     merger_mutator.merges_blocker.cancelForever();
     parts_mover.moves_blocker.cancelForever();
+    queue.pull_log_blocker.cancelForever();
 
     restarting_thread.shutdown();
 
@@ -3641,7 +3640,11 @@ void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
 
         LOG_INFO(log, "Removing replica " << replica_path);
         replica_is_active_node = nullptr;
+        /// It may left some garbage if replica_path subtree are concurently modified
         zookeeper->tryRemoveRecursive(replica_path);
+        if (zookeeper->exists(replica_path))
+            LOG_ERROR(log, "Replica was not completely removed from ZooKeeper, "
+                      << replica_path << " still exists and may contain some garbage.");
 
         /// Check that `zookeeper_path` exists: it could have been deleted by another replica after execution of previous line.
         Strings replicas;
@@ -3649,6 +3652,9 @@ void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
         {
             LOG_INFO(log, "Removing table " << zookeeper_path << " (this might take several minutes)");
             zookeeper->tryRemoveRecursive(zookeeper_path);
+            if (zookeeper->exists(zookeeper_path))
+                LOG_ERROR(log, "Table was not completely removed from ZooKeeper, "
+                          << zookeeper_path << " still exists and may contain some garbage.");
         }
     }
 
