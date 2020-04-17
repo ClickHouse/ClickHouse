@@ -22,8 +22,14 @@ def export_testcases_json(report, path):
                 for el in testcase:
                     if el.tag == "system-err":
                         row["stderr"] = el.text
+                    else:
+                        row["stderr"] = ""
+
                     if el.tag == "system-out":
                         row["stdout"] = el.text
+                    else:
+                        row["stdout"] = ""
+
                 json.dump(row, testcases_file)
                 testcases_file.write("\n")
 
