@@ -5,7 +5,7 @@
 
 int main(int, char **)
 {
-    DayNum today = DateLUT::instance().toDayNum(time(nullptr));
+    const DayNum today{DateLUT::instance().toDayNum(time(nullptr)).toUnderType()};
 
     for (DayNum date = today; DayNum(date + 10) > today; --date)
     {

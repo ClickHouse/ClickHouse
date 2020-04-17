@@ -1,5 +1,4 @@
 SELECT toTimeZone(N, \'UTC\')
-
 Code: 43
 "DateTime('UTC')","2019-09-16 16:20:11"
 "DateTime64(3, 'UTC')","2019-09-16 16:20:11.234"
@@ -35,25 +34,21 @@ SELECT toDayOfWeek(N)
 "UInt8",1
 ------------------------------------------
 SELECT toHour(N)
-
 Code: 43
 "UInt8",19
 "UInt8",19
 ------------------------------------------
 SELECT toMinute(N)
-
 Code: 43
 "UInt8",20
 "UInt8",20
 ------------------------------------------
 SELECT toSecond(N)
-
 Code: 43
 "UInt8",11
 "UInt8",11
 ------------------------------------------
 SELECT toUnixTimestamp(N)
-
 Code: 44
 "UInt32",1568650811
 "UInt32",1568650811
@@ -94,31 +89,26 @@ SELECT toStartOfDay(N)
 "DateTime('Europe/Minsk')","2019-09-16 00:00:00"
 ------------------------------------------
 SELECT toStartOfHour(N)
-
 Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 ------------------------------------------
 SELECT toStartOfMinute(N)
-
 Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
 SELECT toStartOfFiveMinute(N)
-
 Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
 SELECT toStartOfTenMinutes(N)
-
 Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
 SELECT toStartOfFifteenMinutes(N)
-
 Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
@@ -139,7 +129,6 @@ SELECT toStartOfInterval(N, INTERVAL 1 day)
 "DateTime('Europe/Minsk')","2019-09-16 00:00:00"
 ------------------------------------------
 SELECT toStartOfInterval(N, INTERVAL 15 minute)
-
 Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:15:00"
@@ -160,13 +149,11 @@ SELECT date_trunc(\'day\', N)
 "DateTime('Europe/Minsk')","2019-09-16 00:00:00"
 ------------------------------------------
 SELECT date_trunc(\'minute\', N)
-
 Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:20:00"
 ------------------------------------------
 SELECT toTime(N)
-
 Code: 43
 "DateTime('Europe/Minsk')","1970-01-02 19:20:11"
 "DateTime('Europe/Minsk')","1970-01-02 19:20:11"
@@ -232,7 +219,6 @@ SELECT toYearWeek(N)
 "UInt32",201937
 ------------------------------------------
 SELECT timeSlot(N)
-
 Code: 43
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
 "DateTime('Europe/Minsk')","2019-09-16 19:00:00"
@@ -375,15 +361,11 @@ SELECT formatDateTime(N, \'%C %d %D %e %F %H %I %j %m %M %p %R %S %T %u %V %w %y
 SELECT N -  N
 "Int32",0
 "Int32",0
-
 Code: 43
 ------------------------------------------
 SELECT N +  N
-
 Code: 43
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT N != N
@@ -417,47 +399,33 @@ SELECT N >= N
 "UInt8",1
 ------------------------------------------
 SELECT N - DT
-
 Code: 43
 "Int32",0
-
 Code: 43
 ------------------------------------------
 SELECT DT - N
-
 Code: 43
 "Int32",0
-
 Code: 43
 ------------------------------------------
 SELECT N - D
 "Int32",0
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT D - N
 "Int32",0
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT N - DT64
-
 Code: 43
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT DT64 - N
-
 Code: 43
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT N != DT
@@ -726,11 +694,8 @@ SELECT N -  toUInt8(1)
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
 ------------------------------------------
 SELECT toUInt8(1) -  N
-
 Code: 43
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT N -  toInt8(-1)
@@ -739,11 +704,8 @@ SELECT N -  toInt8(-1)
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
 ------------------------------------------
 SELECT toInt8(-1) -  N
-
 Code: 43
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT N -  toUInt16(1)
@@ -752,11 +714,8 @@ SELECT N -  toUInt16(1)
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
 ------------------------------------------
 SELECT toUInt16(1) -  N
-
 Code: 43
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT N -  toInt16(-1)
@@ -765,11 +724,8 @@ SELECT N -  toInt16(-1)
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
 ------------------------------------------
 SELECT toInt16(-1) -  N
-
 Code: 43
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT N -  toUInt32(1)
@@ -778,11 +734,8 @@ SELECT N -  toUInt32(1)
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
 ------------------------------------------
 SELECT toUInt32(1) -  N
-
 Code: 43
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT N -  toInt32(-1)
@@ -791,11 +744,8 @@ SELECT N -  toInt32(-1)
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
 ------------------------------------------
 SELECT toInt32(-1) -  N
-
 Code: 43
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT N -  toUInt64(1)
@@ -804,11 +754,8 @@ SELECT N -  toUInt64(1)
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:10.234"
 ------------------------------------------
 SELECT toUInt64(1) -  N
-
 Code: 43
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT N -  toInt64(-1)
@@ -817,585 +764,486 @@ SELECT N -  toInt64(-1)
 "DateTime64(3, 'Europe/Minsk')","2019-09-16 19:20:12.234"
 ------------------------------------------
 SELECT toInt64(-1) -  N
-
 Code: 43
-
 Code: 43
-
 Code: 43
 ------------------------------------------
 SELECT N == toUInt8(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt8(1) == N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N == toInt8(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt8(-1) == N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N == toUInt16(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt16(1) == N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N == toInt16(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt16(-1) == N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N == toUInt32(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt32(1) == N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N == toInt32(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt32(-1) == N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N == toUInt64(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt64(1) == N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N == toInt64(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt64(-1) == N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N != toUInt8(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt8(1) != N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N != toInt8(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt8(-1) != N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N != toUInt16(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt16(1) != N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N != toInt16(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt16(-1) != N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N != toUInt32(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt32(1) != N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N != toInt32(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt32(-1) != N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N != toUInt64(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt64(1) != N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N != toInt64(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt64(-1) != N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <  toUInt8(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt8(1) <  N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <  toInt8(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt8(-1) <  N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <  toUInt16(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt16(1) <  N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <  toInt16(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt16(-1) <  N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <  toUInt32(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt32(1) <  N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <  toInt32(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt32(-1) <  N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <  toUInt64(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt64(1) <  N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <  toInt64(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt64(-1) <  N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <= toUInt8(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt8(1) <= N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <= toInt8(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt8(-1) <= N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <= toUInt16(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt16(1) <= N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <= toInt16(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt16(-1) <= N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <= toUInt32(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt32(1) <= N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <= toInt32(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt32(-1) <= N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <= toUInt64(1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toUInt64(1) <= N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N <= toInt64(-1)
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT toInt64(-1) <= N
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT N >  toUInt8(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt8(1) >  N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >  toInt8(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt8(-1) >  N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >  toUInt16(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt16(1) >  N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >  toInt16(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt16(-1) >  N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >  toUInt32(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt32(1) >  N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >  toInt32(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt32(-1) >  N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >  toUInt64(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt64(1) >  N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >  toInt64(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt64(-1) >  N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >= toUInt8(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt8(1) >= N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >= toInt8(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt8(-1) >= N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >= toUInt16(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt16(1) >= N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >= toInt16(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt16(-1) >= N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >= toUInt32(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt32(1) >= N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >= toInt32(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt32(-1) >= N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >= toUInt64(1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toUInt64(1) >= N
-
 Code: 43
 "UInt8",0
 "UInt8",0
 ------------------------------------------
 SELECT N >= toInt64(-1)
-
 Code: 43
 "UInt8",1
 "UInt8",1
 ------------------------------------------
 SELECT toInt64(-1) >= N
-
 Code: 43
 "UInt8",0
 "UInt8",0
