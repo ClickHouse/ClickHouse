@@ -32,4 +32,8 @@ Context copyContextAndApplySettings(
     const Context & context,
     const Poco::Util::AbstractConfiguration & config);
 
+void applySettingsToContext(
+    const std::string & config_prefix,
+    Context & context,
+    const Poco::Util::AbstractConfiguration & config);
 }

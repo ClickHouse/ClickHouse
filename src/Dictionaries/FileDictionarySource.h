@@ -11,7 +11,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
 }
-// class Context;
 
 /// Allows loading dictionaries from a file with given format, does not support "random access"
 class FileDictionarySource final : public IDictionarySource
