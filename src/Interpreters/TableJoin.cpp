@@ -5,6 +5,8 @@
 #include <Core/Settings.h>
 #include <Core/Block.h>
 
+#include <Common/StringUtils/StringUtils.h>
+
 #include <DataTypes/DataTypeNullable.h>
 
 
@@ -79,7 +81,9 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
         dedup_columns.push_back(column);
         auto & inserted = dedup_columns.back();
 
-        if (left_table_columns.count(column.name))
+        /// Also qualify unusual column names - that does not look like identifiers.
+
+        if (left_table_columns.count(column.name) || !isValidIdentifierBegin(column.name.at(0)))
             inserted.name = right_table_prefix + column.name;
 
         original_names[inserted.name] = column.name;

@@ -239,19 +239,25 @@ protected:
                 StoragePtr table = nullptr;
                 TableStructureReadLockHolder lock;
 
-                try
+                if (need_lock_structure)
                 {
-                    if (need_lock_structure)
+                    table = tables_it->table();
+                    if (table == nullptr)
                     {
-                        table = tables_it->table();
-                        lock = table->lockStructureForShare(false, context.getCurrentQueryId());
-                    }
-                }
-                catch (const Exception & e)
-                {
-                    if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                        // Table might have just been removed or detached for Lazy engine (see DatabaseLazy::tryGetTable())
                         continue;
-                    throw;
+                    }
+                    try
+                    {
+                        lock = table->lockStructureForShare(
+                                false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
+                    }
+                    catch (const Exception & e)
+                    {
+                        if (e.code() == ErrorCodes::TABLE_IS_DROPPED)
+                            continue;
+                        throw;
+                    }
                 }
 
                 ++rows_count;

@@ -11,6 +11,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Pipe.h>
 
@@ -22,6 +23,7 @@ namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int THERE_IS_NO_COLUMN;
+    extern const int UNKNOWN_TABLE;
 }
 
 
@@ -43,6 +45,11 @@ StorageDictionary::StorageDictionary(
         const DictionaryStructure & dictionary_structure = dictionary->getStructure();
         checkNamesAndTypesCompatibleWithDictionary(dictionary_structure);
     }
+}
+
+void StorageDictionary::checkTableCanBeDropped() const
+{
+    throw Exception("Cannot detach dictionary " + backQuoteIfNeed(dictionary_name) + " as table, use DETACH DICTIONARY query.", ErrorCodes::UNKNOWN_TABLE);
 }
 
 Pipes StorageDictionary::read(
@@ -68,16 +75,30 @@ NamesAndTypesList StorageDictionary::getNamesAndTypes(const DictionaryStructure 
 
     if (dictionary_structure.id)
         dictionary_names_and_types.emplace_back(dictionary_structure.id->name, std::make_shared<DataTypeUInt64>());
+
+    /// In old-style (XML) configuration we don't have this attributes in the
+    /// main attribute list, so we have to add them to columns list explicitly.
+    /// In the new configuration (DDL) we have them both in range_* nodes and
+    /// main attribute list, but for compatibility we add them before main
+    /// attributes list.
     if (dictionary_structure.range_min)
         dictionary_names_and_types.emplace_back(dictionary_structure.range_min->name, dictionary_structure.range_min->type);
+
     if (dictionary_structure.range_max)
         dictionary_names_and_types.emplace_back(dictionary_structure.range_max->name, dictionary_structure.range_max->type);
+
     if (dictionary_structure.key)
+    {
         for (const auto & attribute : *dictionary_structure.key)
             dictionary_names_and_types.emplace_back(attribute.name, attribute.type);
+    }
 
     for (const auto & attribute : dictionary_structure.attributes)
-        dictionary_names_and_types.emplace_back(attribute.name, attribute.type);
+    {
+        /// Some attributes can be already added (range_min and range_max)
+        if (!dictionary_names_and_types.contains(attribute.name))
+            dictionary_names_and_types.emplace_back(attribute.name, attribute.type);
+    }
 
     return dictionary_names_and_types;
 }

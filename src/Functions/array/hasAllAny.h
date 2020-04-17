@@ -27,8 +27,8 @@ namespace ErrorCodes
 class FunctionArrayHasAllAny : public IFunction
 {
 public:
-    FunctionArrayHasAllAny(const Context & context_, bool all_, const char * name_)
-        : context(context_), all(all_), name(name_) {}
+    FunctionArrayHasAllAny(bool all_, const char * name_)
+        : all(all_), name(name_) {}
 
     String getName() const override { return name; }
 
@@ -81,7 +81,7 @@ public:
 
             /// Converts Array(Nothing) or Array(Nullable(Nothing) to common type. Example: hasAll([Null, 1], [Null]) -> 1
             if (typeid_cast<const DataTypeNothing *>(removeNullable(nested_type).get()))
-                preprocessed_column = castColumn(argument, commonType(), context);
+                preprocessed_column = castColumn(argument, commonType());
 
             preprocessed_columns[i] = std::move(preprocessed_column);
         }
@@ -114,7 +114,6 @@ public:
     bool useDefaultImplementationForConstants() const override { return true; }
 
 private:
-    const Context & context;
     bool all;
     const char * name;
 };

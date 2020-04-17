@@ -16,12 +16,14 @@ public:
     MergedBlockOutputStream(
         const MergeTreeDataPartPtr & data_part,
         const NamesAndTypesList & columns_list_,
+        const MergeTreeIndices & skip_indices,
         CompressionCodecPtr default_codec,
         bool blocks_are_granules_size = false);
 
     MergedBlockOutputStream(
         const MergeTreeDataPartPtr & data_part,
         const NamesAndTypesList & columns_list_,
+        const MergeTreeIndices & skip_indices,
         CompressionCodecPtr default_codec,
         const MergeTreeData::DataPart::ColumnToSize & merged_column_to_size,
         size_t aio_threshold,

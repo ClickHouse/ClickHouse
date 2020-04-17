@@ -150,9 +150,16 @@ TEST(Common, RWLockDeadlock)
         usleep(100000);
         usleep(100000);
         usleep(100000);
+        usleep(100000);
         try
         {
-            auto holder2 = lock2->getLock(RWLockImpl::Read, "q1");
+            auto holder2 = lock2->getLock(RWLockImpl::Read, "q1", std::chrono::milliseconds(100));
+            if (!holder2)
+            {
+                throw Exception(
+                        "Locking attempt timed out! Possible deadlock avoided. Client should retry.",
+                        ErrorCodes::DEADLOCK_AVOIDED);
+            }
         }
         catch (const Exception & e)
         {
@@ -174,9 +181,16 @@ TEST(Common, RWLockDeadlock)
         auto holder2 = lock2->getLock(RWLockImpl::Read, "q3");
         usleep(100000);
         usleep(100000);
+        usleep(100000);
         try
         {
-            auto holder1 = lock1->getLock(RWLockImpl::Read, "q3");
+            auto holder1 = lock1->getLock(RWLockImpl::Read, "q3", std::chrono::milliseconds(100));
+            if (!holder1)
+            {
+                throw Exception(
+                        "Locking attempt timed out! Possible deadlock avoided. Client should retry.",
+                        ErrorCodes::DEADLOCK_AVOIDED);
+            }
         }
         catch (const Exception & e)
         {

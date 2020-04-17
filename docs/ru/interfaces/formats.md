@@ -953,8 +953,8 @@ ClickHouse пишет и читает сообщения `Protocol Buffers` в �
 
 Таблица ниже содержит поддерживаемые типы данных и их соответствие [типам данных](../sql_reference/data_types/index.md) ClickHouse для запросов `INSERT` и `SELECT`.
 
-| Тип данных Parquet (`INSERT`) | Тип данных ClickHouse                       | Тип данных Parquet (`SELECT`) |
-|-------------------------------|---------------------------------------------|-------------------------------|
+| Тип данных Parquet (`INSERT`) | Тип данных ClickHouse                                     | Тип данных Parquet (`SELECT`) |
+|-------------------------------|-----------------------------------------------------------|-------------------------------|
 | `UINT8`, `BOOL`               | [UInt8](../sql_reference/data_types/int_uint.md)          | `UINT8`                       |
 | `INT8`                        | [Int8](../sql_reference/data_types/int_uint.md)           | `INT8`                        |
 | `UINT16`                      | [UInt16](../sql_reference/data_types/int_uint.md)         | `UINT16`                      |
@@ -1001,8 +1001,8 @@ $ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Parquet" > {some_
 
 Таблица показывает поддержанные типы данных и их соответствие [типам данных](../sql_reference/data_types/index.md) ClickHouse для запросов `INSERT`.
 
-| Тип данных ORC (`INSERT`) | Тип данных ClickHouse                 |
-|---------------------------|---------------------------------------|
+| Тип данных ORC (`INSERT`) | Тип данных ClickHouse                               |
+|---------------------------|-----------------------------------------------------|
 | `UINT8`, `BOOL`           | [UInt8](../sql_reference/data_types/int_uint.md)    |
 | `INT8`                    | [Int8](../sql_reference/data_types/int_uint.md)     |
 | `UINT16`                  | [UInt16](../sql_reference/data_types/int_uint.md)   |

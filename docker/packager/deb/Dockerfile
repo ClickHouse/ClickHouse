@@ -48,6 +48,7 @@ RUN apt-get --allow-unauthenticated update -y \
             libltdl-dev \
             libre2-dev \
             libjemalloc-dev \
+            libmsgpack-dev \
             unixodbc-dev \
             odbcinst \
             tzdata \

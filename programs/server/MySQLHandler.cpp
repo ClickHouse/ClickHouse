@@ -1,10 +1,8 @@
-#include <Common/config.h>
-
 #include "MySQLHandler.h"
+
 #include <limits>
 #include <ext/scope_guard.h>
 #include <Columns/ColumnVector.h>
-#include <Common/config_version.h>
 #include <Common/NetException.h>
 #include <Common/OpenSSLHelpers.h>
 #include <Core/MySQLProtocol.h>
@@ -18,11 +16,15 @@
 #include <boost/algorithm/string/replace.hpp>
 #include <regex>
 
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
+
 #if USE_POCO_NETSSL
-#include <Poco/Net/SecureStreamSocket.h>
-#include <Poco/Net/SSLManager.h>
-#include <Poco/Crypto/CipherFactory.h>
-#include <Poco/Crypto/RSAKey.h>
+#    include <Poco/Crypto/CipherFactory.h>
+#    include <Poco/Crypto/RSAKey.h>
+#    include <Poco/Net/SSLManager.h>
+#    include <Poco/Net/SecureStreamSocket.h>
 #endif
 
 namespace DB
@@ -284,15 +286,17 @@ void MySQLHandler::comQuery(ReadBuffer & payload)
     }
     else
     {
-        String replacement_query = "select ''";
+        String replacement_query = "SELECT ''";
         bool should_replace = false;
         bool with_output = false;
 
         // Translate query from MySQL to ClickHouse.
-        // This is a temporary workaround until ClickHouse supports the syntax "@@var_name".
+        // Required parameters when setup:
+        // * max_allowed_packet, default 64MB, https://dev.mysql.com/doc/refman/8.0/en/server-system-variables.html#sysvar_max_allowed_packet
         if (isFederatedServerSetupSelectVarCommand(query))
         {
             should_replace = true;
+            replacement_query = "SELECT 67108864 AS max_allowed_packet";
         }
 
         // This is a workaround in order to support adding ClickHouse to MySQL using federated server.

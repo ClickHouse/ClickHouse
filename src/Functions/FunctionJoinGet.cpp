@@ -60,50 +60,64 @@ static auto getJoin(const ColumnsWithTypeAndName & arguments, const Context & co
     return std::make_pair(storage_join, attr_name);
 }
 
-FunctionBaseImplPtr JoinGetOverloadResolver::build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
+template <bool or_null>
+FunctionBaseImplPtr JoinGetOverloadResolver<or_null>::build(const ColumnsWithTypeAndName & arguments, const DataTypePtr &) const
 {
     auto [storage_join, attr_name] = getJoin(arguments, context);
     auto join = storage_join->getJoin();
     DataTypes data_types(arguments.size());
 
-    auto table_lock = storage_join->lockStructureForShare(false, context.getInitialQueryId());
+    auto table_lock = storage_join->lockStructureForShare(
+            false, context.getInitialQueryId(), context.getSettingsRef().lock_acquire_timeout);
     for (size_t i = 0; i < arguments.size(); ++i)
         data_types[i] = arguments[i].type;
 
-    auto return_type = join->joinGetReturnType(attr_name);
-    return std::make_unique<FunctionJoinGet>(table_lock, storage_join, join, attr_name, data_types, return_type);
+    auto return_type = join->joinGetReturnType(attr_name, or_null);
+    return std::make_unique<FunctionJoinGet<or_null>>(table_lock, storage_join, join, attr_name, data_types, return_type);
 }
 
-DataTypePtr JoinGetOverloadResolver::getReturnType(const ColumnsWithTypeAndName & arguments) const
+template <bool or_null>
+DataTypePtr JoinGetOverloadResolver<or_null>::getReturnType(const ColumnsWithTypeAndName & arguments) const
 {
     auto [storage_join, attr_name] = getJoin(arguments, context);
     auto join = storage_join->getJoin();
-    return join->joinGetReturnType(attr_name);
+    return join->joinGetReturnType(attr_name, or_null);
 }
 
 
-void ExecutableFunctionJoinGet::execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
+template <bool or_null>
+void ExecutableFunctionJoinGet<or_null>::execute(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count)
 {
     auto ctn = block.getByPosition(arguments[2]);
     if (isColumnConst(*ctn.column))
         ctn.column = ctn.column->cloneResized(1);
     ctn.name = ""; // make sure the key name never collide with the join columns
     Block key_block = {ctn};
-    join->joinGet(key_block, attr_name);
+    join->joinGet(key_block, attr_name, or_null);
     auto & result_ctn = key_block.getByPosition(1);
     if (isColumnConst(*ctn.column))
         result_ctn.column = ColumnConst::create(result_ctn.column, input_rows_count);
     block.getByPosition(result) = result_ctn;
 }
 
-ExecutableFunctionImplPtr FunctionJoinGet::prepare(const Block &, const ColumnNumbers &, size_t) const
+template <bool or_null>
+ExecutableFunctionImplPtr FunctionJoinGet<or_null>::prepare(const Block &, const ColumnNumbers &, size_t) const
 {
-    return std::make_unique<ExecutableFunctionJoinGet>(join, attr_name);
+    return std::make_unique<ExecutableFunctionJoinGet<or_null>>(join, attr_name);
 }
 
 void registerFunctionJoinGet(FunctionFactory & factory)
 {
-    factory.registerFunction<JoinGetOverloadResolver>();
+    // joinGet
+    factory.registerFunction<JoinGetOverloadResolver<false>>();
+    // joinGetOrNull
+    factory.registerFunction<JoinGetOverloadResolver<true>>();
 }
 
+template class ExecutableFunctionJoinGet<true>;
+template class ExecutableFunctionJoinGet<false>;
+template class FunctionJoinGet<true>;
+template class FunctionJoinGet<false>;
+template class JoinGetOverloadResolver<true>;
+template class JoinGetOverloadResolver<false>;
 }

@@ -291,7 +291,7 @@ void SelectQueryExpressionAnalyzer::tryMakeSetForIndexFromSubquery(const ASTPtr 
     auto interpreter_subquery = interpretSubquery(subquery_or_table_name, context, {}, query_options);
     BlockIO res = interpreter_subquery->execute();
 
-    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true);
+    SetPtr set = std::make_shared<Set>(settings.size_limits_for_set, true, context.getSettingsRef().transform_null_in);
     set->setHeader(res.in->getHeader());
 
     res.in->readPrefix();
@@ -963,13 +963,15 @@ ExpressionAnalysisResult::ExpressionAnalysisResult(
 
     auto finalize_chain = [&](ExpressionActionsChain & chain)
     {
+        chain.finalize();
+
         if (!finalized)
         {
-            chain.finalize();
             finalize(chain, context, where_step_num);
-            chain.clear();
+            finalized = true;
         }
-        finalized = true;
+
+        chain.clear();
     };
 
     {

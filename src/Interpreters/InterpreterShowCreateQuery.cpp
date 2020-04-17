@@ -73,7 +73,7 @@ BlockInputStreamPtr InterpreterShowCreateQuery::executeImpl()
         throw Exception("Unable to show the create query of " + show_query->table + ". Maybe it was created by the system.", ErrorCodes::THERE_IS_NO_QUERY);
 
     std::stringstream stream;
-    formatAST(*create_query, stream, false, true);
+    formatAST(*create_query, stream, false, false);
     String res = stream.str();
 
     MutableColumnPtr column = ColumnString::create();

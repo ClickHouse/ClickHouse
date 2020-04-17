@@ -23,9 +23,12 @@ public:
         return std::static_pointer_cast<const IDictionaryBase>(load(name));
     }
 
-    DictPtr tryGetDictionary(const std::string & name) const
+    DictPtr tryGetDictionary(const std::string & name, bool load) const
     {
-        return std::static_pointer_cast<const IDictionaryBase>(tryLoad(name));
+        if (load)
+            return std::static_pointer_cast<const IDictionaryBase>(tryLoad(name));
+        else
+            return std::static_pointer_cast<const IDictionaryBase>(getCurrentLoadResult(name).object);
     }
 
     static void resetAll();

@@ -141,37 +141,37 @@ SELECT * FROM system.contributors WHERE name='Olga Khvostikova'
 
 Столбцы:
 
-- `database` ([String](../sql_reference/data_types/string.md)) — Имя базы данных, в которой находится словарь, созданный с помощью DDL-запроса. Пустая строка для других словарей.
-- `name` ([String](../sql_reference/data_types/string.md)) — [Имя словаря](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict.md).
-- `status` ([Enum8](../sql_reference/data_types/enum.md)) — Статус словаря. Возможные значения:
-     - `NOT_LOADED` — Словарь не загружен, потому что не использовался.
-     - `LOADED` — Словарь загружен успешно.
-     - `FAILED` — Словарь не загружен в результате ошибки.
-     - `LOADING` — Словарь в процессе загрузки.
-     - `LOADED_AND_RELOADING` — Словарь загружен успешно, сейчас перезагружается (частые причины: запрос [SYSTEM RELOAD DICTIONARY](../sql_reference/statements/system.md#query_language-system-reload-dictionary), таймаут, изменение настроек словаря).
-     - `FAILED_AND_RELOADING` — Словарь не загружен в результате ошибки, сейчас перезагружается.
-- `origin` ([String](../sql_reference/data_types/string.md)) — Путь к конфигурационному файлу, описывающему словарь.
-- `type`  ([String](../sql_reference/data_types/string.md)) — Тип размещения словаря. [Хранение словарей в памяти](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_layout.md).
-- `key` — [Тип ключа](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-key): Числовой ключ ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) или Составной ключ ([String](../sql_reference/data_types/string.md)) — строка вида "(тип 1, тип 2, ..., тип n)".
-- `attribute.names` ([Array](../sql_reference/data_types/array.md)([String](../sql_reference/data_types/string.md))) — Массив [имен атрибутов](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
-- `attribute.types` ([Array](../sql_reference/data_types/array.md)([String](../sql_reference/data_types/string.md))) — Соответствующий массив [типов атрибутов](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
-- `bytes_allocated` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Объем оперативной памяти, используемый словарем.
-- `query_count` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Количество запросов с момента загрузки словаря или с момента последней успешной перезагрузки.
-- `hit_rate` ([Float64](../sql_reference/data_types/float.md)) — Для cache-словарей — процент закэшированных значений.
-- `element_count` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges))  — Количество элементов, хранящихся в словаре.
-- `load_factor` ([Float64](../sql_reference/data_types/float.md)) — Процент заполнения словаря (для хэшированного словаря  — процент заполнения хэш-таблицы).
-- `source` ([String](../sql_reference/data_types/string.md)) — Текст, описывающий [источник данных](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md) для словаря.
-- `lifetime_min` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Минимальное [время обновления](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах. 
-- `lifetime_max` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Максимальное [время обновления](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах.
-- `loading_start_time` ([DateTime](../sql_reference/data_types/datetime.md)) — Время начала загрузки словаря.
-- `loading_duration` ([Float32](../sql_reference/data_types/float.md)) — Время, затраченное на загрузку словаря.
-- `last_exception` ([String](../sql_reference/data_types/string.md)) — Текст ошибки, возникающей при создании или перезагрузке словаря, если словарь не удалось создать.
+-   `database` ([String](../sql_reference/data_types/string.md)) — Имя базы данных, в которой находится словарь, созданный с помощью DDL-запроса. Пустая строка для других словарей.
+-   `name` ([String](../sql_reference/data_types/string.md)) — [Имя словаря](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict.md).
+-   `status` ([Enum8](../sql_reference/data_types/enum.md)) — Статус словаря. Возможные значения:
+    -   `NOT_LOADED` — Словарь не загружен, потому что не использовался.
+    -   `LOADED` — Словарь загружен успешно.
+    -   `FAILED` — Словарь не загружен в результате ошибки.
+    -   `LOADING` — Словарь в процессе загрузки.
+    -   `LOADED_AND_RELOADING` — Словарь загружен успешно, сейчас перезагружается (частые причины: запрос [SYSTEM RELOAD DICTIONARY](../sql_reference/statements/system.md#query_language-system-reload-dictionary), таймаут, изменение настроек словаря).
+    -   `FAILED_AND_RELOADING` — Словарь не загружен в результате ошибки, сейчас перезагружается.
+-   `origin` ([String](../sql_reference/data_types/string.md)) — Путь к конфигурационному файлу, описывающему словарь.
+-   `type` ([String](../sql_reference/data_types/string.md)) — Тип размещения словаря. [Хранение словарей в памяти](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_layout.md).
+-   `key` — [Тип ключа](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-key): Числовой ключ ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) или Составной ключ ([String](../sql_reference/data_types/string.md)) — строка вида “(тип 1, тип 2, …, тип n)”.
+-   `attribute.names` ([Array](../sql_reference/data_types/array.md)([String](../sql_reference/data_types/string.md))) — Массив [имен атрибутов](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
+-   `attribute.types` ([Array](../sql_reference/data_types/array.md)([String](../sql_reference/data_types/string.md))) — Соответствующий массив [типов атрибутов](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_structure.md#ext_dict_structure-attributes), предоставляемых справочником.
+-   `bytes_allocated` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Объем оперативной памяти, используемый словарем.
+-   `query_count` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Количество запросов с момента загрузки словаря или с момента последней успешной перезагрузки.
+-   `hit_rate` ([Float64](../sql_reference/data_types/float.md)) — Для cache-словарей — процент закэшированных значений.
+-   `element_count` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Количество элементов, хранящихся в словаре.
+-   `load_factor` ([Float64](../sql_reference/data_types/float.md)) — Процент заполнения словаря (для хэшированного словаря — процент заполнения хэш-таблицы).
+-   `source` ([String](../sql_reference/data_types/string.md)) — Текст, описывающий [источник данных](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_sources.md) для словаря.
+-   `lifetime_min` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Минимальное [время обновления](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах.
+-   `lifetime_max` ([UInt64](../sql_reference/data_types/int_uint.md#uint-ranges)) — Максимальное [время обновления](../sql_reference/dictionaries/external_dictionaries/external_dicts_dict_lifetime.md) словаря в памяти, по истечении которого Clickhouse попытается перезагрузить словарь (если задано `invalidate_query`, то только если он изменился). Задается в секундах.
+-   `loading_start_time` ([DateTime](../sql_reference/data_types/datetime.md)) — Время начала загрузки словаря.
+-   `loading_duration` ([Float32](../sql_reference/data_types/float.md)) — Время, затраченное на загрузку словаря.
+-   `last_exception` ([String](../sql_reference/data_types/string.md)) — Текст ошибки, возникающей при создании или перезагрузке словаря, если словарь не удалось создать.
 
 **Пример**
 
 Настройте словарь.
 
-```sql
+``` sql
 CREATE DICTIONARY dictdb.dict
 (
     `key` Int64 DEFAULT -1,
@@ -186,11 +186,11 @@ LAYOUT(FLAT())
 
 Убедитесь, что словарь загружен.
 
-```sql
+``` sql
 SELECT * FROM system.dictionaries
 ```
 
-```text
+``` text
 ┌─database─┬─name─┬─status─┬─origin──────┬─type─┬─key────┬─attribute.names──────────────────────┬─attribute.types─────┬─bytes_allocated─┬─query_count─┬─hit_rate─┬─element_count─┬───────────load_factor─┬─source─────────────────────┬─lifetime_min─┬─lifetime_max─┬──loading_start_time─┌──last_successful_update_time─┬──────loading_duration─┬─last_exception─┐
 │ dictdb   │ dict │ LOADED │ dictdb.dict │ Flat │ UInt64 │ ['value_default','value_expression'] │ ['String','String'] │           74032 │           0 │        1 │             1 │ 0.0004887585532746823 │ ClickHouse: dictdb.dicttbl │            0 │            1 │ 2020-03-04 04:17:34 │   2020-03-04 04:30:34        │                 0.002 │                │
 └──────────┴──────┴────────┴─────────────┴──────┴────────┴──────────────────────────────────────┴─────────────────────┴─────────────────┴─────────────┴──────────┴───────────────┴───────────────────────┴────────────────────────────┴──────────────┴──────────────┴─────────────────────┴──────────────────────────────┘───────────────────────┴────────────────┘
@@ -921,33 +921,33 @@ WHERE
 
 Если этот запрос ничего не возвращает - значит всё хорошо.
 
-## system.settings  {#system-tables-system-settings}
+## system.settings {#system-tables-system-settings}
 
 Содержит информацию о сессионных настройках для текущего пользователя.
 
 Столбцы:
 
-- `name` ([String](../sql_reference/data_types/string.md)) — имя настройки.
-- `value` ([String](../sql_reference/data_types/string.md)) — значение настройки.
-- `changed` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — показывает, изменена ли настройка по отношению к значению по умолчанию.
-- `description` ([String](../sql_reference/data_types/string.md)) — краткое описание настройки. 
-- `min` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — минимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../sql_reference/syntax.md#null-literal). 
-- `max` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — максимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../sql_reference/syntax.md#null-literal). 
-- `readonly` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — Показывает, может ли пользователь изменять настройку:
-     - `0` — Текущий пользователь может изменять настройку.
-     - `1` — Текущий пользователь не может изменять настройку.
+-   `name` ([String](../sql_reference/data_types/string.md)) — имя настройки.
+-   `value` ([String](../sql_reference/data_types/string.md)) — значение настройки.
+-   `changed` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — показывает, изменена ли настройка по отношению к значению по умолчанию.
+-   `description` ([String](../sql_reference/data_types/string.md)) — краткое описание настройки.
+-   `min` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — минимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../sql_reference/syntax.md#null-literal).
+-   `max` ([Nullable](../sql_reference/data_types/nullable.md)([String](../sql_reference/data_types/string.md))) — максимальное значение настройки, если задано [ограничение](settings/constraints_on_settings.md#constraints-on-settings). Если нет, то поле содержит [NULL](../sql_reference/syntax.md#null-literal).
+-   `readonly` ([UInt8](../sql_reference/data_types/int_uint.md#uint-ranges)) — Показывает, может ли пользователь изменять настройку:
+    -   `0` — Текущий пользователь может изменять настройку.
+    -   `1` — Текущий пользователь не может изменять настройку.
 
 **Пример**
 
 Пример показывает как получить информацию о настройках, имена которых содержат `min_i`.
 
-```sql
-SELECT * 
-FROM system.settings 
+``` sql
+SELECT *
+FROM system.settings
 WHERE name LIKE '%min_i%'
 ```
 
-```text
+``` text
 ┌─name────────────────────────────────────────┬─value─────┬─changed─┬─description───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┐
 │ min_insert_block_size_rows                  │ 1048576   │       0 │ Squash blocks passed to INSERT query to specified size in rows, if blocks are not big enough.                                                                         │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
 │ min_insert_block_size_bytes                 │ 268435456 │       0 │ Squash blocks passed to INSERT query to specified size in bytes, if blocks are not big enough.                                                                        │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │
@@ -957,21 +957,23 @@ WHERE name LIKE '%min_i%'
 
 Использование `WHERE changed` может быть полезно, например, если необходимо проверить:
 
-- Что настройки корректно загрузились из конфигурационного файла и используются.
-- Настройки, изменённые в текущей сессии.
+-   Что настройки корректно загрузились из конфигурационного файла и используются.
+-   Настройки, изменённые в текущей сессии.
 
-```sql
+<!-- -->
+
+``` sql
 SELECT * FROM system.settings WHERE changed AND name='load_balancing'
 ```
 
-
 **Cм. также**
 
-- [Настройки](settings/index.md#settings)
-- [Разрешения для запросов](settings/permissions_for_queries.md#settings_readonly)
-- [Ограничения для значений настроек](settings/constraints_on_settings.md)
+-   [Настройки](settings/index.md#settings)
+-   [Разрешения для запросов](settings/permissions_for_queries.md#settings_readonly)
+-   [Ограничения для значений настроек](settings/constraints_on_settings.md)
 
-## system.table_engines
+## system.table\_engines {#system.table_engines}
+
 ``` text
 ┌─name───────────────────┬─value───────┬─changed─┐
 │ max_threads            │ 8           │       1 │

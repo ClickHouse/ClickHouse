@@ -62,7 +62,7 @@ StoragesInfo::getParts(MergeTreeData::DataPartStateVector & state, bool has_stat
 }
 
 StoragesInfoStream::StoragesInfoStream(const SelectQueryInfo & query_info, const Context & context)
-    : query_id(context.getCurrentQueryId())
+    : query_id(context.getCurrentQueryId()), settings(context.getSettings())
 {
     /// Will apply WHERE to subset of columns and then add more columns.
     /// This is kind of complicated, but we use WHERE to do less work.
@@ -192,7 +192,7 @@ StoragesInfo StoragesInfoStream::next()
         try
         {
             /// For table not to be dropped and set of columns to remain constant.
-            info.table_lock = info.storage->lockStructureForShare(false, query_id);
+            info.table_lock = info.storage->lockStructureForShare(false, query_id, settings.lock_acquire_timeout);
         }
         catch (const Exception & e)
         {

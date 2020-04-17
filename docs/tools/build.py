@@ -82,6 +82,7 @@ def build_for_lang(lang, args):
             'fr': 'Français',
             'ru': 'Русский',
             'ja': '日本語',
+            'tr': 'Türkçe',
             'fa': 'فارسی'
         }
 
@@ -92,6 +93,7 @@ def build_for_lang(lang, args):
             'fr': 'Documentation ClickHouse %s',
             'ru': 'Документация ClickHouse %s',
             'ja': 'ClickHouseドキュメント %s',
+            'tr': 'ClickHouse Belgeleri %s',
             'fa': 'مستندات %sClickHouse'
         }
 
@@ -109,6 +111,7 @@ def build_for_lang(lang, args):
             'codehilite',
             'nl2br',
             'sane_lists',
+            'pymdownx.details',
             'pymdownx.magiclink',
             'pymdownx.superfences',
             'extra',
@@ -219,7 +222,20 @@ def build_single_page_version(lang, args, nav, cfg):
                     os.path.join(site_temp, 'single'),
                     single_page_output_path
                 )
-                
+
+                single_page_index_html = os.path.join(single_page_output_path, 'index.html')
+                single_page_content_js = os.path.join(single_page_output_path, 'content.js')
+                with open(single_page_index_html, 'r') as f:
+                    sp_prefix, sp_js, sp_suffix = f.read().split('<!-- BREAK -->')
+                with open(single_page_index_html, 'w') as f:
+                    f.write(sp_prefix)
+                    f.write(sp_suffix)
+                with open(single_page_content_js, 'w') as f:
+                    if args.minify:
+                        import jsmin
+                        sp_js = jsmin.jsmin(sp_js)
+                    f.write(sp_js)
+
                 logging.info(f'Re-building single page for {lang} pdf/test')
                 with util.temp_dir() as test_dir:
                     extra['single_page'] = False
@@ -288,13 +304,14 @@ def write_redirect_html(out_path, to_url):
     except OSError:
         pass
     with open(out_path, 'w') as f:
-        f.write(f'''<!DOCTYPE HTML>
+        f.write(f'''<!-- Redirect: {to_url} -->
+<!DOCTYPE HTML>
 <html lang="en-US">
     <head>
         <meta charset="UTF-8">
         <meta http-equiv="refresh" content="0; url={to_url}">
         <script type="text/javascript">
-            window.location.href = "{to_url}"
+            window.location.href = "{to_url}";
         </script>
         <title>Page Redirection</title>
     </head>
@@ -305,9 +322,9 @@ def write_redirect_html(out_path, to_url):
 
 
 def build_redirect_html(args, from_path, to_path):
-    for lang in ['en', 'es', 'fr', 'ja', 'fa']: # TODO: args.lang.split(','):
+    for lang in args.lang.split(','):
         out_path = os.path.join(args.docs_output_dir, lang, from_path.replace('.md', '/index.html'))
-        version_prefix = args.version_prefix + '/' if args.version_prefix else '/'
+        version_prefix = f'/{args.version_prefix}/' if args.version_prefix else '/'
         target_path = to_path.replace('.md', '/')
         to_url = f'/docs{version_prefix}{lang}/{target_path}'
         to_url = to_url.strip()
@@ -361,13 +378,14 @@ if __name__ == '__main__':
     os.chdir(os.path.join(os.path.dirname(__file__), '..'))
     website_dir = os.path.join('..', 'website')
     arg_parser = argparse.ArgumentParser()
-    arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,fa')
+    arg_parser.add_argument('--lang', default='en,es,fr,ru,zh,ja,tr,fa')
     arg_parser.add_argument('--docs-dir', default='.')
     arg_parser.add_argument('--theme-dir', default=website_dir)
     arg_parser.add_argument('--website-dir', default=website_dir)
     arg_parser.add_argument('--output-dir', default='build')
     arg_parser.add_argument('--enable-stable-releases', action='store_true')
-    arg_parser.add_argument('--stable-releases-limit', type=int, default='10')
+    arg_parser.add_argument('--stable-releases-limit', type=int, default='4')
+    arg_parser.add_argument('--lts-releases-limit', type=int, default='2')
     arg_parser.add_argument('--version-prefix', type=str, default='')
     arg_parser.add_argument('--is-stable-release', action='store_true')
     arg_parser.add_argument('--skip-single-page', action='store_true')
@@ -400,7 +418,7 @@ if __name__ == '__main__':
 
     from build import build
     build(args)
-    
+
     if args.livereload:
         new_args = [arg for arg in sys.argv if not arg.startswith('--livereload')]
         new_args = sys.executable + ' ' + ' '.join(new_args)

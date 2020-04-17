@@ -57,7 +57,7 @@ using FunctionGreatest = FunctionBinaryArithmetic<GreatestImpl, NameGreatest>;
 
 void registerFunctionGreatest(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionGreatest>();
+    factory.registerFunction<FunctionGreatest>(FunctionFactory::CaseInsensitive);
 }
 
 }

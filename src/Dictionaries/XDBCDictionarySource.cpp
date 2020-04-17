@@ -16,8 +16,11 @@
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"
 
-#include <Common/config.h>
 #include "registerDictionaries.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 /// For custom settings support
 // #include "DictionarySourceHelpers.h"
@@ -272,11 +275,6 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
                                  bool /* check_config */) -> DictionarySourcePtr {
         throw Exception{"Dictionary source of type `jdbc` is disabled until consistent support for nullable fields.",
                         ErrorCodes::SUPPORT_IS_DISABLED};
-
-        ///       Here is the support for custom settings. Good luck with fixing Nullable's segfault :)
-        ///       NOTE: you should store the field context locally (const Context & -> Context) to make it work properly!
-        //        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
-
         //        BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<JDBCBridgeMixin>>(config, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".connection_string"));
         //        return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".jdbc", sample_block, context, bridge);
     };

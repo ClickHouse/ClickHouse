@@ -6,7 +6,11 @@
         <div class="w-100 navbar-text text-left d-none d-md-block">
             <h1 class="h3 m-0 p-0 d-inline">
                 <a href="#" class="text-white text-decoration-none">
-                    {{ page.title or config.site_name }}
+                    {% if page.title != 'hidden' %}
+                        {{ page.title or config.site_name }}
+                    {% else %}
+                        {{ page.meta.toc_folder_title or config.site_name }}
+                    {% endif %}
                 </a>
             </h1>
         </div>

@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-03-30 15:12+0300\n"
+"POT-Creation-Date: 2020-04-15 13:19+0000\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: zh\n"
@@ -71,11 +71,15 @@ msgstr ""
 "本文档页面的以下内容已经过机器翻译。 但与其他网站不同，它不是在飞行中完成。 "
 "这个翻译的文本生活在github存储库旁边的主ClickHouse代码库，并等待同胞母语，使其更具人类可读性。"
 
+#: templates/docs/content.html:7
+msgid "You can also use the original English version as a reference."
+msgstr "您也可以使用原始的英文版本作为参考。"
+
 #: templates/docs/content.html:10
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "通过编辑此页面帮助ClickHouse文档"
 
-#: templates/docs/content.html:31
+#: templates/docs/content.html:27
 msgid "Built from"
 msgstr "建于"
 
@@ -175,15 +179,15 @@ msgstr "电子邮件讨论"
 msgid "Like ClickHouse?"
 msgstr "像克里克豪斯？"
 
-#: templates/index/community.html:142
+#: templates/index/community.html:143
 msgid "Help to spread the word about it via"
 msgstr "帮助通过传播这个词"
 
-#: templates/index/community.html:143
+#: templates/index/community.html:144
 msgid "and"
 msgstr "和"
 
-#: templates/index/community.html:155
+#: templates/index/community.html:153
 msgid "Hosting ClickHouse Meetups"
 msgstr "碌莽禄Hosting拢Hosting0755-88888888"
 

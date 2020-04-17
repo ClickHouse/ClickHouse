@@ -773,6 +773,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     MergedBlockOutputStream to{
         new_data_part,
         merging_columns,
+        data.skip_indices,
         compression_codec,
         merged_column_to_size,
         data_settings->min_merge_bytes_to_use_direct_io,
@@ -875,9 +876,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             MergedColumnOnlyOutputStream column_to(
                 new_data_part,
                 column_gathered_stream.getHeader(),
-                false,
                 compression_codec,
-                false,
                 /// we don't need to recalc indices here
                 /// because all of them were already recalculated and written
                 /// as key part of vertical merge
@@ -991,7 +990,6 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
 
     splitMutationCommands(source_part, commands_for_part, for_interpreter, for_file_renames);
 
-
     UInt64 watch_prev_elapsed = 0;
     MergeStageProgress stage_progress(1.0);
 
@@ -1043,8 +1041,10 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mutatePartToTempor
     /// All columns from part are changed and may be some more that were missing before in part
     if (isCompactPart(source_part) || source_part->getColumns().isSubsetOf(updated_header.getNamesAndTypesList()))
     {
+        auto part_indices = getIndicesForNewDataPart(data.skip_indices, for_file_renames);
         mutateAllPartColumns(
             new_data_part,
+            part_indices,
             in,
             time_of_mutation,
             compression_codec,
@@ -1260,6 +1260,7 @@ void MergeTreeDataMergerMutator::splitMutationCommands(
         else if (is_compact_part && command.type == MutationCommand::Type::DROP_COLUMN)
         {
             removed_columns_from_compact_part.emplace(command.column_name);
+            for_file_renames.push_back(command);
         }
         else if (command.type == MutationCommand::Type::RENAME_COLUMN)
         {
@@ -1439,6 +1440,22 @@ NamesAndTypesList MergeTreeDataMergerMutator::getColumnsForNewDataPart(
     return all_columns;
 }
 
+MergeTreeIndices MergeTreeDataMergerMutator::getIndicesForNewDataPart(
+    const MergeTreeIndices & all_indices,
+    const MutationCommands & commands_for_removes)
+{
+    NameSet removed_indices;
+    for (const auto & command : commands_for_removes)
+        if (command.type == MutationCommand::DROP_INDEX)
+            removed_indices.insert(command.column_name);
+
+    MergeTreeIndices new_indices;
+    for (const auto & index : all_indices)
+        if (!removed_indices.count(index->name))
+            new_indices.push_back(index);
+
+    return new_indices;
+}
 
 std::set<MergeTreeIndexPtr> MergeTreeDataMergerMutator::getIndicesToRecalculate(
     BlockInputStreamPtr & input_stream,
@@ -1503,6 +1520,7 @@ bool MergeTreeDataMergerMutator::shouldExecuteTTL(const Names & columns, const M
 
 void MergeTreeDataMergerMutator::mutateAllPartColumns(
     MergeTreeData::MutableDataPartPtr new_data_part,
+    const MergeTreeIndices & skip_indices,
     BlockInputStreamPtr mutating_stream,
     time_t time_of_mutation,
     const CompressionCodecPtr & compression_codec,
@@ -1524,6 +1542,7 @@ void MergeTreeDataMergerMutator::mutateAllPartColumns(
     MergedBlockOutputStream out{
         new_data_part,
         new_data_part->getColumns(),
+        skip_indices,
         compression_codec};
 
     mutating_stream->readPrefix();
@@ -1560,7 +1579,6 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     if (mutating_stream == nullptr)
         throw Exception("Cannot mutate part columns with uninitialized mutations stream. It's a bug", ErrorCodes::LOGICAL_ERROR);
 
-
     if (need_remove_expired_values)
         mutating_stream = std::make_shared<TTLBlockInputStream>(mutating_stream, data, new_data_part, time_of_mutation, true);
 
@@ -1568,9 +1586,7 @@ void MergeTreeDataMergerMutator::mutateSomePartColumns(
     MergedColumnOnlyOutputStream out(
         new_data_part,
         mutation_header,
-        /* sync = */ false,
         compression_codec,
-        /* skip_offsets = */ false,
         std::vector<MergeTreeIndexPtr>(indices_to_recalc.begin(), indices_to_recalc.end()),
         nullptr,
         source_part->index_granularity,

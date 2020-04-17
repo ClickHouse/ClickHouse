@@ -203,7 +203,9 @@ CheckResult ReplicatedMergeTreePartCheckThread::checkPart(const String & part_na
     else if (part->name == part_name)
     {
         auto zookeeper = storage.getZooKeeper();
-        auto table_lock = storage.lockStructureForShare(false, RWLockImpl::NO_QUERY);
+
+        auto table_lock = storage.lockStructureForShare(
+                false, RWLockImpl::NO_QUERY, storage.getSettings()->lock_acquire_timeout_for_background_operations);
 
         auto local_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
             part->getColumns(), part->checksums);
