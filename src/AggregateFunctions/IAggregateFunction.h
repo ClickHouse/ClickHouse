@@ -97,6 +97,10 @@ public:
     /// Deserializes state. This function is called only for empty (just created) states.
     virtual void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const = 0;
 
+    /// Finalize state. This function is called once after all 'add' and 'merge' calls. Only is isFinalizationNeeded().
+    virtual void finalize(AggregateDataPtr /*place*/) {}
+    virtual bool isFinalizationNeeded() const { return false; }
+
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const
     {
@@ -150,6 +154,12 @@ public:
       */
     virtual void addBatchArray(
         size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena) const = 0;
+
+    /// Batch version of "finalize" function.
+    virtual void finalizeBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset) = 0;
+
+    /// Batch version of "insertResultInto" function.
+    virtual void batchInsertResultInto(size_t batch_size, AggregateDataPtr * places, size_t place_offset, IColumn & to) const = 0;
 
     /** By default all NULLs are skipped during aggregation.
      *  If it returns nullptr, the default one will be used.
@@ -211,6 +221,22 @@ public:
                 static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, j, arena);
             current_offset = next_offset;
         }
+    }
+
+    void finalizeBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset) override
+    {
+        auto derived = static_cast<const Derived *>(this);
+        if (!derived->isFinalizationNeeded())
+            return;
+
+        for (size_t i = 0; i < batch_size; ++i)
+            derived->finalize(places[i] + place_offset);
+    }
+
+    void batchInsertResultInto(size_t batch_size, AggregateDataPtr * places, size_t place_offset, IColumn & to) const override
+    {
+        for (size_t i = 0; i < batch_size; ++i)
+            static_cast<const Derived *>(this)->insertResultInto(places[i] + place_offset, to);
     }
 };
 

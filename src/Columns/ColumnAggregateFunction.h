@@ -116,7 +116,7 @@ public:
 
     /** Transform column with states of aggregate functions to column with final result values.
       */
-    MutableColumnPtr convertToValues() const;
+    MutableColumnPtr convertToValues();
 
     std::string getName() const override { return "AggregateFunction(" + func->getName() + ")"; }
     const char * getFamilyName() const override { return "AggregateFunction"; }

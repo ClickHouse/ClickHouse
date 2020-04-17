@@ -968,6 +968,22 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
     MutableColumns & key_columns,
     MutableColumns & final_aggregate_columns) const
 {
+    bool is_finalization_needed = false;
+    for (auto & function : aggregate_functions)
+        is_finalization_needed = is_finalization_needed || function->isFinalizationNeeded();
+
+    if (is_finalization_needed)
+    {
+        PaddedPODArray<AggregateDataPtr> places;
+        places.reserve(data.size());
+
+        data.forEachMapped([&](const auto & value) { places.push_back(value); });
+
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            if (aggregate_functions[i]->isFinalizationNeeded())
+                aggregate_functions[i]->finalizeBatch(places.size(), places.data(), offsets_of_aggregate_states[i]);
+    }
+
     if constexpr (Method::low_cardinality_optimization)
     {
         if (data.hasNullKeyData())
@@ -975,9 +991,15 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
             key_columns[0]->insertDefault();
 
             for (size_t i = 0; i < params.aggregates_size; ++i)
+            {
+                if (aggregate_functions[i]->isFinalizationNeeded())
+                    aggregate_functions[i]->finalize(data.getNullKeyData() + offsets_of_aggregate_states[i]);
+
                 aggregate_functions[i]->insertResultInto(
                     data.getNullKeyData() + offsets_of_aggregate_states[i],
                     *final_aggregate_columns[i]);
+
+            }
         }
     }
 

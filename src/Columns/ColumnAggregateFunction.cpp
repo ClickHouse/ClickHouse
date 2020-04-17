@@ -39,7 +39,7 @@ void ColumnAggregateFunction::addArena(ConstArenaPtr arena_)
     foreign_arenas.push_back(arena_);
 }
 
-MutableColumnPtr ColumnAggregateFunction::convertToValues() const
+MutableColumnPtr ColumnAggregateFunction::convertToValues()
 {
     /** If the aggregate function returns an unfinalized/unfinished state,
         * then you just need to copy pointers to it and also shared ownership of data.
@@ -79,11 +79,17 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues() const
         return res;
     }
 
+    if (func->isFinalizationNeeded())
+    {
+        /// Finalization may affect function internal state.
+        ensureOwnership();
+        func->finalizeBatch(data.size(), data.data(), 0);
+    }
+
     MutableColumnPtr res = func->getReturnType()->createColumn();
     res->reserve(data.size());
 
-    for (auto val : data)
-        func->insertResultInto(val, *res);
+    func->batchInsertResultInto(data.size(), data.data(), 0, *res);
 
     return res;
 }

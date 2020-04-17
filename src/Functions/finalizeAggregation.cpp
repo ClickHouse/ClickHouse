@@ -57,8 +57,10 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
-        const ColumnAggregateFunction * column_with_states
-            = typeid_cast<const ColumnAggregateFunction *>(&*block.getByPosition(arguments.at(0)).column);
+        auto & column = block.getByPosition(arguments.at(0)).column;
+        auto mut_column = (*std::move(column)).mutate();
+        auto * column_with_states = typeid_cast<ColumnAggregateFunction *>(mut_column.get());
+
         if (!column_with_states)
             throw Exception("Illegal column " + block.getByPosition(arguments.at(0)).column->getName()
                     + " of first argument of function "
@@ -66,6 +68,7 @@ public:
                 ErrorCodes::ILLEGAL_COLUMN);
 
         block.getByPosition(result).column = column_with_states->convertToValues();
+        column = std::move(mut_column);
     }
 };
 
