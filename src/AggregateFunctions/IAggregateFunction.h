@@ -98,7 +98,7 @@ public:
     virtual void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const = 0;
 
     /// Finalize state. This function is called once after all 'add' and 'merge' calls. Only is isFinalizationNeeded().
-    virtual void finalize(AggregateDataPtr /*place*/) {}
+    virtual void finalize(AggregateDataPtr /*place*/) const {}
     virtual bool isFinalizationNeeded() const { return false; }
 
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
@@ -156,7 +156,7 @@ public:
         size_t batch_size, AggregateDataPtr * places, size_t place_offset, const IColumn ** columns, const UInt64 * offsets, Arena * arena) const = 0;
 
     /// Batch version of "finalize" function.
-    virtual void finalizeBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset) = 0;
+    virtual void finalizeBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset) const = 0;
 
     /// Batch version of "insertResultInto" function.
     virtual void batchInsertResultInto(size_t batch_size, AggregateDataPtr * places, size_t place_offset, IColumn & to) const = 0;
@@ -223,7 +223,7 @@ public:
         }
     }
 
-    void finalizeBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset) override
+    void finalizeBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset) const override
     {
         auto derived = static_cast<const Derived *>(this);
         if (!derived->isFinalizationNeeded())
