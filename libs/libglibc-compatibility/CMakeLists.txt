@@ -28,7 +28,7 @@ if (GLIBC_COMPATIBILITY)
 
     add_library(glibc-compatibility STATIC ${glibc_compatibility_sources})
 
-    target_include_directories(glibc-compatibility PRIVATE libcxxabi)
+    target_include_directories(glibc-compatibility PRIVATE libcxxabi musl/x86_64)
 
     if (USE_STATIC_LIBRARIES=0 AND MAKE_STATIC_LIBRARIES=OFF)
         target_compile_options(PRIVATE -fPIC)
