@@ -89,7 +89,7 @@ DictionarySourcePtr DictionarySourceFactory::create(
         throw Exception{name + ": element dictionary.source should have one or two child elements",
                         ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG};
 
-    const auto & source_type = keys.front();
+    const std::string & source_type = keys.front() == "settings" ? keys.back() : keys.front();
 
     const auto found = registered_sources.find(source_type);
     if (found != registered_sources.end())
