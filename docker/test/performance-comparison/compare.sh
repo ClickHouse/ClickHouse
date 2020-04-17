@@ -2,7 +2,7 @@
 set -ex
 set -o pipefail
 trap "exit" INT TERM
-trap "kill $(jobs -pr) ||:" EXIT
+trap 'kill $(jobs -pr) ||:' EXIT
 
 stage=${stage:-}
 script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -18,22 +18,22 @@ function configure
     sed -i 's/<tcp_port>9000/<tcp_port>9002/g' right/config/config.xml
 
     # Start a temporary server to rename the tables
-    while killall clickhouse; do echo . ; sleep 1 ; done
+    while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
     set -m # Spawn temporary in its own process groups
-    left/clickhouse server --config-file=left/config/config.xml -- --path db0 &> setup-server-log.log &
+    left/clickhouse-server --config-file=left/config/config.xml -- --path db0 &> setup-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
     set +m
-    while ! left/clickhouse client --port 9001 --query "select 1" ; do kill -0 $left_pid ; echo . ; sleep 1 ; done
+    while ! clickhouse-client --port 9001 --query "select 1" ; do kill -0 $left_pid ; echo . ; sleep 1 ; done
     echo server for setup started
 
-    left/clickhouse client --port 9001 --query "create database test" ||:
-    left/clickhouse client --port 9001 --query "rename table datasets.hits_v1 to test.hits" ||:
+    clickhouse-client --port 9001 --query "create database test" ||:
+    clickhouse-client --port 9001 --query "rename table datasets.hits_v1 to test.hits" ||:
 
-    while killall clickhouse; do echo . ; sleep 1 ; done
+    while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
     # Remove logs etc, because they will be updated, and sharing them between
@@ -42,43 +42,50 @@ function configure
     rm db0/metadata/system/* -rf ||:
 
     # Make copies of the original db for both servers. Use hardlinks instead
-    # of copying. Be careful to remove preprocessed configs or it can lead to
-    # weird effects.
+    # of copying. Be careful to remove preprocessed configs and system tables,or
+    # it can lead to weird effects.
     rm -r left/db ||:
     rm -r right/db ||:
     rm -r db0/preprocessed_configs ||:
+    rm -r db/{data,metadata}/system ||:
     cp -al db0/ left/db/
     cp -al db0/ right/db/
 }
 
 function restart
 {
-    while killall clickhouse; do echo . ; sleep 1 ; done
+    while killall clickhouse-server; do echo . ; sleep 1 ; done
     echo all killed
 
     set -m # Spawn servers in their own process groups
 
-    left/clickhouse server --config-file=left/config/config.xml -- --path left/db &>> left-server-log.log &
+    left/clickhouse-server --config-file=left/config/config.xml -- --path left/db &>> left-server-log.log &
     left_pid=$!
     kill -0 $left_pid
     disown $left_pid
 
-    right/clickhouse server --config-file=right/config/config.xml -- --path right/db &>> right-server-log.log &
+    right/clickhouse-server --config-file=right/config/config.xml -- --path right/db &>> right-server-log.log &
     right_pid=$!
     kill -0 $right_pid
     disown $right_pid
 
     set +m
 
-    while ! left/clickhouse client --port 9001 --query "select 1" ; do kill -0 $left_pid ; echo . ; sleep 1 ; done
+    while ! clickhouse-client --port 9001 --query "select 1" ; do kill -0 $left_pid ; echo . ; sleep 1 ; done
     echo left ok
-    while ! right/clickhouse client --port 9002 --query "select 1" ; do kill -0 $right_pid ; echo . ; sleep 1 ; done
+    while ! clickhouse-client --port 9002 --query "select 1" ; do kill -0 $right_pid ; echo . ; sleep 1 ; done
     echo right ok
 
-    left/clickhouse client --port 9001 --query "select * from system.tables where database != 'system'"
-    left/clickhouse client --port 9001 --query "select * from system.build_options"
-    right/clickhouse client --port 9002 --query "select * from system.tables where database != 'system'"
-    right/clickhouse client --port 9002 --query "select * from system.build_options"
+    clickhouse-client --port 9001 --query "select * from system.tables where database != 'system'"
+    clickhouse-client --port 9001 --query "select * from system.build_options"
+    clickhouse-client --port 9002 --query "select * from system.tables where database != 'system'"
+    clickhouse-client --port 9002 --query "select * from system.build_options"
+
+    # Check again that both servers we started are running -- this is important
+    # for running locally, when there might be some other servers started and we
+    # will connect to them instead.
+    kill -0 $left_pid
+    kill -0 $right_pid
 }
 
 function run_tests
@@ -129,7 +136,7 @@ function run_tests
         # FIXME remove some broken long tests
         for test_name in {IPv4,IPv6,modulo,parse_engine_file,number_formatting_formats,select_format,arithmetic,cryptographic_hashes,logical_functions_{medium,small}}
         do
-            printf "$test_name\tMarked as broken (see compare.sh)\n" >> skipped-tests.tsv
+            printf "%s\tMarked as broken (see compare.sh)\n" "$test_name">> skipped-tests.tsv
             rm "$test_prefix/$test_name.xml" ||:
         done
         test_files=$(ls "$test_prefix"/*.xml)
@@ -140,9 +147,9 @@ function run_tests
     for test in $test_files
     do
         # Check that both servers are alive, to fail faster if they die.
-        left/clickhouse client --port 9001 --query "select 1 format Null" \
+        clickhouse-client --port 9001 --query "select 1 format Null" \
             || { echo $test_name >> left-server-died.log ; restart ; continue ; }
-        right/clickhouse client --port 9002 --query "select 1 format Null" \
+        clickhouse-client --port 9002 --query "select 1 format Null" \
             || { echo $test_name >> right-server-died.log ; restart ; continue ; }
 
         test_name=$(basename "$test" ".xml")
@@ -160,7 +167,7 @@ function run_tests
         skipped=$(grep ^skipped "$test_name-raw.tsv" | cut -f2-)
         if [ "$skipped" != "" ]
         then
-            printf "$test_name""\t""$skipped""\n" >> skipped-tests.tsv
+            printf "%s\t%s\n" "$test_name" "$skipped">> skipped-tests.tsv
         fi
     done
 
@@ -172,24 +179,24 @@ function run_tests
 function get_profiles
 {
     # Collect the profiles
-    left/clickhouse client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
-    left/clickhouse client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
-    right/clickhouse client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
-    right/clickhouse client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
-    left/clickhouse client --port 9001 --query "system flush logs"
-    right/clickhouse client --port 9002 --query "system flush logs"
+    clickhouse-client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
+    clickhouse-client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
+    clickhouse-client --port 9001 --query "set query_profiler_cpu_time_period_ns = 0"
+    clickhouse-client --port 9001 --query "set query_profiler_real_time_period_ns = 0"
+    clickhouse-client --port 9001 --query "system flush logs"
+    clickhouse-client --port 9002 --query "system flush logs"
 
-    left/clickhouse client --port 9001 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
-    left/clickhouse client --port 9001 --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
-    left/clickhouse client --port 9001 --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
-    left/clickhouse client --port 9001 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
-    left/clickhouse client --port 9001 --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
+    clickhouse-client --port 9001 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > left-query-log.tsv ||: &
+    clickhouse-client --port 9001 --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > left-query-thread-log.tsv ||: &
+    clickhouse-client --port 9001 --query "select * from system.trace_log format TSVWithNamesAndTypes" > left-trace-log.tsv ||: &
+    clickhouse-client --port 9001 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > left-addresses.tsv ||: &
+    clickhouse-client --port 9001 --query "select * from system.metric_log format TSVWithNamesAndTypes" > left-metric-log.tsv ||: &
 
-    right/clickhouse client --port 9002 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
-    right/clickhouse client --port 9002 --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > right-query-thread-log.tsv ||: &
-    right/clickhouse client --port 9002 --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
-    right/clickhouse client --port 9002 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
-    right/clickhouse client --port 9002 --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
+    clickhouse-client --port 9002 --query "select * from system.query_log where type = 2 format TSVWithNamesAndTypes" > right-query-log.tsv ||: &
+    clickhouse-client --port 9002 --query "select * from system.query_thread_log format TSVWithNamesAndTypes" > right-query-thread-log.tsv ||: &
+    clickhouse-client --port 9002 --query "select * from system.trace_log format TSVWithNamesAndTypes" > right-trace-log.tsv ||: &
+    clickhouse-client --port 9002 --query "select arrayJoin(trace) addr, concat(splitByChar('/', addressToLine(addr))[-1], '#', demangle(addressToSymbol(addr)) ) name from system.trace_log group by addr format TSVWithNamesAndTypes" > right-addresses.tsv ||: &
+    clickhouse-client --port 9002 --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
 
     wait
 }
@@ -197,9 +204,9 @@ function get_profiles
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
-    find . -maxdepth 1 -name "*-queries.tsv" -print | \
-        xargs -n1 -I% basename % -queries.tsv | \
-        parallel --verbose right/clickhouse local --file "{}-queries.tsv" \
+    find . -maxdepth 1 -name "*-queries.tsv" -print0 | \
+        xargs -0 -n1 -I% basename % -queries.tsv | \
+        parallel --verbose clickhouse-local --file "{}-queries.tsv" \
             --structure "\"query text, run int, version UInt32, time float\"" \
             --query "\"$(cat "$script_dir/eqmed.sql")\"" \
             ">" {}-report.tsv
@@ -221,7 +228,7 @@ done
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
 
-right/clickhouse local --query "
+clickhouse-local --query "
 create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
     as select
         -- FIXME Comparison mode doesn't make sense for queries that complete
@@ -295,7 +302,7 @@ create table all_tests_tsv engine File(TSV, 'all-queries.tsv') as
 
 for version in {right,left}
 do
-right/clickhouse local --query "
+clickhouse-local --query "
 create view queries as
     select * from file('queries.rep', TSVWithNamesAndTypes,
         'short int, unstable int, changed int, left float, right float,
@@ -412,6 +419,10 @@ unset IFS
 # operator.
 grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
 }
+
+# Check that local and client are in PATH
+clickhouse-local --version > /dev/null
+clickhouse-client --version > /dev/null
 
 case "$stage" in
 "")
