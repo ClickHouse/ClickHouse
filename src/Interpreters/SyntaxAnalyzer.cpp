@@ -377,6 +377,9 @@ void optimizeOrderBy(const ASTSelectQuery * select_query)
 /// Checks if ASTFunction or its arguments are stateful.
 bool isASTFunctionStateful(const ASTPtr & current_ast, const Context & context)
 {
+    if (!current_ast)
+        return false;
+
     if (auto ast_function = current_ast->as<ASTFunction>())
     {
         if (ast_function->name == "any" || ast_function->name == "groupArray")
@@ -431,29 +434,30 @@ void optimizeDuplicateOrderByFromSubqueries(const ASTPtr & current_ast, const Co
 /// Checks if duplicate ORDER BY from subqueries can be erased.
 void optimizeDuplicateOrderBy(const ASTPtr & current_ast, const Context & context)
 {
+    if (!current_ast)
+        return;
+
     for (const auto & elem : current_ast->children)
         optimizeDuplicateOrderBy(elem, context);
 
-    auto select_query = current_ast->as<ASTSelectQuery>();
-
-    if (!select_query)
-        return;
-
-    for (const auto & elem : select_query->children)
-    {
-        if (elem->getID() == "Set")
-            return;
-    }
-
-    if (select_query->orderBy() || select_query->groupBy())
+    if (auto select_query = current_ast->as<ASTSelectQuery>())
     {
         for (const auto & elem : select_query->children)
         {
-            if (isASTFunctionStateful(elem, context))
+            if (elem->getID() == "Set")
                 return;
         }
 
-        optimizeDuplicateOrderByFromSubqueries(select_query->tables(), context);
+        if (select_query->orderBy() || select_query->groupBy())
+        {
+            for (const auto & elem : select_query->children)
+            {
+                if (isASTFunctionStateful(elem, context))
+                    return;
+            }
+
+            optimizeDuplicateOrderByFromSubqueries(select_query->tables(), context);
+        }
     }
 }
 
@@ -470,9 +474,7 @@ void optimizeDuplicateDistinct(const ASTPtr & current_ast,
         optimizeDuplicateDistinct(child, is_distinct, last_ids);
     }
 
-    const auto select_query = current_ast->as<ASTSelectQuery>();
-
-    if (select_query)
+    if (const auto select_query = current_ast->as<ASTSelectQuery>())
     {
         for (const auto & elem : select_query->children)
         {
@@ -484,20 +486,25 @@ void optimizeDuplicateDistinct(const ASTPtr & current_ast,
             }
         }
 
-        if (select_query->distinct)
+        if (select_query->distinct && select_query->select())
         {
-            auto & expression_list = select_query->select();
+            auto expression_list = select_query->select();
             std::vector<String> current_ids;
 
+            if (expression_list->children.empty())
+                return;
             auto asterisk_id = expression_list->children.front()->getID();
 
             if (asterisk_id == "Asterisk" || asterisk_id == "QualifiedAsterisk")
             {
                 auto table_expression = getTableExpression(*select_query, 0);
+
                 if (table_expression->database_and_table_name)
                     current_ids.push_back(table_expression->database_and_table_name->getColumnName());
+
                 if (table_expression->table_function)
                     current_ids.push_back(table_expression->table_function->getColumnName());
+
                 if (table_expression->subquery)
                     current_ids.push_back(table_expression->subquery->getColumnName());
             }
