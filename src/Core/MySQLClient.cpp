@@ -12,8 +12,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
 
-MySQLClient::MySQLClient(const String & _host, UInt16 _port, const String & _user, const String & _password, const String & _database)
-    : host(_host), port(_port), user(_user), password(_password), database(_database)
+MySQLClient::MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_, const String & database_)
+    : host(host_), port(port_), user(user_), password(password_), database(database_)
 {
     client_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH | CLIENT_SECURE_CONNECTION;
 }

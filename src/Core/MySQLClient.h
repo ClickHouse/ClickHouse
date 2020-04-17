@@ -17,7 +17,7 @@ namespace DB
 class MySQLClient
 {
 public:
-    MySQLClient(const String & _host, UInt16 _port, const String & _user, const String & _password, const String & _database);
+    MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_, const String & database_);
 
     void connect();
 
