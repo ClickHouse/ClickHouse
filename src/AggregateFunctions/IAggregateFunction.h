@@ -97,10 +97,6 @@ public:
     /// Deserializes state. This function is called only for empty (just created) states.
     virtual void deserialize(AggregateDataPtr place, ReadBuffer & buf, Arena * arena) const = 0;
 
-    /// Finalize state. This function is called once after all 'add' and 'merge' calls. Only is isFinalizationNeeded().
-    virtual void finalize(AggregateDataPtr * /*places*/, size_t /*size*/) {}
-    virtual bool isFinalizationNeeded() const { return false; }
-
     /// Returns true if a function requires Arena to handle own states (see add(), merge(), deserialize()).
     virtual bool allocatesMemoryInArena() const
     {
