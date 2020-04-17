@@ -12,9 +12,9 @@ SquashingBlockOutputStream::SquashingBlockOutputStream(BlockOutputStreamPtr dst,
 
 void SquashingBlockOutputStream::write(const Block & block)
 {
-    SquashingTransform::Result result = transform.add(Block(block).mutateColumns());
-    if (result.ready)
-        output->write(header.cloneWithColumns(std::move(result.columns)));
+    auto squashed_columns = transform.add(block);
+    if (!squashed_columns.empty())
+        output->write(header.cloneWithColumns(std::move(squashed_columns)));
 }
 
 
@@ -25,9 +25,9 @@ void SquashingBlockOutputStream::finalize()
 
     all_written = true;
 
-    SquashingTransform::Result result = transform.add({});
-    if (result.ready && !result.columns.empty())
-        output->write(header.cloneWithColumns(std::move(result.columns)));
+    auto squashed_columns = transform.add({});
+    if (!squashed_columns.empty())
+        output->write(header.cloneWithColumns(std::move(squashed_columns)));
 }
 
 

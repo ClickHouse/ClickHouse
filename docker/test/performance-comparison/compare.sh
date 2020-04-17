@@ -370,8 +370,8 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
 
 create table metric_devation engine File(TSVWithNamesAndTypes,
         'metric-deviation.$version.rep') as
-    select floor((q[3] - q[1])/q[2], 3) d,
-        quantilesExact(0, 0.5, 1)(value) q, metric, query
+    select query, floor((q[3] - q[1])/q[2], 3) d,
+        quantilesExact(0, 0.5, 1)(value) q, metric
     from (select * from unstable_run_metrics
         union all select * from unstable_run_traces
         union all select * from unstable_run_metrics_2) mm
@@ -405,11 +405,17 @@ do
     for query in $(cut -d'	' -f1 "stacks.$version.rep" | sort | uniq)
     do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/]/_/g')
+
+        # Build separate .svg flamegraph for each query.
         grep -F "$query	" "stacks.$version.rep" \
             | cut -d'	' -f 2- \
             | sed 's/\t/ /g' \
             | tee "$query_file.stacks.$version.rep" \
             | ~/fg/flamegraph.pl > "$query_file.$version.svg" &
+
+        # Copy metric stats into separate files as well.
+        grep -F "$query	" "metric-deviation.$version.rep" \
+            | cut -f2- > "$query_file.$version.metrics.rep" &
     done
 done
 wait
