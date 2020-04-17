@@ -33,7 +33,7 @@ try
     std::string input = "SELECT number, number / 3, number * number";
 
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
     SharedContextHolder shared_context = Context::createShared();
     Context context = Context::createGlobal(shared_context.get());

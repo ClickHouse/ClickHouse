@@ -76,7 +76,7 @@ try
         ") ENGINE = Log";
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0);
+    ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
     SharedContextHolder shared_context = Context::createShared(shared_context.get());
     Context context = Context::createGlobal();

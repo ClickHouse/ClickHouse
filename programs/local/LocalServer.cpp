@@ -268,8 +268,10 @@ void LocalServer::processQueries()
     String initial_create_query = getInitialCreateTableQuery();
     String queries_str = initial_create_query + config().getRawString("query");
 
+    const auto & settings = context->getSettingsRef();
+
     std::vector<String> queries;
-    auto parse_res = splitMultipartQuery(queries_str, queries);
+    auto parse_res = splitMultipartQuery(queries_str, queries, settings.max_query_size, settings.max_parser_depth);
 
     if (!parse_res.second)
         throw Exception("Cannot parse and execute the following part of query: " + String(parse_res.first), ErrorCodes::SYNTAX_ERROR);

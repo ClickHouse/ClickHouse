@@ -1,8 +1,3 @@
----
-machine_translated: true
-machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
----
-
 # 什么是ClickHouse？ {#shi-yao-shi-clickhouse}
 
 ClickHouse是一个用于联机分析(OLAP)的列式数据库管理系统(DBMS)。
@@ -80,54 +75,6 @@ ClickHouse是一个用于联机分析(OLAP)的列式数据库管理系统(DBMS)�
 3.  由于I/O的降低，这将帮助更多的数据被系统缓存。
 
 例如，查询«统计每个广告平台的记录数量»需要读取«广告平台ID»这一列，它在未压缩的情况下需要1个字节进行存储。如果大部分流量不是来自广告平台，那么这一列至少可以以十倍的压缩率被压缩。当采用快速压缩算法，它的解压速度最少在十亿字节(未压缩数据)每秒。换句话说，这个查询可以在单个服务器上以每秒大约几十亿行的速度进行处理。这实际上是当前实现的速度。
-
-<details markdown="1">
-
-<summary>示例</summary>
-
-    $ clickhouse-client
-    ClickHouse client version 0.0.52053.
-    Connecting to localhost:9000.
-    Connected to ClickHouse server version 0.0.52053.
-
-    :) SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIMIT 20
-
-    SELECT
-        CounterID,
-        count()
-    FROM hits
-    GROUP BY CounterID
-    ORDER BY count() DESC
-    LIMIT 20
-
-    ┌─CounterID─┬──count()─┐
-    │    114208 │ 56057344 │
-    │    115080 │ 51619590 │
-    │      3228 │ 44658301 │
-    │     38230 │ 42045932 │
-    │    145263 │ 42042158 │
-    │     91244 │ 38297270 │
-    │    154139 │ 26647572 │
-    │    150748 │ 24112755 │
-    │    242232 │ 21302571 │
-    │    338158 │ 13507087 │
-    │     62180 │ 12229491 │
-    │     82264 │ 12187441 │
-    │    232261 │ 12148031 │
-    │    146272 │ 11438516 │
-    │    168777 │ 11403636 │
-    │   4120072 │ 11227824 │
-    │  10938808 │ 10519739 │
-    │     74088 │  9047015 │
-    │    115079 │  8837972 │
-    │    337234 │  8205961 │
-    └───────────┴──────────┘
-
-    20 rows in set. Elapsed: 0.153 sec. Processed 1.00 billion rows, 4.00 GB (6.53 billion rows/s., 26.10 GB/s.)
-
-    :)
-
-</details>
 
 ### CPU {#cpu}
 

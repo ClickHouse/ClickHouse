@@ -179,7 +179,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-#### Common Purpose Codecs {#create-query-common-purpose-codecs}
+#### General Purpose Codecs {#create-query-general-purpose-codecs}
 
 Codecs:
 
