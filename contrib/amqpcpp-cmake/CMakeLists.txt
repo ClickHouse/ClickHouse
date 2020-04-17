@@ -126,4 +126,4 @@ add_library(AMQP-CPP ${SRCS})
 target_include_directories(AMQP-CPP PRIVATE ${AMQPCPP_DIR}/include/amqpcpp)
 target_include_directories(AMQP-CPP PRIVATE ${AMQPCPP_DIR}/include/amqpcpp/linux_tcp)
 target_include_directories(AMQP-CPP SYSTEM PUBLIC ${AMQPCPP_DIR}/include)
-
+target_link_libraries (AMQP-CPP PRIVATE ${OPENSSL_CRYPTO_LIBRARY})

@@ -33,6 +33,7 @@ public:
 
     const String & get_user_name() { return user_name; }
     const String & get_password() { return password; }
+    const String & get_vhost() { return vhost; }
 
 private:
     void onReady(AMQP::Connection * conection) override;
@@ -44,10 +45,9 @@ private:
     Poco::Logger * log;
     String user_name;
     String password;
+    String vhost;
 
     std::shared_ptr<ConnectionImpl> handler_impl;
-
-    size_t pending = 0;
 };
 
 

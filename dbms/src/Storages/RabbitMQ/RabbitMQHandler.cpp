@@ -15,9 +15,10 @@ RabbitMQHandler::RabbitMQHandler(const std::pair<std::string, UInt16> & parsed_h
     handler_impl->socket.connect(address);
     handler_impl->socket.setKeepAlive(true);
 
-    //TODO: get login and password here properly
-    user_name = "guest";
-    password = "guest";
+    //TODO: get credentials here properly
+    user_name = "root";
+    password = "clickhouse";
+    vhost = "private";
 }
 
 RabbitMQHandler::~RabbitMQHandler()

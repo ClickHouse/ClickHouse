@@ -83,11 +83,15 @@ StorageRabbitMQ::StorageRabbitMQ(
         , semaphore(0, num_consumers_)
         , connection_handler(parseAddress(host_port, 5672), log)
         , connection(&connection_handler,
-                     AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()), "/")
+                     AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()), connection_handler.get_vhost())
 {
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
+
+    LOG_DEBUG(log, "Is connection ready? - " + std::to_string(connection.ready()));
+    LOG_DEBUG(log, "Is connection usable? - " + std::to_string(connection.usable()));
+    LOG_DEBUG(log, "Is connection waiting for the answer from server? - " + std::to_string(connection.waiting()));
 }
 
 
@@ -142,7 +146,12 @@ void StorageRabbitMQ::startup()
     task->activateAndSchedule();
 
     LOG_DEBUG(log, "Available channels: " + std::to_string(connection.channels()));
-    LOG_DEBUG(log, "Has the connection failed? -" + std::to_string(connection.fail("Connection failed!")));
+
+    /// if connection failed report about what has failed
+    // it will also close the connection, so it has to be restored
+    if (!connection.usable() || !connection.ready())
+        connection.fail("Connection failed!");
+
 }
 
 

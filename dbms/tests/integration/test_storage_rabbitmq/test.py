@@ -94,8 +94,13 @@ def rabbitmq_setup_teardown():
 
 #@pytest.mark.timeout(180)
 #def test_rabbitmq_basic_commands(rabbitmq_cluster):
-#    publisher_connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost', port=5672))
-#    consumer_connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost', port=5672))
+#    credentials = pika.PlainCredentials('root', 'clickhouse')
+#    parameters = pika.ConnectionParameters('localhost',
+#                                       5672,
+#                                       'private',
+#                                       credentials)
+#    publisher_connection = pika.BlockingConnection(parameters)
+#    consumer_connection = pika.BlockingConnection(parameters)
 #
 #    consumer = consumer_connection.channel()
 #    consumer.exchange_declare(exchange='direct_exchange', exchange_type='direct')
@@ -136,7 +141,13 @@ def test_rabbitmq_settings_new_syntax(rabbitmq_cluster):
                      rabbitmq_row_delimiter = '\\n';
         ''')
 
-    connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost', port=5672))
+    #connection = pika.BlockingConnection(pika.ConnectionParameters(host='localhost', port=5672))
+    credentials = pika.PlainCredentials('root', 'clickhouse')
+    parameters = pika.ConnectionParameters('localhost',
+                                       5672,
+                                       'private',
+                                       credentials)
+    connection = pika.BlockingConnection(parameters)
 
     messages = []
     for i in range(25):

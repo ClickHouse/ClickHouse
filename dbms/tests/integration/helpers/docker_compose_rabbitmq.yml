@@ -8,15 +8,8 @@ services:
             - "5672:5672"
             - "15672:15672"
         environment:
-            RABBITMQ_DEFAULT_USER: "guest"
-            RABBITMQ_DEFAULT_PASS: "guest"
-            RABBITMQ_DEFAULT_VHOST: "/"
-        healthcheck:
-            test: ["CMD", "curl", "-f", "http://localhost:5672"]
-            test: ["CMD", "curl", "-f", "http://localhost:15672"]
-            test: ["CMD", "curl", "-f", "http://rabbitmq1:5672"]
-            interval: 30s
-            timeout: 10s
-            retries: 5
-        security_opt:
-            - label:disable
+            RABBITMQ_DEFAULT_USER: "root"
+            RABBITMQ_DEFAULT_PASS: "clickhouse"
+            RABBITMQ_DEFAULT_VHOST: "private"
+            #security_opt:
+            #- label:disable
