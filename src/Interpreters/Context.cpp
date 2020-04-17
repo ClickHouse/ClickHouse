@@ -441,17 +441,11 @@ Context::Context() = default;
 Context::Context(const Context &) = default;
 Context & Context::operator=(const Context &) = default;
 
-SharedContextHolder::SharedContextHolder() = default;
-SharedContextHolder::SharedContextHolder(SharedContextHolder &&) = default;
+SharedContextHolder::SharedContextHolder(SharedContextHolder &&) noexcept = default;
 SharedContextHolder::~SharedContextHolder() = default;
+SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextShared> shared_context)
+    : shared(std::move(shared_context)) {}
 
-Context Context::createGlobal()
-{
-    Context res;
-    res.shared_holder = std::make_shared<ContextShared>();
-    res.shared = res.shared_holder.get();
-    return res;
-}
 
 Context Context::createGlobal(ContextShared * shared)
 {
@@ -462,9 +456,7 @@ Context Context::createGlobal(ContextShared * shared)
 
 SharedContextHolder Context::createShared()
 {
-    SharedContextHolder holder;
-    holder.shared = std::make_unique<ContextShared>();
-    return holder;
+    return SharedContextHolder(std::make_unique<ContextShared>());
 }
 
 Context::~Context() = default;

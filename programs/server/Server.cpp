@@ -228,7 +228,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
       *  settings, available functions, data types, aggregate functions, databases...
       */
     auto shared_context = Context::createShared();
-    global_context = std::make_unique<Context>(Context::createGlobal(shared_context.shared.get()));
+    auto global_context_holder = Context::createGlobal(shared_context.get());
+
+    /// Global context is owned by Server only. Is is assumed that noboby can access context after server was stopped.
+    /// To check it, set global_context to nullptr at the and, to get explicit segfault if it is not true.
+    global_context = &global_context_holder;
+    SCOPE_EXIT(global_context = nullptr);
+
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
