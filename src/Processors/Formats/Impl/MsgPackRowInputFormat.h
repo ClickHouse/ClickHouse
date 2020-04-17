@@ -11,7 +11,8 @@ namespace DB
 
 class ReadBuffer;
 
-class MsgPackVisitor : public msgpack::null_visitor {
+class MsgPackVisitor : public msgpack::null_visitor
+{
 public:
     struct Info
     {
