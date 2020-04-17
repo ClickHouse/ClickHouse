@@ -17,16 +17,15 @@
 #include <string>
 #include <vector>
 
-#include "config_functions.h"
-#if USE_HYPERSCAN
-#    if __has_include(<hs/hs.h>)
-#        include <hs/hs.h>
-#    else
-#        include <hs.h>
-#    endif
+#if !defined(ARCADIA_BUILD)
+#    include "config_functions.h"
+#    include <Common/config.h>
 #endif
 
-#include <Common/config.h>
+#if USE_HYPERSCAN
+#    include <hs.h>
+#endif
+
 #if USE_RE2_ST
 #    include <re2_st/re2.h>
 #else

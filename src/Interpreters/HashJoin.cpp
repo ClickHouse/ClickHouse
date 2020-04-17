@@ -681,12 +681,10 @@ public:
         type_name.reserve(num_columns_to_add);
         right_indexes.reserve(num_columns_to_add);
 
-        for (size_t i = 0; i < num_columns_to_add; ++i)
+        for (auto & src_column : block_with_columns_to_add)
         {
-            const ColumnWithTypeAndName & src_column = sample_block_with_columns_to_add.safeGetByPosition(i);
-
-            /// Don't insert column if it's in left block or not explicitly required.
-            if (!block.has(src_column.name) && block_with_columns_to_add.has(src_column.name))
+            /// Don't insert column if it's in left block
+            if (!block.has(src_column.name))
                 addColumn(src_column);
         }
 
@@ -1158,28 +1156,31 @@ static void checkTypeOfKey(const Block & block_left, const Block & block_right)
 }
 
 
-DataTypePtr HashJoin::joinGetReturnType(const String & column_name) const
+DataTypePtr HashJoin::joinGetReturnType(const String & column_name, bool or_null) const
 {
     std::shared_lock lock(data->rwlock);
 
     if (!sample_block_with_columns_to_add.has(column_name))
         throw Exception("StorageJoin doesn't contain column " + column_name, ErrorCodes::LOGICAL_ERROR);
-    return sample_block_with_columns_to_add.getByName(column_name).type;
+    auto elem = sample_block_with_columns_to_add.getByName(column_name);
+    if (or_null)
+        elem.type = makeNullable(elem.type);
+    return elem.type;
 }
 
 
 template <typename Maps>
-void HashJoin::joinGetImpl(Block & block, const String & column_name, const Maps & maps_) const
+void HashJoin::joinGetImpl(Block & block, const Block & block_with_columns_to_add, const Maps & maps_) const
 {
     joinBlockImpl<ASTTableJoin::Kind::Left, ASTTableJoin::Strictness::RightAny>(
-        block, {block.getByPosition(0).name}, {sample_block_with_columns_to_add.getByName(column_name)}, maps_);
+        block, {block.getByPosition(0).name}, block_with_columns_to_add, maps_);
 }
 
 
 // TODO: support composite key
 // TODO: return multiple columns as named tuple
 // TODO: return array of values when strictness == ASTTableJoin::Strictness::All
-void HashJoin::joinGet(Block & block, const String & column_name) const
+void HashJoin::joinGet(Block & block, const String & column_name, bool or_null) const
 {
     std::shared_lock lock(data->rwlock);
 
@@ -1188,10 +1189,15 @@ void HashJoin::joinGet(Block & block, const String & column_name) const
 
     checkTypeOfKey(block, right_table_keys);
 
+    auto elem = sample_block_with_columns_to_add.getByName(column_name);
+    if (or_null)
+        elem.type = makeNullable(elem.type);
+    elem.column = elem.type->createColumn();
+
     if ((strictness == ASTTableJoin::Strictness::Any || strictness == ASTTableJoin::Strictness::RightAny) &&
         kind == ASTTableJoin::Kind::Left)
     {
-        joinGetImpl(block, column_name, std::get<MapsOne>(data->maps));
+        joinGetImpl(block, {elem}, std::get<MapsOne>(data->maps));
     }
     else
         throw Exception("joinGet only supports StorageJoin of type Left Any", ErrorCodes::LOGICAL_ERROR);

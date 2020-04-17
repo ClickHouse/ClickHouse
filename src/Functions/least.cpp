@@ -57,7 +57,7 @@ using FunctionLeast = FunctionBinaryArithmetic<LeastImpl, NameLeast>;
 
 void registerFunctionLeast(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionLeast>();
+    factory.registerFunction<FunctionLeast>(FunctionFactory::CaseInsensitive);
 }
 
 }

@@ -524,6 +524,30 @@ ClickHouse проверит условия `min_part_size` и `min_part_size_rat
 <path>/var/lib/clickhouse/</path>
 ```
 
+## prometheus {#server_configuration_parameters-prometheus}
+
+Опубликовать данные о метриках, для сбора с помощью системы мониторинга [Prometheus](https://prometheus.io).
+
+Настройки:
+
+-   `endpoint` – путь по которому будет осуществляться экспорт данных метрик по HTTP протоколу для сбора с помощью prometheus. Должен начинаться с '/'. 
+-   `port` – порт по которому будет доступен endpoint для сбора метрик.
+-   `metrics` – флаг для экспорта текущих значений метрик из таблицы [system.metrics](../system_tables.md#system_tables-metrics).
+-   `events` – флаг для экспорта текущих значений метрик из таблицы [system.events](../system_tables.md#system_tables-events).
+-   `asynchronous_metrics` – флаг для экспорта текущих значений значения метрик из таблицы [system.asynchronous\_metrics](../system_tables.md#system_tables-asynchronous_metrics).
+
+**Пример**
+
+``` xml
+ <prometheus>
+        <endpoint>/metrics</endpoint>
+        <port>8001</port>
+        <metrics>true</metrics>
+        <events>true</events>
+        <asynchronous_metrics>true</asynchronous_metrics>
+    </prometheus>
+```
+
 ## query\_log {#server_configuration_parameters-query-log}
 
 Настройка логирования запросов, принятых с настройкой [log\_queries=1](../settings/settings.md).

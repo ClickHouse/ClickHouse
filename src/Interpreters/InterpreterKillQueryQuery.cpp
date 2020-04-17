@@ -267,7 +267,7 @@ BlockIO InterpreterKillQueryQuery::execute()
                 else
                 {
                     ParserAlterCommand parser;
-                    auto command_ast = parseQuery(parser, command_col.getDataAt(i).toString(), 0);
+                    auto command_ast = parseQuery(parser, command_col.getDataAt(i).toString(), 0, context.getSettingsRef().max_parser_depth);
                     required_access_rights = InterpreterAlterQuery::getRequiredAccessForCommand(command_ast->as<const ASTAlterCommand &>(), table_id.database_name, table_id.table_name);
                     if (!access->isGranted(&Poco::Logger::get("InterpreterKillQueryQuery"), required_access_rights))
                     {

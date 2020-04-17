@@ -133,7 +133,10 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
     }
 
     /// Fill lookup table for years and months.
-    for (size_t day = 0; day < DATE_LUT_SIZE && lut[day].year <= DATE_LUT_MAX_YEAR; ++day)
+    size_t year_months_lut_index = 0;
+    size_t first_day_of_last_month = 0;
+
+    for (size_t day = 0; day < DATE_LUT_SIZE; ++day)
     {
         const Values & values = lut[day];
 
@@ -141,7 +144,16 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
         {
             if (values.month == 1)
                 years_lut[values.year - DATE_LUT_MIN_YEAR] = day;
-            years_months_lut[(values.year - DATE_LUT_MIN_YEAR) * 12 + values.month - 1] = day;
+
+            year_months_lut_index = (values.year - DATE_LUT_MIN_YEAR) * 12 + values.month - 1;
+            years_months_lut[year_months_lut_index] = day;
+            first_day_of_last_month = day;
         }
+    }
+
+    /// Fill the rest of lookup table with the same last month (2106-02-01).
+    for (; year_months_lut_index < DATE_LUT_YEARS * 12; ++year_months_lut_index)
+    {
+        years_months_lut[year_months_lut_index] = first_day_of_last_month;
     }
 }

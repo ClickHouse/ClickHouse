@@ -82,16 +82,8 @@
 #endif
 
 /// http://en.wikipedia.org/wiki/ANSI_escape_code
-
-/// Similar codes \e[s, \e[u don't work in VT100 and Mosh.
-#define SAVE_CURSOR_POSITION "\033""7"
-#define RESTORE_CURSOR_POSITION "\033""8"
-
 #define CLEAR_TO_END_OF_LINE "\033[K"
 
-/// This codes are possibly not supported everywhere.
-#define DISABLE_LINE_WRAPPING "\033[?7l"
-#define ENABLE_LINE_WRAPPING "\033[?7h"
 
 namespace DB
 {
@@ -132,8 +124,6 @@ private:
     bool print_time_to_stderr = false;   /// Output execution time to stderr in batch mode.
     bool stdin_is_a_tty = false;         /// stdin is a terminal.
     bool stdout_is_a_tty = false;        /// stdout is a terminal.
-
-    uint16_t terminal_width = 0;         /// Terminal width is needed to render progress bar.
 
     std::unique_ptr<Connection> connection;    /// Connection to DB.
     String query_id;                     /// Current query_id.
@@ -694,7 +684,7 @@ private:
                     if (ignore_error)
                     {
                         Tokens tokens(begin, end);
-                        IParser::Pos token_iterator(tokens);
+                        IParser::Pos token_iterator(tokens, context.getSettingsRef().max_parser_depth);
                         while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                             ++token_iterator;
                         begin = token_iterator->end;
@@ -968,10 +958,15 @@ private:
         ParserQuery parser(end, true);
         ASTPtr res;
 
+        const auto & settings = context.getSettingsRef();
+        size_t max_length = 0;
+        if (!allow_multi_statements)
+            max_length = settings.max_query_size;
+
         if (is_interactive || ignore_error)
         {
             String message;
-            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, 0);
+            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
             if (!res)
             {
@@ -980,7 +975,7 @@ private:
             }
         }
         else
-            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, 0);
+            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (is_interactive)
         {
@@ -1122,11 +1117,16 @@ private:
                 /// to avoid losing sync.
                 if (!cancelled)
                 {
-                    auto cancel_query = [&] {
+                    auto cancel_query = [&]
+                    {
                         connection->sendCancel();
                         cancelled = true;
                         if (is_interactive)
+                        {
+                            if (written_progress_chars)
+                                clearProgress();
                             std::cout << "Cancelling query." << std::endl;
+                        }
 
                         /// Pressing Ctrl+C twice results in shut down.
                         interrupt_listener.unblock();
@@ -1436,7 +1436,7 @@ private:
     {
         written_progress_chars = 0;
         if (!send_logs)
-            std::cerr << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
+            std::cerr << "\r" CLEAR_TO_END_OF_LINE;
     }
 
 
@@ -1461,20 +1461,14 @@ private:
             "\033[1m↗\033[0m",
         };
 
-        if (!send_logs)
-        {
-            if (written_progress_chars)
-                message << RESTORE_CURSOR_POSITION CLEAR_TO_END_OF_LINE;
-            else
-                message << SAVE_CURSOR_POSITION;
-        }
+        auto indicator = indicators[increment % 8];
 
-        message << DISABLE_LINE_WRAPPING;
+        if (!send_logs && written_progress_chars)
+            message << '\r';
 
         size_t prefix_size = message.count();
 
-        message << indicators[increment % 8]
-            << " Progress: ";
+        message << indicator << " Progress: ";
 
         message
             << formatReadableQuantity(progress.read_rows) << " rows, "
@@ -1488,7 +1482,7 @@ private:
         else
             message << ". ";
 
-        written_progress_chars = message.count() - prefix_size - (increment % 8 == 7 ? 10 : 13);    /// Don't count invisible output (escape sequences).
+        written_progress_chars = message.count() - prefix_size - (strlen(indicator) - 2); /// Don't count invisible output (escape sequences).
 
         /// If the approximate number of rows to process is known, we can display a progress bar and percentage.
         if (progress.total_rows_to_read > 0)
@@ -1506,7 +1500,7 @@ private:
 
                 if (show_progress_bar)
                 {
-                    ssize_t width_of_progress_bar = static_cast<ssize_t>(terminal_width) - written_progress_chars - strlen(" 99%");
+                    ssize_t width_of_progress_bar = static_cast<ssize_t>(getTerminalWidth()) - written_progress_chars - strlen(" 99%");
                     if (width_of_progress_bar > 0)
                     {
                         std::string bar = UnicodeBar::render(UnicodeBar::getWidth(progress.read_rows, 0, total_rows_corrected, width_of_progress_bar));
@@ -1521,7 +1515,8 @@ private:
             message << ' ' << (99 * progress.read_rows / total_rows_corrected) << '%';
         }
 
-        message << ENABLE_LINE_WRAPPING;
+        message << CLEAR_TO_END_OF_LINE;
+
         if (send_logs)
             message << '\n';
 
@@ -1589,7 +1584,11 @@ private:
         resetOutput();
 
         if (is_interactive && !written_first_block)
+        {
+            if (written_progress_chars)
+                clearProgress();
             std::cout << "Ok." << std::endl;
+        }
     }
 
     static void showClientVersion()
@@ -1687,6 +1686,7 @@ public:
         stdin_is_a_tty = isatty(STDIN_FILENO);
         stdout_is_a_tty = isatty(STDOUT_FILENO);
 
+        uint64_t terminal_width = 0;
         if (stdin_is_a_tty)
             terminal_width = getTerminalWidth();
 
@@ -1715,7 +1715,6 @@ public:
             ("database,d", po::value<std::string>(), "database")
             ("pager", po::value<std::string>(), "pager")
             ("disable_suggestion,A", "Disable loading suggestion data. Note that suggestion data is loaded asynchronously through a second connection to ClickHouse server. Also it is reasonable to disable suggestion if you want to paste a query with TAB characters. Shorthand option -A is for those who get used to mysql client.")
-            ("always_load_suggestion_data", "Load suggestion data even if clickhouse-client is run in non-interactive mode. Used for testing.")
             ("suggestion_limit", po::value<int>()->default_value(10000),
                 "Suggestion limit for how many databases, tables and columns to fetch.")
             ("multiline,m", "multiline")

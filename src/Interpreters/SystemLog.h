@@ -2,10 +2,14 @@
 
 #include <thread>
 #include <atomic>
+#include <memory>
+#include <vector>
+
 #include <condition_variable>
 #include <boost/noncopyable.hpp>
 #include <common/logger_useful.h>
 #include <Core/Types.h>
+#include <Core/Defines.h>
 #include <Storages/IStorage.h>
 #include <Interpreters/Context.h>
 #include <Common/Stopwatch.h>
@@ -59,13 +63,20 @@ namespace ErrorCodes
 
 #define DBMS_SYSTEM_LOG_QUEUE_SIZE 1048576
 
+
 class Context;
-class QueryLog;
-class QueryThreadLog;
-class PartLog;
-class TextLog;
-class TraceLog;
-class MetricLog;
+
+
+class ISystemLog
+{
+public:
+    virtual String getName() = 0;
+    virtual ASTPtr getCreateTableQuery() = 0;
+    virtual void flush() = 0;
+    virtual void shutdown() = 0;
+    virtual ~ISystemLog() = default;
+};
+
 
 /// System logs should be destroyed in destructor of the last Context and before tables,
 ///  because SystemLog destruction makes insert query while flushing data into underlying tables
@@ -82,11 +93,13 @@ struct SystemLogs
     std::shared_ptr<TraceLog> trace_log;                /// Used to log traces from query profiler
     std::shared_ptr<TextLog> text_log;                  /// Used to log all text messages.
     std::shared_ptr<MetricLog> metric_log;              /// Used to log all metrics.
+
+    std::vector<ISystemLog *> logs;
 };
 
 
 template <typename LogElement>
-class SystemLog : private boost::noncopyable
+class SystemLog : public ISystemLog, private boost::noncopyable
 {
 public:
     using Self = SystemLog;
@@ -106,18 +119,28 @@ public:
         const String & storage_def_,
         size_t flush_interval_milliseconds_);
 
-    ~SystemLog();
-
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
       */
     void add(const LogElement & element);
 
+    void stopFlushThread();
+
     /// Flush data in the buffer to disk
-    void flush();
+    void flush() override;
 
     /// Stop the background flush thread before destructor. No more data will be written.
-    void shutdown();
+    void shutdown() override
+    {
+        stopFlushThread();
+    }
+
+    String getName() override
+    {
+        return LogElement::name();
+    }
+
+    ASTPtr getCreateTableQuery() override;
 
 protected:
     Logger * log;
@@ -250,7 +273,7 @@ void SystemLog<LogElement>::flush()
 
 
 template <typename LogElement>
-void SystemLog<LogElement>::shutdown()
+void SystemLog<LogElement>::stopFlushThread()
 {
     {
         std::unique_lock lock(mutex);
@@ -267,13 +290,6 @@ void SystemLog<LogElement>::shutdown()
     }
 
     saving_thread.join();
-}
-
-
-template <typename LogElement>
-SystemLog<LogElement>::~SystemLog()
-{
-    shutdown();
 }
 
 
@@ -399,7 +415,7 @@ void SystemLog<LogElement>::prepareTable()
             rename->elements.emplace_back(elem);
 
             LOG_DEBUG(log, "Existing table " << description << " for system log has obsolete or different structure."
-            " Renaming it to " << backQuoteIfNeed(to.table));
+                " Renaming it to " << backQuoteIfNeed(to.table));
 
             InterpreterRenameQuery(rename, context).execute();
 
@@ -415,22 +431,7 @@ void SystemLog<LogElement>::prepareTable()
         /// Create the table.
         LOG_DEBUG(log, "Creating new table " << description << " for " + LogElement::name());
 
-        auto create = std::make_shared<ASTCreateQuery>();
-
-        create->database = table_id.database_name;
-        create->table = table_id.table_name;
-
-        Block sample = LogElement::createBlock();
-
-        auto new_columns_list = std::make_shared<ASTColumns>();
-        new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
-        create->set(create->columns_list, new_columns_list);
-
-        ParserStorage storage_parser;
-        ASTPtr storage_ast = parseQuery(
-            storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
-            "Storage to create table for " + LogElement::name(), 0);
-        create->set(create->storage, storage_ast);
+        auto create = getCreateTableQuery();
 
         InterpreterCreateQuery interpreter(create, context);
         interpreter.setInternal(true);
@@ -440,6 +441,30 @@ void SystemLog<LogElement>::prepareTable()
     }
 
     is_prepared = true;
+}
+
+
+template <typename LogElement>
+ASTPtr SystemLog<LogElement>::getCreateTableQuery()
+{
+    auto create = std::make_shared<ASTCreateQuery>();
+
+    create->database = table_id.database_name;
+    create->table = table_id.table_name;
+
+    Block sample = LogElement::createBlock();
+
+    auto new_columns_list = std::make_shared<ASTColumns>();
+    new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(sample.getNamesAndTypesList()));
+    create->set(create->columns_list, new_columns_list);
+
+    ParserStorage storage_parser;
+    ASTPtr storage_ast = parseQuery(
+        storage_parser, storage_def.data(), storage_def.data() + storage_def.size(),
+        "Storage to create table for " + LogElement::name(), 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
+    create->set(create->storage, storage_ast);
+
+    return create;
 }
 
 }

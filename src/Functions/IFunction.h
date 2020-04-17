@@ -2,11 +2,14 @@
 
 #include <memory>
 
-#include "config_core.h"
 #include <Core/Names.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <DataTypes/IDataType.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 /// This file contains user interface for functions.
 /// For developer interface (in case you need to implement a new function) see IFunctionImpl.h

@@ -88,15 +88,15 @@ void RequiredSourceColumnsMatcher::visit(const ASTPtr & ast, Data & data)
         visit(*t, ast, data);
         return;
     }
+
     if (auto * t = ast->as<ASTSelectQuery>())
     {
-        data.addTableAliasIfAny(*ast);
         visit(*t, ast, data);
         return;
     }
+
     if (ast->as<ASTSubquery>())
     {
-        data.addTableAliasIfAny(*ast);
         return;
     }
 
@@ -159,33 +159,14 @@ void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr 
 
 void RequiredSourceColumnsMatcher::visit(const ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
-    ASTTableExpression * expr = nullptr;
-    ASTTableJoin * join = nullptr;
-
     for (auto & child : node.children)
-    {
-        if (auto * e = child->as<ASTTableExpression>())
-            expr = e;
-        if (auto * j = child->as<ASTTableJoin>())
-            join = j;
-    }
-
-    if (join)
-        data.has_table_join = true;
-    data.tables.emplace_back(ColumnNamesContext::JoinedTable{expr, join});
+        if (child->as<ASTTableJoin>())
+            data.has_table_join = true;
 }
 
 /// ASTIdentifiers here are tables. Do not visit them as generic ones.
-void RequiredSourceColumnsMatcher::visit(const ASTTableExpression & node, const ASTPtr &, Data & data)
+void RequiredSourceColumnsMatcher::visit(const ASTTableExpression &, const ASTPtr &, Data &)
 {
-    if (node.database_and_table_name)
-        data.addTableAliasIfAny(*node.database_and_table_name);
-
-    if (node.table_function)
-        data.addTableAliasIfAny(*node.table_function);
-
-    if (node.subquery)
-        data.addTableAliasIfAny(*node.subquery);
 }
 
 void RequiredSourceColumnsMatcher::visit(const ASTArrayJoin & node, const ASTPtr &, Data & data)

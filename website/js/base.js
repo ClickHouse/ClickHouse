@@ -47,16 +47,23 @@
         }, 70);
     }
 
+    $('img').each(function() {
+        var src = $(this).attr('data-src');
+        if (src) {
+            $(this).attr('src', src);
+        }
+    });
 
     (function (d, w, c) {
         (w[c] = w[c] || []).push(function() {
+            var is_single_page = $('html').attr('data-single-page') === 'true';
             try {
                 w.yaCounter18343495 = new Ya.Metrika2({
-                    id:18343495,
-                    clickmap:true,
-                    trackLinks:true,
-                    accurateTrackBounce:true,
-                    webvisor:true
+                    id: 18343495,
+                    clickmap: !is_single_page,
+                    trackLinks: !is_single_page,
+                    accurateTrackBounce: !is_single_page,
+                    webvisor: !is_single_page
                 });
             } catch(e) { }
         });

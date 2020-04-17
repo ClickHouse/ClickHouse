@@ -1,3 +1,4 @@
+# 安装 {#clickhouse-an-zhuang}
 
 ## 系统要求 {#xi-tong-yao-qiu}
 
