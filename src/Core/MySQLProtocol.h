@@ -430,7 +430,7 @@ size_t getLengthEncodedNumberSize(uint64_t x);
 size_t getLengthEncodedStringSize(const String & s);
 
 
-class Handshake : public WritePacket, ReadPacket
+class Handshake : public WritePacket, public ReadPacket
 {
 public:
     int protocol_version = 0xa;
@@ -554,7 +554,7 @@ public:
     }
 };
 
-class HandshakeResponse : public WritePacket, ReadPacket
+class HandshakeResponse : public WritePacket, public ReadPacket
 {
 public:
     uint32_t capability_flags = 0;
@@ -568,20 +568,20 @@ public:
     HandshakeResponse() = default;
 
     HandshakeResponse(
-        UInt32 _capability_flags,
-        UInt32 _max_packet_size,
-        UInt8 _character_set,
-        const String & _username,
-        const String & _database,
-        const String & _auth_response,
-        const String & _auth_plugin_name)
-        : capability_flags(_capability_flags)
-        , max_packet_size(_max_packet_size)
-        , character_set(_character_set)
-        , username(_username)
-        , database(_database)
-        , auth_response(_auth_response)
-        , auth_plugin_name(_auth_plugin_name){};
+        UInt32 capability_flags_,
+        UInt32 max_packet_size_,
+        UInt8 character_set_,
+        const String & username_,
+        const String & database_,
+        const String & auth_response_,
+        const String & auth_plugin_name_)
+        : capability_flags(capability_flags_)
+        , max_packet_size(max_packet_size_)
+        , character_set(character_set_)
+        , username(std::move(username_))
+        , database(std::move(database_))
+        , auth_response(std::move(auth_response_))
+        , auth_plugin_name(std::move(auth_plugin_name_)){};
 
     size_t getPayloadSize() const override
     {
