@@ -230,12 +230,14 @@ create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
         -- but the right way to do this is not yet clear.
         left + right < 0.05 as short,
 
-        not short and abs(diff) < 0.10 and rd[3] > 0.10 as unstable,
-
-        -- Do not consider changed the queries with 5% RD below 5% -- e.g., we're
-        -- likely to observe a difference > 5% in less than 5% cases.
-        -- Not sure it is correct, but empirically it filters out a lot of noise.
-        not short and abs(diff) > 0.15 and abs(diff) > rd[3] and rd[1] > 0.05 as changed,
+        -- Difference > 15% and > rd(99%) -- changed. We can't filter out flaky
+        -- queries by rd(5%), because it can be zero when the difference is smaller
+        -- than a typical distribution width. The difference is still real though.
+        not short and abs(diff) > 0.15 and abs(diff) > rd[4] as changed,
+        
+        -- Not changed but rd(99%) > 10% -- unstable.
+        not short and not changed and rd[4] > 0.10 as unstable,
+        
         left, right, diff, rd,
         replaceAll(_file, '-report.tsv', '') test,
         query
