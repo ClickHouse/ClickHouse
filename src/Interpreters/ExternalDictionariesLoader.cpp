@@ -1,6 +1,9 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Dictionaries/DictionaryFactory.h>
-#include "config_core.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
@@ -32,9 +35,9 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
 
 void ExternalDictionariesLoader::resetAll()
 {
-    #if USE_MYSQL
-        mysqlxx::PoolFactory::instance().reset();
-    #endif
+#if USE_MYSQL
+    mysqlxx::PoolFactory::instance().reset();
+#endif
 }
 
 }

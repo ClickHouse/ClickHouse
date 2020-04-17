@@ -154,23 +154,17 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
         writers_queue.emplace_back(type);  /// SM1: may throw (nothing to roll back)
     }
     else if (readers_queue.empty() ||
-            (rdlock_owner == readers_queue.begin() && !writers_queue.empty()))
+            (rdlock_owner == readers_queue.begin() && readers_queue.size() == 1 && !writers_queue.empty()))
     {
         readers_queue.emplace_back(type);  /// SM1: may throw (nothing to roll back)
     }
     GroupsContainer::iterator it_group =
             (type == Type::Write) ? std::prev(writers_queue.end()) : std::prev(readers_queue.end());
 
+    /// Lock is free to acquire
     if (rdlock_owner == readers_queue.end() && wrlock_owner == writers_queue.end())
     {
-        if (type == Type::Read)
-        {
-            rdlock_owner = it_group;  /// SM2: nothrow
-        }
-        else
-        {
-            wrlock_owner = it_group;  /// SM2: nothrow
-        }
+        (type == Read ? rdlock_owner : wrlock_owner) = it_group;  /// SM2: nothrow
     }
     else
     {
@@ -192,17 +186,10 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
             /// Step 3a. Check if we must handle timeout and exit
             if (!wait_result)  /// Wait timed out!
             {
+                /// Rollback(SM1): nothrow
                 if (it_group->requests == 0)
                 {
-                    /// Roll back SM1
-                    if (type == Read)
-                    {
-                        readers_queue.erase(it_group);  /// Rollback(SM1): nothrow
-                    }
-                    else
-                    {
-                        writers_queue.erase(it_group);  /// Rollback(SM1): nothrow
-                    }
+                    (type == Read ? readers_queue : writers_queue).erase(it_group);
                 }
 
                 return nullptr;
@@ -224,7 +211,7 @@ RWLockImpl::getLock(RWLockImpl::Type type, const String & query_id, const std::c
             /// Methods std::list<>::emplace_back() and std::unordered_map<>::emplace() provide strong exception safety
             /// We only need to roll back the changes to these objects: owner_queries and the readers/writers queue
             if (it_group->requests == 0)
-                eraseGroup(it_group);  /// Rollback(SM1): nothrow
+                dropOwnerGroupAndPassOwnership(it_group);  /// Rollback(SM1): nothrow
 
             throw;
         }
@@ -272,11 +259,11 @@ void RWLockImpl::unlock(GroupsContainer::iterator group_it, const String & query
 
     /// If we are the last remaining referrer, remove this QNode and notify the next one
     if (--group_it->requests == 0)               /// SM: nothrow
-        eraseGroup(group_it);
+        dropOwnerGroupAndPassOwnership(group_it);
 }
 
 
-void RWLockImpl::eraseGroup(GroupsContainer::iterator group_it) noexcept
+void RWLockImpl::dropOwnerGroupAndPassOwnership(GroupsContainer::iterator group_it) noexcept
 {
     rdlock_owner = readers_queue.end();
     wrlock_owner = writers_queue.end();

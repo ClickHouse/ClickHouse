@@ -1,11 +1,16 @@
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <thread>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#else
+#    include <libcpuid/libcpuid.h>
+#endif
+
 #if USE_CPUID
-#   include <libcpuid/libcpuid.h>
+#    include <libcpuid/libcpuid.h>
 #elif USE_CPUINFO
-#   include <cpuinfo.h>
+#    include <cpuinfo.h>
 #endif
 
 

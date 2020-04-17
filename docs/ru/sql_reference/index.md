@@ -1,3 +1,10 @@
+---
+toc_folder_title: Справка по SQL
+toc_hidden: true
+toc_priority: 28
+toc_title: hidden
+---
+
 # Справка по SQL {#spravka-po-sql}
 
 -   [SELECT](statements/select.md)

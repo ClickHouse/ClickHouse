@@ -9,15 +9,16 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/parseAddress.h>
-#include "config_core.h"
 #include "DatabaseFactory.h"
 #include <Poco/File.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_MYSQL
-
-#include <Databases/DatabaseMySQL.h>
-#include <Interpreters/evaluateConstantExpression.h>
-
+#    include <Databases/DatabaseMySQL.h>
+#    include <Interpreters/evaluateConstantExpression.h>
 #endif
 
 

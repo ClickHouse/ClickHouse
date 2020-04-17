@@ -32,6 +32,7 @@
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Common/quoteString.h>
+#include <Core/Defines.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -93,7 +94,7 @@ namespace
         const char * end = begin + file_contents.size();
         while (pos < end)
         {
-            queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0));
+            queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH));
             while (isWhitespaceASCII(*pos) || *pos == ';')
                 ++pos;
         }
@@ -560,7 +561,7 @@ std::vector<UUID> DiskAccessStorage::findAllImpl(std::type_index type) const
 bool DiskAccessStorage::existsImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    return id_to_entry_map.contains(id);
+    return id_to_entry_map.count(id);
 }
 
 
@@ -709,7 +710,7 @@ void DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     if (name_changed)
     {
         const auto & name_to_id_map = name_to_id_maps.at(type);
-        if (name_to_id_map.contains(new_name))
+        if (name_to_id_map.count(new_name))
             throwNameCollisionCannotRename(type, String{old_name}, new_name);
         scheduleWriteLists(type);
     }
