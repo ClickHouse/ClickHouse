@@ -1,4 +1,11 @@
-# Un tiempo {#ontime}
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 15
+toc_title: A tiempo
+---
+
+# A tiempo {#ontime}
 
 Este conjunto de datos se puede obtener de dos maneras:
 
@@ -146,7 +153,7 @@ Carga de datos:
 $ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-## Descarga de Particiones Preparadas {#download-of-prepared-partitions}
+## Descarga de Prepared Partitions {#download-of-prepared-partitions}
 
 ``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
@@ -250,7 +257,7 @@ GROUP BY Carrier
 ORDER BY c3 DESC
 ```
 
-¿Por qué? La solicitud anterior de una gama más amplia de años, 2000-2008
+¿por qué? la solicitud anterior de una gama más amplia de años, 2000-2008
 
 ``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
@@ -319,7 +326,7 @@ GROUP BY Year
 ORDER BY Year;
 ```
 
-¿Por qué? Los destinos más populares por el número de ciudades conectadas directamente para varios rangos de año
+¿por qué? los destinos más populares por el número de ciudades conectadas directamente para varios rangos de año
 
 ``` sql
 SELECT DestCityName, uniqExact(OriginCityName) AS u
@@ -329,7 +336,7 @@ GROUP BY DestCityName
 ORDER BY u DESC LIMIT 10;
 ```
 
-¿Por qué?
+Q9.
 
 ``` sql
 SELECT Year, count(*) AS c1
@@ -337,7 +344,7 @@ FROM ontime
 GROUP BY Year;
 ```
 
-Preguntas frecuentes
+Q10.
 
 ``` sql
 SELECT
@@ -402,4 +409,4 @@ Esta prueba de rendimiento fue creada por Vadim Tkachenko. Ver:
 -   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
 -   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
 
-[Artículo Original](https://clickhouse.tech/docs/es/getting_started/example_datasets/ontime/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/getting_started/example_datasets/ontime/) <!--hide-->

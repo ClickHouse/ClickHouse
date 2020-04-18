@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 16
+toc_title: Datos de taxis de Nueva York
+---
+
 # Datos de taxis de Nueva York {#new-york-taxi-data}
 
 Este conjunto de datos se puede obtener de dos maneras:
@@ -275,7 +282,7 @@ SELECT formatReadableSize(sum(bytes)) FROM system.parts WHERE table = 'trips_mer
 
 Entre otras cosas, puede ejecutar la consulta OPTIMIZE en MergeTree. Pero no es necesario ya que todo estará bien sin él.
 
-## Descarga de Particiones Preparadas {#download-of-prepared-partitions}
+## Descarga de Prepared Partitions {#download-of-prepared-partitions}
 
 ``` bash
 $ curl -O https://clickhouse-datasets.s3.yandex.net/trips_mergetree/partitions/trips_mergetree.tar
@@ -374,10 +381,10 @@ Ejecutamos consultas utilizando un cliente ubicado en un centro de datos de Yand
 
 ## Resumen {#summary}
 
-| servidor        | Q1               | Q2                  | Q3              | Q4      |
-|-----------------|------------------|---------------------|-----------------|---------|
-| Uno             | 0.490            | Ciudad de México    | Más información | 3.593   |
-| Cómo hacer      | Número de modelo | Código del artículo | 0.733           | Puertas |
-| Más información | 0.028            | 0.043               | 0.051           | 0.072   |
+| servidor | Q1    | Q2    | Q3    | Q4    |
+|----------|-------|-------|-------|-------|
+| 1        | 0.490 | 1.224 | 2.104 | 3.593 |
+| 3        | 0.212 | 0.438 | 0.733 | 1.241 |
+| 140      | 0.028 | 0.043 | 0.051 | 0.072 |
 
-[Artículo Original](https://clickhouse.tech/docs/es/getting_started/example_datasets/nyc_taxi/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/getting_started/example_datasets/nyc_taxi/) <!--hide-->

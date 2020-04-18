@@ -20,11 +20,11 @@ package() {
     mkdir -p $pkgdir/usr/bin/
     mkdir -p $pkgdir/usr/lib/systemd/system
     ln -s clickhouse-client $pkgdir/usr/bin/clickhouse-server
-    cp $SRC/dbms/programs/server/config.xml $SRC/dbms/programs/server/users.xml $pkgdir/etc/clickhouse-server/
-    cp $BIN/dbms/programs/clickhouse $pkgdir/usr/bin/clickhouse-client
+    cp $SRC/programs/server/config.xml $SRC/programs/server/users.xml $pkgdir/etc/clickhouse-server/
+    cp $BIN/programs/clickhouse $pkgdir/usr/bin/clickhouse-client
     patchelf --remove-rpath $pkgdir/usr/bin/clickhouse-client
     patchelf --replace-needed libz.so.1 libz-ng.so.1 $pkgdir/usr/bin/clickhouse-client
-    cp $SRC/dbms/programs/client/clickhouse-client.xml $pkgdir/etc/clickhouse-client/config.xml
+    cp $SRC/programs/client/clickhouse-client.xml $pkgdir/etc/clickhouse-client/config.xml
     compiler="libclickhouse-compiler.so"
     if ! pacman -Q clang | grep '^clang 7'; then
         compiler=""

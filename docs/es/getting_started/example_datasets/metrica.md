@@ -1,8 +1,15 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 21
+toc_title: El Yandex.Metrica Datos
+---
+
 # Yandex anonimizado.Metrica Datos {#anonymized-yandex-metrica-data}
 
 El conjunto de datos consta de dos tablas que contienen datos anónimos sobre los hits (`hits_v1`) y visitas (`visits_v1`) el Yandex.Métrica. Puedes leer más sobre Yandex.Metrica en [Historial de ClickHouse](../../introduction/history.md) apartado.
 
-El conjunto de datos consta de dos tablas, cualquiera de ellas se puede descargar como `tsv.xz` o como particiones preparadas. Además, una versión extendida de la `hits` La tabla que contiene 100 millones de filas está disponible como TSV en https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits_100m_obfuscated_v1.tsv.xz y como particiones preparadas en https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits_100m_obfuscated\_v1.tar.xz.
+El conjunto de datos consta de dos tablas, cualquiera de ellas se puede descargar como `tsv.xz` o como particiones preparadas. Además, una versión extendida de la `hits` La tabla que contiene 100 millones de filas está disponible como TSV en https://clickhouse-datasets.s3.yandex.net/hits/tsv/hits\_100m\_obfuscated\_v1.tsv.xz y como particiones preparadas en https://clickhouse-datasets.s3.yandex.net/hits/partitions/hits\_100m\_obfuscated\_v1.tar.xz.
 
 ## Obtención de tablas a partir de particiones preparadas {#obtaining-tables-from-prepared-partitions}
 
@@ -60,4 +67,4 @@ clickhouse-client --query "SELECT COUNT(*) FROM datasets.visits_v1"
 
 [Tutorial de ClickHouse](../../getting_started/tutorial.md) se basa en Yandex.El conjunto de datos de Metrica y la forma recomendada de comenzar con este conjunto de datos es simplemente pasar por el tutorial.
 
-Se pueden encontrar ejemplos adicionales de consultas a estas tablas entre [pruebas estatales](https://github.com/ClickHouse/ClickHouse/tree/master/dbms/tests/queries/1_stateful) de ClickHouse (se nombran `test.hists` y `test.visits` Todos los derechos reservados.
+Se pueden encontrar ejemplos adicionales de consultas a estas tablas entre [pruebas estatales](https://github.com/ClickHouse/ClickHouse/tree/master/tests/queries/1_stateful) de ClickHouse (se nombran `test.hists` y `test.visits` alli).

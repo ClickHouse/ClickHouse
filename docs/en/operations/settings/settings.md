@@ -1,8 +1,13 @@
+---
+toc_priority: 60
+toc_title: Settings
+---
+
 # Settings {#settings}
 
 ## distributed\_product\_mode {#distributed-product-mode}
 
-Changes the behavior of [distributed subqueries](../../query_language/select.md).
+Changes the behavior of [distributed subqueries](../../sql_reference/statements/select.md).
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
@@ -11,7 +16,7 @@ Restrictions:
 -   Only applied for IN and JOIN subqueries.
 -   Only if the FROM section uses a distributed table containing more than one shard.
 -   If the subquery concerns a distributed table containing more than one shard.
--   Not used for a table-valued [remote](../../query_language/table_functions/remote.md) function.
+-   Not used for a table-valued [remote](../../sql_reference/table_functions/remote.md) function.
 
 Possible values:
 
@@ -46,7 +51,7 @@ If `enable_optimize_predicate_expression = 0`, then the execution time of the se
 
 ## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
-Forces a query to an out-of-date replica if updated data is not available. See [Replication](../table_engines/replication.md).
+Forces a query to an out-of-date replica if updated data is not available. See [Replication](../../engines/table_engines/mergetree_family/replication.md).
 
 ClickHouse selects the most relevant from the outdated replicas of the table.
 
@@ -60,7 +65,7 @@ Disables query execution if the index can’t be used by date.
 
 Works with tables in the MergeTree family.
 
-If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
+If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
 
 ## force\_primary\_key {#force-primary-key}
 
@@ -68,7 +73,7 @@ Disables query execution if indexing by the primary key is not possible.
 
 Works with tables in the MergeTree family.
 
-If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
+If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
 
 ## format\_schema {#format-schema}
 
@@ -129,7 +134,7 @@ Default value: 0.
 
 ## max\_http\_get\_redirects {#setting-max_http_get_redirects}
 
-Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../query_language/create/#create-table-query) query and by the [url](../../query_language/table_functions/url.md) table function.
+Limits the maximum number of HTTP GET redirect hops for [URL](../../engines/table_engines/special/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../sql_reference/statements/create.md#create-table-query) query and by the [url](../../sql_reference/table_functions/url.md) table function.
 
 Possible values:
 
@@ -165,7 +170,7 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 
 ## input\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
 
-Enables or disables the full SQL parser if the fast stream parser can’t parse the data. This setting is used only for the [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
+Enables or disables the full SQL parser if the fast stream parser can’t parse the data. This setting is used only for the [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../sql_reference/syntax.md) section.
 
 Possible values:
 
@@ -181,7 +186,7 @@ Default value: 1.
 
 Example of Use
 
-Insert the [DateTime](../../data_types/datetime.md) type value with the different settings.
+Insert the [DateTime](../../sql_reference/data_types/datetime.md) type value with the different settings.
 
 ``` sql
 SET input_format_values_interpret_expressions = 0;
@@ -215,21 +220,28 @@ Ok.
 
 ## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
-Enables or disables template deduction for an SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows to parse and interpret expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse will try to deduce template of an expression, parse the following rows using this template and evaluate the expression on a batch of successfully parsed rows. For the following query:
+Enables or disables template deduction for SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows parsing and interpreting expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse tries to deduce template of an expression, parse the following rows using this template and evaluate the expression on a batch of successfully parsed rows. 
+
+Possible values:
+
+-   0 — Disabled.
+-   1 — Enabled.
+
+Default value: 1.
+
+For the following query:
 
 ``` sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
 
--   if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0` expressions will be interpreted separately for each row (this is very slow for large number of rows)
--   if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
--   if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it’s not possible to deduce template.
-
-Enabled by default.
+-   If `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0`, expressions are interpreted separately for each row (this is very slow for large number of rows).
+-   If `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1`, expressions in the first, second and third rows are parsed using template `lower(String)` and interpreted together, expression in the forth row is parsed with another template (`upper(String)`).
+-   If `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1`, the same as in previous case, but also allows fallback to interpreting expressions separately if it’s not possible to deduce template.
 
 ## input\_format\_values\_accurate\_types\_of\_literals {#settings-input-format-values-accurate-types-of-literals}
 
-This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g
+This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g.
 
 ``` sql
 (..., abs(0), ...),             -- UInt64 literal
@@ -237,9 +249,17 @@ This setting is used only when `input_format_values_deduce_templates_of_expressi
 (..., abs(-1), ...),            -- Int64 literal
 ```
 
-When this setting is enabled, ClickHouse will check the actual type of literal and will use an expression template of the corresponding type. In some cases, it may significantly slow down expression evaluation in `Values`.
-When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` or `Int64` instead of `UInt64` for `42`), but it may cause overflow and precision issues.
-Enabled by default.
+Possible values:
+
+-   0 — Disabled.
+
+    In this case, ClickHouse may use a more general type for some literals (e.g., `Float64` or `Int64` instead of `UInt64` for `42`), but it may cause overflow and precision issues.
+
+-   1 — Enabled.
+
+    In this case, ClickHouse checks the actual type of literal and uses an expression template of the corresponding type. In some cases, it may significantly slow down expression evaluation in `Values`.
+
+Default value: 1.
 
 ## input\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
@@ -326,7 +346,7 @@ Default value: 1.
 
 Allows choosing a parser of the text representation of date and time.
 
-The setting doesn’t apply to [date and time functions](../../query_language/functions/date_time_functions.md).
+The setting doesn’t apply to [date and time functions](../../sql_reference/functions/date_time_functions.md).
 
 Possible values:
 
@@ -342,12 +362,12 @@ Default value: `'basic'`.
 
 See also:
 
--   [DateTime data type.](../../data_types/datetime.md)
--   [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
+-   [DateTime data type.](../../sql_reference/data_types/datetime.md)
+-   [Functions for working with dates and times.](../../sql_reference/functions/date_time_functions.md)
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
-Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
+Sets default strictness for [JOIN clauses](../../sql_reference/statements/select.md#select-join).
 
 Possible values:
 
@@ -363,7 +383,7 @@ Default value: `ALL`.
 Changes behaviour of join operations with `ANY` strictness.
 
 !!! warning "Attention"
-    This setting applies only for `JOIN` operations with [Join](../table_engines/join.md) engine tables.
+    This setting applies only for `JOIN` operations with [Join](../../engines/table_engines/special/join.md) engine tables.
 
 Possible values:
 
@@ -374,18 +394,18 @@ Default value: 0.
 
 See also:
 
--   [JOIN clause](../../query_language/select.md#select-join)
--   [Join table engine](../table_engines/join.md)
+-   [JOIN clause](../../sql_reference/statements/select.md#select-join)
+-   [Join table engine](../../engines/table_engines/special/join.md)
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
-Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
+Sets the type of [JOIN](../../sql_reference/statements/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
 
 Possible values:
 
 -   0 — The empty cells are filled with the default value of the corresponding field type.
--   1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
+-   1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../sql_reference/data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../sql_reference/syntax.md).
 
 Default value: 0.
 
@@ -405,7 +425,7 @@ By default: 1,000,000. It only works when reading from MergeTree engines.
 
 ## merge\_tree\_min\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
-If the number of rows to be read from a file of a [MergeTree](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
+If the number of rows to be read from a file of a [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
 
 Possible values:
 
@@ -415,7 +435,7 @@ Default value: 163840.
 
 ## merge\_tree\_min\_bytes\_for\_concurrent\_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
-If the number of bytes to read from one file of a [MergeTree](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file in several threads.
+If the number of bytes to read from one file of a [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file in several threads.
 
 Possible value:
 
@@ -457,7 +477,7 @@ Default value: 8.
 
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it doesn’t use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed\_cache\_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible values:
 
@@ -469,7 +489,7 @@ Default value: 128 ✕ 8192.
 
 If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it doesn’t use the cache of uncompressed blocks.
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed\_cache\_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
 
 Possible value:
 
@@ -494,7 +514,7 @@ Default value: 0.
 
 Setting up query logging.
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query\_log](../server_settings/settings.md#server_settings-query-log) server configuration parameter.
+Queries sent to ClickHouse with this setup are logged according to the rules in the [query\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-log) server configuration parameter.
 
 Example:
 
@@ -502,11 +522,29 @@ Example:
 log_queries=1
 ```
 
+## log\_queries\_min\_type {#settings-log-queries-min-type}
+
+`query_log` minimal type to log.
+
+Possible values:
+- `QUERY_START` (`=1`)
+- `QUERY_FINISH` (`=2`)
+- `EXCEPTION_BEFORE_START` (`=3`)
+- `EXCEPTION_WHILE_PROCESSING` (`=4`)
+
+Default value: `QUERY_START`.
+
+Can be used to limit which entiries will goes to `query_log`, say you are interesting only in errors, then you can use `EXCEPTION_WHILE_PROCESSING`:
+
+``` text
+log_queries_min_type='EXCEPTION_WHILE_PROCESSING'
+```
+
 ## log\_query\_threads {#settings-log-query-threads}
 
 Setting up query threads logging.
 
-Queries’ threads runned by ClickHouse with this setup are logged according to the rules in the [query\_thread\_log](../server_settings/settings.md#server_settings-query-thread-log) server configuration parameter.
+Queries’ threads runned by ClickHouse with this setup are logged according to the rules in the [query\_thread\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) server configuration parameter.
 
 Example:
 
@@ -528,7 +566,7 @@ The default is slightly more than `max_block_size`. The reason for this is becau
 
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
-Disables lagging replicas for distributed queries. See [Replication](../../operations/table_engines/replication.md).
+Disables lagging replicas for distributed queries. See [Replication](../../engines/table_engines/mergetree_family/replication.md).
 
 Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
 
@@ -573,7 +611,7 @@ Don’t confuse blocks for compression (a chunk of memory consisting of bytes) w
 
 ## min\_compress\_block\_size {#min-compress-block-size}
 
-For [MergeTree](../table_engines/mergetree.md)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least ‘min\_compress\_block\_size’. By default, 65,536.
+For [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least ‘min\_compress\_block\_size’. By default, 65,536.
 
 The actual size of the block, if the uncompressed data is less than ‘max\_compress\_block\_size’, is no less than this value and no less than the volume of data for one mark.
 
@@ -651,7 +689,7 @@ For more information, see the section “Extreme values”.
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
 Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
-Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed\_cache\_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
 For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the ‘use\_uncompressed\_cache’ setting always set to 1.
 
@@ -685,7 +723,7 @@ ClickHouse supports the following algorithms of choosing replicas:
 -   [In order](#load_balancing-in_order)
 -   [First or random](#load_balancing-first_or_random)
 
-### Random (by default) {#load_balancing-random}
+### Random (by Default) {#load_balancing-random}
 
 ``` sql
 load_balancing = random
@@ -862,7 +900,7 @@ Possible values:
 
 Default value: 1.
 
-By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see \[Data Replication\] (../ table\_engines/replication.md).
+By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see \[Data Replication\] (../engines/table\_engines/mergetree_family/replication.md).
 
 ## deduplicate\_blocks\_in\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
@@ -928,15 +966,15 @@ Default value: 0.
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../query_language/agg_functions/reference.md#agg_function-count) construction.
+Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../sql_reference/aggregate_functions/reference.md#agg_function-count) construction.
 
 Possible values:
 
--   [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
--   [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
--   [uniqCombined64](../../query_language/agg_functions/reference.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
--   [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../sql_reference/aggregate_functions/reference.md#agg_function-uniq)
+-   [uniqCombined](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqexact)
 
 Default value: `uniqExact`.
 
@@ -1001,7 +1039,7 @@ Default value: 0.
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
-Enables or disables throwing an exception if an [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query didn’t perform a merge.
+Enables or disables throwing an exception if an [OPTIMIZE](../../sql_reference/statements/misc.md#misc_operations-optimize) query didn’t perform a merge.
 
 By default, `OPTIMIZE` returns successfully even if it didn’t do anything. This setting lets you differentiate these situations and get the reason in an exception message.
 
@@ -1021,7 +1059,7 @@ Controls how fast errors in distributed tables are zeroed. If a replica is unava
 
 See also:
 
--   [Table engine Distributed](../../operations/table_engines/distributed.md)
+-   [Table engine Distributed](../../engines/table_engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
@@ -1033,12 +1071,12 @@ Error count of each replica is capped at this value, preventing a single replica
 
 See also:
 
--   [Table engine Distributed](../../operations/table_engines/distributed.md)
+-   [Table engine Distributed](../../engines/table_engines/special/distributed.md)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
 
-Base interval for the [Distributed](../table_engines/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
+Base interval for the [Distributed](../../engines/table_engines/special/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
 
 Possible values:
 
@@ -1048,7 +1086,7 @@ Default value: 100 milliseconds.
 
 ## distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-Maximum interval for the [Distributed](../table_engines/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+Maximum interval for the [Distributed](../../engines/table_engines/special/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) setting.
 
 Possible values:
 
@@ -1060,7 +1098,7 @@ Default value: 30000 milliseconds (30 seconds).
 
 Enables/disables sending of inserted data in batches.
 
-When batch sending is enabled, the [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better-utilizing server and network resources.
+When batch sending is enabled, the [Distributed](../../engines/table_engines/special/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better-utilizing server and network resources.
 
 Possible values:
 
@@ -1086,7 +1124,7 @@ Default value: 0.
 
 ## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
 
-Sets the period for a real clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). Real clock timer counts wall-clock time.
+Sets the period for a real clock timer of the [query profiler](../../operations/optimizing_performance/sampling_query_profiler.md). Real clock timer counts wall-clock time.
 
 Possible values:
 
@@ -1099,17 +1137,17 @@ Possible values:
 
 -   0 for turning off the timer.
 
-Type: [UInt64](../../data_types/int_uint.md).
+Type: [UInt64](../../sql_reference/data_types/int_uint.md).
 
 Default value: 1000000000 nanoseconds (once a second).
 
 See also:
 
--   System table [trace\_log](../system_tables.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
-Sets the period for a CPU clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). This timer counts only CPU time.
+Sets the period for a CPU clock timer of the [query profiler](../../operations/optimizing_performance/sampling_query_profiler.md). This timer counts only CPU time.
 
 Possible values:
 
@@ -1122,17 +1160,17 @@ Possible values:
 
 -   0 for turning off the timer.
 
-Type: [UInt64](../../data_types/int_uint.md).
+Type: [UInt64](../../sql_reference/data_types/int_uint.md).
 
 Default value: 1000000000 nanoseconds.
 
 See also:
 
--   System table [trace\_log](../system_tables.md#system_tables-trace_log)
+-   System table [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
-Enables of disables [introspections functions](../../query_language/functions/introspection.md) for query profiling.
+Enables of disables [introspections functions](../../sql_reference/functions/introspection.md) for query profiling.
 
 Possible values:
 
@@ -1143,8 +1181,8 @@ Default value: 0.
 
 **See Also**
 
--   [Sampling Query Profiler](../performance/sampling_query_profiler.md)
--   System table [trace\_log](../system_tables.md#system_tables-trace_log)
+-   [Sampling Query Profiler](../optimizing_performance/sampling_query_profiler.md)
+-   System table [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
 
 ## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
 
