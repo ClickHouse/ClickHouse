@@ -1,0 +1,270 @@
+syntax = "proto3";
+package etcdserverpb;
+
+import "kv.proto";
+
+
+service KV {
+  // Range gets the keys in the range from the key-value store.
+  rpc Range(RangeRequest) returns (RangeResponse) {}
+
+  // Put puts the given key into the key-value store.
+  // A put request increments the revision of the key-value store
+  // and generates one event in the event history.
+  rpc Put(PutRequest) returns (PutResponse) {}
+
+  // DeleteRange deletes the given range from the key-value store.
+  // A delete request increments the revision of the key-value store
+  // and generates a delete event in the event history for every deleted key.
+  rpc DeleteRange(DeleteRangeRequest) returns (DeleteRangeResponse) {}
+
+  // Txn processes multiple requests in a single transaction.
+  // A txn request increments the revision of the key-value store
+  // and generates events with the same revision for every completed request.
+  // It is not allowed to modify the same key several times within one txn.
+  rpc Txn(TxnRequest) returns (TxnResponse) {}
+}
+
+service Watch {
+  // Watch watches for events happening or that have happened. Both input and output
+  // are streams; the input stream is for creating and canceling watchers and the output
+  // stream sends events. One watch RPC can watch on multiple key ranges, streaming events
+  // for several watches at once. The entire event history can be watched starting from the
+  // last compaction revision.
+  rpc Watch(stream WatchRequest) returns (stream WatchResponse) {}
+}
+
+message ResponseHeader {
+  // cluster_id is the ID of the cluster which sent the response.
+  uint64 cluster_id = 1;
+  // member_id is the ID of the member which sent the response.
+  uint64 member_id = 2;
+  // revision is the key-value store revision when the request was applied.
+  int64 revision = 3;
+  // raft_term is the raft term when the request was applied.
+  uint64 raft_term = 4;
+}
+
+message RangeRequest {
+  enum SortOrder {
+	NONE = 0; // default, no sorting
+	ASCEND = 1; // lowest target value first
+	DESCEND = 2; // highest target value first
+  }
+  enum SortTarget {
+	KEY = 0;
+	VERSION = 1;
+	CREATE = 2;
+	MOD = 3;
+	VALUE = 4;
+  }
+
+  // key is the first key for the range. If range_end is not given, the request only looks up key.
+  bytes key = 1;
+  // range_end is the upper bound on the requested range [key, range_end).
+  // If range_end is '\0', the range is all keys >= key.
+  // If the range_end is one bit larger than the given key,
+  // then the range requests get the all keys with the prefix (the given key).
+  // If both key and range_end are '\0', then range requests returns all keys.
+  bytes range_end = 2;
+  // limit is a limit on the number of keys returned for the request.
+  int64 limit = 3;
+  // revision is the point-in-time of the key-value store to use for the range.
+  // If revision is less or equal to zero, the range is over the newest key-value store.
+  // If the revision has been compacted, ErrCompacted is returned as a response.
+  int64 revision = 4;
+
+  // sort_order is the order for returned sorted results.
+  SortOrder sort_order = 5;
+
+  // sort_target is the key-value field to use for sorting.
+  SortTarget sort_target = 6;
+
+  // serializable sets the range request to use serializable member-local reads.
+  // Range requests are linearizable by default; linearizable requests have higher
+  // latency and lower throughput than serializable requests but reflect the current
+  // consensus of the cluster. For better performance, in exchange for possible stale reads,
+  // a serializable range request is served locally without needing to reach consensus
+  // with other nodes in the cluster.
+  bool serializable = 7;
+
+  // keys_only when set returns only the keys and not the values.
+  bool keys_only = 8;
+ 
+  // count_only when set returns only the count of the keys in the range.
+  bool count_only = 9;
+}
+
+message RangeResponse {
+  ResponseHeader header = 1;
+  // kvs is the list of key-value pairs matched by the range request.
+  // kvs is empty when count is requested.
+  repeated mvccpb.KeyValue kvs = 2;
+  // more indicates if there are more keys to return in the requested range.
+  bool more = 3;
+  // count is set to the number of keys within the range when requested.
+  int64 count = 4;
+}
+
+message PutRequest {
+  // key is the key, in bytes, to put into the key-value store.
+  bytes key = 1;
+  // value is the value, in bytes, to associate with the key in the key-value store.
+  bytes value = 2;
+  // lease is the lease ID to associate with the key in the key-value store. A lease
+  // value of 0 indicates no lease.
+  int64 lease = 3;
+
+  // If prev_kv is set, etcd gets the previous key-value pair before changing it.
+  // The previous key-value pair will be returned in the put response.
+  bool prev_kv = 4;
+}
+
+message PutResponse {
+  ResponseHeader header = 1;
+  // if prev_kv is set in the request, the previous key-value pair will be returned.
+  mvccpb.KeyValue prev_kv = 2;
+}
+
+message DeleteRangeRequest {
+  // key is the first key to delete in the range.
+  bytes key = 1;
+  // range_end is the key following the last key to delete for the range [key, range_end).
+  // If range_end is not given, the range is defined to contain only the key argument.
+  // If range_end is '\0', the range is all keys greater than or equal to the key argument.
+  bytes range_end = 2;
+
+  // If prev_kv is set, etcd gets the previous key-value pairs before deleting it.
+  // The previous key-value pairs will be returned in the delte response.
+  bool prev_kv = 3;
+}
+
+message DeleteRangeResponse {
+  ResponseHeader header = 1;
+  // deleted is the number of keys deleted by the delete range request.
+  int64 deleted = 2;
+  // if prev_kv is set in the request, the previous key-value pairs will be returned.
+  repeated mvccpb.KeyValue prev_kvs = 3;
+}
+
+message Compare {
+  enum CompareResult {
+    EQUAL = 0;
+    GREATER = 1;
+    LESS = 2;
+    NOT_EQUAL = 3;
+  }
+  enum CompareTarget {
+    VERSION = 0;
+    CREATE = 1;
+    MOD = 2;
+    VALUE= 3;
+  }
+  CompareResult result = 1;
+  // target is the key-value field to inspect for the comparison.
+  CompareTarget target = 2;
+  // key is the subject key for the comparison operation.
+  bytes key = 3;
+  oneof target_union {
+    int64 version = 4;
+    int64 create_revision = 5;
+    int64 mod_revision = 6;
+    bytes value = 7;
+  }
+}
+
+message RequestOp {
+  // request is a union of request types accepted by a transaction.
+  oneof request {
+    RangeRequest request_range = 1;
+    PutRequest request_put = 2;
+    DeleteRangeRequest request_delete_range = 3;
+  }
+}
+
+message TxnRequest {
+  repeated Compare compare = 1;
+  repeated RequestOp success = 2;
+  repeated RequestOp failure = 3;
+}
+
+message TxnResponse {
+  ResponseHeader header = 1;
+  bool succeeded = 2;
+  repeated ResponseOp responses = 3;
+}
+
+message ResponseOp {
+  oneof response {
+    RangeResponse response_range = 1;
+    PutResponse response_put = 2;
+    DeleteRangeResponse response_delete_range = 3;
+  }
+}
+
+message WatchRequest {
+  // request_union is a request to either create a new watcher or cancel an existing watcher.
+  oneof request_union {
+    WatchCreateRequest create_request = 1;
+    WatchCancelRequest cancel_request = 2;
+  }
+}
+
+message WatchCreateRequest {
+  // key is the key to register for watching.
+  bytes key = 1;
+  // range_end is the end of the range [key, range_end) to watch. If range_end is not given,
+  // only the key argument is watched. If range_end is equal to '\0', all keys greater than
+  // or equal to the key argument are watched.
+  bytes range_end = 2;
+  // start_revision is an optional revision to watch from (inclusive). No start_revision is "now".
+  int64 start_revision = 3;
+  // progress_notify is set so that the etcd server will periodically send a WatchResponse with
+  // no events to the new watcher if there are no recent events. It is useful when clients
+  // wish to recover a disconnected watcher starting from a recent known revision.
+  // The etcd server may decide how often it will send notifications based on current load.
+  bool progress_notify = 4;
+
+  enum FilterType {
+  // filter out put event.
+  NOPUT = 0;
+  // filter out delete event.
+  NODELETE = 1;
+  }
+  // filters filter the events at server side before it sends back to the watcher.
+  repeated FilterType filters = 5;
+
+  // If prev_kv is set, created watcher gets the previous KV before the event happens.
+  // If the previous KV is already compacted, nothing will be returned.
+  bool prev_kv = 6;
+}
+
+message WatchCancelRequest {
+  // watch_id is the watcher id to cancel so that no more events are transmitted.
+  int64 watch_id = 1;
+}
+
+message WatchResponse {
+  ResponseHeader header = 1;
+  // watch_id is the ID of the watcher that corresponds to the response.
+  int64 watch_id = 2;
+  // created is set to true if the response is for a create watch request.
+  // The client should record the watch_id and expect to receive events for
+  // the created watcher from the same stream.
+  // All events sent to the created watcher will attach with the same watch_id.
+  bool created = 3;
+  // canceled is set to true if the response is for a cancel watch request.
+  // No further events will be sent to the canceled watcher.
+  bool canceled = 4;
+  // compact_revision is set to the minimum index if a watcher tries to watch
+  // at a compacted index.
+  //
+  // This happens when creating a watcher at a compacted revision or the watcher cannot
+  // catch up with the progress of the key-value store. 
+  //
+  // The client should treat the watcher as canceled and should not try to create any
+  // watcher with the same start_revision again.
+  int64 compact_revision  = 5;
+
+  repeated mvccpb.Event events = 11;
+}
