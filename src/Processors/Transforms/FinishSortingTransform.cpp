@@ -27,7 +27,6 @@ FinishSortingTransform::FinishSortingTransform(
     : SortingTransform(header, description_to_sort_, max_merged_block_size_, limit_)
     , description_sorted(description_sorted_)
 {
-    std::cerr << "Finishing created.\n";
     const auto & sample = inputs.front().getHeader();
 
     /// Replace column names to column position in description_sorted.
@@ -49,8 +48,6 @@ static bool less(const Columns & lhs, const Columns & rhs, size_t i, size_t j, c
 {
     for (const auto & elem : descr)
     {
-        std::cerr << elem.column_name << ":" << elem.column_number << " ";
-
         size_t ind = elem.column_number;
         int res = elem.direction * lhs[ind]->compareAt(i, j, *rhs[ind], elem.nulls_direction);
         if (res < 0)
@@ -58,7 +55,6 @@ static bool less(const Columns & lhs, const Columns & rhs, size_t i, size_t j, c
         else if (res > 0)
             return false;
     }
-    std::cerr << " ----> equal!";
     return false;
 }
 
