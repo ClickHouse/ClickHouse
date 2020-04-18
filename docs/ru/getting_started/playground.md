@@ -5,7 +5,7 @@ ClickHouse Playground позволяет моментально выполнит
 
 Запросы выполняются под пользователем с правами `readonly` для которого есть следующие ограничения:
 - запрещены DDL запросы
-- запроещены INSERT запросы
+- запрещены INSERT запросы
 
 Также установлены следующие опции:
 - [`max_result_bytes=10485760`](../operations/settings/query_complexity/#max-result-bytes)

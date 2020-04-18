@@ -1,4 +1,5 @@
-# Performance {#performance}
+
+# 性能 {#performance}
 
 根据Yandex的内部测试结果，ClickHouse表现出了比同类可比较产品更优的性能。你可以在 [这里](https://clickhouse.tech/benchmark.html) 查看具体的测试结果。
 

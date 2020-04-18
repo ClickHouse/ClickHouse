@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 29
+toc_title: Proxy
 ---
 
 # Servidores proxy de desarrolladores de terceros {#proxy-servers-from-third-party-developers}
@@ -40,4 +43,4 @@ Función:
 
 Implementado en Go.
 
-[Artículo Original](https://clickhouse.tech/docs/es/interfaces/third-party/proxy/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/interfaces/third-party/proxy/) <!--hide-->

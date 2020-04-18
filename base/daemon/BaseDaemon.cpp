@@ -12,7 +12,6 @@
 #include <unistd.h>
 
 #include <typeinfo>
-#include <sys/time.h>
 #include <sys/resource.h>
 #include <iostream>
 #include <fstream>
@@ -51,11 +50,13 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/ClickHouseRevision.h>
 #include <Common/Config/ConfigProcessor.h>
-#include <Common/config_version.h>
 
-#ifdef __APPLE__
-// ucontext is not available without _XOPEN_SOURCE
-#define _XOPEN_SOURCE 700
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
+
+#if defined(OS_DARWIN)
+#    define _XOPEN_SOURCE 700  // ucontext is not available without _XOPEN_SOURCE
 #endif
 #include <ucontext.h>
 
@@ -411,7 +412,7 @@ std::string BaseDaemon::getDefaultCorePath() const
 
 void BaseDaemon::closeFDs()
 {
-#if defined(__FreeBSD__) || (defined(__APPLE__) && defined(__MACH__))
+#if defined(OS_FREEBSD) || defined(OS_DARWIN)
     Poco::File proc_path{"/dev/fd"};
 #else
     Poco::File proc_path{"/proc/self/fd"};
@@ -431,7 +432,7 @@ void BaseDaemon::closeFDs()
     else
     {
         int max_fd = -1;
-#ifdef _SC_OPEN_MAX
+#if defined(_SC_OPEN_MAX)
         max_fd = sysconf(_SC_OPEN_MAX);
         if (max_fd == -1)
 #endif
@@ -449,7 +450,7 @@ namespace
 /// the maximum is 1000, and chromium uses 300 for its tab processes. Ignore
 /// whatever errors that occur, because it's just a debugging aid and we don't
 /// care if it breaks.
-#if defined(__linux__) && !defined(NDEBUG)
+#if defined(OS_LINUX) && !defined(NDEBUG)
 void debugIncreaseOOMScore()
 {
     const std::string new_score = "555";

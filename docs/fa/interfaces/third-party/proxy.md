@@ -1,41 +1,46 @@
-<div markdown="1" markdown="1" dir="rtl">
+---
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 29
+toc_title: "\u067E\u0631\u0627\u06A9\u0633\u06CC \u0647\u0627"
+---
 
-# سرورهای پروکسی از توسعه دهندگان شخص ثالث {#srwrhy-prwkhsy-z-tws-h-dhndgn-shkhs-thlth}
+# سرور های پروکسی از توسعه دهندگان شخص ثالث {#proxy-servers-from-third-party-developers}
 
-[chproxy](https://github.com/Vertamedia/chproxy)، یک پراکسی HTTP و تعادل بار برای پایگاه داده ClickHouse است.
+## لوسیون صورت {#chproxy}
 
-امکانات
+[لوسیون صورت](https://github.com/Vertamedia/chproxy), یک پروکسی قام است و متعادل کننده بار برای پایگاه داده کلیک.
 
--   مسیریابی و پاسخ دهی کاربر به کاربر.
--   محدودیت انعطاف پذیر
--   تمدید SSL cerificate به صورت خودکار.
+ویژگی ها:
 
-اجرا شده در برو
+-   هر کاربر مسیریابی و ذخیره پاسخ.
+-   محدودیت های انعطاف پذیر.
+-   تمدید گواهی اس اس ال به صورت خودکار.
 
-## KittenHouse {#kittenhouse}
+اجرا در بروید.
 
-[KittenHouse](https://github.com/VKCOM/kittenhouse) طراحی شده است که یک پروکسی محلی بین ClickHouse و سرور برنامه باشد در صورتی که غیر ممکن است یا ناخوشایند بافر کردن اطلاعات INSERT در قسمت درخواست شما.
+## خانه کوچک {#kittenhouse}
 
-امکانات:
+[خانه کوچک](https://github.com/VKCOM/kittenhouse) طراحی شده است که یک پروکسی محلی بین کلاینت و سرور نرم افزار در صورتی که غیر ممکن است و یا ناخوشایند به بافر قرار دادن داده ها در سمت نرم افزار خود را.
 
--   بافر حافظه در حافظه و درایو.
--   مسیریابی در جدول
--   تعادل بار و بررسی سلامت.
+ویژگی ها:
 
-اجرا شده در برو
+-   در حافظه و بر روی دیسک بافر داده.
+-   در هر جدول مسیریابی.
+-   متعادل کننده بار و چک کردن سلامت.
 
-## ClickHouse-Bulk {#clickhouse-bulk}
+اجرا در بروید.
 
-[ClickHouse-Bulk](https://github.com/nikepan/clickhouse-bulk) یک ClickHouse جمع کننده ساده است.
+## کلیک-فله {#clickhouse-bulk}
 
-امکانات:
+[کلیک-فله](https://github.com/nikepan/clickhouse-bulk) یک جمع درج کلیک ساده است.
 
--   درخواست گروهی و ارسال توسط آستانه یا فاصله.
--   چند سرور از راه دور
--   احراز هویت پایه
+ویژگی ها:
 
-اجرا شده در برو
+-   درخواست گروه و ارسال شده توسط حد و یا فاصله.
+-   چندین سرور از راه دور.
+-   احراز هویت عمومی.
 
-</div>
+اجرا در بروید.
 
-[مقاله اصلی](https://clickhouse.tech/docs/fa/interfaces/third-party/proxy/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/interfaces/third-party/proxy/) <!--hide-->
