@@ -2,6 +2,7 @@
 #include "ZooKeeperImpl.h"
 #include "KeeperException.h"
 #include "TestKeeper.h"
+#include "EtcdKeeper.h"
 
 #include <random>
 #include <functional>
@@ -54,7 +55,8 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
     session_timeout_ms = session_timeout_ms_;
     operation_timeout_ms = operation_timeout_ms_;
     chroot = chroot_;
-    implementation = implementation_;
+    // implementation = implementation_;
+    implementation = "etcdkeeper";
 
     if (implementation == "zookeeper")
     {
@@ -103,6 +105,12 @@ void ZooKeeper::init(const std::string & implementation_, const std::string & ho
     else if (implementation == "testkeeper")
     {
         impl = std::make_unique<Coordination::TestKeeper>(
+                chroot,
+                Poco::Timespan(0, operation_timeout_ms_ * 1000));
+    }
+    else if (implementation == "etcdkeeper")
+    {
+        impl = std::make_unique<Coordination::EtcdKeeper>(
                 chroot,
                 Poco::Timespan(0, operation_timeout_ms_ * 1000));
     }

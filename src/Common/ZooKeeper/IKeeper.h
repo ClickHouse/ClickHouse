@@ -51,6 +51,10 @@ struct Stat
     int32_t dataLength;
     int32_t numChildren;
     int64_t pzxid;
+
+    std::vector<int64_t> as_vector() {
+        return std::vector<int64_t>{czxid, mzxid, ctime, mtime, version, cversion, aversion, ephemeralOwner, dataLength, numChildren, pzxid};
+    }
 };
 
 struct Request;
