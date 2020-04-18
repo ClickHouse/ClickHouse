@@ -2097,7 +2097,6 @@ void InterpreterSelectQuery::executeOrderOptimized(QueryPipeline & pipeline, Inp
     const Settings & settings = context->getSettingsRef();
 
     bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size());
-    std::cerr << "\n Need finish: " << need_finish_sorting << "\n";
     if (pipeline.getNumStreams() > 1)
     {
         UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
