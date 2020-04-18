@@ -1,13 +1,5 @@
 <test>
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>30000</total_time_ms>
-        </all_of>
-        <any_of>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
 
     <create_query>CREATE TABLE join_table(A Int64, S0 String, S1 String, S2 String, S3 String) ENGINE = MergeTree ORDER BY A</create_query>
