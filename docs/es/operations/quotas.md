@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 51
+toc_title: Cuota
 ---
 
 # Cuota {#quotas}
@@ -14,7 +17,7 @@ A diferencia de las restricciones de complejidad de consultas, las cuotas:
 -   Coloque restricciones en un conjunto de consultas que se pueden ejecutar durante un período de tiempo, en lugar de limitar una sola consulta.
 -   Tenga en cuenta los recursos gastados en todos los servidores remotos para el procesamiento de consultas distribuidas.
 
-Echemos un vistazo a la sección de la ‘users.xml’ fichero que define las cuotas.
+Veamos la sección del ‘users.xml’ fichero que define las cuotas.
 
 ``` xml
 <!-- Quotas -->
@@ -36,7 +39,7 @@ Echemos un vistazo a la sección de la ‘users.xml’ fichero que define las cu
     </default>
 ```
 
-De forma predeterminada, la cuota solo realiza un seguimiento del consumo de recursos para cada hora, sin limitar el uso.
+De forma predeterminada, la cuota sólo pistas de consumo de recursos por cada hora, sin limitación de uso.
 El consumo de recursos calculado para cada intervalo se envía al registro del servidor después de cada solicitud.
 
 ``` xml
@@ -71,15 +74,15 @@ Cuando finaliza el intervalo, se borran todos los valores recopilados. Para la s
 
 Estas son las cantidades que se pueden restringir:
 
-`queries` – El número total de solicitudes.
+`queries` – The total number of requests.
 
-`errors` – El número de consultas que lanzaron una excepción.
+`errors` – The number of queries that threw an exception.
 
-`result_rows` – El número total de filas dadas como resultado.
+`result_rows` – The total number of rows given as the result.
 
-`read_rows` – El número total de filas de origen leídas de las tablas para ejecutar la consulta, en todos los servidores remotos.
+`read_rows` – The total number of source rows read from tables for running the query, on all remote servers.
 
-`execution_time` – El tiempo total de ejecución de la consulta, en segundos (tiempo de pared).
+`execution_time` – The total query execution time, in seconds (wall time).
 
 Si se excede el límite durante al menos un intervalo de tiempo, se lanza una excepción con un texto sobre qué restricción se excedió, para qué intervalo y cuándo comienza el nuevo intervalo (cuando se pueden enviar consultas nuevamente).
 
@@ -106,4 +109,4 @@ Para el procesamiento de consultas distribuidas, los importes acumulados se alma
 
 Cuando se reinicia el servidor, las cuotas se restablecen.
 
-[Artículo Original](https://clickhouse.tech/docs/es/operations/quotas/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/operations/quotas/) <!--hide-->

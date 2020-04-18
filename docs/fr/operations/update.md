@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 47
+toc_title: "Mise \xC0 Jour De ClickHouse"
 ---
 
 # Mise À Jour De ClickHouse {#clickhouse-update}

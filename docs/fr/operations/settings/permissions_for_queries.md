@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 58
+toc_title: "Autorisations pour les requ\xEAtes"
 ---
 
 # Autorisations pour les requêtes {#permissions_for_queries}

@@ -1,3 +1,8 @@
+---
+toc_priority: 14
+toc_title: Playground
+---
+
 # ClickHouse Playground {#clickhouse-playground}
 
 [ClickHouse Playground](https://play.clickhouse.tech?file=welcome) allows people to experiment with ClickHouse by running queries instantly, without setting up their server or cluster.

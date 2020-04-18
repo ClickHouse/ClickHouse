@@ -11,6 +11,7 @@ import macros.plugin
 
 import slugify as slugify_impl
 
+
 class ClickHouseLinkMixin(object):
 
     def handleMatch(self, m, data):
