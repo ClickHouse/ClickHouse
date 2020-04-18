@@ -33,6 +33,8 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
+#include <Functions/FunctionFactory.h>
+
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
 
@@ -216,28 +218,6 @@ void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t sub
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
-/** Calls to these functions in the GROUP BY statement would be
-  * replaced by their immediate argument.
-  */
-const std::unordered_set<String> injective_function_names
-{
-        "negate",
-        "bitNot",
-        "reverse",
-        "reverseUTF8",
-        "toString",
-        "toFixedString",
-        "IPv4NumToString",
-        "IPv4StringToNum",
-        "hex",
-        "unhex",
-        "bitmaskToList",
-        "bitmaskToArray",
-        "tuple",
-        "regionToName",
-        "concatAssumeInjective",
-};
-
 const std::unordered_set<String> possibly_injective_function_names
 {
         "dictGetString",
@@ -278,6 +258,8 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & so
 /// Eliminates injective function calls and constant expressions from group by statement.
 void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
 {
+    const FunctionFactory & function_factory = FunctionFactory::instance();
+
     if (!select_query->groupBy())
     {
         // If there is a HAVING clause without GROUP BY, make sure we have some aggregation happen.
@@ -327,7 +309,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
             }
-            else if (!injective_function_names.count(function->name))
+            else if (!function_factory.get(function->name, context)->isInjective(Block{}))
             {
                 ++i;
                 continue;

@@ -134,7 +134,7 @@ public:
       *
       * sample_block should contain data types of arguments and values of constants, if relevant.
       */
-    virtual bool isInjective(const Block & /*sample_block*/) { return false; }
+    virtual bool isInjective(const Block & /*sample_block*/) const { return false; }
 
     /** Function is called "deterministic", if it returns same result for same values of arguments.
       * Most of functions are deterministic. Notable counterexample is rand().
@@ -189,6 +189,7 @@ public:
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const = 0;
     virtual bool isDeterministicInScopeOfQuery() const = 0;
+    virtual bool isInjective(const Block &) const = 0;
 
     /// Override and return true if function needs to depend on the state of the data.
     virtual bool isStateful() const = 0;
