@@ -26,6 +26,8 @@ public:
     static NamesAndTypesList getNamesAndTypes(const DictionaryStructure & dictionary_structure);
     static String generateNamesAndTypesDescription(const NamesAndTypesList & list);
 
+    const String & dictionaryName() const { return dictionary_name; }
+
 private:
     String dictionary_name;
 
