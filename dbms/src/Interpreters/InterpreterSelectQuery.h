@@ -198,6 +198,7 @@ private:
     void executeHaving(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     static void executeExpression(QueryPipeline & pipeline, const ExpressionActionsPtr & expression);
     void executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info);
+    void executeOrderOptimized(QueryPipeline & pipeline, InputSortingInfoPtr sorting_info, UInt64 limit, SortDescription & sort_description);
     void executeWithFill(QueryPipeline & pipeline);
     void executeMergeSorted(QueryPipeline & pipeline);
     void executePreLimit(QueryPipeline & pipeline, bool do_not_skip_offset);

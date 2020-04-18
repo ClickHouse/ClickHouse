@@ -522,10 +522,26 @@ void NO_INLINE Aggregator::executeWithoutKeyImpl(
     for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
     {
         if (inst->offsets)
-            inst->batch_that->addBatchSinglePlace(
-                inst->offsets[static_cast<ssize_t>(rows - 1)], res + inst->state_offset, inst->batch_arguments, arena);
+            inst->batch_that->addBatchSinglePlace(inst->offsets[static_cast<ssize_t>(rows - 1)], res + inst->state_offset, inst->batch_arguments, arena);
         else
             inst->batch_that->addBatchSinglePlace(rows, res + inst->state_offset, inst->batch_arguments, arena);
+    }
+}
+
+void NO_INLINE Aggregator::executeOnIntervalWithoutKeyImpl(
+        AggregatedDataWithoutKey & res,
+        size_t row_begin,
+        size_t row_end,
+        AggregateFunctionInstruction * aggregate_instructions,
+        Arena * arena)
+{
+    /// Adding values
+    for (AggregateFunctionInstruction * inst = aggregate_instructions; inst->that; ++inst)
+    {
+        if (inst->offsets)
+            inst->batch_that->addBatchSinglePlaceFromInterval(inst->offsets[row_begin], inst->offsets[static_cast<ssize_t>(row_end - 1)], res + inst->state_offset, inst->batch_arguments, arena);
+        else
+            inst->batch_that->addBatchSinglePlaceFromInterval(row_begin, row_end, res + inst->state_offset, inst->batch_arguments, arena);
     }
 }
 
@@ -535,6 +551,99 @@ bool Aggregator::executeOnBlock(const Block & block, AggregatedDataVariants & re
 {
     UInt64 num_rows = block.rows();
     return executeOnBlock(block.getColumns(), num_rows, result, key_columns, aggregate_columns, no_more_keys);
+}
+
+AggregateFunctionInstructions NO_INLINE Aggregator::prepareBlockForAggregation(Columns & materialized_columns, Columns columns, AggregatedDataVariants & result,
+                                                                               ColumnRawPtrs & key_columns, AggregateColumns & aggregate_columns)
+{
+    /// TODO remove code duplication
+
+    /// `result` will destroy the states of aggregate functions in the destructor
+    result.aggregator = this;
+
+    /// How to perform the aggregation?
+    if (result.empty())
+    {
+        result.init(method_chosen);
+        result.keys_size = params.keys_size;
+        result.key_sizes = key_sizes;
+        LOG_TRACE(log, "Aggregation method: " << result.getMethodName());
+    }
+
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+        aggregate_columns[i].resize(params.aggregates[i].arguments.size());
+
+    /** Constant columns are not supported directly during aggregation.
+      * To make them work anyway, we materialize them.
+      */
+//    Columns materialized_columns;
+
+    /// Remember the columns we will work with
+    for (size_t i = 0; i < params.keys_size; ++i)
+    {
+        materialized_columns.push_back(columns.at(params.keys[i])->convertToFullColumnIfConst());
+        key_columns[i] = materialized_columns.back().get();
+
+        if (!result.isLowCardinality())
+        {
+            auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
+            if (column_no_lc.get() != key_columns[i])
+            {
+                materialized_columns.emplace_back(std::move(column_no_lc));
+                key_columns[i] = materialized_columns.back().get();
+            }
+        }
+    }
+
+    AggregateFunctionInstructions aggregate_functions_instructions(params.aggregates_size + 1);
+    aggregate_functions_instructions[params.aggregates_size].that = nullptr;
+
+    std::vector<std::vector<const IColumn *>> nested_columns_holder;
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        for (size_t j = 0; j < aggregate_columns[i].size(); ++j)
+        {
+            materialized_columns.push_back(columns.at(params.aggregates[i].arguments[j])->convertToFullColumnIfConst());
+            aggregate_columns[i][j] = materialized_columns.back().get();
+
+            auto column_no_lc = recursiveRemoveLowCardinality(aggregate_columns[i][j]->getPtr());
+            if (column_no_lc.get() != aggregate_columns[i][j])
+            {
+                materialized_columns.emplace_back(std::move(column_no_lc));
+                aggregate_columns[i][j] = materialized_columns.back().get();
+            }
+        }
+
+        aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
+        aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
+        auto that = aggregate_functions[i];
+
+        /// Unnest consecutive trailing -State combinators
+        while (auto func = typeid_cast<const AggregateFunctionState *>(that))
+            that = func->getNestedFunction().get();
+
+        aggregate_functions_instructions[i].that = that;
+        aggregate_functions_instructions[i].func = that->getAddressOfAddFunction();
+
+        if (auto func = typeid_cast<const AggregateFunctionArray *>(that))
+        {
+            /// Unnest consecutive -State combinators before -Array
+            that = func->getNestedFunction().get();
+            while (auto nested_func = typeid_cast<const AggregateFunctionState *>(that))
+                that = nested_func->getNestedFunction().get();
+
+            auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
+            nested_columns_holder.push_back(std::move(nested_columns));
+            aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
+            aggregate_functions_instructions[i].offsets = offsets;
+        }
+        else
+            aggregate_functions_instructions[i].batch_arguments = aggregate_columns[i].data();
+
+        aggregate_functions_instructions[i].batch_that = that;
+    }
+
+    return aggregate_functions_instructions;
 }
 
 bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedDataVariants & result,
@@ -605,9 +714,11 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         aggregate_functions_instructions[i].arguments = aggregate_columns[i].data();
         aggregate_functions_instructions[i].state_offset = offsets_of_aggregate_states[i];
         auto that = aggregate_functions[i];
+
         /// Unnest consecutive trailing -State combinators
         while (auto func = typeid_cast<const AggregateFunctionState *>(that))
             that = func->getNestedFunction().get();
+
         aggregate_functions_instructions[i].that = that;
         aggregate_functions_instructions[i].func = that->getAddressOfAddFunction();
 
@@ -617,6 +728,7 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
             that = func->getNestedFunction().get();
             while (auto nested_func = typeid_cast<const AggregateFunctionState *>(that))
                 that = nested_func->getNestedFunction().get();
+
             auto [nested_columns, offsets] = checkAndGetNestedArrayOffset(aggregate_columns[i].data(), that->getArgumentTypes().size());
             nested_columns_holder.push_back(std::move(nested_columns));
             aggregate_functions_instructions[i].batch_arguments = nested_columns_holder.back().data();
@@ -1052,7 +1164,7 @@ Block Aggregator::prepareBlockAndFill(
             aggregate_columns[i] = header.safeGetByPosition(i + params.keys_size).type->createColumn();
 
             /// The ColumnAggregateFunction column captures the shared ownership of the arena with the aggregate function states.
-            ColumnAggregateFunction & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
+            auto & column_aggregate_func = assert_cast<ColumnAggregateFunction &>(*aggregate_columns[i]);
 
             for (auto & pool : data_variants.aggregates_pools)
                 column_aggregate_func.addArena(pool);
@@ -1078,6 +1190,7 @@ Block Aggregator::prepareBlockAndFill(
 
     filler(key_columns, aggregate_columns_data, final_aggregate_columns, final);
 
+//CREATING LAST BLOCK
     Block res = header.cloneEmpty();
 
     for (size_t i = 0; i < params.keys_size; ++i)
@@ -1099,7 +1212,34 @@ Block Aggregator::prepareBlockAndFill(
 
     return res;
 }
+void Aggregator::fillAggregateColumnsWithSingleKey(
+    AggregatedDataVariants & data_variants,
+    MutableColumns & final_aggregate_columns)
+{
+    AggregatedDataWithoutKey & data = data_variants.without_key;
 
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+    {
+        aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+    }
+    destroyWithoutKey(data_variants);
+}
+
+void Aggregator::createStatesAndFillKeyColumnsWithSingleKey(
+    AggregatedDataVariants & data_variants,
+    ColumnRawPtrs key_columns,
+    size_t key_row,
+    MutableColumns & final_key_columns)
+{
+    AggregateDataPtr place = data_variants.aggregates_pool->alignedAlloc(total_size_of_aggregate_states, align_aggregate_states);
+    createAggregateStates(place);
+    data_variants.without_key = place;
+
+    for (size_t i = 0; i < params.keys_size; ++i)
+    {
+        final_key_columns[i]->insertFrom(*key_columns[i], key_row);
+    }
+}
 
 Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const
 {

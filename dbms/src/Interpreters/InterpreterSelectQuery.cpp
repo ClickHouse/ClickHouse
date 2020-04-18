@@ -98,6 +98,7 @@
 #include <DataStreams/materializeBlock.h>
 #include <Processors/Pipe.h>
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
+#include <Processors/Transforms/AggregatingInOrderTransform.h>
 
 
 namespace DB
@@ -1615,7 +1616,7 @@ void InterpreterSelectQuery::executeWhere(QueryPipeline & pipeline, const Expres
     });
 }
 
-void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputSortingInfoPtr group_by_info)
+void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputSortingInfoPtr /*group_by_info*/)
 {
     pipeline.transform([&](auto & stream)
     {
@@ -1634,15 +1635,6 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
                 descr.arguments.push_back(header.getPositionByName(name));
 
     const Settings & settings = context->getSettingsRef();
-
-    if (group_by_info)
-    {
-        /// TODO optimization :)
-//        std::cerr << "\n";
-//        for (const auto & elem : group_by_info->order_key_prefix_descr)
-//            std::cerr << elem.column_name << " ";
-//        std::cerr << "\n";
-    }
 
     /** Two-level aggregation is useful in two cases:
       * 1. Parallel aggregation is done, and the results should be merged in parallel.
@@ -1688,7 +1680,7 @@ void InterpreterSelectQuery::executeAggregation(Pipeline & pipeline, const Expre
 }
 
 
-void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputSortingInfoPtr /*group_by_info*/)
+void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const ExpressionActionsPtr & expression, bool overflow_row, bool final, InputSortingInfoPtr group_by_info)
 {
     pipeline.addSimpleTransform([&](const Block & header)
     {
@@ -1724,6 +1716,32 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
     pipeline.dropTotalsIfHas();
+
+    /// TODO better case determination
+    if (group_by_info && settings.optimize_aggregation_in_order)
+    {
+//        std::cerr << "\n\n";
+//        for (const auto & elem : group_by_info->order_key_prefix_descr)
+//            std::cerr << elem.column_name << " ";
+//        std::cerr << "\n\n";
+
+        auto & query = getSelectQuery();
+        SortDescription group_by_descr = getSortDescriptionFromGroupBy(query, *context);
+
+        ///TODO Finish sorting first
+//        UInt64 limit = getLimitForSorting(query, *context);
+//        executeOrderOptimized(pipeline, group_by_info, limit, group_by_descr);
+
+        pipeline.resize(1);
+
+        pipeline.addSimpleTransform([&](const Block & header)
+        {
+            return std::make_shared<AggregatingInOrderTransform>(header, transform_params, group_by_descr, group_by_descr);
+        });
+
+        pipeline.enableQuotaForCurrentStreams();
+        return;
+    }
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
@@ -2052,6 +2070,45 @@ void InterpreterSelectQuery::executeOrder(Pipeline & pipeline, InputSortingInfoP
     }
 }
 
+void InterpreterSelectQuery::executeOrderOptimized(QueryPipeline & pipeline, InputSortingInfoPtr input_sorting_info, UInt64 limit, SortDescription & output_order_descr)
+{
+    const Settings & settings = context->getSettingsRef();
+
+    bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size());
+    std::cerr << "\n Need finish: " << need_finish_sorting << "\n";
+    if (pipeline.getNumStreams() > 1)
+    {
+        UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
+        auto transform = std::make_shared<MergingSortedTransform>(
+                pipeline.getHeader(),
+                pipeline.getNumStreams(),
+                input_sorting_info->order_key_prefix_descr,
+                settings.max_block_size, limit_for_merging);
+
+        pipeline.addPipe({ std::move(transform) });
+    }
+
+    pipeline.enableQuotaForCurrentStreams();
+
+    if (need_finish_sorting)
+    {
+        pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
+        {
+            if (stream_type != QueryPipeline::StreamType::Main)
+                return nullptr;
+
+            return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
+        });
+
+        pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
+        {
+            return std::make_shared<FinishSortingTransform>(
+                    header, input_sorting_info->order_key_prefix_descr,
+                    output_order_descr, settings.max_block_size, limit);
+        });
+    }
+}
+
 void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSortingInfoPtr input_sorting_info)
 {
     auto & query = getSelectQuery();
@@ -2073,41 +2130,8 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
          *  and then merge them into one sorted stream.
          * At this stage we merge per-thread streams into one.
          */
-
-        bool need_finish_sorting = (input_sorting_info->order_key_prefix_descr.size() < output_order_descr.size());
-
-        if (pipeline.getNumStreams() > 1)
-        {
-            UInt64 limit_for_merging = (need_finish_sorting ? 0 : limit);
-            auto transform = std::make_shared<MergingSortedTransform>(
-                pipeline.getHeader(),
-                pipeline.getNumStreams(),
-                input_sorting_info->order_key_prefix_descr,
-                settings.max_block_size, limit_for_merging);
-
-            pipeline.addPipe({ std::move(transform) });
-        }
-
-        pipeline.enableQuotaForCurrentStreams();
-
-        if (need_finish_sorting)
-        {
-            pipeline.addSimpleTransform([&](const Block & header, QueryPipeline::StreamType stream_type) -> ProcessorPtr
-            {
-                if (stream_type != QueryPipeline::StreamType::Main)
-                    return nullptr;
-
-                return std::make_shared<PartialSortingTransform>(header, output_order_descr, limit);
-            });
-
-            pipeline.addSimpleTransform([&](const Block & header) -> ProcessorPtr
-            {
-                return std::make_shared<FinishSortingTransform>(
-                    header, input_sorting_info->order_key_prefix_descr,
-                    output_order_descr, settings.max_block_size, limit);
-            });
-        }
-
+        std::cerr << "\nHello optimized order here!\n";
+        executeOrderOptimized(pipeline, input_sorting_info, limit, output_order_descr);
         return;
     }
 

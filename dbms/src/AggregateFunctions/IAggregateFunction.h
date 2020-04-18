@@ -141,6 +141,8 @@ public:
       */
     virtual void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
 
+    virtual void addBatchSinglePlaceFromInterval(size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const = 0;
+
     /** In addition to addBatch, this method collects multiple rows of arguments into array "places"
       *  as long as they are between offsets[i-1] and offsets[i]. This is used for arrayReduce and
       *  -Array combinator. It might also be used generally to break data dependency when array
@@ -183,6 +185,12 @@ public:
     void addBatchSinglePlace(size_t batch_size, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
     {
         for (size_t i = 0; i < batch_size; ++i)
+            static_cast<const Derived *>(this)->add(place, columns, i, arena);
+    }
+
+    void addBatchSinglePlaceFromInterval(size_t batch_begin, size_t batch_end, AggregateDataPtr place, const IColumn ** columns, Arena * arena) const override
+    {
+        for (size_t i = batch_begin; i < batch_end; ++i)
             static_cast<const Derived *>(this)->add(place, columns, i, arena);
     }
 
