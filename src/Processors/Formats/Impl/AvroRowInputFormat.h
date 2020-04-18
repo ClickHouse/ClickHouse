@@ -22,7 +22,7 @@ namespace DB
 class AvroDeserializer
 {
 public:
-    AvroDeserializer(const ColumnsWithTypeAndName & columns, avro::ValidSchema schema);
+    AvroDeserializer(const Block & header, avro::ValidSchema schema);
     void deserializeRow(MutableColumns & columns, avro::Decoder & decoder) const;
 
 private:
@@ -31,15 +31,46 @@ private:
     static DeserializeFn createDeserializeFn(avro::NodePtr root_node, DataTypePtr target_type);
     SkipFn createSkipFn(avro::NodePtr root_node);
 
-    /// Map from field index in Avro schema to column number in block header. Or -1 if there is no corresponding column.
-    std::vector<int> field_mapping;
+    struct Action
+    {
+        enum Type { Deserialize, Skip };
+        Type type;
+        /// Deserialize
+        int target_column_idx;
+        DeserializeFn deserialize_fn;
+        /// Skip
+        SkipFn skip_fn;
 
-    /// How to skip the corresponding field in Avro schema.
-    std::vector<SkipFn> skip_fns;
+        Action(int target_column_idx_, DeserializeFn deserialize_fn_)
+            : type(Deserialize)
+            , target_column_idx(target_column_idx_)
+            , deserialize_fn(deserialize_fn_) {}
 
-    /// How to deserialize the corresponding field in Avro schema.
-    std::vector<DeserializeFn> deserialize_fns;
+        Action(SkipFn skip_fn_)
+            : type(Skip)
+            , skip_fn(skip_fn_) {}
 
+        void execute(MutableColumns & columns, avro::Decoder & decoder) const
+        {
+            switch(type)
+            {
+                case Deserialize:
+                    deserialize_fn(*columns[target_column_idx], decoder);
+                    break;
+                case Skip:
+                    skip_fn(decoder);
+                    break;
+            }
+        }
+    };
+
+    /// Populate actions by recursively traversing root schema
+    void createActions(const Block & header, const avro::NodePtr& node, std::string current_path = "");
+
+    /// Bitmap of columns found in Avro schema
+    std::vector<bool> column_found;
+    /// Deserialize/Skip actions for a row
+    std::vector<Action> actions;
     /// Map from name of named Avro type (record, enum, fixed) to SkipFn.
     /// This is to avoid infinite recursion when  Avro schema contains self-references. e.g. LinkedList
     std::map<avro::Name, SkipFn> symbolic_skip_fn_map;
@@ -73,7 +104,6 @@ public:
 
     class SchemaRegistry;
 private:
-    const ColumnsWithTypeAndName header_columns;
     std::shared_ptr<SchemaRegistry> schema_registry;
     using SchemaId = uint32_t;
     std::unordered_map<SchemaId, AvroDeserializer> deserializer_cache;
