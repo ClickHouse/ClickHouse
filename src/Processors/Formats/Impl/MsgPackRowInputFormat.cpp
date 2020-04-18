@@ -26,7 +26,7 @@ namespace ErrorCodes
 MsgPackRowInputFormat::MsgPackRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
     : IRowInputFormat(header_, in_, std::move(params_)), buf(in), parser(visitor), data_types(header_.getDataTypes())  {}
 
-void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type)
+void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type) // NOLINT
 {
     while (!info_stack.empty())
     {
@@ -35,7 +35,7 @@ void MsgPackVisitor::set_info(IColumn & column, DataTypePtr type)
     info_stack.push(Info{column, type});
 }
 
-void MsgPackVisitor::insert_integer(UInt64 value)
+void MsgPackVisitor::insert_integer(UInt64 value) // NOLINT
 {
     Info & info = info_stack.top();
     switch (info.type->getTypeId())
@@ -92,37 +92,37 @@ void MsgPackVisitor::insert_integer(UInt64 value)
     }
 }
 
-bool MsgPackVisitor::visit_positive_integer(UInt64 value)
+bool MsgPackVisitor::visit_positive_integer(UInt64 value) // NOLINT
 {
     insert_integer(value);
     return true;
 }
 
-bool MsgPackVisitor::visit_negative_integer(Int64 value)
+bool MsgPackVisitor::visit_negative_integer(Int64 value) // NOLINT
 {
     insert_integer(value);
     return true;
 }
 
-bool MsgPackVisitor::visit_str(const char* value, size_t size)
+bool MsgPackVisitor::visit_str(const char* value, size_t size) // NOLINT
 {
     info_stack.top().column.insertData(value, size);
     return true;
 }
 
-bool MsgPackVisitor::visit_float32(Float32 value)
+bool MsgPackVisitor::visit_float32(Float32 value) // NOLINT
 {
     assert_cast<ColumnFloat32 &>(info_stack.top().column).insertValue(value);
     return true;
 }
 
-bool MsgPackVisitor::visit_float64(Float64 value)
+bool MsgPackVisitor::visit_float64(Float64 value) // NOLINT
 {
     assert_cast<ColumnFloat64 &>(info_stack.top().column).insertValue(value);
     return true;
 }
 
-bool MsgPackVisitor::start_array(size_t size)
+bool MsgPackVisitor::start_array(size_t size) // NOLINT
 {
     auto nested_type = assert_cast<const DataTypeArray &>(*info_stack.top().type).getNestedType();
     ColumnArray & column_array = assert_cast<ColumnArray &>(info_stack.top().column);
@@ -133,13 +133,13 @@ bool MsgPackVisitor::start_array(size_t size)
     return true;
 }
 
-bool MsgPackVisitor::end_array()
+bool MsgPackVisitor::end_array() // NOLINT
 {
     info_stack.pop();
     return true;
 }
 
-void MsgPackVisitor::parse_error(size_t, size_t)
+void MsgPackVisitor::parse_error(size_t, size_t) // NOLINT
 {
     throw Exception("Error occurred while parsing msgpack data.", ErrorCodes::INCORRECT_DATA);
 }
