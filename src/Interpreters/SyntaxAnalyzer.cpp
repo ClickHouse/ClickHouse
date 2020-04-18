@@ -29,8 +29,6 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
 
 #include <Functions/FunctionFactory.h>
@@ -547,34 +545,6 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
     }
 }
 
-void replaceJoinedTable(const ASTSelectQuery & select_query)
-{
-    const ASTTablesInSelectQueryElement * join = select_query.join();
-    if (!join || !join->table_expression)
-        return;
-
-    /// TODO: Push down for CROSS JOIN is not OK [disabled]
-    const auto & table_join = join->table_join->as<ASTTableJoin &>();
-    if (table_join.kind == ASTTableJoin::Kind::Cross)
-        return;
-
-    auto & table_expr = join->table_expression->as<ASTTableExpression &>();
-    if (table_expr.database_and_table_name)
-    {
-        const auto & table_id = table_expr.database_and_table_name->as<ASTIdentifier &>();
-        String expr = "(select * from " + table_id.name + ") as " + table_id.shortName();
-
-        // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
-        //        we can't replace aliased tables.
-        // FIXME: long table names include database name, which we can't save within alias.
-        if (table_id.alias.empty() && table_id.isShort())
-        {
-            ParserTableExpression parser;
-            table_expr = parseQuery(parser, expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH)->as<ASTTableExpression &>();
-        }
-    }
-}
-
 std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
@@ -781,7 +751,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     SyntaxAnalyzerResult && result,
     const SelectQueryOptions & select_options,
     const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-    const Names & required_result_columns) const
+    const Names & required_result_columns,
+    std::shared_ptr<TableJoin> table_join) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
@@ -793,13 +764,12 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     const auto & settings = context.getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
-    result.analyzed_join = std::make_shared<TableJoin>(settings, context.getTemporaryVolume());
+    result.analyzed_join = table_join;
+    if (!result.analyzed_join) /// ExpressionAnalyzer expects some not empty object here
+        result.analyzed_join = std::make_shared<TableJoin>();
 
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
-
-    if (settings.enable_optimize_predicate_expression)
-        replaceJoinedTable(*select_query);
 
     /// TODO: Remove unneeded conversion
     std::vector<TableWithColumnNames> tables_with_column_names;

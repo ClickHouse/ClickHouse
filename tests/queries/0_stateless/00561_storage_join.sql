@@ -1,5 +1,3 @@
-SET any_join_distinct_right_table_keys = 1;
-
 drop table IF EXISTS joinbug;
 
 CREATE TABLE joinbug (
@@ -21,7 +19,7 @@ CREATE TABLE joinbug_join (
   val UInt64,
   val2 Int32,
   created UInt64
-) ENGINE = Join(ANY, INNER, id2);
+) ENGINE = Join(SEMI, LEFT, id2);
 
 insert into joinbug_join (id, id2, val, val2, created)
 select id, id2, val, val2, created
@@ -36,7 +34,7 @@ select id, id2, val, val2, created
 from (
    SELECT toUInt64(arrayJoin(range(50))) AS id2
 ) js1
-ANY INNER JOIN joinbug_join using id2;
+SEMI LEFT JOIN joinbug_join using id2;
 
 DROP TABLE joinbug;
 DROP TABLE joinbug_join;
