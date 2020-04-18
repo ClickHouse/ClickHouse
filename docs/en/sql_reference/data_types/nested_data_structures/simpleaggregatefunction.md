@@ -15,7 +15,7 @@ Currently, the following aggregate functions are supported:
     - [`groupBitOr`](../../query_language/agg_functions/reference.md#groupbitor)
     - [`groupBitXor`](../../query_language/agg_functions/reference.md#groupbitxor)
 
-- Type of the `SimpleAggregateFunction(func, Type)` is `Type` itself, so you do not need to apply functions with `-Merge`/`-State` suffixes.
+- Values of the `SimpleAggregateFunction(func, Type)` look and stored the same way as `Type`, so you do not need to apply functions with `-Merge`/`-State` suffixes.
 - `SimpleAggregateFunction` has better performance than `AggregateFunction` with same aggregation function.
 
 **Parameters**
