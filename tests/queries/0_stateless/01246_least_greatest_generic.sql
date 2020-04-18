@@ -15,8 +15,10 @@ SELECT greatest(1, inf);
 SELECT least(0., -0.);
 SELECT least(toNullable(123), 456);
 
-SELECT LEAST(-1, 18446744073709551615); -- { serverError 386 }
-SELECT LEAST(-1., 18446744073709551615); -- { serverError 386 }
+-- This can be improved
+SELECT LEAST(-1, 18446744073709551615); -- { serverError 43 }
+SELECT LEAST(-1., 18446744073709551615); -- { serverError 43 }
+
 SELECT LEAST(-1., 18446744073709551615.);
 SELECT greatest(-1, 1, 4294967295);
 
