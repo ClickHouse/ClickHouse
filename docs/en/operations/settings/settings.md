@@ -566,7 +566,7 @@ The default is slightly more than `max_block_size`. The reason for this is becau
 
 ## min_insert_block_size_rows {#min-insert-block-size-rows}
 
-Sets minimum block size in rows to pass to the `INSERT` query. Smaller-sized blocks are squashed into one.
+Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones. I
 
 Possible values:
 
@@ -577,7 +577,7 @@ Default value: 1048576.
 
 ## min_insert_block_size_bytes {#min-insert-block-size-bytes}
 
-Sets minimum block size in bytes to pass to the `INSERT` query. Smaller-sized blocks are squashed into one.
+Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
 
 Possible values:
 
