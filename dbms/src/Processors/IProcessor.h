@@ -158,11 +158,11 @@ public:
 
     static std::string statusToName(Status status);
 
-    /** Method 'prepare' is responsible for all cheap ("instantenous": O(1) of data volume, no wait) calculations.
+    /** Method 'prepare' is responsible for all cheap ("instantaneous": O(1) of data volume, no wait) calculations.
       *
       * It may access input and output ports,
       *  indicate the need for work by another processor by returning NeedData or PortFull,
-      *  or indicate the absense of work by returning Finished or Unneeded,
+      *  or indicate the absence of work by returning Finished or Unneeded,
       *  it may pull data from input ports and push data to output ports.
       *
       * The method is not thread-safe and must be called from a single thread in one moment of time,
