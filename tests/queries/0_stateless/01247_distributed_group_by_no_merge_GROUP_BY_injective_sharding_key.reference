@@ -13,6 +13,11 @@ GROUP BY number
 1	1
 1	0
 1	1
+GROUP BY number distributed_group_by_no_merge
+1	0
+1	1
+1	0
+1	1
 GROUP BY number, 1
 1	0
 1	1
@@ -50,3 +55,15 @@ LIMIT
 LIMIT BY
 2	0
 2	1
+GROUP BY (Distributed-over-Distributed)
+4	0
+4	1
+GROUP BY (Distributed-over-Distributed) distributed_group_by_no_merge
+1	0
+1	1
+1	0
+1	1
+1	0
+1	1
+1	0
+1	1

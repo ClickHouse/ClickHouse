@@ -380,13 +380,16 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 }
 
 
-bool StorageDistributed::canForceGroupByNoMerge(const Context &context, const ASTPtr & query_ptr) const
+bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
     const auto & settings = context.getSettingsRef();
     std::string reason;
 
     if (settings.distributed_group_by_no_merge)
         return true;
+    /// Distributed-over-Distributed (see getQueryProcessingStageImpl())
+    if (to_stage == QueryProcessingStage::WithMergeableState)
+        return false;
     if (!settings.optimize_skip_unused_shards)
         return false;
     if (!has_sharding_key)
@@ -445,7 +448,7 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, const AS
 
 QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
-    if (canForceGroupByNoMerge(context, query_ptr))
+    if (canForceGroupByNoMerge(context, to_stage, query_ptr))
         return QueryProcessingStage::Complete;
 
     auto cluster = getOptimizedCluster(context, query_ptr);
