@@ -430,7 +430,7 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
         // injective functions are optimized out in optimizeGroupBy()
         // hence all we need to check is that column in GROUP BY matches sharding expression
         auto & group_exprs = group_by->children;
-        if (!group_exprs.size())
+        if (group_exprs.empty())
             throw Exception("No ASTExpressionList in GROUP BY", ErrorCodes::LOGICAL_ERROR);
 
         auto id = group_exprs[0]->as<ASTIdentifier>();
