@@ -11,6 +11,8 @@ namespace DB
   *
   * Note: a class is used instead of a single function to avoid excessive file open/close on every use.
   * pread is used to avoid lseek.
+  *
+  * Actual performance is from 1 to 5 million iterations per second.
   */
 class MemoryStatisticsOS
 {
