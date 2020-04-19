@@ -98,14 +98,15 @@ fi
 # Even if we have some errors, try our best to save the logs.
 set +e
 
-# Older version use 'kill 0', so put the script into a separate process group
-# FIXME remove set +m in April 2020
-set +m
+# Use clickhouse-client and clickhouse-local from the right server.
+PATH="$(readlink -f right/)":"$PATH"
+export PATH
+
+# Start the main comparison script.
 { \
     time ../download.sh "$REF_PR" "$REF_SHA" "$PR_TO_TEST" "$SHA_TO_TEST" && \
     time stage=configure "$script_path"/compare.sh ; \
 } 2>&1 | ts "$(printf '%%Y-%%m-%%d %%H:%%M:%%S\t')" | tee compare.log
-set -m
 
 # Stop the servers to free memory. Normally they are restarted before getting
 # the profile info, so they shouldn't use much, but if the comparison script
