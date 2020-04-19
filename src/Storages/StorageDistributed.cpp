@@ -383,6 +383,7 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 bool StorageDistributed::canForceGroupByNoMerge(const Context &context, const ASTPtr & query_ptr) const
 {
     const auto & settings = context.getSettingsRef();
+    std::string reason;
 
     if (settings.distributed_group_by_no_merge)
         return true;
@@ -395,8 +396,20 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, const AS
 
     if (select.orderBy())
         return false;
+
     if (select.distinct)
-        return false;
+    {
+        for (auto & expr : select.select()->children)
+        {
+            auto id = expr->as<ASTIdentifier>();
+            if (!id)
+                return false;
+            if (!sharding_key_expr->getSampleBlock().has(id->name))
+                return false;
+        }
+
+        reason = "DISTINCT " + backQuote(serializeAST(*select.select(), true));
+    }
 
     // This can use distributed_group_by_no_merge but in this case limit stage
     // should be done later (which is not the case right now).
@@ -405,21 +418,28 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, const AS
 
     const ASTPtr group_by = select.groupBy();
     if (!group_by)
-        return false;
+    {
+        if (!select.distinct)
+            return false;
+    }
+    else
+    {
+        // injective functions are optimized out in optimizeGroupBy()
+        // hence all we need to check is that column in GROUP BY matches sharding expression
+        auto & group_exprs = group_by->children;
+        if (!group_exprs.size())
+            throw Exception("No ASTExpressionList in GROUP BY", ErrorCodes::LOGICAL_ERROR);
 
-    // injective functions are optimized out in optimizeGroupBy()
-    // hence all we need to check is that column in GROUP BY matches sharding expression
-    auto & group_exprs = group_by->children;
-    if (!group_exprs.size())
-        throw Exception("No ASTExpressionList in GROUP BY", ErrorCodes::LOGICAL_ERROR);
+        auto id = group_exprs[0]->as<ASTIdentifier>();
+        if (!id)
+            return false;
+        if (!sharding_key_expr->getSampleBlock().has(id->name))
+            return false;
 
-    auto id = group_exprs[0]->as<ASTIdentifier>();
-    if (!id)
-        return false;
-    if (!sharding_key_expr->getSampleBlock().has(id->name))
-        return false;
+        reason = "GROUP BY " + backQuote(serializeAST(*group_by, true));
+    }
 
-    LOG_DEBUG(log, "Force distributed_group_by_no_merge for GROUP BY " << backQuote(serializeAST(*group_by, true)) << " (injective)");
+    LOG_DEBUG(log, "Force distributed_group_by_no_merge for " << reason << " (injective)");
     return true;
 }
 

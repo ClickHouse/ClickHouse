@@ -41,6 +41,8 @@ countDistinct GROUP BY number
 DISTINCT
 0
 1
+0
+1
 HAVING
 LIMIT
 2	0
