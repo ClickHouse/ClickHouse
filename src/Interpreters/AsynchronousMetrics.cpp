@@ -141,6 +141,11 @@ void AsynchronousMetrics::update()
         set("MemoryShared", data.shared);
         set("MemoryCode", data.code);
         set("MemoryDataAndStack", data.data_and_stack);
+
+        /// We must update the value of total_memory_tracker periodically.
+        /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/10293
+        total_memory_tracker.set(data.resident);
     }
 #endif
 
