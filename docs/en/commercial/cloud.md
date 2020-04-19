@@ -1,3 +1,8 @@
+---
+toc_title: Cloud
+toc_priority: 1
+---
+
 # ClickHouse Cloud Service Providers {#clickhouse-cloud-service-providers}
 
 !!! info "Info"

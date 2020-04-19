@@ -6,7 +6,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
-#include <Common/config_version.h>
 #include <IO/Progress.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -32,6 +31,10 @@
 #include <Processors/Formats/LazyOutputFormat.h>
 
 #include "TCPHandler.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 
 namespace DB

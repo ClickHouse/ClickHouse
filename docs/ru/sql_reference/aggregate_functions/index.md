@@ -1,3 +1,9 @@
+---
+toc_folder_title: Агрегатные функции
+toc_priority: 33
+toc_title: Введение
+---
+
 # Агрегатные функции {#aggregate-functions}
 
 Агрегатные функции работают в [привычном](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial) для специалистов по базам данных смысле.

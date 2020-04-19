@@ -74,6 +74,9 @@ toc_title: "\u7D71\u5408"
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (用途 [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [パンダ](https://pandas.pydata.org)
         -   [パンダハウス](https://github.com/kszucs/pandahouse)
+- PHP
+    -   [Doctrine](https://www.doctrine-project.org/)
+        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [dplyr](https://db.rstudio.com/dplyr/)
         -   [Rクリックハウス](https://github.com/IMSMWU/RClickhouse) (用途 [クリックハウス-cpp](https://github.com/artpaul/clickhouse-cpp))

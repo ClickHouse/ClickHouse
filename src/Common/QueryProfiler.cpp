@@ -6,7 +6,6 @@
 #include <Common/TraceCollector.h>
 #include <Common/thread_local_rng.h>
 #include <common/StringRef.h>
-#include <common/config_common.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
 

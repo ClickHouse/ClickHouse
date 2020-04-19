@@ -27,6 +27,8 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
         message << "Reading " << data_part->getMarksCount() << " marks from part " << data_part->name
             << ", total " << data_part->rows_count
             << " rows starting from the beginning of the part";
+        if (columns_to_read.size() == 1)    /// Print column name but don't pollute logs in case of many columns.
+            message << ", column " << columns_to_read.front();
 
         LOG_TRACE(log, message.rdbuf());
     }
