@@ -140,6 +140,8 @@ struct SharedContextHolder
     SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
     SharedContextHolder(SharedContextHolder &&) noexcept;
 
+    SharedContextHolder & operator=(SharedContextHolder &&);
+
     ContextShared * get() const { return shared.get(); }
     void reset();
 private:
