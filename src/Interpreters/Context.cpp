@@ -442,6 +442,7 @@ Context::Context(const Context &) = default;
 Context & Context::operator=(const Context &) = default;
 
 SharedContextHolder::SharedContextHolder(SharedContextHolder &&) noexcept = default;
+SharedContextHolder::SharedContextHolder() = default;
 SharedContextHolder::~SharedContextHolder() = default;
 SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextShared> shared_context)
     : shared(std::move(shared_context)) {}
