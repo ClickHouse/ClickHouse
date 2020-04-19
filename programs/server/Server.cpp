@@ -81,6 +81,7 @@ namespace CurrentMetrics
 {
     extern const Metric Revision;
     extern const Metric VersionInteger;
+    extern const Metric MemoryTracking;
 }
 
 namespace
@@ -554,6 +555,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
+
+    /// Limit on total memory usage
+    total_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_all_queries);
+    total_memory_tracker.setDescription("(total)");
+    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
     LOG_INFO(log, "Loading metadata from " + path);
 
