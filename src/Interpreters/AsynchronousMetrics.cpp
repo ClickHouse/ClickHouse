@@ -12,6 +12,7 @@
 #include <Databases/IDatabase.h>
 #include <chrono>
 
+
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
 #endif
@@ -129,6 +130,19 @@ void AsynchronousMetrics::update()
 #endif
 
     set("Uptime", context.getUptimeSeconds());
+
+    /// Process memory usage according to OS
+#if defined(OS_LINUX)
+    {
+        MemoryStatisticsOS::Data data = memory_stat.get();
+
+        set("MemoryVirtual", data.virt);
+        set("MemoryResident", data.resident);
+        set("MemoryShared", data.shared);
+        set("MemoryCode", data.code);
+        set("MemoryDataAndStack", data.data_and_stack);
+    }
+#endif
 
     {
         auto databases = DatabaseCatalog::instance().getDatabases();
