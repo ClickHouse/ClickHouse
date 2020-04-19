@@ -15,7 +15,6 @@
 #include <common/getFQDNOrHostName.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/config.h>
 #include <Common/SettingsChanges.h>
 #include <Disks/DiskSpaceMonitor.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -35,6 +34,11 @@
 #include <Interpreters/executeQuery.h>
 #include <Common/typeid_cast.h>
 #include <Poco/Net/HTTPStream.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 
 namespace DB
 {

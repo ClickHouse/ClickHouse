@@ -5,7 +5,7 @@ toc_priority: 12
 toc_title: "\u6559\u7A0B"
 ---
 
-# 点击教程 {#clickhouse-tutorial}
+# 教程 {#clickhouse-tutorial}
 
 ## 从本教程中可以期待什么？ {#what-to-expect-from-this-tutorial}
 

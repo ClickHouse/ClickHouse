@@ -15,8 +15,11 @@
 #include <Dictionaries/Embedded/RegionsHierarchies.h>
 #include <Dictionaries/Embedded/RegionsNames.h>
 #include <IO/WriteHelpers.h>
-#include <Common/config.h>
 #include <Common/typeid_cast.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 
 namespace DB
@@ -589,7 +592,7 @@ public:
 
     /// For the purpose of query optimization, we assume this function to be injective
     ///  even in face of fact that there are many different cities named Moscow.
-    bool isInjective(const Block &) override { return true; }
+    bool isInjective(const Block &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

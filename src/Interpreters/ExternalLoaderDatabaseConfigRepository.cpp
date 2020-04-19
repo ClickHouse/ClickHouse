@@ -1,29 +1,29 @@
 #include <Interpreters/ExternalLoaderDatabaseConfigRepository.h>
-#include <Interpreters/ExternalDictionariesLoader.h>
-#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <Common/StringUtils/StringUtils.h>
+
 
 namespace DB
 {
-
 namespace ErrorCodes
 {
     extern const int UNKNOWN_DICTIONARY;
 }
 
+
 namespace
 {
-String trimDatabaseName(const std::string & loadable_definition_name, const IDatabase & database)
-{
-    const auto & dbname = database.getDatabaseName();
-    if (!startsWith(loadable_definition_name, dbname))
-        throw Exception(
-            "Loadable '" + loadable_definition_name + "' is not from database '" + database.getDatabaseName(), ErrorCodes::UNKNOWN_DICTIONARY);
-    ///    dbname.loadable_name
-    ///--> remove <---
-    return loadable_definition_name.substr(dbname.length() + 1);
+    String trimDatabaseName(const std::string & loadable_definition_name, const IDatabase & database)
+    {
+        const auto & dbname = database.getDatabaseName();
+        if (!startsWith(loadable_definition_name, dbname))
+            throw Exception(
+                "Loadable '" + loadable_definition_name + "' is not from database '" + database.getDatabaseName(), ErrorCodes::UNKNOWN_DICTIONARY);
+        ///    dbname.loadable_name
+        ///--> remove <---
+        return loadable_definition_name.substr(dbname.length() + 1);
+    }
 }
-}
+
 
 ExternalLoaderDatabaseConfigRepository::ExternalLoaderDatabaseConfigRepository(IDatabase & database_, const Context & context_)
     : name(database_.getDatabaseName())
@@ -34,8 +34,7 @@ ExternalLoaderDatabaseConfigRepository::ExternalLoaderDatabaseConfigRepository(I
 
 LoadablesConfigurationPtr ExternalLoaderDatabaseConfigRepository::load(const std::string & loadable_definition_name)
 {
-    String dictname = trimDatabaseName(loadable_definition_name, database);
-    return getDictionaryConfigurationFromAST(database.getCreateDictionaryQuery(context, dictname)->as<const ASTCreateQuery &>());
+    return database.getDictionaryConfiguration(trimDatabaseName(loadable_definition_name, database));
 }
 
 bool ExternalLoaderDatabaseConfigRepository::exists(const std::string & loadable_definition_name)

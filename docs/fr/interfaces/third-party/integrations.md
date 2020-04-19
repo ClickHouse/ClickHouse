@@ -74,6 +74,9 @@ toc_title: "Int\xE9gration"
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (utiliser [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [Panda](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
+- PHP
+    -   [Doctrine](https://www.doctrine-project.org/)
+        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [dplyr](https://db.rstudio.com/dplyr/)
         -   [RClickhouse](https://github.com/IMSMWU/RClickhouse) (utiliser [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))

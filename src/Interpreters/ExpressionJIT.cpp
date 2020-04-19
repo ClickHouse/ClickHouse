@@ -510,7 +510,7 @@ bool LLVMFunction::isSuitableForConstantFolding() const
     return true;
 }
 
-bool LLVMFunction::isInjective(const Block & sample_block)
+bool LLVMFunction::isInjective(const Block & sample_block) const
 {
     for (const auto & f : originals)
         if (!f->isInjective(sample_block))
