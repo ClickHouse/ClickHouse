@@ -189,7 +189,8 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     const String & database_name_,
     const String & table_name_,
     const String & storage_def_,
-    size_t flush_interval_milliseconds_)
+    size_t flush_interval_milliseconds_,
+    bool lazy_load)
     : context(context_)
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_),
@@ -197,6 +198,11 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
     log = &Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
+
+    if (!lazy_load)
+    {
+        prepareTable();
+    }
 
     saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
