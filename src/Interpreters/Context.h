@@ -136,6 +136,7 @@ using IHostContextPtr = std::shared_ptr<IHostContext>;
 struct SharedContextHolder
 {
     ~SharedContextHolder();
+    SharedContextHolder();
     SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
     SharedContextHolder(SharedContextHolder &&) noexcept;
 
