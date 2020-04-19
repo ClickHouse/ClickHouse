@@ -52,7 +52,7 @@ private:
 
         void execute(MutableColumns & columns, avro::Decoder & decoder) const
         {
-            switch(type)
+            switch (type)
             {
                 case Deserialize:
                     deserialize_fn(*columns[target_column_idx], decoder);
