@@ -577,15 +577,20 @@ void StorageDistributed::createDirectoryMonitors(const std::string & disk)
 }
 
 
-void StorageDistributed::requireDirectoryMonitor(const std::string & disk, const std::string & name)
+StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const std::string & disk, const std::string & name)
 {
     const std::string path(disk + relative_data_path + name);
     const std::string key(disk + name);
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
-    node_data.conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
-    node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(*this, path, node_data.conneciton_pool, monitors_blocker);
+    if (!node_data.directory_monitor)
+    {
+        node_data.conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
+        node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
+            *this, path, node_data.conneciton_pool, monitors_blocker, global_context.getDistributedSchedulePool());
+    }
+    return *node_data.directory_monitor;
 }
 
 size_t StorageDistributed::getShardCount() const

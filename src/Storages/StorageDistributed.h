@@ -109,7 +109,7 @@ public:
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors(const std::string & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    void requireDirectoryMonitor(const std::string & disk, const std::string & name);
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
 
     void flushClusterNodesAllData();
 
