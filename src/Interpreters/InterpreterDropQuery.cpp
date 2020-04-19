@@ -188,7 +188,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     {
         /// Drop dictionary from memory, don't touch data and metadata
         context.checkAccess(AccessType::DROP_DICTIONARY, database_name, dictionary_name);
-        database->detachDictionary(dictionary_name, context);
+        database->detachDictionary(dictionary_name);
     }
     else if (kind == ASTDropQuery::Kind::Truncate)
     {
@@ -254,21 +254,26 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
             bool drop = kind == ASTDropQuery::Kind::Drop;
             context.checkAccess(AccessType::DROP_DATABASE, database_name);
 
-            /// DETACH or DROP all tables and dictionaries inside database
-            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+            if (database->shouldBeEmptyOnDetach())
             {
-                String current_table_name = iterator->name();
-                executeToTable(database_name, current_table_name, kind, false, false, false);
-            }
+                /// DETACH or DROP all tables and dictionaries inside database.
+                /// First we should DETACH or DROP dictionaries because StorageDictionary
+                /// must be detached only by detaching corresponding dictionary.
+                for (auto iterator = database->getDictionariesIterator(context); iterator->isValid(); iterator->next())
+                {
+                    String current_dictionary = iterator->name();
+                    executeToDictionary(database_name, current_dictionary, kind, false, false, false);
+                }
 
-            for (auto iterator = database->getDictionariesIterator(context); iterator->isValid(); iterator->next())
-            {
-                String current_dictionary = iterator->name();
-                executeToDictionary(database_name, current_dictionary, kind, false, false, false);
+                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                {
+                    String current_table_name = iterator->name();
+                    executeToTable(database_name, current_table_name, kind, false, false, false);
+                }
             }
 
             /// DETACH or DROP database itself
-            DatabaseCatalog::instance().detachDatabase(database_name, drop);
+            DatabaseCatalog::instance().detachDatabase(database_name, drop, database->shouldBeEmptyOnDetach());
         }
     }
 

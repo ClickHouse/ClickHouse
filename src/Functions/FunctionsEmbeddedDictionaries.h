@@ -592,7 +592,7 @@ public:
 
     /// For the purpose of query optimization, we assume this function to be injective
     ///  even in face of fact that there are many different cities named Moscow.
-    bool isInjective(const Block &) override { return true; }
+    bool isInjective(const Block &) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {

@@ -256,17 +256,18 @@ if args.report == 'main':
 
         print(tableStart('Test times'))
         print(tableHeader(columns))
-
+        
+        runs = 11  # FIXME pass this as an argument
         attrs = ['' for c in columns]
         for r in rows:
-            if float(r[6]) > 22:
+            if float(r[6]) > 3 * runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
                 attrs[6] = 'style="background: #ffb0a0"'
             else:
                 attrs[6] = ''
 
-            if float(r[5]) > 30:
+            if float(r[5]) > 4 * runs:
                 slow_average_tests += 1
                 attrs[5] = 'style="background: #ffb0a0"'
             else:
