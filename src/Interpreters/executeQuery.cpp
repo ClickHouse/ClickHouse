@@ -721,6 +721,7 @@ void executeQuery(
             });
 
             auto out = context.getOutputFormatProcessor(format_name, *out_buf, pipeline.getHeader());
+            out->setAutoFlush();
 
             /// Save previous progress callback if any. TODO Do it more conveniently.
             auto previous_progress_callback = context.getProgressCallback();
