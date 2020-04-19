@@ -557,7 +557,24 @@ int Server::main(const std::vector<std::string> & /*args*/)
     format_schema_path.createDirectories();
 
     /// Limit on total memory usage
-    total_memory_tracker.setOrRaiseHardLimit(settings.max_memory_usage_for_all_queries);
+    size_t max_server_memory_usage = settings.max_server_memory_usage;
+
+    double max_server_memory_usage_to_ram_ratio = config().getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
+    size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;
+
+    if (max_server_memory_usage == 0)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was set to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage));
+    }
+    else if (max_server_memory_usage > default_max_server_memory_usage)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage)
+            << " because the system has low amount of memory");
+    }
+
+    total_memory_tracker.setOrRaiseHardLimit(max_server_memory_usage);
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
