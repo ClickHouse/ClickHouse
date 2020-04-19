@@ -30,8 +30,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
     const String & default_database_name,
     const String & default_table_name,
     const Poco::Util::AbstractConfiguration & config,
-    const String & config_prefix,
-    bool lazy_load)
+    const String & config_prefix)
 {
     if (!config.has(config_prefix))
         return {};
@@ -64,7 +63,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
     size_t flush_interval_milliseconds = config.getUInt64(config_prefix + ".flush_interval_milliseconds", DEFAULT_SYSTEM_LOG_FLUSH_INTERVAL_MILLISECONDS);
 
-    return std::make_shared<TSystemLog>(context, database, table, engine, flush_interval_milliseconds, lazy_load);
+    return std::make_shared<TSystemLog>(context, database, table, engine, flush_interval_milliseconds);
 }
 
 }
@@ -72,14 +71,12 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
 SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfiguration & config)
 {
-    bool lazy_load = config.getBool("system_tables_lazy_load", true);
-
-    query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log", lazy_load);
-    query_thread_log = createSystemLog<QueryThreadLog>(global_context, "system", "query_thread_log", config, "query_thread_log", lazy_load);
-    part_log = createSystemLog<PartLog>(global_context, "system", "part_log", config, "part_log", lazy_load);
-    trace_log = createSystemLog<TraceLog>(global_context, "system", "trace_log", config, "trace_log", lazy_load);
-    text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log", lazy_load);
-    metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log", lazy_load);
+    query_log = createSystemLog<QueryLog>(global_context, "system", "query_log", config, "query_log");
+    query_thread_log = createSystemLog<QueryThreadLog>(global_context, "system", "query_thread_log", config, "query_thread_log");
+    part_log = createSystemLog<PartLog>(global_context, "system", "part_log", config, "part_log");
+    trace_log = createSystemLog<TraceLog>(global_context, "system", "trace_log", config, "trace_log");
+    text_log = createSystemLog<TextLog>(global_context, "system", "text_log", config, "text_log");
+    metric_log = createSystemLog<MetricLog>(global_context, "system", "metric_log", config, "metric_log");
 
     if (metric_log)
     {
@@ -99,6 +96,14 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
         logs.emplace_back(text_log.get());
     if (metric_log)
         logs.emplace_back(metric_log.get());
+
+    bool lazy_load = config.getBool("system_tables_lazy_load", true);
+    for (auto & log : logs)
+    {
+        if (!lazy_load)
+            log->prepareTable();
+        log->startup();
+    }
 }
 
 
