@@ -117,7 +117,8 @@ public:
         const String & database_name_,
         const String & table_name_,
         const String & storage_def_,
-        size_t flush_interval_milliseconds_);
+        size_t flush_interval_milliseconds_,
+        bool lazy_load);
 
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
