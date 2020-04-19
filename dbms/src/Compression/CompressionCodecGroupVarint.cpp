@@ -117,9 +117,13 @@ namespace DB
 
         Uint32 get_value(const UInt8 * source, UInt8 current_tag, UInt8 & index)
         {
-            UInt32 * cur = (UInt32 *) source; ///????????????
-            UInt32 value = * cur & masks[current_tag];
-            source += current_tag + 1;
+            UInt32 value = 0x0;
+            UInt8 offset = 0;
+            for (size_t i = 0; i < current_tag + 1; ++i) {
+                value |= (* source << offset);
+                offset += 8;
+                ++source;
+            }
             index += current_tag + 1;
             return value;
         }
