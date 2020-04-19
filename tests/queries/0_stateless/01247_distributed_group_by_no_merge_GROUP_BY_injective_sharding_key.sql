@@ -18,6 +18,8 @@ select * from dist_01247;
 
 select 'GROUP BY number';
 select count(), * from dist_01247 group by number;
+select 'GROUP BY number distributed_group_by_no_merge';
+select count(), * from dist_01247 group by number settings distributed_group_by_no_merge=1;
 
 -- dumb, but should work, since "GROUP BY 1" optimized out
 select 'GROUP BY number, 1';
@@ -53,3 +55,8 @@ select count(), * from dist_01247 group by number limit 1 offset 1;
 select 'LIMIT BY';
 select count(), * from dist_01247 group by number limit 0 by number;
 select count(), * from dist_01247 group by number limit 1 by number;
+
+select 'GROUP BY (Distributed-over-Distributed)';
+select count(), * from cluster(test_cluster_two_shards, currentDatabase(), dist_01247) group by number;
+select 'GROUP BY (Distributed-over-Distributed) distributed_group_by_no_merge';
+select count(), * from cluster(test_cluster_two_shards, currentDatabase(), dist_01247) group by number settings distributed_group_by_no_merge=1;
