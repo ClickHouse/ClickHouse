@@ -73,6 +73,8 @@ public:
     virtual String getName() = 0;
     virtual ASTPtr getCreateTableQuery() = 0;
     virtual void flush() = 0;
+    virtual void prepareTable() = 0;
+    virtual void startup() = 0;
     virtual void shutdown() = 0;
     virtual ~ISystemLog() = default;
 };
@@ -117,8 +119,7 @@ public:
         const String & database_name_,
         const String & table_name_,
         const String & storage_def_,
-        size_t flush_interval_milliseconds_,
-        bool lazy_load);
+        size_t flush_interval_milliseconds_);
 
     /** Append a record into log.
       * Writing to table will be done asynchronously and in case of failure, record could be lost.
@@ -129,6 +130,9 @@ public:
 
     /// Flush data in the buffer to disk
     void flush() override;
+
+    /// Start the background thread.
+    void startup() override;
 
     /// Stop the background flush thread before destructor. No more data will be written.
     void shutdown() override
@@ -178,7 +182,7 @@ private:
       * Renames old table if its structure is not suitable.
       * This cannot be done in constructor to avoid deadlock while renaming a table under locked Context when SystemLog object is created.
       */
-    void prepareTable();
+    void prepareTable() override;
 
     /// flushImpl can be executed only in saving_thread.
     void flushImpl(const std::vector<LogElement> & to_flush, uint64_t to_flush_end);
@@ -190,8 +194,7 @@ SystemLog<LogElement>::SystemLog(Context & context_,
     const String & database_name_,
     const String & table_name_,
     const String & storage_def_,
-    size_t flush_interval_milliseconds_,
-    bool lazy_load)
+    size_t flush_interval_milliseconds_)
     : context(context_)
     , table_id(database_name_, table_name_)
     , storage_def(storage_def_),
@@ -199,12 +202,12 @@ SystemLog<LogElement>::SystemLog(Context & context_,
 {
     assert(database_name_ == DatabaseCatalog::SYSTEM_DATABASE);
     log = &Logger::get("SystemLog (" + database_name_ + "." + table_name_ + ")");
+}
 
-    if (!lazy_load)
-    {
-        prepareTable();
-    }
 
+template <typename LogElement>
+void SystemLog<LogElement>::startup()
+{
     saving_thread = ThreadFromGlobalPool([this] { savingThreadFunction(); });
 }
 
