@@ -89,7 +89,8 @@ public:
         if (samples.empty())
             return onEmpty<T>();
 
-        sortIfNeeded();
+        if (!sorted)
+            throw Poco::Exception("ReservoirSampler was not finalized");
 
         double index = level * (samples.size() - 1);
         size_t int_index = static_cast<size_t>(index + 0.5);
@@ -106,7 +107,8 @@ public:
         if (samples.empty())
             return onEmpty<double>();
 
-        sortIfNeeded();
+        if (!sorted)
+            throw Poco::Exception("ReservoirSampler was not finalized");
 
         const double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
 
@@ -162,6 +164,17 @@ public:
             DB::writePODBinary(samples[i], buf);
     }
 
+    void sortIfNeeded()
+    {
+        if (sorted)
+            return;
+        sorted = true;
+        std::sort(samples.begin(), samples.end(), [] (const std::pair<T, UInt32> & lhs, const std::pair<T, UInt32> & rhs)
+        {
+            return lhs.first < rhs.first;
+        });
+    }
+
 private:
     /// We allocate some memory on the stack to avoid allocations when there are many objects with a small number of elements.
     using Element = std::pair<T, UInt32>;
@@ -206,17 +219,6 @@ private:
             samples.resize(size);
             sorted = false;
         }
-    }
-
-    void sortIfNeeded()
-    {
-        if (sorted)
-            return;
-        sorted = true;
-        std::sort(samples.begin(), samples.end(), [] (const std::pair<T, UInt32> & lhs, const std::pair<T, UInt32> & rhs)
-        {
-            return lhs.first < rhs.first;
-        });
     }
 
     template <typename ResultType>
