@@ -1,5 +1,7 @@
 FROM ubuntu:19.10
 
+RUN echo "deb [trusted=yes] http://apt.llvm.org/eoan/ llvm-toolchain-eoan-10 main" >> /etc/apt/sources.list
+
 RUN apt-get update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get install --yes --no-install-recommends \
@@ -19,10 +21,10 @@ RUN apt-get update -y \
             python-termcolor \
             sudo \
             tzdata \
-            clang \
-            clang-tidy \
-            lld \
-            lldb
+            clang-10 \
+            clang-tidy-10 \
+            lld-10 \
+            lldb-10
 
 COPY build.sh /
 
