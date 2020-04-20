@@ -58,6 +58,17 @@ IMergeTreeDataPart::MergeTreeWriterPtr MergeTreeDataPartInMemory::getWriter(
     return std::make_unique<MergeTreeDataPartWriterInMemory>(ptr, columns_list, writer_settings);
 }
 
+bool MergeTreeDataPartInMemory::waitUntilMerged(size_t timeout) const
+{
+    auto lock = storage.lockParts();
+    return is_merged.wait_for(lock, std::chrono::milliseconds(timeout),
+        [this]() { return state == State::Outdated; });
+}
+
+void MergeTreeDataPartInMemory::notifyMerged() const
+{
+    is_merged.notify_one();
+}
 
 void MergeTreeDataPartInMemory::calculateEachColumnSizesOnDisk(ColumnSizeByName & /*each_columns_size*/, ColumnSize & /*total_size*/) const
 {

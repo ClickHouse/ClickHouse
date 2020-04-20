@@ -914,4 +914,9 @@ bool isWidePart(const MergeTreeDataPartPtr & data_part)
     return (data_part && data_part->getType() == MergeTreeDataPartType::WIDE);
 }
 
+bool isInMemoryPart(const MergeTreeDataPartPtr & data_part)
+{
+    return (data_part && data_part->getType() == MergeTreeDataPartType::IN_MEMORY);
+}
+
 }

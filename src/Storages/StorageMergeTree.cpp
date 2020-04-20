@@ -18,6 +18,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/MergeTree/MergeTreeBlockOutputStream.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Disks/DiskSpaceMonitor.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -158,7 +159,10 @@ std::optional<UInt64> StorageMergeTree::totalBytes() const
 
 BlockOutputStreamPtr StorageMergeTree::write(const ASTPtr & /*query*/, const Context & context)
 {
-    return std::make_shared<MergeTreeBlockOutputStream>(*this, context.getSettingsRef().max_partitions_per_insert_block);
+    const auto & settings = context.getSettingsRef();
+    return std::make_shared<MergeTreeBlockOutputStream>(
+        *this, settings.max_partitions_per_insert_block,
+        settings.insert_in_memory_parts_timeout.totalMilliseconds());
 }
 
 void StorageMergeTree::checkTableCanBeDropped() const
@@ -629,6 +633,9 @@ bool StorageMergeTree::merge(
         write_part_log(ExecutionStatus::fromCurrentException());
         throw;
     }
+
+    for (const auto & part : future_part.parts)
+        part->notifyMerged();
 
     return true;
 }

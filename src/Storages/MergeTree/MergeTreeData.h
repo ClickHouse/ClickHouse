@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeDataPartInMemory.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/MergeTreeWriteAheadLog.h>
