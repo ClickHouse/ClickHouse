@@ -53,7 +53,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
     const bool check_access_for_dictionaries = !access->isGranted(AccessType::SHOW_DICTIONARIES);
 
     const auto & external_dictionaries = context.getExternalDictionariesLoader();
-    for (const auto & load_result : external_dictionaries.getCurrentLoadResults())
+    for (const auto & load_result : external_dictionaries.getLoadResults())
     {
         const auto dict_ptr = std::dynamic_pointer_cast<const IDictionaryBase>(load_result.object);
 
@@ -66,9 +66,10 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         else
         {
             short_name = load_result.name;
-            if (!load_result.repository_name.empty() && startsWith(short_name, load_result.repository_name + "."))
+            String repository_name = load_result.config ? load_result.config->repository_name : "";
+            if (!repository_name.empty() && startsWith(short_name, repository_name + "."))
             {
-                database = load_result.repository_name;
+                database = repository_name;
                 short_name = short_name.substr(database.length() + 1);
             }
         }
@@ -81,7 +82,7 @@ void StorageSystemDictionaries::fillData(MutableColumns & res_columns, const Con
         res_columns[i++]->insert(database);
         res_columns[i++]->insert(short_name);
         res_columns[i++]->insert(static_cast<Int8>(load_result.status));
-        res_columns[i++]->insert(load_result.origin);
+        res_columns[i++]->insert(load_result.config ? load_result.config->path : "");
 
         std::exception_ptr last_exception = load_result.exception;
 

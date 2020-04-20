@@ -75,7 +75,11 @@ void OwnPatternFormatter::formatExtended(const DB::ExtendedLogMessage & msg_ext,
     if (color)
         writeCString(resetColor(), wb);
     writeCString("> ", wb);
+    if (color)
+        writeString(setColor(std::hash<std::string>()(msg.getSource())), wb);
     DB::writeString(msg.getSource(), wb);
+    if (color)
+        writeCString(resetColor(), wb);
     writeCString(": ", wb);
     DB::writeString(msg.getText(), wb);
 }

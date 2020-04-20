@@ -9,7 +9,10 @@ The engine inherits from [MergeTree](mergetree.md#table_engines-mergetree), alte
 
 You can use `AggregatingMergeTree` tables for incremental data aggregation, including for aggregated materialized views.
 
-The engine processes all columns with [AggregateFunction](../../../sql_reference/data_types/aggregatefunction.md) type.
+The engine processes all columns with the following types:
+
+- [AggregateFunction](../../../sql_reference/data_types/aggregatefunction.md)
+- [SimpleAggregateFunction](../../../sql_reference/data_types/simpleaggregatefunction.md)
 
 It is appropriate to use `AggregatingMergeTree` if it reduces the number of rows by orders.
 

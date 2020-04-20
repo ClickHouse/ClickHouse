@@ -19,6 +19,7 @@
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
+#include <Common/quoteString.h>
 
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExpressionList.h>
@@ -75,6 +76,7 @@ namespace ErrorCodes
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int TOO_MANY_ROWS;
     extern const int UNABLE_TO_SKIP_UNUSED_SHARDS;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace ActionLocks
@@ -380,8 +382,77 @@ StoragePtr StorageDistributed::createWithOwnCluster(
 }
 
 
-QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr &query_ptr) const
+bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
+    const auto & settings = context.getSettingsRef();
+    std::string reason;
+
+    if (settings.distributed_group_by_no_merge)
+        return true;
+    /// Distributed-over-Distributed (see getQueryProcessingStageImpl())
+    if (to_stage == QueryProcessingStage::WithMergeableState)
+        return false;
+    if (!settings.optimize_skip_unused_shards)
+        return false;
+    if (!has_sharding_key)
+        return false;
+
+    const auto & select = query_ptr->as<ASTSelectQuery &>();
+
+    if (select.orderBy())
+        return false;
+
+    if (select.distinct)
+    {
+        for (auto & expr : select.select()->children)
+        {
+            auto id = expr->as<ASTIdentifier>();
+            if (!id)
+                return false;
+            if (!sharding_key_expr->getSampleBlock().has(id->name))
+                return false;
+        }
+
+        reason = "DISTINCT " + backQuote(serializeAST(*select.select(), true));
+    }
+
+    // This can use distributed_group_by_no_merge but in this case limit stage
+    // should be done later (which is not the case right now).
+    if (select.limitBy() || select.limitLength())
+        return false;
+
+    const ASTPtr group_by = select.groupBy();
+    if (!group_by)
+    {
+        if (!select.distinct)
+            return false;
+    }
+    else
+    {
+        // injective functions are optimized out in optimizeGroupBy()
+        // hence all we need to check is that column in GROUP BY matches sharding expression
+        auto & group_exprs = group_by->children;
+        if (group_exprs.empty())
+            throw Exception("No ASTExpressionList in GROUP BY", ErrorCodes::LOGICAL_ERROR);
+
+        auto id = group_exprs[0]->as<ASTIdentifier>();
+        if (!id)
+            return false;
+        if (!sharding_key_expr->getSampleBlock().has(id->name))
+            return false;
+
+        reason = "GROUP BY " + backQuote(serializeAST(*group_by, true));
+    }
+
+    LOG_DEBUG(log, "Force distributed_group_by_no_merge for " << reason << " (injective)");
+    return true;
+}
+
+QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(const Context &context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
+{
+    if (canForceGroupByNoMerge(context, to_stage, query_ptr))
+        return QueryProcessingStage::Complete;
+
     auto cluster = getOptimizedCluster(context, query_ptr);
     return getQueryProcessingStageImpl(context, to_stage, cluster);
 }
@@ -579,15 +650,20 @@ void StorageDistributed::createDirectoryMonitors(const std::string & disk)
 }
 
 
-void StorageDistributed::requireDirectoryMonitor(const std::string & disk, const std::string & name)
+StorageDistributedDirectoryMonitor& StorageDistributed::requireDirectoryMonitor(const std::string & disk, const std::string & name)
 {
     const std::string path(disk + relative_data_path + name);
     const std::string key(disk + name);
 
     std::lock_guard lock(cluster_nodes_mutex);
     auto & node_data = cluster_nodes_data[key];
-    node_data.conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
-    node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(*this, path, node_data.conneciton_pool, monitors_blocker);
+    if (!node_data.directory_monitor)
+    {
+        node_data.conneciton_pool = StorageDistributedDirectoryMonitor::createPool(name, *this);
+        node_data.directory_monitor = std::make_unique<StorageDistributedDirectoryMonitor>(
+            *this, path, node_data.conneciton_pool, monitors_blocker, global_context.getDistributedSchedulePool());
+    }
+    return *node_data.directory_monitor;
 }
 
 size_t StorageDistributed::getShardCount() const

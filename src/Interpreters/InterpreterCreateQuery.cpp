@@ -45,6 +45,8 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
+
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
@@ -703,7 +705,11 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
     }
 
     if (create.attach)
-        database->attachDictionary(dictionary_name, context);
+    {
+        auto config = getDictionaryConfigurationFromAST(create);
+        auto modification_time = database->getObjectMetadataModificationTime(dictionary_name);
+        database->attachDictionary(dictionary_name, DictionaryAttachInfo{query_ptr, config, modification_time});
+    }
     else
         database->createDictionary(context, dictionary_name, query_ptr);
 
