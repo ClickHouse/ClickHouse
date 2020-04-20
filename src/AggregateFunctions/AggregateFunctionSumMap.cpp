@@ -36,23 +36,29 @@ struct WithoutOverflowPolicy
     }
 };
 
-template <typename T>
-using SumMapWithOverflow = AggregateFunctionSumMap<T, WithOverflowPolicy>;
+template <bool overflow, bool tuple_argument>
+struct SumMap
+{
+    template <typename T>
+    using F = AggregateFunctionSumMap<T,
+        std::conditional_t<overflow, WithOverflowPolicy, WithoutOverflowPolicy>,
+        tuple_argument>;
+};
 
-template <typename T>
-using SumMapWithoutOverflow = AggregateFunctionSumMap<T, WithoutOverflowPolicy>;
+template <bool overflow, bool tuple_argument>
+struct SumMapFiltered
+{
+    template <typename T>
+    using F = AggregateFunctionSumMapFiltered<T,
+        std::conditional_t<overflow, WithOverflowPolicy, WithoutOverflowPolicy>,
+        tuple_argument>;
+};
 
-template <typename T>
-using SumMapFilteredWithOverflow = AggregateFunctionSumMapFiltered<T, WithOverflowPolicy>;
 
-template <typename T>
-using SumMapFilteredWithoutOverflow = AggregateFunctionSumMapFiltered<T, WithoutOverflowPolicy>;
-
-using SumMapArgs = std::pair<DataTypePtr, DataTypes>;
-
-SumMapArgs parseArguments(const std::string & name, const DataTypes & arguments)
+auto parseArguments(const std::string & name, const DataTypes & arguments)
 {
     DataTypes args;
+    bool tuple_argument = false;
 
     if (arguments.size() == 1)
     {
@@ -66,9 +72,13 @@ SumMapArgs parseArguments(const std::string & name, const DataTypes & arguments)
 
         const auto elems = tuple_type->getElements();
         args.insert(args.end(), elems.begin(), elems.end());
+        tuple_argument = true;
     }
     else
+    {
         args.insert(args.end(), arguments.begin(), arguments.end());
+        tuple_argument = false;
+    }
 
     if (args.size() < 2)
         throw Exception("Aggregate function " + name + " requires at least two arguments of Array type or one argument of tuple of two arrays",
@@ -92,28 +102,42 @@ SumMapArgs parseArguments(const std::string & name, const DataTypes & arguments)
         values_types.push_back(array_type->getNestedType());
     }
 
-    return  {std::move(keys_type), std::move(values_types)};
+    return  std::tuple{std::move(keys_type), std::move(values_types),
+                tuple_argument};
 }
 
-template <template <typename> class Function>
+template <bool overflow>
 AggregateFunctionPtr createAggregateFunctionSumMap(const std::string & name, const DataTypes & arguments, const Array & params)
 {
     assertNoParameters(name, params);
 
-    auto [keys_type, values_types] = parseArguments(name, arguments);
+    auto [keys_type, values_types, tuple_argument] = parseArguments(name,
+            arguments);
 
-    AggregateFunctionPtr res(createWithNumericBasedType<Function>(*keys_type, keys_type, values_types, arguments));
-    if (!res)
-        res.reset(createWithDecimalType<Function>(*keys_type, keys_type, values_types, arguments));
-    if (!res)
-        res.reset(createWithStringType<Function>(*keys_type, keys_type, values_types, arguments));
+    AggregateFunctionPtr res;
+    if (tuple_argument)
+    {
+        res.reset(createWithNumericBasedType<SumMap<overflow, true>::template F>(*keys_type, keys_type, values_types, arguments));
+        if (!res)
+            res.reset(createWithDecimalType<SumMap<overflow, true>::template F>(*keys_type, keys_type, values_types, arguments));
+        if (!res)
+            res.reset(createWithStringType<SumMap<overflow, true>::template F>(*keys_type, keys_type, values_types, arguments));
+    }
+    else
+    {
+        res.reset(createWithNumericBasedType<SumMap<overflow, false>::template F>(*keys_type, keys_type, values_types, arguments));
+        if (!res)
+            res.reset(createWithDecimalType<SumMap<overflow, false>::template F>(*keys_type, keys_type, values_types, arguments));
+        if (!res)
+            res.reset(createWithStringType<SumMap<overflow, false>::template F>(*keys_type, keys_type, values_types, arguments));
+    }
     if (!res)
         throw Exception("Illegal type of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return res;
 }
 
-template <template <typename> class Function>
+template <bool overflow>
 AggregateFunctionPtr createAggregateFunctionSumMapFiltered(const std::string & name, const DataTypes & arguments, const Array & params)
 {
     if (params.size() != 1)
@@ -125,26 +149,40 @@ AggregateFunctionPtr createAggregateFunctionSumMapFiltered(const std::string & n
         throw Exception("Aggregate function " + name + " requires an Array as parameter.",
             ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
-    auto [keys_type, values_types] = parseArguments(name, arguments);
+    auto [keys_type, values_types, tuple_argument] = parseArguments(name,
+            arguments);
 
-    AggregateFunctionPtr res(createWithNumericBasedType<Function>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
-    if (!res)
-        res.reset(createWithDecimalType<Function>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
-    if (!res)
-        res.reset(createWithStringType<Function>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
+    AggregateFunctionPtr res;
+    if (tuple_argument)
+    {
+        res.reset(createWithNumericBasedType<SumMapFiltered<overflow, true>::template F>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
+        if (!res)
+            res.reset(createWithDecimalType<SumMapFiltered<overflow, true>::template F>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
+        if (!res)
+            res.reset(createWithStringType<SumMapFiltered<overflow, true>::template F>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
+    }
+    else
+    {
+        res.reset(createWithNumericBasedType<SumMapFiltered<overflow, false>::template F>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
+        if (!res)
+            res.reset(createWithDecimalType<SumMapFiltered<overflow, false>::template F>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
+        if (!res)
+            res.reset(createWithStringType<SumMapFiltered<overflow, false>::template F>(*keys_type, keys_type, values_types, keys_to_keep, arguments, params));
+    }
     if (!res)
         throw Exception("Illegal type of argument for aggregate function " + name, ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 
     return res;
 }
+
 }
 
 void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sumMap", createAggregateFunctionSumMap<SumMapWithoutOverflow>);
-    factory.registerFunction("sumMapWithOverflow", createAggregateFunctionSumMap<SumMapWithOverflow>);
-    factory.registerFunction("sumMapFiltered", createAggregateFunctionSumMapFiltered<SumMapFilteredWithoutOverflow>);
-    factory.registerFunction("sumMapFilteredWithOverflow", createAggregateFunctionSumMapFiltered<SumMapFilteredWithOverflow>);
+    factory.registerFunction("sumMap", createAggregateFunctionSumMap<false /*overflow*/>);
+    factory.registerFunction("sumMapWithOverflow", createAggregateFunctionSumMap<true /*overflow*/>);
+    factory.registerFunction("sumMapFiltered", createAggregateFunctionSumMapFiltered<false /*overflow*/>);
+    factory.registerFunction("sumMapFilteredWithOverflow", createAggregateFunctionSumMapFiltered<true /*overflow*/>);
 }
 
 }
