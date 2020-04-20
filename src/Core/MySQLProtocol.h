@@ -491,49 +491,30 @@ public:
 
     void readPayloadImpl(ReadBuffer & buffer) override
     {
-        /// 1-byte: [0a] protocol version
         buffer.readStrict(reinterpret_cast<char *>(&protocol_version), 1);
-
-        /// string[NUL]: server version
         readNullTerminated(server_version, buffer);
-
-        /// 4-bytes: connection id
         buffer.readStrict(reinterpret_cast<char *>(&connection_id), 4);
 
-        /// 8-bytes: auth-plugin-data-part-1
         auth_plugin_data.resize(AUTH_PLUGIN_DATA_PART_1_LENGTH);
         buffer.readStrict(auth_plugin_data.data(), AUTH_PLUGIN_DATA_PART_1_LENGTH);
 
-        /// 1-byte: [00] filler
         buffer.ignore(1);
-
-        /// 2-bytes: capability flags lower 2-bytes
         buffer.readStrict(reinterpret_cast<char *>(&capability_flags), 2);
-
-        /// 1-byte: character set
         buffer.readStrict(reinterpret_cast<char *>(&character_set), 1);
-
-        /// 2-bytes: status flags(ignored)
         buffer.readStrict(reinterpret_cast<char *>(&status_flags), 2);
-
-        /// 2-bytes: capability flags upper 2-bytes
         buffer.readStrict((reinterpret_cast<char *>(&capability_flags)) + 2, 2);
 
         UInt8 auth_plugin_data_length = 0;
         if (capability_flags & MySQLProtocol::CLIENT_PLUGIN_AUTH)
         {
-            /// 1-byte: length of auth-plugin-data
             buffer.readStrict(reinterpret_cast<char *>(&auth_plugin_data_length), 1);
         }
         else
         {
-            /// 1-byte:  [00]
             buffer.ignore(1);
         }
 
-        /// string[10]     reserved (all [00])
         buffer.ignore(10);
-
         if (capability_flags & MySQLProtocol::CLIENT_SECURE_CONNECTION)
         {
             UInt8 part2_length = (auth_plugin_data_length - AUTH_PLUGIN_DATA_PART_1_LENGTH) > 13
@@ -764,7 +745,7 @@ public:
     String session_state_changes;
     String info;
 
-    OK_Packet(uint32_t capabilities_) : capabilities(capabilities_) { }
+    OK_Packet(uint32_t capabilities_) : header(0x00), capabilities(capabilities_), affected_rows(0), last_insert_id(0), status_flags(0) { }
     OK_Packet(
         uint8_t header_,
         uint32_t capabilities_,
@@ -776,6 +757,7 @@ public:
         : header(header_)
         , capabilities(capabilities_)
         , affected_rows(affected_rows_)
+        , last_insert_id(0)
         , warnings(warnings_)
         , status_flags(status_flags_)
         , session_state_changes(std::move(session_state_changes_))
@@ -814,7 +796,7 @@ public:
     {
         buffer.write(header);
         writeLengthEncodedNumber(affected_rows, buffer);
-        writeLengthEncodedNumber(0, buffer); /// last insert-id
+        writeLengthEncodedNumber(last_insert_id, buffer); /// last insert-id
 
         if (capabilities & CLIENT_PROTOCOL_41)
         {
@@ -859,7 +841,8 @@ public:
             auto len = readLengthEncodedNumber(payload);
             info.resize(len);
             payload.readStrict(info.data(), len);
-            if (status_flags & SERVER_SESSION_STATE_CHANGED) {
+            if (status_flags & SERVER_SESSION_STATE_CHANGED)
+            {
                 len = readLengthEncodedNumber(payload);
                 session_state_changes.resize(len);
                 payload.readStrict(session_state_changes.data(), len);
