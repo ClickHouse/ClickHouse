@@ -22,9 +22,6 @@
 #    include <Common/config.h>
 #endif
 
-/// For custom settings support
-// #include "DictionarySourceHelpers.h"
-
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 #    include <Poco/Data/ODBC/Connector.h>
 #endif
