@@ -423,10 +423,6 @@ if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
 endif()
 
-if(CPUINFO_LIBRARY)
-    target_link_libraries(clickhouse_common_io PRIVATE ${CPUINFO_LIBRARY})
-endif()
-
 dbms_target_link_libraries (
         PRIVATE
     clickhouse_parsers
