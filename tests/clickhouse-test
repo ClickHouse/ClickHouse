@@ -110,7 +110,7 @@ def get_stacktraces_from_gdb(server_pid):
 # collect server stacktraces from system.stack_trace table
 def get_stacktraces_from_clickhouse(client):
     try:
-        return subprocess.check_call("{} --allow_introspection_functions=1 --query \"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace FROM system.stack_trace format Vertical\"".format(client), shell=True)
+        return subprocess.check_output("{} --allow_introspection_functions=1 --query \"SELECT arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), arrayMap(x -> addressToLine(x), trace), arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace FROM system.stack_trace format Vertical\"".format(client), shell=True)
     except Exception as ex:
         return "Error occured while receiving stack traces from client: {}".format(str(ex))
 
