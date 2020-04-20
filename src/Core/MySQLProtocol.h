@@ -132,6 +132,12 @@ enum ColumnType
     MYSQL_TYPE_GEOMETRY = 0xff
 };
 
+enum ResponsePacketType
+{
+    PACKET_OK = 0x00,
+    PACKET_ERR = 0xff,
+    PACKET_EOF = 0xfe,
+};
 
 // https://dev.mysql.com/doc/dev/mysql-server/latest/group__group__cs__column__definition__flags.html
 enum ColumnDefinitionFlags
@@ -233,6 +239,7 @@ public:
     virtual void readPayload(ReadBuffer & in, uint8_t & sequence_id)
     {
         PacketPayloadReadBuffer payload(in, sequence_id);
+        payload.next();
         readPayloadImpl(payload);
         if (!payload.eof())
         {
@@ -480,8 +487,6 @@ public:
 
     void readPayloadImpl(ReadBuffer & buffer) override
     {
-        buffer.ignore(4);
-
         /// 1-byte: [0a] protocol version
         buffer.readStrict(reinterpret_cast<char *>(&protocol_version), 1);
 
@@ -583,7 +588,9 @@ public:
         , username(std::move(username_))
         , database(std::move(database_))
         , auth_response(std::move(auth_response_))
-        , auth_plugin_name(std::move(auth_plugin_name_)){};
+        , auth_plugin_name(std::move(auth_plugin_name_))
+    {
+    }
 
     size_t getPayloadSize() const override
     {
@@ -847,18 +854,19 @@ protected:
     }
 };
 
-class ERR_Packet : public WritePacket
+class ERR_Packet : public WritePacket, public ReadPacket
 {
-    int error_code;
+public:
+    int error_code = 0;
     String sql_state;
     String error_message;
-public:
+
+    ERR_Packet() = default;
     ERR_Packet(int error_code_, String sql_state_, String error_message_)
         : error_code(error_code_), sql_state(std::move(sql_state_)), error_message(std::move(error_message_))
     {
     }
 
-protected:
     size_t getPayloadSize() const override
     {
         return 4 + sql_state.length() + std::min(error_message.length(), MYSQL_ERRMSG_SIZE);
@@ -872,6 +880,51 @@ protected:
         buffer.write(sql_state.data(), sql_state.length());
         buffer.write(error_message.data(), std::min(error_message.length(), MYSQL_ERRMSG_SIZE));
     }
+
+    void readPayloadImpl(ReadBuffer & payload) override
+    {
+        UInt8 header = 0;
+        payload.readStrict(reinterpret_cast<char *>(&header), 1);
+        assert(header == 0xff);
+        payload.readStrict(reinterpret_cast<char *>(&error_code), 2);
+        payload.ignore(1);
+        payload.readStrict(reinterpret_cast<char *>(&sql_state), 5);
+        readString(error_message, payload);
+    }
+};
+
+/// https://dev.mysql.com/doc/internals/en/generic-response-packets.html
+class PacketResponse : public ReadPacket
+{
+public:
+    OK_Packet * ok;
+    ERR_Packet  err;
+    EOF_Packet * eof;
+
+    PacketResponse() = default;
+
+    void readPayloadImpl(ReadBuffer & payload) override
+    {
+        UInt8 header = *payload.position();
+        switch (header)
+        {
+            case PACKET_OK:
+                packetType = PACKET_OK;
+                break;
+            case PACKET_ERR:
+                packetType = PACKET_ERR;
+                err.readPayloadImpl(payload);
+                break;
+            case PACKET_EOF:
+                packetType = PACKET_EOF;
+                break;
+        };
+    }
+
+    ResponsePacketType getType() { return packetType; }
+
+private:
+    ResponsePacketType packetType = PACKET_OK;
 };
 
 class ColumnDefinition : public WritePacket

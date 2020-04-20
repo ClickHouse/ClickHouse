@@ -33,7 +33,7 @@ private:
     bool connected = false;
     UInt32 client_capability_flags = 0;
 
-    uint8_t seq = 1;
+    uint8_t seq = 0;
     UInt8 charset_utf8 = 33;
     UInt32 max_packet_size = MySQLProtocol::MAX_PACKET_LENGTH;
     String mysql_native_password = "mysql_native_password";
@@ -43,7 +43,7 @@ private:
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::optional<Poco::Net::SocketAddress> address;
 
-    void handshake(ReadBuffer & payload);
+    void handshake();
 
 protected:
     std::shared_ptr<MySQLProtocol::PacketSender> packet_sender;
