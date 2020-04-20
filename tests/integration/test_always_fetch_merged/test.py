@@ -59,5 +59,5 @@ def test_replica_always_download(started_cluster):
 
     node1_parts = node1.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1").strip()
     node2_parts = node2.query("SELECT COUNT() FROM system.parts WHERE table = 'test_table' and active=1").strip()
-    assert node1_parts < '10'  # something merged
-    assert node2_parts < '10'
+    assert int(node1_parts) < 10  # something merged
+    assert int(node2_parts) < 10
