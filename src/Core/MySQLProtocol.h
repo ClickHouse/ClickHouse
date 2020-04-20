@@ -492,7 +492,8 @@ public:
         buffer.readStrict(reinterpret_cast<char *>(&connection_id), 4);
 
         /// 8-bytes: auth-plugin-data-part-1
-        buffer.readStrict(reinterpret_cast<char *>(&auth_plugin_data), AUTH_PLUGIN_DATA_PART_1_LENGTH);
+        auth_plugin_data.resize(AUTH_PLUGIN_DATA_PART_1_LENGTH);
+        buffer.readStrict(auth_plugin_data.data(), AUTH_PLUGIN_DATA_PART_1_LENGTH);
 
         /// 1-byte: [00] filler
         buffer.ignore(1);
@@ -529,7 +530,8 @@ public:
             UInt8 part2_length = (auth_plugin_data_length - AUTH_PLUGIN_DATA_PART_1_LENGTH) > 13
                 ? 13
                 : (auth_plugin_data_length - AUTH_PLUGIN_DATA_PART_1_LENGTH);
-            buffer.readStrict((reinterpret_cast<char *>(&auth_plugin_data)) + AUTH_PLUGIN_DATA_PART_1_LENGTH, part2_length);
+            auth_plugin_data.resize(part2_length + AUTH_PLUGIN_DATA_PART_1_LENGTH);
+            buffer.readStrict(auth_plugin_data.data() + AUTH_PLUGIN_DATA_PART_1_LENGTH, part2_length);
         }
 
         if (capability_flags & MySQLProtocol::CLIENT_PLUGIN_AUTH)
@@ -586,7 +588,9 @@ public:
     size_t getPayloadSize() const override
     {
         size_t size = 0;
-        size += 4 + 4 + 1;
+        size += 4 + 4 + 1 + 23;
+        size += username.size() + 1;
+
         if (capability_flags & CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA)
         {
             size += getLengthEncodedStringSize(auth_response);
@@ -615,14 +619,16 @@ public:
         buffer.write(reinterpret_cast<const char *>(&capability_flags), 4);
         buffer.write(reinterpret_cast<const char *>(&max_packet_size), 4);
         buffer.write(reinterpret_cast<const char *>(&character_set), 1);
-        writeNulTerminatedString(username, buffer);
+        writeChar(0x0, 23, buffer);
 
+        writeNulTerminatedString(username, buffer);
         if (capability_flags & CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA)
         {
             writeLengthEncodedString(auth_response, buffer);
         }
         else if (capability_flags & CLIENT_SECURE_CONNECTION)
         {
+            writeChar(auth_response.size(), buffer);
             writeString(auth_response, buffer);
         }
         else
@@ -1066,17 +1072,19 @@ public:
     {
         /// https://dev.mysql.com/doc/internals/en/secure-password-authentication.html
         /// SHA1( password ) XOR SHA1( "20-bytes random data from server" <concat> SHA1( SHA1( password ) ) )
-        Poco::SHA1Engine engine;
-        engine.update(password.data(), password.size());
-        const Poco::SHA1Engine::Digest & password_sha1 = engine.digest();
-        engine.update(password_sha1.data(), password_sha1.size());
-        const Poco::SHA1Engine::Digest & password_double_sha1 = engine.digest();
+        Poco::SHA1Engine engine1;
+        engine1.update(password.data(), password.size());
+        const Poco::SHA1Engine::Digest & password_sha1 = engine1.digest();
 
-        engine.reset();
+        Poco::SHA1Engine engine2;
+        engine2.update(password.data(), password.size());
+        engine2.update(password_sha1.data(), password_sha1.size());
+        const Poco::SHA1Engine::Digest & password_double_sha1 = engine2.digest();
 
-        engine.update(auth_plugin_data.data(), auth_plugin_data.size());
-        engine.update(password_double_sha1.data(), password_double_sha1.size());
-        const Poco::SHA1Engine::Digest & digest = engine.digest();
+        Poco::SHA1Engine engine3;
+        engine3.update(auth_plugin_data.data(), auth_plugin_data.size());
+        engine3.update(password_double_sha1.data(), password_double_sha1.size());
+        const Poco::SHA1Engine::Digest & digest = engine3.digest();
 
         scramble.resize(Poco::SHA1Engine::DIGEST_SIZE);
         for (size_t i = 0; i < scramble.size(); i++)
