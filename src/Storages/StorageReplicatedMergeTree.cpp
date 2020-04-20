@@ -2695,7 +2695,7 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
 }
 
 
-void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id, const String & part_name)
+void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
 {
     auto zookeeper = getZooKeeper();
 
@@ -2721,10 +2721,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id, 
             break;
         }
 
-        if (part_name.empty() || parts_with_quorum.added_parts[partition_id] == part_name)
-            parts_with_quorum.added_parts.erase(partition_id);
-        else
-            break;
+        parts_with_quorum.added_parts.erase(partition_id);
 
         String new_added_parts = parts_with_quorum.toString();
 
