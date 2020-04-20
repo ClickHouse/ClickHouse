@@ -16,6 +16,7 @@
 #include <Dictionaries/Embedded/RegionsNames.h>
 #include <IO/WriteHelpers.h>
 #include <Common/typeid_cast.h>
+#include <Core/Defines.h>
 
 #if !defined(ARCADIA_BUILD)
 #    include <Common/config.h>
@@ -450,7 +451,7 @@ public:
             for (size_t i = 0; i < size; ++i)
             {
                 T cur = vec_from[i];
-                while (cur)
+                for (size_t depth = 0; cur && depth < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++depth)
                 {
                     res_values.push_back(cur);
                     cur = Transform::toParent(cur, dict);
