@@ -31,7 +31,7 @@ ConcatProcessor::Status ConcatProcessor::prepare()
 
     /// Check can input.
 
-    while (current_input != inputs.end() && !current_input->isFinished())
+    while (current_input != inputs.end() && current_input->isFinished())
         ++current_input;
 
     if (current_input == inputs.end())
