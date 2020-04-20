@@ -2,6 +2,10 @@
 # docker build -t yandex/clickhouse-binary-builder .
 FROM ubuntu:19.10
 
+RUN apt-get --allow-unauthenticated update -y && apt-get install --yes wget gnupg
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
+RUN echo "deb [trusted=yes] http://apt.llvm.org/eoan/ llvm-toolchain-eoan-10 main" >> /etc/apt/sources.list
+
 RUN apt-get --allow-unauthenticated update -y \
     && env DEBIAN_FRONTEND=noninteractive \
         apt-get --allow-unauthenticated install --yes --no-install-recommends \
@@ -23,6 +27,9 @@ RUN apt-get update -y \
             curl \
             gcc-9 \
             g++-9 \
+            clang-10 \
+            lld-10 \
+            clang-tidy-10 \
             clang-9 \
             lld-9 \
             clang-tidy-9 \
@@ -43,10 +50,10 @@ RUN apt-get update -y \
             build-essential
 
 # This symlink required by gcc to find lld compiler
-RUN ln -s /usr/bin/lld-9 /usr/bin/ld.lld
+RUN ln -s /usr/bin/lld-10 /usr/bin/ld.lld
 
-ENV CC=clang-9
-ENV CXX=clang++-9
+ENV CC=clang-10
+ENV CXX=clang++-10
 
 # libtapi is required to support .tbh format from recent MacOS SDKs
 RUN git clone https://github.com/tpoechtrager/apple-libtapi.git
