@@ -13,6 +13,7 @@ PEERDIR(
     clickhouse/base/widechar_width
     contrib/libs/libcpuid/libcpuid
     contrib/libs/openssl
+    contrib/libs/poco/NetSSL_OpenSSL
     contrib/libs/re2
     contrib/restricted/ryu
 )

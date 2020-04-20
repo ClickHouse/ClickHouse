@@ -11,7 +11,10 @@
 #include <Poco/Exception.h>
 #include <Poco/Net/NetException.h>
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
+
 #if USE_POCO_NETSSL
 #include <Poco/Net/SecureStreamSocket.h>
 #endif
