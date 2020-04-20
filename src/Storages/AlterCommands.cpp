@@ -472,11 +472,22 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
-bool AlterCommand::isModifyingData() const
+bool AlterCommand::isModifyingData(const StorageInMemoryMetadata & metadata) const
 {
     /// Possible change data representation on disk
     if (type == MODIFY_COLUMN)
-        return data_type != nullptr;
+    {
+        if (data_type == nullptr)
+            return false;
+
+        for (const auto & column : metadata.columns.getAllPhysical())
+        {
+            if (column.name == column_name)
+                return column.type->getName() != data_type->getName();
+        }
+
+        return true;
+    }
 
     return type == ADD_COLUMN  /// We need to change columns.txt in each part for MergeTree
         || type == DROP_COLUMN /// We need to change columns.txt in each part for MergeTree
@@ -888,11 +899,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
-bool AlterCommands::isModifyingData() const
+bool AlterCommands::isModifyingData(const StorageInMemoryMetadata & metadata) const
 {
     for (const auto & param : *this)
     {
-        if (param.isModifyingData())
+        if (param.isModifyingData(metadata))
             return true;
     }
 
