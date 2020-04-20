@@ -281,14 +281,6 @@ struct StringComparisonImpl
     {
         StringComparisonImpl<typename Op::SymmetricOp>::fixed_string_vector_constant(b_data, b_n, a_data, a_size, c);
     }
-
-    static void constantConstant(
-        const ColumnString::Chars & a_data, ColumnString::Offset a_size,
-        const ColumnString::Chars & b_data, ColumnString::Offset b_size,
-        UInt8 & c)
-    {
-        c = Op::apply(memcmpSmallAllowOverflow15(a_data.data(), a_size, b_data.data(), b_size), 0);
-    }
 };
 
 
@@ -450,14 +442,6 @@ struct StringEqualsImpl
         PaddedPODArray<UInt8> & c)
     {
         fixed_string_vector_constant(b_data, b_n, a_data, a_size, c);
-    }
-
-    static void constantConstant(
-        const ColumnString::Chars & a_data, ColumnString::Offset a_size,
-        const ColumnString::Chars & b_data, ColumnString::Offset b_size,
-        UInt8 & c)
-    {
-        c = positive == memequalSmallAllowOverflow15(a_data.data(), a_size, b_data.data(), b_size);
     }
 };
 
@@ -764,10 +748,7 @@ private:
 
         if (c0_const && c1_const)
         {
-            UInt8 res = 0;
-            StringImpl::constantConstant(*c0_const_chars, c0_const_size, *c1_const_chars, c1_const_size, res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(c0_const->size(), toField(res));
-            return true;
+            return executeString(block, result, c0_const->convertToFullColumn().get(), c1_const->convertToFullColumn().get());
         }
         else
         {
