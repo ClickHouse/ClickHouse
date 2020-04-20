@@ -363,7 +363,7 @@ gccMurmurHash(par1, ...);
 
 - Calculated hash value.
 
-Type: `UInt64`.
+Type: [UInt64](../../sql_reference/data_types/int_uint.md).
 
 **Example**
 
