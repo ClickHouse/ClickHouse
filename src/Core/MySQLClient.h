@@ -1,6 +1,6 @@
 #pragma once
-#include <Core/Types.h>
 #include <Core/MySQLProtocol.h>
+#include <Core/Types.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromPocoSocket.h>
@@ -33,8 +33,9 @@ private:
     bool connected = false;
     UInt32 client_capability_flags = 0;
 
-    uint8_t  seq = 0;
+    uint8_t seq = 1;
     UInt8 charset_utf8 = 33;
+    UInt32 max_packet_size = MySQLProtocol::MAX_PACKET_LENGTH;
     String mysql_native_password = "mysql_native_password";
 
     std::shared_ptr<ReadBuffer> in;
