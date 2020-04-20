@@ -413,16 +413,3 @@ inline char * itoa<int128_t>(int128_t i, char * p)
 {
     return impl::writeSIntText(i, p);
 }
-
-//template <>
-//inline char * itoa<uint128_t>(uint128_t i, char * p)
-//{
-//    return impl::writeUIntText(i, p);
-//}
-//
-//template <>
-//inline char * itoa<int128_t>(int128_t i, char * p)
-//{
-//    return impl::writeSIntText(i, p);
-//}
-

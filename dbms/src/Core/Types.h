@@ -177,17 +177,14 @@ struct Decimal
     const Decimal<T> & operator/ (const T & x) const { return value / x; }
     const Decimal<T> & operator% (const T & x) const { return value % x; }
 
-    bool operator== (const T & x) const { return value == x; }
+    inline bool operator< (const T & x) const { return value < x; }
+    inline bool operator> (const T & x) const { return value > x; }
+    inline bool operator== (const T & x) const { return value == x; }
 
     static T getScaleMultiplier(UInt32 scale);
 
     T value;
 };
-
-//template <>
-//String::operator+= (const Decimal<bUInt256> & x) {
-//
-//}
 
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;

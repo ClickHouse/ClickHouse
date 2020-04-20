@@ -110,3 +110,16 @@ struct is_arithmetic
 
 template <typename T>
 inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
+
+template <typename T>
+struct make_unsigned
+{
+    typedef std::make_unsigned_t<T> type;
+};
+
+template <> struct make_unsigned<bInt128>  { typedef bUInt128 type; };
+template <> struct make_unsigned<bUInt128> { typedef bUInt128 type; };
+template <> struct make_unsigned<bInt256>  { typedef bUInt256 type; };
+template <> struct make_unsigned<bUInt256> { typedef bUInt256 type; };
+
+template <typename T> using make_unsigned_t = typename make_unsigned<T>::type;

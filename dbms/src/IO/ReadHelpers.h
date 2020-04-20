@@ -107,6 +107,26 @@ inline void readPODBinary(T & x, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char *>(&x), sizeof(x));
 }
 
+inline void readBigIntBinary(bInt256 & x, ReadBuffer & buf) {
+    char sign_byte;
+    buf.read(sign_byte);
+
+    const auto & int_backend = x.backend();
+    auto limbs = int_backend.limbs();
+    buf.readStrict(const_cast<char *>(reinterpret_cast<const char *>(limbs)), int_backend.internal_limb_count * sizeof(*limbs));
+
+    if (sign_byte) {
+        x = -x;
+    }
+}
+
+inline void readBigIntBinary(bUInt256 & x, ReadBuffer & buf) {
+    const auto & int_backend = x.backend();
+    auto limbs = int_backend.limbs();
+    buf.readStrict(const_cast<char *>(reinterpret_cast<const char *>(limbs)), int_backend.internal_limb_count * sizeof(*limbs));
+}
+
+
 template <typename T>
 inline void readIntBinary(T & x, ReadBuffer & buf)
 {
@@ -259,8 +279,8 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    bool negative = false;
-    std::make_unsigned_t<T> res = 0;
+    T sign = 1;
+    T res = 0;
     if (buf.eof())
     {
         if constexpr (throw_exception)
@@ -278,7 +298,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 break;
             case '-':
                 if constexpr (is_signed_v<T>)
-                    negative = true;
+                    sign = -1;
                 else
                 {
                     if constexpr (throw_exception)
@@ -318,7 +338,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
 end:
-    x = negative ? -res : res;
+    x = sign * res;
 
     return ReturnType(true);
 }
@@ -738,16 +758,18 @@ readBinary(T & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(bInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(bInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(UInt256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
-inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(Decimal256 & x, ReadBuffer & buf) { readBigIntBinary(x.value, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
+inline void readBinary(bUInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(bInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(bUInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
+inline void readBinary(bInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
 
 template <typename T>
 inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
@@ -780,7 +802,6 @@ inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); 
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline void readText(LocalDateTime & x, ReadBuffer & buf) { readDateTimeText(x, buf); }
 inline void readText(UUID & x, ReadBuffer & buf) { readUUIDText(x, buf); }
-//inline void readText(bUInt128 & x, ReadBuffer& buf) {}
 [[noreturn]] inline void readText(UInt128 &, ReadBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-
@@ -860,6 +881,10 @@ inline void readCSV(String & x, ReadBuffer & buf, const FormatSettings::CSV & se
 inline void readCSV(LocalDate & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(bUInt128 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(bInt128 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(bUInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(bInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 [[noreturn]] inline void readCSV(UInt128 &, ReadBuffer &)
 {
     /** Because UInt128 isn't a natural type, without arithmetic operator and only use as an intermediary type -for UUID-

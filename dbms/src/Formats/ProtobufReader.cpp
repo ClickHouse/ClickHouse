@@ -436,6 +436,26 @@ public:
         cannotConvertType("UInt128");
     }
 
+    bool readUInt128(bUInt128 &) override
+    {
+        cannotConvertType("UInt128");
+    }
+
+    bool readInt128(bInt128 &) override
+    {
+        cannotConvertType("Int128");
+    }
+
+    bool readUInt256(bUInt256 &) override
+    {
+        cannotConvertType("UInt256");
+    }
+
+    bool readInt256(bInt256 &) override
+    {
+        cannotConvertType("Int256");
+    }
+
     bool readFloat32(Float32 &) override
     {
         cannotConvertType("Float32");
@@ -492,6 +512,11 @@ public:
     bool readDecimal128(Decimal128 &, UInt32, UInt32) override
     {
         cannotConvertType("Decimal128");
+    }
+
+    bool readDecimal256(Decimal256 &, UInt32, UInt32) override
+    {
+        cannotConvertType("Decimal256");
     }
 
     bool readAggregateFunction(const AggregateFunctionPtr &, AggregateDataPtr, Arena &) override

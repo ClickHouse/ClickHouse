@@ -840,6 +840,29 @@ inline void writeDateTimeTextRFC1123(time_t datetime, WriteBuffer & buf, const D
     buf.write(" GMT", 4);
 }
 
+void writeBigIntBinary(const bUInt256 & x, WriteBuffer & buf)
+{
+    const auto & int_backend = x.backend();
+    auto limbs = int_backend.limbs();
+
+    // signed 256-bit boost integer is actually 257-bit :/
+    if (int_backend.isneg()) {
+        buf.write(1);
+    }
+    else{
+        buf.write(0);
+    }
+
+    buf.write(reinterpret_cast<const char *>(limbs), int_backend.internal_limb_count * sizeof(*limbs));
+}
+
+void writeBigIntBinary(const bInt256 & x, WriteBuffer & buf)
+{
+    const auto & int_backend = x.backend();
+    auto limbs = int_backend.limbs();
+
+    buf.write(reinterpret_cast<const char *>(limbs), int_backend.internal_limb_count * sizeof(*limbs));
+}
 
 /// Methods for output in binary format.
 template <typename T>
@@ -854,14 +877,19 @@ inline void writeBinary(const UInt256 & x, WriteBuffer & buf) { writePODBinary(x
 inline void writeBinary(const Decimal32 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal64 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
-inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const Decimal256 & x, WriteBuffer & buf) { writeBigIntBinary(x.value, buf); }
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
+// boost is using built-in variables if exists
+inline void writeBinary(const bUInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const bInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const bUInt256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
+inline void writeBinary(const bInt256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
-inline std::enable_if_t<is_integral_v<T>, void>
+inline std::enable_if_t<is_integral_v<T> && (sizeof(T) <= 16), void>
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
 template <typename T>
@@ -882,13 +910,10 @@ inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x,
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
-//inline void writeText(const bUInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
-//inline void writeText(const bInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
-
-//String & operator+=(String & s, const bInt256 & x) {
-//    s += x.str();
-//    return s;
-//}
+inline void writeText(const bUInt128 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+inline void writeText(const bInt128 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+inline void writeText(const bUInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+inline void writeText(const bInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
 
 template <typename T>
 void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
@@ -900,27 +925,15 @@ void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)
     }
 
     const T whole_part = DecimalUtils::getWholePart(value, scale);
+    writeText(whole_part, ostr);
 
-    writeIntText(whole_part, ostr);
     if (scale)
     {
         writeChar('.', ostr);
-//        String str_fractional(scale, '0');
-//        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= Decimal<T>(10))
-//            str_fractional[pos] += value % Decimal<T>(10);
-//        ostr.write(str_fractional.data(), scale);
-        for (Int32 pos = scale - 1; pos >= 0; --pos, value /= Decimal<T>(10))
-            writeIntText(value % Decimal<T>(10), ostr);
+        const T fractional_part = DecimalUtils::getFractionalPart(value, scale);
+        writeText(fractional_part, ostr);
     }
 }
-
-
-//template <>
-//void writeText(Decimal<bInt256> value, UInt32 /*scale*/, WriteBuffer & ostr)
-//{
-//    // FIXME: operators do not work
-//    writeText(value.value.str(), ostr);
-//}
 
 
 /// String, date, datetime are in single quotes with C-style escaping. Numbers - without.
@@ -950,20 +963,6 @@ inline void writeQuoted(const UUID & x, WriteBuffer & buf)
     writeText(x, buf);
     writeChar('\'', buf);
 }
-
-//inline void writeQuoted(const bUInt256 & x, WriteBuffer & buf)
-//{
-//    writeChar('\'', buf);
-//    writeText(x, buf);
-//    writeChar('\'', buf);
-//}
-
-//inline void writeQuoted(const bInt256 & x, WriteBuffer & buf)
-//{
-//    writeChar('\'', buf);
-//    writeText(x, buf);
-//    writeChar('\'', buf);
-//}
 
 /// String, date, datetime are in double quotes with C-style escaping. Numbers - without.
 template <typename T>

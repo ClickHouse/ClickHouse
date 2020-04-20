@@ -320,6 +320,10 @@ public:
     virtual void writeInt64(Int64) override { cannotConvertType("Int64"); }
     virtual void writeUInt64(UInt64) override { cannotConvertType("UInt64"); }
     virtual void writeUInt128(const UInt128 &) override { cannotConvertType("UInt128"); }
+    virtual void writebUInt128(const bUInt128 &) override { cannotConvertType("UInt128"); }
+    virtual void writeInt128(const bInt128 &) override { cannotConvertType("Int128"); }
+    virtual void writeUInt256(const bUInt256 &) override { cannotConvertType("UInt256"); }
+    virtual void writeInt256(const bInt256 &) override { cannotConvertType("Int256"); }
     virtual void writeFloat32(Float32) override { cannotConvertType("Float32"); }
     virtual void writeFloat64(Float64) override { cannotConvertType("Float64"); }
     virtual void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) override {}
@@ -333,6 +337,7 @@ public:
     virtual void writeDecimal32(Decimal32, UInt32) override { cannotConvertType("Decimal32"); }
     virtual void writeDecimal64(Decimal64, UInt32) override { cannotConvertType("Decimal64"); }
     virtual void writeDecimal128(const Decimal128 &, UInt32) override { cannotConvertType("Decimal128"); }
+    virtual void writeDecimal256(const Decimal256 &, UInt32) override { cannotConvertType("Decimal256"); }
 
     virtual void writeAggregateFunction(const AggregateFunctionPtr &, ConstAggregateDataPtr) override { cannotConvertType("AggregateFunction"); }
 

@@ -164,7 +164,6 @@ template <> struct NearestFieldTypeImpl<UInt32> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<DayNum> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<UInt128> { using Type = UInt128; };
 template <> struct NearestFieldTypeImpl<UUID> { using Type = UInt128; };
-template <> struct NearestFieldTypeImpl<bUInt256> { using Type = bUInt256; };
 template <> struct NearestFieldTypeImpl<Int16> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<Int32> { using Type = Int64; };
 
@@ -176,6 +175,9 @@ template <> struct NearestFieldTypeImpl<unsigned long> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<unsigned long long> { using Type = UInt64; };
 
 template <> struct NearestFieldTypeImpl<Int128> { using Type = Int128; };
+template <> struct NearestFieldTypeImpl<bUInt128> { using Type = bUInt128; };
+template <> struct NearestFieldTypeImpl<bInt128> { using Type = bInt128; };
+template <> struct NearestFieldTypeImpl<bUInt256> { using Type = bUInt256; };
 template <> struct NearestFieldTypeImpl<bInt256> { using Type = bInt256; };
 template <> struct NearestFieldTypeImpl<Decimal32> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<Decimal64> { using Type = DecimalField<Decimal64>; };
@@ -692,9 +694,11 @@ private:
 template <> struct Field::TypeToEnum<Null>    { static const Types::Which value = Types::Null; };
 template <> struct Field::TypeToEnum<UInt64>  { static const Types::Which value = Types::UInt64; };
 template <> struct Field::TypeToEnum<UInt128> { static const Types::Which value = Types::UInt128; };
+template <> struct Field::TypeToEnum<bUInt128> { static const Types::Which value = Types::UInt128; };
 template <> struct Field::TypeToEnum<bUInt256> { static const Types::Which value = Types::UInt256; };
 template <> struct Field::TypeToEnum<Int64>   { static const Types::Which value = Types::Int64; };
 template <> struct Field::TypeToEnum<Int128>  { static const Types::Which value = Types::Int128; };
+template <> struct Field::TypeToEnum<bInt128>  { static const Types::Which value = Types::Int128; };
 template <> struct Field::TypeToEnum<bInt256>  { static const Types::Which value = Types::Int256; };
 template <> struct Field::TypeToEnum<Float64> { static const Types::Which value = Types::Float64; };
 template <> struct Field::TypeToEnum<String>  { static const Types::Which value = Types::String; };

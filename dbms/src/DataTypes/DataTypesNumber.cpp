@@ -17,8 +17,8 @@ void registerDataTypeNumbers(DataTypeFactory & factory)
     factory.registerSimpleDataType("UInt16", create<DataTypeUInt16>);
     factory.registerSimpleDataType("UInt32", create<DataTypeUInt32>);
     factory.registerSimpleDataType("UInt64", create<DataTypeUInt64>);
-    factory.registerSimpleDataType("UInt128", create<DataTypeUInt128>);
-    factory.registerSimpleDataType("UInt256", create<DataTypeUInt256>);
+    factory.registerSimpleDataType("UInt128", create<DateTypeUInt128>);
+    factory.registerSimpleDataType("UInt256", create<DateTypeUInt256>);
 
     factory.registerSimpleDataType("Int8", create<DataTypeInt8>);
     factory.registerSimpleDataType("Int16", create<DataTypeInt16>);

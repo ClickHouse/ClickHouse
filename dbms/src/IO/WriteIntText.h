@@ -30,4 +30,19 @@ void writeIntText(T x, WriteBuffer & buf)
     else
         detail::writeUIntTextFallback(x, buf);
 }
+
+//template <>
+//void writeIntText(bUInt128 x, WriteBuffer & buf)
+//{
+//    writeText()
+//}
+//
+//template <typename T>
+//void writeIntText(T x, WriteBuffer & buf)
+//{
+//    if (likely(buf.position() + WRITE_HELPERS_MAX_INT_WIDTH < buf.buffer().end()))
+//        buf.position() = itoa(x, buf.position());
+//    else
+//        detail::writeUIntTextFallback(x, buf);
+//}
 }

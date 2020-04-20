@@ -11,6 +11,8 @@
 #include <Formats/ProtobufReader.h>
 #include <Formats/ProtobufWriter.h>
 
+#include <boost/multiprecision/integer.hpp>
+
 
 namespace DB
 {
