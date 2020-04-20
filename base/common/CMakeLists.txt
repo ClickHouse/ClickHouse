@@ -1,5 +1,3 @@
-configure_file (config_common.h.in config_common.h)
-
 set (SRCS
     argsToConfig.cpp
     coverage.cpp

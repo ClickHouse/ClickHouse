@@ -29,10 +29,6 @@
 #include <AggregateFunctions/AggregateFunctionState.h>
 #include <Disks/DiskSpaceMonitor.h>
 
-#if !defined(ARCADIA_BUILD)
-#    include <common/config_common.h>
-#endif
-
 
 namespace ProfileEvents
 {

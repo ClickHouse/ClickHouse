@@ -62,7 +62,6 @@
 #include "MySQLHandlerFactory.h"
 
 #if !defined(ARCADIA_BUILD)
-#    include <common/config_common.h>
 #    include "config_core.h"
 #    include "Common/config_version.h"
 #endif
