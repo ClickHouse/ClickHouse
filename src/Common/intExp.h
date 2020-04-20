@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <limits>
 
+#include <boost/multiprecision/integer.hpp>
 
 // Also defined in Core/Defines.h
 #if !defined(NO_SANITIZE_UNDEFINED)
@@ -89,6 +90,54 @@ inline int64_t exp10_i64(int x)
 
 inline __int128 exp10_i128(int x)
 {
+    static const __int128 values[] = {
+        static_cast<__int128>(1ll),
+        static_cast<__int128>(10ll),
+        static_cast<__int128>(100ll),
+        static_cast<__int128>(1000ll),
+        static_cast<__int128>(10000ll),
+        static_cast<__int128>(100000ll),
+        static_cast<__int128>(1000000ll),
+        static_cast<__int128>(10000000ll),
+        static_cast<__int128>(100000000ll),
+        static_cast<__int128>(1000000000ll),
+        static_cast<__int128>(10000000000ll),
+        static_cast<__int128>(100000000000ll),
+        static_cast<__int128>(1000000000000ll),
+        static_cast<__int128>(10000000000000ll),
+        static_cast<__int128>(100000000000000ll),
+        static_cast<__int128>(1000000000000000ll),
+        static_cast<__int128>(10000000000000000ll),
+        static_cast<__int128>(100000000000000000ll),
+        static_cast<__int128>(1000000000000000000ll),
+        static_cast<__int128>(1000000000000000000ll) * 10ll,
+        static_cast<__int128>(1000000000000000000ll) * 100ll,
+        static_cast<__int128>(1000000000000000000ll) * 1000ll,
+        static_cast<__int128>(1000000000000000000ll) * 10000ll,
+        static_cast<__int128>(1000000000000000000ll) * 100000ll,
+        static_cast<__int128>(1000000000000000000ll) * 1000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 10000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 100000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 1000000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 10000000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 100000000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 1000000000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 10000000000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 100000000000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 1000000000000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 10000000000000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 100000000000000000ll,
+        static_cast<__int128>(1000000000000000000ll) * 100000000000000000ll * 10ll,
+        static_cast<__int128>(1000000000000000000ll) * 100000000000000000ll * 100ll,
+        static_cast<__int128>(1000000000000000000ll) * 100000000000000000ll * 1000ll
+    };
+    return values[x];
+}
+
+
+inline boost::multiprecision::int256_t exp10_i256(int x)
+{
+    // FIXME
     static const __int128 values[] = {
         static_cast<__int128>(1ll),
         static_cast<__int128>(10ll),

@@ -6,10 +6,14 @@
 #include <string>
 #include <type_traits>
 
+#include <boost/multiprecision/integer.hpp>
+
 using Int8 = int8_t;
 using Int16 = int16_t;
 using Int32 = int32_t;
 using Int64 = int64_t;
+using bInt128 = boost::multiprecision::int128_t;
+using bInt256 = boost::multiprecision::int256_t;
 
 #if __cplusplus <= 201703L
 using char8_t = unsigned char;
@@ -19,6 +23,8 @@ using UInt8 = char8_t;
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;
 using UInt64 = uint64_t;
+using bUInt128 = boost::multiprecision::uint128_t;
+using bUInt256 = boost::multiprecision::uint256_t;
 
 using String = std::string;
 
@@ -31,6 +37,12 @@ struct is_signed
     static constexpr bool value = std::is_signed_v<T>;
 };
 
+template <>
+struct is_signed<bInt256>
+{
+    static constexpr bool value = true;
+};
+
 template <typename T>
 inline constexpr bool is_signed_v = is_signed<T>::value;
 
@@ -40,6 +52,12 @@ struct is_unsigned
     static constexpr bool value = std::is_unsigned_v<T>;
 };
 
+template <>
+struct is_unsigned<bUInt256>
+{
+    static constexpr bool value = true;
+};
+
 template <typename T>
 inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
 
@@ -47,6 +65,18 @@ template <typename T>
 struct is_integral
 {
     static constexpr bool value = std::is_integral_v<T>;
+};
+
+template <>
+struct is_integral<bInt256>
+{
+    static constexpr bool value = true;
+};
+
+template <>
+struct is_integral<bUInt256>
+{
+    static constexpr bool value = true;
 };
 
 template <typename T>
@@ -60,3 +90,4 @@ struct is_arithmetic
 
 template <typename T>
 inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
+
