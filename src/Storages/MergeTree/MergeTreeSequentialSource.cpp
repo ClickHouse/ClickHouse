@@ -1,4 +1,4 @@
-#include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 
 namespace DB
@@ -8,16 +8,17 @@ namespace ErrorCodes
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
-MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
+MergeTreeSequentialSource::MergeTreeSequentialSource(
     const MergeTreeData & storage_,
-    const MergeTreeData::DataPartPtr & data_part_,
+    MergeTreeData::DataPartPtr data_part_,
     Names columns_to_read_,
     bool read_with_direct_io_,
     bool take_column_types_from_storage,
     bool quiet)
-    : storage(storage_)
-    , data_part(data_part_)
-    , columns_to_read(columns_to_read_)
+    : SourceWithProgress(storage_.getSampleBlockForColumns(columns_to_read_))
+    , storage(storage_)
+    , data_part(std::move(data_part_))
+    , columns_to_read(std::move(columns_to_read_))
     , read_with_direct_io(read_with_direct_io_)
     , mark_cache(storage.global_context.getMarkCache())
 {
@@ -34,8 +35,6 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
     }
 
     addTotalRowsApprox(data_part->rows_count);
-
-    header = storage.getSampleBlockForColumns(columns_to_read);
 
     /// Add columns because we don't want to read empty blocks
     injectRequiredColumns(storage, data_part, columns_to_read);
@@ -64,33 +63,11 @@ MergeTreeSequentialBlockInputStream::MergeTreeSequentialBlockInputStream(
         /* uncompressed_cache = */ nullptr, mark_cache.get(), reader_settings);
 }
 
-
-void MergeTreeSequentialBlockInputStream::fixHeader(Block & header_block) const
-{
-    /// Types may be different during ALTER (when this stream is used to perform an ALTER).
-    for (const auto & name_type : data_part->getColumns())
-    {
-        if (header_block.has(name_type.name))
-        {
-            auto & elem = header_block.getByName(name_type.name);
-            if (!elem.type->equals(*name_type.type))
-            {
-                elem.type = name_type.type;
-                elem.column = elem.type->createColumn();
-            }
-        }
-    }
-}
-
-Block MergeTreeSequentialBlockInputStream::getHeader() const
-{
-    return header;
-}
-
-Block MergeTreeSequentialBlockInputStream::readImpl()
+Chunk MergeTreeSequentialSource::generate()
 try
 {
-    Block res;
+    auto & header = getPort().getHeader();
+
     if (!isCancelled() && current_row < data_part->rows_count)
     {
         size_t rows_to_read = data_part->index_granularity.getMarkRows(current_mark);
@@ -98,15 +75,15 @@ try
 
         auto & sample = reader->getColumns();
         Columns columns(sample.size());
-        size_t rows_readed = reader->readRows(current_mark, continue_reading, rows_to_read, columns);
+        size_t rows_read = reader->readRows(current_mark, continue_reading, rows_to_read, columns);
 
-        if (rows_readed)
+        if (rows_read)
         {
-            current_row += rows_readed;
-            current_mark += (rows_to_read == rows_readed);
+            current_row += rows_read;
+            current_mark += (rows_to_read == rows_read);
 
             bool should_evaluate_missing_defaults = false;
-            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_readed);
+            reader->fillMissingColumns(columns, should_evaluate_missing_defaults, rows_read);
 
             if (should_evaluate_missing_defaults)
             {
@@ -115,20 +92,21 @@ try
 
             reader->performRequiredConversions(columns);
 
-            res = header.cloneEmpty();
-
             /// Reorder columns and fill result block.
             size_t num_columns = sample.size();
+            Columns res_columns;
+            res_columns.reserve(num_columns);
+
             auto it = sample.begin();
             for (size_t i = 0; i < num_columns; ++i)
             {
-                if (res.has(it->name))
-                    res.getByName(it->name).column = std::move(columns[i]);
+                if (header.has(it->name))
+                    res_columns.emplace_back(std::move(columns[i]));
 
                 ++it;
             }
 
-            res.checkNumberOfRows();
+            return Chunk(std::move(res_columns), rows_read);
         }
     }
     else
@@ -136,7 +114,7 @@ try
         finish();
     }
 
-    return res;
+    return {};
 }
 catch (...)
 {
@@ -146,8 +124,7 @@ catch (...)
     throw;
 }
 
-
-void MergeTreeSequentialBlockInputStream::finish()
+void MergeTreeSequentialSource::finish()
 {
     /** Close the files (before destroying the object).
      * When many sources are created, but simultaneously reading only a few of them,
@@ -157,7 +134,6 @@ void MergeTreeSequentialBlockInputStream::finish()
     data_part.reset();
 }
 
-
-MergeTreeSequentialBlockInputStream::~MergeTreeSequentialBlockInputStream() = default;
+MergeTreeSequentialSource::~MergeTreeSequentialSource() = default;
 
 }

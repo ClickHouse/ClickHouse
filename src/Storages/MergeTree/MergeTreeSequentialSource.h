@@ -1,5 +1,5 @@
 #pragma once
-#include <DataStreams/IBlockInputStream.h>
+#include <Processors/Sources/SourceWithProgress.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MarkRange.h>
@@ -9,39 +9,32 @@ namespace DB
 {
 
 /// Lightweight (in terms of logic) stream for reading single part from MergeTree
-class MergeTreeSequentialBlockInputStream : public IBlockInputStream
+class MergeTreeSequentialSource : public SourceWithProgress
 {
 public:
-    MergeTreeSequentialBlockInputStream(
+    MergeTreeSequentialSource(
         const MergeTreeData & storage_,
-        const MergeTreeData::DataPartPtr & data_part_,
+        MergeTreeData::DataPartPtr data_part_,
         Names columns_to_read_,
         bool read_with_direct_io_,
         bool take_column_types_from_storage,
         bool quiet = false
     );
 
-    ~MergeTreeSequentialBlockInputStream() override;
+    ~MergeTreeSequentialSource() override;
 
-    String getName() const override { return "MergeTreeSequentialBlockInputStream"; }
-
-    Block getHeader() const override;
-
-    /// Closes readers and unlock part locks
-    void finish();
+    String getName() const override { return "MergeTreeSequentialSource"; }
 
     size_t getCurrentMark() const { return current_mark; }
 
     size_t getCurrentRow() const { return current_row; }
 
 protected:
-    Block readImpl() override;
+    Chunk generate() override;
 
 private:
 
     const MergeTreeData & storage;
-
-    Block header;
 
     /// Data part will not be removed if the pointer owns it
     MergeTreeData::DataPartPtr data_part;
@@ -52,7 +45,7 @@ private:
     /// Should read using direct IO
     bool read_with_direct_io;
 
-    Logger * log = &Logger::get("MergeTreeSequentialBlockInputStream");
+    Logger * log = &Logger::get("MergeTreeSequentialSource");
 
     std::shared_ptr<MarkCache> mark_cache;
     using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
@@ -65,8 +58,8 @@ private:
     size_t current_row = 0;
 
 private:
-    void fixHeader(Block & header_block) const;
-
+    /// Closes readers and unlock part locks
+    void finish();
 };
 
 }
