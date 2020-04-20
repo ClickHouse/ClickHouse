@@ -989,7 +989,7 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
 
     if (storage_settings_ptr->always_fetch_merged_part)
     {
-        LOG_INFO(log, "Will fetch part " << entry.new_part_name << " because setting always_fetch_merged_part is set to 1");
+        LOG_INFO(log, "Will fetch part " << entry.new_part_name << " because setting 'always_fetch_merged_part' is true");
         return false;
     }
 
