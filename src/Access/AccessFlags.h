@@ -61,6 +61,10 @@ public:
 
     friend bool operator ==(const AccessFlags & left, const AccessFlags & right) { return left.flags == right.flags; }
     friend bool operator !=(const AccessFlags & left, const AccessFlags & right) { return !(left == right); }
+    friend bool operator <(const AccessFlags & left, const AccessFlags & right) { return memcmp(&left.flags, &right.flags, sizeof(Flags)) < 0; }
+    friend bool operator >(const AccessFlags & left, const AccessFlags & right) { return right < left; }
+    friend bool operator <=(const AccessFlags & left, const AccessFlags & right) { return !(right < left); }
+    friend bool operator >=(const AccessFlags & left, const AccessFlags & right) { return !(left < right); }
 
     void clear() { flags.reset(); }
 

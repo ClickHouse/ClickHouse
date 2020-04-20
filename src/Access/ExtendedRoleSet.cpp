@@ -1,3 +1,4 @@
+
 #include <Access/ExtendedRoleSet.h>
 #include <Access/AccessControlManager.h>
 #include <Access/User.h>
@@ -38,12 +39,6 @@ ExtendedRoleSet::ExtendedRoleSet(const UUID & id)
 
 
 ExtendedRoleSet::ExtendedRoleSet(const std::vector<UUID> & ids_)
-{
-    add(ids_);
-}
-
-
-ExtendedRoleSet::ExtendedRoleSet(const boost::container::flat_set<UUID> & ids_)
 {
     add(ids_);
 }
@@ -126,6 +121,7 @@ std::shared_ptr<ASTExtendedRoleSet> ExtendedRoleSet::toAST() const
         ast->names.reserve(ids.size());
         for (const UUID & id : ids)
             ast->names.emplace_back(::DB::toString(id));
+        boost::range::sort(ast->names);
     }
 
     if (!except_ids.empty())
@@ -133,6 +129,7 @@ std::shared_ptr<ASTExtendedRoleSet> ExtendedRoleSet::toAST() const
         ast->except_names.reserve(except_ids.size());
         for (const UUID & except_id : except_ids)
             ast->except_names.emplace_back(::DB::toString(except_id));
+        boost::range::sort(ast->except_names);
     }
 
     return ast;
@@ -238,13 +235,6 @@ void ExtendedRoleSet::add(const UUID & id)
 
 
 void ExtendedRoleSet::add(const std::vector<UUID> & ids_)
-{
-    for (const auto & id : ids_)
-        add(id);
-}
-
-
-void ExtendedRoleSet::add(const boost::container::flat_set<UUID> & ids_)
 {
     for (const auto & id : ids_)
         add(id);
