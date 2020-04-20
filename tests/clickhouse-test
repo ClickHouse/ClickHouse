@@ -182,7 +182,8 @@ def run_tests_array(all_tests_with_params):
             if args.skip and any(s in name for s in args.skip):
                 print(MSG_SKIPPED + " - skip")
                 skipped_total += 1
-            elif not args.zookeeper and 'zookeeper' in name:
+            elif not args.zookeeper and ('zookeeper' in name
+                    or 'replica' in name):
                 print(MSG_SKIPPED + " - no zookeeper")
                 skipped_total += 1
             elif not args.shard and ('shard' in name
@@ -568,7 +569,7 @@ if __name__ == '__main__':
         if args.tmp is None:
             args.tmp = '/tmp/clickhouse-test'
     if args.queries is None:
-        print_err("Failed to detect path to the queries directory. Please specify it with '--queries' option.")
+        print("Failed to detect path to the queries directory. Please specify it with '--queries' option.", file=sys.stderr)
         exit(1)
     if args.tmp is None:
         args.tmp = args.queries
@@ -578,7 +579,7 @@ if __name__ == '__main__':
         elif find_binary(args.binary):
             args.client = args.binary + ' client'
         else:
-            print("No 'clickhouse' binary found in PATH")
+            print("No 'clickhouse' binary found in PATH", file=sys.stderr)
             parser.print_help()
             exit(1)
 

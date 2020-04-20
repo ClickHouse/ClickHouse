@@ -140,9 +140,16 @@ report_stage_end('substitute2')
 for q in test_queries:
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
-    for conn_index, c in enumerate(connections):
-        res = c.execute(q, query_id = 'prewarm {} {}'.format(0, q))
-        print('prewarm\t' + tsv_escape(q) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+    try:
+        for conn_index, c in enumerate(connections):
+            res = c.execute(q, query_id = 'prewarm {} {}'.format(0, q))
+            print('prewarm\t' + tsv_escape(q) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+    except:
+        # If prewarm fails for some query -- skip it, and try to test the others.
+        # This might happen if the new test introduces some function that the
+        # old server doesn't support. Still, report it as an error.
+        print(traceback.format_exc(), file=sys.stderr)
+        continue
 
     # Now, perform measured runs.
     # Track the time spent by the client to process this query, so that we can notice
