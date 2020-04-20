@@ -443,8 +443,8 @@ void AvroDeserializer::createActions(const Block & header, const avro::NodePtr& 
     {
         for (size_t i = 0; i < node->leaves(); ++i)
         {
-            const auto& field_node = node->leafAt(i);
-            const auto& field_name = node->nameAt(i);
+            const auto & field_node = node->leafAt(i);
+            const auto & field_name = node->nameAt(i);
             auto field_path = current_path.empty() ? field_name : current_path + "." + field_name;
             createActions(header, field_node, field_path);
         }
@@ -454,7 +454,7 @@ void AvroDeserializer::createActions(const Block & header, const avro::NodePtr& 
         if (header.has(current_path))
         {
             auto target_column_idx = header.getPositionByName(current_path);
-            const auto& column = header.getByPosition(target_column_idx);
+            const auto & column = header.getByPosition(target_column_idx);
             try
             {
                 actions.emplace_back(target_column_idx, createDeserializeFn(node, column.type));
