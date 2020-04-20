@@ -23,13 +23,12 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CANNOT_COMPILE_REGEXP;
-    extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(IServer & server_, const std::string & name_)
-    : server(server_), log(&Logger::get(name_)), name(name_)
+HTTPRequestHandlerFactoryMain::HTTPRequestHandlerFactoryMain(const std::string & name_)
+    : log(&Logger::get(name_)), name(name_)
 {
 }
 
@@ -77,29 +76,37 @@ HTTPRequestHandlerFactoryMain::TThis * HTTPRequestHandlerFactoryMain::addHandler
 
 static inline auto createHandlersFactoryFromConfig(IServer & server, const std::string & name, const String & prefix)
 {
-    auto main_handler_factory = new HTTPRequestHandlerFactoryMain(server, name);
+    auto main_handler_factory = new HTTPRequestHandlerFactoryMain(name);
 
-    Poco::Util::AbstractConfiguration::Keys keys;
-    server.config().keys(prefix, keys);
-
-    for (const auto & key : keys)
+    try
     {
-        if (!startsWith(key, "routing_rule"))
-            throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'routing_rule'", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        Poco::Util::AbstractConfiguration::Keys keys;
+        server.config().keys(prefix, keys);
 
-        const auto & handler_type = server.config().getString(prefix + "." + key + ".handler.type", "");
+        for (const auto & key : keys)
+        {
+            if (!startsWith(key, "routing_rule"))
+                throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'routing_rule'", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
 
-        if (handler_type == "static")
-            main_handler_factory->addHandler(createStaticHandlerFactory(server, prefix));
-        else if (handler_type == "dynamic_query_handler")
-            main_handler_factory->addHandler(createDynamicHandlerFactory(server, prefix));
-        else if (handler_type == "predefine_query_handler")
-            main_handler_factory->addHandler(createPredefineHandlerFactory(server, prefix));
-        else
-            throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'routing_rule'", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+            const auto & handler_type = server.config().getString(prefix + "." + key + ".handler.type", "");
+
+            if (handler_type == "static")
+                main_handler_factory->addHandler(createStaticHandlerFactory(server, prefix));
+            else if (handler_type == "dynamic_query_handler")
+                main_handler_factory->addHandler(createDynamicHandlerFactory(server, prefix));
+            else if (handler_type == "predefine_query_handler")
+                main_handler_factory->addHandler(createPredefineHandlerFactory(server, prefix));
+            else
+                throw Exception("Unknown element in config: " + prefix + "." + key + ", must be 'routing_rule'", ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
+        }
+
+        return main_handler_factory;
     }
-
-    return main_handler_factory;
+    catch (...)
+    {
+        delete main_handler_factory;
+        throw;
+    }
 }
 
 static const auto ping_response_expression = "Ok.\n";
@@ -111,7 +118,7 @@ static inline Poco::Net::HTTPRequestHandlerFactory * createHTTPHandlerFactory(IS
         return createHandlersFactoryFromConfig(server, name, "routing_rules");
     else
     {
-        return (new HTTPRequestHandlerFactoryMain(server, name))
+        return (new HTTPRequestHandlerFactoryMain(name))
             ->addHandler((new RoutingRuleHTTPHandlerFactory<StaticRequestHandler>(server, root_response_expression))
                 ->attachStrictPath("/")->allowGetAndHeadRequest())
             ->addHandler((new RoutingRuleHTTPHandlerFactory<StaticRequestHandler>(server, ping_response_expression))
@@ -127,7 +134,7 @@ static inline Poco::Net::HTTPRequestHandlerFactory * createHTTPHandlerFactory(IS
 
 static inline Poco::Net::HTTPRequestHandlerFactory * createInterserverHTTPHandlerFactory(IServer & server, const std::string & name)
 {
-    return (new HTTPRequestHandlerFactoryMain(server, name))
+    return (new HTTPRequestHandlerFactoryMain(name))
         ->addHandler((new RoutingRuleHTTPHandlerFactory<StaticRequestHandler>(server, root_response_expression))
             ->attachStrictPath("/")->allowGetAndHeadRequest())
         ->addHandler((new RoutingRuleHTTPHandlerFactory<StaticRequestHandler>(server, ping_response_expression))
