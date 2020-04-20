@@ -3307,7 +3307,6 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->alter_version = new_metadata_version;
         alter_entry->create_time = time(nullptr);
 
-
         auto maybe_mutation_commands = params.getMutationCommands(current_metadata);
         alter_entry->have_mutation = !maybe_mutation_commands.empty();
 
