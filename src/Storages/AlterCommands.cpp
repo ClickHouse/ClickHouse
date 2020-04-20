@@ -480,11 +480,10 @@ bool AlterCommand::isModifyingData(const StorageInMemoryMetadata & metadata) con
         if (data_type == nullptr)
             return false;
 
+        /// It is allowed to ALTER data type to the same type as before.
         for (const auto & column : metadata.columns.getAllPhysical())
-        {
             if (column.name == column_name)
                 return !column.type->equals(*data_type);
-        }
 
         return true;
     }
