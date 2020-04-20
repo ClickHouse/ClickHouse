@@ -61,6 +61,10 @@ public:
     bool readNumber(Int64 & value) { return current_converter->readInt64(value); }
     bool readNumber(UInt64 & value) { return current_converter->readUInt64(value); }
     bool readNumber(UInt128 & value) { return current_converter->readUInt128(value); }
+    bool readNumber(bInt128 & value) { return current_converter->readbInt128(value); }
+    bool readNumber(bUInt128 & value) { return current_converter->readbUInt128(value); }
+    bool readNumber(bInt256 & value) { return current_converter->readbInt256(value); }
+    bool readNumber(bUInt256 & value) { return current_converter->readbUInt256(value); }
     bool readNumber(Float32 & value) { return current_converter->readFloat32(value); }
     bool readNumber(Float64 & value) { return current_converter->readFloat64(value); }
 
@@ -146,6 +150,12 @@ private:
        virtual bool readInt64(Int64 &) = 0;
        virtual bool readUInt64(UInt64 &) = 0;
        virtual bool readUInt128(UInt128 &) = 0;
+
+       virtual bool readbInt128(bInt128 &) = 0;
+       virtual bool readbUInt128(bUInt128 &) = 0;
+       virtual bool readbInt256(bInt256 &) = 0;
+       virtual bool readbUInt256(bUInt256 &) = 0;
+
        virtual bool readFloat32(Float32 &) = 0;
        virtual bool readFloat64(Float64 &) = 0;
        virtual void prepareEnumMapping8(const std::vector<std::pair<std::string, Int8>> &) = 0;
@@ -221,6 +231,10 @@ public:
     bool readNumber(Int64 &) { return false; }
     bool readNumber(UInt64 &) { return false; }
     bool readNumber(UInt128 &) { return false; }
+    bool readNumber(bInt128 &) { return false; }
+    bool readNumber(bUInt128 &) { return false; }
+    bool readNumber(bInt256 &) { return false; }
+    bool readNumber(bUInt256 &) { return false; }
     bool readNumber(Float32 &) { return false; }
     bool readNumber(Float64 &) { return false; }
     bool readStringInto(PaddedPODArray<UInt8> &) { return false; }

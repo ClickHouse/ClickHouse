@@ -177,6 +177,11 @@ template <> struct NearestFieldTypeImpl<long long> { using Type = Int64; };
 template <> struct NearestFieldTypeImpl<unsigned long> { using Type = UInt64; };
 template <> struct NearestFieldTypeImpl<unsigned long long> { using Type = UInt64; };
 
+template <> struct NearestFieldTypeImpl<bUInt128> { using Type = bUInt128; };
+template <> struct NearestFieldTypeImpl<bInt128> { using Type = bInt128; };
+template <> struct NearestFieldTypeImpl<bUInt256> { using Type = bUInt256; };
+template <> struct NearestFieldTypeImpl<bInt256> { using Type = bInt256; };
+
 template <> struct NearestFieldTypeImpl<Int128> { using Type = Int128; };
 template <> struct NearestFieldTypeImpl<Decimal32> { using Type = DecimalField<Decimal32>; };
 template <> struct NearestFieldTypeImpl<Decimal64> { using Type = DecimalField<Decimal64>; };

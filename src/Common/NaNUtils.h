@@ -37,7 +37,7 @@ std::enable_if_t<std::is_floating_point_v<T>, T> NaNOrZero()
 }
 
 template <typename T>
-std::enable_if_t<std::numeric_limits<T>::is_integer, T> NaNOrZero()
+std::enable_if_t<std::numeric_limits<T>::is_integer && (sizeof(T) <= 16), T> NaNOrZero()
 {
     return 0;
 }

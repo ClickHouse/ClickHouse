@@ -259,8 +259,8 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    bool negative = false;
-    std::make_unsigned_t<T> res = 0;
+    short res_sign = 1;
+    make_unsigned_t<T> res = 0;
     if (buf.eof())
     {
         if constexpr (throw_exception)
@@ -278,7 +278,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
                 break;
             case '-':
                 if constexpr (is_signed_v<T>)
-                    negative = true;
+                    res_sign = -1;
                 else
                 {
                     if constexpr (throw_exception)
@@ -318,7 +318,7 @@ ReturnType readIntTextImpl(T & x, ReadBuffer & buf)
     }
 
 end:
-    x = negative ? -res : res;
+    x = res_sign * res;
 
     return ReturnType(true);
 }
@@ -745,6 +745,11 @@ inline void readBinary(Decimal64 & x, ReadBuffer & buf) { readPODBinary(x, buf);
 inline void readBinary(Decimal128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(LocalDate & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 
+template <typename T> void readBigIntBinary(T &, ReadBuffer &) { /* TBD */ }
+inline void readBinary(bUInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(bInt128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
+inline void readBinary(bUInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
+inline void readBinary(bInt256 & x, ReadBuffer & buf) { readBigIntBinary(x, buf); }
 
 template <typename T>
 inline std::enable_if_t<is_arithmetic_v<T> && (sizeof(T) <= 8), void>
@@ -871,6 +876,10 @@ inline void readCSV(UUID & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
      */
     throw Exception("UInt128 cannot be read as a text", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 }
+inline void readCSV(bUInt128 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(bInt128 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(bUInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
+inline void readCSV(bInt256 & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 
 template <typename T>
 void readBinary(std::vector<T> & x, ReadBuffer & buf)

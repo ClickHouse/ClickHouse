@@ -822,10 +822,15 @@ inline void writeBinary(const Decimal128 & x, WriteBuffer & buf) { writePODBinar
 inline void writeBinary(const LocalDate & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 inline void writeBinary(const LocalDateTime & x, WriteBuffer & buf) { writePODBinary(x, buf); }
 
+template <typename T> void writeBigIntBinary(const T & x, WriteBuffer & buf);
+inline void writeBinary(const bUInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const bInt128 & x, WriteBuffer & buf) { writePODBinary(x, buf); }
+inline void writeBinary(const bUInt256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
+inline void writeBinary(const bInt256 & x, WriteBuffer & buf) { writeBigIntBinary(x, buf); }
 
 /// Methods for outputting the value in text form for a tab-separated format.
 template <typename T>
-inline std::enable_if_t<is_integral_v<T>, void>
+inline std::enable_if_t<is_integral_v<T> && (sizeof(T) <= 16), void>
 writeText(const T & x, WriteBuffer & buf) { writeIntText(x, buf); }
 
 template <typename T>
@@ -846,6 +851,10 @@ inline void writeText(const LocalDate & x, WriteBuffer & buf) { writeDateText(x,
 inline void writeText(const LocalDateTime & x, WriteBuffer & buf) { writeDateTimeText(x, buf); }
 inline void writeText(const UUID & x, WriteBuffer & buf) { writeUUIDText(x, buf); }
 inline void writeText(const UInt128 & x, WriteBuffer & buf) { writeText(UUID(x), buf); }
+inline void writeText(const bUInt128 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+inline void writeText(const bInt128 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+inline void writeText(const bUInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
+inline void writeText(const bInt256 & x, WriteBuffer & buf) { writeText(x.str(), buf); }
 
 template <typename T>
 void writeText(Decimal<T> value, UInt32 scale, WriteBuffer & ostr)

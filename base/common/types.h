@@ -37,11 +37,8 @@ struct is_signed
     static constexpr bool value = std::is_signed_v<T>;
 };
 
-template <>
-struct is_signed<bInt256>
-{
-    static constexpr bool value = true;
-};
+template <> struct is_signed<bUInt128> { static constexpr bool value = true; };
+template <> struct is_signed<bUInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_signed_v = is_signed<T>::value;
@@ -52,11 +49,8 @@ struct is_unsigned
     static constexpr bool value = std::is_unsigned_v<T>;
 };
 
-template <>
-struct is_unsigned<bUInt256>
-{
-    static constexpr bool value = true;
-};
+template <> struct is_unsigned<bUInt128> { static constexpr bool value = true; };
+template <> struct is_unsigned<bUInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_unsigned_v = is_unsigned<T>::value;
@@ -67,17 +61,10 @@ struct is_integral
     static constexpr bool value = std::is_integral_v<T>;
 };
 
-template <>
-struct is_integral<bInt256>
-{
-    static constexpr bool value = true;
-};
-
-template <>
-struct is_integral<bUInt256>
-{
-    static constexpr bool value = true;
-};
+template <> struct is_integral<bUInt128> { static constexpr bool value = true; };
+template <> struct is_integral<bInt128> { static constexpr bool value = true; };
+template <> struct is_integral<bUInt256> { static constexpr bool value = true; };
+template <> struct is_integral<bInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_integral_v = is_integral<T>::value;
@@ -91,3 +78,15 @@ struct is_arithmetic
 template <typename T>
 inline constexpr bool is_arithmetic_v = is_arithmetic<T>::value;
 
+template <typename T>
+struct make_unsigned
+{
+    typedef std::make_unsigned_t<T> type;
+};
+
+template <> struct make_unsigned<bInt128>  { typedef bUInt128 type; };
+template <> struct make_unsigned<bUInt128> { typedef bUInt128 type; };
+template <> struct make_unsigned<bInt256>  { typedef bUInt256 type; };
+template <> struct make_unsigned<bUInt256> { typedef bUInt256 type; };
+
+template <typename T> using make_unsigned_t = typename make_unsigned<T>::type;
