@@ -7,6 +7,7 @@
 #include "DictionarySourceFactory.h"
 #include "DictionaryStructure.h"
 #include "registerDictionaries.h"
+#include "DictionarySourceHelpers.h"
 
 namespace DB
 {
@@ -83,7 +84,9 @@ void registerDictionarySourceFile(DictionarySourceFactory & factory)
         const auto filepath = config.getString(config_prefix + ".file.path");
         const auto format = config.getString(config_prefix + ".file.format");
 
-        return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context, check_config);
+        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+
+        return std::make_unique<FileDictionarySource>(filepath, format, sample_block, context_local_copy, check_config);
     };
 
     factory.registerSource("file", create_table_source);
