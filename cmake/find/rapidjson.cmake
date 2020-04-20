@@ -1,4 +1,4 @@
-option(ENABLE_RAPIDJSON "Use rapidjson" ON)
+option(ENABLE_RAPIDJSON "Use rapidjson" ${ENABLE_LIBRARIES})
 if(NOT ENABLE_RAPIDJSON)
     return()
 endif()

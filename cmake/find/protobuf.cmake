@@ -1,6 +1,6 @@
-option (ENABLE_PROTOBUF "Enable protobuf" ON)
+option(ENABLE_PROTOBUF "Enable protobuf" ${ENABLE_LIBRARIES})
 
-if (ENABLE_PROTOBUF)
+if(ENABLE_PROTOBUF)
 
 option(USE_INTERNAL_PROTOBUF_LIBRARY "Set to FALSE to use system protobuf instead of bundled" ${NOT_UNBUNDLED})
 
@@ -104,4 +104,4 @@ endif()
 
 endif()
 
-message(STATUS "Using protobuf=${USE_PROTOBUF}: ${Protobuf_INCLUDE_DIR} : ${Protobuf_LIBRARY}")
+message(STATUS "Using protobuf=${USE_PROTOBUF}: ${Protobuf_INCLUDE_DIR} : ${Protobuf_LIBRARY} : ${Protobuf_PROTOC_EXECUTABLE}")

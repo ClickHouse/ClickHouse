@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import requests
+import time
 
 
 class Query:
@@ -57,7 +58,7 @@ class Query:
         return logins
 
     _LABELS = '''
-        repository(owner: "yandex" name: "ClickHouse") {{
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
             pullRequest(number: {number}) {{
                 labels(first: {max_page_size} {next}) {{
                     pageInfo {{
@@ -99,7 +100,7 @@ class Query:
         return labels
 
     _TIMELINE = '''
-        repository(owner: "yandex" name: "ClickHouse") {{
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
             pullRequest(number: {number}) {{
                 timeline(first: {max_page_size} {next}) {{
                     pageInfo {{
@@ -164,7 +165,7 @@ class Query:
         return events
 
     _PULL_REQUESTS = '''
-        repository(owner: "yandex" name: "ClickHouse") {{
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
             defaultBranchRef {{
                 name
                 target {{
@@ -280,7 +281,7 @@ class Query:
                     f'there are {commit["associatedPullRequests"]["totalCount"]} pull-requests merged in commit {commit["oid"]}'
 
                 for pull_request in commit['associatedPullRequests']['nodes']:
-                    if(pull_request['baseRepository']['nameWithOwner'] == 'yandex/ClickHouse' and
+                    if(pull_request['baseRepository']['nameWithOwner'] == 'ClickHouse/ClickHouse' and
                        pull_request['baseRefName'] == default_branch_name and
                        pull_request['mergeCommit']['oid'] == commit['oid'] and
                        (not login or pull_request['author']['login'] == login)):
@@ -289,7 +290,7 @@ class Query:
         return pull_requests
 
     _DEFAULT = '''
-        repository(owner: "yandex", name: "ClickHouse") {
+        repository(owner: "ClickHouse", name: "ClickHouse") {
             defaultBranchRef {
                 name
             }
@@ -304,7 +305,7 @@ class Query:
         return self._run(Query._DEFAULT)['repository']['defaultBranchRef']['name']
 
     _GET_LABEL = '''
-        repository(owner: "yandex" name: "ClickHouse") {{
+        repository(owner: "ClickHouse" name: "ClickHouse") {{
             labels(first: {max_page_size} {next} query: "{name}") {{
                 pageInfo {{
                     hasNextPage
@@ -394,20 +395,28 @@ class Query:
                 }}
             }}
             '''
-        request = requests_retry_session().post('https://api.github.com/graphql', json={'query': query}, headers=headers)
-        if request.status_code == 200:
-            result = request.json()
-            if 'errors' in result:
-                raise Exception(f'Errors occured: {result["errors"]}')
 
-            if not is_mutation:
-                import inspect
-                caller = inspect.getouterframes(inspect.currentframe(), 2)[1][3]
-                if caller not in self.api_costs.keys():
-                    self.api_costs[caller] = 0
-                self.api_costs[caller] += result['data']['rateLimit']['cost']
+        while True:
+            request = requests_retry_session().post('https://api.github.com/graphql', json={'query': query}, headers=headers)
+            if request.status_code == 200:
+                result = request.json()
+                if 'errors' in result:
+                    raise Exception(f'Errors occured: {result["errors"]}')
 
-            return result['data']
-        else:
-            import json
-            raise Exception(f'Query failed with code {request.status_code}:\n{json.dumps(request.json(), indent=4)}')
+                if not is_mutation:
+                    import inspect
+                    caller = inspect.getouterframes(inspect.currentframe(), 2)[1][3]
+                    if caller not in self.api_costs.keys():
+                        self.api_costs[caller] = 0
+                    self.api_costs[caller] += result['data']['rateLimit']['cost']
+
+                return result['data']
+            else:
+                import json
+                resp = request.json()
+                if resp and len(resp) > 0 and resp[0] and 'type' in resp[0] and resp[0]['type'] == 'RATE_LIMITED':
+                    print("API rate limit exceeded. Waiting for 1 second.")
+                    time.sleep(1)
+                    continue
+
+                raise Exception(f'Query failed with code {request.status_code}:\n{json.dumps(resp, indent=4)}')

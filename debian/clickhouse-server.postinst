@@ -4,6 +4,7 @@ set -e
 
 CLICKHOUSE_USER=${CLICKHOUSE_USER:=clickhouse}
 CLICKHOUSE_GROUP=${CLICKHOUSE_GROUP:=${CLICKHOUSE_USER}}
+# Please note that we don't support paths with whitespaces. This is rather ignorant.
 CLICKHOUSE_CONFDIR=${CLICKHOUSE_CONFDIR:=/etc/clickhouse-server}
 CLICKHOUSE_DATADIR=${CLICKHOUSE_DATADIR:=/var/lib/clickhouse}
 CLICKHOUSE_LOGDIR=${CLICKHOUSE_LOGDIR:=/var/log/clickhouse-server}
@@ -12,19 +13,14 @@ CLICKHOUSE_GENERIC_PROGRAM=${CLICKHOUSE_GENERIC_PROGRAM:=clickhouse}
 EXTRACT_FROM_CONFIG=${CLICKHOUSE_GENERIC_PROGRAM}-extract-from-config
 CLICKHOUSE_CONFIG=$CLICKHOUSE_CONFDIR/config.xml
 
-OS=${OS=`lsb_release -is 2>/dev/null ||:`}
-[ -z "$OS" ] && [ -f /etc/os-release ] && . /etc/os-release && OS=$ID
-[ -z "$OS" ] && [ -f /etc/centos-release ] && OS=centos
-[ -z "$OS" ] && OS=`uname -s ||:`
-
 [ -f /usr/share/debconf/confmodule ] && . /usr/share/debconf/confmodule
 [ -f /etc/default/clickhouse ] && . /etc/default/clickhouse
 
-if [ "$OS" = "rhel" ] || [ "$OS" = "centos" ] || [ "$OS" = "fedora" ] || [ "$OS" = "CentOS" ] || [ "$OS" = "Fedora" ] || [ "$OS" = "ol" ]; then
-    is_rh=1
+if [ ! -f "/etc/debian_version" ]; then
+    not_deb_os=1
 fi
 
-if [ "$1" = configure ] || [ -n "$is_rh" ]; then
+if [ "$1" = configure ] || [ -n "$not_deb_os" ]; then
     if [ -x "/bin/systemctl" ] && [ -f /etc/systemd/system/clickhouse-server.service ] && [ -d /run/systemd/system ]; then
         # if old rc.d service present - remove it
         if [ -x "/etc/init.d/clickhouse-server" ] && [ -x "/usr/sbin/update-rc.d" ]; then
@@ -47,9 +43,8 @@ if [ "$1" = configure ] || [ -n "$is_rh" ]; then
 
     # Make sure the administrative user exists
     if ! getent passwd ${CLICKHOUSE_USER} > /dev/null; then
-        if [ -n "$is_rh" ]; then
-            adduser --system --no-create-home --home /nonexistent \
-                --shell /bin/false ${CLICKHOUSE_USER} > /dev/null
+        if [ -n "$not_deb_os" ]; then
+            useradd -r -s /bin/false --home-dir /nonexistent ${CLICKHOUSE_USER} > /dev/null
         else
             adduser --system --disabled-login --no-create-home --home /nonexistent \
                 --shell /bin/false --group --gecos "ClickHouse server" ${CLICKHOUSE_USER} > /dev/null
@@ -58,12 +53,12 @@ if [ "$1" = configure ] || [ -n "$is_rh" ]; then
 
     # if the user was created manually, make sure the group is there as well
     if ! getent group ${CLICKHOUSE_GROUP} > /dev/null; then
-        addgroup --system ${CLICKHOUSE_GROUP} > /dev/null
+        groupadd -r ${CLICKHOUSE_GROUP} > /dev/null
     fi
 
     # make sure user is in the correct group
     if ! id -Gn ${CLICKHOUSE_USER} | grep -qw ${CLICKHOUSE_USER}; then
-        adduser ${CLICKHOUSE_USER} ${CLICKHOUSE_GROUP} > /dev/null
+        usermod -a -G ${CLICKHOUSE_GROUP} ${CLICKHOUSE_USER} > /dev/null
     fi
 
     # check validity of user and group
@@ -80,6 +75,9 @@ Please fix this and reinstall this package." >&2
     fi
 
     if [ -x "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG" ] && [ -f "$CLICKHOUSE_CONFIG" ]; then
+        if [ -z "$SHELL" ]; then
+            SHELL="/bin/sh"
+        fi
         CLICKHOUSE_DATADIR_FROM_CONFIG=$(su -s $SHELL ${CLICKHOUSE_USER} -c "$CLICKHOUSE_BINDIR/$EXTRACT_FROM_CONFIG --config-file=\"$CLICKHOUSE_CONFIG\" --key=path") ||:
         echo "Path to data directory in ${CLICKHOUSE_CONFIG}: ${CLICKHOUSE_DATADIR_FROM_CONFIG}"
     fi
@@ -135,6 +133,8 @@ Please fix this and reinstall this package." >&2
         defaultpassword="$RET"
         if [ -n "$defaultpassword" ]; then
             echo "<yandex><users><default><password>$defaultpassword</password></default></users></yandex>" > ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chown ${CLICKHOUSE_USER}:${CLICKHOUSE_GROUP} ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
+            chmod 600 ${CLICKHOUSE_CONFDIR}/users.d/default-password.xml
         fi
 
         # everything went well, so now let's reset the password

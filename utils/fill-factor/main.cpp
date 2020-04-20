@@ -5,7 +5,7 @@
 #include <emmintrin.h>
 #endif
 
-#include <common/Types.h>
+#include <common/types.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBufferFromFileDescriptor.h>
 
@@ -53,7 +53,7 @@ int main(int argc, char ** argv)
         std::cerr << e.what() << ", " << e.message() << std::endl
             << std::endl
             << "Stack trace:" << std::endl
-            << e.getStackTrace().toString()
+            << e.getStackTraceString()
             << std::endl;
         throw;
     }

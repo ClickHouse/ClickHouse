@@ -1,6 +1,7 @@
-# Criteo TB级别点击日志
 
-可以从<http://labs.criteo.com/downloads/download-terabyte-click-logs/>上下载数据
+# Criteo TB级别点击日志 {#criteo-tbji-bie-dian-ji-ri-zhi}
+
+可以从http://labs.criteo.com/downloads/download-terabyte-click-logs/上下载数据
 
 创建原始数据对应的表结构：
 
@@ -10,8 +11,8 @@ CREATE TABLE criteo_log (date Date, clicked UInt8, int1 Int32, int2 Int32, int3 
 
 下载数据：
 
-```bash
-for i in {00..23}; do echo $i; zcat datasets/criteo/day_${i#0}.gz | sed -r 's/^/2000-01-'${i/00/24}'\t/' | clickhouse-client --host=example-perftest01j --query="INSERT INTO criteo_log FORMAT TabSeparated"; done
+``` bash
+$ for i in {00..23}; do echo $i; zcat datasets/criteo/day_${i#0}.gz | sed -r 's/^/2000-01-'${i/00/24}'\t/' | clickhouse-client --host=example-perftest01j --query="INSERT INTO criteo_log FORMAT TabSeparated"; done
 ```
 
 创建转换后的数据对应的表结构：
@@ -71,5 +72,4 @@ INSERT INTO criteo SELECT date, clicked, int1, int2, int3, int4, int5, int6, int
 DROP TABLE criteo_log;
 ```
 
-
-[Original article](https://clickhouse.yandex/docs/en/getting_started/example_datasets/criteo/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets/criteo/) <!--hide-->

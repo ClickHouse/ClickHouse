@@ -65,7 +65,7 @@ void checkCompressedHeaders(const std::string & mrk_path, const std::string & bi
 
         out << "Mark " << mark_num << ", points to " << offset_in_compressed_file << ", " << offset_in_decompressed_block << ". ";
 
-        bin_in.seek(offset_in_compressed_file);
+        bin_in.seek(offset_in_compressed_file, SEEK_SET);
         auto sizes = stat(bin_in, out);
 
         out << "Block sizes: " << sizes.first << ", " << sizes.second << '\n' << DB::flush;
@@ -76,7 +76,7 @@ void checkCompressedHeaders(const std::string & mrk_path, const std::string & bi
 void checkByCompressedReadBuffer(const std::string & mrk_path, const std::string & bin_path)
 {
     DB::ReadBufferFromFile mrk_in(mrk_path);
-    DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0);
+    DB::CompressedReadBufferFromFile bin_in(bin_path, 0, 0, 0);
 
     DB::WriteBufferFromFileDescriptor out(STDOUT_FILENO);
     bool mrk2_format = boost::algorithm::ends_with(mrk_path, ".mrk2");
@@ -133,7 +133,7 @@ int main(int argc, char ** argv)
         std::cerr << e.what() << ", " << e.message() << std::endl
             << std::endl
             << "Stack trace:" << std::endl
-            << e.getStackTrace().toString()
+            << e.getStackTraceString()
             << std::endl;
         throw;
     }

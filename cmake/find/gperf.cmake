@@ -1,7 +1,7 @@
 # Check if gperf was installed
 find_program(GPERF gperf)
 if(GPERF)
-    option(ENABLE_GPERF "Use gperf function hash generator tool" ON)
+    option(ENABLE_GPERF "Use gperf function hash generator tool" ${ENABLE_LIBRARIES})
 endif()
 if (ENABLE_GPERF)
     if(NOT GPERF)

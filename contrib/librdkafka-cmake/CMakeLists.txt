@@ -23,6 +23,8 @@ set(SRCS
   ${RDKAFKA_SOURCE_DIR}/rdkafka_lz4.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_metadata.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_metadata_cache.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_mock.c
+  ${RDKAFKA_SOURCE_DIR}/rdkafka_mock_handlers.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_msg.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_msgset_reader.c
   ${RDKAFKA_SOURCE_DIR}/rdkafka_msgset_writer.c
@@ -62,6 +64,7 @@ set(SRCS
 )
 
 add_library(rdkafka ${SRCS})
+target_compile_options(rdkafka PRIVATE -fno-sanitize=undefined)
 target_include_directories(rdkafka SYSTEM PUBLIC include)
 target_include_directories(rdkafka SYSTEM PUBLIC ${RDKAFKA_SOURCE_DIR})         # Because weird logic with "include_next" is used.
 target_include_directories(rdkafka SYSTEM PRIVATE ${ZSTD_INCLUDE_DIR}/common)   # Because wrong path to "zstd_errors.h" is used.

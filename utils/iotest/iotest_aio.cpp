@@ -3,7 +3,7 @@ int main(int, char **) { return 0; }
 #else
 
 #include <fcntl.h>
-#include <port/unistd.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <time.h>
 #include <iostream>
@@ -15,9 +15,6 @@ int main(int, char **) { return 0; }
 #include <Common/Stopwatch.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -175,7 +172,7 @@ int mainImpl(int argc, char ** argv)
     Stopwatch watch;
 
     for (size_t i = 0; i < threads_count; ++i)
-        pool.schedule(std::bind(thread, fd, mode, min_offset, max_offset, block_size, buffers_count, count));
+        pool.scheduleOrThrowOnError(std::bind(thread, fd, mode, min_offset, max_offset, block_size, buffers_count, count));
     pool.wait();
 
     watch.stop();

@@ -13,6 +13,7 @@
 //    machines.
 
 #include "murmurhash2.h"
+#include <cstring>
 
 // Platform-specific functions and macros
 // Microsoft Visual Studio
@@ -48,7 +49,8 @@ uint32_t MurmurHash2(const void * key, int len, uint32_t seed)
 
     while (len >= 4)
     {
-        uint32_t k = *reinterpret_cast<const uint32_t *>(data);
+        uint32_t k;
+        memcpy(&k, data, sizeof(k));
         k *= m;
         k ^= k >> r;
         k *= m;

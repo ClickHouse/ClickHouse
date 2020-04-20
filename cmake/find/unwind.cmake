@@ -1,8 +1,4 @@
-option (USE_UNWIND "Enable libunwind (better stacktraces)" ON)
-
-if (NOT CMAKE_SYSTEM MATCHES "Linux" OR ARCH_ARM OR ARCH_32)
-    set (USE_UNWIND OFF)
-endif ()
+option (USE_UNWIND "Enable libunwind (better stacktraces)" ${ENABLE_LIBRARIES})
 
 if (USE_UNWIND)
     add_subdirectory(contrib/libunwind-cmake)

@@ -107,7 +107,7 @@ Using libraries from OS packages is discouraged, but we also support this option
 - shared;
 
 Static linking is the only option for production usage.
-We also have support for shared linking, but it is indended only for developers.
+We also have support for shared linking, but it is intended only for developers.
 
 #### Make tools:
 - make;

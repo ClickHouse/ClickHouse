@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<yandex>
+   <quotas>
+        <myQuota>
+            <interval>
+                <!-- Length of interval = 1 year -->
+                <duration>31556952</duration>
+
+                <!-- Normal limits. -->
+                <queries>1000</queries>
+                <errors>0</errors>
+                <read_rows>1000</read_rows>
+                <result_rows>0</result_rows>
+            </interval>
+        </myQuota>
+    </quotas>
+</yandex>
