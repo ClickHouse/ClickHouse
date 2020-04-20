@@ -16,7 +16,6 @@ class HTTPRequestHandlerFactoryMain : public Poco::Net::HTTPRequestHandlerFactor
 private:
     using TThis = HTTPRequestHandlerFactoryMain;
 
-    IServer & server;
     Logger * log;
     std::string name;
 
@@ -25,7 +24,7 @@ public:
 
     ~HTTPRequestHandlerFactoryMain();
 
-    HTTPRequestHandlerFactoryMain(IServer & server_, const std::string & name_);
+    HTTPRequestHandlerFactoryMain(const std::string & name_);
 
     TThis * addHandler(Poco::Net::HTTPRequestHandlerFactory * child_factory);
 
