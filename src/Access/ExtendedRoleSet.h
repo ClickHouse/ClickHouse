@@ -28,7 +28,6 @@ struct ExtendedRoleSet
 
     ExtendedRoleSet(const UUID & id);
     ExtendedRoleSet(const std::vector<UUID> & ids_);
-    ExtendedRoleSet(const boost::container::flat_set<UUID> & ids_);
 
     /// The constructor from AST requires the AccessControlManager if `ast.id_mode == false`.
     ExtendedRoleSet(const ASTExtendedRoleSet & ast);
@@ -48,7 +47,6 @@ struct ExtendedRoleSet
     void clear();
     void add(const UUID & id);
     void add(const std::vector<UUID> & ids_);
-    void add(const boost::container::flat_set<UUID> & ids_);
 
     /// Checks if a specified ID matches this ExtendedRoleSet.
     bool match(const UUID & id) const;

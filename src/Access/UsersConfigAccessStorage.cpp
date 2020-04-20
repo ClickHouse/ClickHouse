@@ -151,30 +151,30 @@ namespace
             }
         }
 
-        user->access.grant(AccessType::ALL); /// By default all databases are accessible.
+        /// By default all databases are accessible
+        /// and the user can grant everything he has.
+        user->access.grantWithGrantOption(AccessType::ALL);
 
         if (databases)
         {
             user->access.revoke(AccessFlags::allFlags() - AccessFlags::allGlobalFlags());
-            user->access.grant(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
+            user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
             for (const String & database : *databases)
-                user->access.grant(AccessFlags::allFlags(), database);
+                user->access.grantWithGrantOption(AccessFlags::allFlags(), database);
         }
 
         if (dictionaries)
         {
             user->access.revoke(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG);
             for (const String & dictionary : *dictionaries)
-                user->access.grant(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG, dictionary);
+                user->access.grantWithGrantOption(AccessFlags::allDictionaryFlags(), IDictionary::NO_DATABASE_TAG, dictionary);
         }
-
-        user->access_with_grant_option = user->access; /// By default the user can grant everything he has.
 
         bool access_management = config.getBool(user_config + ".access_management", false);
         if (!access_management)
         {
             user->access.revoke(AccessType::ACCESS_MANAGEMENT);
-            user->access_with_grant_option.clear();
+            user->access.revokeGrantOption(AccessType::ALL);
         }
 
         return user;

@@ -18,6 +18,8 @@ SRCS(
     EnabledRowPolicies.cpp
     EnabledSettings.cpp
     ExtendedRoleSet.cpp
+    GrantedAccess.cpp
+    GrantedRoles.cpp
     IAccessEntity.cpp
     IAccessStorage.cpp
     MemoryAccessStorage.cpp

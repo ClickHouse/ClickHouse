@@ -37,10 +37,10 @@ namespace
         if (!role)
             return;
 
-        for (const auto & granted_role : role->granted_roles)
+        for (const auto & granted_role : role->granted_roles.roles)
             collectRoles(collected_roles, get_role_function, granted_role, false, false);
 
-        for (const auto & granted_role : role->granted_roles_with_admin_option)
+        for (const auto & granted_role : role->granted_roles.roles_with_admin_option)
             collectRoles(collected_roles, get_role_function, granted_role, false, true);
     }
 
@@ -59,8 +59,8 @@ namespace
             if (collect_info.with_admin_option)
                 new_info->enabled_roles_with_admin_option.emplace_back(role_id);
             new_info->names_of_roles[role_id] = role->getName();
-            new_info->access.merge(role->access);
-            new_info->access_with_grant_option.merge(role->access_with_grant_option);
+            new_info->access.merge(role->access.access);
+            new_info->access_with_grant_option.merge(role->access.access_with_grant_option);
             new_info->settings_from_enabled_roles.merge(role->settings);
         }
         return new_info;

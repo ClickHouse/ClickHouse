@@ -134,12 +134,12 @@ void ContextAccess::setUser(const UserPtr & user_) const
     std::vector<UUID> current_roles, current_roles_with_admin_option;
     if (params.use_default_roles)
     {
-        for (const UUID & id : user->granted_roles)
+        for (const UUID & id : user->granted_roles.roles)
         {
             if (user->default_roles.match(id))
                 current_roles.push_back(id);
         }
-        boost::range::set_intersection(current_roles, user->granted_roles_with_admin_option,
+        boost::range::set_intersection(current_roles, user->granted_roles.roles_with_admin_option,
                                        std::back_inserter(current_roles_with_admin_option));
     }
     else
@@ -147,9 +147,9 @@ void ContextAccess::setUser(const UserPtr & user_) const
         current_roles.reserve(params.current_roles.size());
         for (const auto & id : params.current_roles)
         {
-            if (user->granted_roles.count(id))
+            if (user->granted_roles.roles.contains(id))
                 current_roles.push_back(id);
-            if (user->granted_roles_with_admin_option.count(id))
+            if (user->granted_roles.roles_with_admin_option.contains(id))
                 current_roles_with_admin_option.push_back(id);
         }
     }
@@ -397,13 +397,13 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
 
     if (grant_option)
     {
-        *merged_access = user->access_with_grant_option;
+        *merged_access = user->access.access_with_grant_option;
         if (roles_info)
             merged_access->merge(roles_info->access_with_grant_option);
     }
     else
     {
-        *merged_access = user->access;
+        *merged_access = user->access.access;
         if (roles_info)
             merged_access->merge(roles_info->access);
     }
