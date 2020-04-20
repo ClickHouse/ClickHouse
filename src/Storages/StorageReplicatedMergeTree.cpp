@@ -1274,7 +1274,8 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
     ++total_fetches;
     SCOPE_EXIT({--total_fetches;});
 
-    if (storage_settings_ptr->replicated_max_parallel_fetches_for_table && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
+    if (storage_settings_ptr->replicated_max_parallel_fetches_for_table
+        && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
     {
         throw Exception("Too many fetches from replicas for table, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString(),
             ErrorCodes::TOO_MANY_FETCHES);
@@ -1416,7 +1417,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
     }
     catch (...)
     {
-        /** If you can not download the part you need for some merge, it's better not to try to get other parts for this merge,
+        /** If we can not download the part we need for some merge, it's better not to try to get other parts for this merge,
           * but try to get already merged part. To do this, move the action to get the remaining parts
           * for this merge at the end of the queue.
           */
