@@ -83,6 +83,34 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
+                case Field::Types::bUInt128:
+                {
+                    bUInt128 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bInt128:
+                {
+                    bInt128 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bUInt256:
+                {
+                    bUInt256 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bInt256:
+                {
+                    bUInt256 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
             }
         }
     }
@@ -140,6 +168,26 @@ namespace DB
                 {
                     DB::writeStringBinary(elem.get<AggregateFunctionStateData>().name, buf);
                     DB::writeStringBinary(elem.get<AggregateFunctionStateData>().data, buf);
+                    break;
+                }
+                case Field::Types::bUInt128:
+                {
+                    DB::writeBinary(get<bUInt128>(elem), buf);
+                    break;
+                }
+                case Field::Types::bInt128:
+                {
+                    DB::writeBinary(get<bInt128>(elem), buf);
+                    break;
+                }
+                case Field::Types::bUInt256:
+                {
+                    DB::writeBinary(get<bUInt256>(elem), buf);
+                    break;
+                }
+                case Field::Types::bInt256:
+                {
+                    DB::writeBinary(get<bInt256>(elem), buf);
                     break;
                 }
             }
@@ -226,6 +274,34 @@ namespace DB
                     x.push_back(value);
                     break;
                 }
+                case Field::Types::bUInt128:
+                {
+                    bUInt128 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bInt128:
+                {
+                    bInt128 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bUInt256:
+                {
+                    bUInt256 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
+                case Field::Types::bInt256:
+                {
+                    bUInt256 value;
+                    DB::readBinary(value, buf);
+                    x.push_back(value);
+                    break;
+                }
             }
         }
     }
@@ -282,6 +358,26 @@ namespace DB
                 {
                     DB::writeStringBinary(elem.get<AggregateFunctionStateData>().name, buf);
                     DB::writeStringBinary(elem.get<AggregateFunctionStateData>().data, buf);
+                    break;
+                }
+                case Field::Types::bUInt128:
+                {
+                    DB::writeBinary(get<bUInt128>(elem), buf);
+                    break;
+                }
+                case Field::Types::bInt128:
+                {
+                    DB::writeBinary(get<bInt128>(elem), buf);
+                    break;
+                }
+                case Field::Types::bUInt256:
+                {
+                    DB::writeBinary(get<bUInt256>(elem), buf);
+                    break;
+                }
+                case Field::Types::bInt256:
+                {
+                    DB::writeBinary(get<bInt256>(elem), buf);
                     break;
                 }
             }
