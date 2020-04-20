@@ -5,8 +5,11 @@
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Dictionaries/IDictionary.h>
+#include <Databases/DictionaryAttachInfo.h>
 #include <Common/Exception.h>
 
+#include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/copy.hpp>
 #include <ctime>
 #include <functional>
 #include <memory>
@@ -18,12 +21,10 @@ namespace DB
 class Context;
 struct Settings;
 struct ConstraintsDescription;
-class ColumnsDescription;
 struct IndicesDescription;
 struct TableStructureWriteLockHolder;
 class ASTCreateQuery;
-using Dictionaries = std::set<String>;
-class ASTCreateQuery;
+using Dictionaries = std::vector<String>;
 
 namespace ErrorCodes
 {
@@ -87,8 +88,13 @@ private:
 public:
     DatabaseDictionariesSnapshotIterator() = default;
     DatabaseDictionariesSnapshotIterator(Dictionaries & dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
-
     DatabaseDictionariesSnapshotIterator(Dictionaries && dictionaries_) : dictionaries(dictionaries_), it(dictionaries.begin()) {}
+
+    DatabaseDictionariesSnapshotIterator(const std::unordered_map<String, DictionaryAttachInfo> & dictionaries_)
+    {
+        boost::range::copy(dictionaries_ | boost::adaptors::map_keys, std::back_inserter(dictionaries));
+        it = dictionaries.begin();
+    }
 
     void next() { ++it; }
 
@@ -155,12 +161,6 @@ public:
         return std::make_unique<DatabaseDictionariesSnapshotIterator>();
     }
 
-    /// Get an iterator to pass through all the tables and dictionary tables.
-    virtual DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const FilterByNameFunction & filter_by_name = {})
-    {
-        return getTablesIterator(filter_by_name);
-    }
-
     /// Is the database empty.
     virtual bool empty(const Context & context) const = 0;
 
@@ -208,7 +208,7 @@ public:
 
     /// Add dictionary to the database, but do not add it to the metadata. The database may not support this method.
     /// If dictionaries_lazy_load is false it also starts loading the dictionary asynchronously.
-    virtual void attachDictionary(const String & /*name*/, const Context & /*context*/)
+    virtual void attachDictionary(const String & /* dictionary_name */, const DictionaryAttachInfo & /* attach_info */)
     {
         throw Exception("There is no ATTACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -220,7 +220,7 @@ public:
     }
 
     /// Forget about the dictionary without deleting it. The database may not support this method.
-    virtual void detachDictionary(const String & /*name*/, const Context & /*context*/)
+    virtual void detachDictionary(const String & /*name*/)
     {
         throw Exception("There is no DETACH DICTIONARY query for Database" + getEngineName(), ErrorCodes::NOT_IMPLEMENTED);
     }
@@ -276,6 +276,11 @@ public:
         return getCreateDictionaryQueryImpl(context, name, true);
     }
 
+    virtual Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfiguration(const String & /*name*/) const
+    {
+        throw Exception(getEngineName() + ": getDictionaryConfiguration() is not supported", ErrorCodes::NOT_IMPLEMENTED);
+    }
+
     /// Get the CREATE DATABASE query for current database.
     virtual ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const = 0;
 
@@ -292,6 +297,9 @@ public:
     virtual String getMetadataPath() const { return {}; }
     /// Returns metadata path of a concrete table if the database supports it, empty string otherwise
     virtual String getObjectMetadataPath(const String & /*table_name*/) const { return {}; }
+
+    /// All tables and dictionaries should be detached before detaching the database.
+    virtual bool shouldBeEmptyOnDetach() const { return true; }
 
     /// Ask all tables to complete the background threads they are using and delete all table objects.
     virtual void shutdown() = 0;

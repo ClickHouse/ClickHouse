@@ -46,7 +46,9 @@ void registerFunctions()
     registerFunctionsArithmetic(factory);
     registerFunctionsArray(factory);
     registerFunctionsTuple(factory);
+#if !defined(ARCADIA_BUILD)
     registerFunctionsBitmap(factory);
+#endif
     registerFunctionsCoding(factory);
     registerFunctionsComparison(factory);
     registerFunctionsConditional(factory);

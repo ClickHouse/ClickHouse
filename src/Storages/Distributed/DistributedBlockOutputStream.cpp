@@ -61,11 +61,11 @@ namespace ErrorCodes
     extern const int CANNOT_LINK;
 }
 
-static void writeBlockConvert(const Context & context, const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
+static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
 {
     if (!blocksHaveEqualStructure(out->getHeader(), block))
     {
-        ConvertingBlockInputStream convert(context,
+        ConvertingBlockInputStream convert(
             std::make_shared<OneBlockInputStream>(block),
             out->getHeader(),
             ConvertingBlockInputStream::MatchColumnsMode::Name);
@@ -333,7 +333,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
                 job.stream->writePrefix();
             }
 
-            writeBlockConvert(context, job.stream, shard_block, shard_info.getLocalNodeCount());
+            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount());
         }
 
         job.blocks_written += 1;
@@ -568,7 +568,7 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
     auto block_io = interp.execute();
 
     block_io.out->writePrefix();
-    writeBlockConvert(context, block_io.out, block, repeats);
+    writeBlockConvert(block_io.out, block, repeats);
     block_io.out->writeSuffix();
 }
 
@@ -589,8 +589,8 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         const std::string path(disk + data_path + dir_name + '/');
 
         /// ensure shard subdirectory creation and notify storage
-        if (Poco::File(path).createDirectory())
-            storage.requireDirectoryMonitor(disk, dir_name);
+        Poco::File(path).createDirectory();
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
 
         const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
         const auto & block_file_path = path + file_name;
@@ -632,6 +632,9 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             stream.writePrefix();
             stream.write(block);
             stream.writeSuffix();
+
+            auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
+            directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
         }
 
         if (link(first_file_tmp_path.data(), block_file_path.data()))

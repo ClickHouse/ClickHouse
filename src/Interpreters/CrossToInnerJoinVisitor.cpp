@@ -52,17 +52,21 @@ struct JoinedElement
 
     void rewriteCommaToCross()
     {
-        if (join)
+        if (join && join->kind == ASTTableJoin::Kind::Comma)
             join->kind = ASTTableJoin::Kind::Cross;
     }
 
-    void rewriteCrossToInner(ASTPtr on_expression)
+    bool rewriteCrossToInner(ASTPtr on_expression)
     {
+        if (join->kind != ASTTableJoin::Kind::Cross)
+            return false;
+
         join->kind = ASTTableJoin::Kind::Inner;
         join->strictness = ASTTableJoin::Strictness::All;
 
         join->on_expression = on_expression;
         join->children.push_back(join->on_expression);
+        return true;
     }
 
     ASTPtr arrayJoin() const { return element.array_join; }
@@ -214,7 +218,7 @@ private:
     }
 };
 
-using CheckExpressionMatcher = ConstOneTypeMatcher<CheckExpressionVisitorData, false>;
+using CheckExpressionMatcher = ConstOneTypeMatcher<CheckExpressionVisitorData, NeedChild::none>;
 using CheckExpressionVisitor = ConstInDepthNodeVisitor<CheckExpressionMatcher, true>;
 
 
@@ -329,8 +333,8 @@ void CrossToInnerJoinMatcher::visit(ASTSelectQuery & select, ASTPtr &, Data & da
     {
         if (visitor_data.matchAny(i))
         {
-            joined_tables[i].rewriteCrossToInner(visitor_data.makeOnExpression(i));
-            data.done = true;
+            if (joined_tables[i].rewriteCrossToInner(visitor_data.makeOnExpression(i)))
+                data.done = true;
         }
     }
 }

@@ -6,3 +6,5 @@ optimize_skip_unused_shards
 optimize_skip_unused_shards lack of WHERE
 0
 1
+0
+1

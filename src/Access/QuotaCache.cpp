@@ -167,7 +167,12 @@ QuotaCache::QuotaCache(const AccessControlManager & access_control_manager_)
 QuotaCache::~QuotaCache() = default;
 
 
-std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(const UUID & user_id, const String & user_name, const std::vector<UUID> & enabled_roles, const Poco::Net::IPAddress & client_address, const String & client_key)
+std::shared_ptr<const EnabledQuota> QuotaCache::getEnabledQuota(
+    const UUID & user_id,
+    const String & user_name,
+    const std::vector<UUID> & enabled_roles,
+    const Poco::Net::IPAddress & client_address,
+    const String & client_key)
 {
     std::lock_guard lock{mutex};
     ensureAllQuotasRead();
@@ -250,16 +255,18 @@ void QuotaCache::quotaRemoved(const UUID & quota_id)
 void QuotaCache::chooseQuotaToConsume()
 {
     /// `mutex` is already locked.
-    std::erase_if(
-        enabled_quotas,
-        [&](const std::pair<EnabledQuota::Params, std::weak_ptr<EnabledQuota>> & pr)
+
+    for (auto i = enabled_quotas.begin(), e = enabled_quotas.end(); i != e;)
+    {
+        auto elem = i->second.lock();
+        if (!elem)
+            i = enabled_quotas.erase(i);
+        else
         {
-            auto elem = pr.second.lock();
-            if (!elem)
-                return true; // remove from the `enabled_quotas` list.
             chooseQuotaToConsumeFor(*elem);
-            return false; // keep in the `enabled_quotas` list.
-        });
+            ++i;
+        }
+    }
 }
 
 void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)

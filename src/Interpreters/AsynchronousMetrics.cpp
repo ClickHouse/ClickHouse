@@ -5,7 +5,6 @@
 #include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/typeid_cast.h>
-#include "config_core.h"
 #include <Storages/MarkCache.h>
 #include <Storages/StorageMergeTree.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -13,12 +12,13 @@
 #include <Databases/IDatabase.h>
 #include <chrono>
 
-#if __has_include(<common/config_common.h>)
-#include <common/config_common.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
 #endif
 
 #if USE_JEMALLOC
-    #include <jemalloc/jemalloc.h>
+#    include <jemalloc/jemalloc.h>
 #endif
 
 
@@ -131,6 +131,24 @@ void AsynchronousMetrics::update()
 
     set("Uptime", context.getUptimeSeconds());
 
+    /// Process memory usage according to OS
+#if defined(OS_LINUX)
+    {
+        MemoryStatisticsOS::Data data = memory_stat.get();
+
+        set("MemoryVirtual", data.virt);
+        set("MemoryResident", data.resident);
+        set("MemoryShared", data.shared);
+        set("MemoryCode", data.code);
+        set("MemoryDataAndStack", data.data_and_stack);
+
+        /// We must update the value of total_memory_tracker periodically.
+        /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/10293
+        total_memory_tracker.set(data.resident);
+    }
+#endif
+
     {
         auto databases = DatabaseCatalog::instance().getDatabases();
 
@@ -216,9 +234,9 @@ void AsynchronousMetrics::update()
         set("NumberOfTables", total_number_of_tables);
     }
 
-#if USE_JEMALLOC
+#if USE_JEMALLOC && JEMALLOC_VERSION_MAJOR >= 4
     {
-    #define FOR_EACH_METRIC(M) \
+#    define FOR_EACH_METRIC(M) \
         M("allocated", size_t) \
         M("active", size_t) \
         M("metadata", size_t) \
@@ -228,9 +246,9 @@ void AsynchronousMetrics::update()
         M("retained", size_t) \
         M("background_thread.num_threads", size_t) \
         M("background_thread.num_runs", uint64_t) \
-        M("background_thread.run_interval", uint64_t) \
+        M("background_thread.run_interval", uint64_t)
 
-    #define GET_METRIC(NAME, TYPE) \
+#    define GET_METRIC(NAME, TYPE) \
         do \
         { \
             TYPE value{}; \
@@ -241,13 +259,12 @@ void AsynchronousMetrics::update()
 
         FOR_EACH_METRIC(GET_METRIC)
 
-    #undef GET_METRIC
-    #undef FOR_EACH_METRIC
+#    undef GET_METRIC
+#    undef FOR_EACH_METRIC
     }
 #endif
 
     /// Add more metrics as you wish.
 }
-
 
 }

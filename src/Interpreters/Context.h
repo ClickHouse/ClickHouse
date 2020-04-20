@@ -13,7 +13,6 @@
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
-#include "config_core.h"
 #include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
@@ -24,6 +23,10 @@
 #include <optional>
 #include <thread>
 #include <Common/RemoteHostFilter.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 
 namespace Poco
@@ -468,9 +471,11 @@ public:
       */
     void dropCaches() const;
 
+    BackgroundSchedulePool & getBufferFlushSchedulePool();
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
+    BackgroundSchedulePool & getDistributedSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;
