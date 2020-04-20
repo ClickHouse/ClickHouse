@@ -95,14 +95,14 @@ private:
 
         /// UTC offset is from -12 to +14 in all known time zones. This requires checking only three indices.
 
-        if ((guess == 0 || t >= lut[guess].date) && t < lut[DayNum(guess + 1)].date)
+        if (t >= lut[guess].date && t < lut[DayNum(guess + 1)].date)
             return guess;
 
         /// Time zones that have offset 0 from UTC do daylight saving time change (if any) towards increasing UTC offset (example: British Standard Time).
-        if (offset_at_start_of_epoch >= 0)
-            return DayNum(guess + 1);
+        if (t < lut[guess].date)
+            return DayNum(guess - 1);
 
-        return DayNum(guess - 1);
+        return DayNum(guess + 1);
     }
 
     inline const Values & find(time_t t) const
@@ -579,7 +579,7 @@ public:
             return t / 3600;
 
         /// Assume that if offset was fractional, then the fraction is the same as at the beginning of epoch.
-        /// NOTE This assumption is false for "Pacific/Pitcairn" time zone.
+        /// NOTE This assumption is false for "Pacific/Pitcairn" and "Pacific/Kiritimati" time zones.
         return (t + 86400 - offset_at_start_of_epoch) / 3600;
     }
 
