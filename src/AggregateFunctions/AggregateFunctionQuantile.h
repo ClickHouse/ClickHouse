@@ -35,7 +35,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-template <typename> class QuantileTiming;
+template <typename Value, bool weighted> class QuantileTiming;
 
 
 /** Generic aggregate function for calculation of quantiles.
@@ -110,7 +110,7 @@ public:
     {
         auto value = static_cast<const ColVecType &>(*columns[0]).getData()[row_num];
 
-        if constexpr (std::is_same_v<Data, QuantileTiming<Value>>)
+        if constexpr (std::is_same_v<Data, QuantileTiming<Value, has_second_arg>>)
         {
             /// QuantileTiming only supports integers.
             if (isNaN(value) || value > std::numeric_limits<Value>::max() || value < std::numeric_limits<Value>::min())
@@ -142,7 +142,7 @@ public:
     }
 
     bool isFinalizationNeeded() const override { return is_finalization_needed; }
-    void finalize(AggregateDataPtr place) const override
+    void finalize(AggregateDataPtr place [[maybe_unused]]) const override
     {
         if constexpr (is_finalization_needed)
         {
