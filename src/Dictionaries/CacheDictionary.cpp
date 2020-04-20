@@ -10,12 +10,14 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
+#include <Core/Defines.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include <Common/setThreadName.h>
 #include "CacheDictionary.inc.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
+
 
 namespace ProfileEvents
 {
@@ -144,7 +146,7 @@ void CacheDictionary::isInImpl(const PaddedPODArray<Key> & child_ids, const Ance
     PaddedPODArray<Key> children(out_size, 0);
     PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
 
-    while (true)
+    for (size_t i = 0; i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
     {
         size_t out_idx = 0;
         size_t parents_idx = 0;
@@ -218,7 +220,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
     std::vector<Key> ancestors(1, child_id);
 
     /// Iteratively find all ancestors for child.
-    while (true)
+    for (size_t i = 0; i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
     {
         toParent(child, parent);
 
