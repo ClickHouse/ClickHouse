@@ -43,6 +43,8 @@ public:
 
     ASTPtr getCreateDatabaseQuery(const Context & context) const override;
 
+    bool shouldBeEmptyOnDetach() const override { return false; }
+
     void shutdown() override;
 
 protected:

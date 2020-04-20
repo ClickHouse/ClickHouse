@@ -220,7 +220,8 @@ public:
         // This method only works for extending the last allocation. For lack of
         // original size, check a weaker condition: that 'begin' is at least in
         // the current Chunk.
-        assert(range_start >= head->begin && range_start < head->end);
+        assert(range_start >= head->begin);
+        assert(range_start < head->end);
 
         if (head->pos + additional_bytes <= head->end)
         {

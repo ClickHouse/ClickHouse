@@ -21,7 +21,7 @@ public:
     void write(const Block & block, const IColumn::Permutation * permutation,
         const Block & primary_key_block, const Block & skip_indexes_block) override;
 
-    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync) override;
+    void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) override;
 
 private:
     /// Write single granule of one column (rows between 2 marks)

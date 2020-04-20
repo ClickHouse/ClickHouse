@@ -103,16 +103,17 @@ void RoleCache::collectRolesInfo()
 {
     /// `mutex` is already locked.
 
-    std::erase_if(
-        enabled_roles,
-        [&](const std::pair<EnabledRoles::Params, std::weak_ptr<EnabledRoles>> & pr)
+    for (auto i = enabled_roles.begin(), e = enabled_roles.end(); i != e;)
+    {
+        auto elem = i->second.lock();
+        if (!elem)
+            i = enabled_roles.erase(i);
+        else
         {
-            auto elem = pr.second.lock();
-            if (!elem)
-                return true; // remove from the `enabled_roles` map.
             collectRolesInfoFor(*elem);
-            return false; // keep in the `enabled_roles` map.
-        });
+            ++i;
+        }
+    }
 }
 
 

@@ -48,7 +48,7 @@ static State & state()
 static void check(const std::string & query, const std::string & expected, const Context & context, const NamesAndTypesList & columns)
 {
     ParserSelectQuery parser;
-    ASTPtr ast = parseQuery(parser, query, 1000);
+    ASTPtr ast = parseQuery(parser, query, 1000, 1000);
     SelectQueryInfo query_info;
     query_info.syntax_analyzer_result = SyntaxAnalyzer(context).analyzeSelect(ast, columns);
     query_info.query = ast;
