@@ -342,6 +342,60 @@ SELECT murmurHash2_64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 └──────────────────────┴────────┘
 ```
 
+## gccMurmurHash {#gccmurmurhash}
+
+Вычисляет 64-битное значение [MurmurHash2](https://github.com/aappleby/smhasher), используя те же hash seed, что и [gcc](https://github.com/gcc-mirror/gcc/blob/41d6b10e96a1de98e90a7c0378437c3255814b16/libstdc%2B%2B-v3/include/bits/functional_hash.h#L191).
+
+**Синтаксис**
+
+```sql
+gccMurmurHash(par1, ...);
+```
+
+**Параметры**
+
+- `par1, ...` — Переменное число параметров, которые могут могут быть любыми из [поддерживаемых типов данных](../../data_types/index.md).
+
+**Возвращаемое значение**
+
+- Вычисленный хэш-код.
+
+Тип: [UInt64](../../data_types/int_uint.md).
+
+**Примеры**
+
+Запрос:
+
+```sql
+SELECT gccMurmurHash(1, 2, 3) as gccMurmurHash;
+```
+
+Результат:
+
+```text
+┌────────gccMurmurHash─┐
+│ 12384823029245979431 │
+└──────────────────────┘
+```
+
+Запрос:
+
+```sql
+SELECT gccMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2)))) as gccMurmurHash;
+```
+
+Результат:
+
+```text
+┌───────gccMurmurHash─┐
+│ 1188926775431157506 │
+└─────────────────────┘
+```
+
+**См. также**
+
+- [Модуль NGINX для A/B тестирования](https://nginx.ru/ru/docs/http/ngx_http_split_clients_module.html)
+
 ## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
 
 Генерирует значение [MurmurHash3](https://github.com/aappleby/smhasher).
