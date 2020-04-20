@@ -36,7 +36,7 @@ void MySQLClient::connect()
         packet_sender = std::make_shared<PacketSender>(*in, *out, seq);
         connected = true;
 
-        handshake(*in);
+        handshake();
     }
     catch (Poco::Net::NetException & e)
     {
@@ -61,10 +61,10 @@ void MySQLClient::close()
 }
 
 /// https://dev.mysql.com/doc/internals/en/connection-phase-packets.html
-void MySQLClient::handshake(ReadBuffer & payload)
+void MySQLClient::handshake()
 {
     Handshake handshake;
-    handshake.readPayloadImpl(payload);
+    packet_sender->receivePacket(handshake);
     if (handshake.auth_plugin_name != mysql_native_password)
     {
         throw Exception(
@@ -75,7 +75,21 @@ void MySQLClient::handshake(ReadBuffer & payload)
     Native41 native41(password, handshake.auth_plugin_data);
     String auth_plugin_data = native41.getAuthPluginData();
 
-    HandshakeResponse handshakeResponse(client_capability_flags, max_packet_size, charset_utf8, user, database, auth_plugin_data, mysql_native_password);
+    HandshakeResponse handshakeResponse(
+        client_capability_flags, max_packet_size, charset_utf8, user, database, auth_plugin_data, mysql_native_password);
     packet_sender->sendPacket<HandshakeResponse>(handshakeResponse, true);
+
+    PacketResponse packetResponse;
+    packet_sender->receivePacket(packetResponse);
+
+    switch (packetResponse.getType()) {
+        case PACKET_OK:
+            break;
+        case PACKET_ERR:
+            throw Exception(packetResponse.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
+            break;
+        case PACKET_EOF:
+            break;
+    }
 }
 }
