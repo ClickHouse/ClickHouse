@@ -13,21 +13,6 @@ import jsmin
 import mdx_clickhouse
 
 
-def copy_icons(args):
-    logging.info('Copying icons')
-    icons_dir = os.path.join(args.output_dir, 'images', 'icons')
-    os.makedirs(icons_dir)
-    for icon in [
-        'github',
-        'edit',
-        'external-link'
-    ]:
-        icon = '%s.svg' % icon
-        icon_src = os.path.join(args.website_dir, 'images', 'feathericons', 'icons', icon)
-        icon_dst = os.path.join(icons_dir, icon)
-        shutil.copy2(icon_src, icon_dst)
-
-
 def build_website(args):
     logging.info('Building website')
     env = jinja2.Environment(
