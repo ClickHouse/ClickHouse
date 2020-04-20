@@ -26,6 +26,12 @@ namespace ErrorCodes
 template <typename Value>
 struct QuantileExact
 {
+    /// Static interface for AggregateFunctionQuantile.
+    using ValueType = Value;
+    static constexpr bool has_second_arg = false;
+    using FloatReturnType = void;
+    static constexpr bool is_finalization_needed = true;
+
     /// The memory will be allocated to several elements at once, so that the state occupies 64 bytes.
     static constexpr size_t bytes_in_arena = 64 - sizeof(PODArray<Value>);
     using Array = PODArrayWithStackMemory<Value, bytes_in_arena>;
@@ -128,6 +134,7 @@ struct QuantileExact
 template <typename Value>
 struct QuantileExactExclusive : public QuantileExact<Value>
 {
+    using FloatReturnType = Float64;
     using QuantileExact<Value>::array;
 
     void finalize(Float64 level)
@@ -236,6 +243,7 @@ struct QuantileExactExclusive : public QuantileExact<Value>
 template <typename Value>
 struct QuantileExactInclusive : public QuantileExact<Value>
 {
+    using FloatReturnType = Float64;
     using QuantileExact<Value>::array;
 
     void finalize(Float64 level)

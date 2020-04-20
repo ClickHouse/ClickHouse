@@ -35,12 +35,19 @@ namespace ErrorCodes
   * does not depend on the expected number of points. Also an variant on java
   * uses asin, which slows down the algorithm a bit.
   */
-template <typename T>
+template <typename T, bool float_return, bool weighted>
 class QuantileTDigest
 {
+public:
+    /// Static interface for AggregateFunctionQuantile.
+    using ValueType = T;
+    static constexpr bool has_second_arg = weighted;
+    using FloatReturnType = std::conditional_t<float_return, Float32, void>;
+    static constexpr bool is_finalization_needed = true;
+
+private:
     using Value = Float32;
     using Count = Float32;
-
     /** The centroid stores the weight of points around their mean value
       */
     struct Centroid
@@ -239,7 +246,8 @@ public:
         if (summary.empty())
             return std::is_floating_point_v<ResultType> ? NAN : 0;
 
-        compress();
+        if (unmerged > 0)
+            throw Poco::Exception("QuantileTDigest was not finalized");
 
         if (summary.size() == 1)
             return summary.front().mean;
@@ -279,7 +287,8 @@ public:
             return;
         }
 
-        compress();
+        if (unmerged > 0)
+            throw Poco::Exception("QuantileTDigest was not finalized");
 
         if (summary.size() == 1)
         {
@@ -317,6 +326,16 @@ public:
         auto rest_of_results = summary.back().mean;
         for (; result_num < size; ++result_num)
             result[levels_permutation[result_num]] = rest_of_results;
+    }
+
+    void finalize(Float64)
+    {
+        compress();
+    }
+
+    void finalize(const Float64 *, const size_t *, size_t)
+    {
+        compress();
     }
 
     T get(Float64 level)

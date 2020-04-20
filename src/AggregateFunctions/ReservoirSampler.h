@@ -95,7 +95,8 @@ public:
         if (samples.empty())
             return onEmpty<T>();
 
-        sortIfNeeded();
+        if (!sorted)
+            throw Poco::Exception("ReservoirSampler was not finalized");
 
         double index = level * (samples.size() - 1);
         size_t int_index = static_cast<size_t>(index + 0.5);
@@ -114,7 +115,9 @@ public:
                 return 0;
             return onEmpty<double>();
         }
-        sortIfNeeded();
+
+        if (!sorted)
+            throw Poco::Exception("ReservoirSampler was not finalized");
 
         double index = std::max(0., std::min(samples.size() - 1., level * (samples.size() - 1)));
 
@@ -192,6 +195,14 @@ public:
             DB::writeBinary(samples[i], buf);
     }
 
+    void sortIfNeeded()
+    {
+        if (sorted)
+            return;
+        sorted = true;
+        std::sort(samples.begin(), samples.end(), Comparer());
+    }
+
 private:
     friend void qdigest_test(int normal_size, UInt64 value_limit, const std::vector<UInt64> & values, int queries_count, bool verbose);
     friend void rs_perf_test();
@@ -222,14 +233,6 @@ private:
             size_t j = genRandom(i + 1);
             std::swap(v[i], v[j]);
         }
-    }
-
-    void sortIfNeeded()
-    {
-        if (sorted)
-            return;
-        sorted = true;
-        std::sort(samples.begin(), samples.end(), Comparer());
     }
 
     template <typename ResultType>

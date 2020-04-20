@@ -19,9 +19,15 @@ namespace ErrorCodes
   *  to apply random sampling.
   * The function is deterministic, but care should be taken with choose of "determinator" argument.
   */
-template <typename Value>
+template <typename Value, bool return_float>
 struct QuantileReservoirSamplerDeterministic
 {
+    /// Static interface for AggregateFunctionQuantile.
+    using ValueType = Value;
+    static constexpr bool has_second_arg = true;
+    using FloatReturnType = std::conditional_t<return_float, Float64, void>;
+    static constexpr bool is_finalization_needed = true;
+
     using Data = ReservoirSamplerDeterministic<Value, ReservoirSamplerDeterministicOnEmpty::RETURN_NAN_OR_ZERO>;
     Data data;
 
@@ -49,6 +55,16 @@ struct QuantileReservoirSamplerDeterministic
     void deserialize(ReadBuffer & buf)
     {
         data.read(buf);
+    }
+
+    void finalize(Float64)
+    {
+        data.sortIfNeeded();
+    }
+
+    void finalize(const Float64 *, const size_t *, size_t)
+    {
+        data.sortIfNeeded();
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.

@@ -43,28 +43,31 @@ template <typename> class QuantileTiming;
   */
 
 template <
-    /// Type of first argument.
-    typename Value,
     /// Data structure and implementation of calculation. Look at QuantileExact.h for example.
     typename Data,
     /// Structure with static member "name", containing the name of the aggregate function.
     typename Name,
-    /// If true, the function accepts the second argument
-    /// (in can be "weight" to calculate quantiles or "determinator" that is used instead of PRNG).
-    /// Second argument is always obtained through 'getUInt' method.
-    bool has_second_arg,
-    /// If non-void, the function will return float of specified type with possibly interpolated results and NaN if there was no values.
-    /// Otherwise it will return Value type and default value if there was no values.
-    /// As an example, the function cannot return floats, if the SQL type of argument is Date or DateTime.
-    typename FloatReturnType,
     /// If true, the function will accept multiple parameters with quantile levels
     ///  and return an Array filled with many values of that quantiles.
     bool returns_many
 >
-class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data,
-    AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>
+class AggregateFunctionQuantile final : public IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Data, Name, returns_many>>
 {
 private:
+    /// Type of first argument.
+    using Value = typename Data::ValueType;
+    /// If true, the function accepts the second argument
+    /// (in can be "weight" to calculate quantiles or "determinator" that is used instead of PRNG).
+    /// Second argument is always obtained through 'getUInt' method.
+    static constexpr bool has_second_arg = Data::has_second_arg;
+    /// If non-void, the function will return float of specified type with possibly interpolated results and NaN if there was no values.
+    /// Otherwise it will return Value type and default value if there was no values.
+    /// As an example, the function cannot return floats, if the SQL type of argument is Date or DateTime.
+    using FloatReturnType = typename Data::FloatReturnType;
+
+    /// If true, aggregation state is needed to be finalized.
+    static constexpr bool is_finalization_needed = Data::is_finalization_needed;
+
     using ColVecType = std::conditional_t<IsDecimalNumber<Value>, ColumnDecimal<Value>, ColumnVector<Value>>;
 
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
@@ -79,7 +82,7 @@ private:
 
 public:
     AggregateFunctionQuantile(const DataTypePtr & argument_type_, const Array & params)
-        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Value, Data, Name, has_second_arg, FloatReturnType, returns_many>>({argument_type_}, params)
+        : IAggregateFunctionDataHelper<Data, AggregateFunctionQuantile<Data, Name, returns_many>>({argument_type_}, params)
         , levels(params, returns_many), level(levels.levels[0]), argument_type(this->argument_types[0])
     {
         if (!returns_many && levels.size() > 1)
@@ -138,14 +141,17 @@ public:
         this->data(place).deserialize(buf);
     }
 
-    bool isFinalizationNeeded() const override { return true; }
+    bool isFinalizationNeeded() const override { return is_finalization_needed; }
     void finalize(AggregateDataPtr place) const override
     {
-        auto & data = this->data(const_cast<AggregateDataPtr>(place));
-        if constexpr (returns_many)
-            data.finalize(levels.levels.data(), levels.permutation.data(), levels.size());
-        else
-            data.finalize(level);
+        if constexpr (is_finalization_needed)
+        {
+            auto & data = this->data(const_cast<AggregateDataPtr>(place));
+            if constexpr (returns_many)
+                data.finalize(levels.levels.data(), levels.permutation.data(), levels.size());
+            else
+                data.finalize(level);
+        }
     }
 
     void insertResultInto(ConstAggregateDataPtr place, IColumn & to) const override

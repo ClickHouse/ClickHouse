@@ -167,19 +167,48 @@ namespace detail
             buf.readStrict(reinterpret_cast<char *>(elems.data()), size * sizeof(elems[0]));
         }
 
+        size_t getElementNumber(Float64 level) const
+        {
+            return level < 1 ? level * elems.size()
+                             : (elems.size() - 1);
+        }
+
+        void finalize(Float64 level)
+        {
+            if (!elems.empty())
+            {
+                size_t n = getElementNumber(level);
+
+                auto & array = const_cast<Array &>(elems);
+                std::nth_element(array.begin(), array.begin() + n, array.end());
+            }
+        }
+
+        void finalize(const Float64 * levels, const size_t * indices, size_t size)
+        {
+            auto & array = const_cast<Array &>(elems);
+            if (!array.empty())
+            {
+                size_t prev_n = 0;
+                for (size_t i = 0; i < size; ++i)
+                {
+                    auto level = levels[indices[i]];
+                    size_t n = getElementNumber(level);
+
+                    std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
+                    prev_n = n;
+                }
+            }
+        }
+
         UInt16 get(double level) const
         {
             UInt16 quantile = 0;
 
             if (!elems.empty())
             {
-                size_t n = level < 1
-                    ? level * elems.size()
-                    : (elems.size() - 1);
-
-                /// Sorting an array will not be considered a violation of constancy.
+                size_t n = getElementNumber(level);
                 auto & array = const_cast<Array &>(elems);
-                std::nth_element(array.begin(), array.begin() + n, array.end());
                 quantile = array[n];
             }
 
@@ -189,21 +218,14 @@ namespace detail
         template <typename ResultType>
         void getMany(const double * levels, const size_t * levels_permutation, size_t size, ResultType * result) const
         {
-            size_t prev_n = 0;
             auto & array = const_cast<Array &>(elems);
             for (size_t i = 0; i < size; ++i)
             {
                 auto level_index = levels_permutation[i];
                 auto level = levels[level_index];
 
-                size_t n = level < 1
-                    ? level * elems.size()
-                    : (elems.size() - 1);
-
-                std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
-
+                size_t n = getElementNumber(level);
                 result[level_index] = array[n];
-                prev_n = n;
             }
         }
 
@@ -475,9 +497,16 @@ namespace detail
 /** sizeof - 64 bytes.
   * If there are not enough of them - allocates up to 20 KB of memory in addition.
   */
-template <typename>     /// Unused template parameter is for AggregateFunctionQuantile.
+template <typename Value, bool weighted>     /// Unused template parameter is for AggregateFunctionQuantile.
 class QuantileTiming : private boost::noncopyable
 {
+public:
+    /// Static interface for AggregateFunctionQuantile.
+    using ValueType = Value;
+    static constexpr bool has_second_arg = weighted;
+    using FloatReturnType = Float32;
+    static constexpr bool is_finalization_needed = true;
+
 private:
     union
     {
@@ -706,24 +735,37 @@ public:
         }
     }
 
+    void finalize(Float64 level)
+    {
+        Kind kind = which();
+
+        if (kind == Kind::Tiny)
+            tiny.prepare();
+        else if (kind == Kind::Medium)
+            return medium.finalize(level);
+    }
+
+    void finalize(const Float64 * levels, const size_t * indices, size_t size)
+    {
+        Kind kind = which();
+
+        if (kind == Kind::Tiny)
+            tiny.prepare();
+        else if (kind == Kind::Medium)
+            return medium.finalize(levels, indices, size);
+    }
+
     /// Get the value of the `level` quantile. The level must be between 0 and 1.
     UInt16 get(double level) const
     {
         Kind kind = which();
 
         if (kind == Kind::Tiny)
-        {
-            tiny.prepare();
             return tiny.get(level);
-        }
         else if (kind == Kind::Medium)
-        {
             return medium.get(level);
-        }
         else
-        {
             return large->get(level);
-        }
     }
 
     /// Get the size values of the quantiles of the `levels` levels. Record `size` results starting with `result` address.
@@ -733,18 +775,11 @@ public:
         Kind kind = which();
 
         if (kind == Kind::Tiny)
-        {
-            tiny.prepare();
             tiny.getMany(levels, size, result);
-        }
         else if (kind == Kind::Medium)
-        {
             medium.getMany(levels, levels_permutation, size, result);
-        }
         else /*if (kind == Kind::Large)*/
-        {
             large->getMany(levels, levels_permutation, size, result);
-        }
     }
 
     /// The same, but in the case of an empty state, NaN is returned.

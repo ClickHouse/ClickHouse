@@ -19,9 +19,15 @@ namespace ErrorCodes
   * This algorithm is quite inefficient in terms of precision for memory usage,
   *  but very efficient in CPU (though less efficient than QuantileTiming and than QuantileExact for small sets).
   */
-template <typename Value>
+template <typename Value, bool return_float>
 struct QuantileReservoirSampler
 {
+    /// Static interface for AggregateFunctionQuantile.
+    using ValueType = Value;
+    static constexpr bool has_second_arg = true;
+    using FloatReturnType = std::conditional_t<return_float, Float64, void>;
+    static constexpr bool is_finalization_needed = true;
+
     using Data = ReservoirSampler<Value, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO>;
     Data data;
 
@@ -49,6 +55,16 @@ struct QuantileReservoirSampler
     void deserialize(ReadBuffer & buf)
     {
         data.read(buf);
+    }
+
+    void finalize(Float64)
+    {
+        data.sortIfNeeded();
+    }
+
+    void finalize(const Float64 *, const size_t *, size_t)
+    {
+        data.sortIfNeeded();
     }
 
     /// Get the value of the `level` quantile. The level must be between 0 and 1.

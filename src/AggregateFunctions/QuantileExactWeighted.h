@@ -20,6 +20,12 @@ namespace ErrorCodes
 template <typename Value>
 struct QuantileExactWeighted
 {
+    /// Static interface for AggregateFunctionQuantile.
+    using ValueType = Value;
+    static constexpr bool has_second_arg = true;
+    using FloatReturnType = void;
+    static constexpr bool is_finalization_needed = false;
+
     struct Int128Hash
     {
         size_t operator()(Int128 x) const
