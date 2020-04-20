@@ -359,7 +359,7 @@ gccMurmurHash(par1, ...);
 
 - `par1, ...` —  A variable number of parameters that can be any of the [supported data types](../../sql_reference/data_types/index.md#data_types).
 
-**Returned value(s)**
+**Returned value**
 
 - Calculated hash value.
 
@@ -395,7 +395,7 @@ Result:
 └─────────────────────┘
 ```
 
-**See Also** (Optional)
+**See Also**
 
 - [NGINX A/B testing module](https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html)
 
