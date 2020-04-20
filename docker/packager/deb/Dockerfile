@@ -1,6 +1,8 @@
 # docker build -t yandex/clickhouse-deb-builder .
 FROM ubuntu:19.10
 
+RUN apt-get --allow-unauthenticated update -y && apt-get install --yes wget gnupg
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
 RUN echo "deb [trusted=yes] http://apt.llvm.org/eoan/ llvm-toolchain-eoan-10 main" >> /etc/apt/sources.list
 
 RUN apt-get --allow-unauthenticated update -y \
