@@ -324,7 +324,6 @@ include (cmake/find/rdkafka.cmake)
 include (cmake/find/capnp.cmake)
 include (cmake/find/llvm.cmake)
 include (cmake/find/h3.cmake)
-include (cmake/find/cpuid.cmake) # Freebsd, bundled
 if (NOT USE_CPUID)
     include (cmake/find/cpuinfo.cmake) # Debian
 endif()

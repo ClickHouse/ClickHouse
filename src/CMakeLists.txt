@@ -403,6 +403,7 @@ target_link_libraries(clickhouse_common_io
     ${Poco_XML_LIBRARY}
     ${ZLIB_LIBRARIES}
     ${EXECINFO_LIBRARIES}
+    cpuid
         PUBLIC
     ${Boost_SYSTEM_LIBRARY}
     ${Boost_PROGRAM_OPTIONS_LIBRARY}
@@ -420,10 +421,6 @@ endif()
 
 if(RE2_INCLUDE_DIR)
     target_include_directories(clickhouse_common_io SYSTEM BEFORE PUBLIC ${RE2_INCLUDE_DIR})
-endif()
-
-if(CPUID_LIBRARY)
-    target_link_libraries(clickhouse_common_io PRIVATE ${CPUID_LIBRARY})
 endif()
 
 if(CPUINFO_LIBRARY)

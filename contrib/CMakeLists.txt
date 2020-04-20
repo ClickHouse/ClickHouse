@@ -1,9 +1,23 @@
-# Third-party libraries may have substandard code.
-
+# Third-party libraries may have sub-standard code.
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
 set_property(DIRECTORY PROPERTY EXCLUDE_FROM_ALL 1)
+
+add_subdirectory (cctz-cmake)
+add_subdirectory (consistent-hashing-sumbur)
+add_subdirectory (consistent-hashing)
+add_subdirectory (croaring)
+add_subdirectory (FastMemcpy)
+add_subdirectory (grpc-cmake)
+add_subdirectory (jemalloc-cmake)
+add_subdirectory (libcpuid-cmake)
+add_subdirectory (murmurhash)
+add_subdirectory (replxx-cmake)
+add_subdirectory (ryu-cmake)
+
+
+# TODO: refactor the contrib libraries below this comment.
 
 if (USE_INTERNAL_BOOST_LIBRARY)
     add_subdirectory (boost-cmake)
@@ -27,8 +41,6 @@ if (USE_INTERNAL_DOUBLE_CONVERSION_LIBRARY)
     add_subdirectory (double-conversion-cmake)
 endif ()
 
-add_subdirectory (ryu-cmake)
-
 if (USE_INTERNAL_CITYHASH_LIBRARY)
     add_subdirectory (cityhash102)
 endif ()
@@ -40,9 +52,6 @@ endif ()
 if (USE_INTERNAL_METROHASH_LIBRARY)
     add_subdirectory (libmetrohash)
 endif ()
-
-add_subdirectory (murmurhash)
-add_subdirectory (croaring)
 
 if (USE_INTERNAL_BTRIE_LIBRARY)
     add_subdirectory (libbtrie)
@@ -73,14 +82,6 @@ if (USE_INTERNAL_ZLIB_LIBRARY)
             target_compile_definitions (zlibstatic PUBLIC X86_64 UNALIGNED_OK)
         endif ()
     endif ()
-endif ()
-
-add_subdirectory (cctz-cmake)
-
-add_subdirectory (jemalloc-cmake)
-
-if (USE_INTERNAL_CPUID_LIBRARY)
-    add_subdirectory (libcpuid)
 endif ()
 
 if (USE_INTERNAL_H3_LIBRARY)
@@ -328,10 +329,3 @@ endif()
 if (USE_FASTOPS)
     add_subdirectory (fastops-cmake)
 endif()
-
-add_subdirectory(grpc-cmake)
-
-add_subdirectory(replxx-cmake)
-add_subdirectory(FastMemcpy)
-add_subdirectory(consistent-hashing)
-add_subdirectory(consistent-hashing-sumbur)
