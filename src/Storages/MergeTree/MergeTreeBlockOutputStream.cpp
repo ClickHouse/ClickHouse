@@ -6,6 +6,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TIMEOUT_EXCEEDED;
+}
+
 Block MergeTreeBlockOutputStream::getHeader() const
 {
     return storage.getSampleBlock();
@@ -25,6 +30,13 @@ void MergeTreeBlockOutputStream::write(const Block & block)
         storage.renameTempPartAndAdd(part, &storage.increment);
 
         PartLog::addNewPart(storage.global_context, part, watch.elapsed());
+
+        if (isInMemoryPart(part) && storage.getSettings()->in_memory_parts_insert_sync)
+        {
+            if (!part->waitUntilMerged(in_memory_parts_timeout))
+                throw Exception("Timeout exceeded while waiting to write part "
+                    + part->name + " on disk", ErrorCodes::TIMEOUT_EXCEEDED);
+        }
 
         /// Initiate async merge - it will be done if it's good time for merge and if there are space in 'background_pool'.
         if (storage.merging_mutating_task_handle)

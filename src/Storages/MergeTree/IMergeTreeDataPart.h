@@ -91,6 +91,9 @@ public:
 
     virtual bool supportsVerticalMerge() const { return false; }
 
+    virtual bool waitUntilMerged(size_t /* timeout */) const { return true; }
+    virtual void notifyMerged() const {}
+
     /// NOTE: Returns zeros if column files are not found in checksums.
     /// Otherwise return information about column size on disk.
     ColumnSize getColumnSize(const String & column_name, const IDataType & /* type */) const;
@@ -354,5 +357,6 @@ using MergeTreeDataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
 bool isCompactPart(const MergeTreeDataPartPtr & data_part);
 bool isWidePart(const MergeTreeDataPartPtr & data_part);
+bool isInMemoryPart(const MergeTreeDataPartPtr & data_part);
 
 }

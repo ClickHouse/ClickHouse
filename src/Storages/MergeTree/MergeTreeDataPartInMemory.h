@@ -45,9 +45,14 @@ public:
 
     void renameTo(const String & /*new_relative_path*/, bool /*remove_new_dir_if_exists*/) const override {}
 
+    bool waitUntilMerged(size_t timeout) const override;
+    void notifyMerged() const override;
+
     mutable Block block;
 
 private:
+    mutable std::condition_variable is_merged;
+
     void checkConsistency(bool /* require_part_metadata */) const override {}
 
     /// Loads marks index granularity into memory
