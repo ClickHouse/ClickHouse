@@ -138,7 +138,6 @@ inline int memcmpSmallLikeZeroPaddedAllowOverflow15(const Char * a, size_t a_siz
 }
 
 
-
 /** Variant when memory regions have same size.
   * TODO Check if the compiler can optimize previous function when the caller pass identical sizes.
   */
