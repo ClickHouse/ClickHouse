@@ -13,7 +13,7 @@ namespace ErrorCodes
 }
 
 MySQLClient::MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_, const String & database_)
-    : host(host_), port(port_), user(user_), password(password_), database(database_)
+    : host(host_), port(port_), user(user_), password(std::move(password_)), database(std::move(database_))
 {
     client_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH | CLIENT_SECURE_CONNECTION;
 }
@@ -73,9 +73,9 @@ void MySQLClient::handshake(ReadBuffer & payload)
     }
 
     Native41 native41(password, handshake.auth_plugin_data);
-    String response = native41.getAuthPluginData();
+    String auth_plugin_data = native41.getAuthPluginData();
 
-    HandshakeResponse handshakeResponse(client_capability_flags, 0, charset_utf8, user, database, handshake.auth_plugin_data, mysql_native_password);
+    HandshakeResponse handshakeResponse(client_capability_flags, max_packet_size, charset_utf8, user, database, auth_plugin_data, mysql_native_password);
     packet_sender->sendPacket<HandshakeResponse>(handshakeResponse, true);
 }
 }
