@@ -985,6 +985,14 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         LOG_TRACE(log, log_message.rdbuf());
     }
 
+    const auto storage_settings_ptr = getSettings();
+
+    if (storage_settings_ptr->always_fetch_merged_part)
+    {
+        LOG_INFO(log, "Will fetch part " << entry.new_part_name << " because setting always_fetch_merged_part is set to 1");
+        return false;
+    }
+
     DataPartsVector parts;
     bool have_all_parts = true;
     for (const String & name : entry.source_parts)
@@ -1005,7 +1013,6 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         parts.push_back(part);
     }
 
-    const auto storage_settings_ptr = getSettings();
     if (!have_all_parts)
     {
         /// If you do not have all the necessary parts, try to take some already merged part from someone.
