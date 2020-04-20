@@ -74,7 +74,6 @@ Context copyContextAndApplySettings(
             changes.emplace_back(key, value);
         }
 
-        // local_context.checkSettingsConstraints(changes);
         local_context.applySettingsChanges(changes);
     }
     return local_context;
