@@ -748,7 +748,12 @@ private:
 
         if (c0_const && c1_const)
         {
-            return executeString(block, result, c0_const->convertToFullColumn().get(), c1_const->convertToFullColumn().get());
+            auto res = executeString(block, result, &c0_const->getDataColumn(), &c1_const->getDataColumn());
+            if (!res)
+                return false;
+
+            block.getByPosition(result).column = ColumnConst::create(block.getByPosition(result).column, c0_const->size());
+            return true;
         }
         else
         {
