@@ -3,6 +3,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Columns/ColumnConst.h>
 
 namespace DB
 {

@@ -1,23 +1,12 @@
 #pragma once
 
-#include <common/logger_useful.h>
-
-#include <DataStreams/MergingSortedBlockInputStream.h>
-#include <DataStreams/ColumnGathererStream.h>
-
-#include <queue>
-
-
 namespace DB
 {
 
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
+extern const int LOGICAL_ERROR;
 }
-
-static const size_t MAX_ROWS_IN_MULTIVERSION_QUEUE = 8192;
-
 
 /* Deque with fixed memory size. Allows pushing gaps.
  * frontGap() returns the number of gaps were inserted before front.
@@ -154,7 +143,7 @@ private:
     {
         if (size() + 1 == container.size())
             throw Exception("Not enough space to insert into FixedSizeDequeWithGaps with capacity "
-                            + toString(container.size() - 1), ErrorCodes::LOGICAL_ERROR);
+                            + std::to_string(container.size() - 1), ErrorCodes::LOGICAL_ERROR);
     }
 
     void checkHasValuesToRemove() const
@@ -168,48 +157,6 @@ private:
         if (empty())
             throw Exception("Cannot get value from empty FixedSizeDequeWithGaps", ErrorCodes::LOGICAL_ERROR);
     }
-};
-
-class VersionedCollapsingSortedBlockInputStream : public MergingSortedBlockInputStream
-{
-public:
-    /// Don't need version column. It's in primary key.
-    /// max_rows_in_queue should be about max_block_size_ if we won't store a lot of extra blocks (RowRef holds SharedBlockPtr).
-    VersionedCollapsingSortedBlockInputStream(
-        const BlockInputStreams & inputs_, const SortDescription & description_,
-        const String & sign_column_, size_t max_block_size_,
-        WriteBuffer * out_row_sources_buf_ = nullptr, bool average_block_sizes_ = false);
-
-    String getName() const override { return "VersionedCollapsingSorted"; }
-
-protected:
-    /// Can return 1 more records than max_block_size.
-    Block readImpl() override;
-
-private:
-    size_t sign_column_number = 0;
-
-    Logger * log = &Logger::get("VersionedCollapsingSortedBlockInputStream");
-
-    /// Read is finished.
-    bool finished = false;
-
-    Int8 sign_in_queue = 0;
-    const size_t max_rows_in_queue;
-    /// Rows with the same primary key and sign.
-    FixedSizeDequeWithGaps<SharedBlockRowRef> current_keys;
-
-    size_t blocks_written = 0;
-
-    /// Sources of rows for VERTICAL merge algorithm. Size equals to (size + number of gaps) in current_keys.
-    std::queue<RowSourcePart> current_row_sources;
-
-    void merge(MutableColumns & merged_columns, SortingHeap<SortCursor> & queue);
-
-    /// Output to result row for the current primary key.
-    void insertRow(size_t skip_rows, const SharedBlockRowRef & row, MutableColumns & merged_columns);
-
-    void insertGap(size_t gap_size);
 };
 
 }
