@@ -483,7 +483,7 @@ bool AlterCommand::isModifyingData(const StorageInMemoryMetadata & metadata) con
         for (const auto & column : metadata.columns.getAllPhysical())
         {
             if (column.name == column_name)
-                return column.type->getName() != data_type->getName();
+                return !column.type->equals(*data_type);
         }
 
         return true;
@@ -507,7 +507,7 @@ namespace
 /// The function works for Arrays and Nullables of the same structure.
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 {
-    if (from->getName() == to->getName())
+    if (from->equals(*to))
         return true;
 
     static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
