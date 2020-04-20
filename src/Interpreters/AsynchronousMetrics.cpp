@@ -12,6 +12,7 @@
 #include <Databases/IDatabase.h>
 #include <chrono>
 
+
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
 #endif
@@ -129,6 +130,24 @@ void AsynchronousMetrics::update()
 #endif
 
     set("Uptime", context.getUptimeSeconds());
+
+    /// Process memory usage according to OS
+#if defined(OS_LINUX)
+    {
+        MemoryStatisticsOS::Data data = memory_stat.get();
+
+        set("MemoryVirtual", data.virt);
+        set("MemoryResident", data.resident);
+        set("MemoryShared", data.shared);
+        set("MemoryCode", data.code);
+        set("MemoryDataAndStack", data.data_and_stack);
+
+        /// We must update the value of total_memory_tracker periodically.
+        /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/10293
+        total_memory_tracker.set(data.resident);
+    }
+#endif
 
     {
         auto databases = DatabaseCatalog::instance().getDatabases();
