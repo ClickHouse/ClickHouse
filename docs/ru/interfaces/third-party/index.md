@@ -1,5 +1,5 @@
 ---
-toc_folder_title: Third-Party
+toc_folder_title: От сторонних разработчиков
 toc_priority: 24
 ---
 

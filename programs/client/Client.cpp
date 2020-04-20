@@ -684,7 +684,7 @@ private:
                     if (ignore_error)
                     {
                         Tokens tokens(begin, end);
-                        IParser::Pos token_iterator(tokens);
+                        IParser::Pos token_iterator(tokens, context.getSettingsRef().max_parser_depth);
                         while (token_iterator->type != TokenType::Semicolon && token_iterator.isValid())
                             ++token_iterator;
                         begin = token_iterator->end;
@@ -958,10 +958,15 @@ private:
         ParserQuery parser(end, true);
         ASTPtr res;
 
+        const auto & settings = context.getSettingsRef();
+        size_t max_length = 0;
+        if (!allow_multi_statements)
+            max_length = settings.max_query_size;
+
         if (is_interactive || ignore_error)
         {
             String message;
-            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, 0);
+            res = tryParseQuery(parser, pos, end, message, true, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
             if (!res)
             {
@@ -970,7 +975,7 @@ private:
             }
         }
         else
-            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, 0);
+            res = parseQueryAndMovePosition(parser, pos, end, "", allow_multi_statements, max_length, settings.max_parser_depth);
 
         if (is_interactive)
         {

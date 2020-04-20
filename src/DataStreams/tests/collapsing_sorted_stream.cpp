@@ -7,7 +7,6 @@
 
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/CollapsingSortedBlockInputStream.h>
 #include <DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <Interpreters/Context.h>

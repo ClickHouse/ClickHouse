@@ -278,12 +278,6 @@ DatabaseTablesIteratorPtr DatabaseAtomic::getTablesIterator(const IDatabase::Fil
     return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
 }
 
-DatabaseTablesIteratorPtr DatabaseAtomic::getTablesWithDictionaryTablesIterator(const IDatabase::FilterByNameFunction & filter_by_dictionary_name)
-{
-    auto base_iter = DatabaseWithDictionaries::getTablesWithDictionaryTablesIterator(filter_by_dictionary_name);
-    return std::make_unique<AtomicDatabaseTablesSnapshotIterator>(std::move(typeid_cast<DatabaseTablesSnapshotIterator &>(*base_iter)));
-}
-
 UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
 {
     if (auto table = tryGetTable(global_context, table_name))

@@ -6,6 +6,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/Defines.h>
+
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -43,6 +45,8 @@
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
+
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
 #include <Compression/CompressionFactory.h>
 
@@ -189,7 +193,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
         String type_name = column.type->getName();
         auto pos = type_name.data();
         const auto end = pos + type_name.size();
-        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
+        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -215,7 +219,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         String type_name = column.type->getName();
         auto type_name_pos = type_name.data();
         const auto type_name_end = type_name_pos + type_name.size();
-        column_declaration->type = parseQuery(storage_p, type_name_pos, type_name_end, "data type", 0);
+        column_declaration->type = parseQuery(storage_p, type_name_pos, type_name_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
         if (column.default_desc.expression)
         {
@@ -235,7 +239,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             auto codec_desc_pos = codec_desc.data();
             const auto codec_desc_end = codec_desc_pos + codec_desc.size();
             ParserIdentifierWithParameters codec_p;
-            column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0);
+            column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         }
 
         if (column.ttl)
@@ -721,7 +725,14 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
     }
 
     if (create.attach)
-        database->attachDictionary(dictionary_name, context);
+    {
+        auto query = DatabaseCatalog::instance().getDatabase(database_name)->getCreateDictionaryQuery(context, dictionary_name);
+        create = query->as<ASTCreateQuery &>();
+        create.attach = true;
+        auto config = getDictionaryConfigurationFromAST(create);
+        auto modification_time = database->getObjectMetadataModificationTime(dictionary_name);
+        database->attachDictionary(dictionary_name, DictionaryAttachInfo{query_ptr, config, modification_time});
+    }
     else
         database->createDictionary(context, dictionary_name, query_ptr);
 

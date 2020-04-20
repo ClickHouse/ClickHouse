@@ -317,9 +317,11 @@ struct ContextShared
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
+    std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
     std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
+    std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -413,9 +415,11 @@ struct ContextShared
         embedded_dictionaries.reset();
         external_dictionaries_loader.reset();
         external_models_loader.reset();
+        buffer_flush_schedule_pool.reset();
         background_pool.reset();
         background_move_pool.reset();
         schedule_pool.reset();
+        distributed_schedule_pool.reset();
         ddl_worker.reset();
 
         /// Stop trace collector if any
@@ -1330,12 +1334,28 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
     return *shared->background_move_pool;
 }
 
+BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->buffer_flush_schedule_pool)
+        shared->buffer_flush_schedule_pool.emplace(settings.background_buffer_flush_schedule_pool_size);
+    return *shared->buffer_flush_schedule_pool;
+}
+
 BackgroundSchedulePool & Context::getSchedulePool()
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
         shared->schedule_pool.emplace(settings.background_schedule_pool_size);
     return *shared->schedule_pool;
+}
+
+BackgroundSchedulePool & Context::getDistributedSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->distributed_schedule_pool)
+        shared->distributed_schedule_pool.emplace(settings.background_distributed_schedule_pool_size);
+    return *shared->distributed_schedule_pool;
 }
 
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)

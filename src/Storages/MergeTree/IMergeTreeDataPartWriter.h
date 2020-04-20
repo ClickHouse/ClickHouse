@@ -107,7 +107,7 @@ public:
     void initSkipIndices();
     void initPrimaryIndex();
 
-    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) = 0;
+    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) = 0;
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
 

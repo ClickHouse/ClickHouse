@@ -67,7 +67,9 @@ public:
 
     bool isRemote() const override { return true; }
 
-    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum /*to_stage*/, const ASTPtr &) const override;
+    /// Return true if distributed_group_by_no_merge may be applied.
+    bool canForceGroupByNoMerge(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const;
+    QueryProcessingStage::Enum getQueryProcessingStage(const Context &, QueryProcessingStage::Enum to_stage, const ASTPtr &) const override;
 
     Pipes read(
         const Names & column_names,
@@ -107,7 +109,7 @@ public:
     /// create directory monitors for each existing subdirectory
     void createDirectoryMonitors(const std::string & disk);
     /// ensure directory monitor thread and connectoin pool creation by disk and subdirectory name
-    void requireDirectoryMonitor(const std::string & disk, const std::string & name);
+    StorageDistributedDirectoryMonitor & requireDirectoryMonitor(const std::string & disk, const std::string & name);
 
     void flushClusterNodesAllData();
 

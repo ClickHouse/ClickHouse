@@ -989,7 +989,7 @@ Result:
 
 ## arrayZip {#arrayzip}
 
-Combine multiple Array type columns into one Array\[Tuple(…)\] column
+Combines multiple arrays into a single array. The resulting array contains the corresponding elements of the source arrays grouped into tuples in the listed order of arguments.
 
 **Syntax**
 
@@ -999,27 +999,32 @@ arrayZip(arr1, arr2, ..., arrN)
 
 **Parameters**
 
-`arr` — Any number of [array](../../sql_reference/data_types/array.md) type columns to combine.
+- `arrN` — [Array](../data_types/array.md).
+
+The function can take any number of arrays of different types. All the input arrays must be of equal size.
 
 **Returned value**
 
-The result of Array\[Tuple(…)\] type after the combination of these arrays
+- Array with elements from the source arrays grouped into [tuples](../data_types/tuple.md). Data types in the tuple are the same as types of the input arrays and in the same order as arrays are passed.
+
+Type: [Array](../data_types/array.md).
 
 **Example**
 
 Query:
 
 ``` sql
-SELECT arrayZip(['a', 'b', 'c'], ['d', 'e', 'f']);
+SELECT arrayZip(['a', 'b', 'c'], [5, 2, 1])
 ```
 
 Result:
 
 ``` text
-┌─arrayZip(['a', 'b', 'c'], ['d', 'e', 'f'])─┐
-│ [('a','d'),('b','e'),('c','f')]            │
-└────────────────────────────────────────────┘
+┌─arrayZip(['a', 'b', 'c'], [5, 2, 1])─┐
+│ [('a',5),('b',2),('c',1)]            │
+└──────────────────────────────────────┘
 ```
+
 
 ## arrayAUC {#arrayauc}
 Calculate AUC (Area Under the Curve, which is a concept in machine learning, see more details: https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).

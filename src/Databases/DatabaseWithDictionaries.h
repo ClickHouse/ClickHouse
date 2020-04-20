@@ -8,9 +8,9 @@ namespace DB
 class DatabaseWithDictionaries : public DatabaseOnDisk
 {
 public:
-    void attachDictionary(const String & name, const Context & context) override;
+    void attachDictionary(const String & dictionary_name, const DictionaryAttachInfo & attach_info) override;
 
-    void detachDictionary(const String & name, const Context & context) override;
+    void detachDictionary(const String & dictionary_name) override;
 
     void createDictionary(const Context & context,
                           const String & dictionary_name,
@@ -18,15 +18,15 @@ public:
 
     void removeDictionary(const Context & context, const String & dictionary_name) override;
 
-    StoragePtr tryGetTable(const Context & context, const String & table_name) const override;
-
-    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const override;
-
-    DatabaseTablesIteratorPtr getTablesWithDictionaryTablesIterator(const FilterByNameFunction & filter_by_dictionary_name) override;
+    bool isDictionaryExist(const Context & context, const String & dictionary_name) const override;
 
     DatabaseDictionariesIteratorPtr getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name) override;
 
-    bool isDictionaryExist(const Context & context, const String & dictionary_name) const override;
+    Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfiguration(const String & /*name*/) const override;
+
+    time_t getObjectMetadataModificationTime(const String & object_name) const override;
+
+    bool empty(const Context & context) const override;
 
     void shutdown() override;
 
@@ -39,16 +39,17 @@ protected:
     void attachToExternalDictionariesLoader(Context & context);
     void detachFromExternalDictionariesLoader();
 
-    StoragePtr getDictionaryStorage(const String & table_name, bool load) const;
+    void detachDictionaryImpl(const String & dictionary_name, DictionaryAttachInfo & attach_info);
 
     ASTPtr getCreateDictionaryQueryImpl(const Context & context,
                                         const String & dictionary_name,
                                         bool throw_on_error) const override;
 
-private:
-    ext::scope_guard database_as_config_repo_for_external_loader;
+    std::unordered_map<String, DictionaryAttachInfo> dictionaries;
 
-    StoragePtr tryGetTableImpl(const Context & context, const String & table_name, bool load) const;
+private:
+    ExternalDictionariesLoader * external_loader = nullptr;
+    ext::scope_guard database_as_config_repo_for_external_loader;
 };
 
 }

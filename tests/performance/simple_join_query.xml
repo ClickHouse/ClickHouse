@@ -1,18 +1,10 @@
 <test>
 
-    <stop_conditions>
-        <all_of>
-            <total_time_ms>30000</total_time_ms>
-        </all_of>
-        <any_of>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
 
     <create_query>CREATE TABLE join_table(A Int64, S0 String, S1 String, S2 String, S3 String) ENGINE = MergeTree ORDER BY A</create_query>
 
-    <fill_query>INSERT INTO join_table SELECT number AS A, toString(arrayMap(x->x, range(100))) S0, S0 AS S1, S0 AS S2, S0 AS S3 from numbers(500000)</fill_query>
+    <fill_query>INSERT INTO join_table SELECT number AS A, toString(arrayMap(x->x, range(100))) S0, S0 AS S1, S0 AS S2, S0 AS S3 from numbers_mt(5000000)</fill_query>
 
     <query tag='UsingJoinWithoutSubquery'>SELECT COUNT() FROM join_table LEFT JOIN join_table USING A</query>
     <query tag='UsingJoinWithSubquery'>SELECT COUNT() FROM join_table LEFT JOIN (SELECT A FROM join_table) AS right USING A</query>
