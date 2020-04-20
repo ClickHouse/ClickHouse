@@ -99,10 +99,10 @@ private:
             return guess;
 
         /// Time zones that have offset 0 from UTC do daylight saving time change (if any) towards increasing UTC offset (example: British Standard Time).
-        if (t < lut[guess].date)
-            return DayNum(guess - 1);
+        if (t >= lut[DayNum(guess + 1)].date)
+            return DayNum(guess + 1);
 
-        return DayNum(guess + 1);
+        return DayNum(guess - 1);
     }
 
     inline const Values & find(time_t t) const
