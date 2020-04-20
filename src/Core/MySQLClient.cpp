@@ -79,10 +79,11 @@ void MySQLClient::handshake()
         client_capability_flags, max_packet_size, charset_utf8, user, database, auth_plugin_data, mysql_native_password);
     packet_sender->sendPacket<HandshakeResponse>(handshakeResponse, true);
 
-    PacketResponse packetResponse;
+    PacketResponse packetResponse(handshake.capability_flags);
     packet_sender->receivePacket(packetResponse);
 
-    switch (packetResponse.getType()) {
+    switch (packetResponse.getType())
+    {
         case PACKET_OK:
             break;
         case PACKET_ERR:
