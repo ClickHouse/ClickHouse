@@ -2,13 +2,10 @@
 
 namespace DB
 {
-using namespace MySQLProtocol;
 using namespace MySQLProtocol::Authentication;
 
 namespace ErrorCodes
 {
-    extern const int NETWORK_ERROR;
-    extern const int SOCKET_TIMEOUT;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
 }
 
@@ -18,36 +15,22 @@ MySQLClient::MySQLClient(const String & host_, UInt16 port_, const String & user
     client_capability_flags = CLIENT_PROTOCOL_41 | CLIENT_PLUGIN_AUTH | CLIENT_SECURE_CONNECTION;
 }
 
-void MySQLClient::connect()
+bool MySQLClient::connect()
 {
-    try
-    {
-        if (connected)
-        {
-            close();
-        }
-
-        socket = std::make_unique<Poco::Net::StreamSocket>();
-        address = DNSResolver::instance().resolveAddress(host, port);
-        socket->connect(*address);
-
-        in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
-        out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
-        packet_sender = std::make_shared<PacketSender>(*in, *out, seq);
-        connected = true;
-
-        handshake();
-    }
-    catch (Poco::Net::NetException & e)
+    if (connected)
     {
         close();
-        throw NetException(e.displayText(), ErrorCodes::NETWORK_ERROR);
     }
-    catch (Poco::TimeoutException & e)
-    {
-        close();
-        throw NetException(e.displayText(), ErrorCodes::SOCKET_TIMEOUT);
-    }
+
+    socket = std::make_unique<Poco::Net::StreamSocket>();
+    address = DNSResolver::instance().resolveAddress(host, port);
+    socket->connect(*address);
+
+    in = std::make_shared<ReadBufferFromPocoSocket>(*socket);
+    out = std::make_shared<WriteBufferFromPocoSocket>(*socket);
+    packet_sender = std::make_shared<PacketSender>(*in, *out, seq);
+    connected = true;
+    return handshake();
 }
 
 void MySQLClient::close()
@@ -61,7 +44,7 @@ void MySQLClient::close()
 }
 
 /// https://dev.mysql.com/doc/internals/en/connection-phase-packets.html
-void MySQLClient::handshake()
+bool MySQLClient::handshake()
 {
     Handshake handshake;
     packet_sender->receivePacket(handshake);
@@ -81,16 +64,19 @@ void MySQLClient::handshake()
 
     PacketResponse packetResponse(handshake.capability_flags);
     packet_sender->receivePacket(packetResponse);
-
-    switch (packetResponse.getType())
+    if (packetResponse.getType() != PACKET_ERR)
     {
-        case PACKET_OK:
-            break;
-        case PACKET_ERR:
-            throw Exception(packetResponse.err.error_message, ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
-            break;
-        case PACKET_EOF:
-            break;
+        return true;
     }
+    else
+    {
+        last_error = packetResponse.err.error_message;
+        return false;
+    }
+}
+
+String MySQLClient::error()
+{
+    return last_error;
 }
 }

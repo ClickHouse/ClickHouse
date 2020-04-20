@@ -14,14 +14,15 @@
 
 namespace DB
 {
+using namespace MySQLProtocol;
+
 class MySQLClient
 {
 public:
     MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_, const String & database_);
-
-    void connect();
-
+    bool connect();
     void close();
+    String error();
 
 private:
     String host;
@@ -32,6 +33,7 @@ private:
 
     bool connected = false;
     UInt32 client_capability_flags = 0;
+    String last_error;
 
     uint8_t seq = 0;
     UInt8 charset_utf8 = 33;
@@ -42,10 +44,8 @@ private:
     std::shared_ptr<WriteBuffer> out;
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     std::optional<Poco::Net::SocketAddress> address;
+    std::shared_ptr<PacketSender> packet_sender;
 
-    void handshake();
-
-protected:
-    std::shared_ptr<MySQLProtocol::PacketSender> packet_sender;
+    bool handshake();
 };
 }
