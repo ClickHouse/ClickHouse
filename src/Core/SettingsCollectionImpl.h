@@ -173,19 +173,19 @@ bool SettingsCollection<Derived>::tryGet(const StringRef & name, String & value)
 
 
 template <class Derived>
-bool SettingsCollection<Derived>::operator ==(const Derived & rhs) const
+bool SettingsCollection<Derived>::operator ==(const SettingsCollection<Derived> & rhs) const
 {
     const auto & the_members = members();
     for (size_t i = 0; i != the_members.size(); ++i)
     {
         const auto & member = the_members[i];
         bool left_changed = member.is_changed(castToDerived());
-        bool right_changed = member.is_changed(rhs);
+        bool right_changed = member.is_changed(rhs.castToDerived());
         if (left_changed || right_changed)
         {
             if (left_changed != right_changed)
                 return false;
-            if (member.get_field(castToDerived()) != member.get_field(rhs))
+            if (member.get_field(castToDerived()) != member.get_field(rhs.castToDerived()))
                 return false;
         }
     }
