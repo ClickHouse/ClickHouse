@@ -58,12 +58,22 @@ Int64 ColumnDecimal<T>::getInt(size_t n) const {
     return Int64(data[n] * scale);
 }
 
+template <>
+Int64 ColumnDecimal<Decimal256>::getInt(size_t n) const {
+    throw Exception(String("Method getInt is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
+}
+
 template <typename T>
 UInt64 ColumnDecimal<T>::get64(size_t n) const
 {
     if constexpr (sizeof(T) > sizeof(UInt64))
         throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
     return static_cast<typename T::NativeType>(data[n]);
+}
+
+template <>
+UInt64 ColumnDecimal<Decimal256>::get64(size_t) const {
+    throw Exception(String("Method get64 is not supported for ") + getFamilyName(), ErrorCodes::NOT_IMPLEMENTED);
 }
 
 template <typename T>
@@ -226,8 +236,8 @@ void ColumnDecimal<T>::getExtremes(Field & min, Field & max) const
 {
     if (data.size() == 0)
     {
-        min = NearestFieldType<T>(0, scale);
-        max = NearestFieldType<T>(0, scale);
+        min = NearestFieldType<T>(T(0), scale);
+        max = NearestFieldType<T>(T(0), scale);
         return;
     }
 

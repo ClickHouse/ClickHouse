@@ -171,20 +171,20 @@ struct Decimal
     const Decimal<T> & operator /= (const T & x) { value /= x; return *this; }
     const Decimal<T> & operator %= (const T & x) { value %= x; return *this; }
 
-    const Decimal<T> & operator+ (const T & x) const { return value + x; }
-    const Decimal<T> & operator- (const T & x) const { return value - x; }
-    const Decimal<T> & operator* (const T & x) const { return value * x; }
-    const Decimal<T> & operator/ (const T & x) const { return value / x; }
-    const Decimal<T> & operator% (const T & x) const { return value % x; }
-
-    inline bool operator< (const T & x) const { return value < x; }
-    inline bool operator> (const T & x) const { return value > x; }
-    inline bool operator== (const T & x) const { return value == x; }
-
     static T getScaleMultiplier(UInt32 scale);
 
     T value;
 };
+
+Decimal<bInt256> operator+ (const Decimal<bInt256> & x, const bInt256 & y) { return x.value + y; }
+Decimal<bInt256> operator- (const Decimal<bInt256> & x, const bInt256 & y) { return x.value - y; }
+Decimal<bInt256> operator* (const Decimal<bInt256> & x, const bInt256 & y) { return x.value * y; }
+Decimal<bInt256> operator/ (const Decimal<bInt256> & x, const bInt256 & y) { return x.value / y; }
+Decimal<bInt256> operator% (const Decimal<bInt256> & x, const bInt256 & y) { return x.value % y; }
+
+inline bool operator< (const Decimal<bInt256> & x, const bInt256 & y) { return x.value < y; }
+inline bool operator> (const Decimal<bInt256> & x, const bInt256 & y) { return x.value > y; }
+inline bool operator== (const Decimal<bInt256> & x, const bInt256 & y) { return x.value == y; }
 
 using Decimal32 = Decimal<Int32>;
 using Decimal64 = Decimal<Int64>;
