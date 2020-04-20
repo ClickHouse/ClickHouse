@@ -1138,9 +1138,8 @@ public:
 
     static DataTypePtr getType(const char *, const ColumnsWithTypeAndName &)
     {
-        DataTypePtr key_type = std::make_unique<DataTypeString>();
-        DataTypePtr value_type = std::make_unique<DataTypeString>();
-        DataTypePtr tuple_type = std::make_unique<DataTypeTuple>(DataTypes{key_type, value_type});
+        DataTypePtr string_type = std::make_unique<DataTypeString>();
+        DataTypePtr tuple_type = std::make_unique<DataTypeTuple>(DataTypes{string_type, string_type});
         return std::make_unique<DataTypeArray>(tuple_type);
     }
 
