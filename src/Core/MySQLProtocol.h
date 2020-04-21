@@ -520,8 +520,9 @@ public:
             UInt8 part2_length = (auth_plugin_data_length - AUTH_PLUGIN_DATA_PART_1_LENGTH) > 13
                 ? 13
                 : (auth_plugin_data_length - AUTH_PLUGIN_DATA_PART_1_LENGTH);
-            auth_plugin_data.resize(part2_length + AUTH_PLUGIN_DATA_PART_1_LENGTH);
-            buffer.readStrict(auth_plugin_data.data() + AUTH_PLUGIN_DATA_PART_1_LENGTH, part2_length);
+            auth_plugin_data.resize(part2_length + AUTH_PLUGIN_DATA_PART_1_LENGTH - 1);
+            buffer.readStrict(auth_plugin_data.data() + AUTH_PLUGIN_DATA_PART_1_LENGTH, part2_length - 1);
+            buffer.ignore(1);
         }
 
         if (capability_flags & MySQLProtocol::CLIENT_PLUGIN_AUTH)
@@ -621,7 +622,7 @@ public:
         else if (capability_flags & CLIENT_SECURE_CONNECTION)
         {
             writeChar(auth_response.size(), buffer);
-            writeString(auth_response, buffer);
+            writeString(auth_response.data(), auth_response.size(), buffer);
         }
         else
         {
@@ -1165,11 +1166,10 @@ public:
         /// https://dev.mysql.com/doc/internals/en/secure-password-authentication.html
         /// SHA1( password ) XOR SHA1( "20-bytes random data from server" <concat> SHA1( SHA1( password ) ) )
         Poco::SHA1Engine engine1;
-        engine1.update(password.data(), password.size());
+        engine1.update(password.data());
         const Poco::SHA1Engine::Digest & password_sha1 = engine1.digest();
 
         Poco::SHA1Engine engine2;
-        engine2.update(password.data(), password.size());
         engine2.update(password_sha1.data(), password_sha1.size());
         const Poco::SHA1Engine::Digest & password_double_sha1 = engine2.digest();
 
@@ -1178,10 +1178,10 @@ public:
         engine3.update(password_double_sha1.data(), password_double_sha1.size());
         const Poco::SHA1Engine::Digest & digest = engine3.digest();
 
-        scramble.resize(Poco::SHA1Engine::DIGEST_SIZE);
-        for (size_t i = 0; i < scramble.size(); i++)
+        scramble.resize(SCRAMBLE_LENGTH);
+        for (size_t i = 0; i < SCRAMBLE_LENGTH; i++)
         {
-            scramble[i] = password_sha1[i] ^ digest[i];
+            scramble[i] = static_cast<unsigned char>(password_sha1[i] ^ digest[i]);
         }
     }
 
