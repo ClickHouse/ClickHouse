@@ -147,9 +147,9 @@ void ContextAccess::setUser(const UserPtr & user_) const
         current_roles.reserve(params.current_roles.size());
         for (const auto & id : params.current_roles)
         {
-            if (user->granted_roles.contains(id))
+            if (user->granted_roles.count(id))
                 current_roles.push_back(id);
-            if (user->granted_roles_with_admin_option.contains(id))
+            if (user->granted_roles_with_admin_option.count(id))
                 current_roles_with_admin_option.push_back(id);
         }
     }
@@ -358,7 +358,7 @@ void ContextAccess::checkAdminOption(const UUID & role_id) const
         return;
 
     auto roles_with_admin_option_loaded = roles_with_admin_option.load();
-    if (roles_with_admin_option_loaded && roles_with_admin_option_loaded->contains(role_id))
+    if (roles_with_admin_option_loaded && roles_with_admin_option_loaded->count(role_id))
         return;
 
     std::optional<String> role_name = manager->readName(role_id);

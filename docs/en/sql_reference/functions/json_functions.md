@@ -194,17 +194,17 @@ SELECT JSONExtract('{"day": 5}', 'day', 'Enum8(\'Sunday\' = 0, \'Monday\' = 1, \
 
 ## JSONExtractKeysAndValues(json\[, indices\_or\_keys…\], value\_type) {#jsonextractkeysandvaluesjson-indices-or-keys-value-type}
 
-Parse key-value pairs from a JSON where the values are of the given ClickHouse data type.
+Parses key-value pairs from a JSON where the values are of the given ClickHouse data type.
 
 Example:
 
 ``` sql
-SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)];
+SELECT JSONExtractKeysAndValues('{"x": {"a": 5, "b": 7, "c": 11}}', 'x', 'Int8') = [('a',5),('b',7),('c',11)]
 ```
 
 ## JSONExtractRaw(json\[, indices\_or\_keys\]…) {#jsonextractrawjson-indices-or-keys}
 
-Returns a part of JSON.
+Returns a part of JSON as unparsed string.
 
 If the part does not exist or has a wrong type, an empty string will be returned.
 
@@ -214,7 +214,7 @@ Example:
 SELECT JSONExtractRaw('{"a": "hello", "b": [-100, 200.0, 300]}', 'b') = '[-100, 200.0, 300]'
 ```
 
-## JSONExtractArrayRaw(json\[, indices\_or\_keys\]…) {#jsonextractarrayrawjson-indices-or-keys}
+## JSONExtractArrayRaw(json\[, indices\_or\_keys…\]) {#jsonextractarrayrawjson-indices-or-keys}
 
 Returns an array with elements of JSON array, each represented as unparsed string.
 
@@ -227,3 +227,13 @@ SELECT JSONExtractArrayRaw('{"a": "hello", "b": [-100, 200.0, "hello"]}', 'b') =
 ```
 
 [Original article](https://clickhouse.tech/docs/en/query_language/functions/json_functions/) <!--hide-->
+
+## JSONExtractKeysAndValuesRaw(json\[, indices\_or\_keys…\]) {#jsonextractkeysandvaluesrawjson-indices-or-keys}
+
+Parses key-value pairs from a JSON and returns an array of such pairs, each value represented as unparsed string.
+
+Example:
+
+``` sql
+SELECT JSONExtractKeysAndValuesRaw('{"a": "hello", "b": [-100, 200.0, 300]}') = [('a','"hello"'),('b','[-100,200,300]')]
+```

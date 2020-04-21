@@ -1,9 +1,4 @@
 <test>
-    <stop_conditions>
-        <any_of>
-            <iterations>2</iterations>
-        </any_of>
-    </stop_conditions>
 
     <preconditions>
         <table_exists>default.hits_10m_single</table_exists>

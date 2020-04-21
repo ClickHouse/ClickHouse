@@ -46,7 +46,8 @@ int main(int argc, char ** argv)
         formatAST(*ast, std::cerr);
         std::cerr << std::endl;
 
-        Context context = Context::createGlobal();
+        SharedContextHolder shared_context = Context::createShared();
+        Context context = Context::createGlobal(shared_context.get());
         context.makeGlobalContext();
         NamesAndTypesList columns
         {

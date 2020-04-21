@@ -126,8 +126,13 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 
 namespace
 {
-    using NamesAndTypesMap = ::google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = ::google::dense_hash_set<StringRef, StringRefHash>;
+#if !defined(ARCADIA_BUILD)
+    using NamesAndTypesMap = google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
+#else
+    using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
+#endif
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {

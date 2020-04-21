@@ -95,7 +95,8 @@ int main()
         }
     };
 
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
 
     auto system_database = std::make_shared<DatabaseMemory>("system");

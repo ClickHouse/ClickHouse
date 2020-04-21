@@ -472,11 +472,21 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         throw Exception("Wrong parameter type in ALTER query", ErrorCodes::LOGICAL_ERROR);
 }
 
-bool AlterCommand::isModifyingData() const
+bool AlterCommand::isModifyingData(const StorageInMemoryMetadata & metadata) const
 {
     /// Possible change data representation on disk
     if (type == MODIFY_COLUMN)
-        return data_type != nullptr;
+    {
+        if (data_type == nullptr)
+            return false;
+
+        /// It is allowed to ALTER data type to the same type as before.
+        for (const auto & column : metadata.columns.getAllPhysical())
+            if (column.name == column_name)
+                return !column.type->equals(*data_type);
+
+        return true;
+    }
 
     return type == ADD_COLUMN  /// We need to change columns.txt in each part for MergeTree
         || type == DROP_COLUMN /// We need to change columns.txt in each part for MergeTree
@@ -496,7 +506,7 @@ namespace
 /// The function works for Arrays and Nullables of the same structure.
 bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 {
-    if (from->getName() == to->getName())
+    if (from->equals(*to))
         return true;
 
     static const std::unordered_multimap<std::type_index, const std::type_info &> ALLOWED_CONVERSIONS =
@@ -888,11 +898,11 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     validateColumnsDefaultsAndGetSampleBlock(default_expr_list, all_columns.getAll(), context);
 }
 
-bool AlterCommands::isModifyingData() const
+bool AlterCommands::isModifyingData(const StorageInMemoryMetadata & metadata) const
 {
     for (const auto & param : *this)
     {
-        if (param.isModifyingData())
+        if (param.isModifyingData(metadata))
             return true;
     }
 
