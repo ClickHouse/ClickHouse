@@ -395,10 +395,6 @@ Result:
 └─────────────────────┘
 ```
 
-**See Also**
-
-- [NGINX A/B testing module](https://nginx.ru/en/docs/http/ngx_http_split_clients_module.html)
-
 ## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
 
 Produces a [MurmurHash3](https://github.com/aappleby/smhasher) hash value.
