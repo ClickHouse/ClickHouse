@@ -972,13 +972,13 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
     for (auto & function : aggregate_functions)
         is_finalization_needed = is_finalization_needed || function->isFinalizationNeeded();
 
+    PaddedPODArray<AggregateDataPtr> places;
+    places.reserve(data.size());
+
+    data.forEachMapped([&](const auto & value) { places.push_back(value); });
+
     if (is_finalization_needed)
     {
-        PaddedPODArray<AggregateDataPtr> places;
-        places.reserve(data.size());
-
-        data.forEachMapped([&](const auto & value) { places.push_back(value); });
-
         for (size_t i = 0; i < params.aggregates_size; ++i)
             if (aggregate_functions[i]->isFinalizationNeeded())
                 aggregate_functions[i]->finalizeBatch(places.size(), places.data(), offsets_of_aggregate_states[i]);
@@ -1003,14 +1003,15 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
         }
     }
 
-    data.forEachValue([&](const auto & key, auto & mapped)
+    for (size_t i = 0; i < params.aggregates_size; ++i)
+        aggregate_functions[i]->batchInsertResultInto(
+                places.size(), places.data(),
+                offsets_of_aggregate_states[i],
+                *final_aggregate_columns[i]);
+
+    data.forEachValue([&](const auto & key, auto &)
     {
         method.insertKeyIntoColumns(key, key_columns, key_sizes);
-
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-            aggregate_functions[i]->insertResultInto(
-                mapped + offsets_of_aggregate_states[i],
-                *final_aggregate_columns[i]);
     });
 
     destroyImpl<Method>(data);
