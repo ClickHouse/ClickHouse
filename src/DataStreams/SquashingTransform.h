@@ -28,18 +28,23 @@ public:
     /** Add next block and possibly returns squashed block.
       * At end, you need to pass empty block. As the result for last (empty) block, you will get last Result with ready = true.
       */
-    Columns add(const Block & block);
+    Block add(Block && block);
+    Block add(const Block & block);
 
 private:
     size_t min_block_size_rows;
     size_t min_block_size_bytes;
     bool reserve_memory;
 
-    Columns accumulated_columns;
+    Block accumulated_block;
 
-    void append(Columns && block_columns);
+    template <typename ReferenceType>
+    Block addImpl(ReferenceType block);
+    
+    template <typename ReferenceType>
+    void append(ReferenceType block);
 
-    bool isEnoughSize(const Columns & columns);
+    bool isEnoughSize(const Block & block);
     bool isEnoughSize(size_t rows, size_t bytes) const;
 };
 

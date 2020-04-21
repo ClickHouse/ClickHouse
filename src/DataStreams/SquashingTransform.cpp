@@ -15,86 +15,106 @@ SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_b
 {
 }
 
+Block SquashingTransform::add(Block && input_block)
+{
+    return addImpl<Block &&>(std::move(input_block));
+}
 
-Columns SquashingTransform::add(const Block & block)
+Block SquashingTransform::add(const Block & input_block)
+{
+    return addImpl<const Block &>(input_block);
+}
+
+/*
+ * To minimize copying, accept two types of argument: const reference for output
+ * stream, and rvalue reference for input stream, and decide whether to copy 
+ * inside this function. This allows us not to copy Block unless we absolutely
+ * have to.
+ */
+template <typename ReferenceType>
+Block SquashingTransform::addImpl(ReferenceType input_block)
 {
     /// End of input stream.
-    if (!block)
+    if (!input_block)
     {
-        Columns to_return;
-        std::swap(to_return, accumulated_columns);
+        Block to_return;
+        std::swap(to_return, accumulated_block);
         return to_return;
     }
 
-    auto block_columns = block.getColumns();
     /// Just read block is already enough.
-    if (isEnoughSize(block_columns))
+    if (isEnoughSize(input_block))
     {
         /// If no accumulated data, return just read block.
-        if (accumulated_columns.empty())
+        if (!accumulated_block)
         {
-            return block_columns;
+            return std::move(input_block);
         }
 
         /// Return accumulated data (maybe it has small size) and place new block to accumulated data.
-        block_columns.swap(accumulated_columns);
-        return block_columns;
+        Block to_return = std::move(input_block);
+        std::swap(to_return, accumulated_block);
+        return to_return;
     }
 
     /// Accumulated block is already enough.
-    if (isEnoughSize(accumulated_columns))
+    if (isEnoughSize(accumulated_block))
     {
         /// Return accumulated data and place new block to accumulated data.
-        std::swap(block_columns, accumulated_columns);
-        return block_columns;
+        Block to_return = std::move(input_block);
+        std::swap(to_return, accumulated_block);
+        return to_return;
     }
 
-    append(std::move(block_columns));
+    append<ReferenceType>(std::move(input_block));
 
-    if (isEnoughSize(accumulated_columns))
+    if (isEnoughSize(accumulated_block))
     {
-        Columns to_return;
-        std::swap(to_return, accumulated_columns);
+        Block to_return;
+        std::swap(to_return, accumulated_block);
         return to_return;
     }
 
     /// Squashed block is not ready.
-    return Columns();
+    return {};
 }
 
 
-void SquashingTransform::append(Columns && block_columns)
+template <typename ReferenceType>
+void SquashingTransform::append(ReferenceType input_block)
 {
-    if (accumulated_columns.empty())
+    if (!accumulated_block)
     {
-        std::swap(accumulated_columns, block_columns);
+        accumulated_block = std::move(input_block);
         return;
     }
 
-    assert(block_columns.size() == accumulated_columns.size());
+    assert(blocksHaveEqualStructure(input_block, accumulated_block));
 
-    for (size_t i = 0, size = block_columns.size(); i < size; ++i)
+    for (size_t i = 0, size = accumulated_block.columns(); i < size; ++i)
     {
-        auto mutable_column = std::move(*accumulated_columns[i]).mutate();
+        const auto source_column = input_block.getByPosition(i).column;
+
+        auto mutable_column = (*std::move(
+            accumulated_block.getByPosition(i).column)).mutate();
 
         if (reserve_memory)
         {
             mutable_column->reserve(min_block_size_bytes);
         }
-        mutable_column->insertRangeFrom(*block_columns[i], 0,
-                                        block_columns[i]->size());
+        mutable_column->insertRangeFrom(*source_column, 0, source_column->size());
 
-        accumulated_columns[i] = std::move(mutable_column);
+        accumulated_block.getByPosition(i).column = std::move(mutable_column);
     }
 }
 
 
-bool SquashingTransform::isEnoughSize(const Columns & columns)
+bool SquashingTransform::isEnoughSize(const Block & block)
 {
     size_t rows = 0;
     size_t bytes = 0;
 
-    for (const auto & column : columns)
+    for (const auto & [column, type, name] : block)
     {
         if (!rows)
             rows = column->size();

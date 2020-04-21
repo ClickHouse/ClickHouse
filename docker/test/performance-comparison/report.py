@@ -169,12 +169,14 @@ if args.report == 'main':
 
         attrs = ['' for c in columns]
         for row in rows:
-            if float(row[2]) < 0.:
-                faster_queries += 1
-                attrs[2] = 'style="background: #adbdff"'
-            else:
-                slower_queries += 1
-                attrs[2] = 'style="background: #ffb0a0"'
+            attrs[2] = ''
+            if abs(float(row[2])) > 0.10:
+                if float(row[2]) < 0.:
+                    faster_queries += 1
+                    attrs[2] = 'style="background: #adbdff"'
+                else:
+                    slower_queries += 1
+                    attrs[2] = 'style="background: #ffb0a0"'
 
             print(tableRow(row, attrs))
 
