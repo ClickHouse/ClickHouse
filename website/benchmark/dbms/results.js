@@ -53,7 +53,6 @@ var results =
                     [0.182, 0.016, 0.014]
                 ]
         },
-
         {
             "system": "ClickHouse",
             "version": "19.1.6",
