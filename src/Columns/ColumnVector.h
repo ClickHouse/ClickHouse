@@ -134,10 +134,7 @@ public:
         data.push_back(static_cast<const Self &>(src).getData()[n]);
     }
 
-    void insertData(const char * pos, size_t /*length*/) override
-    {
-        data.push_back(unalignedLoad<T>(pos));
-    }
+    void insertData(const char * pos, size_t length) override;
 
     void insertDefault() override
     {

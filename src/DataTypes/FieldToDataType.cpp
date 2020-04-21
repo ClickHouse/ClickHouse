@@ -110,4 +110,24 @@ DataTypePtr FieldToDataType::operator() (const AggregateFunctionStateData & x) c
     return DataTypeFactory::instance().get(name);
 }
 
+DataTypePtr FieldToDataType::operator() (const bUInt128 &) const
+{
+    throw Exception("There are no UInt128 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+DataTypePtr FieldToDataType::operator() (const bInt128 &) const
+{
+    throw Exception("There are no Int128 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+DataTypePtr FieldToDataType::operator() (const bUInt256 &) const
+{
+    throw Exception("There are no UInt256 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
+DataTypePtr FieldToDataType::operator() (const bInt256 &) const
+{
+    throw Exception("There are no Int256 literals in SQL", ErrorCodes::NOT_IMPLEMENTED);
+}
+
 }

@@ -30,8 +30,26 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
+    extern const int BAD_TYPE_OF_FIELD;
 }
 
+template <typename T>
+void ColumnVector<T>::insertData(const char * pos, size_t /*length*/)
+{
+    data.push_back(unalignedLoad<T>(pos));
+}
+
+template <>
+void ColumnVector<bUInt256>::insertData(const char *, size_t)
+{
+    throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+void ColumnVector<bInt256>::insertData(const char *, size_t)
+{
+    throw Exception("Int256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
 
 template <typename T>
 StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
@@ -232,6 +250,30 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
     }
 
     return res;
+}
+
+template <>
+MutableColumnPtr ColumnVector<bUInt128>::cloneResized(size_t) const
+{
+    throw Exception("UInt128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+MutableColumnPtr ColumnVector<bInt128>::cloneResized(size_t) const
+{
+    throw Exception("Int128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+MutableColumnPtr ColumnVector<bUInt256>::cloneResized(size_t) const
+{
+    throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+MutableColumnPtr ColumnVector<bInt256>::cloneResized(size_t) const
+{
+    throw Exception("Int256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 template <typename T>
@@ -441,11 +483,15 @@ template class ColumnVector<UInt16>;
 template class ColumnVector<UInt32>;
 template class ColumnVector<UInt64>;
 template class ColumnVector<UInt128>;
+template class ColumnVector<bUInt128>;
+template class ColumnVector<bUInt256>;
 template class ColumnVector<Int8>;
 template class ColumnVector<Int16>;
 template class ColumnVector<Int32>;
 template class ColumnVector<Int64>;
 template class ColumnVector<Int128>;
+template class ColumnVector<bInt128>;
+template class ColumnVector<bInt256>;
 template class ColumnVector<Float32>;
 template class ColumnVector<Float64>;
 }

@@ -42,8 +42,12 @@ namespace common
                             boost::multiprecision::int256_t y,
                             boost::multiprecision::int256_t & res)
     {
+        using boost::multiprecision::int256_t;
+        static const int256_t max_int256 = (int256_t(1) << 255) + ((int256_t(1) << 255) - 1);
+        static const int256_t min_int256 = -max_int256;
+
         res = x + y;
-        return false;
+        return (y > 0 && x > max_int256 - y) || (y < 0 && x < min_int256 - y);
     }
 
     template <typename T>
@@ -84,8 +88,12 @@ namespace common
                             boost::multiprecision::int256_t y,
                             boost::multiprecision::int256_t & res)
     {
+        using boost::multiprecision::int256_t;
+        static const int256_t max_int256 = (int256_t(1) << 255) + ((int256_t(1) << 255) - 1);
+        static const int256_t min_int256 = -max_int256;
+
         res = x - y;
-        return false;
+        return (y < 0 && x > max_int256 + y) || (y > 0 && x < min_int256 + y);
     }
 
     template <typename T>
@@ -130,6 +138,11 @@ namespace common
                             boost::multiprecision::int256_t & res)
     {
         res = x * y;
-        return false;
+        if (!x || !y)
+            return false;
+
+        boost::multiprecision::int256_t a = (x > 0) ? x : -x;
+        boost::multiprecision::int256_t b = (y > 0) ? y : -y;
+        return (a * b) / b != a;
     }
 }
