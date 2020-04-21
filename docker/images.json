@@ -15,5 +15,5 @@
     "docker/test/stress": "yandex/clickhouse-stress-test",
     "docker/test/split_build_smoke_test": "yandex/clickhouse-split-build-smoke-test",
     "docker/test/codebrowser": "yandex/clickhouse-codebrowser",
-    "tests/integration/image": "yandex/clickhouse-integration-tests-runner"
+    "docker/test/integration/runner": "yandex/clickhouse-integration-tests-runner"
 }
