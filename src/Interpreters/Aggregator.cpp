@@ -1142,7 +1142,12 @@ Block Aggregator::prepareBlockAndFillWithoutKey(AggregatedDataVariants & data_va
                 if (!final_)
                     aggregate_columns[i]->push_back(data + offsets_of_aggregate_states[i]);
                 else
+                {
+                    if (aggregate_functions[i]->isFinalizationNeeded())
+                        aggregate_functions[i]->finalize(data + offsets_of_aggregate_states[i]);
+
                     aggregate_functions[i]->insertResultInto(data + offsets_of_aggregate_states[i], *final_aggregate_columns[i]);
+                }
             }
 
             if (!final_)
