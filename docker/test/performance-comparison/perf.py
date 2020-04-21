@@ -25,7 +25,7 @@ parser = argparse.ArgumentParser(description='Run performance test.')
 parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, help='test description file')
 parser.add_argument('--host', nargs='*', default=['localhost'], help="Server hostname(s). Corresponds to '--port' options.")
 parser.add_argument('--port', nargs='*', default=[9000], help="Server port(s). Corresponds to '--host' options.")
-parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 11)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
+parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 13)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
 parser.add_argument('--no-long', type=bool, default=True, help='Skip the tests tagged as long.')
 args = parser.parse_args()
 
