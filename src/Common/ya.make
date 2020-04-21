@@ -64,6 +64,7 @@ SRCS(
     isLocalAddress.cpp
     Macros.cpp
     malloc.cpp
+    MemoryStatisticsOS.cpp
     MemoryTracker.cpp
     new_delete.cpp
     OptimizedRegularExpression.cpp
