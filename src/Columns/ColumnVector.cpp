@@ -40,6 +40,18 @@ void ColumnVector<T>::insertData(const char * pos, size_t /*length*/)
 }
 
 template <>
+void ColumnVector<bUInt128>::insertData(const char *, size_t)
+{
+    throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+void ColumnVector<bInt128>::insertData(const char *, size_t)
+{
+    throw Exception("Int256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
 void ColumnVector<bUInt256>::insertData(const char *, size_t)
 {
     throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -59,11 +71,55 @@ StringRef ColumnVector<T>::serializeValueIntoArena(size_t n, Arena & arena, char
     return StringRef(pos, sizeof(T));
 }
 
+template <>
+StringRef ColumnVector<bUInt128>::serializeValueIntoArena(size_t, Arena &, char const *&) const {
+    throw Exception("UInt128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+StringRef ColumnVector<bInt128>::serializeValueIntoArena(size_t, Arena &, char const *&) const {
+    throw Exception("Int128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+StringRef ColumnVector<bUInt256>::serializeValueIntoArena(size_t, Arena &, char const *&) const {
+    throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+StringRef ColumnVector<bInt256>::serializeValueIntoArena(size_t, Arena &, char const *&) const {
+    throw Exception("Int256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
 template <typename T>
 const char * ColumnVector<T>::deserializeAndInsertFromArena(const char * pos)
 {
     data.push_back(unalignedLoad<T>(pos));
     return pos + sizeof(T);
+}
+
+template <>
+const char * ColumnVector<bUInt128>::deserializeAndInsertFromArena(const char *)
+{
+    throw Exception("UInt128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+const char * ColumnVector<bInt128>::deserializeAndInsertFromArena(const char *)
+{
+    throw Exception("Int128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+const char * ColumnVector<bUInt256>::deserializeAndInsertFromArena(const char *)
+{
+    throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+const char * ColumnVector<bInt256>::deserializeAndInsertFromArena(const char *)
+{
+    throw Exception("Int256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 template <typename T>
@@ -309,6 +365,26 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
     size_t old_size = data.size();
     data.resize(old_size + length);
     memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
+}
+
+template <>
+void ColumnVector<bUInt128>::insertRangeFrom(const IColumn &, size_t, size_t) {
+    throw Exception("UInt128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+void ColumnVector<bInt128>::insertRangeFrom(const IColumn &, size_t, size_t) {
+    throw Exception("Int128 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+void ColumnVector<bUInt256>::insertRangeFrom(const IColumn &, size_t, size_t) {
+    throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+}
+
+template <>
+void ColumnVector<bInt256>::insertRangeFrom(const IColumn &, size_t, size_t) {
+    throw Exception("Int256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
 }
 
 template <typename T>
