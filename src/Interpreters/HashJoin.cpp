@@ -648,7 +648,7 @@ bool HashJoin::addJoinedBlock(const Block & source_block, bool check_limits)
     if (overDictionary())
         throw Exception("Logical error: insert into hash-map in HashJoin over dictionary", ErrorCodes::LOGICAL_ERROR);
 
-    /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficient.
+    /// RowRef::SizeT is uint32_t (not size_t) for hash table Cell memory efficiency.
     /// It's possible to split bigger blocks and insert them by parts here. But it would be a dead code.
     if (unlikely(source_block.rows() > std::numeric_limits<RowRef::SizeT>::max()))
         throw Exception("Too many rows in right table block for HashJoin: " + toString(source_block.rows()), ErrorCodes::NOT_IMPLEMENTED);
