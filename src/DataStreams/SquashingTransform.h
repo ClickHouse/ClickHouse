@@ -40,7 +40,7 @@ private:
 
     template <typename ReferenceType>
     Block addImpl(ReferenceType block);
-    
+
     template <typename ReferenceType>
     void append(ReferenceType block);
 
