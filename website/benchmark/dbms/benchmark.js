@@ -1,9 +1,9 @@
 var data_sizes =
-[
-    { id: "10000000",   name: "10 mln." },
-    { id: "100000000",  name: "100 mln." },
-    { id: "1000000000", name: "1 bn." }
-];
+    [
+        {id: "10000000", name: "10 mln."},
+        {id: "100000000", name: "100 mln."},
+        {id: "1000000000", name: "1 bn."}
+    ];
 
 var current_data_size = 1000000000;
 
@@ -11,7 +11,7 @@ var systems = [];
 var systems_uniq = {};
 for (r in results) {
     if (systems_uniq[results[r].system])
-       continue;
+        continue;
     systems_uniq[results[r].system] = 1;
     systems.push(results[r].system);
 }
@@ -25,19 +25,22 @@ try {
     current_data_size = state[0];
     current_systems = state[1];
     current_runs = state[2];
-} catch (e) {}
+} catch (e) {
+}
 
 function update_hash() {
-    window.location.hash = JSON.stringify([ current_data_size, current_systems, current_runs ]);
+    window.location.hash = JSON.stringify([current_data_size, current_systems, current_runs]);
 }
 
 
 function generate_selectors(elem) {
     var html = '<table class="table table-borderless"><tbody><tr id="systems_selector"><th scope="row"><strong class="fake-btn">Compare</strong></th><td>';
 
-    var available_systems_for_current_data_size = results.
-        filter(function(run) { return run.data_size == current_data_size; }).
-        map(function(run) { return run.system; });
+    var available_systems_for_current_data_size = results.filter(function (run) {
+        return run.data_size == current_data_size;
+    }).map(function (run) {
+        return run.system;
+    });
 
     for (var i = 0; i < systems.length; i++) {
         var selected = current_systems.indexOf(systems[i]) != -1;
@@ -67,7 +70,7 @@ function generate_selectors(elem) {
 
     elem.html(html);
 
-    $('#systems_selector button:not(.disabled)').click(function(event) {
+    $('#systems_selector button:not(.disabled)').click(function (event) {
         var target = $(event.target || event.srcElement);
 
         if (target.hasClass("active") && current_systems.length == 1) {
@@ -76,8 +79,11 @@ function generate_selectors(elem) {
 
         target.toggleClass("active");
 
-        current_systems = $.map($('#systems_selector button'), function(elem) {
-            return $(elem).hasClass("active") ? $(elem).html() : null }).filter(function(x) { return x; });
+        current_systems = $.map($('#systems_selector button'), function (elem) {
+            return $(elem).hasClass("active") ? $(elem).html() : null
+        }).filter(function (x) {
+            return x;
+        });
 
         update_hash();
         generate_selectors(elem);
@@ -85,7 +91,7 @@ function generate_selectors(elem) {
         generate_diagram();
     });
 
-    $('#data_size_selector button').click(function(event) {
+    $('#data_size_selector button').click(function (event) {
         var target = $(event.target || event.srcElement);
 
         current_data_size = target.attr("data-size-id");
@@ -96,7 +102,7 @@ function generate_selectors(elem) {
         generate_diagram();
     });
 
-    $('#runs_selector button').click(function(event) {
+    $('#runs_selector button').click(function (event) {
         var target = $(event.target || event.srcElement);
 
         if (target.hasClass("active") && current_runs.length == 1) {
@@ -105,15 +111,18 @@ function generate_selectors(elem) {
 
         target.toggleClass("active");
 
-        current_runs = $.map($('#runs_selector button'), function(elem) {
-            return $(elem).hasClass("active") ? $(elem).attr("data-run-id") : null }).filter(function(x) { return x; });
+        current_runs = $.map($('#runs_selector button'), function (elem) {
+            return $(elem).hasClass("active") ? $(elem).attr("data-run-id") : null
+        }).filter(function (x) {
+            return x;
+        });
 
         update_hash();
         generate_selectors(elem);
         generate_comparison_table();
         generate_diagram();
     });
-};
+}
 
 
 function format_number_cell(value, ratio) {
@@ -145,8 +154,9 @@ var ratios = [];
 function generate_comparison_table() {
     ratios = [];
 
-    var filtered_results = results.filter(function(x) {
-        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1; });
+    var filtered_results = results.filter(function (x) {
+        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
+    });
 
     var html = "";
 
@@ -241,9 +251,12 @@ function generate_comparison_table() {
     $('#comparison_table').html(html);
 
     for (var i = 0; i < queries.length; i++) {
-        $('#query_checkbox' + i).click(function() { calculate_totals(); generate_diagram(); } );
+        $('#query_checkbox' + i).click(function () {
+            calculate_totals();
+            generate_diagram();
+        });
     }
-    $('#query_checkbox_toggler').click(function() {
+    $('#query_checkbox_toggler').click(function () {
         for (var i = 0; i < queries.length; i++) {
             var item = $('#query_checkbox' + i);
             item.prop("checked", !item.prop("checked"));
@@ -257,8 +270,9 @@ function generate_comparison_table() {
 function calculate_totals() {
     if (!current_systems.length) return;
 
-    var filtered_results = results.filter(function(x) {
-        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1; });
+    var filtered_results = results.filter(function (x) {
+        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
+    });
 
     var total_ratios = [];
 
@@ -267,14 +281,16 @@ function calculate_totals() {
             var k = current_runs[current_run_idx];
 
             var current_ratios = ratios[j][k].filter(
-                function(x, i) {
+                function (x, i) {
                     return x && $("#query_checkbox" + i).is(':checked');
                 }
             );
 
             var ratio = Math.pow(
                 current_ratios.reduce(
-                    function(acc, cur) { return acc * cur; },
+                    function (acc, cur) {
+                        return acc * cur;
+                    },
                     1),
                 1 / current_ratios.length);
 
@@ -295,8 +311,9 @@ function calculate_totals() {
 function generate_diagram() {
     var html = "";
 
-    var filtered_results = results.filter(function(x) {
-        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1; });
+    var filtered_results = results.filter(function (x) {
+        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
+    });
 
     var max_ratio = 1;
     var min_ratio = 0;
@@ -366,7 +383,7 @@ function generate_diagram() {
     html += "</table>";
 
     $('#diagram').html(html);
-};
+}
 
 generate_selectors($('#selectors'));
 generate_comparison_table();
