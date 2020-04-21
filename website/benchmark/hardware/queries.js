@@ -1,6 +1,9 @@
-var current_data_size = 1000000000;
+var current_data_size = 0;
 
-var current_systems = ["ClickHouse", "Vertica", "Greenplum"];
+var current_systems = [
+'Xeon Gold 6230, 2 sockets, 40 threads',
+'Dell PowerEdge R640 DX292 2x Xeon SP Gold 16-Core 2.10GHz, 196 GB RAM, 2x SSD 960 GB RAID-1',
+'E5-2650 v2 @ 2.60GHz, 2 sockets, 16 threads, 8xHDD RAID-5'];
 
 var queries =
     [
@@ -176,4 +179,4 @@ var queries =
             "query": "SELECT    toStartOfMinute(EventTime) AS Minute,    count() AS PageViews FROM hits WHERE    CounterID = 34    AND EventDate >= toDate('2013-07-01')    AND EventDate <= toDate('2013-07-02')    AND NOT Refresh    AND NOT DontCountHits GROUP BY    Minute ORDER BY Minute;",
             "comment": "",
         }
-    ]
+    ];

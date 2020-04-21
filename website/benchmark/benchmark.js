@@ -6,8 +6,6 @@ var data_sizes =
     ];
 
 
-var current_data_size = 1000000000;
-
 var systems = [];
 var systems_uniq = {};
 for (r in results) {
@@ -17,7 +15,6 @@ for (r in results) {
     systems.push(results[r].system);
 }
 
-var current_systems = ["ClickHouse", "Vertica", "Greenplum"];
 var runs = ["first (cold cache)", "second", "third"];
 var current_runs = ['0', '1'];
 
@@ -37,9 +34,14 @@ function update_hash() {
 function generate_selectors(elem) {
     var html = '<table class="table table-borderless"><tbody><tr id="systems_selector"><th scope="row"><strong class="fake-btn">Compare</strong></th><td>';
 
-    var available_systems_for_current_data_size = results.filter(function (run) {
-        return run.data_size == current_data_size;
-    }).map(function (run) {
+    var available_results = results;
+
+    if (current_data_size) {
+        available_results = results.filter(function (run) {
+            return run.data_size == current_data_size;
+        });
+    }
+    var available_systems_for_current_data_size = available_results.map(function (run) {
         return run.system;
     });
 
@@ -54,10 +56,12 @@ function generate_selectors(elem) {
     }
 
     html += '</td></tr>';
-    html += '<tr id="data_size_selector"><th scope="row"><strong class="fake-btn">Dataset size</strong></th><td>';
+    if (current_data_size) {
+        html += '<tr id="data_size_selector"><th scope="row"><strong class="fake-btn">Dataset size</strong></th><td>';
 
-    for (var i = 0; i < data_sizes.length; i++) {
-        html += '<button type="button" class="btn btn-outline-dark mr-2 mb-2' + (data_sizes[i].id == current_data_size ? ' active' : '') + '" data-size-id="' + data_sizes[i].id + '">' + data_sizes[i].name + '</button>';
+        for (var i = 0; i < data_sizes.length; i++) {
+            html += '<button type="button" class="btn btn-outline-dark mr-2 mb-2' + (data_sizes[i].id == current_data_size ? ' active' : '') + '" data-size-id="' + data_sizes[i].id + '">' + data_sizes[i].name + '</button>';
+        }
     }
 
     html += '</td></tr>';
@@ -92,16 +96,18 @@ function generate_selectors(elem) {
         generate_diagram();
     });
 
-    $('#data_size_selector button').click(function (event) {
-        var target = $(event.target || event.srcElement);
+    if (current_data_size) {
+        $('#data_size_selector button').click(function (event) {
+            var target = $(event.target || event.srcElement);
 
-        current_data_size = target.attr("data-size-id");
+            current_data_size = target.attr("data-size-id");
 
-        update_hash();
-        generate_selectors(elem);
-        generate_comparison_table();
-        generate_diagram();
-    });
+            update_hash();
+            generate_selectors(elem);
+            generate_comparison_table();
+            generate_diagram();
+        });
+    }
 
     $('#runs_selector button').click(function (event) {
         var target = $(event.target || event.srcElement);
@@ -124,7 +130,6 @@ function generate_selectors(elem) {
         generate_diagram();
     });
 }
-
 
 function format_number_cell(value, ratio) {
     var html = "";
@@ -155,9 +160,13 @@ var ratios = [];
 function generate_comparison_table() {
     ratios = [];
 
-    var filtered_results = results.filter(function (x) {
-        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
-    });
+    var filtered_results = results;
+
+    if (current_data_size) {
+        filtered_results = results.filter(function (x) {
+            return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
+        });
+    }
 
     var html = "";
 
@@ -270,10 +279,12 @@ function generate_comparison_table() {
 
 function calculate_totals() {
     if (!current_systems.length) return;
-
-    var filtered_results = results.filter(function (x) {
-        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
-    });
+    var filtered_results = results;
+    if (current_data_size) {
+        filtered_results = filtered_results.filter(function (x) {
+            return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
+        });
+    }
 
     var total_ratios = [];
 
@@ -311,10 +322,12 @@ function calculate_totals() {
 
 function generate_diagram() {
     var html = "";
-
-    var filtered_results = results.filter(function (x) {
-        return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
-    });
+    var filtered_results = results;
+    if (current_data_size) {
+        filtered_results = results.filter(function (x) {
+            return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
+        });
+    }
 
     var max_ratio = 1;
     var min_ratio = 0;

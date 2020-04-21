@@ -119,9 +119,10 @@ def minify_website(args):
             raise RuntimeError('failed to run closure compiler')
 
     else:
-        logging.info(command)
         js_in = ' '.join(js_in)
-        output = subprocess.check_output(f'cat {js_in} > {js_out}', shell=True)
+        command = f'cat {js_in} > {js_out}'
+        logging.info(command)
+        output = subprocess.check_output(command, shell=True)
         logging.debug(output)
     with open(js_out, 'rb') as f:
         js_digest = hashlib.sha3_224(f.read()).hexdigest()[0:8]
@@ -155,7 +156,7 @@ def minify_website(args):
 
 def process_benchmark_results(args):
     benchmark_root = os.path.join(args.website_dir, 'benchmark')
-    for benchmark_kind in ['dbms']:
+    for benchmark_kind in ['dbms', 'hardware']:
         results = []
         results_root = os.path.join(benchmark_root, benchmark_kind, 'results')
         for result in sorted(os.listdir(results_root)):

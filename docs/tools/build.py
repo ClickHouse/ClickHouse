@@ -365,6 +365,7 @@ def build(args):
 
     for static_redirect in [
         ('benchmark.html', '/benchmark/dbms/'),
+        ('benchmark_hardware.html', '/benchmark/hardware/'),
         ('tutorial.html', '/docs/en/getting_started/tutorial/',),
         ('reference_en.html', '/docs/en/single/', ),
         ('reference_ru.html', '/docs/ru/single/',),
