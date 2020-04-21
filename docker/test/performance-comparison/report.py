@@ -169,12 +169,14 @@ if args.report == 'main':
 
         attrs = ['' for c in columns]
         for row in rows:
-            if float(row[2]) < 0.:
-                faster_queries += 1
-                attrs[2] = 'style="background: #adbdff"'
-            else:
-                slower_queries += 1
-                attrs[2] = 'style="background: #ffb0a0"'
+            attrs[2] = ''
+            if abs(float(row[2])) > 0.10:
+                if float(row[2]) < 0.:
+                    faster_queries += 1
+                    attrs[2] = 'style="background: #adbdff"'
+                else:
+                    slower_queries += 1
+                    attrs[2] = 'style="background: #ffb0a0"'
 
             print(tableRow(row, attrs))
 
@@ -257,7 +259,7 @@ if args.report == 'main':
         print(tableStart('Test times'))
         print(tableHeader(columns))
         
-        runs = 11  # FIXME pass this as an argument
+        runs = 13  # FIXME pass this as an argument
         attrs = ['' for c in columns]
         for r in rows:
             if float(r[6]) > 3 * runs:
@@ -367,10 +369,20 @@ elif args.report == 'all-queries':
 
         attrs = ['' for c in columns]
         for r in rows:
-            if float(r[2]) > 0.05:
-                attrs[3] = 'style="background: #ffb0a0"'
-            elif float(r[2]) < -0.05:
-                attrs[3] = 'style="background: #adbdff"'
+            rd = ast.literal_eval(r[4])
+            # Note the zero-based array index, this is rd[4] in SQL.
+            threshold = rd[3]
+            if threshold > 0.2:
+                attrs[4] = 'style="background: #ffb0a0"'
+            else:
+                attrs[4] = ''
+
+            diff = float(r[2])
+            if abs(diff) > threshold and threshold >= 0.05:
+                if diff > 0.:
+                    attrs[3] = 'style="background: #ffb0a0"'
+                else:
+                    attrs[3] = 'style="background: #adbdff"'
             else:
                 attrs[3] = ''
 
