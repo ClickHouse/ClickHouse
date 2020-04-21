@@ -185,11 +185,19 @@ void FunctionArrayReduce::executeImpl(Block & block, const ColumnNumbers & argum
         that->addBatchArray(input_rows_count, places.data(), 0, aggregate_arguments, offsets->data(), arena.get());
     }
 
-    for (size_t i = 0; i < input_rows_count; ++i)
-        if (!res_col_aggregate_function)
-            agg_func.insertResultInto(places[i], res_col);
-        else
+    if (!res_col_aggregate_function)
+    {
+        if (agg_func.isFinalizationNeeded())
+            agg_func.finalizeBatch(places.size(), places.data(), 0);
+
+        agg_func.batchInsertResultInto(places.size(), places.data(), 0, res_col);
+    }
+    else
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
             res_col_aggregate_function->insertFrom(places[i]);
+    }
+
     block.getByPosition(result).column = std::move(result_holder);
 }
 
