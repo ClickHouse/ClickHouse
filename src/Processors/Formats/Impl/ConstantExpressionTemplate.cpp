@@ -77,6 +77,7 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
     {
         /// It can be Array(Nullable(nested_type)) or Tuple(..., Nullable(nested_type), ...)
         bool is_nullable = false;
+        if (auto nullable = dynamic_cast<const DataTypeNullable *>(nested_type.get()))
         {
             nested_type = nullable->getNestedType();
             is_nullable = true;
