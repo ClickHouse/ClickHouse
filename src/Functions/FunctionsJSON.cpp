@@ -21,6 +21,7 @@ void registerFunctionsJSON(FunctionFactory & factory)
     factory.registerFunction<FunctionJSON<NameJSONExtractKeysAndValues, JSONExtractKeysAndValuesImpl>>();
     factory.registerFunction<FunctionJSON<NameJSONExtractRaw, JSONExtractRawImpl>>();
     factory.registerFunction<FunctionJSON<NameJSONExtractArrayRaw, JSONExtractArrayRawImpl>>();
+    factory.registerFunction<FunctionJSON<NameJSONExtractKeysAndValuesRaw, JSONExtractKeysAndValuesRawImpl>>();
 }
 
 }

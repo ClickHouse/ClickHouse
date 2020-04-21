@@ -235,28 +235,30 @@ create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
         -- but the right way to do this is not yet clear.
-        left + right < 0.05 as short,
+        (left + right) / 2 < 0.02 as short,
 
-        -- Difference > 15% and > rd(99%) -- changed. We can't filter out flaky
+        -- Difference > 5% and > rd(99%) -- changed. We can't filter out flaky
         -- queries by rd(5%), because it can be zero when the difference is smaller
         -- than a typical distribution width. The difference is still real though.
-        not short and abs(diff) > 0.15 and abs(diff) > rd[4] as changed,
+        not short and abs(diff) > 0.05 and abs(diff) > rd[4] as changed,
         
-        -- Not changed but rd(99%) > 10% -- unstable.
-        not short and not changed and rd[4] > 0.10 as unstable,
+        -- Not changed but rd(99%) > 5% -- unstable.
+        not short and not changed and rd[4] > 0.05 as unstable,
         
         left, right, diff, rd,
         replaceAll(_file, '-report.tsv', '') test,
-        query
+
+        -- Truncate long queries.
+        if(length(query) < 300, query, substr(query, 1, 298) || '...') query
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
 create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
     select left, right, diff, rd, test, query from queries where changed
-    order by rd[3] desc;
+    order by abs(diff) desc;
 
 create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as
     select left, right, diff, rd, test, query from queries where unstable
-    order by rd[3] desc;
+    order by rd[4] desc;
 
 create table unstable_tests_tsv engine File(TSV, 'bad-tests.tsv') as
     select test, sum(unstable) u, sum(changed) c, u + c s from queries
@@ -370,8 +372,8 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
 
 create table metric_devation engine File(TSVWithNamesAndTypes,
         'metric-deviation.$version.rep') as
-    select floor((q[3] - q[1])/q[2], 3) d,
-        quantilesExact(0, 0.5, 1)(value) q, metric, query
+    select query, floor((q[3] - q[1])/q[2], 3) d,
+        quantilesExact(0, 0.5, 1)(value) q, metric
     from (select * from unstable_run_metrics
         union all select * from unstable_run_traces
         union all select * from unstable_run_metrics_2) mm
@@ -405,11 +407,17 @@ do
     for query in $(cut -d'	' -f1 "stacks.$version.rep" | sort | uniq)
     do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/]/_/g')
+
+        # Build separate .svg flamegraph for each query.
         grep -F "$query	" "stacks.$version.rep" \
             | cut -d'	' -f 2- \
             | sed 's/\t/ /g' \
             | tee "$query_file.stacks.$version.rep" \
             | ~/fg/flamegraph.pl > "$query_file.$version.svg" &
+
+        # Copy metric stats into separate files as well.
+        grep -F "$query	" "metric-deviation.$version.rep" \
+            | cut -f2- > "$query_file.$version.metrics.rep" &
     done
 done
 wait

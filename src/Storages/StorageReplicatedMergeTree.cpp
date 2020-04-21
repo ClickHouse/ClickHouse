@@ -985,6 +985,14 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         LOG_TRACE(log, log_message.rdbuf());
     }
 
+    const auto storage_settings_ptr = getSettings();
+
+    if (storage_settings_ptr->always_fetch_merged_part)
+    {
+        LOG_INFO(log, "Will fetch part " << entry.new_part_name << " because setting 'always_fetch_merged_part' is true");
+        return false;
+    }
+
     DataPartsVector parts;
     bool have_all_parts = true;
     for (const String & name : entry.source_parts)
@@ -1005,7 +1013,6 @@ bool StorageReplicatedMergeTree::tryExecuteMerge(const LogEntry & entry)
         parts.push_back(part);
     }
 
-    const auto storage_settings_ptr = getSettings();
     if (!have_all_parts)
     {
         /// If you do not have all the necessary parts, try to take some already merged part from someone.
@@ -1274,7 +1281,8 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
     ++total_fetches;
     SCOPE_EXIT({--total_fetches;});
 
-    if (storage_settings_ptr->replicated_max_parallel_fetches_for_table && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
+    if (storage_settings_ptr->replicated_max_parallel_fetches_for_table
+        && current_table_fetches >= storage_settings_ptr->replicated_max_parallel_fetches_for_table)
     {
         throw Exception("Too many fetches from replicas for table, maximum: " + storage_settings_ptr->replicated_max_parallel_fetches_for_table.toString(),
             ErrorCodes::TOO_MANY_FETCHES);
@@ -1416,7 +1424,7 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry)
     }
     catch (...)
     {
-        /** If you can not download the part you need for some merge, it's better not to try to get other parts for this merge,
+        /** If we can not download the part we need for some merge, it's better not to try to get other parts for this merge,
           * but try to get already merged part. To do this, move the action to get the remaining parts
           * for this merge at the end of the queue.
           */
@@ -3305,7 +3313,6 @@ void StorageReplicatedMergeTree::alter(
         alter_entry->columns_str = new_columns_str;
         alter_entry->alter_version = new_metadata_version;
         alter_entry->create_time = time(nullptr);
-
 
         auto maybe_mutation_commands = params.getMutationCommands(current_metadata);
         alter_entry->have_mutation = !maybe_mutation_commands.empty();

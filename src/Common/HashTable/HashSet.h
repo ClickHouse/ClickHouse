@@ -43,7 +43,7 @@ public:
 
         for (size_t i = 0; i < rhs.grower.bufSize(); ++i)
             if (!rhs.buf[i].isZero(*this))
-                this->insert(Cell::getKey(rhs.buf[i].getValue()));
+                this->insert(rhs.buf[i].getValue());
     }
 
 
@@ -60,7 +60,7 @@ public:
         {
             Cell x;
             x.read(rb);
-            this->insert(Cell::getKey(x.getValue()));
+            this->insert(x.getValue());
         }
     }
 };

@@ -1,6 +1,6 @@
 #include "MergeTreeDataMergerMutator.h"
 
-#include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Disks/DiskSpaceMonitor.h>
@@ -12,16 +12,19 @@
 #include <DataStreams/TTLBlockInputStream.h>
 #include <DataStreams/DistinctSortedBlockInputStream.h>
 #include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/MergingSortedBlockInputStream.h>
-#include <DataStreams/CollapsingSortedBlockInputStream.h>
-#include <DataStreams/SummingSortedBlockInputStream.h>
-#include <DataStreams/ReplacingSortedBlockInputStream.h>
-#include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
-#include <DataStreams/AggregatingSortedBlockInputStream.h>
-#include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <DataStreams/MaterializingBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/ColumnGathererStream.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/CollapsingSortedTransform.h>
+#include <Processors/Merges/SummingSortedTransform.h>
+#include <Processors/Merges/ReplacingSortedTransform.h>
+#include <Processors/Merges/GraphiteRollupSortedTransform.h>
+#include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/VersionedCollapsingTransform.h>
+#include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/MaterializingTransform.h>
+#include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Common/SimpleIncrement.h>
 #include <Common/interpolate.h>
@@ -663,7 +666,7 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     /** Read from all parts, merge and write into a new one.
       * In passing, we calculate expression for sorting.
       */
-    BlockInputStreams src_streams;
+    Pipes pipes;
     UInt64 watch_prev_elapsed = 0;
 
     /// We count total amount of bytes in parts
@@ -690,18 +693,24 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
 
     for (const auto & part : parts)
     {
-        auto input = std::make_unique<MergeTreeSequentialBlockInputStream>(
+        auto input = std::make_unique<MergeTreeSequentialSource>(
             data, part, merging_column_names, read_with_direct_io, true);
 
         input->setProgressCallback(
             MergeProgressCallback(merge_entry, watch_prev_elapsed, horizontal_stage_progress));
 
-        BlockInputStreamPtr stream = std::move(input);
-        if (data.hasPrimaryKey() || data.hasSkipIndices())
-            stream = std::make_shared<MaterializingBlockInputStream>(
-                    std::make_shared<ExpressionBlockInputStream>(stream, data.sorting_key_and_skip_indices_expr));
+        Pipe pipe(std::move(input));
 
-        src_streams.emplace_back(stream);
+        if (data.hasPrimaryKey() || data.hasSkipIndices())
+        {
+            auto expr = std::make_shared<ExpressionTransform>(pipe.getHeader(), data.sorting_key_and_skip_indices_expr);
+            pipe.addSimpleTransform(std::move(expr));
+
+            auto materializing = std::make_shared<MaterializingTransform>(pipe.getHeader());
+            pipe.addSimpleTransform(std::move(materializing));
+        }
+
+        pipes.emplace_back(std::move(pipe));
     }
 
     Names sort_columns = data.sorting_key_columns;
@@ -709,14 +718,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     size_t sort_columns_size = sort_columns.size();
     sort_description.reserve(sort_columns_size);
 
-    Block header = src_streams.at(0)->getHeader();
+    Block header = pipes.at(0).getHeader();
     for (size_t i = 0; i < sort_columns_size; ++i)
         sort_description.emplace_back(header.getPositionByName(sort_columns[i]), 1, 1);
 
     /// The order of the streams is important: when the key is matched, the elements go in the order of the source stream number.
     /// In the merged part, the lines with the same key must be in the ascending order of the identifier of original part,
     ///  that is going in insertion order.
-    std::shared_ptr<IBlockInputStream> merged_stream;
+    ProcessorPtr merged_transform;
 
     /// If merge is vertical we cannot calculate it
     bool blocks_are_granules_size = (merge_alg == MergeAlgorithm::Vertical);
@@ -725,44 +734,47 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
     switch (data.merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
-            merged_stream = std::make_unique<MergingSortedBlockInputStream>(
-                src_streams, sort_description, merge_block_size, 0, rows_sources_write_buf.get(), true, blocks_are_granules_size);
+            merged_transform = std::make_unique<MergingSortedTransform>(
+                header, pipes.size(), sort_description, merge_block_size, 0, rows_sources_write_buf.get(), true, blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Collapsing:
-            merged_stream = std::make_unique<CollapsingSortedBlockInputStream>(
-                src_streams, sort_description, data.merging_params.sign_column,
+            merged_transform = std::make_unique<CollapsingSortedTransform>(
+                header, pipes.size(), sort_description, data.merging_params.sign_column,
                 merge_block_size, rows_sources_write_buf.get(), blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Summing:
-            merged_stream = std::make_unique<SummingSortedBlockInputStream>(
-                src_streams, sort_description, data.merging_params.columns_to_sum, merge_block_size);
+            merged_transform = std::make_unique<SummingSortedTransform>(
+                header, pipes.size(), sort_description, data.merging_params.columns_to_sum, merge_block_size);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
-            merged_stream = std::make_unique<AggregatingSortedBlockInputStream>(
-                src_streams, sort_description, merge_block_size);
+            merged_transform = std::make_unique<AggregatingSortedTransform>(
+                header, pipes.size(), sort_description, merge_block_size);
             break;
 
         case MergeTreeData::MergingParams::Replacing:
-            merged_stream = std::make_unique<ReplacingSortedBlockInputStream>(
-                src_streams, sort_description, data.merging_params.version_column,
+            merged_transform = std::make_unique<ReplacingSortedTransform>(
+                header, pipes.size(), sort_description, data.merging_params.version_column,
                 merge_block_size, rows_sources_write_buf.get(), blocks_are_granules_size);
             break;
 
         case MergeTreeData::MergingParams::Graphite:
-            merged_stream = std::make_unique<GraphiteRollupSortedBlockInputStream>(
-                src_streams, sort_description, merge_block_size,
+            merged_transform = std::make_unique<GraphiteRollupSortedTransform>(
+                header, pipes.size(), sort_description, merge_block_size,
                 data.merging_params.graphite_params, time_of_merge);
             break;
 
         case MergeTreeData::MergingParams::VersionedCollapsing:
-            merged_stream = std::make_unique<VersionedCollapsingSortedBlockInputStream>(
-                src_streams, sort_description, data.merging_params.sign_column,
+            merged_transform = std::make_unique<VersionedCollapsingTransform>(
+                header, pipes.size(), sort_description, data.merging_params.sign_column,
                 merge_block_size, rows_sources_write_buf.get(), blocks_are_granules_size);
             break;
     }
+
+    Pipe merged_pipe(std::move(pipes), std::move(merged_transform));
+    BlockInputStreamPtr merged_stream = std::make_shared<TreeExecutorBlockInputStream>(std::move(merged_pipe));
 
     if (deduplicate)
         merged_stream = std::make_shared<DistinctSortedBlockInputStream>(merged_stream, SizeLimits(), 0 /*limit_hint*/, Names());
@@ -861,13 +873,14 @@ MergeTreeData::MutableDataPartPtr MergeTreeDataMergerMutator::mergePartsToTempor
             MergeStageProgress column_progress(progress_before, column_sizes->columnWeight(column_name));
             for (size_t part_num = 0; part_num < parts.size(); ++part_num)
             {
-                auto column_part_stream = std::make_shared<MergeTreeSequentialBlockInputStream>(
+                auto column_part_source = std::make_shared<MergeTreeSequentialSource>(
                     data, parts[part_num], column_names, read_with_direct_io, true);
 
-                column_part_stream->setProgressCallback(
+                column_part_source->setProgressCallback(
                     MergeProgressCallback(merge_entry, watch_prev_elapsed, column_progress));
 
-                column_part_streams[part_num] = std::move(column_part_stream);
+                column_part_streams[part_num] = std::make_shared<TreeExecutorBlockInputStream>(
+                        Pipe(std::move(column_part_source)));
             }
 
             rows_sources_read_buf.seek(0, 0);
