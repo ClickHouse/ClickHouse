@@ -161,12 +161,14 @@ function generate_comparison_table() {
     ratios = [];
 
     var filtered_results = results;
-
     if (current_data_size) {
-        filtered_results = results.filter(function (x) {
-            return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
+        filtered_results = filtered_results.filter(function (x) {
+            return x.data_size == current_data_size;
         });
     }
+    filtered_results = filtered_results.filter(function (x) {
+        return current_systems.indexOf(x.system) != -1;
+    });
 
     var html = "";
 
@@ -282,9 +284,13 @@ function calculate_totals() {
     var filtered_results = results;
     if (current_data_size) {
         filtered_results = filtered_results.filter(function (x) {
-            return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
+            return x.data_size == current_data_size;
         });
     }
+
+    filtered_results = filtered_results.filter(function (x) {
+        return current_systems.indexOf(x.system) != -1;
+    });
 
     var total_ratios = [];
 
@@ -324,10 +330,13 @@ function generate_diagram() {
     var html = "";
     var filtered_results = results;
     if (current_data_size) {
-        filtered_results = results.filter(function (x) {
+        filtered_results = filtered_results.filter(function (x) {
             return x.data_size == current_data_size && current_systems.indexOf(x.system) != -1;
         });
     }
+    filtered_results = filtered_results.filter(function (x) {
+        return current_systems.indexOf(x.system) != -1;
+    });
 
     var max_ratio = 1;
     var min_ratio = 0;
