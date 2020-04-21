@@ -78,6 +78,9 @@ public:
         nested_func->merge(place, assert_cast<const ColumnAggregateFunction &>(*columns[0]).getData()[row_num], arena);
     }
 
+    bool isFinalizationNeeded() const override { return nested_func->isFinalizationNeeded(); }
+    void finalize(AggregateDataPtr place) const override { return nested_func->finalize(place); }
+
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         nested_func->merge(place, rhs, arena);
@@ -101,6 +104,16 @@ public:
     bool allocatesMemoryInArena() const override
     {
         return nested_func->allocatesMemoryInArena();
+    }
+
+    void finalizeBatch(size_t batch_size, AggregateDataPtr * places, size_t place_offset) const override
+    {
+        nested_func->finalizeBatch(batch_size, places, place_offset);
+    }
+
+    void batchInsertResultInto(size_t batch_size, AggregateDataPtr * places, size_t place_offset, IColumn & to) const override
+    {
+        nested_func->batchInsertResultInto(batch_size, places, place_offset, to);
     }
 };
 

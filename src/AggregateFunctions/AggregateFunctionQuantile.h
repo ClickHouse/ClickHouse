@@ -64,7 +64,6 @@ private:
     /// Otherwise it will return Value type and default value if there was no values.
     /// As an example, the function cannot return floats, if the SQL type of argument is Date or DateTime.
     using FloatReturnType = typename Data::FloatReturnType;
-
     /// If true, aggregation state is needed to be finalized.
     static constexpr bool is_finalization_needed = Data::is_finalization_needed;
 
