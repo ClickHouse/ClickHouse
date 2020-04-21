@@ -20,58 +20,82 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
 
-static inline std::string uriPathGetter(const Poco::Net::HTTPServerRequest & request)
+static inline bool checkRegexExpression(const StringRef & match_str, const StringRef & expression)
 {
-    const auto & uri = request.getURI();
-    const auto & end = find_first_symbols<'?'>(uri.data(), uri.data() + uri.size());
+    re2_st::StringPiece regex(expression.data, expression.size);
 
-    return std::string(uri.data(), end - uri.data());
+    auto compiled_regex = std::make_shared<re2_st::RE2>(regex);
+
+    if (!compiled_regex->ok())
+        throw Exception("cannot compile re2: " + expression.toString() + " for routing_rule, error: " + compiled_regex->error() +
+            ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
+
+    int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
+
+    re2_st::StringPiece matches[num_captures];
+    re2_st::StringPiece match_input(match_str.data, match_str.size);
+    return compiled_regex->Match(match_input, 0, match_str.size, re2_st::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
 }
 
-static inline std::function<std::string(const Poco::Net::HTTPServerRequest &)> headerGetter(const std::string & header_name)
+static inline bool checkExpression(const StringRef & match_str, const std::string & expression)
 {
-    return [header_name](const Poco::Net::HTTPServerRequest & request) { return request.get(header_name, ""); };
+    if (startsWith(expression, "regex:"))
+        return checkRegexExpression(match_str, expression.substr(6));
+
+    return match_str == expression;
 }
 
-static inline auto methodsExpressionFilter(const std::string &methods_expression)
+static inline auto methodsFilter(Poco::Util::AbstractConfiguration & config, const std::string & config_path)
 {
-    Poco::StringTokenizer tokenizer(Poco::toUpper(Poco::trim(methods_expression)), ",");
-    return [methods = std::vector<String>(tokenizer.begin(), tokenizer.end())](const Poco::Net::HTTPServerRequest & request)
+    std::vector<String> methods;
+    Poco::StringTokenizer tokenizer(config.getString(config_path), ",");
+
+    for (auto iterator = tokenizer.begin(); iterator != tokenizer.end(); ++iterator)
+        methods.emplace_back(Poco::toUpper(Poco::trim(*iterator)));
+
+    return [methods](const Poco::Net::HTTPServerRequest & request) { return std::count(methods.begin(), methods.end(), request.getMethod()); };
+}
+
+static inline auto urlFilter(Poco::Util::AbstractConfiguration & config, const std::string & config_path)
+{
+    return [expression = config.getString(config_path)](const Poco::Net::HTTPServerRequest & request)
     {
-        return std::count(methods.begin(), methods.end(), request.getMethod());
+        const auto & uri = request.getURI();
+        const auto & end = find_first_symbols<'?'>(uri.data(), uri.data() + uri.size());
+
+        return checkExpression(StringRef(uri.data(), end - uri.data()), expression);
     };
 }
 
-template <typename GetFunction>
-static inline auto regularExpressionFilter(const std::string & regular_expression, const GetFunction & get)
+static inline auto headersFilter(Poco::Util::AbstractConfiguration & config, const std::string & prefix)
 {
-    auto compiled_regex = std::make_shared<re2_st::RE2>(regular_expression);
+    std::unordered_map<String, String> headers_expression;
+    Poco::Util::AbstractConfiguration::Keys headers_name;
+    config.keys(prefix, headers_name);
 
-    if (!compiled_regex->ok())
-        throw Exception("cannot compile re2: " + regular_expression + " for routing_rule, error: " + compiled_regex->error() +
-            ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
-
-    return std::make_pair(compiled_regex, [get = std::move(get), compiled_regex](const Poco::Net::HTTPServerRequest & request)
+    for (const auto & header_name : headers_name)
     {
-        const auto & test_content = get(request);
-        int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
+        const auto & expression = config.getString(prefix + "." + header_name);
+        checkExpression("", expression);    /// Check expression syntax is correct
+        headers_expression.emplace(std::make_pair(header_name, expression));
+    }
 
-        re2_st::StringPiece matches[num_captures];
-        re2_st::StringPiece input(test_content.data(), test_content.size());
-        return compiled_regex->Match(input, 0, test_content.size(), re2_st::RE2::Anchor::ANCHOR_BOTH, matches, num_captures);
-    });
-}
+    return [headers_expression](const Poco::Net::HTTPServerRequest & request)
+    {
+        for (const auto & [header_name, header_expression] : headers_expression)
+        {
+            const auto & header_value = request.get(header_name);
+            if (!checkExpression(StringRef(header_value.data(), header_value.size()), header_expression))
+                return false;
+        }
 
-template <typename GetFunction>
-static inline std::function<bool(const Poco::Net::HTTPServerRequest &)> expressionFilter(const std::string & expression, const GetFunction & get)
-{
-    if (startsWith(expression, "regex:"))
-        return regularExpressionFilter(expression, get).second;
-
-    return [expression, get = std::move(get)](const Poco::Net::HTTPServerRequest & request) { return get(request) == expression; };
+        return true;
+    };
 }
 
 template <typename TEndpoint>
@@ -84,12 +108,15 @@ static inline Poco::Net::HTTPRequestHandlerFactory * addFiltersFromConfig(
     for (const auto & filter_type : filters_type)
     {
         if (filter_type == "handler")
-            continue;   /// Skip handler config
-        else if (filter_type == "method")
-            factory->addFilter(methodsExpressionFilter(config.getString(prefix + "." + filter_type)));
+            continue;
+        else if (filter_type == "url")
+            factory->addFilter(urlFilter(config, prefix + ".url"));
+        else if (filter_type == "headers")
+            factory->addFilter(headersFilter(config, prefix + ".headers"));
+        else if (filter_type == "methods")
+            factory->addFilter(methodsFilter(config, prefix + ".methods"));
         else
-            factory->addFilter(expressionFilter(config.getString(prefix + "." + filter_type), filter_type == "url"
-                ? uriPathGetter : headerGetter(filter_type)));
+            throw Exception("Unknown element in config: " + prefix + "." + filter_type, ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG);
     }
 
     return factory;

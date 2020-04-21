@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+
+<yandex>
+    <routing_rules>
+        <routing_rule>
+            <methods>GET</methods>
+            <headers><XXX>xxx</XXX></headers>
+            <url>/test_predefine_handler_get</url>
+            <handler>
+                <type>predefine_query_handler</type>
+                <query>SELECT * FROM system.settings WHERE name = {setting_name:String}</query>
+            </handler>
+        </routing_rule>
+    </routing_rules>
+</yandex>

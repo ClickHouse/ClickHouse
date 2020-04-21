@@ -75,12 +75,12 @@ StaticRequestHandler::StaticRequestHandler(IServer & server_, const String & exp
 
 Poco::Net::HTTPRequestHandlerFactory * createStaticHandlerFactory(IServer & server, const std::string & config_prefix)
 {
-    const auto & status = server.config().getInt(config_prefix + ".handler.status", 200);
-    const auto & response_content = server.config().getRawString(config_prefix + ".handler.response_content", "Ok.\n");
-    const auto & response_content_type = server.config().getString(config_prefix + ".handler.content_type", "text/plain; charset=UTF-8");
+    int status = server.config().getInt(config_prefix + ".handler.status", 200);
+    std::string response_content = server.config().getRawString(config_prefix + ".handler.response_content", "Ok.\n");
+    std::string response_content_type = server.config().getString(config_prefix + ".handler.content_type", "text/plain; charset=UTF-8");
 
     return addFiltersFromConfig(new RoutingRuleHTTPHandlerFactory<StaticRequestHandler>(
-        server, response_content, status, response_content_type), server.config(), config_prefix);
+        server, std::move(response_content), status, std::move(response_content_type)), server.config(), config_prefix);
 }
 
 }

@@ -2,10 +2,12 @@
 
 #include "IServer.h"
 #include <common/logger_useful.h>
+#include <Common/HTMLForm.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Poco/Net/HTTPServerRequest.h>
 #include <Poco/Net/HTTPServerResponse.h>
 #include <Poco/Net/HTTPRequestHandlerFactory.h>
+#include <Interpreters/AsynchronousMetrics.h>
 
 namespace DB
 {
@@ -19,7 +21,7 @@ private:
     Logger * log;
     std::string name;
 
-    std::vector<Poco::Net::HTTPRequestHandlerFactory *> child_handler_factories;
+    std::vector<Poco::Net::HTTPRequestHandlerFactory *> child_factories;
 public:
 
     ~HTTPRequestHandlerFactoryMain();
@@ -101,12 +103,12 @@ private:
     std::function<Poco::Net::HTTPRequestHandler * ()> creator;
 };
 
-Poco::Net::HTTPRequestHandlerFactory * createHandlerFactory(IServer & server, const std::string & name);
-
 Poco::Net::HTTPRequestHandlerFactory * createStaticHandlerFactory(IServer & server, const std::string & config_prefix);
 
 Poco::Net::HTTPRequestHandlerFactory * createDynamicHandlerFactory(IServer & server, const std::string & config_prefix);
 
 Poco::Net::HTTPRequestHandlerFactory * createPredefineHandlerFactory(IServer & server, const std::string & config_prefix);
+
+Poco::Net::HTTPRequestHandlerFactory * createHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & name);
 
 }
