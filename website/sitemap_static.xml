@@ -5,7 +5,7 @@
   <changefreq>daily</changefreq>
 </url>
 <url>
-  <loc>https://clickhouse.tech/benchmark.html</loc>
+  <loc>https://clickhouse.tech/benchmark/dbms/</loc>
   <changefreq>weekly</changefreq>
 </url>
 <url>
