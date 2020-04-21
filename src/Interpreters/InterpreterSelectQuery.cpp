@@ -72,6 +72,7 @@
 #include <ext/scope_guard.h>
 #include <memory>
 
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -84,7 +85,6 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
-#include <Processors/Transforms/MergingSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
@@ -305,12 +305,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     max_streams = settings.max_threads;
     ASTSelectQuery & query = getSelectQuery();
+    std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
                 query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),
-                options, joined_tables.tablesWithColumns(), required_result_column_names);
+                options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         /// Save scalar sub queries's results in the query context
         if (context->hasQueryContext())
@@ -1712,7 +1713,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
-    pipeline.dropTotalsIfHas();
+    /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
+    pipeline.dropTotalsAndExtremes();
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)

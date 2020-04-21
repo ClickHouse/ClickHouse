@@ -22,8 +22,6 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 {
     using DataPart = MergeTreeDataPartCompact;
     String data_file_name = DataPart::DATA_FILE_NAME;
-    if (settings.is_writing_temp_files)
-        data_file_name += DataPart::TEMP_FILE_SUFFIX;
 
     stream = std::make_unique<Stream>(
         data_file_name,
@@ -145,7 +143,7 @@ void MergeTreeDataPartWriterCompact::writeColumnSingleGranule(const ColumnWithTy
     column.type->serializeBinaryBulkStateSuffix(serialize_settings, state);
 }
 
-void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync)
+void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart::Checksums & checksums)
 {
     if (columns_buffer.size() != 0)
         writeBlock(header.cloneWithColumns(columns_buffer.releaseColumns()));
@@ -161,8 +159,6 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
     }
 
     stream->finalize();
-    if (sync)
-        stream->sync();
     stream->addToChecksums(checksums);
     stream.reset();
 }

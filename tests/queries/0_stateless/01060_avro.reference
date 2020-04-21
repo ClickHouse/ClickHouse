@@ -19,6 +19,10 @@
 = references
 "a1","c1"
 "a2","c2"
+= nested
+1,"b1",2.2,2.3,"c3"
+2.3,"b1",1,"c3"
+not found
 = compression
 1000
 1000

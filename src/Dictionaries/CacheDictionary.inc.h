@@ -75,6 +75,13 @@ void CacheDictionary::getItemsNumberImpl(
 
                 if (find_result.outdated)
                 {
+                    /// Protection of reading very expired keys.
+                    if (now > cells[find_result.cell_idx].strict_max)
+                    {
+                        cache_not_found_ids[id].push_back(row);
+                        continue;
+                    }
+
                     cache_expired_ids[id].push_back(row);
                     if (allow_read_expired_keys)
                         update_routine();
@@ -249,6 +256,13 @@ void CacheDictionary::getItemsString(
             {
                 if (find_result.outdated)
                 {
+                    /// Protection of reading very expired keys.
+                    if (now > cells[find_result.cell_idx].strict_max)
+                    {
+                        cache_not_found_ids[id].push_back(row);
+                        continue;
+                    }
+
                     cache_expired_ids[id].push_back(row);
 
                     if (allow_read_expired_keys)

@@ -694,11 +694,20 @@ bool Aggregator::executeOnBlock(Columns columns, UInt64 num_rows, AggregatedData
         && worth_convert_to_two_level)
     {
         size_t size = current_memory_usage + params.min_free_disk_space;
-        auto reservation = params.tmp_volume->reserve(size);
-        if (!reservation)
-            throw Exception("Not enough space for external aggregation in temporary storage", ErrorCodes::NOT_ENOUGH_SPACE);
+        const std::string tmp_path = params.tmp_volume->getNextDisk()->getPath();
 
-        const std::string tmp_path(reservation->getDisk()->getPath());
+        // enoughSpaceInDirectory() is not enough to make it right, since
+        // another process (or another thread of aggregator) can consume all
+        // space.
+        //
+        // But true reservation (IVolume::reserve()) cannot be used here since
+        // current_memory_usage does not takes compression into account and
+        // will reserve way more that actually will be used.
+        //
+        // Hence let's do a simple check.
+        if (!enoughSpaceInDirectory(tmp_path, size))
+            throw Exception("Not enough space for external aggregation in " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
+
         writeToTemporaryFile(result, tmp_path);
     }
 

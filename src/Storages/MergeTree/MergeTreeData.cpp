@@ -30,7 +30,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
-#include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -94,15 +94,11 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
-    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int INVALID_PARTITION_VALUE;
     extern const int METADATA_MISMATCH;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
-    extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int CANNOT_MUNMAP;
-    extern const int CANNOT_MREMAP;
     extern const int BAD_TTL_EXPRESSION;
     extern const int INCORRECT_FILE_NAME;
     extern const int BAD_DATA_PART_NAME;
@@ -954,10 +950,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 /// Don't count the part as broken if there is not enough memory to load it.
                 /// In fact, there can be many similar situations.
                 /// But it is OK, because there is a safety guard against deleting too many parts.
-                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
-                    || e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY
-                    || e.code() == ErrorCodes::CANNOT_MUNMAP
-                    || e.code() == ErrorCodes::CANNOT_MREMAP)
+                if (isNotEnoughMemoryErrorCode(e.code()))
                     throw;
 
                 broken = true;
@@ -1484,7 +1477,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                     ErrorCodes::ILLEGAL_COLUMN);
             }
         }
-        else if (command.isModifyingData())
+        else if (command.isModifyingData(getInMemoryMetadata()))
         {
             if (columns_alter_type_forbidden.count(command.column_name))
                 throw Exception("Trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);

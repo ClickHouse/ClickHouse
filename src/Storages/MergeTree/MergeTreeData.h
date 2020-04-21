@@ -14,7 +14,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
+#include <Processors/Merges/Algorithms/Graphite.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
@@ -619,6 +619,8 @@ public:
     {
         return storage_settings.get();
     }
+
+    String getRelativeDataPath() const { return relative_data_path; }
 
     /// Get table path on disk
     String getFullPathOnDisk(const DiskPtr & disk) const;
