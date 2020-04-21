@@ -45,6 +45,9 @@ if (USE_INTERNAL_POCO_LIBRARY)
 
     add_library (poco_data ${SRCS_DATA})
 
+    if (COMPILER_GCC)
+        target_compile_options (poco_data PUBLIC -Wno-deprecated-copy)
+    endif ()
     target_include_directories (poco_data PUBLIC ${LIBRARY_DIR}/Data/include)
     target_link_libraries (poco_data PUBLIC poco_foundation)
 
@@ -94,13 +97,11 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Foundation/src/FIFOBufferStream.cpp
         ${LIBRARY_DIR}/Foundation/src/File.cpp
         ${LIBRARY_DIR}/Foundation/src/FileChannel.cpp
-        ${LIBRARY_DIR}/Foundation/src/FileStream_POSIX.cpp
         ${LIBRARY_DIR}/Foundation/src/FileStream.cpp
         ${LIBRARY_DIR}/Foundation/src/FileStreamFactory.cpp
         ${LIBRARY_DIR}/Foundation/src/Format.cpp
         ${LIBRARY_DIR}/Foundation/src/Formatter.cpp
         ${LIBRARY_DIR}/Foundation/src/FormattingChannel.cpp
-        ${LIBRARY_DIR}/Foundation/src/FPEnvironment_C99.cpp
         ${LIBRARY_DIR}/Foundation/src/FPEnvironment.cpp
         ${LIBRARY_DIR}/Foundation/src/Glob.cpp
         ${LIBRARY_DIR}/Foundation/src/Hash.cpp
@@ -125,7 +126,6 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Foundation/src/MemoryPool.cpp
         ${LIBRARY_DIR}/Foundation/src/MemoryStream.cpp
         ${LIBRARY_DIR}/Foundation/src/Message.cpp
-        ${LIBRARY_DIR}/Foundation/src/Mutex_POSIX.cpp
         ${LIBRARY_DIR}/Foundation/src/Mutex.cpp
         ${LIBRARY_DIR}/Foundation/src/NamedEvent.cpp
         ${LIBRARY_DIR}/Foundation/src/NamedMutex.cpp
@@ -141,7 +141,6 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Foundation/src/Path.cpp
         ${LIBRARY_DIR}/Foundation/src/PatternFormatter.cpp
         ${LIBRARY_DIR}/Foundation/src/Pipe.cpp
-        ${LIBRARY_DIR}/Foundation/src/PipeImpl_POSIX.cpp
         ${LIBRARY_DIR}/Foundation/src/PipeImpl.cpp
         ${LIBRARY_DIR}/Foundation/src/PipeStream.cpp
         ${LIBRARY_DIR}/Foundation/src/PriorityNotificationQueue.cpp
@@ -153,12 +152,10 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Foundation/src/RegularExpression.cpp
         ${LIBRARY_DIR}/Foundation/src/RotateStrategy.cpp
         ${LIBRARY_DIR}/Foundation/src/Runnable.cpp
-        ${LIBRARY_DIR}/Foundation/src/RWLock_POSIX.cpp
         ${LIBRARY_DIR}/Foundation/src/RWLock.cpp
         ${LIBRARY_DIR}/Foundation/src/Semaphore.cpp
         ${LIBRARY_DIR}/Foundation/src/SHA1Engine.cpp
         ${LIBRARY_DIR}/Foundation/src/SharedLibrary.cpp
-        ${LIBRARY_DIR}/Foundation/src/SharedMemory_POSIX.cpp
         ${LIBRARY_DIR}/Foundation/src/SharedMemory.cpp
         ${LIBRARY_DIR}/Foundation/src/SignalHandler.cpp
         ${LIBRARY_DIR}/Foundation/src/SimpleFileChannel.cpp
@@ -172,6 +169,7 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Foundation/src/String.cpp
         ${LIBRARY_DIR}/Foundation/src/StringTokenizer.cpp
         ${LIBRARY_DIR}/Foundation/src/SynchronizedObject.cpp
+        ${LIBRARY_DIR}/Foundation/src/SyslogChannel.cpp
         ${LIBRARY_DIR}/Foundation/src/Task.cpp
         ${LIBRARY_DIR}/Foundation/src/TaskManager.cpp
         ${LIBRARY_DIR}/Foundation/src/TaskNotification.cpp
@@ -209,8 +207,43 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/Foundation/src/Windows1250Encoding.cpp
         ${LIBRARY_DIR}/Foundation/src/Windows1251Encoding.cpp
         ${LIBRARY_DIR}/Foundation/src/Windows1252Encoding.cpp
+    )
 
-        # pcre
+    add_library (poco_foundation ${SRCS_FOUNDATION})
+
+    if (COMPILER_GCC)
+        target_compile_options (poco_foundation
+            PUBLIC
+                -Wno-suggest-override
+        )
+    elseif (COMPILER_CLANG)
+        target_compile_options (poco_foundation
+            PUBLIC
+                -Wno-atomic-implicit-seq-cst
+                -Wno-deprecated
+                -Wno-extra-semi-stmt
+                -Wno-zero-as-null-pointer-constant
+        )
+    endif ()
+    target_compile_options (poco_foundation
+        PUBLIC
+            -Wno-sign-compare
+            -Wno-unused-parameter
+    )
+    target_compile_definitions (poco_foundation
+        PRIVATE
+            POCO_UNBUNDLED
+            POCO_UNBUNDLED_ZLIB
+        PUBLIC
+            POCO_ENABLE_CPP11
+            POCO_OS_FAMILY_UNIX
+    )
+    target_include_directories (poco_foundation PUBLIC ${LIBRARY_DIR}/Foundation/include)
+    target_link_libraries (poco_foundation PRIVATE poco_foundation_pcre zlib)
+
+    # Poco::Foundation (pcre)
+
+    set (SRCS_FOUNDATION_PCRE
         ${LIBRARY_DIR}/Foundation/src/pcre_config.c
 		${LIBRARY_DIR}/Foundation/src/pcre_byte_order.c
 		${LIBRARY_DIR}/Foundation/src/pcre_chartables.c
@@ -233,28 +266,13 @@ if (USE_INTERNAL_POCO_LIBRARY)
 		${LIBRARY_DIR}/Foundation/src/pcre_valid_utf8.c
 		${LIBRARY_DIR}/Foundation/src/pcre_xclass.c
     )
-    if (OS_LINUX)
-        list (APPEND SRCS_FOUNDATION
-            ${LIBRARY_DIR}/Foundation/src/SyslogChannel.cpp
-        )
-    endif ()
 
-    add_library (poco_foundation ${SRCS_FOUNDATION})
+    add_library (poco_foundation_pcre ${SRCS_FOUNDATION_PCRE})
 
-    target_compile_definitions (poco_foundation
+    target_compile_options (poco_foundation_pcre
         PRIVATE
-            POCO_UNBUNDLED
-            POCO_UNBUNDLED_ZLIB
-        PUBLIC
-            POCO_ENABLE_CPP11)
-    target_compile_options (poco_foundation
-        PUBLIC
             -Wno-sign-compare
-            -Wno-unused-parameter
-            -Wno-zero-as-null-pointer-constant
     )
-    target_include_directories (poco_foundation PUBLIC ${LIBRARY_DIR}/Foundation/include)
-    target_link_libraries (poco_foundation PRIVATE zlib)
 
     # Poco::JSON
 
@@ -271,15 +289,20 @@ if (USE_INTERNAL_POCO_LIBRARY)
         ${LIBRARY_DIR}/JSON/src/Stringifier.cpp
         ${LIBRARY_DIR}/JSON/src/Template.cpp
         ${LIBRARY_DIR}/JSON/src/TemplateCache.cpp
-
-        # pdjson
-        ${LIBRARY_DIR}/JSON/src/pdjson.c
     )
 
     add_library (poco_json ${SRCS_JSON})
 
     target_include_directories (poco_json PUBLIC ${LIBRARY_DIR}/JSON/include)
-    target_link_libraries (poco_json PUBLIC poco_foundation)
+    target_link_libraries (poco_json PUBLIC poco_foundation poco_json_pdjson)
+
+    # Poco::JSON (pdjson)
+
+    set (SRCS_JSON_PDJSON
+        ${LIBRARY_DIR}/JSON/src/pdjson.c
+    )
+
+    add_library (poco_json_pdjson ${SRCS_JSON_PDJSON})
 
     # Poco::Net
 
@@ -388,12 +411,20 @@ if (USE_INTERNAL_POCO_LIBRARY)
 
     add_library (poco_net ${SRCS_NET})
 
+    if (COMPILER_CLANG)
+        # clang-specific warnings
+        target_compile_options (poco_net
+            PRIVATE
+                -Wno-atomic-implicit-seq-cst
+                -Wno-extra-semi-stmt
+            PUBLIC
+                -Wno-extra-semi
+        )
+    endif ()
     target_compile_options (poco_net
-        PUBLIC
-            -Wno-atomic-implicit-seq-cst
+        PRIVATE
             -Wno-deprecated
             -Wno-extra-semi
-            -Wno-extra-semi-stmt
     )
     target_include_directories (poco_net PUBLIC ${LIBRARY_DIR}/Net/include)
     target_link_libraries (poco_net PUBLIC poco_foundation)
@@ -512,16 +543,25 @@ if (USE_INTERNAL_POCO_LIBRARY)
 
         # expat
         ${LIBRARY_DIR}/XML/src/xmlparse.cpp
-        ${LIBRARY_DIR}/XML/src/xmlrole.c
-        ${LIBRARY_DIR}/XML/src/xmltok_impl.c
-        ${LIBRARY_DIR}/XML/src/xmltok_ns.c
-        ${LIBRARY_DIR}/XML/src/xmltok.c
     )
 
     add_library (poco_xml ${SRCS_XML})
 
     target_compile_options (poco_xml PUBLIC -Wno-old-style-cast)
     target_include_directories (poco_xml PUBLIC ${LIBRARY_DIR}/XML/include)
-    target_link_libraries (poco_xml PUBLIC poco_foundation)
+    target_link_libraries (poco_xml PUBLIC poco_foundation poco_xml_expat)
+
+    # Poco::XML (expat)
+
+    set (SRCS_XML_EXPAT
+        ${LIBRARY_DIR}/XML/src/xmlrole.c
+        ${LIBRARY_DIR}/XML/src/xmltok_impl.c
+        ${LIBRARY_DIR}/XML/src/xmltok_ns.c
+        ${LIBRARY_DIR}/XML/src/xmltok.c
+    )
+
+    add_library (poco_xml_expat ${SRCS_XML_EXPAT})
+
+    target_include_directories (poco_xml_expat PUBLIC ${LIBRARY_DIR}/XML/include)
 else ()
 endif ()
