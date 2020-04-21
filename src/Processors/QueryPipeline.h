@@ -109,7 +109,8 @@ public:
     /// Add already calculated totals.
     void addTotals(ProcessorPtr source);
 
-    void dropTotalsIfHas();
+    /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
+    void dropTotalsAndExtremes();
 
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);

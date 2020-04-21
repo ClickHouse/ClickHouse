@@ -401,18 +401,24 @@ void QueryPipeline::addTotals(ProcessorPtr source)
     assertBlocksHaveEqualStructure(current_header, source->getOutputs().front().getHeader(), "QueryPipeline");
 
     totals_having_port = &source->getOutputs().front();
-    processors.emplace_back(source);
+    processors.emplace_back(std::move(source));
 }
 
-void QueryPipeline::dropTotalsIfHas()
+void QueryPipeline::dropTotalsAndExtremes()
 {
-    if (totals_having_port)
+    auto drop_port = [&](OutputPort *& port)
     {
-        auto null_sink = std::make_shared<NullSink>(totals_having_port->getHeader());
-        connect(*totals_having_port, null_sink->getPort());
+        auto null_sink = std::make_shared<NullSink>(port->getHeader());
+        connect(*port, null_sink->getPort());
         processors.emplace_back(std::move(null_sink));
-        totals_having_port = nullptr;
-    }
+        port = nullptr;
+    };
+
+    if (totals_having_port)
+        drop_port(totals_having_port);
+
+    if (extremes_port)
+        drop_port(extremes_port);
 }
 
 void QueryPipeline::addExtremesTransform()
