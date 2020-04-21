@@ -124,7 +124,7 @@ public:
 
     void finalize(AggregateDataPtr place) const override
     {
-        return nested_function->finalize(place);
+        return nested_function->finalize(nestedPlace(place));
     }
 
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
