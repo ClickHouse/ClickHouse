@@ -94,7 +94,8 @@ void ClusterCopierApp::mainImpl()
         << "path " << process_path << ", "
         << "revision " << ClickHouseRevision::get() << ")");
 
-    auto context = std::make_unique<Context>(Context::createGlobal());
+    SharedContextHolder shared_context = Context::createShared();
+    auto context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
     context->makeGlobalContext();
     SCOPE_EXIT(context->shutdown());
 
