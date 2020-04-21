@@ -24,7 +24,7 @@ struct QuantileReservoirSampler
 {
     /// Static interface for AggregateFunctionQuantile.
     using ValueType = Value;
-    static constexpr bool has_second_arg = true;
+    static constexpr bool has_second_arg = false;
     using FloatReturnType = std::conditional_t<return_float, Float64, void>;
     static constexpr bool is_finalization_needed = true;
 
