@@ -1712,7 +1712,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
-    pipeline.dropTotalsIfHas();
+    /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
+    pipeline.dropTotalsAndExtremes();
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
