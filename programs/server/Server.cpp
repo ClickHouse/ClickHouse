@@ -81,6 +81,7 @@ namespace CurrentMetrics
 {
     extern const Metric Revision;
     extern const Metric VersionInteger;
+    extern const Metric MemoryTracking;
 }
 
 namespace
@@ -230,7 +231,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
       */
-    global_context = std::make_unique<Context>(Context::createGlobal());
+    auto shared_context = Context::createShared();
+    auto global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+    global_context_ptr = global_context.get();
+
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
@@ -327,7 +331,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
+        global_context_ptr = nullptr;
         global_context.reset();
+        shared_context.reset();
         LOG_DEBUG(log, "Destroyed global context.");
     });
 
@@ -554,6 +560,28 @@ int Server::main(const std::vector<std::string> & /*args*/)
     auto format_schema_path = Poco::File(config().getString("format_schema_path", path + "format_schemas/"));
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
+
+    /// Limit on total memory usage
+    size_t max_server_memory_usage = settings.max_server_memory_usage;
+
+    double max_server_memory_usage_to_ram_ratio = config().getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
+    size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;
+
+    if (max_server_memory_usage == 0)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was set to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage));
+    }
+    else if (max_server_memory_usage > default_max_server_memory_usage)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage)
+            << " because the system has low amount of memory");
+    }
+
+    total_memory_tracker.setOrRaiseHardLimit(max_server_memory_usage);
+    total_memory_tracker.setDescription("(total)");
+    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
 
     LOG_INFO(log, "Loading metadata from " + path);
 

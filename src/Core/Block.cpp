@@ -181,25 +181,25 @@ const ColumnWithTypeAndName & Block::safeGetByPosition(size_t position) const
 }
 
 
-ColumnWithTypeAndName & Block::getByName(const std::string & name)
+const ColumnWithTypeAndName * Block::findByName(const std::string & name) const
 {
     auto it = index_by_name.find(name);
     if (index_by_name.end() == it)
-        throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
-            , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
-
-    return data[it->second];
+    {
+        return nullptr;
+    }
+    return &data[it->second];
 }
 
 
 const ColumnWithTypeAndName & Block::getByName(const std::string & name) const
 {
-    auto it = index_by_name.find(name);
-    if (index_by_name.end() == it)
+    auto * result = findByName(name);
+    if (!result)
         throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
             , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
 
-    return data[it->second];
+    return *result;
 }
 
 

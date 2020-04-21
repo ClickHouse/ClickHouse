@@ -1,5 +1,8 @@
 #include <Storages/IStorage.h>
 
+#include <sparsehash/dense_hash_map>
+#include <sparsehash/dense_hash_set>
+
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -8,9 +11,6 @@
 #include <Common/quoteString.h>
 
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
-
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/dense_hash_set>
 
 
 namespace DB

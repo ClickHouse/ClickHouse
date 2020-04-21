@@ -61,6 +61,7 @@ public:
     /// TODO add ability to rename nested columns
     void rename(const String & column_from, const String & column_to);
 
+    /// NOTE Must correspond with Nested::flatten function.
     void flattenNested(); /// TODO: remove, insert already flattened Nested columns.
 
     bool operator==(const ColumnsDescription & other) const { return columns == other.columns; }

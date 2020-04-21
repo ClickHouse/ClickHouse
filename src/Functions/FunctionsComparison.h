@@ -160,7 +160,7 @@ struct StringComparisonImpl
 
         for (size_t i = 0; i < size; ++i)
         {
-            c[i] = Op::apply(memcmpSmallAllowOverflow15(
+            c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(
                 a_data.data() + prev_a_offset, a_offsets[i] - prev_a_offset - 1,
                 b_data.data() + i * b_n, b_n), 0);
 
@@ -168,7 +168,7 @@ struct StringComparisonImpl
         }
     }
 
-    static void NO_INLINE string_vectorConstant(
+    static void NO_INLINE string_vector_constant(
         const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
         const ColumnString::Chars & b_data, ColumnString::Offset b_size,
         PaddedPODArray<UInt8> & c)
@@ -239,11 +239,11 @@ struct StringComparisonImpl
             size_t size = a_data.size() / a_n;
 
             for (size_t i = 0; i < size; ++i)
-                c[i] = Op::apply(memcmpSmallAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data() + i * b_n, b_n), 0);
+                c[i] = Op::apply(memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data() + i * b_n, b_n), 0);
         }
     }
 
-    static void NO_INLINE fixed_string_vectorConstant(
+    static void NO_INLINE fixed_string_vector_constant(
         const ColumnString::Chars & a_data, ColumnString::Offset a_n,
         const ColumnString::Chars & b_data, ColumnString::Offset b_size,
         PaddedPODArray<UInt8> & c)
@@ -262,7 +262,7 @@ struct StringComparisonImpl
         {
             size_t size = a_data.size();
             for (size_t i = 0, j = 0; i < size; i += a_n, ++j)
-                c[j] = Op::apply(memcmpSmallAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size), 0);
+                c[j] = Op::apply(0, memcmpSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i, a_n, b_data.data(), b_size));
         }
     }
 
@@ -271,7 +271,7 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
-        StringComparisonImpl<typename Op::SymmetricOp>::string_vectorConstant(b_data, b_offsets, a_data, a_size, c);
+        StringComparisonImpl<typename Op::SymmetricOp>::string_vector_constant(b_data, b_offsets, a_data, a_size, c);
     }
 
     static void constant_fixed_string_vector(
@@ -279,15 +279,7 @@ struct StringComparisonImpl
         const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
-        StringComparisonImpl<typename Op::SymmetricOp>::fixed_string_vectorConstant(b_data, b_n, a_data, a_size, c);
-    }
-
-    static void constantConstant(
-        const ColumnString::Chars & a_data, ColumnString::Offset a_size,
-        const ColumnString::Chars & b_data, ColumnString::Offset b_size,
-        UInt8 & c)
-    {
-        c = Op::apply(memcmpSmallAllowOverflow15(a_data.data(), a_size, b_data.data(), b_size), 0);
+        StringComparisonImpl<typename Op::SymmetricOp>::fixed_string_vector_constant(b_data, b_n, a_data, a_size, c);
     }
 };
 
@@ -331,7 +323,7 @@ struct StringEqualsImpl
         {
             auto a_size = a_offsets[i] - prev_a_offset - 1;
 
-            c[i] = positive == memequalSmallAllowOverflow15(
+            c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(
                 a_data.data() + prev_a_offset, a_size,
                 b_data.data() + b_n * i, b_n);
 
@@ -339,7 +331,7 @@ struct StringEqualsImpl
         }
     }
 
-    static void NO_INLINE string_vectorConstant(
+    static void NO_INLINE string_vector_constant(
         const ColumnString::Chars & a_data, const ColumnString::Offsets & a_offsets,
         const ColumnString::Chars & b_data, ColumnString::Offset b_size,
         PaddedPODArray<UInt8> & c)
@@ -397,15 +389,21 @@ struct StringEqualsImpl
         {
             fixed_string_vector_fixed_string_vector_16(a_data, b_data, c);
         }
+        else if (a_n == b_n)
+        {
+            size_t size = a_data.size() / a_n;
+            for (size_t i = 0; i < size; ++i)
+                c[i] = positive == memequalSmallAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data() + i * a_n, a_n);
+        }
         else
         {
             size_t size = a_data.size() / a_n;
             for (size_t i = 0; i < size; ++i)
-                c[i] = positive == memequalSmallAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data() + i * b_n, b_n);
+                c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data() + i * b_n, b_n);
         }
     }
 
-    static void NO_INLINE fixed_string_vectorConstant(
+    static void NO_INLINE fixed_string_vector_constant(
         const ColumnString::Chars & a_data, ColumnString::Offset a_n,
         const ColumnString::Chars & b_data, ColumnString::Offset b_size,
         PaddedPODArray<UInt8> & c)
@@ -418,7 +416,7 @@ struct StringEqualsImpl
         {
             size_t size = a_data.size() / a_n;
             for (size_t i = 0; i < size; ++i)
-                c[i] = positive == memequalSmallAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data(), b_size);
+                c[i] = positive == memequalSmallLikeZeroPaddedAllowOverflow15(a_data.data() + i * a_n, a_n, b_data.data(), b_size);
         }
     }
 
@@ -435,7 +433,7 @@ struct StringEqualsImpl
         const ColumnString::Chars & b_data, const ColumnString::Offsets & b_offsets,
         PaddedPODArray<UInt8> & c)
     {
-        string_vectorConstant(b_data, b_offsets, a_data, a_size, c);
+        string_vector_constant(b_data, b_offsets, a_data, a_size, c);
     }
 
     static void constant_fixed_string_vector(
@@ -443,15 +441,7 @@ struct StringEqualsImpl
         const ColumnString::Chars & b_data, ColumnString::Offset b_n,
         PaddedPODArray<UInt8> & c)
     {
-        fixed_string_vectorConstant(b_data, b_n, a_data, a_size, c);
-    }
-
-    static void constantConstant(
-        const ColumnString::Chars & a_data, ColumnString::Offset a_size,
-        const ColumnString::Chars & b_data, ColumnString::Offset b_size,
-        UInt8 & c)
-    {
-        c = positive == memequalSmallAllowOverflow15(a_data.data(), a_size, b_data.data(), b_size);
+        fixed_string_vector_constant(b_data, b_n, a_data, a_size, c);
     }
 };
 
@@ -758,9 +748,11 @@ private:
 
         if (c0_const && c1_const)
         {
-            UInt8 res = 0;
-            StringImpl::constantConstant(*c0_const_chars, c0_const_size, *c1_const_chars, c1_const_size, res);
-            block.getByPosition(result).column = block.getByPosition(result).type->createColumnConst(c0_const->size(), toField(res));
+            auto res = executeString(block, result, &c0_const->getDataColumn(), &c1_const->getDataColumn());
+            if (!res)
+                return false;
+
+            block.getByPosition(result).column = ColumnConst::create(block.getByPosition(result).column, c0_const->size());
             return true;
         }
         else
@@ -780,7 +772,7 @@ private:
                     c1_fixed_string->getChars(), c1_fixed_string->getN(),
                     c_res->getData());
             else if (c0_string && c1_const)
-                StringImpl::string_vectorConstant(
+                StringImpl::string_vector_constant(
                     c0_string->getChars(), c0_string->getOffsets(),
                     *c1_const_chars, c1_const_size,
                     c_res->getData());
@@ -795,7 +787,7 @@ private:
                     c1_fixed_string->getChars(), c1_fixed_string->getN(),
                     c_res->getData());
             else if (c0_fixed_string && c1_const)
-                StringImpl::fixed_string_vectorConstant(
+                StringImpl::fixed_string_vector_constant(
                     c0_fixed_string->getChars(), c0_fixed_string->getN(),
                     *c1_const_chars, c1_const_size,
                     c_res->getData());
