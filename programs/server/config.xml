@@ -525,30 +525,45 @@
     </query_masking_rules>
     -->
 
-    <http_handlers>
-        <root_handler/>
-        <ping_handler>/ping</ping_handler>
-        <replicas_status_handler>/replicas_status</replicas_status_handler>
-        <dynamic_query_handler><query_param_name>query</query_param_name></dynamic_query_handler>
+    <!-- Uncomment to use custom http routing.
+        url -
 
-        <no_handler_description>Use / or /ping for health checks.&#10;Or /replicas_status for more sophisticated health checks.&#10;Send queries from your program with POST method or GET /?query=...&#10;&#10;Use clickhouse-client:&#10;&#10;For interactive data analysis:&#10;clickhouse-client&#10;&#10;For batch query processing:&#10;clickhouse-client --query='SELECT 1' &gt; result&#10;clickhouse-client &lt; query &gt; result&#10;</no_handler_description>
 
-        <!-- Uncomment to use predefined queries.
-            url - RE2 compatible regular expression (optional)
-            method - HTTP method(optional)
-            headers - HTTP Header(optional)
-            queries - predefined queries (mandatory)
-        <predefined_query_handler>
-            <url>/test_simple_predefine</url>
-            <method>GET</method>
-            <headers> <X-ClickHouse-User>default</X-ClickHouse-User></headers>
-            <queries>
-                <query>SELECT 1, {query_prepared_param_1:String}</query>
-                <query>SELECT 1, {query_prepared_param_2:String}</query>
-            </queries>
-        </predefined_query_handler>
-        -->
-    </http_handlers>
+    -->
+    <!--
+    <routing_rules>
+        &lt;!&ndash; rules are checked from top to bottom, first match runs the handler &ndash;&gt;
+        <routing_rule>
+            <url>/</url>    &lt;!&ndash; match requests on that url &ndash;&gt;
+            <methods>POST,GET</methods> &lt;!&ndash; and with that method &ndash;&gt;
+            &lt;!&ndash; other possible request matching rules can be introduced, for headers, ips, etc &ndash;&gt;
+            <pragma>no-cache</pragma>
+            <handler>
+                <type>dynamic_query_handler</type>
+                <query_param_name>query</query_param_name>
+            </handler>
+        </routing_rule>
+
+        <routing_rule>
+            <url>/</url>
+            <handler>
+                <type>static</type>
+                <status>200</status>
+                <content-type>text/plain; charset=UTF-8</content-type>
+                <response_content>config://http_server_default_response</response_content>
+            </handler>
+        </routing_rule>
+
+        <rule> &lt;!&ndash; no conditions, i.e. match  everything &ndash;&gt;
+            <handler>
+                <type>static</type>
+                <status>404</status>
+                <content-type>text/html</content-type>
+                <reponse_content><body><h1>Check your query</h1></body></reponse_content>
+            </handler>
+        </rule>
+    </routing_rules>
+    -->
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
     <!-- <disable_internal_dns_cache>1</disable_internal_dns_cache> -->

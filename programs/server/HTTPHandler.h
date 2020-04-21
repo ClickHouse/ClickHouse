@@ -29,7 +29,7 @@ public:
     void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override;
 
     /// This method is called right before the query execution.
-    virtual void customizeContext(Context & /* context */) {}
+    virtual void customizeContext(Poco::Net::HTTPServerRequest & request, Context & /* context */) {}
 
     virtual bool customizeQueryParam(Context & context, const std::string & key, const std::string & value) = 0;
 
@@ -101,12 +101,17 @@ class PredefineQueryHandler : public HTTPHandler
 private:
     NameSet receive_params;
     std::string predefine_query;
+    std::unordered_map<String, String> header_name_with_capture_regex;
 public:
-    explicit PredefineQueryHandler(IServer & server, const NameSet & receive_params, const std::string & predefine_query_);
+    explicit PredefineQueryHandler(
+        IServer & server, const NameSet & receive_params_, const std::string & predefine_query_
+        , const std::unordered_map<String, String> & header_name_with_capture_regex_);
+
+    virtual void customizeContext(Poco::Net::HTTPServerRequest & request, Context & context) override;
 
     std::string getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context) override;
 
-    bool customizeQueryParam(Context &context, const std::string &key, const std::string &value) override;
+    bool customizeQueryParam(Context & context, const std::string & key, const std::string & value) override;
 };
 
 }
