@@ -314,7 +314,6 @@ include (cmake/find/ltdl.cmake) # for odbc
 include (cmake/find/termcap.cmake)
 include (cmake/find/odbc.cmake)
 # openssl, zlib, odbc before poco
-include (cmake/find/poco.cmake)
 include (cmake/find/lz4.cmake)
 include (cmake/find/xxhash.cmake)
 include (cmake/find/sparsehash.cmake)

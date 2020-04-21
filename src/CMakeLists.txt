@@ -372,20 +372,14 @@ set_source_files_properties(
         PROPERTIES COMPILE_FLAGS "-O3 ${WITHOUT_COVERAGE}")
 
 target_link_libraries (clickhouse_common_io
-        PUBLIC
-    common
         PRIVATE
-    string_utils
-    widechar_width
-    ${LINK_LIBRARIES_ONLY_ON_X86_64}
+            string_utils
+            widechar_width
+            ${LINK_LIBRARIES_ONLY_ON_X86_64}
         PUBLIC
-    ${DOUBLE_CONVERSION_LIBRARIES}
-    ryu
-        PUBLIC
-    ${Poco_Net_LIBRARY}
-    ${Poco_Util_LIBRARY}
-    ${Poco_Foundation_LIBRARY}
-    ${Poco_XML_LIBRARY}
+            common
+            ${DOUBLE_CONVERSION_LIBRARIES}
+            ryu
 )
 
 if(RE2_LIBRARY)
@@ -396,19 +390,16 @@ if(RE2_ST_LIBRARY)
 endif()
 
 target_link_libraries(clickhouse_common_io
-        PUBLIC
-    ${CITYHASH_LIBRARIES}
-    pcg_random
         PRIVATE
-    ${Poco_XML_LIBRARY}
-    ${ZLIB_LIBRARIES}
-    ${EXECINFO_LIBRARIES}
-    cpuid
+            ${EXECINFO_LIBRARIES}
+            cpuid
         PUBLIC
-    ${Boost_SYSTEM_LIBRARY}
-    ${Boost_PROGRAM_OPTIONS_LIBRARY}
-        PUBLIC
-    roaring
+            ${Boost_PROGRAM_OPTIONS_LIBRARY}
+            ${Boost_SYSTEM_LIBRARY}
+            ${CITYHASH_LIBRARIES}
+            ${ZLIB_LIBRARIES}
+            pcg_random
+            roaring
 )
 
 if (USE_RDKAFKA)
@@ -424,24 +415,21 @@ if(RE2_INCLUDE_DIR)
 endif()
 
 dbms_target_link_libraries (
-        PRIVATE
-    clickhouse_parsers
-    clickhouse_common_config
-    clickhouse_common_zookeeper
-    string_utils # FIXME: not sure if it's private
-        PUBLIC
-    clickhouse_common_io
-        PRIVATE
-    clickhouse_dictionaries_embedded
-    ${LZ4_LIBRARY}
-        PUBLIC
-    ${MYSQLXX_LIBRARY}
-        PRIVATE
-    ${BTRIE_LIBRARIES}
-    ${Boost_PROGRAM_OPTIONS_LIBRARY}
-    ${Boost_FILESYSTEM_LIBRARY}
-        PUBLIC
-    ${Boost_SYSTEM_LIBRARY}
+    PRIVATE
+        ${BTRIE_LIBRARIES}
+        ${Boost_PROGRAM_OPTIONS_LIBRARY}
+        ${Boost_FILESYSTEM_LIBRARY}
+        ${LZ4_LIBRARY}
+        clickhouse_parsers
+        clickhouse_common_config
+        clickhouse_common_zookeeper
+        clickhouse_dictionaries_embedded
+        poco_json
+        string_utils
+    PUBLIC
+        ${Boost_SYSTEM_LIBRARY}
+        ${MYSQLXX_LIBRARY}
+        clickhouse_common_io
 )
 
 target_include_directories(clickhouse_common_io PUBLIC ${CMAKE_CURRENT_BINARY_DIR}/Core/include) # uses some includes from core
@@ -463,52 +451,6 @@ endif()
 if (NOT USE_INTERNAL_BOOST_LIBRARY)
     target_include_directories (clickhouse_common_io SYSTEM BEFORE PUBLIC ${Boost_INCLUDE_DIRS})
 endif ()
-
-if (Poco_SQL_FOUND AND NOT USE_INTERNAL_POCO_LIBRARY)
-    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
-    dbms_target_include_directories (SYSTEM PRIVATE ${Poco_SQL_INCLUDE_DIR})
-endif()
-
-if (USE_POCO_SQLODBC)
-    target_link_libraries (clickhouse_common_io PRIVATE ${Poco_SQL_LIBRARY})
-    dbms_target_link_libraries (PRIVATE ${Poco_SQLODBC_LIBRARY} ${Poco_SQL_LIBRARY})
-    if (NOT USE_INTERNAL_POCO_LIBRARY)
-        target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQL_INCLUDE_DIR})
-        dbms_target_include_directories (SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_SQLODBC_INCLUDE_DIR} SYSTEM PUBLIC ${Poco_SQL_INCLUDE_DIR})
-    endif()
-endif()
-
-if (Poco_Data_FOUND)
-    target_include_directories (clickhouse_common_io SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
-    dbms_target_include_directories (SYSTEM PRIVATE ${Poco_Data_INCLUDE_DIR})
-endif()
-
-if (USE_POCO_DATAODBC)
-    target_link_libraries (clickhouse_common_io PRIVATE ${Poco_Data_LIBRARY})
-    dbms_target_link_libraries (PRIVATE ${Poco_DataODBC_LIBRARY})
-    if (NOT USE_INTERNAL_POCO_LIBRARY)
-        dbms_target_include_directories (SYSTEM PRIVATE ${ODBC_INCLUDE_DIRS} ${Poco_DataODBC_INCLUDE_DIR})
-    endif()
-endif()
-
-if (USE_POCO_MONGODB)
-    dbms_target_link_libraries (PRIVATE ${Poco_MongoDB_LIBRARY})
-endif()
-
-if (USE_POCO_REDIS)
-    dbms_target_link_libraries (PRIVATE ${Poco_Redis_LIBRARY})
-endif()
-
-if (USE_POCO_NETSSL)
-    target_link_libraries (clickhouse_common_io PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
-    dbms_target_link_libraries (PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
-endif()
-
-if (USE_POCO_JSON)
-    dbms_target_link_libraries (PRIVATE ${Poco_JSON_LIBRARY})
-endif()
-
-dbms_target_link_libraries (PRIVATE ${Poco_Foundation_LIBRARY})
 
 if (USE_ICU)
     dbms_target_link_libraries (PRIVATE ${ICU_LIBRARIES})
