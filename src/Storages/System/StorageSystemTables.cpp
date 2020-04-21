@@ -226,7 +226,7 @@ protected:
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
             if (!tables_it || !tables_it->isValid())
-                tables_it = database->getTablesWithDictionaryTablesIterator(context);
+                tables_it = database->getTablesIterator(context);
 
             const bool need_lock_structure = needLockStructure(database, getPort().getHeader());
 

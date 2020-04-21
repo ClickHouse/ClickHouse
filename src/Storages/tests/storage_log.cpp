@@ -26,7 +26,8 @@ try
     names_and_types.emplace_back("a", std::make_shared<DataTypeUInt64>());
     names_and_types.emplace_back("b", std::make_shared<DataTypeUInt8>());
 
-    auto context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    auto context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
     context.setPath("./");
 

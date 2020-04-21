@@ -120,7 +120,7 @@ void ODBCColumnsInfoHandler::handleRequest(Poco::Net::HTTPServerRequest & reques
 
         SCOPE_EXIT(SQLFreeStmt(hstmt, SQL_DROP));
 
-        const auto & context_settings = context->getSettingsRef();
+        const auto & context_settings = context.getSettingsRef();
 
         /// TODO Why not do SQLColumns instead?
         std::string name = schema_name.empty() ? table_name : schema_name + "." + table_name;
