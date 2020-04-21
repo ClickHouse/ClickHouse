@@ -51,13 +51,14 @@ def build_website(args):
             '*.md',
             '*.sh',
             '*.css',
-            '*.js',
+            'js/*.js',
             'build',
             'docs',
             'public',
             'node_modules',
             'templates',
-            'feathericons'
+            'feathericons',
+            'locale'
         )
     )
 
@@ -67,7 +68,7 @@ def build_website(args):
                 continue
 
             path = os.path.join(root, filename)
-            if not (filename.endswith('.html') or filename.endswith('.js')):
+            if not filename.endswith('.html'):
                 continue
             logging.info('Processing %s', path)
             with open(path, 'rb') as f:
@@ -130,7 +131,7 @@ def minify_website(args):
         logging.info(closure_args)
         if closure.run(*closure_args):
             raise RuntimeError('failed to run closure compiler')
-            
+
     else:
         logging.info(command)
         js_in = ' '.join(js_in)

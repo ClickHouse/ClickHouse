@@ -11,6 +11,19 @@ a:hover, a:active {
     text-decoration: underline;
 }
 
+.btn.disabled, .btn:disabled {
+    cursor: default;
+    opacity: 0.4;
+}
+
+.fake-btn {
+    display: inline-block;
+    padding: 0.375rem 0.75rem;
+    text-align: center;
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
 #logo-icon, #docs-logo-icon {
     width: 40px;
 }
@@ -26,20 +39,16 @@ a:hover, a:active {
     line-height: 1.2;
 }
 
-.bg-dark-alt {
+.bg-dark-alt, .bg-dark-alt:focus {
     background: #36363F;
 }
 
-.bg-dark-alt:focus {
-    background: #36363F;
-}
-
-.bg-secondary-alt {
+.bg-secondary-alt, .bg-secondary-alt:focus {
     background: #444451;
 }
 
-.bg-secondary-alt:focus {
-    background: #444451;
+.bg-orange, .bg-orange:focus {
+    background: #f14600;
 }
 
 .text-dark-alt {
