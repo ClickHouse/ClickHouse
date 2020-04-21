@@ -101,21 +101,4 @@ void writeProbablyBackQuotedStringMySQL(const StringRef & s, WriteBuffer & buf)
     writeProbablyQuotedStringImpl(s, buf, [](const StringRef & s_, WriteBuffer & buf_) { return writeBackQuotedStringMySQL(s_, buf_); });
 }
 
-template <typename T>
-void writeBigIntBinary(const T & x, WriteBuffer & buf)
-{
-    const auto & int_backend = x.backend();
-    auto limbs = int_backend.limbs();
-
-    // signed 256-bit boost integer is actually 257-bit :/
-    if (int_backend.isneg()) {
-        buf.write(1);
-    }
-    else{
-        buf.write(0);
-    }
-
-    buf.write(reinterpret_cast<const char *>(limbs), int_backend.internal_limb_count * sizeof(*limbs));
-}
-
 }

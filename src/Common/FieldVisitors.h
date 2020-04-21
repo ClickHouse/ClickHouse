@@ -156,10 +156,18 @@ public:
         throw Exception("Cannot convert AggregateFunctionStateData to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
     }
 
-    T operator() (const bUInt128 & x) const { return static_cast<T>(x); }
-    T operator() (const bInt128 & x) const { return static_cast<T>(x); }
-    T operator() (const bUInt256 & x) const { return static_cast<T>(x); }
-    T operator() (const bInt256 & x) const { return static_cast<T>(x); }
+    T operator() (const bUInt128 &) const {
+        throw Exception("Cannot convert UInt128 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
+    T operator() (const bInt128 &) const {
+        throw Exception("Cannot convert Int128 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
+    T operator() (const bUInt256 &) const {
+        throw Exception("Cannot convert UInt256 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
+    T operator() (const bInt256 &) const {
+        throw Exception("Cannot convert Int256 to " + demangle(typeid(T).name()), ErrorCodes::CANNOT_CONVERT_TYPE);
+    }
 };
 
 
