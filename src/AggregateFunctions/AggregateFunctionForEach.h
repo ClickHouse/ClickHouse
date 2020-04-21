@@ -195,6 +195,20 @@ public:
         }
     }
 
+    bool isFinalizationNeeded() const override
+    {
+        return nested_func->isFinalizationNeeded();
+    }
+
+    void finalize(AggregateDataPtr place) const override
+    {
+        AggregateFunctionForEachData & state = data(place);
+        char * nested_state = state.array_of_aggregate_datas;
+
+        for (size_t i = 0; i < state.dynamic_array_size; ++i)
+            nested_func->finalize(nested_state);
+    }
+
     void serialize(ConstAggregateDataPtr place, WriteBuffer & buf) const override
     {
         const AggregateFunctionForEachData & state = data(place);

@@ -104,6 +104,15 @@ public:
         nested_function->merge(place, rhs, arena);
     }
 
+    bool isFinalizationNeeded() const override
+    {
+        return nested_function->isFinalizationNeeded();
+    }
+    void finalize(AggregateDataPtr place) const override
+    {
+        return nested_function->finalize(place);
+    }
+
     void serialize(
         ConstAggregateDataPtr place,
         WriteBuffer & buf) const override

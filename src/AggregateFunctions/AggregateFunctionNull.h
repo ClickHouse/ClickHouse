@@ -117,6 +117,16 @@ public:
         return nested_function->alignOfData();
     }
 
+    bool isFinalizationNeeded() const override
+    {
+        return nested_function->isFinalizationNeeded();
+    }
+
+    void finalize(AggregateDataPtr place) const override
+    {
+        return nested_function->finalize(place);
+    }
+
     void merge(AggregateDataPtr place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if (result_is_nullable && getFlag(rhs))
