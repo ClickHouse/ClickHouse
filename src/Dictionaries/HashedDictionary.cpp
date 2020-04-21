@@ -2,6 +2,8 @@
 #include <ext/size.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
+#include <Core/Defines.h>
+
 
 namespace
 {
@@ -87,7 +89,7 @@ void HashedDictionary::isInAttrImpl(const AttrType & attr, const ChildType & chi
         auto id = getAt(child_ids, row);
         const auto ancestor_id = getAt(ancestor_ids, row);
 
-        while (id != null_value && id != ancestor_id)
+        for (size_t i = 0; id != null_value && id != ancestor_id && i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
         {
             auto it = attr.find(id);
             if (it != std::end(attr))

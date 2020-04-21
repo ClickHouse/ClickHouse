@@ -1,3 +1,4 @@
+
 ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 # Windows使用指引 {#windowsshi-yong-zhi-yin}
@@ -67,9 +68,9 @@ ClickHose支持Linux,FreeBSD 及 Mac OS X 系统。
 
 命令执行成功后，可以通过执行`git pull upstream master`，从ClickHouse的主分支中拉去更新。
 
-## Working with submodules {#working-with-submodules}
+## 使用子模块 {#working-with-submodules}
 
-Working with submodules in git could be painful. Next commands will help to manage it:
+在git中使用子模块可能会很痛苦。 接下来的命令将有助于管理它:
 
     # ! each command accepts --recursive
     # Update remote URLs for submodules. Barely rare case
@@ -81,7 +82,7 @@ Working with submodules in git could be painful. Next commands will help to mana
     # Two last commands could be merged together
     git submodule update --init
 
-The next commands would help you to reset all submodules to the initial state (!WARING! - any chenges inside will be deleted):
+接下来的命令将帮助您将所有子模块重置为初始状态（！华林！ -里面的任何chenges将被删除):
 
     # Synchronizes submodules' remote URL with .gitmodules
     git submodule sync --recursive

@@ -1,191 +1,194 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_priority: 60
+toc_title: "\u8BBE\u7F6E"
 ---
 
-# Settings {#settings}
+# 设置 {#settings}
 
-## distributed\_product\_mode {#distributed-product-mode}
+## 分布\_产品\_模式 {#distributed-product-mode}
 
-Changes the behavior of [distributed subqueries](../../query_language/select.md).
+改变的行为 [分布式子查询](../../sql_reference/statements/select.md).
 
 ClickHouse applies this setting when the query contains the product of distributed tables, i.e. when the query for a distributed table contains a non-GLOBAL subquery for the distributed table.
 
-Restrictions:
+限制:
 
--   Only applied for IN and JOIN subqueries.
--   Only if the FROM section uses a distributed table containing more than one shard.
--   If the subquery concerns a distributed table containing more than one shard.
--   Not used for a table-valued [remote](../../query_language/table_functions/remote.md) function.
+-   仅适用于IN和JOIN子查询。
+-   仅当FROM部分使用包含多个分片的分布式表时。
+-   如果子查询涉及包含多个分片的分布式表。
+-   不用于表值 [远程](../../sql_reference/table_functions/remote.md) 功能。
 
-Possible values:
+可能的值:
 
--   `deny` — Default value. Prohibits using these types of subqueries (returns the “Double-distributed in/JOIN subqueries is denied” exception).
+-   `deny` — Default value. Prohibits using these types of subqueries (returns the “Double-distributed in/JOIN subqueries is denied” 例外）。
 -   `local` — Replaces the database and table in the subquery with local ones for the destination server (shard), leaving the normal `IN`/`JOIN.`
--   `global` — Replaces the `IN`/`JOIN` query with `GLOBAL IN`/`GLOBAL JOIN.`
+-   `global` — Replaces the `IN`/`JOIN` 查询与 `GLOBAL IN`/`GLOBAL JOIN.`
 -   `allow` — Allows the use of these types of subqueries.
 
 ## enable\_optimize\_predicate\_expression {#enable-optimize-predicate-expression}
 
-Turns on predicate pushdown in `SELECT` queries.
+打开谓词下推 `SELECT` 查询。
 
-Predicate pushdown may significantly reduce network traffic for distributed queries.
+谓词下推可以显着减少分布式查询的网络流量。
 
-Possible values:
+可能的值:
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 1.
+默认值：1。
 
-Usage
+用途
 
-Consider the following queries:
+请考虑以下查询:
 
 1.  `SELECT count() FROM test_table WHERE date = '2018-10-10'`
 2.  `SELECT count() FROM (SELECT * FROM test_table) WHERE date = '2018-10-10'`
 
-If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal because ClickHouse applies `WHERE` to the subquery when processing it.
+如果 `enable_optimize_predicate_expression = 1`，则这些查询的执行时间相等，因为ClickHouse应用 `WHERE` 对子查询进行处理。
 
-If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer, because the `WHERE` clause applies to all the data after the subquery finishes.
+如果 `enable_optimize_predicate_expression = 0`，那么第二个查询的执行时间要长得多，因为 `WHERE` 子句适用于子查询完成后的所有数据。
 
 ## fallback\_to\_stale\_replicas\_for\_distributed\_queries {#settings-fallback_to_stale_replicas_for_distributed_queries}
 
-Forces a query to an out-of-date replica if updated data is not available. See [Replication](../table_engines/replication.md).
+如果更新的数据不可用，则强制对过期副本进行查询。 看 [复制](../../engines/table_engines/mergetree_family/replication.md).
 
-ClickHouse selects the most relevant from the outdated replicas of the table.
+ClickHouse从表的过时副本中选择最相关的副本。
 
-Used when performing `SELECT` from a distributed table that points to replicated tables.
+执行时使用 `SELECT` 从指向复制表的分布式表。
 
-By default, 1 (enabled).
+默认情况下，1（已启用）。
 
 ## force\_index\_by\_date {#settings-force_index_by_date}
 
-Disables query execution if the index can’t be used by date.
+如果索引不能按日期使用，则禁用查询执行。
 
-Works with tables in the MergeTree family.
+适用于MergeTree系列中的表。
 
-If `force_index_by_date=1`, ClickHouse checks whether the query has a date key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For example, the condition `Date != ' 2000-01-01 '` is acceptable even when it matches all the data in the table (i.e., running the query requires a full scan). For more information about ranges of data in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
+如果 `force_index_by_date=1`，ClickHouse检查查询是否具有可用于限制数据范围的date键条件。 如果没有合适的条件，则会引发异常。 但是，它不检查条件是否减少了要读取的数据量。 例如，条件 `Date != ' 2000-01-01 '` 即使它与表中的所有数据匹配（即运行查询需要完全扫描），也是可以接受的。 有关MergeTree表中数据范围的详细信息，请参阅 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
 
 ## force\_primary\_key {#force-primary-key}
 
-Disables query execution if indexing by the primary key is not possible.
+如果无法按主键编制索引，则禁用查询执行。
 
-Works with tables in the MergeTree family.
+适用于MergeTree系列中的表。
 
-If `force_primary_key=1`, ClickHouse checks to see if the query has a primary key condition that can be used for restricting data ranges. If there is no suitable condition, it throws an exception. However, it does not check whether the condition reduces the amount of data to read. For more information about data ranges in MergeTree tables, see [MergeTree](../table_engines/mergetree.md).
+如果 `force_primary_key=1`，ClickHouse检查查询是否具有可用于限制数据范围的主键条件。 如果没有合适的条件，则会引发异常。 但是，它不检查条件是否减少了要读取的数据量。 有关MergeTree表中数据范围的详细信息，请参阅 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md).
 
 ## format\_schema {#format-schema}
 
-This parameter is useful when you are using formats that require a schema definition, such as [Cap’n Proto](https://capnproto.org/) or [Protobuf](https://developers.google.com/protocol-buffers/). The value depends on the format.
+当您使用需要架构定义的格式时，此参数非常有用，例如 [普罗托船长](https://capnproto.org/) 或 [Protobuf](https://developers.google.com/protocol-buffers/). 该值取决于格式。
 
 ## fsync\_metadata {#fsync-metadata}
 
-Enables or disables [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) when writing `.sql` files. Enabled by default.
+启用或禁用 [fsync](http://pubs.opengroup.org/onlinepubs/9699919799/functions/fsync.html) 写作时 `.sql` 文件 默认情况下启用。
 
-It makes sense to disable it if the server has millions of tiny tables that are constantly being created and destroyed.
+如果服务器有数百万个不断创建和销毁的小表，那么禁用它是有意义的。
 
 ## enable\_http\_compression {#settings-enable_http_compression}
 
-Enables or disables data compression in the response to an HTTP request.
+在对HTTP请求的响应中启用或禁用数据压缩。
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+欲了解更多信息，请阅读 [HTTP接口描述](../../interfaces/http.md).
 
-Possible values:
+可能的值:
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 0.
+默认值：0。
 
 ## http\_zlib\_compression\_level {#settings-http_zlib_compression_level}
 
-Sets the level of data compression in the response to an HTTP request if [enable\_http\_compression = 1](#settings-enable_http_compression).
+在以下情况下，设置对HTTP请求的响应中的数据压缩级别 [enable\_http\_compression=1](#settings-enable_http_compression).
 
-Possible values: Numbers from 1 to 9.
+可能的值：数字从1到9。
 
-Default value: 3.
+默认值：3。
 
 ## http\_native\_compression\_disable\_checksumming\_on\_decompress {#settings-http_native_compression_disable_checksumming_on_decompress}
 
-Enables or disables checksum verification when decompressing the HTTP POST data from the client. Used only for ClickHouse native compression format (not used with `gzip` or `deflate`).
+在从客户端解压缩HTTP POST数据时启用或禁用校验和验证。 仅用于ClickHouse原生压缩格式（不用于 `gzip` 或 `deflate`).
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+欲了解更多信息，请阅读 [HTTP接口描述](../../interfaces/http.md).
 
-Possible values:
+可能的值:
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 0.
+默认值：0。
 
 ## send\_progress\_in\_http\_headers {#settings-send_progress_in_http_headers}
 
-Enables or disables `X-ClickHouse-Progress` HTTP response headers in `clickhouse-server` responses.
+启用或禁用 `X-ClickHouse-Progress` Http响应头 `clickhouse-server` 答复。
 
-For more information, read the [HTTP interface description](../../interfaces/http.md).
+欲了解更多信息，请阅读 [HTTP接口描述](../../interfaces/http.md).
 
-Possible values:
+可能的值:
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 0.
+默认值：0。
 
 ## max\_http\_get\_redirects {#setting-max_http_get_redirects}
 
-Limits the maximum number of HTTP GET redirect hops for [URL](../table_engines/url.md)-engine tables. The setting applies to both types of tables: those created by the [CREATE TABLE](../../query_language/create/#create-table-query) query and by the [url](../../query_language/table_functions/url.md) table function.
+限制HTTP GET重定向跳数的最大数量 [URL](../../engines/table_engines/special/url.md)-发动机表。 该设置适用于两种类型的表：由 [CREATE TABLE](../../sql_reference/statements/create.md#create-table-query) 查询和由 [url](../../sql_reference/table_functions/url.md) 表功能。
 
-Possible values:
+可能的值:
 
--   Any positive integer number of hops.
+-   跳数的任何正整数。
 -   0 — No hops allowed.
 
-Default value: 0.
+默认值：0。
 
 ## input\_format\_allow\_errors\_num {#settings-input_format_allow_errors_num}
 
-Sets the maximum number of acceptable errors when reading from text formats (CSV, TSV, etc.).
+设置从文本格式（CSV，TSV等）读取时可接受的错误的最大数量。).
 
-The default value is 0.
+默认值为0。
 
-Always pair it with `input_format_allow_errors_ratio`.
+总是与它配对 `input_format_allow_errors_ratio`.
 
-If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_num`, ClickHouse ignores the row and moves on to the next one.
+如果在读取行时发生错误，但错误计数器仍小于 `input_format_allow_errors_num`，ClickHouse忽略该行并移动到下一个。
 
-If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
+如果两者 `input_format_allow_errors_num` 和 `input_format_allow_errors_ratio` 超出时，ClickHouse引发异常。
 
 ## input\_format\_allow\_errors\_ratio {#settings-input_format_allow_errors_ratio}
 
-Sets the maximum percentage of errors allowed when reading from text formats (CSV, TSV, etc.).
-The percentage of errors is set as a floating-point number between 0 and 1.
+设置从文本格式（CSV，TSV等）读取时允许的最大错误百分比。).
+错误百分比设置为介于0和1之间的浮点数。
 
-The default value is 0.
+默认值为0。
 
-Always pair it with `input_format_allow_errors_num`.
+总是与它配对 `input_format_allow_errors_num`.
 
-If an error occurred while reading rows but the error counter is still less than `input_format_allow_errors_ratio`, ClickHouse ignores the row and moves on to the next one.
+如果在读取行时发生错误，但错误计数器仍小于 `input_format_allow_errors_ratio`，ClickHouse忽略该行并移动到下一个。
 
-If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` are exceeded, ClickHouse throws an exception.
+如果两者 `input_format_allow_errors_num` 和 `input_format_allow_errors_ratio` 超出时，ClickHouse引发异常。
 
 ## input\_format\_values\_interpret\_expressions {#settings-input_format_values_interpret_expressions}
 
-Enables or disables the full SQL parser if the fast stream parser can’t parse the data. This setting is used only for the [Values](../../interfaces/formats.md#data-format-values) format at the data insertion. For more information about syntax parsing, see the [Syntax](../../query_language/syntax.md) section.
+如果快速流解析器无法解析数据，则启用或禁用完整SQL解析器。 此设置仅用于 [值](../../interfaces/formats.md#data-format-values) 格式在数据插入。 有关语法分析的详细信息，请参阅 [语法](../../sql_reference/syntax.md) 科。
 
-Possible values:
+可能的值:
 
 -   0 — Disabled.
 
-    In this case, you must provide formatted data. See the [Formats](../../interfaces/formats.md) section.
+    在这种情况下，您必须提供格式化的数据。 见 [格式](../../interfaces/formats.md) 科。
 
 -   1 — Enabled.
 
-    In this case, you can use an SQL expression as a value, but data insertion is much slower this way. If you insert only formatted data, then ClickHouse behaves as if the setting value is 0.
+    在这种情况下，您可以使用SQL表达式作为值，但数据插入速度要慢得多。 如果仅插入格式化的数据，则ClickHouse的行为就好像设置值为0。
 
-Default value: 1.
+默认值：1。
 
-Example of Use
+使用示例
 
-Insert the [DateTime](../../data_types/datetime.md) type value with the different settings.
+插入 [日期时间](../../sql_reference/data_types/datetime.md) 使用不同的设置键入值。
 
 ``` sql
 SET input_format_values_interpret_expressions = 0;
@@ -206,7 +209,7 @@ INSERT INTO datetime_t VALUES (now())
 Ok.
 ```
 
-The last query is equivalent to the following:
+最后一个查询等效于以下内容:
 
 ``` sql
 SET input_format_values_interpret_expressions = 0;
@@ -219,21 +222,21 @@ Ok.
 
 ## input\_format\_values\_deduce\_templates\_of\_expressions {#settings-input_format_values_deduce_templates_of_expressions}
 
-Enables or disables template deduction for an SQL expressions in [Values](../../interfaces/formats.md#data-format-values) format. It allows to parse and interpret expressions in `Values` much faster if expressions in consecutive rows have the same structure. ClickHouse will try to deduce template of an expression, parse the following rows using this template and evaluate the expression on a batch of successfully parsed rows. For the following query:
+启用或禁用以下内容中的SQL表达式的模板扣除 [值](../../interfaces/formats.md#data-format-values) 格式。 它允许解析和解释表达式 `Values` 如果连续行中的表达式具有相同的结构，速度要快得多。 ClickHouse将尝试推导表达式的模板，使用此模板解析以下行，并在一批成功解析的行上评估表达式。 对于以下查询:
 
 ``` sql
 INSERT INTO test VALUES (lower('Hello')), (lower('world')), (lower('INSERT')), (upper('Values')), ...
 ```
 
--   if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=0` expressions will be interpreted separately for each row (this is very slow for large number of rows)
--   if `input_format_values_interpret_expressions=0` and `format_values_deduce_templates_of_expressions=1` expressions in the first, second and third rows will be parsed using template `lower(String)` and interpreted together, expression is the forth row will be parsed with another template (`upper(String)`)
--   if `input_format_values_interpret_expressions=1` and `format_values_deduce_templates_of_expressions=1` - the same as in previous case, but also allows fallback to interpreting expressions separately if it’s not possible to deduce template.
+-   如果 `input_format_values_interpret_expressions=1` 和 `format_values_deduce_templates_of_expressions=0` 表达式将单独解释每行（对于大量行来说，这非常慢)
+-   如果 `input_format_values_interpret_expressions=0` 和 `format_values_deduce_templates_of_expressions=1` 第一行，第二行和第三行中的表达式将使用template进行分析 `lower(String)` 并一起解释，expression是第四行将与另一个模板进行解析 (`upper(String)`)
+-   如果 `input_format_values_interpret_expressions=1` 和 `format_values_deduce_templates_of_expressions=1` -与前面的情况相同，但如果无法推断模板，也可以回退到单独解释表达式。
 
-Enabled by default.
+默认情况下启用。
 
 ## input\_format\_values\_accurate\_types\_of\_literals {#settings-input-format-values-accurate-types-of-literals}
 
-This setting is used only when `input_format_values_deduce_templates_of_expressions = 1`. It can happen, that expressions for some column have the same structure, but contain numeric literals of different types, e.g
+此设置仅在以下情况下使用 `input_format_values_deduce_templates_of_expressions = 1`. 它可能发生，某些列的表达式具有相同的结构，但包含不同类型的数字文字，例如
 
 ``` sql
 (..., abs(0), ...),             -- UInt64 literal
@@ -241,266 +244,266 @@ This setting is used only when `input_format_values_deduce_templates_of_expressi
 (..., abs(-1), ...),            -- Int64 literal
 ```
 
-When this setting is enabled, ClickHouse will check the actual type of literal and will use an expression template of the corresponding type. In some cases, it may significantly slow down expression evaluation in `Values`.
-When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` or `Int64` instead of `UInt64` for `42`), but it may cause overflow and precision issues.
-Enabled by default.
+启用此设置后，ClickHouse将检查文本的实际类型，并使用相应类型的表达式模板。 在某些情况下，可能会显着减慢表达式评估 `Values`.
+When disabled, ClickHouse may use more general type for some literals (e.g. `Float64` 或 `Int64` 而不是 `UInt64` 为 `42`），但它可能会导致溢出和精度问题。
+默认情况下启用。
 
 ## input\_format\_defaults\_for\_omitted\_fields {#session_settings-input_format_defaults_for_omitted_fields}
 
-When performing `INSERT` queries, replace omitted input column values with default values of the respective columns. This option only applies to [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) and [TabSeparated](../../interfaces/formats.md#tabseparated) formats.
+执行时 `INSERT` 查询时，将省略的输入列值替换为相应列的默认值。 此选项仅适用于 [JSONEachRow](../../interfaces/formats.md#jsoneachrow), [CSV](../../interfaces/formats.md#csv) 和 [TabSeparated](../../interfaces/formats.md#tabseparated) 格式。
 
-!!! note "Note"
-    When this option is enabled, extended table metadata are sent from server to client. It consumes additional computing resources on the server and can reduce performance.
+!!! note "注"
+    启用此选项后，扩展表元数据将从服务器发送到客户端。 它会消耗服务器上的额外计算资源，并可能降低性能。
 
-Possible values:
+可能的值:
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 1.
+默认值：1。
 
 ## input\_format\_tsv\_empty\_as\_default {#settings-input-format-tsv-empty-as-default}
 
-When enabled, replace empty input fields in TSV with default values. For complex default expressions `input_format_defaults_for_omitted_fields` must be enabled too.
+启用后，将TSV中的空输入字段替换为默认值。 对于复杂的默认表达式 `input_format_defaults_for_omitted_fields` 必须启用了。
 
-Disabled by default.
+默认情况下禁用。
 
 ## input\_format\_null\_as\_default {#settings-input-format-null-as-default}
 
-Enables or disables using default values if input data contain `NULL`, but data type of the corresponding column in not `Nullable(T)` (for text input formats).
+如果输入数据包含 `NULL`，但相应列的数据类型不 `Nullable(T)` （对于文本输入格式）。
 
 ## input\_format\_skip\_unknown\_fields {#settings-input-format-skip-unknown-fields}
 
-Enables or disables skipping insertion of extra data.
+启用或禁用跳过额外数据的插入。
 
-When writing data, ClickHouse throws an exception if input data contain columns that do not exist in the target table. If skipping is enabled, ClickHouse doesn’t insert extra data and doesn’t throw an exception.
+写入数据时，如果输入数据包含目标表中不存在的列，ClickHouse将引发异常。 如果启用了跳过，ClickHouse不会插入额外的数据，也不会引发异常。
 
-Supported formats:
+支持的格式:
 
 -   [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
 -   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
 -   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
 -   [TSKV](../../interfaces/formats.md#tskv)
 
-Possible values:
+可能的值:
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 0.
+默认值：0。
 
 ## input\_format\_import\_nested\_json {#settings-input_format_import_nested_json}
 
-Enables or disables the insertion of JSON data with nested objects.
+启用或禁用具有嵌套对象的JSON数据的插入。
 
-Supported formats:
+支持的格式:
 
 -   [JSONEachRow](../../interfaces/formats.md#jsoneachrow)
 
-Possible values:
+可能的值:
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 0.
+默认值：0。
 
-See also:
+另请参阅:
 
--   [Usage of Nested Structures](../../interfaces/formats.md#jsoneachrow-nested) with the `JSONEachRow` format.
+-   [嵌套结构的使用](../../interfaces/formats.md#jsoneachrow-nested) 与 `JSONEachRow` 格式。
 
 ## input\_format\_with\_names\_use\_header {#settings-input-format-with-names-use-header}
 
-Enables or disables checking the column order when inserting data.
+启用或禁用插入数据时检查列顺序。
 
-To improve insert performance, we recommend disabling this check if you are sure that the column order of the input data is the same as in the target table.
+为了提高插入性能，如果您确定输入数据的列顺序与目标表中的列顺序相同，建议禁用此检查。
 
-Supported formats:
+支持的格式:
 
 -   [CSVWithNames](../../interfaces/formats.md#csvwithnames)
 -   [TabSeparatedWithNames](../../interfaces/formats.md#tabseparatedwithnames)
 
-Possible values:
+可能的值:
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 1.
+默认值：1。
 
 ## date\_time\_input\_format {#settings-date_time_input_format}
 
-Allows choosing a parser of the text representation of date and time.
+允许选择日期和时间的文本表示的解析器。
 
-The setting doesn’t apply to [date and time functions](../../query_language/functions/date_time_functions.md).
+该设置不适用于 [日期和时间功能](../../sql_reference/functions/date_time_functions.md).
 
-Possible values:
+可能的值:
 
 -   `'best_effort'` — Enables extended parsing.
 
-    ClickHouse can parse the basic `YYYY-MM-DD HH:MM:SS` format and all [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) date and time formats. For example, `'2018-06-08T01:02:03.000Z'`.
+    ClickHouse可以解析基本 `YYYY-MM-DD HH:MM:SS` 格式和所有 [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601) 日期和时间格式。 例如, `'2018-06-08T01:02:03.000Z'`.
 
 -   `'basic'` — Use basic parser.
 
-    ClickHouse can parse only the basic `YYYY-MM-DD HH:MM:SS` format. For example, `'2019-08-20 10:18:56'`.
+    ClickHouse只能解析基本的 `YYYY-MM-DD HH:MM:SS` 格式。 例如, `'2019-08-20 10:18:56'`.
 
-Default value: `'basic'`.
+默认值: `'basic'`.
 
-See also:
+另请参阅:
 
--   [DateTime data type.](../../data_types/datetime.md)
--   [Functions for working with dates and times.](../../query_language/functions/date_time_functions.md)
+-   [日期时间数据类型。](../../sql_reference/data_types/datetime.md)
+-   [用于处理日期和时间的函数。](../../sql_reference/functions/date_time_functions.md)
 
 ## join\_default\_strictness {#settings-join_default_strictness}
 
-Sets default strictness for [JOIN clauses](../../query_language/select.md#select-join).
+设置默认严格性 [加入子句](../../sql_reference/statements/select.md#select-join).
 
-Possible values:
+可能的值:
 
--   `ALL` — If the right table has several matching rows, ClickHouse creates a [Cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) from matching rows. This is the normal `JOIN` behaviour from standard SQL.
--   `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` and `ALL` are the same.
+-   `ALL` — If the right table has several matching rows, ClickHouse creates a [笛卡尔积](https://en.wikipedia.org/wiki/Cartesian_product) 从匹配的行。 这是正常的 `JOIN` 来自标准SQL的行为。
+-   `ANY` — If the right table has several matching rows, only the first one found is joined. If the right table has only one matching row, the results of `ANY` 和 `ALL` 都是一样的
 -   `ASOF` — For joining sequences with an uncertain match.
--   `Empty string` — If `ALL` or `ANY` is not specified in the query, ClickHouse throws an exception.
+-   `Empty string` — If `ALL` 或 `ANY` 如果未在查询中指定，ClickHouse将引发异常。
 
-Default value: `ALL`.
+默认值: `ALL`.
 
 ## join\_any\_take\_last\_row {#settings-join_any_take_last_row}
 
-Changes behaviour of join operations with `ANY` strictness.
+更改联接操作的行为 `ANY` 严格。
 
-!!! warning "Attention"
-    This setting applies only for `JOIN` operations with [Join](../table_engines/join.md) engine tables.
+!!! warning "注意"
+    此设置仅适用于 `JOIN` 操作与 [加入我们](../../engines/table_engines/special/join.md) 发动机表.
 
-Possible values:
+可能的值:
 
 -   0 — If the right table has more than one matching row, only the first one found is joined.
 -   1 — If the right table has more than one matching row, only the last one found is joined.
 
-Default value: 0.
+默认值：0。
 
-See also:
+另请参阅:
 
--   [JOIN clause](../../query_language/select.md#select-join)
--   [Join table engine](../table_engines/join.md)
+-   [JOIN子句](../../sql_reference/statements/select.md#select-join)
+-   [联接表引擎](../../engines/table_engines/special/join.md)
 -   [join\_default\_strictness](#settings-join_default_strictness)
 
 ## join\_use\_nulls {#join_use_nulls}
 
-Sets the type of [JOIN](../../query_language/select.md) behavior. When merging tables, empty cells may appear. ClickHouse fills them differently based on this setting.
+设置类型 [JOIN](../../sql_reference/statements/select.md) 行为 合并表时，可能会出现空单元格。 ClickHouse根据此设置以不同的方式填充它们。
 
-Possible values:
+可能的值:
 
 -   0 — The empty cells are filled with the default value of the corresponding field type.
--   1 — `JOIN` behaves the same way as in standard SQL. The type of the corresponding field is converted to [Nullable](../../data_types/nullable.md#data_type-nullable), and empty cells are filled with [NULL](../../query_language/syntax.md).
+-   1 — `JOIN` 其行为方式与标准SQL中的行为方式相同。 相应字段的类型将转换为 [可为空](../../sql_reference/data_types/nullable.md#data_type-nullable)，和空单元格填充 [NULL](../../sql_reference/syntax.md).
 
-Default value: 0.
+默认值：0。
 
 ## max\_block\_size {#setting-max_block_size}
 
-In ClickHouse, data is processed by blocks (sets of column parts). The internal processing cycles for a single block are efficient enough, but there are noticeable expenditures on each block. The `max_block_size` setting is a recommendation for what size of the block (in a count of rows) to load from tables. The block size shouldn’t be too small, so that the expenditures on each block are still noticeable, but not too large so that the query with LIMIT that is completed after the first block is processed quickly. The goal is to avoid consuming too much memory when extracting a large number of columns in multiple threads and to preserve at least some cache locality.
+在ClickHouse中，数据由块（列部分集）处理。 单个块的内部处理周期足够高效，但每个块都有明显的支出。 该 `max_block_size` 设置是建议从表中加载块的大小（行数）。 块大小不应该太小，以便每个块上的支出仍然明显，但不能太大，以便在第一个块处理完成后快速完成限制查询。 目标是避免在多个线程中提取大量列时占用太多内存，并且至少保留一些缓存局部性。
 
-Default value: 65,536.
+默认值：65,536。
 
-Blocks the size of `max_block_size` are not always loaded from the table. If it is obvious that less data needs to be retrieved, a smaller block is processed.
+块的大小 `max_block_size` 并不总是从表中加载。 如果显然需要检索的数据较少，则处理较小的块。
 
 ## preferred\_block\_size\_bytes {#preferred-block-size-bytes}
 
-Used for the same purpose as `max_block_size`, but it sets the recommended block size in bytes by adapting it to the number of rows in the block.
-However, the block size cannot be more than `max_block_size` rows.
-By default: 1,000,000. It only works when reading from MergeTree engines.
+用于相同的目的 `max_block_size`，但它通过使其适应块中的行数来设置推荐的块大小（以字节为单位）。
+但是，块大小不能超过 `max_block_size` 行。
+默认情况下：1,000,000。 它只有在从MergeTree引擎读取时才有效。
 
 ## merge\_tree\_min\_rows\_for\_concurrent\_read {#setting-merge-tree-min-rows-for-concurrent-read}
 
-If the number of rows to be read from a file of a [MergeTree](../table_engines/mergetree.md) table exceeds `merge_tree_min_rows_for_concurrent_read` then ClickHouse tries to perform a concurrent reading from this file on several threads.
+如果从a的文件中读取的行数 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md) 表超过 `merge_tree_min_rows_for_concurrent_read` 然后ClickHouse尝试在多个线程上从该文件执行并发读取。
 
-Possible values:
+可能的值:
 
--   Any positive integer.
+-   任何正整数。
 
-Default value: 163840.
+默认值:163840.
 
 ## merge\_tree\_min\_bytes\_for\_concurrent\_read {#setting-merge-tree-min-bytes-for-concurrent-read}
 
-If the number of bytes to read from one file of a [MergeTree](../table_engines/mergetree.md)-engine table exceeds `merge_tree_min_bytes_for_concurrent_read`, then ClickHouse tries to concurrently read from this file in several threads.
+如果从一个文件中读取的字节数 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)-发动机表超过 `merge_tree_min_bytes_for_concurrent_read`，然后ClickHouse尝试在多个线程中并发读取此文件。
 
-Possible value:
+可能的值:
 
--   Any positive integer.
+-   任何正整数。
 
-Default value: 251658240.
+默认值:251658240.
 
 ## merge\_tree\_min\_rows\_for\_seek {#setting-merge-tree-min-rows-for-seek}
 
-If the distance between two data blocks to be read in one file is less than `merge_tree_min_rows_for_seek` rows, then ClickHouse does not seek through the file but reads the data sequentially.
+如果要在一个文件中读取的两个数据块之间的距离小于 `merge_tree_min_rows_for_seek` 行，然后ClickHouse不查找文件，而是按顺序读取数据。
 
-Possible values:
+可能的值:
 
--   Any positive integer.
+-   任何正整数。
 
-Default value: 0.
+默认值：0。
 
 ## merge\_tree\_min\_bytes\_for\_seek {#setting-merge-tree-min-bytes-for-seek}
 
-If the distance between two data blocks to be read in one file is less than `merge_tree_min_bytes_for_seek` bytes, then ClickHouse sequentially reads a range of file that contains both blocks, thus avoiding extra seek.
+如果要在一个文件中读取的两个数据块之间的距离小于 `merge_tree_min_bytes_for_seek` 字节数，然后ClickHouse依次读取包含两个块的文件范围，从而避免了额外的寻道。
 
-Possible values:
+可能的值:
 
--   Any positive integer.
+-   任何正整数。
 
-Default value: 0.
+默认值：0。
 
 ## merge\_tree\_coarse\_index\_granularity {#setting-merge-tree-coarse-index-granularity}
 
-When searching for data, ClickHouse checks the data marks in the index file. If ClickHouse finds that required keys are in some range, it divides this range into `merge_tree_coarse_index_granularity` subranges and searches the required keys there recursively.
+搜索数据时，ClickHouse会检查索引文件中的数据标记。 如果ClickHouse发现所需的键在某个范围内，它将此范围划分为 `merge_tree_coarse_index_granularity` 子范围和递归地搜索所需的键。
 
-Possible values:
+可能的值:
 
--   Any positive even integer.
+-   任何正偶数整数。
 
-Default value: 8.
+默认值：8。
 
 ## merge\_tree\_max\_rows\_to\_use\_cache {#setting-merge-tree-max-rows-to-use-cache}
 
-If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it doesn’t use the cache of uncompressed blocks.
+如果克里克豪斯应该阅读更多 `merge_tree_max_rows_to_use_cache` 在一个查询中的行，它不使用未压缩块的缓存。
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed\_cache\_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
 
-Possible values:
+可能的值:
 
--   Any positive integer.
+-   任何正整数。
 
 Default value: 128 ✕ 8192.
 
 ## merge\_tree\_max\_bytes\_to\_use\_cache {#setting-merge-tree-max-bytes-to-use-cache}
 
-If ClickHouse should read more than `merge_tree_max_bytes_to_use_cache` bytes in one query, it doesn’t use the cache of uncompressed blocks.
+如果克里克豪斯应该阅读更多 `merge_tree_max_bytes_to_use_cache` 在一个查询中的字节，它不使用未压缩块的缓存。
 
-The cache of uncompressed blocks stores data extracted for queries. ClickHouse uses this cache to speed up responses to repeated small queries. This setting protects the cache from trashing by queries that read a large amount of data. The [uncompressed\_cache\_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) server setting defines the size of the cache of uncompressed blocks.
+未压缩块的缓存存储为查询提取的数据。 ClickHouse使用此缓存来加快对重复的小查询的响应。 此设置可保护缓存免受读取大量数据的查询的破坏。 该 [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) 服务器设置定义未压缩块的高速缓存的大小。
 
-Possible value:
+可能的值:
 
--   Any positive integer.
+-   任何正整数。
 
-Default value: 2013265920.
+默认值:2013265920.
 
 ## min\_bytes\_to\_use\_direct\_io {#settings-min-bytes-to-use-direct-io}
 
-The minimum data volume required for using direct I/O access to the storage disk.
+使用直接I/O访问存储磁盘所需的最小数据量。
 
-ClickHouse uses this setting when reading data from tables. If the total storage volume of all the data to be read exceeds `min_bytes_to_use_direct_io` bytes, then ClickHouse reads the data from the storage disk with the `O_DIRECT` option.
+ClickHouse在从表中读取数据时使用此设置。 如果要读取的所有数据的总存储量超过 `min_bytes_to_use_direct_io` 字节，然后ClickHouse读取从存储磁盘的数据 `O_DIRECT` 选项。
 
-Possible values:
+可能的值:
 
 -   0 — Direct I/O is disabled.
--   Positive integer.
+-   整数。
 
-Default value: 0.
+默认值：0。
 
 ## log\_queries {#settings-log-queries}
 
-Setting up query logging.
+设置查询日志记录。
 
-Queries sent to ClickHouse with this setup are logged according to the rules in the [query\_log](../server_settings/settings.md#server_settings-query-log) server configuration parameter.
+使用此设置发送到ClickHouse的查询将根据以下内容中的规则记录 [query\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-log) 服务器配置参数。
 
-Example:
+示例:
 
 ``` text
 log_queries=1
@@ -508,11 +511,11 @@ log_queries=1
 
 ## log\_query\_threads {#settings-log-query-threads}
 
-Setting up query threads logging.
+设置查询线程日志记录。
 
-Queries’ threads runned by ClickHouse with this setup are logged according to the rules in the [query\_thread\_log](../server_settings/settings.md#server_settings-query-thread-log) server configuration parameter.
+ClickHouse使用此设置运行的查询线程将根据以下命令中的规则记录 [query\_thread\_log](../server_configuration_parameters/settings.md#server_configuration_parameters-query-thread-log) 服务器配置参数。
 
-Example:
+示例:
 
 ``` text
 log_query_threads=1
@@ -520,680 +523,680 @@ log_query_threads=1
 
 ## max\_insert\_block\_size {#settings-max_insert_block_size}
 
-The size of blocks to form for insertion into a table.
-This setting only applies in cases when the server forms the blocks.
-For example, for an INSERT via the HTTP interface, the server parses the data format and forms blocks of the specified size.
-But when using clickhouse-client, the client parses the data itself, and the ‘max\_insert\_block\_size’ setting on the server doesn’t affect the size of the inserted blocks.
-The setting also doesn’t have a purpose when using INSERT SELECT, since data is inserted using the same blocks that are formed after SELECT.
+要插入到表中的块的大小。
+此设置仅适用于服务器形成块的情况。
+例如，对于通过HTTP接口进行的插入，服务器会分析数据格式并形成指定大小的块。
+但是当使用clickhouse-client时，客户端解析数据本身，并且 ‘max\_insert\_block\_size’ 服务器上的设置不会影响插入的块的大小。
+使用INSERT SELECT时，该设置也没有目的，因为数据是使用在SELECT之后形成的相同块插入的。
 
-Default value: 1,048,576.
+默认值：1,048,576。
 
-The default is slightly more than `max_block_size`. The reason for this is because certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion and a large enough block size allow sorting more data in RAM.
+默认值略高于 `max_block_size`. 这样做的原因是因为某些表引擎 (`*MergeTree`）在磁盘上为每个插入的块形成一个数据部分，这是一个相当大的实体。 同样, `*MergeTree` 表在插入过程中对数据进行排序，并且足够大的块大小允许在RAM中对更多数据进行排序。
 
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
-Disables lagging replicas for distributed queries. See [Replication](../../operations/table_engines/replication.md).
+禁用分布式查询的滞后副本。 看 [复制](../../engines/table_engines/mergetree_family/replication.md).
 
-Sets the time in seconds. If a replica lags more than the set value, this replica is not used.
+以秒为单位设置时间。 如果副本滞后超过设定值，则不使用此副本。
 
-Default value: 300.
+默认值：300。
 
-Used when performing `SELECT` from a distributed table that points to replicated tables.
+执行时使用 `SELECT` 从指向复制表的分布式表。
 
 ## max\_threads {#settings-max_threads}
 
-The maximum number of query processing threads, excluding threads for retrieving data from remote servers (see the ‘max\_distributed\_connections’ parameter).
+查询处理线程的最大数量，不包括用于从远程服务器检索数据的线程（请参阅 ‘max\_distributed\_connections’ 参数）。
 
-This parameter applies to threads that perform the same stages of the query processing pipeline in parallel.
-For example, when reading from a table, if it is possible to evaluate expressions with functions, filter with WHERE and pre-aggregate for GROUP BY in parallel using at least ‘max\_threads’ number of threads, then ‘max\_threads’ are used.
+此参数适用于并行执行查询处理管道的相同阶段的线程。
+例如，当从表中读取时，如果可以使用函数来评估表达式，请使用WHERE进行过滤，并且至少使用并行方式对GROUP BY进行预聚合 ‘max\_threads’ 线程数，然后 ‘max\_threads’ 被使用。
 
-Default value: the number of physical CPU cores.
+默认值：物理CPU内核数。
 
-If less than one SELECT query is normally run on a server at a time, set this parameter to a value slightly less than the actual number of processor cores.
+如果一次在服务器上运行的SELECT查询通常少于一个，请将此参数设置为略小于实际处理器内核数的值。
 
-For queries that are completed quickly because of a LIMIT, you can set a lower ‘max\_threads’. For example, if the necessary number of entries are located in every block and max\_threads = 8, then 8 blocks are retrieved, although it would have been enough to read just one.
+对于由于限制而快速完成的查询，可以设置较低的 ‘max\_threads’. 例如，如果必要数量的条目位于每个块中，并且max\_threads=8，则会检索8个块，尽管只读取一个块就足够了。
 
-The smaller the `max_threads` value, the less memory is consumed.
+越小 `max_threads` 值，较少的内存被消耗。
 
 ## max\_insert\_threads {#settings-max-insert-threads}
 
-The maximum number of threads to execute the `INSERT SELECT` query.
+要执行的最大线程数 `INSERT SELECT` 查询。
 
-Possible values:
+可能的值:
 
--   0 (or 1) — `INSERT SELECT` no parallel execution.
--   Positive integer. Bigger than 1.
+-   0 (or 1) — `INSERT SELECT` 没有并行执行。
+-   整数。 大于1。
 
-Default value: 0.
+默认值：0。
 
-Parallel `INSERT SELECT` has effect only if the `SELECT` part is executed in parallel, see [max\_threads](#settings-max_threads) setting.
-Higher values will lead to higher memory usage.
+平行 `INSERT SELECT` 只有在 `SELECT` 部分并行执行，请参阅 [max\_threads](#settings-max_threads) 设置。
+更高的值将导致更高的内存使用率。
 
 ## max\_compress\_block\_size {#max-compress-block-size}
 
-The maximum size of blocks of uncompressed data before compressing for writing to a table. By default, 1,048,576 (1 MiB). If the size is reduced, the compression rate is significantly reduced, the compression and decompression speed increases slightly due to cache locality, and memory consumption is reduced. There usually isn’t any reason to change this setting.
+在压缩写入表之前，未压缩数据块的最大大小。 默认情况下，1,048,576（1MiB）。 如果大小减小，则压缩率显着降低，压缩和解压缩速度由于高速缓存局部性而略微增加，并且内存消耗减少。 通常没有任何理由更改此设置。
 
-Don’t confuse blocks for compression (a chunk of memory consisting of bytes) with blocks for query processing (a set of rows from a table).
+不要将用于压缩的块（由字节组成的内存块）与用于查询处理的块（表中的一组行）混淆。
 
 ## min\_compress\_block\_size {#min-compress-block-size}
 
-For [MergeTree](../table_engines/mergetree.md)" tables. In order to reduce latency when processing queries, a block is compressed when writing the next mark if its size is at least ‘min\_compress\_block\_size’. By default, 65,536.
+为 [MergeTree](../../engines/table_engines/mergetree_family/mergetree.md)"表。 为了减少处理查询时的延迟，在写入下一个标记时，如果块的大小至少为 ‘min\_compress\_block\_size’. 默认情况下，65,536。
 
-The actual size of the block, if the uncompressed data is less than ‘max\_compress\_block\_size’, is no less than this value and no less than the volume of data for one mark.
+块的实际大小，如果未压缩的数据小于 ‘max\_compress\_block\_size’，是不小于该值且不小于一个标记的数据量。
 
-Let’s look at an example. Assume that ‘index\_granularity’ was set to 8192 during table creation.
+让我们来看看一个例子。 假设 ‘index\_granularity’ 在表创建期间设置为8192。
 
-We are writing a UInt32-type column (4 bytes per value). When writing 8192 rows, the total will be 32 KB of data. Since min\_compress\_block\_size = 65,536, a compressed block will be formed for every two marks.
+我们正在编写一个UInt32类型的列（每个值4个字节）。 当写入8192行时，总数将是32KB的数据。 由于min\_compress\_block\_size=65,536，将为每两个标记形成一个压缩块。
 
-We are writing a URL column with the String type (average size of 60 bytes per value). When writing 8192 rows, the average will be slightly less than 500 KB of data. Since this is more than 65,536, a compressed block will be formed for each mark. In this case, when reading data from the disk in the range of a single mark, extra data won’t be decompressed.
+我们正在编写一个字符串类型的URL列（每个值的平均大小60字节）。 当写入8192行时，平均数据将略少于500KB。 由于这超过65,536，将为每个标记形成一个压缩块。 在这种情况下，当从单个标记范围内的磁盘读取数据时，额外的数据不会被解压缩。
 
-There usually isn’t any reason to change this setting.
+通常没有任何理由更改此设置。
 
 ## max\_query\_size {#settings-max_query_size}
 
-The maximum part of a query that can be taken to RAM for parsing with the SQL parser.
-The INSERT query also contains data for INSERT that is processed by a separate stream parser (that consumes O(1) RAM), which is not included in this restriction.
+查询的最大部分，可以被带到RAM用于使用SQL解析器进行解析。
+插入查询还包含由单独的流解析器（消耗O(1)RAM）处理的插入数据，这些数据不包含在此限制中。
 
-Default value: 256 KiB.
+默认值：256KiB。
 
 ## interactive\_delay {#interactive-delay}
 
-The interval in microseconds for checking whether request execution has been cancelled and sending the progress.
+以微秒为单位的间隔，用于检查请求执行是否已被取消并发送进度。
 
-Default value: 100,000 (checks for cancelling and sends the progress ten times per second).
+默认值：100,000（检查取消并每秒发送十次进度）。
 
-## connect\_timeout, receive\_timeout, send\_timeout {#connect-timeout-receive-timeout-send-timeout}
+## connect\_timeout,receive\_timeout,send\_timeout {#connect-timeout-receive-timeout-send-timeout}
 
-Timeouts in seconds on the socket used for communicating with the client.
+用于与客户端通信的套接字上的超时以秒为单位。
 
-Default value: 10, 300, 300.
+默认值：10，300，300。
 
 ## cancel\_http\_readonly\_queries\_on\_client\_close {#cancel-http-readonly-queries-on-client-close}
 
 Cancels HTTP read-only queries (e.g. SELECT) when a client closes the connection without waiting for the response.
 
-Default value: 0
+默认值：0
 
 ## poll\_interval {#poll-interval}
 
-Lock in a wait loop for the specified number of seconds.
+锁定在指定秒数的等待循环。
 
-Default value: 10.
+默认值：10。
 
 ## max\_distributed\_connections {#max-distributed-connections}
 
-The maximum number of simultaneous connections with remote servers for distributed processing of a single query to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
+与远程服务器同时连接的最大数量，用于分布式处理对单个分布式表的单个查询。 我们建议设置不小于群集中服务器数量的值。
 
-Default value: 1024.
+默认值：1024。
 
-The following parameters are only used when creating Distributed tables (and when launching a server), so there is no reason to change them at runtime.
+以下参数仅在创建分布式表（以及启动服务器时）时使用，因此没有理由在运行时更改它们。
 
 ## distributed\_connections\_pool\_size {#distributed-connections-pool-size}
 
-The maximum number of simultaneous connections with remote servers for distributed processing of all queries to a single Distributed table. We recommend setting a value no less than the number of servers in the cluster.
+与远程服务器同时连接的最大数量，用于分布式处理对单个分布式表的所有查询。 我们建议设置不小于群集中服务器数量的值。
 
-Default value: 1024.
+默认值：1024。
 
 ## connect\_timeout\_with\_failover\_ms {#connect-timeout-with-failover-ms}
 
-The timeout in milliseconds for connecting to a remote server for a Distributed table engine, if the ‘shard’ and ‘replica’ sections are used in the cluster definition.
-If unsuccessful, several attempts are made to connect to various replicas.
+以毫秒为单位连接到分布式表引擎的远程服务器的超时，如果 ‘shard’ 和 ‘replica’ 部分用于群集定义。
+如果不成功，将尝试多次连接到各种副本。
 
-Default value: 50.
+默认值：50。
 
 ## connections\_with\_failover\_max\_tries {#connections-with-failover-max-tries}
 
-The maximum number of connection attempts with each replica for the Distributed table engine.
+分布式表引擎的每个副本的最大连接尝试次数。
 
-Default value: 3.
+默认值：3。
 
-## extremes {#extremes}
+## 极端 {#extremes}
 
-Whether to count extreme values (the minimums and maximums in columns of a query result). Accepts 0 or 1. By default, 0 (disabled).
-For more information, see the section “Extreme values”.
+是否计算极值（查询结果列中的最小值和最大值）。 接受0或1。 默认情况下，0（禁用）。
+有关详细信息，请参阅部分 “Extreme values”.
 
 ## use\_uncompressed\_cache {#setting-use_uncompressed_cache}
 
-Whether to use a cache of uncompressed blocks. Accepts 0 or 1. By default, 0 (disabled).
-Using the uncompressed cache (only for tables in the MergeTree family) can significantly reduce latency and increase throughput when working with a large number of short queries. Enable this setting for users who send frequent short requests. Also pay attention to the [uncompressed\_cache\_size](../server_settings/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
+是否使用未压缩块的缓存。 接受0或1。 默认情况下，0（禁用）。
+使用未压缩缓存（仅适用于MergeTree系列中的表）可以在处理大量短查询时显着减少延迟并提高吞吐量。 为频繁发送短请求的用户启用此设置。 还要注意 [uncompressed\_cache\_size](../server_configuration_parameters/settings.md#server-settings-uncompressed_cache_size) configuration parameter (only set in the config file) – the size of uncompressed cache blocks. By default, it is 8 GiB. The uncompressed cache is filled in as needed and the least-used data is automatically deleted.
 
-For queries that read at least a somewhat large volume of data (one million rows or more), the uncompressed cache is disabled automatically to save space for truly small queries. This means that you can keep the ‘use\_uncompressed\_cache’ setting always set to 1.
+对于至少读取大量数据（一百万行或更多行）的查询，将自动禁用未压缩缓存，以节省真正小型查询的空间。 这意味着你可以保持 ‘use\_uncompressed\_cache’ 设置始终设置为1。
 
 ## replace\_running\_query {#replace-running-query}
 
-When using the HTTP interface, the ‘query\_id’ parameter can be passed. This is any string that serves as the query identifier.
-If a query from the same user with the same ‘query\_id’ already exists at this time, the behaviour depends on the ‘replace\_running\_query’ parameter.
+当使用HTTP接口时， ‘query\_id’ 参数可以传递。 这是用作查询标识符的任何字符串。
+如果来自同一用户的查询具有相同的 ‘query\_id’ 已经存在在这个时候，行为取决于 ‘replace\_running\_query’ 参数。
 
-`0` (default) – Throw an exception (don’t allow the query to run if a query with the same ‘query\_id’ is already running).
+`0` (default) – Throw an exception (don't allow the query to run if a query with the same ‘query\_id’ 已经运行）。
 
 `1` – Cancel the old query and start running the new one.
 
-Yandex.Metrica uses this parameter set to 1 for implementing suggestions for segmentation conditions. After entering the next character, if the old query hasn’t finished yet, it should be cancelled.
+YandexMetrica使用此参数设置为1来实现分段条件的建议。 输入下一个字符后，如果旧的查询还没有完成，应该取消。
 
 ## stream\_flush\_interval\_ms {#stream-flush-interval-ms}
 
-Works for tables with streaming in the case of a timeout, or when a thread generates [max\_insert\_block\_size](#settings-max_insert_block_size) rows.
+适用于在超时的情况下或线程生成流式传输的表 [max\_insert\_block\_size](#settings-max_insert_block_size) 行。
 
-The default value is 7500.
+默认值为7500。
 
-The smaller the value, the more often data is flushed into the table. Setting the value too low leads to poor performance.
+值越小，数据被刷新到表中的频率就越高。 将该值设置得太低会导致性能较差。
 
 ## load\_balancing {#settings-load_balancing}
 
-Specifies the algorithm of replicas selection that is used for distributed query processing.
+指定用于分布式查询处理的副本选择算法。
 
-ClickHouse supports the following algorithms of choosing replicas:
+ClickHouse支持以下选择副本的算法:
 
--   [Random](#load_balancing-random) (by default)
--   [Nearest hostname](#load_balancing-nearest_hostname)
--   [In order](#load_balancing-in_order)
--   [First or random](#load_balancing-first_or_random)
+-   [随机](#load_balancing-random) （默认情况下)
+-   [最近的主机名](#load_balancing-nearest_hostname)
+-   [按顺序](#load_balancing-in_order)
+-   [第一次或随机](#load_balancing-first_or_random)
 
-### Random (by default) {#load_balancing-random}
+### 随机（默认情况下) {#load_balancing-random}
 
 ``` sql
 load_balancing = random
 ```
 
-The number of errors is counted for each replica. The query is sent to the replica with the fewest errors, and if there are several of these, to anyone of them.
-Disadvantages: Server proximity is not accounted for; if the replicas have different data, you will also get different data.
+对每个副本计算错误数。 查询发送到错误最少的副本，如果存在其中几个错误，则发送给其中任何一个。
+缺点：不考虑服务器邻近度；如果副本具有不同的数据，则也会获得不同的数据。
 
-### Nearest Hostname {#load_balancing-nearest_hostname}
+### 最近的主机名 {#load_balancing-nearest_hostname}
 
 ``` sql
 load_balancing = nearest_hostname
 ```
 
-The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server’s hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
+The number of errors is counted for each replica. Every 5 minutes, the number of errors is integrally divided by 2. Thus, the number of errors is calculated for a recent time with exponential smoothing. If there is one replica with a minimal number of errors (i.e. errors occurred recently on the other replicas), the query is sent to it. If there are multiple replicas with the same minimal number of errors, the query is sent to the replica with a hostname that is most similar to the server's hostname in the config file (for the number of different characters in identical positions, up to the minimum length of both hostnames).
 
-For instance, example01-01-1 and example01-01-2.yandex.ru are different in one position, while example01-01-1 and example01-02-2 differ in two places.
-This method might seem primitive, but it doesn’t require external data about network topology, and it doesn’t compare IP addresses, which would be complicated for our IPv6 addresses.
+例如，例如01-01-1和example01-01-2.yandex.ru 在一个位置是不同的，而example01-01-1和example01-02-2在两个地方不同。
+这种方法可能看起来很原始，但它不需要有关网络拓扑的外部数据，也不比较IP地址，这对于我们的IPv6地址来说会很复杂。
 
-Thus, if there are equivalent replicas, the closest one by name is preferred.
-We can also assume that when sending a query to the same server, in the absence of failures, a distributed query will also go to the same servers. So even if different data is placed on the replicas, the query will return mostly the same results.
+因此，如果存在等效副本，则首选按名称最接近的副本。
+我们还可以假设，当向同一台服务器发送查询时，在没有失败的情况下，分布式查询也将转到同一台服务器。 因此，即使在副本上放置了不同的数据，查询也会返回大多相同的结果。
 
-### In Order {#load_balancing-in_order}
+### 按顺序 {#load_balancing-in_order}
 
 ``` sql
 load_balancing = in_order
 ```
 
-Replicas with the same number of errors are accessed in the same order as they are specified in the configuration.
-This method is appropriate when you know exactly which replica is preferable.
+具有相同错误数的副本的访问顺序与配置中指定的顺序相同。
+当您确切知道哪个副本是可取的时，此方法是适当的。
 
-### First or Random {#load_balancing-first_or_random}
+### 第一次或随机 {#load_balancing-first_or_random}
 
 ``` sql
 load_balancing = first_or_random
 ```
 
-This algorithm chooses the first replica in the set or a random replica if the first is unavailable. It’s effective in cross-replication topology setups, but useless in other configurations.
+此算法选择集合中的第一个副本，如果第一个副本不可用，则选择随机副本。 它在跨复制拓扑设置中有效，但在其他配置中无用。
 
-The `first_or_random` algorithm solves the problem of the `in_order` algorithm. With `in_order`, if one replica goes down, the next one gets a double load while the remaining replicas handle the usual amount of traffic. When using the `first_or_random` algorithm, the load is evenly distributed among replicas that are still available.
+该 `first_or_random` 算法解决的问题 `in_order` 算法。 与 `in_order`，如果一个副本出现故障，下一个副本将获得双重负载，而其余副本将处理通常的流量。 使用时 `first_or_random` 算法中，负载均匀分布在仍然可用的副本之间。
 
 ## prefer\_localhost\_replica {#settings-prefer-localhost-replica}
 
-Enables/disables preferable using the localhost replica when processing distributed queries.
+在处理分布式查询时，最好使用localhost副本启用/禁用该副本。
 
-Possible values:
+可能的值:
 
 -   1 — ClickHouse always sends a query to the localhost replica if it exists.
--   0 — ClickHouse uses the balancing strategy specified by the [load\_balancing](#settings-load_balancing) setting.
+-   0 — ClickHouse uses the balancing strategy specified by the [load\_balancing](#settings-load_balancing) 设置。
 
-Default value: 1.
+默认值：1。
 
-!!! warning "Warning"
-    Disable this setting if you use [max\_parallel\_replicas](#settings-max_parallel_replicas).
+!!! warning "警告"
+    如果使用此设置，请禁用此设置 [max\_parallel\_replicas](#settings-max_parallel_replicas).
 
 ## totals\_mode {#totals-mode}
 
-How to calculate TOTALS when HAVING is present, as well as when max\_rows\_to\_group\_by and group\_by\_overflow\_mode = ‘any’ are present.
-See the section “WITH TOTALS modifier”.
+如何计算总计时有存在，以及当max\_rows\_to\_group\_by和group\_by\_overflow\_mode= ‘any’ 都在场。
+请参阅部分 “WITH TOTALS modifier”.
 
 ## totals\_auto\_threshold {#totals-auto-threshold}
 
-The threshold for `totals_mode = 'auto'`.
-See the section “WITH TOTALS modifier”.
+阈值 `totals_mode = 'auto'`.
+请参阅部分 “WITH TOTALS modifier”.
 
 ## max\_parallel\_replicas {#settings-max_parallel_replicas}
 
-The maximum number of replicas for each shard when executing a query.
-For consistency (to get different parts of the same data split), this option only works when the sampling key is set.
-Replica lag is not controlled.
+执行查询时每个分片的最大副本数。
+为了保持一致性（以获取相同数据拆分的不同部分），此选项仅在设置了采样键时有效。
+副本滞后不受控制。
 
-## compile {#compile}
+## 编译 {#compile}
 
-Enable compilation of queries. By default, 0 (disabled).
+启用查询的编译。 默认情况下，0（禁用）。
 
-The compilation is only used for part of the query-processing pipeline: for the first stage of aggregation (GROUP BY).
-If this portion of the pipeline was compiled, the query may run faster due to deployment of short cycles and inlining aggregate function calls. The maximum performance improvement (up to four times faster in rare cases) is seen for queries with multiple simple aggregate functions. Typically, the performance gain is insignificant. In very rare cases, it may slow down query execution.
+编译仅用于查询处理管道的一部分：用于聚合的第一阶段（GROUP BY）。
+如果编译了管道的这一部分，则由于部署周期较短和内联聚合函数调用，查询可能运行得更快。 对于具有多个简单聚合函数的查询，可以看到最大的性能改进（在极少数情况下可快四倍）。 通常，性能增益是微不足道的。 在极少数情况下，它可能会减慢查询执行速度。
 
 ## min\_count\_to\_compile {#min-count-to-compile}
 
-How many times to potentially use a compiled chunk of code before running compilation. By default, 3.
+在运行编译之前可能使用已编译代码块的次数。 默认情况下，3。
 For testing, the value can be set to 0: compilation runs synchronously and the query waits for the end of the compilation process before continuing execution. For all other cases, use values ​​starting with 1. Compilation normally takes about 5-10 seconds.
-If the value is 1 or more, compilation occurs asynchronously in a separate thread. The result will be used as soon as it is ready, including queries that are currently running.
+如果该值为1或更大，则编译在单独的线程中异步进行。 结果将在准备就绪后立即使用，包括当前正在运行的查询。
 
-Compiled code is required for each different combination of aggregate functions used in the query and the type of keys in the GROUP BY clause.
-The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don’t use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
+对于查询中使用的聚合函数的每个不同组合以及GROUP BY子句中的键类型，都需要编译代码。
+The results of the compilation are saved in the build directory in the form of .so files. There is no restriction on the number of compilation results since they don't use very much space. Old results will be used after server restarts, except in the case of a server upgrade – in this case, the old results are deleted.
 
 ## output\_format\_json\_quote\_64bit\_integers {#session_settings-output_format_json_quote_64bit_integers}
 
-If the value is true, integers appear in quotes when using JSON\* Int64 and UInt64 formats (for compatibility with most JavaScript implementations); otherwise, integers are output without the quotes.
+如果该值为true，则在使用JSON\*Int64和UInt64格式时，整数将显示在引号中（为了与大多数JavaScript实现兼容）；否则，整数将不带引号输出。
 
 ## format\_csv\_delimiter {#settings-format_csv_delimiter}
 
-The character interpreted as a delimiter in the CSV data. By default, the delimiter is `,`.
+将字符解释为CSV数据中的分隔符。 默认情况下，分隔符为 `,`.
 
 ## input\_format\_csv\_unquoted\_null\_literal\_as\_null {#settings-input_format_csv_unquoted_null_literal_as_null}
 
-For CSV input format enables or disables parsing of unquoted `NULL` as literal (synonym for `\N`).
+对于CSV输入格式，启用或禁用未引用的解析 `NULL` 作为文字（同义词 `\N`).
 
 ## output\_format\_csv\_crlf\_end\_of\_line {#settings-output-format-csv-crlf-end-of-line}
 
-Use DOS/Windows-style line separator (CRLF) in CSV instead of Unix style (LF).
+在CSV中使用DOS/Windows样式的行分隔符(CRLF)而不是Unix样式(LF)。
 
 ## output\_format\_tsv\_crlf\_end\_of\_line {#settings-output-format-tsv-crlf-end-of-line}
 
-Use DOC/Windows-style line separator (CRLF) in TSV instead of Unix style (LF).
+在TSV中使用DOC/Windows样式的行分隔符（CRLF）而不是Unix样式（LF）。
 
 ## insert\_quorum {#settings-insert_quorum}
 
-Enables the quorum writes.
+启用仲裁写入。
 
--   If `insert_quorum < 2`, the quorum writes are disabled.
--   If `insert_quorum >= 2`, the quorum writes are enabled.
+-   如果 `insert_quorum < 2`，仲裁写入被禁用。
+-   如果 `insert_quorum >= 2`，仲裁写入已启用。
 
-Default value: 0.
+默认值：0。
 
-Quorum writes
+仲裁写入
 
-`INSERT` succeeds only when ClickHouse manages to correctly write data to the `insert_quorum` of replicas during the `insert_quorum_timeout`. If for any reason the number of replicas with successful writes does not reach the `insert_quorum`, the write is considered failed and ClickHouse will delete the inserted block from all the replicas where data has already been written.
+`INSERT` 只有当ClickHouse设法正确地将数据写入成功 `insert_quorum` 在复制品的 `insert_quorum_timeout`. 如果由于任何原因，成功写入的副本数量没有达到 `insert_quorum`，写入被认为失败，ClickHouse将从已经写入数据的所有副本中删除插入的块。
 
-All the replicas in the quorum are consistent, i.e., they contain data from all previous `INSERT` queries. The `INSERT` sequence is linearized.
+仲裁中的所有副本都是一致的，即它们包含来自所有以前的数据 `INSERT` 查询。 该 `INSERT` 序列线性化。
 
-When reading the data written from the `insert_quorum`, you can use the [select\_sequential\_consistency](#settings-select_sequential_consistency) option.
+当读取从写入的数据 `insert_quorum`，您可以使用 [select\_sequential\_consistency](#settings-select_sequential_consistency) 选项。
 
-ClickHouse generates an exception
+ClickHouse生成异常
 
--   If the number of available replicas at the time of the query is less than the `insert_quorum`.
--   At an attempt to write data when the previous block has not yet been inserted in the `insert_quorum` of replicas. This situation may occur if the user tries to perform an `INSERT` before the previous one with the `insert_quorum` is completed.
+-   如果查询时可用副本的数量小于 `insert_quorum`.
+-   在尝试写入数据时，以前的块尚未被插入 `insert_quorum` 的复制品。 如果用户尝试执行 `INSERT` 前一个与 `insert_quorum` 完成。
 
-See also:
+另请参阅:
 
 -   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
 ## insert\_quorum\_timeout {#settings-insert_quorum-timeout}
 
-Write to quorum timeout in seconds. If the timeout has passed and no write has taken place yet, ClickHouse will generate an exception and the client must repeat the query to write the same block to the same or any other replica.
+写入仲裁超时以秒为单位。 如果超时已经过去，并且还没有发生写入，ClickHouse将生成异常，客户端必须重复查询以将相同的块写入相同的副本或任何其他副本。
 
-Default value: 60 seconds.
+默认值：60秒。
 
-See also:
+另请参阅:
 
 -   [insert\_quorum](#settings-insert_quorum)
 -   [select\_sequential\_consistency](#settings-select_sequential_consistency)
 
 ## select\_sequential\_consistency {#settings-select_sequential_consistency}
 
-Enables or disables sequential consistency for `SELECT` queries:
+启用或禁用顺序一致性 `SELECT` 查询:
 
-Possible values:
+可能的值:
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 0.
+默认值：0。
 
-Usage
+用途
 
-When sequential consistency is enabled, ClickHouse allows the client to execute the `SELECT` query only for those replicas that contain data from all previous `INSERT` queries executed with `insert_quorum`. If the client refers to a partial replica, ClickHouse will generate an exception. The SELECT query will not include data that has not yet been written to the quorum of replicas.
+当启用顺序一致性时，ClickHouse允许客户端执行 `SELECT` 仅查询那些包含来自所有先前数据的副本 `INSERT` 查询执行 `insert_quorum`. 如果客户端引用了部分副本，ClickHouse将生成异常。 SELECT查询将不包括尚未写入副本仲裁的数据。
 
-See also:
+另请参阅:
 
 -   [insert\_quorum](#settings-insert_quorum)
 -   [insert\_quorum\_timeout](#settings-insert_quorum_timeout)
 
 ## insert\_deduplicate {#settings-insert-deduplicate}
 
-Enables or disables block deduplication of `INSERT` (for Replicated\* tables).
+启用或禁用块重复数据删除 `INSERT` （对于复制的\*表）。
 
-Possible values:
+可能的值:
 
 -   0 — Disabled.
 -   1 — Enabled.
 
-Default value: 1.
+默认值：1。
 
-By default, blocks inserted into replicated tables by the `INSERT` statement are deduplicated (see \[Data Replication\] (../ table\_engines/replication.md).
+默认情况下，块插入到复制的表 `INSERT` 重复数据删除语句（请参阅\[数据复制\]（../engines/table\_engines/mergetree\_family/replication.md）。
 
 ## deduplicate\_blocks\_in\_dependent\_materialized\_views {#settings-deduplicate-blocks-in-dependent-materialized-views}
 
-Enables or disables the deduplication check for materialized views that receive data from Replicated\* tables.
+启用或禁用从已复制\*表接收数据的实例化视图的重复数据删除检查。
 
-Possible values:
+可能的值:
 
       0 — Disabled.
       1 — Enabled.
 
-Default value: 0.
+默认值：0。
 
-Usage
+用途
 
-By default, deduplication is not performed for materialized views but is done upstream, in the source table.
-If an INSERTed block is skipped due to deduplication in the source table, there will be no insertion into attached materialized views. This behaviour exists to enable insertion of highly aggregated data into materialized views, for cases where inserted blocks are the same after materialized view aggregation but derived from different INSERTs into the source table.
-At the same time, this behaviour “breaks” `INSERT` idempotency. If an `INSERT` into the main table was successful and `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won’t receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` allows for changing this behaviour. On retry, a materialized view will receive the repeat insert and will perform deduplication check by itself,
-ignoring check result for the source table, and will insert rows lost because of the first failure.
+默认情况下，重复数据删除不对实例化视图执行，而是在源表的上游执行。
+如果由于源表中的重复数据删除而跳过了插入的块，则不会插入附加的实例化视图。 这种行为的存在是为了允许将高度聚合的数据插入到实例化视图中，对于在实例化视图聚合之后插入的块相同，但是从源表中的不同插入派生的情况。
+与此同时，这种行为 “breaks” `INSERT` 幂等性 如果一个 `INSERT` 进入主表是成功的， `INSERT` into a materialized view failed (e.g. because of communication failure with Zookeeper) a client will get an error and can retry the operation. However, the materialized view won't receive the second insert because it will be discarded by deduplication in the main (source) table. The setting `deduplicate_blocks_in_dependent_materialized_views` 允许改变这种行为。 重试时，实例化视图将收到重复插入，并自行执行重复数据删除检查,
+忽略源表的检查结果，并将插入由于第一次失败而丢失的行。
 
 ## max\_network\_bytes {#settings-max-network-bytes}
 
-Limits the data volume (in bytes) that is received or transmitted over the network when executing a query. This setting applies to every individual query.
+限制在执行查询时通过网络接收或传输的数据量（以字节为单位）。 此设置适用于每个单独的查询。
 
-Possible values:
+可能的值:
 
--   Positive integer.
+-   整数。
 -   0 — Data volume control is disabled.
 
-Default value: 0.
+默认值：0。
 
 ## max\_network\_bandwidth {#settings-max-network-bandwidth}
 
-Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
+限制通过网络进行数据交换的速度，以每秒字节为单位。 此设置适用于每个查询。
 
-Possible values:
+可能的值:
 
--   Positive integer.
+-   整数。
 -   0 — Bandwidth control is disabled.
 
-Default value: 0.
+默认值：0。
 
 ## max\_network\_bandwidth\_for\_user {#settings-max-network-bandwidth-for-user}
 
-Limits the speed of the data exchange over the network in bytes per second. This setting applies to all concurrently running queries performed by a single user.
+限制通过网络进行数据交换的速度，以每秒字节为单位。 此设置适用于单个用户执行的所有并发运行的查询。
 
-Possible values:
+可能的值:
 
--   Positive integer.
+-   整数。
 -   0 — Control of the data speed is disabled.
 
-Default value: 0.
+默认值：0。
 
 ## max\_network\_bandwidth\_for\_all\_users {#settings-max-network-bandwidth-for-all-users}
 
-Limits the speed that data is exchanged at over the network in bytes per second. This setting applies to all concurrently running queries on the server.
+限制通过网络交换数据的速度，以每秒字节为单位。 此设置适用于服务器上同时运行的所有查询。
 
-Possible values:
+可能的值:
 
--   Positive integer.
+-   整数。
 -   0 — Control of the data speed is disabled.
 
-Default value: 0.
+默认值：0。
 
 ## count\_distinct\_implementation {#settings-count_distinct_implementation}
 
-Specifies which of the `uniq*` functions should be used to perform the [COUNT(DISTINCT …)](../../query_language/agg_functions/reference.md#agg_function-count) construction.
+指定其中的 `uniq*` 函数应用于执行 [COUNT(DISTINCT …)](../../sql_reference/aggregate_functions/reference.md#agg_function-count) 建筑。
 
-Possible values:
+可能的值:
 
--   [uniq](../../query_language/agg_functions/reference.md#agg_function-uniq)
--   [uniqCombined](../../query_language/agg_functions/reference.md#agg_function-uniqcombined)
--   [uniqCombined64](../../query_language/agg_functions/reference.md#agg_function-uniqcombined64)
--   [uniqHLL12](../../query_language/agg_functions/reference.md#agg_function-uniqhll12)
--   [uniqExact](../../query_language/agg_functions/reference.md#agg_function-uniqexact)
+-   [uniq](../../sql_reference/aggregate_functions/reference.md#agg_function-uniq)
+-   [uniqCombined](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined)
+-   [uniqCombined64](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqcombined64)
+-   [uniqHLL12](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqhll12)
+-   [uniqExact](../../sql_reference/aggregate_functions/reference.md#agg_function-uniqexact)
 
-Default value: `uniqExact`.
+默认值: `uniqExact`.
 
 ## skip\_unavailable\_shards {#settings-skip_unavailable_shards}
 
-Enables or disables silently skipping of unavailable shards.
+启用或禁用静默跳过不可用分片。
 
-Shard is considered unavailable if all its replicas are unavailable. A replica is unavailable in the following cases:
+如果分片的所有副本都不可用，则视为不可用。 副本在以下情况下不可用:
 
--   ClickHouse can’t connect to replica for any reason.
+-   ClickHouse出于任何原因无法连接到副本。
 
-    When connecting to a replica, ClickHouse performs several attempts. If all these attempts fail, the replica is considered unavailable.
+    连接到副本时，ClickHouse会执行多次尝试。 如果所有这些尝试都失败，则认为副本不可用。
 
--   Replica can’t be resolved through DNS.
+-   副本无法通过DNS解析。
 
-    If replica’s hostname can’t be resolved through DNS, it can indicate the following situations:
+    如果无法通过DNS解析副本的主机名，则可能指示以下情况:
 
-    -   Replica’s host has no DNS record. It can occur in systems with dynamic DNS, for example, [Kubernetes](https://kubernetes.io), where nodes can be unresolvable during downtime, and this is not an error.
+    -   副本的主机没有DNS记录。 它可以发生在具有动态DNS的系统中，例如, [Kubernetes](https://kubernetes.io)，其中节点在停机期间可能无法解决问题，这不是错误。
 
-    -   Configuration error. ClickHouse configuration file contains a wrong hostname.
+    -   配置错误。 ClickHouse配置文件包含错误的主机名。
 
-Possible values:
+可能的值:
 
 -   1 — skipping enabled.
 
-    If a shard is unavailable, ClickHouse returns a result based on partial data and doesn’t report node availability issues.
+    如果分片不可用，ClickHouse将基于部分数据返回结果，并且不报告节点可用性问题。
 
 -   0 — skipping disabled.
 
-    If a shard is unavailable, ClickHouse throws an exception.
+    如果分片不可用，ClickHouse将引发异常。
 
-Default value: 0.
+默认值：0。
 
 ## optimize\_skip\_unused\_shards {#settings-optimize_skip_unused_shards}
 
-Enables or disables skipping of unused shards for SELECT queries that have sharding key condition in PREWHERE/WHERE (assumes that the data is distributed by sharding key, otherwise do nothing).
+对于在PREWHERE/WHERE中具有分片键条件的SELECT查询，启用或禁用跳过未使用的分片（假定数据是通过分片键分发的，否则不执行任何操作）。
 
-Default value: 0
+默认值：0
 
 ## force\_optimize\_skip\_unused\_shards {#settings-force_optimize_skip_unused_shards}
 
-Enables or disables query execution if [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) enabled and skipping of unused shards is not possible. If the skipping is not possible and the setting is enabled exception will be thrown.
+在以下情况下启用或禁用查询执行 [`optimize_skip_unused_shards`](#settings-optimize_skip_unused_shards) 无法启用和跳过未使用的分片。 如果跳过是不可能的，并且设置为启用异常将被抛出。
 
-Possible values:
+可能的值:
 
--   0 - Disabled (do not throws)
--   1 - Disable query execution only if the table has sharding key
--   2 - Disable query execution regardless sharding key is defined for the table
+-   0-禁用（不抛出)
+-   1-仅当表具有分片键时禁用查询执行
+-   2-无论为表定义了分片键，都禁用查询执行
 
-Default value: 0
+默认值：0
 
 ## force\_optimize\_skip\_unused\_shards\_no\_nested {#settings-force_optimize_skip_unused_shards_no_nested}
 
-Reset [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) for nested `Distributed` table
+重置 [`optimize_skip_unused_shards`](#settings-force_optimize_skip_unused_shards) 对于嵌套 `Distributed` 表
 
-Possible values:
+可能的值:
 
 -   1 — Enabled.
 -   0 — Disabled.
 
-Default value: 0.
+默认值：0。
 
 ## optimize\_throw\_if\_noop {#setting-optimize_throw_if_noop}
 
-Enables or disables throwing an exception if an [OPTIMIZE](../../query_language/misc.md#misc_operations-optimize) query didn’t perform a merge.
+启用或禁用抛出异常，如果 [OPTIMIZE](../../sql_reference/statements/misc.md#misc_operations-optimize) 查询未执行合并。
 
-By default, `OPTIMIZE` returns successfully even if it didn’t do anything. This setting lets you differentiate these situations and get the reason in an exception message.
+默认情况下, `OPTIMIZE` 即使它没有做任何事情，也会成功返回。 此设置允许您区分这些情况并在异常消息中获取原因。
 
-Possible values:
+可能的值:
 
 -   1 — Throwing an exception is enabled.
 -   0 — Throwing an exception is disabled.
 
-Default value: 0.
+默认值：0。
 
 ## distributed\_replica\_error\_half\_life {#settings-distributed_replica_error_half_life}
 
--   Type: seconds
--   Default value: 60 seconds
+-   类型：秒
+-   默认值：60秒
 
-Controls how fast errors in distributed tables are zeroed. If a replica is unavailable for some time, accumulates 5 errors, and distributed\_replica\_error\_half\_life is set to 1 second, then the replica is considered normal 3 seconds after last error.
+控制清零分布式表中的错误的速度。 如果某个副本在一段时间内不可用，累计出现5个错误，并且distributed\_replica\_error\_half\_life设置为1秒，则该副本在上一个错误发生3秒后视为正常。
 
-See also:
+另请参阅:
 
--   [Table engine Distributed](../../operations/table_engines/distributed.md)
+-   [表引擎分布式](../../engines/table_engines/special/distributed.md)
 -   [distributed\_replica\_error\_cap](#settings-distributed_replica_error_cap)
 
 ## distributed\_replica\_error\_cap {#settings-distributed_replica_error_cap}
 
--   Type: unsigned int
--   Default value: 1000
+-   类型：无符号int
+-   默认值：1000
 
-Error count of each replica is capped at this value, preventing a single replica from accumulating too many errors.
+每个副本的错误计数上限为此值，从而防止单个副本累积太多错误。
 
-See also:
+另请参阅:
 
--   [Table engine Distributed](../../operations/table_engines/distributed.md)
+-   [表引擎分布式](../../engines/table_engines/special/distributed.md)
 -   [distributed\_replica\_error\_half\_life](#settings-distributed_replica_error_half_life)
 
 ## distributed\_directory\_monitor\_sleep\_time\_ms {#distributed_directory_monitor_sleep_time_ms}
 
-Base interval for the [Distributed](../table_engines/distributed.md) table engine to send data. The actual interval grows exponentially in the event of errors.
+对于基本间隔 [分布](../../engines/table_engines/special/distributed.md) 表引擎发送数据。 在发生错误时，实际间隔呈指数级增长。
 
-Possible values:
+可能的值:
 
--   A positive integer number of milliseconds.
+-   毫秒的正整数。
 
-Default value: 100 milliseconds.
+默认值：100毫秒。
 
 ## distributed\_directory\_monitor\_max\_sleep\_time\_ms {#distributed_directory_monitor_max_sleep_time_ms}
 
-Maximum interval for the [Distributed](../table_engines/distributed.md) table engine to send data. Limits exponential growth of the interval set in the [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) setting.
+的最大间隔 [分布](../../engines/table_engines/special/distributed.md) 表引擎发送数据。 限制在设置的区间的指数增长 [distributed\_directory\_monitor\_sleep\_time\_ms](#distributed_directory_monitor_sleep_time_ms) 设置。
 
-Possible values:
+可能的值:
 
--   A positive integer number of milliseconds.
+-   毫秒的正整数。
 
-Default value: 30000 milliseconds (30 seconds).
+默认值：30000毫秒（30秒）。
 
 ## distributed\_directory\_monitor\_batch\_inserts {#distributed_directory_monitor_batch_inserts}
 
-Enables/disables sending of inserted data in batches.
+启用/禁用批量发送插入的数据。
 
-When batch sending is enabled, the [Distributed](../table_engines/distributed.md) table engine tries to send multiple files of inserted data in one operation instead of sending them separately. Batch sending improves cluster performance by better-utilizing server and network resources.
+当批量发送被启用时， [分布](../../engines/table_engines/special/distributed.md) 表引擎尝试在一个操作中发送插入数据的多个文件，而不是单独发送它们。 批量发送通过更好地利用服务器和网络资源来提高集群性能。
 
-Possible values:
+可能的值:
 
 -   1 — Enabled.
 -   0 — Disabled.
 
-Default value: 0.
+默认值：0。
 
 ## os\_thread\_priority {#setting-os-thread-priority}
 
-Sets the priority ([nice](https://en.wikipedia.org/wiki/Nice_(Unix))) for threads that execute queries. The OS scheduler considers this priority when choosing the next thread to run on each available CPU core.
+设置优先级 ([不错](https://en.wikipedia.org/wiki/Nice_(Unix))）对于执行查询的线程。 当选择要在每个可用CPU内核上运行的下一个线程时，操作系统调度程序会考虑此优先级。
 
-!!! warning "Warning"
-    To use this setting, you need to set the `CAP_SYS_NICE` capability. The `clickhouse-server` package sets it up during installation. Some virtual environments don’t allow you to set the `CAP_SYS_NICE` capability. In this case, `clickhouse-server` shows a message about it at the start.
+!!! warning "警告"
+    要使用此设置，您需要设置 `CAP_SYS_NICE` 能力。 该 `clickhouse-server` 软件包在安装过程中设置它。 某些虚拟环境不允许您设置 `CAP_SYS_NICE` 能力。 在这种情况下, `clickhouse-server` 在开始时显示关于它的消息。
 
-Possible values:
+可能的值:
 
--   You can set values in the range `[-20, 19]`.
+-   您可以在范围内设置值 `[-20, 19]`.
 
-Lower values mean higher priority. Threads with low `nice` priority values are executed more frequently than threads with high values. High values are preferable for long-running non-interactive queries because it allows them to quickly give up resources in favour of short interactive queries when they arrive.
+值越低意味着优先级越高。 低螺纹 `nice` 与具有高值的线程相比，优先级值的执行频率更高。 高值对于长时间运行的非交互式查询更为可取，因为这使得它们可以在到达时快速放弃资源，转而使用短交互式查询。
 
-Default value: 0.
+默认值：0。
 
 ## query\_profiler\_real\_time\_period\_ns {#query_profiler_real_time_period_ns}
 
-Sets the period for a real clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). Real clock timer counts wall-clock time.
+设置周期的实时时钟定时器 [查询探查器](../../operations/optimizing_performance/sampling_query_profiler.md). 真正的时钟计时器计数挂钟时间。
 
-Possible values:
+可能的值:
 
--   Positive integer number, in nanoseconds.
+-   正整数，以纳秒为单位。
 
-    Recommended values:
+    推荐值:
 
             - 10000000 (100 times a second) nanoseconds and less for single queries.
             - 1000000000 (once a second) for cluster-wide profiling.
 
--   0 for turning off the timer.
+-   0用于关闭计时器。
 
-Type: [UInt64](../../data_types/int_uint.md).
+类型: [UInt64](../../sql_reference/data_types/int_uint.md).
 
-Default value: 1000000000 nanoseconds (once a second).
+默认值：1000000000纳秒（每秒一次）。
 
-See also:
+另请参阅:
 
--   System table [trace\_log](../system_tables.md#system_tables-trace_log)
+-   系统表 [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
 
 ## query\_profiler\_cpu\_time\_period\_ns {#query_profiler_cpu_time_period_ns}
 
-Sets the period for a CPU clock timer of the [query profiler](../../operations/performance/sampling_query_profiler.md). This timer counts only CPU time.
+设置周期的CPU时钟定时器 [查询探查器](../../operations/optimizing_performance/sampling_query_profiler.md). 此计时器仅计算CPU时间。
 
-Possible values:
+可能的值:
 
--   A positive integer number of nanoseconds.
+-   纳秒的正整数。
 
-    Recommended values:
+    推荐值:
 
             - 10000000 (100 times a second) nanoseconds and more for single queries.
             - 1000000000 (once a second) for cluster-wide profiling.
 
--   0 for turning off the timer.
+-   0用于关闭计时器。
 
-Type: [UInt64](../../data_types/int_uint.md).
+类型: [UInt64](../../sql_reference/data_types/int_uint.md).
 
-Default value: 1000000000 nanoseconds.
+默认值：1000000000纳秒。
 
-See also:
+另请参阅:
 
--   System table [trace\_log](../system_tables.md#system_tables-trace_log)
+-   系统表 [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
 
 ## allow\_introspection\_functions {#settings-allow_introspection_functions}
 
-Enables of disables [introspections functions](../../query_language/functions/introspection.md) for query profiling.
+启用禁用 [反省函数](../../sql_reference/functions/introspection.md) 用于查询分析。
 
-Possible values:
+可能的值:
 
 -   1 — Introspection functions enabled.
 -   0 — Introspection functions disabled.
 
-Default value: 0.
+默认值：0。
 
-**See Also**
+**另请参阅**
 
--   [Sampling Query Profiler](../performance/sampling_query_profiler.md)
--   System table [trace\_log](../system_tables.md#system_tables-trace_log)
+-   [采样查询探查器](../optimizing_performance/sampling_query_profiler.md)
+-   系统表 [trace\_log](../../operations/system_tables.md#system_tables-trace_log)
 
 ## input\_format\_parallel\_parsing {#input-format-parallel-parsing}
 
--   Type: bool
--   Default value: True
+-   类型：布尔
+-   默认值：True
 
-Enable order-preserving parallel parsing of data formats. Supported only for TSV, TKSV, CSV and JSONEachRow formats.
+启用数据格式的保序并行分析。 仅支持TSV，TKSV，CSV和JSONEachRow格式。
 
 ## min\_chunk\_bytes\_for\_parallel\_parsing {#min-chunk-bytes-for-parallel-parsing}
 
--   Type: unsigned int
--   Default value: 1 MiB
+-   类型：无符号int
+-   默认值：1MiB
 
-The minimum chunk size in bytes, which each thread will parse in parallel.
+以字节为单位的最小块大小，每个线程将并行解析。
 
 ## output\_format\_avro\_codec {#settings-output_format_avro_codec}
 
-Sets the compression codec used for output Avro file.
+设置用于输出Avro文件的压缩编解ec。
 
-Type: string
+类型：字符串
 
-Possible values:
+可能的值:
 
 -   `null` — No compression
 -   `deflate` — Compress with Deflate (zlib)
--   `snappy` — Compress with [Snappy](https://google.github.io/snappy/)
+-   `snappy` — Compress with [活泼的](https://google.github.io/snappy/)
 
-Default value: `snappy` (if available) or `deflate`.
+默认值: `snappy` （如果可用）或 `deflate`.
 
 ## output\_format\_avro\_sync\_interval {#settings-output_format_avro_sync_interval}
 
-Sets minimum data size (in bytes) between synchronization markers for output Avro file.
+设置输出Avro文件的同步标记之间的最小数据大小（以字节为单位）。
 
-Type: unsigned int
+类型：无符号int
 
-Possible values: 32 (32 bytes) - 1073741824 (1 GiB)
+可能的值：32（32字节）-1073741824（1GiB)
 
-Default value: 32768 (32 KiB)
+默认值：32768（32KiB)
 
 ## format\_avro\_schema\_registry\_url {#settings-format_avro_schema_registry_url}
 
-Sets Confluent Schema Registry URL to use with [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) format
+设置要与之一起使用的汇合架构注册表URL [AvroConfluent](../../interfaces/formats.md#data-format-avro-confluent) 格式
 
-Type: URL
+类型：网址
 
-Default value: Empty
+默认值：空
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->
+[原始文章](https://clickhouse.tech/docs/en/operations/settings/settings/) <!-- hide -->

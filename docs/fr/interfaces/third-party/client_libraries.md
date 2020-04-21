@@ -36,6 +36,7 @@ toc_title: "Biblioth\xE8ques Clientes"
     -   [AnyEvent-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
 -   Rubis
     -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
+    -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   R
     -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickhouse](https://github.com/IMSMWU/RClickhouse)

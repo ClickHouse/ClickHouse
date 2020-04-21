@@ -1,3 +1,4 @@
+
 # 如何构建 ClickHouse 发布包 {#ru-he-gou-jian-clickhouse-fa-bu-bao}
 
 ## 安装 Git 和 Pbuilder {#an-zhuang-git-he-pbuilder}
@@ -32,12 +33,12 @@ cd ClickHouse
 sudo apt-get install git cmake ninja-build
 ```
 
-Or cmake3 instead of cmake on older systems.
+或cmake3而不是旧系统上的cmake。
 或者在早期版本的系统中用 cmake3 替代 cmake
 
 ## 安装 GCC 9 {#an-zhuang-gcc-9}
 
-There are several ways to do this.
+有几种方法可以做到这一点。
 
 ### 安装 PPA 包 {#an-zhuang-ppa-bao}
 
@@ -79,6 +80,6 @@ cd ..
 ```
 
 若要创建一个执行文件， 执行 `ninja clickhouse`。
-这个命令会使得 `programs/clickhouse` 文件可执行，您可以使用 `client` or `server` 参数运行。
+这个命令会使得 `programs/clickhouse` 文件可执行，您可以使用 `client` 或 `server` 参数运行。
 
 [来源文章](https://clickhouse.tech/docs/en/development/build/) <!--hide-->

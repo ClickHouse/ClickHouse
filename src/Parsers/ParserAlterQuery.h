@@ -12,6 +12,7 @@ namespace DB
   *     [DROP COLUMN [IF EXISTS] col_to_drop, ...]
   *     [CLEAR COLUMN [IF EXISTS] col_to_clear [IN PARTITION partition],]
   *     [MODIFY COLUMN [IF EXISTS] col_to_modify type, ...]
+  *     [RENAME COLUMN [IF EXISTS] col_name TO col_name]
   *     [MODIFY PRIMARY KEY (a, b, c...)]
   *     [MODIFY SETTING setting_name=setting_value, ...]
   *     [COMMENT COLUMN [IF EXISTS] col_name string]

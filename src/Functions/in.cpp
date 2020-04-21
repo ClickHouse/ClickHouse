@@ -21,38 +21,62 @@ namespace ErrorCodes
   * notIn(x, set) - and NOT IN.
   */
 
-template <bool negative, bool global>
+template <bool negative, bool global, bool null_is_skipped>
 struct FunctionInName;
 
 template <>
-struct FunctionInName<false, false>
+struct FunctionInName<false, false, true>
 {
     static constexpr auto name = "in";
 };
 
 template <>
-struct FunctionInName<false, true>
+struct FunctionInName<false, true, true>
 {
     static constexpr auto name = "globalIn";
 };
 
 template <>
-struct FunctionInName<true, false>
+struct FunctionInName<true, false, true>
 {
     static constexpr auto name = "notIn";
 };
 
 template <>
-struct FunctionInName<true, true>
+struct FunctionInName<true, true, true>
 {
     static constexpr auto name = "globalNotIn";
 };
 
-template <bool negative, bool global>
+template <>
+struct FunctionInName<false, false, false>
+{
+    static constexpr auto name = "nullIn";
+};
+
+template <>
+struct FunctionInName<false, true, false>
+{
+    static constexpr auto name = "globalNullIn";
+};
+
+template <>
+struct FunctionInName<true, false, false>
+{
+    static constexpr auto name = "notNullIn";
+};
+
+template <>
+struct FunctionInName<true, true, false>
+{
+    static constexpr auto name = "globalNotNullIn";
+};
+
+template <bool negative, bool global, bool null_is_skipped>
 class FunctionIn : public IFunction
 {
 public:
-    static constexpr auto name = FunctionInName<negative, global>::name;
+    static constexpr auto name = FunctionInName<negative, global, null_is_skipped>::name;
     static FunctionPtr create(const Context &)
     {
         return std::make_shared<FunctionIn>();
@@ -74,6 +98,8 @@ public:
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }
+
+    bool useDefaultImplementationForNulls() const override { return null_is_skipped; }
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t /*input_rows_count*/) override
     {
@@ -123,10 +149,14 @@ public:
 
 void registerFunctionsIn(FunctionFactory & factory)
 {
-    factory.registerFunction<FunctionIn<false, false>>();
-    factory.registerFunction<FunctionIn<false, true>>();
-    factory.registerFunction<FunctionIn<true, false>>();
-    factory.registerFunction<FunctionIn<true, true>>();
+    factory.registerFunction<FunctionIn<false, false, true>>();
+    factory.registerFunction<FunctionIn<false, true, true>>();
+    factory.registerFunction<FunctionIn<true, false, true>>();
+    factory.registerFunction<FunctionIn<true, true, true>>();
+    factory.registerFunction<FunctionIn<false, false, false>>();
+    factory.registerFunction<FunctionIn<false, true, false>>();
+    factory.registerFunction<FunctionIn<true, false, false>>();
+    factory.registerFunction<FunctionIn<true, true, false>>();
 }
 
 }

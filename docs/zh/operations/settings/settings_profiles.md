@@ -1,23 +1,26 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_priority: 61
+toc_title: "\u8BBE\u7F6E\u914D\u7F6E\u6587\u4EF6"
 ---
 
-# Settings Profiles {#settings-profiles}
+# 设置配置文件 {#settings-profiles}
 
-A settings profile is a collection of settings grouped under the same name. Each ClickHouse user has a profile.
-To apply all the settings in a profile, set the `profile` setting.
+设置配置文件是以相同名称分组的设置的集合。 每个ClickHouse用户都有一个配置文件。
+要应用配置文件中的所有设置，请设置 `profile` 设置。
 
-Example:
+示例:
 
-Install the `web` profile.
+安装 `web` 侧写
 
 ``` sql
 SET profile = 'web'
 ```
 
-Settings profiles are declared in the user config file. This is usually `users.xml`.
+设置配置文件在用户配置文件中声明。 这通常是 `users.xml`.
 
-Example:
+示例:
 
 ``` xml
 <!-- Settings profiles -->
@@ -61,8 +64,8 @@ Example:
 </profiles>
 ```
 
-The example specifies two profiles: `default` and `web`. The `default` profile has a special purpose: it must always be present and is applied when starting the server. In other words, the `default` profile contains default settings. The `web` profile is a regular profile that can be set using the `SET` query or using a URL parameter in an HTTP query.
+该示例指定了两个配置文件: `default` 和 `web`. 该 `default` 配置文件有一个特殊用途：它必须始终存在并在启动服务器时应用。 换句话说， `default` 配置文件包含默认设置。 该 `web` 配置文件是一个常规的配置文件，可以使用设置 `SET` 查询或在HTTP查询中使用URL参数。
 
-Settings profiles can inherit from each other. To use inheritance, indicate one or multiple `profile` settings before the other settings that are listed in the profile. In case when one setting is defined in different profiles, the latest defined is used.
+设置配置文件可以彼此继承。 要使用继承，请指示一个或多个 `profile` 配置文件中列出的其他设置之前的设置。 如果在不同的配置文件中定义了一个设置，则使用最新定义。
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/settings/settings_profiles/) <!--hide-->

@@ -3,7 +3,7 @@ toc_priority: 33
 toc_title: ReplacingMergeTree
 ---
 
-# Replacingmergetree {#replacingmergetree}
+# ReplacingMergeTree {#replacingmergetree}
 
 The engine differs from [MergeTree](mergetree.md#table_engines-mergetree) in that it removes duplicate entries with the same primary key value (or more accurately, with the same [sorting key](mergetree.md) value).
 

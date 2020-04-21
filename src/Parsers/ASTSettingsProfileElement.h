@@ -19,6 +19,7 @@ public:
     Field max_value;
     std::optional<bool> readonly;
     bool id_mode = false;  /// If true then `parent_profile` keeps UUID, not a name.
+    bool use_inherit_keyword = false;  /// If true then this element is a part of ASTCreateSettingsProfileQuery.
 
     bool empty() const { return parent_profile.empty() && name.empty(); }
 
@@ -41,5 +42,7 @@ public:
     String getID(char) const override { return "SettingsProfileElements"; }
     ASTPtr clone() const override { return std::make_shared<ASTSettingsProfileElements>(*this); }
     void formatImpl(const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
+
+    void setUseInheritKeyword(bool use_inherit_keyword_);
 };
 }

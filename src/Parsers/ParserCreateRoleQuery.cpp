@@ -41,6 +41,14 @@ namespace
             return true;
         });
     }
+
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+        });
+    }
 }
 
 
@@ -82,12 +90,17 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 
     String new_name;
     std::shared_ptr<ASTSettingsProfileElements> settings;
+    String cluster;
+
     while (true)
     {
         if (alter && parseRenameTo(pos, expected, new_name))
             continue;
 
         if (parseSettings(pos, expected, attach_mode, settings))
+            continue;
+
+        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;
 
         break;
@@ -101,6 +114,7 @@ bool ParserCreateRoleQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     query->if_exists = if_exists;
     query->if_not_exists = if_not_exists;
     query->or_replace = or_replace;
+    query->cluster = std::move(cluster);
     query->name = std::move(name);
     query->new_name = std::move(new_name);
     query->settings = std::move(settings);

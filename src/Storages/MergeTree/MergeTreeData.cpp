@@ -30,7 +30,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartCompact.h>
 #include <Storages/MergeTree/MergeTreeDataPartWide.h>
-#include <Storages/MergeTree/MergeTreeSequentialBlockInputStream.h>
+#include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 #include <Storages/MergeTree/MergedColumnOnlyOutputStream.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -94,15 +94,11 @@ namespace ErrorCodes
     extern const int CORRUPTED_DATA;
     extern const int BAD_TYPE_OF_FIELD;
     extern const int BAD_ARGUMENTS;
-    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int INVALID_PARTITION_VALUE;
     extern const int METADATA_MISMATCH;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int TOO_MANY_PARTS;
     extern const int INCOMPATIBLE_COLUMNS;
-    extern const int CANNOT_ALLOCATE_MEMORY;
-    extern const int CANNOT_MUNMAP;
-    extern const int CANNOT_MREMAP;
     extern const int BAD_TTL_EXPRESSION;
     extern const int INCORRECT_FILE_NAME;
     extern const int BAD_DATA_PART_NAME;
@@ -192,7 +188,7 @@ MergeTreeData::MergeTreeData(
         min_format_version = MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING;
     }
 
-    setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast);
+    setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
 
     /// format_file always contained on any data path
     PathWithDisk version_file;
@@ -610,14 +606,17 @@ void checkTTLExpression(const ExpressionActionsPtr & ttl_expression, const Strin
 }
 
 
-void MergeTreeData::setTTLExpressions(const ColumnsDescription::ColumnTTLs & new_column_ttls,
+void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
         const ASTPtr & new_ttl_table_ast, bool only_check)
 {
-    auto create_ttl_entry = [this](ASTPtr ttl_ast)
+
+    auto new_column_ttls = new_columns.getColumnTTLs();
+
+    auto create_ttl_entry = [this, &new_columns](ASTPtr ttl_ast)
     {
         TTLEntry result;
 
-        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, getColumns().getAllPhysical());
+        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, new_columns.getAllPhysical());
         result.expression = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
         result.destination_type = PartDestinationType::DELETE;
         result.result_column = ttl_ast->getColumnName();
@@ -951,10 +950,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks)
                 /// Don't count the part as broken if there is not enough memory to load it.
                 /// In fact, there can be many similar situations.
                 /// But it is OK, because there is a safety guard against deleting too many parts.
-                if (e.code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED
-                    || e.code() == ErrorCodes::CANNOT_ALLOCATE_MEMORY
-                    || e.code() == ErrorCodes::CANNOT_MUNMAP
-                    || e.code() == ErrorCodes::CANNOT_MREMAP)
+                if (isNotEnoughMemoryErrorCode(e.code()))
                     throw;
 
                 broken = true;
@@ -1457,6 +1453,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
     for (const auto & column : getColumns().getAllPhysical())
         old_types.emplace(column.name, column.type.get());
 
+
     for (const AlterCommand & command : commands)
     {
         if (command.type == AlterCommand::MODIFY_ORDER_BY && !is_custom_partitioned)
@@ -1471,7 +1468,16 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                 "ALTER ADD INDEX is not supported for tables with the old syntax",
                 ErrorCodes::BAD_ARGUMENTS);
         }
-        else if (command.isModifyingData())
+        if (command.type == AlterCommand::RENAME_COLUMN)
+        {
+            if (columns_alter_type_forbidden.count(command.column_name) || columns_alter_type_metadata_only.count(command.column_name))
+            {
+                throw Exception(
+                    "Trying to ALTER RENAME key " + backQuoteIfNeed(command.column_name) + " column which is a part of key expression",
+                    ErrorCodes::ILLEGAL_COLUMN);
+            }
+        }
+        else if (command.isModifyingData(getInMemoryMetadata()))
         {
             if (columns_alter_type_forbidden.count(command.column_name))
                 throw Exception("Trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
@@ -1490,7 +1496,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
 
     setProperties(metadata, /* only_check = */ true);
 
-    setTTLExpressions(metadata.columns.getColumnTTLs(), metadata.ttl_for_table_ast, /* only_check = */ true);
+    setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast, /* only_check = */ true);
 
     if (settings_ast)
     {
@@ -3589,4 +3595,18 @@ bool MergeTreeData::canUsePolymorphicParts(const MergeTreeSettings & settings, S
     return true;
 }
 
+MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const MergeTreeDataPartPtr part) const
+{
+    MutationCommands commands = getFirtsAlterMutationCommandsForPart(part);
+
+    AlterConversions result{};
+    for (const auto & command : commands)
+        /// Currently we need explicit conversions only for RENAME alter
+        /// all other conversions can be deduced from diff between part columns
+        /// and columns in storage.
+        if (command.type == MutationCommand::Type::RENAME_COLUMN)
+            result.rename_map[command.rename_to] = command.column_name;
+
+    return result;
+}
 }

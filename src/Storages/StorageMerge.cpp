@@ -2,7 +2,6 @@
 #include <DataStreams/narrowBlockInputStreams.h>
 #include <DataStreams/LazyBlockInputStream.h>
 #include <DataStreams/NullBlockInputStream.h>
-#include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/ConcatBlockInputStream.h>
 #include <DataStreams/materializeBlock.h>
@@ -118,7 +117,8 @@ bool StorageMerge::isRemote() const
 bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, const Context & query_context) const
 {
     /// It's beneficial if it is true for at least one table.
-    StorageListWithLocks selected_tables = getSelectedTables(query_context.getCurrentQueryId());
+    StorageListWithLocks selected_tables = getSelectedTables(
+            query_context.getCurrentQueryId(), query_context.getSettingsRef());
 
     size_t i = 0;
     for (const auto & table : selected_tables)
@@ -136,7 +136,7 @@ bool StorageMerge::mayBenefitFromIndexForIn(const ASTPtr & left_in_operand, cons
 }
 
 
-QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, const ASTPtr & query_ptr) const
+QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context & context, QueryProcessingStage::Enum to_stage, const ASTPtr & query_ptr) const
 {
     auto stage_in_source_tables = QueryProcessingStage::FetchColumns;
 
@@ -150,7 +150,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
         if (table.get() != this)
         {
             ++selected_table_size;
-            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context, query_ptr));
+            stage_in_source_tables = std::max(stage_in_source_tables, table->getQueryProcessingStage(context, to_stage, query_ptr));
         }
 
         iterator->next();
@@ -195,7 +195,7 @@ Pipes StorageMerge::read(
       * This is necessary to correctly pass the recommended number of threads to each table.
       */
     StorageListWithLocks selected_tables = getSelectedTables(
-        query_info.query, has_table_virtual_column, context.getCurrentQueryId());
+        query_info.query, has_table_virtual_column, context.getCurrentQueryId(), context.getSettingsRef());
 
     if (selected_tables.empty())
         /// FIXME: do we support sampling in this case?
@@ -287,7 +287,8 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
         return pipes;
     }
 
-    if (processed_stage <= storage->getQueryProcessingStage(*modified_context, query_info.query))
+    auto storage_stage = storage->getQueryProcessingStage(*modified_context, QueryProcessingStage::Complete, query_info.query);
+    if (processed_stage <= storage_stage)
     {
         /// If there are only virtual columns in query, you must request at least one other column.
         if (real_column_names.empty())
@@ -295,7 +296,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 
         pipes = storage->read(real_column_names, modified_query_info, *modified_context, processed_stage, max_block_size, UInt32(streams_num));
     }
-    else if (processed_stage > storage->getQueryProcessingStage(*modified_context, query_info.query))
+    else if (processed_stage > storage_stage)
     {
         modified_query_info.query->as<ASTSelectQuery>()->replaceDatabaseAndTable(source_database, table_name);
 
@@ -355,7 +356,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
 }
 
 
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String & query_id) const
+StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String & query_id, const Settings & settings) const
 {
     StorageListWithLocks selected_tables;
     auto iterator = getDatabaseIterator();
@@ -364,7 +365,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
     {
         auto & table = iterator->table();
         if (table.get() != this)
-            selected_tables.emplace_back(table, table->lockStructureForShare(false, query_id), iterator->name());
+            selected_tables.emplace_back(
+                    table, table->lockStructureForShare(false, query_id, settings.lock_acquire_timeout), iterator->name());
 
         iterator->next();
     }
@@ -373,7 +375,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
 }
 
 
-StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr & query, bool has_virtual_column, const String & query_id) const
+StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(
+        const ASTPtr & query, bool has_virtual_column, const String & query_id, const Settings & settings) const
 {
     StorageListWithLocks selected_tables;
     DatabaseTablesIteratorPtr iterator = getDatabaseIterator();
@@ -389,7 +392,8 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const ASTPtr 
 
         if (storage.get() != this)
         {
-            selected_tables.emplace_back(storage, storage->lockStructureForShare(false, query_id), iterator->name());
+            selected_tables.emplace_back(
+                    storage, storage->lockStructureForShare(false, query_id, settings.lock_acquire_timeout), iterator->name());
             virtual_column->insert(iterator->name());
         }
 
@@ -434,7 +438,7 @@ void StorageMerge::checkAlterIsPossible(const AlterCommands & commands, const Se
 void StorageMerge::alter(
     const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
 
     StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
@@ -473,7 +477,7 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
                                           Pipe & pipe, QueryProcessingStage::Enum processed_stage)
 {
     Block before_block_header = pipe.getHeader();
-    pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(before_block_header, header, ConvertingTransform::MatchColumnsMode::Name, context));
+    pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(before_block_header, header, ConvertingTransform::MatchColumnsMode::Name));
 
     auto where_expression = query->as<ASTSelectQuery>()->where();
 

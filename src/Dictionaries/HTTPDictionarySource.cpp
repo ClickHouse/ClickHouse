@@ -202,9 +202,11 @@ void registerDictionarySourceHTTP(DictionarySourceFactory & factory)
         if (dict_struct.has_expressions)
             throw Exception{"Dictionary source of type `http` does not support attribute expressions", ErrorCodes::LOGICAL_ERROR};
 
+        Context context_local_copy = copyContextAndApplySettings(config_prefix, context, config);
+
         return std::make_unique<HTTPDictionarySource>(
             dict_struct, config, config_prefix + ".http",
-            sample_block, context, check_config);
+            sample_block, context_local_copy, check_config);
     };
     factory.registerSource("http", create_table_source);
 }

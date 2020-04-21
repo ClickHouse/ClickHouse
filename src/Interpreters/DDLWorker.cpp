@@ -463,7 +463,7 @@ void DDLWorker::parseQueryAndResolveHost(DDLTask & task)
 
         ParserQuery parser_query(end);
         String description;
-        task.query = parseQuery(parser_query, begin, end, description, 0);
+        task.query = parseQuery(parser_query, begin, end, description, 0, context.getSettingsRef().max_parser_depth);
     }
 
     // XXX: serious design flaw since `ASTQueryWithOnCluster` is not inherited from `IAST`!
@@ -1376,5 +1376,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & cont
     return io;
 }
 
+
+BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, const Context & context)
+{
+    return executeDDLQueryOnCluster(query_ptr_, context, {});
+}
 
 }

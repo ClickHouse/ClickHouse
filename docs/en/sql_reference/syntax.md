@@ -16,11 +16,11 @@ INSERT INTO t VALUES (1, 'Hello, world'), (2, 'abc'), (3, 'def')
 The `INSERT INTO t VALUES` fragment is parsed by the full parser, and the data `(1, 'Hello, world'), (2, 'abc'), (3, 'def')` is parsed by the fast stream parser. You can also turn on the full parser for the data by using the [input\_format\_values\_interpret\_expressions](../operations/settings/settings.md#settings-input_format_values_interpret_expressions) setting. When `input_format_values_interpret_expressions = 1`, ClickHouse first tries to parse values with the fast stream parser. If it fails, ClickHouse tries to use the full parser for the data, treating it like an SQL [expression](#syntax-expressions).
 
 Data can have any format. When a query is received, the server calculates no more than [max\_query\_size](../operations/settings/settings.md#settings-max_query_size) bytes of the request in RAM (by default, 1 MB), and the rest is stream parsed.
-This means the system doesn’t have problems with large `INSERT` queries, like MySQL does.
+It allows for avoiding issues with large `INSERT` queries.
 
 When using the `Values` format in an `INSERT` query, it may seem that data is parsed the same as expressions in a `SELECT` query, but this is not true. The `Values` format is much more limited.
 
-Next we will cover the full parser. For more information about format parsers, see the [Formats](../interfaces/formats.md) section.
+The rest of this article covers the full parser. For more information about format parsers, see the [Formats](../interfaces/formats.md) section.
 
 ## Spaces {#spaces}
 
@@ -28,33 +28,33 @@ There may be any number of space symbols between syntactical constructions (incl
 
 ## Comments {#comments}
 
-SQL-style and C-style comments are supported.
-SQL-style comments: from `--` to the end of the line. The space after `--` can be omitted.
-Comments in C-style: from `/*` to `*/`. These comments can be multiline. Spaces are not required here, either.
+ClickHouse supports either SQL-style and C-style comments.
+SQL-style comments start with `--` and continue to the end of the line, a space after `--` can be omitted.
+C-style are from `/*` to `*/`and  can be multiline, spaces are not required either.
 
 ## Keywords {#syntax-keywords}
 
 Keywords are case-insensitive when they correspond to:
 
 -   SQL standard. For example, `SELECT`, `select` and `SeLeCt` are all valid.
--   Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is same as `datetime`.
+-   Implementation in some popular DBMS (MySQL or Postgres). For example, `DateTime` is the same as `datetime`.
 
 Whether data type name is case-sensitive can be checked in the `system.data_type_families` table.
 
-In contrast to standard SQL all other keywords (including functions names) are **case-sensitive**.
+In contrast to standard SQL, all other keywords (including functions names) are **case-sensitive**.
 
-Keywords are not reserved (they are just parsed as keywords in the corresponding context). If you use [identifiers](#syntax-identifiers) the same as the keywords, enclose them into quotes. For example, the query `SELECT "FROM" FROM table_name` is valid if the table `table_name` has column with the name `"FROM"`.
+Keywords are not reserved; they are treated as such only in the corresponding context. If you use [identifiers](#syntax-identifiers) with the same name as the keywords, enclose them into double-quotes or backticks. For example, the query `SELECT "FROM" FROM table_name` is valid if the table `table_name` has column with the name `"FROM"`.
 
 ## Identifiers {#syntax-identifiers}
 
 Identifiers are:
 
--   Cluster, database, table, partition and column names.
+-   Cluster, database, table, partition, and column names.
 -   Functions.
 -   Data types.
 -   [Expression aliases](#syntax-expression_aliases).
 
-Identifiers can be quoted or non-quoted. It is recommended to use non-quoted identifiers.
+Identifiers can be quoted or non-quoted. The latter is preferred.
 
 Non-quoted identifiers must match the regex `^[a-zA-Z_][0-9a-zA-Z_]*$` and can not be equal to [keywords](#syntax-keywords). Examples: `x, _1, X_y__Z123_.`
 
@@ -62,34 +62,34 @@ If you want to use identifiers the same as keywords or you want to use other sym
 
 ## Literals {#literals}
 
-There are: numeric, string, compound and `NULL` literals.
+There are numeric, string, compound, and `NULL` literals.
 
 ### Numeric {#numeric}
 
-A numeric literal tries to be parsed:
+Numeric literal tries to be parsed:
 
--   First as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
+-   First, as a 64-bit signed number, using the [strtoull](https://en.cppreference.com/w/cpp/string/byte/strtoul) function.
 -   If unsuccessful, as a 64-bit unsigned number, using the [strtoll](https://en.cppreference.com/w/cpp/string/byte/strtol) function.
 -   If unsuccessful, as a floating-point number using the [strtod](https://en.cppreference.com/w/cpp/string/byte/strtof) function.
--   Otherwise, an error is returned.
+-   Otherwise, it returns an error.
 
-The corresponding value will have the smallest type that the value fits in.
+Literal value has the smallest type that the value fits in.
 For example, 1 is parsed as `UInt8`, but 256 is parsed as `UInt16`. For more information, see [Data types](../sql_reference/data_types/index.md).
 
 Examples: `1`, `18446744073709551615`, `0xDEADBEEF`, `01`, `0.1`, `1e100`, `-1e-100`, `inf`, `nan`.
 
 ### String {#syntax-string-literal}
 
-Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where `c` is any character, are converted to `c`. This means that you can use the sequences `\'`and`\\`. The value will have the [String](../sql_reference/data_types/string.md) type.
+Only string literals in single quotes are supported. The enclosed characters can be backslash-escaped. The following escape sequences have a corresponding special value: `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\a`, `\v`, `\xHH`. In all other cases, escape sequences in the format `\c`, where `c` is any character, are converted to `c`. It means that you can use the sequences `\'`and`\\`. The value will have the [String](../sql_reference/data_types/string.md) type.
 
-The minimum set of characters that you need to escape in string literals: `'` and `\`. Single quote can be escaped with the single quote, literals `'It\'s'` and `'It''s'` are equal.
+In string literals, you need to escape at least `'` and `\`. Single quotes can be escaped with the single quote, literals `'It\'s'` and `'It''s'` are equal.
 
 ### Compound {#compound}
 
-Constructions are supported for arrays: `[1, 2, 3]` and tuples: `(1, 'Hello, world!', 2)`..
-Actually, these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively.
+Arrays are constructed with square brackets `[1, 2, 3]`. Nuples are constructed with round brackets `(1, 'Hello, world!', 2)`.
+Technically these are not literals, but expressions with the array creation operator and the tuple creation operator, respectively.
 An array must consist of at least one item, and a tuple must have at least two items.
-Tuples have a special purpose for use in the `IN` clause of a `SELECT` query. Tuples can be obtained as the result of a query, but they can’t be saved to a database (with the exception of [Memory](../engines/table_engines/special/memory.md) tables).
+There's a separate case when tuples appear in the `IN` clause of a `SELECT` query. Query results can include tuples, but tuples can’t be saved to a database (except of tables with [Memory](../engines/table_engines/special/memory.md) engine).
 
 ### NULL {#null-literal}
 
@@ -99,13 +99,13 @@ In order to store `NULL` in a table field, it must be of the [Nullable](../sql_r
 
 Depending on the data format (input or output), `NULL` may have a different representation. For more information, see the documentation for [data formats](../interfaces/formats.md#formats).
 
-There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation will also be `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
+There are many nuances to processing `NULL`. For example, if at least one of the arguments of a comparison operation is `NULL`, the result of this operation is also `NULL`. The same is true for multiplication, addition, and other operations. For more information, read the documentation for each operation.
 
 In queries, you can check `NULL` using the [IS NULL](operators.md#operator-is-null) and [IS NOT NULL](operators.md) operators and the related functions `isNull` and `isNotNull`.
 
 ## Functions {#functions}
 
-Functions are written like an identifier with a list of arguments (possibly empty) in brackets. In contrast to standard SQL, the brackets are required, even for an empty arguments list. Example: `now()`.
+Function calls are written like an identifier with a list of arguments (possibly empty) in round brackets. In contrast to standard SQL, the brackets are required, even for an empty argument list. Example: `now()`.
 There are regular and aggregate functions (see the section “Aggregate functions”). Some aggregate functions can contain two lists of arguments in brackets. Example: `quantile (0.9) (x)`. These aggregate functions are called “parametric” functions, and the arguments in the first list are called “parameters”. The syntax of aggregate functions without parameters is the same as for regular functions.
 
 ## Operators {#operators}
@@ -115,11 +115,11 @@ For example, the expression `1 + 2 * 3 + 4` is transformed to `plus(plus(1, mult
 
 ## Data Types and Database Table Engines {#data_types-and-database-table-engines}
 
-Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an arguments list in brackets. For more information, see the sections “Data types,” “Table engines,” and “CREATE”.
+Data types and table engines in the `CREATE` query are written the same way as identifiers or functions. In other words, they may or may not contain an argument list in brackets. For more information, see the sections “Data types,” “Table engines,” and “CREATE”.
 
 ## Expression Aliases {#syntax-expression_aliases}
 
-An alias is a user-defined name for an expression in a query.
+An alias is a user-defined name for expression in a query.
 
 ``` sql
 expr AS alias
@@ -141,7 +141,7 @@ expr AS alias
 
 ### Notes on Usage {#notes-on-usage}
 
-Aliases are global for a query or subquery and you can define an alias in any part of a query for any expression. For example, `SELECT (1 AS n) + 2, n`.
+Aliases are global for a query or subquery, and you can define an alias in any part of a query for any expression. For example, `SELECT (1 AS n) + 2, n`.
 
 Aliases are not visible in subqueries and between subqueries. For example, while executing the query `SELECT (SELECT sum(b.a) + num FROM b) - a.a AS num FROM a` ClickHouse generates the exception `Unknown identifier: num`.
 
@@ -182,4 +182,4 @@ An expression is a function, identifier, literal, application of an operator, ex
 A list of expressions is one or more expressions separated by commas.
 Functions and operators, in turn, can have expressions as arguments.
 
-[Original article](https://clickhouse.tech/docs/en/query_language/syntax/) <!--hide-->
+[Original article](https://clickhouse.tech/docs/en/sql_reference/syntax/) <!--hide-->

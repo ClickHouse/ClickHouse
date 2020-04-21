@@ -24,7 +24,10 @@ toc_title: Integrations
         -   [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
 -   Message queues
     -   [Kafka](https://kafka.apache.org)
-        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/kshvakov/clickhouse/))
+        -   [clickhouse\_sinker](https://github.com/housepower/clickhouse_sinker) (uses [Go client](https://github.com/ClickHouse/clickhouse-go/))
+-   Stream processing
+    -   [Flink](https://flink.apache.org)
+        -   [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
 -   Object storages
     -   [S3](https://en.wikipedia.org/wiki/Amazon_S3)
         -   [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
@@ -72,9 +75,12 @@ toc_title: Integrations
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (uses [infi.clickhouse\_orm](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [pandas](https://pandas.pydata.org)
         -   [pandahouse](https://github.com/kszucs/pandahouse)
+- PHP
+    -   [Doctrine](https://www.doctrine-project.org/)
+        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [dplyr](https://db.rstudio.com/dplyr/)
-        -   [RClickhouse](https://github.com/IMSMWU/RClickhouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
+        -   [RClickHouse](https://github.com/IMSMWU/RClickHouse) (uses [clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp))
 -   Java
     -   [Hadoop](http://hadoop.apache.org)
         -   [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) (uses [JDBC](../../sql_reference/table_functions/jdbc.md))

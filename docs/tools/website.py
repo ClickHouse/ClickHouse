@@ -13,21 +13,6 @@ import jsmin
 import mdx_clickhouse
 
 
-def copy_icons(args):
-    logging.info('Copying icons')
-    icons_dir = os.path.join(args.output_dir, 'images', 'icons')
-    os.makedirs(icons_dir)
-    for icon in [
-        'github',
-        'edit',
-        'external-link'
-    ]:
-        icon = '%s.svg' % icon
-        icon_src = os.path.join(args.website_dir, 'images', 'feathericons', 'icons', icon)
-        icon_dst = os.path.join(icons_dir, icon)
-        shutil.copy2(icon_src, icon_dst)
-
-
 def build_website(args):
     logging.info('Building website')
     env = jinja2.Environment(
@@ -155,7 +140,8 @@ def minify_website(args):
                 with open(path, 'rb') as f:
                     content = f.read().decode('utf-8')
                 if filename.endswith('.html'):
-                    content = htmlmin.minify(content, remove_empty_space=False)
+                    if not content.startswith('<!-- Redirect: '):
+                        content = htmlmin.minify(content, remove_empty_space=False)
                     content = content.replace('base.css?css_digest', f'base.css?{css_digest}')
                     content = content.replace('base.js?js_digest', f'base.js?{js_digest}')
                 elif filename.endswith('.css'):

@@ -104,10 +104,10 @@ private:
         Edges backEdges;
 
         ExecStatus status;
-        std::mutex status_mutex;
+        std::unique_ptr<std::mutex> status_mutex;
 
-        std::vector<void *> post_updated_input_ports;
-        std::vector<void *> post_updated_output_ports;
+        std::unique_ptr<Port::UpdateInfo::UpdateList> post_updated_input_ports;
+        std::unique_ptr<Port::UpdateInfo::UpdateList> post_updated_output_ports;
 
         /// Last state for profiling.
         IProcessor::Status last_processor_status = IProcessor::Status::NeedData;
@@ -124,12 +124,10 @@ private:
             execution_state->processor = processor;
             execution_state->processors_id = processor_id;
             execution_state->has_quota = processor->hasQuota();
-        }
 
-        Node(Node && other) noexcept
-            : processor(other.processor), status(other.status)
-            , execution_state(std::move(other.execution_state))
-        {
+            status_mutex = std::make_unique<std::mutex>();
+            post_updated_input_ports = std::make_unique<Port::UpdateInfo::UpdateList>();
+            post_updated_output_ports = std::make_unique<Port::UpdateInfo::UpdateList>();
         }
     };
 

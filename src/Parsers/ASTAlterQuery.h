@@ -29,6 +29,7 @@ public:
         DROP_COLUMN,
         MODIFY_COLUMN,
         COMMENT_COLUMN,
+        RENAME_COLUMN,
         MODIFY_ORDER_BY,
         MODIFY_TTL,
         MATERIALIZE_TTL,
@@ -69,6 +70,7 @@ public:
 
     /** The ADD COLUMN query here optionally stores the name of the column following AFTER
      * The DROP query stores the column name for deletion here
+     * Also used for RENAME COLUMN.
      */
     ASTPtr column;
 
@@ -154,6 +156,9 @@ public:
     /// MOVE PARTITION partition TO TABLE db.table
     String to_database;
     String to_table;
+
+    /// Target column name
+    ASTPtr rename_to;
 
     String getID(char delim) const override { return "AlterCommand" + (delim + std::to_string(static_cast<int>(type))); }
 

@@ -17,15 +17,6 @@ namespace ErrorCodes
 
 namespace
 {
-    bool parseRoundBrackets(IParser::Pos & pos, Expected & expected)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            return ParserToken{TokenType::OpeningRoundBracket}.ignore(pos, expected)
-                && ParserToken{TokenType::ClosingRoundBracket}.ignore(pos, expected);
-        });
-    }
-
     bool parseAccessFlags(IParser::Pos & pos, Expected & expected, AccessFlags & access_flags)
     {
         static constexpr auto is_one_of_access_type_words = [](IParser::Pos & pos_)
@@ -63,7 +54,6 @@ namespace
                 return false;
             }
 
-            parseRoundBrackets(pos, expected);
             return true;
         });
     }
@@ -247,6 +237,14 @@ namespace
             return true;
         });
     }
+
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
+        });
+    }
 }
 
 
@@ -269,6 +267,10 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     else
         return false;
 
+    String cluster;
+    if (cluster.empty())
+        parseOnCluster(pos, expected, cluster);
+
     bool grant_option = false;
     bool admin_option = false;
     if (kind == Kind::REVOKE)
@@ -284,9 +286,15 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!parseAccessRightsElements(pos, expected, elements) && !parseRoles(pos, expected, attach, roles))
         return false;
 
+    if (cluster.empty())
+        parseOnCluster(pos, expected, cluster);
+
     std::shared_ptr<ASTExtendedRoleSet> to_roles;
     if (!parseToRoles(pos, expected, kind, to_roles))
         return false;
+
+    if (cluster.empty())
+        parseOnCluster(pos, expected, cluster);
 
     if (kind == Kind::GRANT)
     {
@@ -295,6 +303,9 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         else if (ParserKeyword{"WITH ADMIN OPTION"}.ignore(pos, expected))
             admin_option = true;
     }
+
+    if (cluster.empty())
+        parseOnCluster(pos, expected, cluster);
 
     if (grant_option && roles)
         throw Exception("GRANT OPTION should be specified for access types", ErrorCodes::SYNTAX_ERROR);
@@ -306,6 +317,7 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     query->kind = kind;
     query->attach = attach;
+    query->cluster = std::move(cluster);
     query->access_rights_elements = std::move(elements);
     query->roles = std::move(roles);
     query->to_roles = std::move(to_roles);

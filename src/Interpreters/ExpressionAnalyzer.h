@@ -123,7 +123,7 @@ protected:
     SyntaxAnalyzerResultPtr syntax;
 
     const ConstStoragePtr & storage() const { return syntax->storage; } /// The main table in FROM clause, if exists.
-    const AnalyzedJoin & analyzedJoin() const { return *syntax->analyzed_join; }
+    const TableJoin & analyzedJoin() const { return *syntax->analyzed_join; }
     const NamesAndTypesList & sourceColumns() const { return syntax->required_source_columns; }
     const std::vector<const ASTFunction *> & aggregates() const { return syntax->aggregates; }
     NamesAndTypesList sourceWithJoinedColumns() const;
@@ -276,8 +276,6 @@ private:
     SetPtr isPlainStorageSetInSubquery(const ASTPtr & subquery_or_table_name);
 
     JoinPtr makeTableJoin(const ASTTablesInSelectQueryElement & join_element);
-    void makeSubqueryForJoin(const ASTTablesInSelectQueryElement & join_element, NamesWithAliases && required_columns_with_aliases,
-                             SubqueryForSet & subquery_for_set) const;
 
     const ASTSelectQuery * getAggregatingQuery() const;
 

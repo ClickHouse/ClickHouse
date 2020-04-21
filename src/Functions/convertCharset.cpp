@@ -1,20 +1,22 @@
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_ICU
+#    include <Columns/ColumnConst.h>
+#    include <Columns/ColumnString.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <Functions/FunctionFactory.h>
+#    include <Functions/FunctionHelpers.h>
+#    include <Functions/IFunction.h>
+#    include <IO/WriteHelpers.h>
+#    include <Common/ObjectPool.h>
+#    include <Common/typeid_cast.h>
+#    include <ext/range.h>
 
-#include <Functions/IFunction.h>
-#include <Functions/FunctionFactory.h>
-#include <Functions/FunctionHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <DataTypes/DataTypeString.h>
-#include <Columns/ColumnString.h>
-#include <Columns/ColumnConst.h>
-#include <Common/typeid_cast.h>
-#include <Common/ObjectPool.h>
-#include <ext/range.h>
-
-#include <unicode/ucnv.h>
-#include <string>
-#include <memory>
+#    include <memory>
+#    include <string>
+#    include <unicode/ucnv.h>
 
 
 namespace DB

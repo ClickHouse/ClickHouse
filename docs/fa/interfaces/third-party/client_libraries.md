@@ -37,6 +37,7 @@ toc_title: "\u06A9\u062A\u0627\u0628\u062E\u0627\u0646\u0647 \u0647\u0627\u06CC 
     -   [هرفنت-کلیکهاوس](https://metacpan.org/release/AnyEvent-ClickHouse)
 -   روبی
     -   [تاتر (روبی)](https://github.com/shlima/click_house)
+    -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   R
     -   [کلیک تحقیق](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [خانه روستایی](https://github.com/IMSMWU/RClickhouse)

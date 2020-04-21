@@ -1,6 +1,7 @@
 #include <Interpreters/InterpreterCreateRoleQuery.h>
 #include <Parsers/ASTCreateRoleQuery.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DDLWorker.h>
 #include <Access/AccessControlManager.h>
 #include <Access/Role.h>
 
@@ -43,6 +44,9 @@ BlockIO InterpreterCreateRoleQuery::execute()
         context.checkAccess(AccessType::ALTER_ROLE);
     else
         context.checkAccess(AccessType::CREATE_ROLE);
+
+    if (!query.cluster.empty())
+        return executeDDLQueryOnCluster(query_ptr, context);
 
     std::optional<SettingsProfileElements> settings_from_query;
     if (query.settings)

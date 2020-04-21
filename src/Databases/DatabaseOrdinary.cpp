@@ -16,6 +16,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
 #include <Parsers/queryToString.h>
@@ -74,18 +75,24 @@ namespace
 
 
     void tryAttachDictionary(
-        Context & context,
-        const ASTCreateQuery & query,
-        DatabaseOrdinary & database)
+        const ASTPtr & query,
+        DatabaseOrdinary & database,
+        const String & metadata_path)
     {
-        assert(query.is_dictionary);
+        auto & create_query = query->as<ASTCreateQuery &>();
+        assert(create_query.is_dictionary);
         try
         {
-            database.attachDictionary(query.table, context);
+            Poco::File meta_file(metadata_path);
+            auto config = getDictionaryConfigurationFromAST(create_query);
+            time_t modification_time = meta_file.getLastModified().epochTime();
+            database.attachDictionary(create_query.table, DictionaryAttachInfo{query, config, modification_time});
         }
         catch (Exception & e)
         {
-            e.addMessage("Cannot attach table '" + backQuote(query.table) + "' from query " + serializeAST(query));
+            e.addMessage("Cannot attach dictionary " + backQuote(database.getDatabaseName()) + "." + backQuote(create_query.table) +
+                         " from metadata file " + metadata_path +
+                         " from query " + serializeAST(*query));
             throw;
         }
     }
@@ -173,12 +180,12 @@ void DatabaseOrdinary::loadStoredObjects(
 
     /// Attach dictionaries.
     attachToExternalDictionariesLoader(context);
-    for (const auto & name_with_query : file_names)
+    for (const auto & [name, query] : file_names)
     {
-        auto create_query = name_with_query.second->as<const ASTCreateQuery &>();
+        auto create_query = query->as<const ASTCreateQuery &>();
         if (create_query.is_dictionary)
         {
-            tryAttachDictionary(context, create_query, *this);
+            tryAttachDictionary(query, *this, getMetadataPath() + name);
 
             /// Messages, so that it's not boring to wait for the server to load for a long time.
             logAboutProgress(log, ++dictionaries_processed, total_dictionaries, watch);
@@ -234,7 +241,8 @@ void DatabaseOrdinary::alterTable(
     }
 
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path, 0);
+    ASTPtr ast = parseQuery(parser, statement.data(), statement.data() + statement.size(), "in file " + table_metadata_path,
+        0, context.getSettingsRef().max_parser_depth);
 
     auto & ast_create_query = ast->as<ASTCreateQuery &>();
 

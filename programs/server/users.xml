@@ -83,6 +83,9 @@
 
             <!-- Quota for user. -->
             <quota>default</quota>
+
+            <!-- User can create other users and grant rights to them. -->
+            <!-- <access_management>1</access_management> -->
         </default>
     </users>
 

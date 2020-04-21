@@ -128,14 +128,16 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictHas, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatchSimple<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchSimple<HashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchSimple<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+#if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
@@ -241,7 +243,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -306,7 +308,9 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+#if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
@@ -488,8 +492,10 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
+#if !defined(ARCADIA_BUILD)
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -763,7 +769,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -826,7 +832,9 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
+#if !defined(ARCADIA_BUILD)
             !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
             !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchRange<RangeHashedDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
@@ -1086,8 +1094,10 @@ private:
             !executeDispatch<CacheDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyHashedDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatchComplex<ComplexKeyCacheDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr) &&
-            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr))
+#if !defined(ARCADIA_BUILD)
+            !executeDispatchComplex<TrieDictionary>(block, arguments, result, dict_ptr) &&
+#endif
+            !executeDispatchComplex<SimplePolygonDictionary>(block, arguments, result, dict_ptr))
             throw Exception{"Unsupported dictionary type " + dict_ptr->getTypeName(), ErrorCodes::UNKNOWN_TYPE};
     }
 
@@ -1328,7 +1338,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -1476,7 +1486,7 @@ private:
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0, 1}; }
 
-    bool isInjective(const Block & sample_block) override
+    bool isInjective(const Block & sample_block) const override
     {
         return isDictGetFunctionInjective(dictionaries_loader, sample_block);
     }
@@ -1617,7 +1627,7 @@ public:
 
 private:
     size_t getNumberOfArguments() const override { return 2; }
-    bool isInjective(const Block & /*sample_block*/) override { return true; }
+    bool isInjective(const Block & /*sample_block*/) const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return {0}; }
@@ -1652,7 +1662,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictGetHierarchy, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr) &&
             !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr) &&
@@ -1816,7 +1826,7 @@ private:
 
         auto dict = dictionaries_loader.getDictionary(dict_name_col->getValue<String>());
         const auto dict_ptr = dict.get();
-        context.checkAccess(AccessType::dictIsIn, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
+        context.checkAccess(AccessType::dictGet, dict_ptr->getDatabaseOrNoDatabaseTag(), dict_ptr->getName());
 
         if (!executeDispatch<FlatDictionary>(block, arguments, result, dict_ptr)
             && !executeDispatch<HashedDictionary>(block, arguments, result, dict_ptr)

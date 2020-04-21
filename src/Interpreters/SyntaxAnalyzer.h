@@ -11,7 +11,7 @@ namespace DB
 {
 
 class ASTFunction;
-class AnalyzedJoin;
+class TableJoin;
 class Context;
 struct Settings;
 struct SelectQueryOptions;
@@ -20,7 +20,7 @@ using Scalars = std::map<String, Block>;
 struct SyntaxAnalyzerResult
 {
     ConstStoragePtr storage;
-    std::shared_ptr<AnalyzedJoin> analyzed_join;
+    std::shared_ptr<TableJoin> analyzed_join;
 
     NamesAndTypesList source_columns;
     NameSet source_columns_set; /// Set of names of source_columns.
@@ -94,7 +94,8 @@ public:
         SyntaxAnalyzerResult && result,
         const SelectQueryOptions & select_options = {},
         const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns = {},
-        const Names & required_result_columns = {}) const;
+        const Names & required_result_columns = {},
+        std::shared_ptr<TableJoin> table_join = {}) const;
 
 private:
     const Context & context;

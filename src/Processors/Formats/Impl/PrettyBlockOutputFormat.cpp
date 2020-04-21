@@ -225,7 +225,7 @@ void PrettyBlockOutputFormat::consumeTotals(Chunk chunk)
 {
     total_rows = 0;
     writeSuffixIfNot();
-    writeCString("\nExtremes:\n", out);
+    writeCString("\nTotals:\n", out);
     write(chunk, PortKind::Totals);
 }
 
@@ -233,7 +233,7 @@ void PrettyBlockOutputFormat::consumeExtremes(Chunk chunk)
 {
     total_rows = 0;
     writeSuffixIfNot();
-    writeCString("\nTotals:\n", out);
+    writeCString("\nExtremes:\n", out);
     write(chunk, PortKind::Extremes);
 }
 

@@ -12,7 +12,7 @@ Usage examples:
 -   Use in test to populate reproducible large table.
 -   Generate random input for fuzzing tests.
 
-## Usage In Clickhouse Server {#usage-in-clickhouse-server}
+## Usage In ClickHouse Server {#usage-in-clickhouse-server}
 
 ``` sql
 ENGINE = GenerateRandom(random_seed, max_string_length, max_array_length)

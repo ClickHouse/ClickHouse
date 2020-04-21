@@ -13,15 +13,15 @@ Las pruebas funcionales son las más simples y cómodas de usar. La mayoría de 
 
 Cada prueba funcional envía una o varias consultas al servidor ClickHouse en ejecución y compara el resultado con la referencia.
 
-Las pruebas se encuentran en `testsies` directorio. Hay dos subdirectorios: `stateless` y `stateful`. Las pruebas sin estado ejecutan consultas sin datos de prueba precargados: a menudo crean pequeños conjuntos de datos sintéticos sobre la marcha, dentro de la prueba misma. Las pruebas estatales requieren datos de prueba precargados de Yandex.Métrica y no está disponible para el público en general. Tendemos a usar sólo `stateless` pruebas y evitar la adición de nuevos `stateful` prueba.
+Las pruebas se encuentran en `queries` directorio. Hay dos subdirectorios: `stateless` y `stateful`. Las pruebas sin estado ejecutan consultas sin datos de prueba precargados: a menudo crean pequeños conjuntos de datos sintéticos sobre la marcha, dentro de la prueba misma. Las pruebas estatales requieren datos de prueba precargados de Yandex.Métrica y no está disponible para el público en general. Tendemos a usar sólo `stateless` pruebas y evitar la adición de nuevos `stateful` prueba.
 
 Cada prueba puede ser de dos tipos: `.sql` y `.sh`. `.sql` test es el script SQL simple que se canaliza a `clickhouse-client --multiquery --testmode`. `.sh` test es un script que se ejecuta por sí mismo.
 
-Para ejecutar todas las pruebas, use `testskhouse-test` herramienta. Mira `--help` para la lista de posibles opciones. Simplemente puede ejecutar todas las pruebas o ejecutar un subconjunto de pruebas filtradas por subcadena en el nombre de la prueba: `./clickhouse-test substring`.
+Para ejecutar todas las pruebas, use `clickhouse-test` herramienta. Mira `--help` para la lista de posibles opciones. Simplemente puede ejecutar todas las pruebas o ejecutar un subconjunto de pruebas filtradas por subcadena en el nombre de la prueba: `./clickhouse-test substring`.
 
 La forma más sencilla de invocar pruebas funcionales es copiar `clickhouse-client` a `/usr/bin/`, ejecutar `clickhouse-server` y luego ejecutar `./clickhouse-test` de su propio directorio.
 
-Para agregar una nueva prueba, cree un `.sql` o `.sh` archivo en `testsies/0_stateless` directorio, compruébelo manualmente y luego genere `.reference` archivo de la siguiente manera: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` o `./00000_test.sh > ./00000_test.reference`.
+Para agregar una nueva prueba, cree un `.sql` o `.sh` archivo en `queries/0_stateless` directorio, compruébelo manualmente y luego genere `.reference` archivo de la siguiente manera: `clickhouse-client -n --testmode < 00000_test.sql > 00000_test.reference` o `./00000_test.sh > ./00000_test.reference`.
 
 Las pruebas deben usar (crear, soltar, etc.) solo tablas en `test` base de datos que se supone que se crea de antemano; también las pruebas pueden usar tablas temporales.
 
@@ -36,13 +36,13 @@ deshabilitar estos grupos de pruebas utilizando `--no-zookeeper`, `--no-shard` y
 
 ## Bugs conocidos {#known-bugs}
 
-Si conocemos algunos errores que se pueden reproducir fácilmente mediante pruebas funcionales, colocamos pruebas funcionales preparadas en `testsies/bugs` directorio. Estas pruebas se moverán a `teststests_stateless` cuando se corrigen errores.
+Si conocemos algunos errores que se pueden reproducir fácilmente mediante pruebas funcionales, colocamos pruebas funcionales preparadas en `tests/queries/bugs` directorio. Estas pruebas se moverán a `tests/queries/0_stateless` cuando se corrigen errores.
 
 ## Pruebas de integración {#integration-tests}
 
 Las pruebas de integración permiten probar ClickHouse en la configuración agrupada y la interacción de ClickHouse con otros servidores como MySQL, Postgres, MongoDB. Son útiles para emular divisiones de red, caídas de paquetes, etc. Estas pruebas se ejecutan bajo Docker y crean múltiples contenedores con varios software.
 
-Ver `testsgration/README.md` sobre cómo ejecutar estas pruebas.
+Ver `tests/integration/README.md` sobre cómo ejecutar estas pruebas.
 
 Tenga en cuenta que la integración de ClickHouse con controladores de terceros no se ha probado. Además, actualmente no tenemos pruebas de integración con nuestros controladores JDBC y ODBC.
 

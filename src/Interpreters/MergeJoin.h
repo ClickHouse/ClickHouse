@@ -13,7 +13,7 @@
 namespace DB
 {
 
-class AnalyzedJoin;
+class TableJoin;
 class MergeJoinCursor;
 struct MergeJoinEqualRange;
 
@@ -48,7 +48,7 @@ struct MiniLSM
 class MergeJoin : public IJoin
 {
 public:
-    MergeJoin(std::shared_ptr<AnalyzedJoin> table_join_, const Block & right_sample_block);
+    MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right_sample_block);
 
     bool addJoinedBlock(const Block & block, bool check_limits) override;
     void joinBlock(Block &, ExtraBlockPtr & not_processed) override;
@@ -76,7 +76,7 @@ private:
     using Cache = LRUCache<size_t, Block, std::hash<size_t>, BlockByteWeight>;
 
     mutable std::shared_mutex rwlock;
-    std::shared_ptr<AnalyzedJoin> table_join;
+    std::shared_ptr<TableJoin> table_join;
     SizeLimits size_limits;
     SortDescription left_sort_description;
     SortDescription right_sort_description;

@@ -1,4 +1,5 @@
 #include <Storages/ColumnsDescription.h>
+
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -22,10 +23,12 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
+#include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+
 
 namespace DB
 {
@@ -36,6 +39,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int CANNOT_PARSE_TEXT;
     extern const int THERE_IS_NO_DEFAULT_VALUE;
+    extern const int LOGICAL_ERROR;
 }
 
 ColumnDescription::ColumnDescription(String name_, DataTypePtr type_, bool is_virtual_)
@@ -100,7 +104,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
     ParserColumnDeclaration column_parser(/* require type */ true);
     String column_line;
     readEscapedStringUntilEOL(column_line, buf);
-    ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0);
+    ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
     {
         name = col_ast->name;
@@ -193,6 +197,18 @@ void ColumnsDescription::remove(const String & column_name)
 
     for (auto list_it = range.first; list_it != range.second;)
         list_it = columns.get<0>().erase(list_it);
+}
+
+void ColumnsDescription::rename(const String & column_from, const String & column_to)
+{
+    auto it = columns.get<1>().find(column_from);
+    if (it == columns.get<1>().end())
+        throw Exception("Cannot find column " + column_from + " in ColumnsDescription", ErrorCodes::LOGICAL_ERROR);
+
+    columns.get<1>().modify_key(it, [&column_to] (String & old_name)
+    {
+        old_name = column_to;
+    });
 }
 
 

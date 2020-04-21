@@ -3,7 +3,7 @@ toc_priority: 37
 toc_title: VersionedCollapsingMergeTree
 ---
 
-# Versionedcollapsingmergetree {#versionedcollapsingmergetree}
+# VersionedCollapsingMergeTree {#versionedcollapsingmergetree}
 
 This engine:
 

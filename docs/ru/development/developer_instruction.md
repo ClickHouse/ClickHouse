@@ -71,7 +71,7 @@ ClickHouse не работает и не собирается на 32-битны
 
 После этого, вы сможете добавлять в свой репозиторий обновления из репозитория Яндекса с помощью команды `git pull upstream master`.
 
-## Работа с сабмодулями git {#rabota-s-sabmoduliami-git}
+## Работа с сабмодулями Git {#rabota-s-sabmoduliami-git}
 
 Работа с сабмодулями git может быть достаточно болезненной. Следующие команды позволят содержать их в порядке:
 
@@ -267,7 +267,7 @@ Mac OS X:
     clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.hits FORMAT TSV" < hits_v1.tsv
     clickhouse-client --max_insert_block_size 100000 --query "INSERT INTO test.visits FORMAT TSV" < visits_v1.tsv
 
-# Создание pull request {#sozdanie-pull-request}
+# Создание Pull Request {#sozdanie-pull-request}
 
 Откройте свой форк репозитория в интерфейсе GitHub. Если вы вели разработку в бранче, выберите этот бранч. На странице будет доступна кнопка «Pull request». По сути, это означает «создать заявку на принятие моих изменений в основной репозиторий».
 

@@ -317,9 +317,11 @@ struct ContextShared
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
+    std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
     std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
+    std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -413,9 +415,11 @@ struct ContextShared
         embedded_dictionaries.reset();
         external_dictionaries_loader.reset();
         external_models_loader.reset();
+        buffer_flush_schedule_pool.reset();
         background_pool.reset();
         background_move_pool.reset();
         schedule_pool.reset();
+        distributed_schedule_pool.reset();
         ddl_worker.reset();
 
         /// Stop trace collector if any
@@ -441,12 +445,26 @@ Context::Context() = default;
 Context::Context(const Context &) = default;
 Context & Context::operator=(const Context &) = default;
 
+SharedContextHolder::SharedContextHolder(SharedContextHolder &&) noexcept = default;
+SharedContextHolder & SharedContextHolder::operator=(SharedContextHolder &&) = default;
+SharedContextHolder::SharedContextHolder() = default;
+SharedContextHolder::~SharedContextHolder() = default;
+SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextShared> shared_context)
+    : shared(std::move(shared_context)) {}
 
-Context Context::createGlobal()
+void SharedContextHolder::reset() { shared.reset(); }
+
+
+Context Context::createGlobal(ContextShared * shared)
 {
     Context res;
-    res.shared = std::make_shared<ContextShared>();
+    res.shared = shared;
     return res;
+}
+
+SharedContextHolder Context::createShared()
+{
+    return SharedContextHolder(std::make_unique<ContextShared>());
 }
 
 Context::~Context() = default;
@@ -665,12 +683,10 @@ String Context::getUserName() const
     return access->getUserName();
 }
 
-UUID Context::getUserID() const
+std::optional<UUID> Context::getUserID() const
 {
     auto lock = getLock();
-    if (!user_id)
-        throw Exception("No current user", ErrorCodes::LOGICAL_ERROR);
-    return *user_id;
+    return user_id;
 }
 
 
@@ -909,7 +925,6 @@ void Context::setSettings(const Settings & settings_)
     auto old_allow_introspection_functions = settings.allow_introspection_functions;
 
     settings = settings_;
-    active_default_settings = nullptr;
 
     if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
         calculateAccessRights();
@@ -919,7 +934,6 @@ void Context::setSettings(const Settings & settings_)
 void Context::setSetting(const StringRef & name, const String & value)
 {
     auto lock = getLock();
-    active_default_settings = nullptr;
     if (name == "profile")
     {
         setProfile(value);
@@ -935,7 +949,6 @@ void Context::setSetting(const StringRef & name, const String & value)
 void Context::setSetting(const StringRef & name, const Field & value)
 {
     auto lock = getLock();
-    active_default_settings = nullptr;
     if (name == "profile")
     {
         setProfile(value.safeGet<String>());
@@ -959,20 +972,6 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     auto lock = getLock();
     for (const SettingChange & change : changes)
         applySettingChange(change);
-}
-
-
-void Context::resetSettingsToDefault()
-{
-    auto lock = getLock();
-    auto default_settings = getAccess()->getDefaultSettings();
-    if (default_settings && (default_settings == active_default_settings))
-        return;
-    if (default_settings)
-        setSettings(*default_settings);
-    else
-        setSettings(Settings{});
-    active_default_settings = default_settings;
 }
 
 
@@ -1349,12 +1348,28 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
     return *shared->background_move_pool;
 }
 
+BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->buffer_flush_schedule_pool)
+        shared->buffer_flush_schedule_pool.emplace(settings.background_buffer_flush_schedule_pool_size);
+    return *shared->buffer_flush_schedule_pool;
+}
+
 BackgroundSchedulePool & Context::getSchedulePool()
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
         shared->schedule_pool.emplace(settings.background_schedule_pool_size);
     return *shared->schedule_pool;
+}
+
+BackgroundSchedulePool & Context::getDistributedSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->distributed_schedule_pool)
+        shared->distributed_schedule_pool.emplace(settings.background_distributed_schedule_pool_size);
+    return *shared->distributed_schedule_pool;
 }
 
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)

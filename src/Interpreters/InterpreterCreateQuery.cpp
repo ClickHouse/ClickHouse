@@ -6,6 +6,8 @@
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/Defines.h>
+
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 
@@ -42,6 +44,8 @@
 
 #include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
+
+#include <Dictionaries/getDictionaryConfigurationFromAST.h>
 
 #include <Compression/CompressionFactory.h>
 
@@ -181,7 +185,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const NamesAndTypesList & columns)
         String type_name = column.type->getName();
         auto pos = type_name.data();
         const auto end = pos + type_name.size();
-        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0);
+        column_declaration->type = parseQuery(storage_p, pos, end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         columns_list->children.emplace_back(column_declaration);
     }
 
@@ -207,7 +211,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
         String type_name = column.type->getName();
         auto type_name_pos = type_name.data();
         const auto type_name_end = type_name_pos + type_name.size();
-        column_declaration->type = parseQuery(storage_p, type_name_pos, type_name_end, "data type", 0);
+        column_declaration->type = parseQuery(storage_p, type_name_pos, type_name_end, "data type", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
 
         if (column.default_desc.expression)
         {
@@ -227,7 +231,7 @@ ASTPtr InterpreterCreateQuery::formatColumns(const ColumnsDescription & columns)
             auto codec_desc_pos = codec_desc.data();
             const auto codec_desc_end = codec_desc_pos + codec_desc.size();
             ParserIdentifierWithParameters codec_p;
-            column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0);
+            column_declaration->codec = parseQuery(codec_p, codec_desc_pos, codec_desc_end, "column codec", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
         }
 
         if (column.ttl)
@@ -403,7 +407,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::setProperties(AS
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table});
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
-        as_storage_lock = as_storage->lockStructureForShare(false, context.getCurrentQueryId());
+        as_storage_lock = as_storage->lockStructureForShare(
+                false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
         properties.columns = as_storage->getColumns();
 
         /// Secondary indices make sense only for MergeTree family of storage engines.
@@ -700,7 +705,11 @@ BlockIO InterpreterCreateQuery::createDictionary(ASTCreateQuery & create)
     }
 
     if (create.attach)
-        database->attachDictionary(dictionary_name, context);
+    {
+        auto config = getDictionaryConfigurationFromAST(create);
+        auto modification_time = database->getObjectMetadataModificationTime(dictionary_name);
+        database->attachDictionary(dictionary_name, DictionaryAttachInfo{query_ptr, config, modification_time});
+    }
     else
         database->createDictionary(context, dictionary_name, query_ptr);
 
@@ -765,7 +774,14 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
 
     if (!create.to_table.empty())
-        required_access.emplace_back(AccessType::INSERT, create.to_database, create.to_table);
+        required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, create.to_database, create.to_table);
+
+    if (create.storage && create.storage->engine)
+    {
+        auto source_access_type = StorageFactory::instance().getSourceAccessType(create.storage->engine->name);
+        if (source_access_type != AccessType::NONE)
+            required_access.emplace_back(source_access_type);
+    }
 
     return required_access;
 }

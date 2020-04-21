@@ -1,58 +1,61 @@
 ---
-en_copy: true
+machine_translated: true
+machine_translated_rev: b111334d6614a02564cf32f379679e9ff970d9b1
+toc_priority: 58
+toc_title: "\u67E5\u8BE2\u6743\u9650"
 ---
 
-# Permissions for Queries {#permissions_for_queries}
+# 查询权限 {#permissions_for_queries}
 
-Queries in ClickHouse can be divided into several types:
+ClickHouse中的查询可以分为几种类型:
 
-1.  Read data queries: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
-2.  Write data queries: `INSERT`, `OPTIMIZE`.
-3.  Change settings query: `SET`, `USE`.
-4.  [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+1.  读取数据查询: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
+2.  写入数据查询: `INSERT`, `OPTIMIZE`.
+3.  更改设置查询: `SET`, `USE`.
+4.  [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 查询: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
 5.  `KILL QUERY`.
 
-The following settings regulate user permissions by the type of query:
+以下设置按查询类型规范用户权限:
 
--   [readonly](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
+-   [只读](#settings_readonly) — Restricts permissions for all types of queries except DDL queries.
 -   [allow\_ddl](#settings_allow_ddl) — Restricts permissions for DDL queries.
 
-`KILL QUERY` can be performed with any settings.
+`KILL QUERY` 可以与任何设置进行。
 
-## readonly {#settings_readonly}
+## 只读 {#settings_readonly}
 
-Restricts permissions for reading data, write data and change settings queries.
+限制读取数据、写入数据和更改设置查询的权限。
 
-See how the queries are divided into types [above](#permissions_for_queries).
+查看查询如何划分为多种类型 [以上](#permissions_for_queries).
 
-Possible values:
+可能的值:
 
 -   0 — All queries are allowed.
 -   1 — Only read data queries are allowed.
 -   2 — Read data and change settings queries are allowed.
 
-After setting `readonly = 1`, the user can’t change `readonly` and `allow_ddl` settings in the current session.
+设置后 `readonly = 1`，用户无法更改 `readonly` 和 `allow_ddl` 当前会话中的设置。
 
-When using the `GET` method in the [HTTP interface](../../interfaces/http.md), `readonly = 1` is set automatically. To modify data, use the `POST` method.
+使用时 `GET` 方法中的 [HTTP接口](../../interfaces/http.md), `readonly = 1` 自动设置。 要修改数据，请使用 `POST` 方法。
 
-Setting `readonly = 1` prohibit the user from changing all the settings. There is a way to prohibit the user
-from changing only specific settings, for details see [constraints on settings](constraints_on_settings.md).
+设置 `readonly = 1` 禁止用户更改所有设置。 有一种方法可以禁止用户
+从只更改特定设置，有关详细信息，请参阅 [对设置的限制](constraints_on_settings.md).
 
-Default value: 0
+默认值：0
 
 ## allow\_ddl {#settings_allow_ddl}
 
-Allows or denies [DDL](https://en.wikipedia.org/wiki/Data_definition_language) queries.
+允许或拒绝 [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 查询。
 
-See how the queries are divided into types [above](#permissions_for_queries).
+查看查询如何划分为多种类型 [以上](#permissions_for_queries).
 
-Possible values:
+可能的值:
 
 -   0 — DDL queries are not allowed.
 -   1 — DDL queries are allowed.
 
-You can’t execute `SET allow_ddl = 1` if `allow_ddl = 0` for the current session.
+你不能执行 `SET allow_ddl = 1` 如果 `allow_ddl = 0` 对于当前会话。
 
-Default value: 1
+默认值：1
 
-[Original article](https://clickhouse.tech/docs/en/operations/settings/permissions_for_queries/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/operations/settings/permissions_for_queries/) <!--hide-->

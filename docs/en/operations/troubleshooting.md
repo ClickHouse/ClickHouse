@@ -12,12 +12,12 @@ toc_title: Troubleshooting
 
 ## Installation {#troubleshooting-installation-errors}
 
-### You Cannot Get Deb Packages From Clickhouse Repository With Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
+### You Cannot Get Deb Packages from ClickHouse Repository with Apt-get {#you-cannot-get-deb-packages-from-clickhouse-repository-with-apt-get}
 
 -   Check firewall settings.
 -   If you cannot access the repository for any reason, download packages as described in the [Getting started](../getting_started/index.md) article and install them manually using the `sudo dpkg -i <packages>` command. You will also need the `tzdata` package.
 
-## Connecting To the Server {#troubleshooting-accepts-no-connections}
+## Connecting to the Server {#troubleshooting-accepts-no-connections}
 
 Possible issues:
 
@@ -137,7 +137,7 @@ If you start `clickhouse-client` with the `stack-trace` parameter, ClickHouse re
 
 You might see a message about a broken connection. In this case, you can repeat the query. If the connection breaks every time you perform the query, check the server logs for errors.
 
-## Efficiency Of Query Processing {#troubleshooting-too-slow}
+## Efficiency of Query Processing {#troubleshooting-too-slow}
 
 If you see that ClickHouse is working too slowly, you need to profile the load on the server resources and network for your queries.
 

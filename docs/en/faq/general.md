@@ -27,7 +27,7 @@ NLS_LANG=RUSSIAN_RUSSIA.UTF8
 
 ### Using INTO OUTFILE Clause {#using-into-outfile-clause}
 
-Add an [INTO OUTFILE](../query_language/select/#into-outfile-clause) clause to your query.
+Add an [INTO OUTFILE](../sql_reference/statements/select.md#into-outfile-clause) clause to your query.
 
 For example:
 
@@ -35,7 +35,7 @@ For example:
 SELECT * FROM table INTO OUTFILE 'file'
 ```
 
-By default, ClickHouse uses the [TabSeparated](../interfaces/formats.md#tabseparated) format for output data. To select the [data format](../interfaces/formats.md), use the [FORMAT clause](../query_language/select/#format-clause).
+By default, ClickHouse uses the [TabSeparated](../interfaces/formats.md#tabseparated) format for output data. To select the [data format](../interfaces/formats.md), use the [FORMAT clause](../sql_reference/statements/select.md#format-clause).
 
 For example:
 

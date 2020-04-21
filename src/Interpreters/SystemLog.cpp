@@ -83,6 +83,27 @@ SystemLogs::SystemLogs(Context & global_context, const Poco::Util::AbstractConfi
         size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds");
         metric_log->startCollectMetric(collect_interval_milliseconds);
     }
+
+    if (query_log)
+        logs.emplace_back(query_log.get());
+    if (query_thread_log)
+        logs.emplace_back(query_thread_log.get());
+    if (part_log)
+        logs.emplace_back(part_log.get());
+    if (trace_log)
+        logs.emplace_back(trace_log.get());
+    if (text_log)
+        logs.emplace_back(text_log.get());
+    if (metric_log)
+        logs.emplace_back(metric_log.get());
+
+    bool lazy_load = config.getBool("system_tables_lazy_load", true);
+    for (auto & log : logs)
+    {
+        if (!lazy_load)
+            log->prepareTable();
+        log->startup();
+    }
 }
 
 
@@ -93,21 +114,8 @@ SystemLogs::~SystemLogs()
 
 void SystemLogs::shutdown()
 {
-    if (query_log)
-        query_log->shutdown();
-    if (query_thread_log)
-        query_thread_log->shutdown();
-    if (part_log)
-        part_log->shutdown();
-    if (trace_log)
-        trace_log->shutdown();
-    if (text_log)
-        text_log->shutdown();
-    if (metric_log)
-    {
-        metric_log->stopCollectMetric();
-        metric_log->shutdown();
-    }
+    for (auto & log : logs)
+        log->shutdown();
 }
 
 }

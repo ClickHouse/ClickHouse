@@ -252,6 +252,9 @@ void registerStorageURL(StorageFactory & factory)
             format_name,
             args.columns, args.constraints, args.context,
             compression_method);
+    },
+    {
+        .source_access_type = AccessType::URL,
     });
 }
 }
