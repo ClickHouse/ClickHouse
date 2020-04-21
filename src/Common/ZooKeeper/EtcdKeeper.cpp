@@ -13,7 +13,7 @@
 
 namespace Coordination
 {
-    std::atomic<int32_t> seq {1};
+    std::atomic<int32_t> seq {0};
 
     enum class WatchConnType {
         READ = 1,
@@ -79,7 +79,8 @@ namespace Coordination
         std::string range_end(key);
         if(with_prefix)
         {
-            int ascii = (int)range_end[range_end.length()-1];
+            std::cout << "WITH PREFIX" << std::endl;
+            int ascii = (int)range_end[range_end.length() - 1];
             range_end.back() = ascii+1;
             request.set_range_end(range_end);
         }
@@ -328,6 +329,7 @@ namespace Coordination
     using EtcdRequests = std::vector<EtcdRequestPtr>;
 
     struct EtcdKeeperResponse : virtual Response {
+        std::string process_path;
         virtual ~EtcdKeeperResponse() {}
         virtual void readFromResponses(bool compare_result, std::vector<ResponseOp> responses) = 0;
         void readFromRepeatedPtrField(bool compare_result, google::protobuf::RepeatedPtrField<ResponseOp> fields)
@@ -348,7 +350,6 @@ namespace Coordination
     struct EtcdKeeperCreateRequest final : CreateRequest, EtcdKeeperRequest
     {
         std::string process_path;
-
         EtcdKeeperCreateRequest() {}
         EtcdKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
         EtcdKeeperResponsePtr makeResponse() const override;
@@ -368,12 +369,8 @@ namespace Coordination
         }
         void prepareCall() const override {
             // TODO add creating metadata nodes
-            EtcdKeeper::EtcdNode test_node;
-            test_node.data = data;
             setProcessPath();
             std::cout << "CREATE " << process_path << std::endl;
-
-            test_node.serialize();
             txn_requests.success_puts.push_back(preparePutRequest(process_path, data));
         }
     };
@@ -382,7 +379,7 @@ namespace Coordination
     {
         void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
         {
-            std::cout << "readFromResponses" << std::endl;
+            error = Error::ZNODEEXISTS;
             for (auto resp: responses) {
                 if(ResponseOp::ResponseCase::kResponsePut == resp.response_case())
                 {
@@ -409,17 +406,20 @@ namespace Coordination
     {
         void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
         {
+            error = Error::ZNONODE;
             for (auto resp: responses) {
                 if(ResponseOp::ResponseCase::kResponseDeleteRange == resp.response_case())
                 {
-                    auto response = resp.mutable_response_delete_range();
-                    if (response->deleted())
+                    auto delete_range_resp = resp.response_delete_range();
+                    if (delete_range_resp.deleted())
                     {
-                        error = Error::ZOK;
-                    }
-                    else
-                    {
-                        error = Error::ZNONODE;
+                        for (auto kv : delete_range_resp.prev_kvs())
+                        {
+                            if (kv.key() == process_path) {
+                                error = Error::ZOK;
+                                return;
+                            }
+                        }
                     }
                 }
             }
@@ -440,20 +440,17 @@ namespace Coordination
     {
         void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
         {
-            if (responses.size() == 0) {
-                error = Error::ZNONODE;
-            }
+            error = Error::ZNONODE;
             for (auto resp: responses) {
                 if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                 {
-                    auto response = resp.mutable_response_range();
-                    if (response->count())
+                    auto range_resp = resp.response_range();
+                    for (auto kv : range_resp.kvs())
                     {
-                        error = Error::ZOK;
-                    }
-                    else
-                    {
-                        error = Error::ZNONODE;
+                        if (kv.key() == process_path) {
+                            error = Error::ZOK;
+                            return;
+                        }
                     }
                 }
             }
@@ -475,24 +472,22 @@ namespace Coordination
     {
         void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
         {
-            for (auto resp: responses) {
-                if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
-                {
-                    auto response = resp.mutable_response_range();
-                    std::cout << "COUNT" << response->count() << std::endl;
-                    if (response->count() > 0)
+            error = Error::ZNONODE;
+            if (compare_result) {
+                for (auto resp: responses) {
+                    if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
                     {
-                        data = "";
-                        for (auto kv : response->kvs())
+                        auto range_resp = resp.response_range();
+                        for (auto kv : range_resp.kvs())
                         {
-                            data = kv.value();
+                            std::cout << "P" << kv.key() << std::endl;
+                            if (kv.key() == process_path) {
+                                data = kv.value();
+                                stat = Stat();
+                                error = Error::ZOK;
+                                return;
+                            }
                         }
-                        stat = Stat();
-                        error = Error::ZOK;
-                    }
-                    else
-                    {
-                        error = Error::ZNONODE;
                     }
                 }
             }
@@ -524,17 +519,33 @@ namespace Coordination
     {
         void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
         {
-            if (compare_result)
-            {
-                error = Error::ZOK;
-            }
-            else if (responses[0].response_range().count() == 0)
-            {
-                error = Error::ZNONODE;
+            error = Error::ZNONODE;
+            if (!compare_result) {
+                for (auto resp: responses) {
+                    if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
+                    {
+                        auto range_resp = resp.response_range();
+                        for (auto kv : range_resp.kvs())
+                        {
+                            if (kv.key() == process_path) {
+                                error = Error::ZBADVERSION;
+                                return;
+                            }
+                        }
+                    }
+                }
             }
             else
             {
-                error = Error::ZBADVERSION;
+                for (auto resp: responses) {
+                    if(ResponseOp::ResponseCase::kResponsePut == resp.response_case())
+                    {
+                        auto put_resp = resp.response_put();
+                        if (put_resp.prev_kv().key() == process_path) {
+                            error = Error::ZOK;
+                        }
+                    }
+                }
             }
         }
     };
@@ -555,18 +566,34 @@ namespace Coordination
     {
         void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
         {
-            if (!compare_result) {
+            if (!compare_result)
+            {
                 error = Error::ZNONODE;
             }
             else
             {
-                for (auto resp : responses) {
-                    for (auto kv : resp.response_range().kvs()) {
-                        names.emplace_back(baseName(kv.key()));
-                    }
-                }
                 error = Error::ZOK;
             }
+            for (auto resp : responses) {
+                if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
+                {
+                    auto range_resp = resp.response_range();
+                    for (auto kv : range_resp.kvs())
+                    {
+                        std::cout << "KEY" << kv.key() << std::endl;
+                        if (kv.key().rfind(process_path, 0) == 0)
+                        {
+                            for (auto kv : range_resp.kvs())
+                            {
+                                names.emplace_back(baseName(kv.key()));
+                            }
+                            error = Error::ZOK;
+                            return;
+                        }
+                    }
+                }
+            }
+            
         }
     };
  
@@ -592,23 +619,37 @@ namespace Coordination
     {
         void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
         {
-            if (compare_result) {
+
+            if (compare_result) 
+            {
                 error = Error::ZOK;
             }
-            else if (responses[0].response_range().count())
+            else
             {
-                error = Error::ZNONODE;
-            }
-            else 
-            {
-                error = Error::ZBADVERSION;
+                error = Error::ZNODEEXISTS;
+                for (auto resp: responses) {
+                    if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
+                    {
+                        auto range_resp = resp.response_range();
+                        for (auto kv : range_resp.kvs())
+                        {
+                            if (kv.key() == process_path) {
+                                error = Error::ZBADVERSION;
+                                return;
+                            }
+                        }
+                    }
+                }
             }
         }
     };
  
+using EtcdKeeperResponsePtr = std::shared_ptr<EtcdKeeperResponse>;
+using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
+
     struct EtcdKeeperMultiRequest final : MultiRequest, EtcdKeeperRequest
     {
-        Responses resps;
+        EtcdKeeperResponses resps;
 
         EtcdKeeperMultiRequest(const Requests & generic_requests)
         {
@@ -652,7 +693,7 @@ namespace Coordination
         }
 
         void prepareCall() const override {
-            // txn_requests.interaction();
+            txn_requests.interaction();
         }
  
         EtcdKeeperResponsePtr makeResponse() const override;
@@ -660,11 +701,14 @@ namespace Coordination
 
     struct EtcdKeeperMultiResponse final : MultiResponse, EtcdKeeperResponse
     {
+        EtcdKeeperResponses resps;
+
         void readFromResponses(bool compare_result, std::vector<ResponseOp> responses_)
         {
             if (compare_result) {
-                for (int i; i != responses.size(); i++) {
-                    responses[i]->error = Error::ZOK;
+                for (int i; i != resps.size(); i++) {
+                    resps[i]->readFromResponses(compare_result, responses_);
+                    responses.push_back(resps[i]);
                 }
             }
             else
@@ -679,19 +723,50 @@ namespace Coordination
     EtcdKeeperResponsePtr EtcdKeeperCreateRequest::makeResponse() const
     {
         auto resp = std::make_shared<EtcdKeeperCreateResponse>();
+        resp->process_path = process_path;
         resp->path_created = process_path;
         return resp;
     }
-    EtcdKeeperResponsePtr EtcdKeeperRemoveRequest::makeResponse() const { return std::make_shared<EtcdKeeperRemoveResponse>(); }
-    EtcdKeeperResponsePtr EtcdKeeperExistsRequest::makeResponse() const { return std::make_shared<EtcdKeeperExistsResponse>(); }
-    EtcdKeeperResponsePtr EtcdKeeperGetRequest::makeResponse() const { return std::make_shared<EtcdKeeperGetResponse>(); }
-    EtcdKeeperResponsePtr EtcdKeeperSetRequest::makeResponse() const { return std::make_shared<EtcdKeeperSetResponse>(); }
-    EtcdKeeperResponsePtr EtcdKeeperListRequest::makeResponse() const { return std::make_shared<EtcdKeeperListResponse>(); }
-    EtcdKeeperResponsePtr EtcdKeeperCheckRequest::makeResponse() const { return std::make_shared<EtcdKeeperCheckResponse>(); }
+    EtcdKeeperResponsePtr EtcdKeeperRemoveRequest::makeResponse() const 
+    {
+        auto resp = std::make_shared<EtcdKeeperRemoveResponse>();
+        resp->process_path = path;
+        return resp;
+    }
+    EtcdKeeperResponsePtr EtcdKeeperExistsRequest::makeResponse() const 
+    {
+        auto resp = std::make_shared<EtcdKeeperExistsResponse>();
+        resp->process_path = path;
+        return resp;
+    }
+    EtcdKeeperResponsePtr EtcdKeeperGetRequest::makeResponse() const 
+    {
+        auto resp = std::make_shared<EtcdKeeperGetResponse>();
+        resp->process_path = path;
+        return resp;
+    }
+    EtcdKeeperResponsePtr EtcdKeeperSetRequest::makeResponse() const
+    {
+        auto resp = std::make_shared<EtcdKeeperSetResponse>();
+        resp->process_path = path;
+        return resp;
+    }
+    EtcdKeeperResponsePtr EtcdKeeperListRequest::makeResponse() const 
+    {
+        auto resp = std::make_shared<EtcdKeeperListResponse>();
+        resp->process_path = path + "/";
+        return resp;
+    }
+    EtcdKeeperResponsePtr EtcdKeeperCheckRequest::makeResponse() const 
+    {
+        auto resp = std::make_shared<EtcdKeeperCheckResponse>();
+        resp->process_path = path;
+        return resp;
+    }
     EtcdKeeperResponsePtr EtcdKeeperMultiRequest::makeResponse() const 
     { 
         auto resp = std::make_shared<EtcdKeeperMultiResponse>();
-        resp->responses = resps;
+        resp->resps = resps;
         return resp;
     }
  
@@ -700,7 +775,7 @@ namespace Coordination
             : root_path(root_path_), operation_timeout(operation_timeout_)
     {
         log = &Logger::get("EtcdKeeper");
-        LOG_FATAL(log, "INIT");
+        LOG_DEBUG(log, "INIT");
 
         std::string stripped_address = "localhost:2379";
         std::shared_ptr<Channel> channel = grpc::CreateChannel(stripped_address, grpc::InsecureChannelCredentials());
