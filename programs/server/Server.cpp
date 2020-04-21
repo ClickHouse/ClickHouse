@@ -231,7 +231,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
       */
-    global_context = std::make_unique<Context>(Context::createGlobal());
+    auto shared_context = Context::createShared();
+    auto global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+    global_context_ptr = global_context.get();
+
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
@@ -328,7 +331,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
+        global_context_ptr = nullptr;
         global_context.reset();
+        shared_context.reset();
         LOG_DEBUG(log, "Destroyed global context.");
     });
 

@@ -304,7 +304,7 @@ def write_redirect_html(out_path, to_url):
     except OSError:
         pass
     with open(out_path, 'w') as f:
-        f.write(f'''<!-- Redirect: {to_url} -->
+        f.write(f'''<!--[if IE 6]> Redirect: {to_url} <![endif]-->
 <!DOCTYPE HTML>
 <html lang="en-US">
     <head>
