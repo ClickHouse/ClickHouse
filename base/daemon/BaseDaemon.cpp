@@ -233,7 +233,6 @@ private:
     Logger * log;
     BaseDaemon & daemon;
 
-private:
     void onTerminate(const std::string & message, UInt32 thread_num) const
     {
         LOG_FATAL(log, "(version " << VERSION_STRING << VERSION_OFFICIAL << ") (from thread " << thread_num << ") " << message);
