@@ -1,6 +1,7 @@
 #include <Access/SettingsProfilesCache.h>
 #include <Access/AccessControlManager.h>
 #include <Access/SettingsProfile.h>
+#include <Core/Settings.h>
 #include <Common/quoteString.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>

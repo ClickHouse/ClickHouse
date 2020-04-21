@@ -4,6 +4,7 @@
 #include <Access/User.h>
 #include <Access/SettingsProfile.h>
 #include <Dictionaries/IDictionary.h>
+#include <Core/Settings.h>
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -362,7 +363,7 @@ namespace
         for (const String & name : names)
         {
             SettingsProfileElement profile_element;
-            profile_element.name = name;
+            profile_element.setting_index = Settings::findIndexStrict(name);
             Poco::Util::AbstractConfiguration::Keys constraint_types;
             String path_to_name = path_to_constraints + "." + name;
             config.keys(path_to_name, constraint_types);
@@ -411,7 +412,7 @@ namespace
             }
 
             SettingsProfileElement profile_element;
-            profile_element.name = key;
+            profile_element.setting_index = Settings::findIndexStrict(key);
             profile_element.value = config.getString(profile_config + "." + key);
             profile->elements.emplace_back(std::move(profile_element));
         }
