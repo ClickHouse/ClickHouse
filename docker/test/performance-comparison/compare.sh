@@ -240,23 +240,23 @@ create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
         -- Difference > 15% and > rd(99%) -- changed. We can't filter out flaky
         -- queries by rd(5%), because it can be zero when the difference is smaller
         -- than a typical distribution width. The difference is still real though.
-        not short and abs(diff) > 0.15 and abs(diff) > rd[4] as changed,
+        not short and abs(diff) > 0.05 and abs(diff) > rd[4] as changed,
         
         -- Not changed but rd(99%) > 10% -- unstable.
         not short and not changed and rd[4] > 0.10 as unstable,
         
         left, right, diff, rd,
         replaceAll(_file, '-report.tsv', '') test,
-        query
+        if(length(query) < 300, query, substr(query, 1, 298) || '...') query
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
 create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
     select left, right, diff, rd, test, query from queries where changed
-    order by rd[3] desc;
+    order by abs(diff) desc;
 
 create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as
     select left, right, diff, rd, test, query from queries where unstable
-    order by rd[3] desc;
+    order by rd[4] desc;
 
 create table unstable_tests_tsv engine File(TSV, 'bad-tests.tsv') as
     select test, sum(unstable) u, sum(changed) c, u + c s from queries

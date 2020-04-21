@@ -20,10 +20,10 @@ Block SquashingBlockInputStream::readImpl()
         if (!block)
             all_read = true;
 
-        auto columns = transform.add(block);
-        if (!columns.empty())
+        auto squashed_block = transform.add(std::move(block));
+        if (squashed_block)
         {
-            return header.cloneWithColumns(std::move(columns));
+            return squashed_block;
         }
     }
     return {};
