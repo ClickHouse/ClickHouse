@@ -232,7 +232,7 @@ StoragePtr DatabaseLazy::loadTable(const Context & context, const String & table
         auto ast = parseQueryFromMetadata(context, table_metadata_path, /*throw_on_error*/ true, /*remove_empty*/false);
         if (ast)
         {
-            auto & ast_create = ast->as<const ASTCreateQuery &>();
+            const auto & ast_create = ast->as<const ASTCreateQuery &>();
             String table_data_path_relative = getTableDataPath(ast_create);
             table = createTableFromAST(ast_create, database_name, table_data_path_relative, context_copy, false).second;
         }

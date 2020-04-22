@@ -131,7 +131,7 @@ SetPtr makeExplicitSet(
     const DataTypePtr & left_arg_type = sample_block.getByName(left_arg->getColumnName()).type;
 
     DataTypes set_element_types = {left_arg_type};
-    auto left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
+    const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
 
@@ -148,9 +148,9 @@ SetPtr makeExplicitSet(
     std::function<size_t(const DataTypePtr &)> get_type_depth;
     get_type_depth = [&get_type_depth](const DataTypePtr & type) -> size_t
     {
-        if (auto array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
             return 1 + get_type_depth(array_type->getNestedType());
-        else if (auto tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+        else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
             return 1 + (tuple_type->getElements().empty() ? 0 : get_type_depth(tuple_type->getElements().at(0)));
 
         return 0;
@@ -492,7 +492,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             // generated a unique column name for it. Use it instead of a generic
             // display name.
             auto child_column_name = child->getColumnName();
-            auto as_literal = child->as<ASTLiteral>();
+            const auto * as_literal = child->as<ASTLiteral>();
             if (as_literal)
             {
                 assert(!as_literal->unique_column_name.empty());
@@ -601,8 +601,8 @@ void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
     if (literal.unique_column_name.empty())
     {
         const auto default_name = literal.getColumnName();
-        auto & block = data.getSampleBlock();
-        auto * existing_column = block.findByName(default_name);
+        const auto & block = data.getSampleBlock();
+        const auto * existing_column = block.findByName(default_name);
 
         /*
          * To approximate CSE, bind all identical literals to a single temporary
