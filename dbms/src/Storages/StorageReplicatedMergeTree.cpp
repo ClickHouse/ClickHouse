@@ -2221,7 +2221,7 @@ void StorageReplicatedMergeTree::mergeSelectingTask()
 
             FutureMergedMutatedPart future_merged_part;
             if (max_source_parts_size_for_merge > 0 &&
-                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred))
+                merger_mutator.selectPartsToMerge(future_merged_part, false, max_source_parts_size_for_merge, merge_pred, nullptr))
             {
                 success = createLogEntryToMergeParts(zookeeper, future_merged_part.parts,
                     future_merged_part.name, deduplicate, force_ttl);
@@ -2694,6 +2694,58 @@ void StorageReplicatedMergeTree::updateQuorum(const String & part_name)
             else
                 throw Coordination::Exception(code, quorum_status_path);
         }
+    }
+}
+
+
+void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
+{
+    auto zookeeper = getZooKeeper();
+
+    /// The name of the previous part for which the quorum was reached.
+    const String quorum_last_part_path = zookeeper_path + "/quorum/last_part";
+
+    /// Delete information from "last_part" node.
+
+    while (true)
+    {
+        Coordination::Stat added_parts_stat;
+        String old_added_parts = zookeeper->get(quorum_last_part_path, &added_parts_stat);
+
+        ReplicatedMergeTreeQuorumAddedParts parts_with_quorum(format_version);
+
+        if (!old_added_parts.empty())
+            parts_with_quorum.fromString(old_added_parts);
+
+        /// Delete information about particular partition.
+        if (!parts_with_quorum.added_parts.contains(partition_id))
+        {
+            /// There is no information about interested part.
+            break;
+        }
+
+        parts_with_quorum.added_parts.erase(partition_id);
+
+        String new_added_parts = parts_with_quorum.toString();
+
+        auto code = zookeeper->trySet(quorum_last_part_path, new_added_parts, added_parts_stat.version);
+
+        if (code == Coordination::ZOK)
+        {
+            break;
+        }
+        else if (code == Coordination::ZNONODE)
+        {
+            /// Node is deleted. It is impossible, but it is Ok.
+            break;
+        }
+        else if (code == Coordination::ZBADVERSION)
+        {
+            /// Node was updated meanwhile. We must re-read it and repeat all the actions.
+            continue;
+        }
+        else
+            throw Coordination::Exception(code, quorum_last_part_path);
     }
 }
 
@@ -3623,6 +3675,9 @@ void StorageReplicatedMergeTree::dropPartition(const ASTPtr & query, const ASTPt
                 waitForAllReplicasToProcessLogEntry(entry);
         }
     }
+
+    /// Cleaning possibly stored information about parts from /quorum/last_part node in ZooKeeper.
+    cleanLastPartNode(partition_id);
 }
 
 
@@ -5126,6 +5181,9 @@ bool StorageReplicatedMergeTree::waitForShrinkingQueueSize(size_t queue_size, UI
 
     /// Let's fetch new log entries firstly
     queue.pullLogsToQueue(getZooKeeper());
+    /// This is significant, because the execution of this task could be delayed at BackgroundPool.
+    /// And we force it to be executed.
+    queue_task_handle->wake();
 
     Poco::Event target_size_event;
     auto callback = [&target_size_event, queue_size] (size_t new_queue_size)
