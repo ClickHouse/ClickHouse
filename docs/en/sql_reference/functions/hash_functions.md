@@ -370,29 +370,17 @@ Type: [UInt64](../../sql_reference/data_types/int_uint.md).
 Query:
 
 ```sql
-SELECT gccMurmurHash(1, 2, 3) as gccMurmurHash;
+SELECT 
+    gccMurmurHash(1, 2, 3) AS res1, 
+    gccMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2)))) AS res2
 ```
 
 Result:
 
-```text
-┌────────gccMurmurHash─┐
-│ 12384823029245979431 │
-└──────────────────────┘
-```
-
-Query:
-
-```sql
-SELECT gccMurmurHash(('a', [1, 2, 3], 4, (4, ['foo', 'bar'], 1, (1, 2)))) as gccMurmurHash;
-```
-
-Result:
-
-```text
-┌───────gccMurmurHash─┐
-│ 1188926775431157506 │
-└─────────────────────┘
+``` text
+┌─────────────────res1─┬────────────────res2─┐
+│ 12384823029245979431 │ 1188926775431157506 │
+└──────────────────────┴─────────────────────┘
 ```
 
 ## murmurHash3\_32, murmurHash3\_64 {#murmurhash3-32-murmurhash3-64}
