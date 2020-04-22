@@ -31,11 +31,11 @@ build:
     - docker pull $CI_REGISTRY/yandex/clickhouse-builder
     - docker run --rm --volumes-from "${HOSTNAME}-build" --workdir "${CI_PROJECT_DIR}" --env CI_PROJECT_DIR=${CI_PROJECT_DIR} $CI_REGISTRY/yandex/clickhouse-builder /build_gitlab_ci.sh
   # You can upload your binary to nexus
-    - curl -v --keepalive-time 60 --keepalive --user "$NEXUS_USER:$NEXUS_PASSWORD" -XPUT "http://$NEXUS_HOST/repository/binaries/$CI_PROJECT_NAME" --upload-file ./dbms/src/Server/clickhouse
+    - curl -v --keepalive-time 60 --keepalive --user "$NEXUS_USER:$NEXUS_PASSWORD" -XPUT "http://$NEXUS_HOST/repository/binaries/$CI_PROJECT_NAME" --upload-file ./src/Server/clickhouse
   # Or download artifacts from gitlab
   artifacts:
     paths:
-      - ./dbms/src/Server/clickhouse
+      - ./src/Server/clickhouse
     expire_in: 1 day
   tags:
     - docker

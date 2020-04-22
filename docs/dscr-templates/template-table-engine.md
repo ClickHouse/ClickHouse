@@ -4,8 +4,9 @@
 -   Relations with other engines if they exist.
 
 ## Creating a Table {#creating-a-table}
-
-    Syntax codeblock
+``` sql
+    CREATE TABLE ...
+```
 
 **Engine Parameters**
 
@@ -13,19 +14,19 @@
 
 ## Virtual columns {#virtual-columns}
 
-If they exist.
+List and virtual columns with description, if they exist.
 
 ## Specifics and recommendations {#specifics-and-recommendations}
 
 Algorithms
-Specifics of read/write processes
+Specifics of read and write processes
 Examples of tasks
 Recommendations for usage
 Specifics of data storage
 
 ## Usage Example {#usage-example}
 
-The example must show usage and/or a use cases. The following text contains recommended parts of an example.
+The example must show usage and use cases. The following text contains the recommended parts of this section.
 
 Input table:
 
@@ -42,7 +43,7 @@ Result:
 ``` text
 ```
 
-Any text clarifying the example.
+Follow up with any text to clarify the example.
 
 ## See Also {#see-also}
 

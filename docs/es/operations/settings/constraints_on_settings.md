@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 62
+toc_title: "Restricciones en la configuraci\xF3n"
+---
+
 # Restricciones en la configuración {#constraints-on-settings}
 
 Las restricciones en los ajustes se pueden definir en el `profiles` sección de la `user.xml` el archivo de configuración y prohíba a los usuarios cambiar algunos de los ajustes `SET` consulta.
@@ -25,7 +32,7 @@ Las restricciones se definen como las siguientes:
 </profiles>
 ```
 
-Si el usuario intenta violar las restricciones, se produce una excepción y no se cambia la configuración.
+Si el usuario intenta violar las restricciones, se lanza una excepción y la configuración no se cambia.
 Se admiten tres tipos de restricciones: `min`, `max`, `readonly`. El `min` y `max` Las restricciones especifican los límites superior e inferior para una configuración numérica y se pueden usar en combinación. El `readonly` constraint especifica que el usuario no puede cambiar la configuración correspondiente en absoluto.
 
 **Ejemplo:** Dejar `users.xml` incluye líneas:
@@ -63,6 +70,6 @@ Code: 452, e.displayText() = DB::Exception: Setting max_memory_usage should not 
 Code: 452, e.displayText() = DB::Exception: Setting force_index_by_date should not be changed.
 ```
 
-**Nota:** el `default` perfil tiene un manejo especial: todas las restricciones definidas para el `default` perfil se convierten en las restricciones predeterminadas, por lo que restringen todos los usuarios hasta que se anulan explícitamente para estos usuarios.
+**Nota:** el `default` perfil tiene un manejo especial: todas las restricciones definidas para el `default` profile se convierten en las restricciones predeterminadas, por lo que restringen a todos los usuarios hasta que se anulan explícitamente para estos usuarios.
 
-[Artículo Original](https://clickhouse.tech/docs/es/operations/settings/constraints_on_settings/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/operations/settings/constraints_on_settings/) <!--hide-->

@@ -1,14 +1,19 @@
+---
+toc_priority: 61
+toc_title: The Beginner ClickHouse Developer Instruction
+---
+
 Building of ClickHouse is supported on Linux, FreeBSD and Mac OS X.
 
-# If you use Windows {#if-you-use-windows}
+# If You Use Windows {#if-you-use-windows}
 
 If you use Windows, you need to create a virtual machine with Ubuntu. To start working with a virtual machine please install VirtualBox. You can download Ubuntu from the website: https://www.ubuntu.com/\#download. Please create a virtual machine from the downloaded image (you should reserve at least 4GB of RAM for it). To run a command-line terminal in Ubuntu, please locate a program containing the word “terminal” in its name (gnome-terminal, konsole etc.) or just press Ctrl+Alt+T.
 
-# If you use a 32-bit system {#if-you-use-a-32-bit-system}
+# If You Use a 32-bit System {#if-you-use-a-32-bit-system}
 
 ClickHouse cannot work or build on a 32-bit system. You should acquire access to a 64-bit system and you can continue reading.
 
-# Creating a repository on GitHub {#creating-a-repository-on-github}
+# Creating a Repository on GitHub {#creating-a-repository-on-github}
 
 To start working with ClickHouse repository you will need a GitHub account.
 
@@ -26,9 +31,9 @@ To do that in Ubuntu you would run in the command line terminal:
     sudo apt install git
 
 A brief manual on using Git can be found here: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf.
-For a detailed manual on Git see https://git-scm.com/book/ru/v2.
+For a detailed manual on Git see https://git-scm.com/book/en/v2.
 
-# Cloning a repository to your development machine {#cloning-a-repository-to-your-development-machine}
+# Cloning a Repository to Your Development Machine {#cloning-a-repository-to-your-development-machine}
 
 Next, you need to download the source files onto your working machine. This is called “to clone a repository” because it creates a local copy of the repository on your working machine.
 
@@ -72,7 +77,7 @@ You can also add original ClickHouse repo’s address to your local repository t
 
 After successfully running this command you will be able to pull updates from the main ClickHouse repo by running `git pull upstream master`.
 
-## Working with submodules {#working-with-submodules}
+## Working with Submodules {#working-with-submodules}
 
 Working with submodules in git could be painful. Next commands will help to manage it:
 
@@ -140,7 +145,7 @@ Mac OS X build is supported only for Clang. Just run `brew install llvm`
 
 If you decide to use Clang, you can also install `libc++` and `lld`, if you know what it is. Using `ccache` is also recommended.
 
-# The Building process {#the-building-process}
+# The Building Process {#the-building-process}
 
 Now that you are ready to build ClickHouse we recommend you to create a separate directory `build` inside `ClickHouse` that will contain all of the build artefacts:
 
@@ -193,19 +198,19 @@ Upon the successful start of the building process, you’ll see the build progre
 
 While building messages about protobuf files in libhdfs2 library like `libprotobuf WARNING` may show up. They affect nothing and are safe to be ignored.
 
-Upon successful build you get an executable file `ClickHouse/<build_dir>/dbms/programs/clickhouse`:
+Upon successful build you get an executable file `ClickHouse/<build_dir>/programs/clickhouse`:
 
-    ls -l dbms/programs/clickhouse
+    ls -l programs/clickhouse
 
-# Running the built executable of ClickHouse {#running-the-built-executable-of-clickhouse}
+# Running the Built Executable of ClickHouse {#running-the-built-executable-of-clickhouse}
 
-To run the server under the current user you need to navigate to `ClickHouse/dbms/programs/server/` (located outside of `build`) and run:
+To run the server under the current user you need to navigate to `ClickHouse/programs/server/` (located outside of `build`) and run:
 
-    ../../../build/dbms/programs/clickhouse server
+    ../../../build/programs/clickhouse server
 
 In this case, ClickHouse will use config files located in the current directory. You can run `clickhouse server` from any directory specifying the path to a config file as a command-line parameter `--config-file`.
 
-To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/dbms/programs/` and run `clickhouse client`.
+To connect to ClickHouse with clickhouse-client in another terminal navigate to `ClickHouse/build/programs/` and run `clickhouse client`.
 
 If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying host address 127.0.0.1:
 
@@ -214,7 +219,7 @@ If you get `Connection refused` message on Mac OS X or FreeBSD, try specifying h
 You can replace the production version of ClickHouse binary installed in your system with your custom-built ClickHouse binary. To do that install ClickHouse on your machine following the instructions from the official website. Next, run the following:
 
     sudo service clickhouse-server stop
-    sudo cp ClickHouse/build/dbms/programs/clickhouse /usr/bin/
+    sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
     sudo service clickhouse-server start
 
 Note that `clickhouse-client`, `clickhouse-server` and others are symlinks to the commonly shared `clickhouse` binary.
@@ -222,7 +227,7 @@ Note that `clickhouse-client`, `clickhouse-server` and others are symlinks to th
 You can also run your custom-built ClickHouse binary with the config file from the ClickHouse package installed on your system:
 
     sudo service clickhouse-server stop
-    sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+    sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
 # IDE (Integrated Development Environment) {#ide-integrated-development-environment}
 
@@ -242,7 +247,7 @@ The Code Style Guide: https://clickhouse.tech/docs/en/development/style/
 
 Writing tests: https://clickhouse.tech/docs/en/development/tests/
 
-List of tasks: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy\_tasks\_sorted\_en.md
+List of tasks: https://github.com/ClickHouse/ClickHouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
 
 # Test Data {#test-data}
 

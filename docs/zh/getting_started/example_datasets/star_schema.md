@@ -1,4 +1,5 @@
-# Star Schema Benchmark {#star-schema-benchmark}
+
+# 星型基准测试 {#star-schema-benchmark}
 
 编译 dbgen:
 
@@ -110,7 +111,7 @@ FROM lineorder l
 ALTER TABLE lineorder_flat DROP COLUMN C_CUSTKEY, DROP COLUMN S_SUPPKEY, DROP COLUMN P_PARTKEY;
 ```
 
-Running the queries:
+运行查询:
 
 Q1.1
 
@@ -190,4 +191,4 @@ Q4.3
 SELECT toYear(LO_ORDERDATE) AS year, S_CITY, P_BRAND, sum(LO_REVENUE - LO_SUPPLYCOST) AS profit FROM lineorder_flat WHERE S_NATION = 'UNITED STATES' AND (year = 1997 OR year = 1998) AND P_CATEGORY = 'MFGR#14' GROUP BY year, S_CITY, P_BRAND ORDER BY year, S_CITY, P_BRAND;
 ```
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->

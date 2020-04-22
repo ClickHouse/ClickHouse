@@ -1,0 +1,77 @@
+<test>
+    
+    <create_query>CREATE TABLE lot_of_string_arrays_src (`id` UInt64, `col00` Array(String), `col01` Array(String), `col02` Array(String), `col03` Array(String), `col04` Array(String), `col05` Array(String), `col06` Array(String), `col07` Array(String), `col08` Array(String), `col09` Array(String), `col10` Array(String), `col11` Array(String), `col12` Array(String), `col13` Array(String), `col14` Array(String), `col15` Array(String), `col16` Array(String), `col17` Array(String), `col18` Array(String), `col19` Array(String), `col20` Array(String), `col21` Array(String), `col22` Array(String), `col23` Array(String), `col24` Array(String), `col25` Array(String), `col26` Array(String), `col27` Array(String), `col28` Array(String), `col29` Array(String), `col30` Array(String), `col31` Array(String), `col32` Array(String), `col33` Array(String), `col34` Array(String), `col35` Array(String), `col36` Array(String), `col37` Array(String), `col38` Array(String), `col39` Array(String), `col40` Array(String), `col41` Array(String), `col42` Array(String), `col43` Array(String), `col44` Array(String), `col45` Array(String), `col46` Array(String), `col47` Array(String), `col48` Array(String), `col49` Array(String)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;</create_query>
+    <create_query>CREATE TABLE lot_of_string_arrays_dst_lowcardinality (`id` UInt64, `col00` Array(LowCardinality(String)), `col01` Array(LowCardinality(String)), `col02` Array(LowCardinality(String)), `col03` Array(LowCardinality(String)), `col04` Array(LowCardinality(String)), `col05` Array(LowCardinality(String)), `col06` Array(LowCardinality(String)), `col07` Array(LowCardinality(String)), `col08` Array(LowCardinality(String)), `col09` Array(LowCardinality(String)), `col10` Array(LowCardinality(String)), `col11` Array(LowCardinality(String)), `col12` Array(LowCardinality(String)), `col13` Array(LowCardinality(String)), `col14` Array(LowCardinality(String)), `col15` Array(LowCardinality(String)), `col16` Array(LowCardinality(String)), `col17` Array(LowCardinality(String)), `col18` Array(LowCardinality(String)), `col19` Array(LowCardinality(String)), `col20` Array(LowCardinality(String)), `col21` Array(LowCardinality(String)), `col22` Array(LowCardinality(String)), `col23` Array(LowCardinality(String)), `col24` Array(LowCardinality(String)), `col25` Array(LowCardinality(String)), `col26` Array(LowCardinality(String)), `col27` Array(LowCardinality(String)), `col28` Array(LowCardinality(String)), `col29` Array(LowCardinality(String)), `col30` Array(LowCardinality(String)), `col31` Array(LowCardinality(String)), `col32` Array(LowCardinality(String)), `col33` Array(LowCardinality(String)), `col34` Array(LowCardinality(String)), `col35` Array(LowCardinality(String)), `col36` Array(LowCardinality(String)), `col37` Array(LowCardinality(String)), `col38` Array(LowCardinality(String)), `col39` Array(LowCardinality(String)), `col40` Array(LowCardinality(String)), `col41` Array(LowCardinality(String)), `col42` Array(LowCardinality(String)), `col43` Array(LowCardinality(String)), `col44` Array(LowCardinality(String)), `col45` Array(LowCardinality(String)), `col46` Array(LowCardinality(String)), `col47` Array(LowCardinality(String)), `col48` Array(LowCardinality(String)), `col49` Array(LowCardinality(String))) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;</create_query>
+    <create_query>CREATE TABLE lot_of_string_arrays_dst (`id` UInt64, `col00` Array(String), `col01` Array(String), `col02` Array(String), `col03` Array(String), `col04` Array(String), `col05` Array(String), `col06` Array(String), `col07` Array(String), `col08` Array(String), `col09` Array(String), `col10` Array(String), `col11` Array(String), `col12` Array(String), `col13` Array(String), `col14` Array(String), `col15` Array(String), `col16` Array(String), `col17` Array(String), `col18` Array(String), `col19` Array(String), `col20` Array(String), `col21` Array(String), `col22` Array(String), `col23` Array(String), `col24` Array(String), `col25` Array(String), `col26` Array(String), `col27` Array(String), `col28` Array(String), `col29` Array(String), `col30` Array(String), `col31` Array(String), `col32` Array(String), `col33` Array(String), `col34` Array(String), `col35` Array(String), `col36` Array(String), `col37` Array(String), `col38` Array(String), `col39` Array(String), `col40` Array(String), `col41` Array(String), `col42` Array(String), `col43` Array(String), `col44` Array(String), `col45` Array(String), `col46` Array(String), `col47` Array(String), `col48` Array(String), `col49` Array(String)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8192;</create_query>
+
+    <fill_query>INSERT INTO lot_of_string_arrays_src SELECT 
+        intDiv( rowid, 50 ) as id,
+        anyIf(arr, rowid % 50 = 00) as col00,
+        anyIf(arr, rowid % 50 = 01) as col01,
+        anyIf(arr, rowid % 50 = 02) as col02,
+        anyIf(arr, rowid % 50 = 03) as col03,
+        anyIf(arr, rowid % 50 = 04) as col04,
+        anyIf(arr, rowid % 50 = 05) as col05,
+        anyIf(arr, rowid % 50 = 06) as col06,
+        anyIf(arr, rowid % 50 = 07) as col07,
+        anyIf(arr, rowid % 50 = 08) as col08,
+        anyIf(arr, rowid % 50 = 09) as col09,
+        anyIf(arr, rowid % 50 = 10) as col10,
+        anyIf(arr, rowid % 50 = 11) as col11,
+        anyIf(arr, rowid % 50 = 12) as col12,
+        anyIf(arr, rowid % 50 = 13) as col13,
+        anyIf(arr, rowid % 50 = 14) as col14,
+        anyIf(arr, rowid % 50 = 15) as col15,
+        anyIf(arr, rowid % 50 = 16) as col16,
+        anyIf(arr, rowid % 50 = 17) as col17,
+        anyIf(arr, rowid % 50 = 18) as col18,
+        anyIf(arr, rowid % 50 = 19) as col19,
+        anyIf(arr, rowid % 50 = 20) as col20,
+        anyIf(arr, rowid % 50 = 21) as col21,
+        anyIf(arr, rowid % 50 = 22) as col22,
+        anyIf(arr, rowid % 50 = 23) as col23,
+        anyIf(arr, rowid % 50 = 24) as col24,
+        anyIf(arr, rowid % 50 = 25) as col25,
+        anyIf(arr, rowid % 50 = 26) as col26,
+        anyIf(arr, rowid % 50 = 27) as col27,
+        anyIf(arr, rowid % 50 = 28) as col28,
+        anyIf(arr, rowid % 50 = 29) as col29,
+        anyIf(arr, rowid % 50 = 30) as col30,
+        anyIf(arr, rowid % 50 = 31) as col31,
+        anyIf(arr, rowid % 50 = 32) as col32,
+        anyIf(arr, rowid % 50 = 33) as col33,
+        anyIf(arr, rowid % 50 = 34) as col34,
+        anyIf(arr, rowid % 50 = 35) as col35,
+        anyIf(arr, rowid % 50 = 36) as col36,
+        anyIf(arr, rowid % 50 = 37) as col37,
+        anyIf(arr, rowid % 50 = 38) as col38,
+        anyIf(arr, rowid % 50 = 39) as col39,
+        anyIf(arr, rowid % 50 = 40) as col40,
+        anyIf(arr, rowid % 50 = 41) as col41,
+        anyIf(arr, rowid % 50 = 42) as col42,
+        anyIf(arr, rowid % 50 = 43) as col43,
+        anyIf(arr, rowid % 50 = 44) as col44,
+        anyIf(arr, rowid % 50 = 45) as col45,
+        anyIf(arr, rowid % 50 = 46) as col46,
+        anyIf(arr, rowid % 50 = 47) as col47,
+        anyIf(arr, rowid % 50 = 48) as col48,
+        anyIf(arr, rowid % 50 = 49) as col49
+        FROM (
+            SELECT
+                intDiv( number, 4 ) as rowid,
+                groupArray( base64Encode( left( reinterpretAsString( rand64() ), 6) ) ) as arr
+            FROM 
+                numbers(1000000)
+            GROUP BY rowid
+        ) GROUP BY id</fill_query>
+    <fill_query>optimize table lot_of_string_arrays_src</fill_query>
+    <fill_query>system stop merges</fill_query>
+    
+    <query>INSERT INTO lot_of_string_arrays_dst SELECT rand64() as id, columns('^col') FROM lot_of_string_arrays_src</query>
+    <query>INSERT INTO lot_of_string_arrays_dst_lowcardinality SELECT rand64() as id, columns('^col') FROM lot_of_string_arrays_src</query>
+
+    <drop_query>system start merges</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lot_of_string_arrays_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lot_of_string_arrays_dst</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lot_of_string_arrays_dst_lowcardinality</drop_query>
+</test>

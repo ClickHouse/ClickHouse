@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 65
+toc_title: "C\xF3mo crear ClickHouse en Mac OS X"
+---
+
 # Cómo crear ClickHouse en Mac OS X {#how-to-build-clickhouse-on-mac-os-x}
 
 Build debería funcionar en Mac OS X 10.15 (Catalina)
@@ -43,7 +50,7 @@ $ cd ..
 Si tiene la intención de ejecutar clickhouse-server, asegúrese de aumentar la variable maxfiles del sistema.
 
 !!! info "Nota"
-    Tendrá que utilizar sudo.
+    Tendrás que usar sudo.
 
 Para ello, cree el siguiente archivo:
 
@@ -81,6 +88,6 @@ $ sudo chown root:wheel /Library/LaunchDaemons/limit.maxfiles.plist
 
 Reiniciar.
 
-Para comprobar si está funcionando, puede usar `ulimit -n` comando.
+Para verificar si está funcionando, puede usar `ulimit -n` comando.
 
-[Artículo Original](https://clickhouse.tech/docs/es/development/build_osx/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/development/build_osx/) <!--hide-->

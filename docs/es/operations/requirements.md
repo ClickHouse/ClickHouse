@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 44
+toc_title: Requisito
+---
+
 # Requisito {#requirements}
 
 ## CPU {#cpu}
@@ -6,7 +13,7 @@ Para la instalación desde paquetes deb precompilados, utilice una CPU con arqui
 
 ClickHouse implementa el procesamiento de datos paralelo y utiliza todos los recursos de hardware disponibles. Al elegir un procesador, tenga en cuenta que ClickHouse funciona de manera más eficiente en configuraciones con un gran número de núcleos pero con una velocidad de reloj más baja que en configuraciones con menos núcleos y una velocidad de reloj más alta. Por ejemplo, 16 núcleos con 2600 MHz es preferible a 8 núcleos con 3600 MHz.
 
-Uso de **Impulso de Turbo** y **Hiper-threading** tecnologías se recomienda. Mejora significativamente el rendimiento con una carga típica.
+Uso de **Impulso de Turbo** y **hiper-threading** tecnologías se recomienda. Mejora significativamente el rendimiento con una carga típica.
 
 ## RAM {#ram}
 
@@ -17,9 +24,9 @@ El volumen requerido de RAM depende de:
 -   La complejidad de las consultas.
 -   La cantidad de datos que se procesan en las consultas.
 
-Para calcular el volumen requerido de RAM, debe estimar el tamaño de los datos temporales para [GRUPO POR](../query_language/select.md#select-group-by-clause), [DISTINTO](../query_language/select.md#select-distinct), [UNIR](../query_language/select.md#select-join) y otras operaciones que utilice.
+Para calcular el volumen requerido de RAM, debe estimar el tamaño de los datos temporales para [GROUP BY](../sql_reference/statements/select.md#select-group-by-clause), [DISTINCT](../sql_reference/statements/select.md#select-distinct), [JOIN](../sql_reference/statements/select.md#select-join) y otras operaciones que utilice.
 
-ClickHouse puede usar memoria externa para datos temporales. Ver [GRUPO POR en memoria externa](../query_language/select.md#select-group-by-in-external-memory) para más detalles.
+ClickHouse puede usar memoria externa para datos temporales. Ver [GROUP BY en memoria externa](../sql_reference/statements/select.md#select-group-by-in-external-memory) para más detalles.
 
 ## Archivo de intercambio {#swap-file}
 
@@ -41,9 +48,9 @@ El volumen de almacenamiento requerido para sus datos debe calcularse por separa
 
 Para calcular el volumen final de datos que se almacenarán, aplique el coeficiente de compresión al volumen de datos estimado. Si planea almacenar datos en varias réplicas, multiplique el volumen estimado por el número de réplicas.
 
-## Rojo {#network}
+## Red {#network}
 
-Si es posible, utilice redes de 10G o clase superior.
+Si es posible, use redes de 10G o clase superior.
 
 El ancho de banda de la red es fundamental para procesar consultas distribuidas con una gran cantidad de datos intermedios. Además, la velocidad de la red afecta a los procesos de replicación.
 

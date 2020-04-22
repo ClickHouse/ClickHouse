@@ -1,12 +1,19 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 12
+toc_title: Tutorial
+---
+
 # Tutorial de ClickHouse {#clickhouse-tutorial}
 
 ## Qué Esperar de Este Tutorial? {#what-to-expect-from-this-tutorial}
 
-Al pasar por este tutorial, aprenderá cómo configurar el clúster básico de ClickHouse, será pequeño, pero tolerante a fallos y escalable. Usaremos uno de los conjuntos de datos de ejemplo para llenarlo con datos y ejecutar algunas consultas de demostración.
+Al pasar por este tutorial, aprenderá cómo configurar un clúster de ClickHouse simple. Será pequeño, pero tolerante a fallos y escalable. Luego usaremos uno de los conjuntos de datos de ejemplo para llenarlo con datos y ejecutar algunas consultas de demostración.
 
 ## Configuración de nodo único {#single-node-setup}
 
-Para posponer las complejidades del entorno distribuido, comenzaremos con la implementación de ClickHouse en un único servidor o máquina virtual. ClickHouse generalmente se instala desde [deb](index.md#install-from-deb-packages) o [RPM](index.md#from-rpm-packages) paquetes, pero hay [alternativa](index.md#from-docker-image) para los sistemas operativos que no los admiten.
+Para posponer las complejidades de un entorno distribuido, comenzaremos con la implementación de ClickHouse en un único servidor o máquina virtual. ClickHouse generalmente se instala desde [deb](index.md#install-from-deb-packages) o [RPM](index.md#from-rpm-packages) paquetes, pero hay [alternativa](index.md#from-docker-image) para los sistemas operativos que no los admiten.
 
 Por ejemplo, ha elegido `deb` paquetes y ejecutado:
 
@@ -20,15 +27,15 @@ sudo apt-get update
 sudo apt-get install -y clickhouse-server clickhouse-client
 ```
 
-¿Qué tenemos en los paquetes que tengo instalados:
+¿qué tenemos en los paquetes que tengo instalados:
 
 -   `clickhouse-client` el paquete contiene [Casa de clics-cliente](../interfaces/cli.md) aplicación, cliente interactivo de la consola ClickHouse.
 -   `clickhouse-common` El paquete contiene un archivo ejecutable ClickHouse.
 -   `clickhouse-server` El paquete contiene archivos de configuración para ejecutar ClickHouse como servidor.
 
-Los archivos de configuración del servidor se encuentran en `/etc/clickhouse-server/`. Antes de ir más lejos, tenga en cuenta el `<path>` elemento en `config.xml`. La ruta determina la ubicación para el almacenamiento de datos, por lo que debe ubicarse en un volumen con gran capacidad de disco, el valor predeterminado es `/var/lib/clickhouse/`. Si desea ajustar la configuración, no es útil editar directamente `config.xml` archivo, teniendo en cuenta que podría ser reescrito en futuras actualizaciones de paquetes. La forma recomendada de anular los elementos de configuración es crear [archivos en config.directorio d](../operations/configuration_files.md) que sirven como “patches” de configuración.XML.
+Los archivos de configuración del servidor se encuentran en `/etc/clickhouse-server/`. Antes de ir más lejos, tenga en cuenta el `<path>` elemento en `config.xml`. La ruta determina la ubicación para el almacenamiento de datos, por lo que debe ubicarse en un volumen con gran capacidad de disco; el valor predeterminado es `/var/lib/clickhouse/`. Si desea ajustar la configuración, no es útil editar directamente `config.xml` archivo, teniendo en cuenta que podría ser reescrito en futuras actualizaciones de paquetes. La forma recomendada de anular los elementos de configuración es crear [archivos en config.directorio d](../operations/configuration_files.md) que sirven como “patches” de configuración.XML.
 
-Como habrás notado, `clickhouse-server` no se inicia automáticamente después de la instalación del paquete. Tampoco se reiniciará automáticamente después de las actualizaciones. La forma en que inicia el servidor depende de su sistema de inicio, generalmente, es:
+Como habrás notado, `clickhouse-server` no se inicia automáticamente después de la instalación del paquete. Tampoco se reiniciará automáticamente después de las actualizaciones. La forma en que inicia el servidor depende de su sistema de inicio, por lo general, es:
 
 ``` bash
 sudo service clickhouse-server start
@@ -40,7 +47,7 @@ o
 sudo /etc/init.d/clickhouse-server start
 ```
 
-La ubicación predeterminada para los registros del servidor es `/var/log/clickhouse-server/`. El servidor estará listo para manejar las conexiones de cliente una vez `Ready for connections` se registró el mensaje.
+La ubicación predeterminada para los registros del servidor es `/var/log/clickhouse-server/`. El servidor está listo para manejar las conexiones de cliente una vez que registra el `Ready for connections` mensaje.
 
 Una vez que el `clickhouse-server` está en funcionamiento, podemos usar `clickhouse-client` para conectarse al servidor y ejecutar algunas consultas de prueba como `SELECT "Hello, world!";`.
 
@@ -80,7 +87,7 @@ clickhouse-client --query='INSERT INTO table FORMAT TabSeparated' < data.tsv
 
 ## Importar conjunto de datos de muestra {#import-sample-dataset}
 
-Ahora es el momento de llenar nuestro servidor ClickHouse con algunos datos de muestra. En este tutorial, usaremos datos anónimos de Yandex.Metrica, el primer servicio que ejecuta ClickHouse en forma de producción antes de que se convirtiera en código abierto (más sobre eso en [sección de historia](../introduction/history.md)). Hay [múltiples formas de importar Yandex.Conjunto de datos de Metrica](example_datasets/metrica.md) y por el bien del tutorial, iremos con el más realista.
+Ahora es el momento de llenar nuestro servidor ClickHouse con algunos datos de muestra. En este tutorial, usaremos los datos anónimos de Yandex.Metrica, el primer servicio que ejecuta ClickHouse en forma de producción antes de que se convirtiera en código abierto (más sobre eso en [sección de historia](../introduction/history.md)). Hay [múltiples formas de importar Yandex.Conjunto de datos de Metrica](example_datasets/metrica.md), y por el bien del tutorial, iremos con el más realista.
 
 ### Descargar y extraer datos de tabla {#download-and-extract-table-data}
 
@@ -93,19 +100,19 @@ Los archivos extraídos tienen un tamaño de aproximadamente 10 GB.
 
 ### Crear tablas {#create-tables}
 
-Las tablas se agrupan lógicamente en “databases”. Hay un `default` base de datos, pero crearemos una nueva llamada `tutorial`:
+Como en la mayoría de los sistemas de gestión de bases de datos, ClickHouse agrupa lógicamente las tablas en “databases”. Hay un `default` base de datos, pero crearemos una nueva llamada `tutorial`:
 
 ``` bash
 clickhouse-client --query "CREATE DATABASE IF NOT EXISTS tutorial"
 ```
 
-La sintaxis para crear tablas es mucho más complicada en comparación con las bases de datos (ver [referencia](../query_language/create.md). En general `CREATE TABLE` declaración tiene que especificar tres cosas clave:
+La sintaxis para crear tablas es mucho más complicada en comparación con las bases de datos (ver [referencia](../sql_reference/statements/create.md). En general `CREATE TABLE` declaración tiene que especificar tres cosas clave:
 
 1.  Nombre de la tabla que se va a crear.
-2.  Table schema, i.e. list of columns and their [tipos de datos](../data_types/index.md).
-3.  [Motor de tabla](../operations/table_engines/index.md) y su configuración, que determina todos los detalles sobre cómo se ejecutarán físicamente las consultas a esta tabla.
+2.  Table schema, i.e. list of columns and their [tipos de datos](../sql_reference/data_types/index.md).
+3.  [Motor de tabla](../engines/table_engines/index.md) y su configuración, que determina todos los detalles sobre cómo se ejecutarán físicamente las consultas a esta tabla.
 
-El Yandex.Metrica es un servicio de análisis web y el conjunto de datos de muestra no cubre toda su funcionalidad, por lo que solo hay dos tablas para crear:
+El Yandex.Metrica es un servicio de análisis web, y el conjunto de datos de muestra no cubre toda su funcionalidad, por lo que solo hay dos tablas para crear:
 
 -   `hits` es una tabla con cada acción realizada por todos los usuarios en todos los sitios web cubiertos por el servicio.
 -   `visits` es una tabla que contiene sesiones precompiladas en lugar de acciones individuales.
@@ -455,11 +462,11 @@ SETTINGS index_granularity = 8192
 
 Puede ejecutar esas consultas utilizando el modo interactivo de `clickhouse-client` (simplemente ejecútelo en un terminal sin especificar una consulta por adelantado) o pruebe algunos [interfaz alternativa](../interfaces/index.md) Si quieres.
 
-Como podemos ver, `hits_v1` utiliza el [motor básico MergeTree](../operations/table_engines/mergetree.md), mientras que el `visits_v1` utiliza el [Derrumbar](../operations/table_engines/collapsingmergetree.md) variante.
+Como podemos ver, `hits_v1` utiliza el [motor básico MergeTree](../engines/table_engines/mergetree_family/mergetree.md), mientras que el `visits_v1` utiliza el [Derrumbar](../engines/table_engines/mergetree_family/collapsingmergetree.md) variante.
 
 ### Importar datos {#import-data}
 
-La importación de datos a ClickHouse se realiza a través de [INSERTAR EN](../query_language/insert_into.md) consulta como en muchas otras bases de datos SQL. Sin embargo, los datos generalmente se proporcionan en uno de los [Formatos soportados](../interfaces/formats.md) en lugar de `VALUES` cláusula (que también es compatible).
+La importación de datos a ClickHouse se realiza a través de [INSERT INTO](../sql_reference/statements/insert_into.md) consulta como en muchas otras bases de datos SQL. Sin embargo, los datos generalmente se proporcionan en uno de los [Formatos de serialización compatibles](../interfaces/formats.md) en lugar de `VALUES` cláusula (que también es compatible).
 
 Los archivos que descargamos anteriormente están en formato separado por tabuladores, así que aquí le mostramos cómo importarlos a través del cliente de la consola:
 
@@ -479,16 +486,16 @@ FORMAT TSV
 max_insert_block_size    1048576    0    "The maximum block size for insertion, if we control the creation of blocks for insertion."
 ```
 
-Opcionalmente se puede [OPTIMIZAR](../query_language/misc/#misc_operations-optimize) las tablas después de la importación. Las tablas que están configuradas con el motor de la familia MergeTree siempre fusionan partes de datos en segundo plano para optimizar el almacenamiento de datos (o al menos verificar si tiene sentido). Estas consultas solo obligarán al motor de tablas a realizar la optimización del almacenamiento en este momento en lugar de algún tiempo después:
+Opcionalmente se puede [OPTIMIZE](../query_language/misc/#misc_operations-optimize) las tablas después de la importación. Las tablas que están configuradas con un motor de la familia MergeTree siempre fusionan partes de datos en segundo plano para optimizar el almacenamiento de datos (o al menos verificar si tiene sentido). Estas consultas obligan al motor de tablas a realizar la optimización del almacenamiento en este momento en lugar de algún tiempo después:
 
 ``` bash
 clickhouse-client --query "OPTIMIZE TABLE tutorial.hits_v1 FINAL"
 clickhouse-client --query "OPTIMIZE TABLE tutorial.visits_v1 FINAL"
 ```
 
-Esta es una operación intensiva de E / S y CPU, por lo que si la tabla recibe constantemente datos nuevos, es mejor dejarlo solo y dejar que las fusiones se ejecuten en segundo plano.
+Estas consultas inician una operación intensiva de E / S y CPU, por lo que si la tabla recibe datos nuevos de manera consistente, es mejor dejarlos solos y dejar que las fusiones se ejecuten en segundo plano.
 
-Ahora podemos comprobar que las tablas se han importado correctamente:
+Ahora podemos comprobar si la importación de la tabla fue exitosa:
 
 ``` bash
 clickhouse-client --query "SELECT COUNT(*) FROM tutorial.hits_v1"
@@ -524,9 +531,9 @@ El clúster ClickHouse es un clúster homogéneo. Pasos para configurar:
 1.  Instale el servidor ClickHouse en todas las máquinas del clúster
 2.  Configurar configuraciones de clúster en archivos de configuración
 3.  Crear tablas locales en cada instancia
-4.  Crear un [Tabla distribuida](../operations/table_engines/distributed.md)
+4.  Crear un [Tabla distribuida](../engines/table_engines/special/distributed.md)
 
-[Tabla distribuida](../operations/table_engines/distributed.md) es en realidad una especie de “view” a las tablas locales del clúster ClickHouse. La consulta SELECT de una tabla distribuida se ejecutará utilizando recursos de todos los fragmentos del clúster. Puede especificar configuraciones para varios clústeres y crear varias tablas distribuidas que proporcionen vistas a diferentes clústeres.
+[Tabla distribuida](../engines/table_engines/special/distributed.md) es en realidad una especie de “view” a las tablas locales del clúster ClickHouse. La consulta SELECT de una tabla distribuida se ejecuta utilizando recursos de todos los fragmentos del clúster. Puede especificar configuraciones para varios clústeres y crear varias tablas distribuidas que proporcionen vistas a diferentes clústeres.
 
 Ejemplo de configuración para un clúster con tres fragmentos, una réplica cada uno:
 
@@ -555,7 +562,7 @@ Ejemplo de configuración para un clúster con tres fragmentos, una réplica cad
 </remote_servers>
 ```
 
-Para más demostraciones, creemos una nueva tabla local con la misma `CREATE TABLE` consulta que utilizamos para `hits_v1`, pero nombre de tabla diferente:
+Para más demostraciones, vamos a crear una nueva tabla local con la misma `CREATE TABLE` consulta que utilizamos para `hits_v1`, pero nombre de tabla diferente:
 
 ``` sql
 CREATE TABLE tutorial.hits_local (...) ENGINE = MergeTree() ...
@@ -568,22 +575,22 @@ CREATE TABLE tutorial.hits_all AS tutorial.hits_local
 ENGINE = Distributed(perftest_3shards_1replicas, tutorial, hits_local, rand());
 ```
 
-Una práctica común es crear tablas distribuidas similares en todas las máquinas del clúster. Esto permitiría ejecutar consultas distribuidas en cualquier máquina del clúster. También hay una opción alternativa para crear una tabla distribuida temporal para una consulta SELECT determinada usando [remoto](../query_language/table_functions/remote.md) función de la tabla.
+Una práctica común es crear tablas distribuidas similares en todas las máquinas del clúster. Permite ejecutar consultas distribuidas en cualquier máquina del clúster. También hay una opción alternativa para crear una tabla distribuida temporal para una consulta SELECT determinada usando [remoto](../sql_reference/table_functions/remote.md) función de la tabla.
 
-Vamos a correr [INSERTAR SELECCIONAR](../query_language/insert_into.md) en la tabla Distributed para extender la tabla a varios servidores.
+Vamos a correr [INSERT SELECT](../sql_reference/statements/insert_into.md) en la tabla Distributed para extender la tabla a varios servidores.
 
 ``` sql
 INSERT INTO tutorial.hits_all SELECT * FROM tutorial.hits_v1;
 ```
 
 !!! warning "Aviso"
-    Este enfoque no es adecuado para la fragmentación de tablas grandes. Hay una herramienta separada [Método de codificación de datos:](../operations/utils/clickhouse-copier.md) que puede volver a fragmentar tablas grandes arbitrarias.
+    Este enfoque no es adecuado para la fragmentación de tablas grandes. Hay una herramienta separada [Método de codificación de datos:](../operations/utilities/clickhouse-copier.md) que puede volver a fragmentar tablas grandes arbitrarias.
 
-Como era de esperar, las consultas computacionalmente pesadas se ejecutan N veces más rápido y se lanzan en 3 servidores en lugar de uno.
+Como era de esperar, las consultas computacionalmente pesadas se ejecutan N veces más rápido si utilizan 3 servidores en lugar de uno.
 
-En este caso, hemos utilizado un clúster con 3 fragmentos, cada uno contiene una única réplica.
+En este caso, hemos utilizado un clúster con 3 fragmentos, y cada uno contiene una sola réplica.
 
-Para proporcionar resiliencia en un entorno de producción, recomendamos que cada fragmento contenga 2-3 réplicas distribuidas entre varios centros de datos. Tenga en cuenta que ClickHouse admite un número ilimitado de réplicas.
+Para proporcionar resiliencia en un entorno de producción, se recomienda que cada fragmento contenga 2-3 réplicas distribuidas entre varias zonas de disponibilidad o centros de datos (o al menos racks). Tenga en cuenta que ClickHouse admite un número ilimitado de réplicas.
 
 Ejemplo de configuración para un clúster de un fragmento que contiene tres réplicas:
 
@@ -609,13 +616,12 @@ Ejemplo de configuración para un clúster de un fragmento que contiene tres ré
 </remote_servers>
 ```
 
-Para habilitar la replicación nativa <a href="http://zookeeper.apache.org/" rel="external nofollow">ZooKeeper</a> se requiere. ClickHouse se encargará de la coherencia de los datos en todas las réplicas y ejecutará el procedimiento de restauración después de la falla
-automática. Se recomienda implementar el clúster ZooKeeper en servidores separados.
+Para habilitar la replicación nativa [ZooKeeper](http://zookeeper.apache.org/) se requiere. ClickHouse se encarga de la coherencia de los datos en todas las réplicas y ejecuta el procedimiento de restauración después de la falla automáticamente. Se recomienda implementar el clúster ZooKeeper en servidores independientes (donde no se están ejecutando otros procesos, incluido ClickHouse).
 
-ZooKeeper no es un requisito estricto: en algunos casos simples, puede duplicar los datos escribiéndolos en todas las réplicas de su código de aplicación. Este enfoque es **ni** recomendado, en este caso, ClickHouse no podrá
-garantizar la coherencia de los datos en todas las réplicas. Esto sigue siendo responsabilidad de su aplicación.
+!!! note "Nota"
+    ZooKeeper no es un requisito estricto: en algunos casos simples, puede duplicar los datos escribiéndolos en todas las réplicas de su código de aplicación. Este enfoque es **ni** recomendado, en este caso, ClickHouse no podrá garantizar la coherencia de los datos en todas las réplicas. Por lo tanto, se convierte en responsabilidad de su aplicación.
 
-Las ubicaciones de ZooKeeper deben especificarse en el archivo de configuración:
+Las ubicaciones de ZooKeeper se especifican en el archivo de configuración:
 
 ``` xml
 <zookeeper>
@@ -634,7 +640,7 @@ Las ubicaciones de ZooKeeper deben especificarse en el archivo de configuración
 </zookeeper>
 ```
 
-Además, necesitamos establecer macros para identificar cada fragmento y réplica, se usará en la creación de la tabla:
+Además, necesitamos establecer macros para identificar cada fragmento y réplica que se utilizan en la creación de tablas:
 
 ``` xml
 <macros>
@@ -643,7 +649,7 @@ Además, necesitamos establecer macros para identificar cada fragmento y réplic
 </macros>
 ```
 
-Si no hay réplicas en este momento en la creación de la tabla replicada, se creará una nueva primera réplica. Si ya hay réplicas activas, la nueva réplica clonará los datos de las existentes. Tiene la opción de crear primero todas las tablas replicadas e insertar datos en ella. Otra opción es crear algunas réplicas y agregar las otras después o durante la inserción de datos.
+Si no hay réplicas en este momento en la creación de la tabla replicada, se crea una instancia de una nueva primera réplica. Si ya hay réplicas activas, la nueva réplica clona los datos de las existentes. Tiene la opción de crear primero todas las tablas replicadas y, a continuación, insertar datos en ella. Otra opción es crear algunas réplicas y agregar las otras después o durante la inserción de datos.
 
 ``` sql
 CREATE TABLE tutorial.hits_replica (...)
@@ -654,12 +660,12 @@ ENGINE = ReplcatedMergeTree(
 ...
 ```
 
-Aquí usamos [ReplicatedMergeTree](../operations/table_engines/replication.md) motor de mesa. En los parámetros, especificamos la ruta ZooKeeper que contiene identificadores de fragmentos y réplicas.
+Aquí usamos [ReplicatedMergeTree](../engines/table_engines/mergetree_family/replication.md) motor de mesa. En los parámetros, especificamos la ruta ZooKeeper que contiene identificadores de fragmentos y réplicas.
 
 ``` sql
 INSERT INTO tutorial.hits_replica SELECT * FROM tutorial.hits_local;
 ```
 
-La replicación funciona en modo multi-master. Los datos se pueden cargar en cualquier réplica y se sincronizarán con otras instancias automáticamente. La replicación es asíncrona, por lo que en un momento dado, no todas las réplicas pueden contener datos insertados recientemente. Para permitir la inserción de datos, al menos una réplica debe estar activa. Otros sincronizarán los datos y repararán la coherencia una vez que vuelvan a activarse. Tenga en cuenta que tal enfoque permite la baja posibilidad de una pérdida de datos que acaba de agregar.
+La replicación funciona en modo multi-master. Los datos se pueden cargar en cualquier réplica y el sistema los sincroniza automáticamente con otras instancias. La replicación es asíncrona, por lo que en un momento dado, no todas las réplicas pueden contener datos insertados recientemente. Al menos una réplica debe estar disponible para permitir la ingestión de datos. Otros sincronizarán los datos y repararán la coherencia una vez que vuelvan a activarse. Tenga en cuenta que este enfoque permite la baja posibilidad de una pérdida de datos recientemente insertados.
 
-[Artículo Original](https://clickhouse.tech/docs/es/getting_started/tutorial/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/getting_started/tutorial/) <!--hide-->

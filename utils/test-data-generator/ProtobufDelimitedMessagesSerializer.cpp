@@ -1,5 +1,5 @@
 // Generator of protobuf delimited messages used in the protobuf IO tests
-// dbms/tests/queries/0_stateless/00825_protobuf_format*
+// tests/queries/0_stateless/00825_protobuf_format*
 
 #include <boost/program_options.hpp>
 #include <fstream>

@@ -1,3 +1,9 @@
+---
+toc_folder_title: Interfaces
+toc_priority: 14
+toc_title: Introduction
+---
+
 # Interfaces {#interfaces}
 
 ClickHouse provides two network interfaces (both can be optionally wrapped in TLS for additional security):

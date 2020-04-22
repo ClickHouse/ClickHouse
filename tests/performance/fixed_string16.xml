@@ -1,0 +1,14 @@
+<test>
+    <tags>
+        <tag>comparison</tag>
+    </tags>
+
+    <preconditions>
+        <table_exists>test.hits</table_exists>
+    </preconditions>
+
+
+
+    <query><![CDATA[SELECT count() FROM test.hits WHERE ClientIP6 < RemoteIP6]]></query>
+
+</test>
