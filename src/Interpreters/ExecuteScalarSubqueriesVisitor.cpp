@@ -64,7 +64,7 @@ void ExecuteScalarSubqueriesMatcher::visit(ASTPtr & ast, Data & data)
 ///  blacklist them here.
 static bool worthConvertingToLiteral(const Block & scalar)
 {
-    auto scalar_type_name = scalar.safeGetByPosition(0).type->getFamilyName();
+    const auto * scalar_type_name = scalar.safeGetByPosition(0).type->getFamilyName();
     std::set<String> useless_literal_types = {"Array", "Tuple", "AggregateFunction", "Function", "Set", "LowCardinality"};
     return !useless_literal_types.count(scalar_type_name);
 }

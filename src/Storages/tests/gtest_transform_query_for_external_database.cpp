@@ -27,7 +27,7 @@ struct State
         {"create_time", std::make_shared<DataTypeDateTime>()},
     };
 
-    State(Context & context_) : context(context_)
+    explicit State(Context & context_) : context(context_)
     {
         registerFunctions();
         DatabasePtr database = std::make_shared<DatabaseMemory>("test");

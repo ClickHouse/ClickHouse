@@ -609,7 +609,7 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
         /// Add columns obtained by JOIN (if needed).
         for (const auto & joined_column : analyzed_join->columnsFromJoinedTable())
         {
-            auto & name = joined_column.name;
+            const auto & name = joined_column.name;
             if (available_columns.count(name))
                 continue;
 

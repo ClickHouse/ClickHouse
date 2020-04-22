@@ -98,8 +98,8 @@ void QueryThreadLogElement::appendToBlock(Block & block) const
 
     if (profile_counters)
     {
-        auto column_names = columns[i++].get();
-        auto column_values = columns[i++].get();
+        auto * column_names = columns[i++].get();
+        auto * column_values = columns[i++].get();
         dumpToArrayColumns(*profile_counters, column_names, column_values, true);
     }
     else

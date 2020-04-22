@@ -24,7 +24,7 @@ class DataTypeCustomIPv4Serialization : public DataTypeCustomSimpleTextSerializa
 public:
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override
     {
-        const auto col = checkAndGetColumn<ColumnUInt32>(&column);
+        const auto * col = checkAndGetColumn<ColumnUInt32>(&column);
         if (!col)
         {
             throw Exception("IPv4 type can only serialize columns of type UInt32." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);
@@ -63,7 +63,7 @@ public:
 
     void serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override
     {
-        const auto col = checkAndGetColumn<ColumnFixedString>(&column);
+        const auto * col = checkAndGetColumn<ColumnFixedString>(&column);
         if (!col)
         {
             throw Exception("IPv6 type domain can only serialize columns of type FixedString(16)." + column.getName(), ErrorCodes::ILLEGAL_COLUMN);

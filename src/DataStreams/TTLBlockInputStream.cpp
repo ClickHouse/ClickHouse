@@ -63,7 +63,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     }
 }
 
-bool TTLBlockInputStream::isTTLExpired(time_t ttl)
+bool TTLBlockInputStream::isTTLExpired(time_t ttl) const
 {
     return (ttl && (ttl <= current_time));
 }

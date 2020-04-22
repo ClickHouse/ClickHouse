@@ -39,11 +39,11 @@ namespace
 
     const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
     {
-        auto & info = chunk.getChunkInfo();
+        const auto & info = chunk.getChunkInfo();
         if (!info)
             throw Exception("Chunk info was not set for chunk.", ErrorCodes::LOGICAL_ERROR);
 
-        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)
             throw Exception("Chunk should have AggregatedChunkInfo.", ErrorCodes::LOGICAL_ERROR);
 
@@ -294,7 +294,6 @@ private:
         return Status::PortFull;
     }
 
-private:
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
     ConvertingAggregatedToChunksSource::SharedDataPtr shared_data;

@@ -881,7 +881,7 @@ size_t ReplicatedMergeTreeQueue::getConflictsCountForRange(
 {
     std::vector<std::pair<String, LogEntryPtr>> conflicts;
 
-    for (auto & future_part_elem : future_parts)
+    for (const auto & future_part_elem : future_parts)
     {
         /// Do not check itself log entry
         if (future_part_elem.second->znode_name == entry.znode_name)
