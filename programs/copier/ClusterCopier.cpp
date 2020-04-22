@@ -1186,16 +1186,14 @@ TaskStatus ClusterCopier::processPartitionPieceTaskImpl(
         String query;
         query += "SELECT " + fields + " FROM " + getQuotedTable(from_table);
 
-        if (enable_splitting)
-          if (experimental_use_sample_offset)
-              query += " SAMPLE 1/" + toString(number_of_splits) + " OFFSET " + toString(current_piece_number) + "/" + toString(number_of_splits);
+        if (enable_splitting && experimental_use_sample_offset)
+            query += " SAMPLE 1/" + toString(number_of_splits) + " OFFSET " + toString(current_piece_number) + "/" + toString(number_of_splits);
 
         /// TODO: Bad, it is better to rewrite with ASTLiteral(partition_key_field)
         query += " WHERE (" + queryToString(task_table.engine_push_partition_key_ast) + " = (" + task_partition.name + " AS partition_key))";
 
-        if (enable_splitting)
-            if (!experimental_use_sample_offset)
-                query += " AND ( cityHash64(" + primary_key_comma_separated + ") %" + toString(number_of_splits) + " = " + toString(current_piece_number) + " )";
+        if (enable_splitting && !experimental_use_sample_offset)
+            query += " AND ( cityHash64(" + primary_key_comma_separated + ") %" + toString(number_of_splits) + " = " + toString(current_piece_number) + " )";
 
         if (!task_table.where_condition_str.empty())
             query += " AND (" + task_table.where_condition_str + ")";
