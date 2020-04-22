@@ -274,18 +274,18 @@ PoolWithFailoverBase<TNestedPool>::getMany(
                     < std::forward_as_tuple(!right.is_up_to_date, right.staleness);
             });
 
-    if (up_to_date_count >= min_entries)
-    {
-        /// There is enough up-to-date entries.
-        try_results.resize(up_to_date_count);
-    }
-    else if (fallback_to_stale_replicas)
+    if (fallback_to_stale_replicas)
     {
         /// There is not enough up-to-date entries but we are allowed to return stale entries.
         /// Gather all up-to-date ones and least-bad stale ones.
 
         size_t size = std::min(try_results.size(), max_entries);
         try_results.resize(size);
+    }
+    else if (up_to_date_count >= min_entries)
+    {
+        /// There is enough up-to-date entries.
+        try_results.resize(up_to_date_count);
     }
     else
         throw DB::Exception(
