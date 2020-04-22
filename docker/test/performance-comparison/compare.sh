@@ -176,6 +176,28 @@ function run_tests
     wait
 }
 
+function get_profiles_watchdog
+{
+    sleep 3000
+
+    echo "The trace collection did not finish in time." >> report-errors.rep
+
+    for pid in $(pgrep -f clickhouse)
+    do
+        gdb -p $pid --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+    done
+    wait
+
+    for i in {1..10}
+    do
+        if ! pkill -f clickhouse
+        then
+            break
+        fi
+        sleep 1
+    done
+}
+
 function get_profiles
 {
     # Collect the profiles
@@ -446,10 +468,28 @@ case "$stage" in
     time run_tests ||:
     ;&
 "get_profiles")
+    # Getting profiles inexplicably hangs sometimes, so try to save some logs if
+    # this happens again. Give the servers 5 minutes to collect all info, then
+    # trace and kill. Start in a subshell, so that both function don't interfere
+    # with each other's jobs through `wait`. Also make the subshell have its own
+    # process group, so that we can then kill it with all its child processes.
+    # Somehow it doesn't kill the children by itself when dying.
+    set -m
+    ( get_profiles_watchdog ) &
+    watchdog_pid=$!
+    set +m
+    # Check that the watchdog started OK.
+    kill -0 $watchdog_pid
+
     # If the tests fail with OOM or something, still try to restart the servers
     # to collect the logs. Prefer not to restart, because addresses might change
-    # and we won't be able to process trace_log data.
-    time get_profiles || restart || get_profiles ||:
+    # and we won't be able to process trace_log data. Start in a subshell, so that
+    # it doesn't interfere with the watchdog through `wait`.
+    ( time get_profiles || restart || get_profiles ||: )
+
+    # Kill the whole process group, because somehow when the subshell is killed,
+    # the sleep inside remains alive and orphaned.
+    while env kill -- -$watchdog_pid ; do sleep 1; done
 
     # Stop the servers to free memory for the subsequent query analysis.
     while killall clickhouse; do echo . ; sleep 1 ; done
@@ -465,3 +505,7 @@ case "$stage" in
     time "$script_dir/report.py" > report.html
     ;&
 esac
+
+# Print some final debug info to help debug Weirdness, of which there is plenty.
+jobs
+pstree -apgT
