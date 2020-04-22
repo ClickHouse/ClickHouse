@@ -11,7 +11,7 @@ a:hover, a:active {
     text-decoration: underline;
 }
 
-#logo-icon {
+#logo-icon, #docs-logo-icon {
     width: 40px;
 }
 
@@ -20,8 +20,38 @@ a:hover, a:active {
     margin-left: 12px;
 }
 
+.display-5 {
+    font-size: 2rem;
+    font-weight: 300;
+    line-height: 1.2;
+}
+
+.bg-dark-alt {
+    background: #36363F;
+}
+
+.bg-dark-alt:focus {
+    background: #36363F;
+}
+
 .bg-secondary-alt {
     background: #444451;
+}
+
+.bg-secondary-alt:focus {
+    background: #444451;
+}
+
+.text-dark-alt {
+    color: #36363F;
+}
+
+.btn-dark-alt {
+    background: #36363F;
+}
+
+.btn-dark-alt:focus {
+    background: #36363F;
 }
 
 .btn-outline-orange {
@@ -68,9 +98,10 @@ a.btn-outline-yellow {
     color: #fc0;
 }
 
-.navbar {
+.navbar-light {
     border-bottom: 1px solid #efefef;
 }
+
 
 .navbar-light .navbar-nav .nav-link {
     color: #000;
@@ -87,6 +118,28 @@ a.btn-outline-yellow {
     color: rgba(241, 70, 0, 0.1);
     line-height: 1;
     margin-top: -1rem;
+}
+
+.dropdown-item {
+  color: #e1e1e1 !important;
+}
+
+.dropdown-item:hover,
+.dropdown-item:focus {
+  background-color: #1e1e1e;
+}
+
+.nav .dropdown-toggle::after {
+    vertical-align: 0;
+}
+.nav .dropdown-toggle[aria-expanded=false]::after {
+    display: inline-block;
+    margin-right: .255em;
+    vertical-align: 0;
+    content: "";
+    border-top: .3em solid transparent;
+    border-right: .3em solid;
+    border-bottom: .3em solid transparent;
 }
 
 .dots-lb {
@@ -108,5 +161,3 @@ a.btn-outline-yellow {
 .dots-cc {
     background: #fff url('/images/dots.svg') repeat-y 50% -17.5%;
 }
-
-{% include "css/highlight.css" %}

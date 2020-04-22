@@ -1,8 +1,15 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 61
+toc_title: "La instrucci\xF3n para desarrolladores de ClickHouse para principiantes"
+---
+
 La construcción de ClickHouse es compatible con Linux, FreeBSD y Mac OS X.
 
 # Si utiliza Windows {#if-you-use-windows}
 
-Si usa Windows, necesita crear una máquina virtual con Ubuntu. Para comenzar a trabajar con una máquina virtual, instale VirtualBox. Puede descargar Ubuntu desde el sitio web: https://www.ubuntu.com/\#download. Por favor, cree una máquina virtual a partir de la imagen descargada (debe reservar al menos 4 GB de RAM para ello). Para ejecutar un terminal de línea de comandos en Ubuntu, busque un programa que contenga la palabra “terminal” es su nombre (gnome-terminal, konsole, etc.) o simplemente presione Ctrl + Alt + T.
+Si usa Windows, necesita crear una máquina virtual con Ubuntu. Para comenzar a trabajar con una máquina virtual, instale VirtualBox. Puede descargar Ubuntu desde el sitio web: https://www.ubuntu.com/\#download. Por favor, cree una máquina virtual a partir de la imagen descargada (debe reservar al menos 4 GB de RAM para ello). Para ejecutar un terminal de línea de comandos en Ubuntu, busque un programa que contenga la palabra “terminal” en su nombre (gnome-terminal, konsole etc.) o simplemente presione Ctrl + Alt + T.
 
 # Si utiliza un sistema de 32 bits {#if-you-use-a-32-bit-system}
 
@@ -12,11 +19,11 @@ ClickHouse no puede funcionar ni construir en un sistema de 32 bits. Debe adquir
 
 Para comenzar a trabajar con el repositorio de ClickHouse, necesitará una cuenta de GitHub.
 
-Probablemente ya tenga uno, pero si no lo hace, regístrese en https://github.com. En caso de que no tenga claves SSH, debe generarlas y luego cargarlas en GitHub. Es necesario para enviar a través de sus parches. También es posible usar las mismas claves SSH que usa con cualquier otro servidor SSH, probablemente ya las tenga.
+Probablemente ya tenga uno, pero si no lo hace, regístrese en https://github.com . En caso de que no tenga claves SSH, debe generarlas y luego cargarlas en GitHub. Es necesario para enviar a través de sus parches. También es posible usar las mismas claves SSH que usa con cualquier otro servidor SSH, probablemente ya las tenga.
 
 Cree una bifurcación del repositorio ClickHouse. Para hacerlo por favor haga clic en el “fork” botón en la esquina superior derecha en https://github.com/ClickHouse/ClickHouse . Se bifurcará su propia copia de ClickHouse/ClickHouse a su cuenta.
 
-El proceso de desarrollo consiste en comprometer primero los cambios previstos en su bifurcación de ClickHouse y luego crear un “pull request” Para que estos cambios sean aceptados en el repositorio principal (ClickHouse / ClickHouse).
+El proceso de desarrollo consiste en comprometer primero los cambios previstos en su bifurcación de ClickHouse y luego crear un “pull request” para que estos cambios sean aceptados en el repositorio principal (ClickHouse / ClickHouse).
 
 Para trabajar con repositorios git, instale `git`.
 
@@ -26,7 +33,7 @@ Para hacer eso en Ubuntu, ejecutaría en la terminal de línea de comandos:
     sudo apt install git
 
 Puede encontrar un breve manual sobre el uso de Git aquí: https://services.github.com/on-demand/downloads/github-git-cheat-sheet.pdf .
-Para obtener un manual detallado sobre Git, consulte https://git-scm.com/book/ru/v2 .
+Para obtener un manual detallado sobre Git, consulte https://git-scm.com/book/en/v2 .
 
 # Clonación de un repositorio en su máquina de desarrollo {#cloning-a-repository-to-your-development-machine}
 
@@ -43,7 +50,7 @@ Este comando creará un directorio `ClickHouse` que contiene la copia de trabajo
 
 Es importante que la ruta al directorio de trabajo no contenga espacios en blanco, ya que puede ocasionar problemas con la ejecución del sistema de compilación.
 
-Tenga en cuenta que el repositorio ClickHouse utiliza `submodules`. Así es como se llaman las referencias a repositorios adicionales (es decir, bibliotecas externas de las que depende el proyecto). Significa que al clonar el repositorio debe especificar el `--recursive` como en el ejemplo anterior. Si el repositorio se ha clonado sin submódulos, para descargarlos debe ejecutar lo siguiente:
+Tenga en cuenta que el repositorio ClickHouse utiliza `submodules`. That is what the references to additional repositories are called (i.e. external libraries on which the project depends). It means that when cloning the repository you need to specify the `--recursive` como en el ejemplo anterior. Si el repositorio se ha clonado sin submódulos, para descargarlos debe ejecutar lo siguiente:
 
     git submodule init
     git submodule update
@@ -134,15 +141,15 @@ Las compilaciones oficiales de Yandex actualmente usan GCC porque genera código
 
 Para instalar GCC en Ubuntu, ejecute: `sudo apt install gcc g++`
 
-Compruebe la versión de gcc: `gcc --version`. Si está por debajo de 9, siga las instrucciones aquí: https://clickhouse .tech/docs/es/development/build/\#install-gcc-9.
+Compruebe la versión de gcc: `gcc --version`. Si está por debajo de 9, siga las instrucciones aquí: https://clickhouse .tech/docs/en/development/build/\#install-gcc-9.
 
 La compilación de Mac OS X solo es compatible con Clang. Sólo tiene que ejecutar `brew install llvm`
 
-Si decide utilizar Clang, también puede instalar `libc++` y `lld` sabe lo que es. Utilizar `ccache` también se recomienda.
+Si decide utilizar Clang, también puede instalar `libc++` y `lld` si usted sabe lo que es. Utilizar `ccache` también se recomienda.
 
 # El proceso de construcción {#the-building-process}
 
-Ahora que está listo para construir ClickHouse, le recomendamos que cree un directorio separado `build` Dentro `ClickHouse` que contendrá todos los de la generación de artefactos:
+Ahora que está listo para construir ClickHouse, le recomendamos que cree un directorio separado `build` dentro `ClickHouse` que contendrá todos los de la generación de artefactos:
 
     mkdir build
     cd build
@@ -167,7 +174,7 @@ Para una construcción más rápida, puede recurrir al `debug` tipo de compilaci
 
     cmake -D CMAKE_BUILD_TYPE=Debug ..
 
-Puede cambiar el tipo de compilación ejecutando este comando en el `build` Directorio.
+Puede cambiar el tipo de compilación ejecutando este comando en el `build` directorio.
 
 Ejecutar ninja para construir:
 
@@ -189,23 +196,23 @@ En máquinas con 4GB de RAM, se recomienda especificar 1, para 8GB de RAM `-j 2`
 
 Si recibe el mensaje: `ninja: error: loading 'build.ninja': No such file or directory`, significa que la generación de una configuración de compilación ha fallado y necesita inspeccionar el mensaje anterior.
 
-Cuando se inicie correctamente el proceso de construcción, verá el progreso de construcción: el número de tareas procesadas y el número total de tareas.
+Cuando se inicie correctamente el proceso de construcción, verá el progreso de la compilación: el número de tareas procesadas y el número total de tareas.
 
 Al crear mensajes sobre archivos protobuf en la biblioteca libhdfs2, como `libprotobuf WARNING` puede aparecer. Afectan a nada y son seguros para ser ignorado.
 
-Tras la compilación exitosa, obtienes un archivo ejecutable `ClickHouse/<build_dir>/dbms/programs/clickhouse`:
+Tras la compilación exitosa, obtienes un archivo ejecutable `ClickHouse/<build_dir>/programs/clickhouse`:
 
-    ls -l dbms/programs/clickhouse
+    ls -l programs/clickhouse
 
 # Ejecutando el ejecutable construido de ClickHouse {#running-the-built-executable-of-clickhouse}
 
-Para ejecutar el servidor bajo el usuario actual, debe navegar hasta `ClickHouse/dbms/programs/server/` (situado fuera de `build`) y ejecutar:
+Para ejecutar el servidor bajo el usuario actual, debe navegar hasta `ClickHouse/programs/server/` (situado fuera de `build`) y ejecutar:
 
-    ../../../build/dbms/programs/clickhouse server
+    ../../../build/programs/clickhouse server
 
 En este caso, ClickHouse usará archivos de configuración ubicados en el directorio actual. Puede ejecutar `clickhouse server` desde cualquier directorio que especifique la ruta a un archivo de configuración como un parámetro de línea de comandos `--config-file`.
 
-Para conectarse a ClickHouse con clickhouse-client en otro terminal, vaya a `ClickHouse/build/dbms/programs/` y ejecutar `clickhouse client`.
+Para conectarse a ClickHouse con clickhouse-client en otro terminal, vaya a `ClickHouse/build/programs/` y ejecutar `clickhouse client`.
 
 Si usted consigue `Connection refused` mensaje en Mac OS X o FreeBSD, intente especificar la dirección de host 127.0.0.1:
 
@@ -214,15 +221,15 @@ Si usted consigue `Connection refused` mensaje en Mac OS X o FreeBSD, intente es
 Puede reemplazar la versión de producción del binario ClickHouse instalado en su sistema con su binario ClickHouse personalizado. Para ello, instale ClickHouse en su máquina siguiendo las instrucciones del sitio web oficial. A continuación, ejecute lo siguiente:
 
     sudo service clickhouse-server stop
-    sudo cp ClickHouse/build/dbms/programs/clickhouse /usr/bin/
+    sudo cp ClickHouse/build/programs/clickhouse /usr/bin/
     sudo service clickhouse-server start
 
-Tenga en cuenta que `clickhouse-client`, `clickhouse-server` y otros son enlaces simbólicos a los comúnmente compartidos `clickhouse` Binario.
+Tenga en cuenta que `clickhouse-client`, `clickhouse-server` y otros son enlaces simbólicos a los comúnmente compartidos `clickhouse` binario.
 
 También puede ejecutar su binario ClickHouse personalizado con el archivo de configuración del paquete ClickHouse instalado en su sistema:
 
     sudo service clickhouse-server stop
-    sudo -u clickhouse ClickHouse/build/dbms/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
+    sudo -u clickhouse ClickHouse/build/programs/clickhouse server --config-file /etc/clickhouse-server/config.xml
 
 # IDE (entorno de desarrollo integrado) {#ide-integrated-development-environment}
 
@@ -238,11 +245,11 @@ Por si acaso, vale la pena mencionar que CLion crea `build` por sí mismo, tambi
 
 La descripción de la arquitectura ClickHouse se puede encontrar aquí: https://clickhouse.tech/docs/es/desarrollo/arquitectura/
 
-La Guía de estilo de código: https://clickhouse.tech/docs/es/development/style/
+La Guía de estilo de código: https://clickhouse.tech/docs/en/development/style/
 
-Pruebas de escritura: https://clickhouse.tech/docs/es/development/tests/
+Pruebas de escritura: https://clickhouse.tech/docs/en/development/tests/
 
-Lista de tareas: https://github.com/ClickHouse/ClickHouse/blob/master/dbms/tests/instructions/easy\_tasks\_sorted\_en.md
+Lista de tareas: https://github.com/ClickHouse/ClickHouse/blob/master/testsructions/easy\_tasks\_sorted\_en.md
 
 # Datos de prueba {#test-data}
 
@@ -271,8 +278,8 @@ Navega a tu repositorio de fork en la interfaz de usuario de GitHub. Si ha estad
 
 Se puede crear una solicitud de extracción incluso si el trabajo aún no se ha completado. En este caso, por favor ponga la palabra “WIP” (trabajo en curso) al comienzo del título, se puede cambiar más tarde. Esto es útil para la revisión cooperativa y la discusión de los cambios, así como para ejecutar todas las pruebas disponibles. Es importante que proporcione una breve descripción de sus cambios, que más tarde se utilizará para generar registros de cambios de lanzamiento.
 
-Las pruebas comenzarán tan pronto como los empleados de Yandex etiqueten su PR con una etiqueta “can be tested”. Los resultados de algunas primeras comprobaciones (por ejemplo, el estilo de código) llegarán en varios minutos. Los resultados de la comprobación de compilación llegarán dentro de media hora. Y el conjunto principal de pruebas se informará dentro de una hora.
+Las pruebas comenzarán tan pronto como los empleados de Yandex etiqueten su PR con una etiqueta “can be tested”. The results of some first checks (e.g. code style) will come in within several minutes. Build check results will arrive within half an hour. And the main set of tests will report itself within an hour.
 
-El sistema preparará compilaciones binarias ClickHouse para su solicitud de extracción individualmente. Para recuperar estas compilaciones, haga clic en “Details” junto al enlace “ClickHouse build check” en la lista de cheques. Allí encontrará enlaces directos a la construcción.deb paquetes de ClickHouse que puede implementar incluso en sus servidores de producción (si no tiene miedo).
+El sistema preparará compilaciones binarias ClickHouse para su solicitud de extracción individualmente. Para recuperar estas compilaciones, haga clic en “Details” junto al link “ClickHouse build check” en la lista de cheques. Allí encontrará enlaces directos a la construcción.deb paquetes de ClickHouse que puede implementar incluso en sus servidores de producción (si no tiene miedo).
 
 Lo más probable es que algunas de las compilaciones fallen las primeras veces. Esto se debe al hecho de que verificamos las compilaciones tanto con gcc como con clang, con casi todas las advertencias existentes (siempre con el `-Werror` bandera) habilitado para sonido. En esa misma página, puede encontrar todos los registros de compilación para que no tenga que compilar ClickHouse de todas las formas posibles.

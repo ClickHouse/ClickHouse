@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 41
+toc_title: "Aplicaci\xF3n de modelos CatBoost"
+---
+
 # Aplicación de un modelo Catboost en ClickHouse {#applying-catboost-model-in-clickhouse}
 
 [CatBoost](https://catboost.ai) es una biblioteca de impulso de gradiente libre y de código abierto desarrollada en [Yandex](https://yandex.com/company/) para el aprendizaje automático.
@@ -15,14 +22,14 @@ Para obtener más información sobre la formación de modelos CatBoost, consulte
 
 ## Requisito {#prerequisites}
 
-Si usted no tiene el [Acoplador](https://docs.docker.com/install/) sin embargo, instalarlo.
+Si no tienes el [Acoplador](https://docs.docker.com/install/) sin embargo, instalarlo.
 
 !!! note "Nota"
     [Acoplador](https://www.docker.com) es una plataforma de software que le permite crear contenedores que aíslan una instalación de CatBoost y ClickHouse del resto del sistema.
 
 Antes de aplicar un modelo CatBoost:
 
-**1.** Neumático de la [Imagen de acoplador](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) del registro:
+**1.** Tire de la [Imagen de acoplador](https://hub.docker.com/r/yandex/tutorial-catboost-clickhouse) del registro:
 
 ``` bash
 $ docker pull yandex/tutorial-catboost-clickhouse
@@ -109,7 +116,7 @@ FROM amazon_train
 
 +-count()-+
 |   65538 |
-+---------+
++-------+
 ```
 
 ## 3. Integrar CatBoost en ClickHouse {#integrate-catboost-into-clickhouse}
@@ -158,7 +165,7 @@ La forma más rápida de evaluar un modelo CatBoost es compilar `libcatboostmode
 
 Para el modelo de prueba, ejecute el cliente ClickHouse `$ clickhouse client`.
 
-Vamos a asegurarnos de que el modelo está funcionando:
+Asegurémonos de que el modelo esté funcionando:
 
 ``` sql
 :) SELECT
@@ -178,7 +185,7 @@ LIMIT 10
 ```
 
 !!! note "Nota"
-    Función [modelEvaluar](../query_language/functions/other_functions.md#function-modelevaluate) devuelve tupla con predicciones sin procesar por clase para modelos multiclase.
+    Función [modelEvaluar](../sql_reference/functions/other_functions.md#function-modelevaluate) devuelve tupla con predicciones sin procesar por clase para modelos multiclase.
 
 Vamos a predecir la probabilidad:
 
@@ -201,7 +208,7 @@ LIMIT 10
 ```
 
 !!! note "Nota"
-    Más información sobre [exp()](../query_language/functions/math_functions.md) función.
+    Más información sobre [exp()](../sql_reference/functions/math_functions.md) función.
 
 Vamos a calcular LogLoss en la muestra:
 
@@ -227,6 +234,6 @@ FROM
 ```
 
 !!! note "Nota"
-    Más información sobre [avg()](../query_language/agg_functions/reference.md#agg_function-avg) y [Registro()](../query_language/functions/math_functions.md) función.
+    Más información sobre [avg()](../sql_reference/aggregate_functions/reference.md#agg_function-avg) y [registro()](../sql_reference/functions/math_functions.md) función.
 
-[Artículo Original](https://clickhouse.tech/docs/es/guides/apply_catboost_model/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/guides/apply_catboost_model/) <!--hide-->

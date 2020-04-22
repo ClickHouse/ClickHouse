@@ -1,10 +1,20 @@
-<div markdown="1" markdown="1" dir="rtl">
+---
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 15
+toc_title: "\u0628\u0647 \u0645\u0648\u0642\u0639"
+---
 
-# OnTime {#ontime}
+# به موقع {#ontime}
 
-دانلود داده ها:
+این مجموعه داده را می توان به دو روش دریافت کرد:
 
-</div>
+-   واردات از دادههای خام
+-   دانلود پارتیشن های تهیه شده
+
+## واردات از دادههای خام {#import-from-raw-data}
+
+بارگیری داده ها:
 
 ``` bash
 for s in `seq 1987 2018`
@@ -16,13 +26,9 @@ done
 done
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
 (از https://github.com/Percona-Lab/ontime-airline-performance/blob/master/download.sh )
 
-ساخت جدول:
-
-</div>
+ایجاد یک جدول:
 
 ``` sql
 CREATE TABLE `ontime` (
@@ -141,73 +147,81 @@ ORDER BY (Carrier, FlightDate)
 SETTINGS index_granularity = 8192;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-Load داده ها:
-
-</div>
+بارگیری داده:
 
 ``` bash
-for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
+$ for i in *.zip; do echo $i; unzip -cq $i '*.csv' | sed 's/\.00//g' | clickhouse-client --host=example-perftest01j --query="INSERT INTO ontime FORMAT CSVWithNames"; done
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
+## دانلود پارتیشن های تهیه شده {#download-of-prepared-partitions}
 
-query ها:
+``` bash
+$ curl -O https://clickhouse-datasets.s3.yandex.net/ontime/partitions/ontime.tar
+$ tar xvf ontime.tar -C /var/lib/clickhouse # path to ClickHouse data directory
+$ # check permissions of unpacked data, fix if required
+$ sudo service clickhouse-server restart
+$ clickhouse-client --query "select count(*) from datasets.ontime"
+```
+
+!!! info "اطلاعات"
+    اگر شما نمایش داده شد شرح داده شده در زیر اجرا خواهد شد, شما مجبور به استفاده از نام جدول کامل, `datasets.ontime`.
+
+## نمایش داده شد {#queries}
 
 Q0.
 
-</div>
-
 ``` sql
-select avg(c1) from (select Year, Month, count(*) as c1 from ontime group by Year, Month);
+SELECT avg(c1)
+FROM
+(
+    SELECT Year, Month, count(*) AS c1
+    FROM ontime
+    GROUP BY Year, Month
+);
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-Q1. تعداد پروازهای به تفکیک روز از تاریخ 2000 تا 2008
-
-</div>
+Q1. تعداد پرواز در روز از سال 2000 تا 2008
 
 ``` sql
-SELECT DayOfWeek, count(*) AS c FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC;
+SELECT DayOfWeek, count(*) AS c
+FROM ontime
+WHERE Year>=2000 AND Year<=2008
+GROUP BY DayOfWeek
+ORDER BY c DESC;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-Q2. تعداد پروازهای بیش از 10 دقیقه تاخیر خورده، گروه بندی براساس روزهای هفته از سال 2000 تا 2008
-
-</div>
+Q2. تعداد پروازهای تاخیر بیش از 10 دقیقه, گروه بندی شده توسط روز هفته, برای 2000-2008
 
 ``` sql
-SELECT DayOfWeek, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY DayOfWeek ORDER BY c DESC
+SELECT DayOfWeek, count(*) AS c
+FROM ontime
+WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
+GROUP BY DayOfWeek
+ORDER BY c DESC;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-Q3. تعداد تاخیرها براساس airport از سال 2000 تا 2008
-
-</div>
+پرسش 3 تعداد تاخیر در فرودگاه برای 2000-2008
 
 ``` sql
-SELECT Origin, count(*) AS c FROM ontime WHERE DepDelay>10 AND Year >= 2000 AND Year <= 2008 GROUP BY Origin ORDER BY c DESC LIMIT 10
+SELECT Origin, count(*) AS c
+FROM ontime
+WHERE DepDelay>10 AND Year>=2000 AND Year<=2008
+GROUP BY Origin
+ORDER BY c DESC
+LIMIT 10;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-Q4. تعداد تاخیرها براساس carrier در سال 78
-
-</div>
+پرسش4. تعداد تاخیر توسط حامل برای 2007
 
 ``` sql
-SELECT Carrier, count(*) FROM ontime WHERE DepDelay>10 AND Year = 2007 GROUP BY Carrier ORDER BY count(*) DESC
+SELECT Carrier, count(*)
+FROM ontime
+WHERE DepDelay>10 AND Year=2007
+GROUP BY Carrier
+ORDER BY count(*) DESC;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-Q5. درصد تاخیر ها براساس carrier در سال 2007
-
-</div>
+پرسش 5 درصد تاخیر توسط حامل برای 2007
 
 ``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
@@ -233,21 +247,17 @@ JOIN
 ORDER BY c3 DESC;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-نسخه ی بهتر query
-
-</div>
+نسخه بهتر از پرس و جو همان:
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year = 2007 GROUP BY Carrier ORDER BY c3 DESC
+SELECT Carrier, avg(DepDelay>10)*100 AS c3
+FROM ontime
+WHERE Year=2007
+GROUP BY Carrier
+ORDER BY c3 DESC
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-Q6. مانند query قبلی اما برای طیف وسیعی از سال های 2000 تا 2008
-
-</div>
+س6 درخواست قبلی برای طیف وسیع تری از سال 2000-2008
 
 ``` sql
 SELECT Carrier, c, c2, c*100/c2 as c3
@@ -258,7 +268,7 @@ FROM
         count(*) AS c
     FROM ontime
     WHERE DepDelay>10
-        AND Year >= 2000 AND Year <= 2008
+        AND Year>=2000 AND Year<=2008
     GROUP BY Carrier
 )
 JOIN
@@ -267,27 +277,23 @@ JOIN
         Carrier,
         count(*) AS c2
     FROM ontime
-    WHERE Year >= 2000 AND Year <= 2008
+    WHERE Year>=2000 AND Year<=2008
     GROUP BY Carrier
 ) USING Carrier
 ORDER BY c3 DESC;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-نسخه ی بهتر query
-
-</div>
+نسخه بهتر از پرس و جو همان:
 
 ``` sql
-SELECT Carrier, avg(DepDelay > 10) * 100 AS c3 FROM ontime WHERE Year >= 2000 AND Year <= 2008 GROUP BY Carrier ORDER BY c3 DESC
+SELECT Carrier, avg(DepDelay>10)*100 AS c3
+FROM ontime
+WHERE Year>=2000 AND Year<=2008
+GROUP BY Carrier
+ORDER BY c3 DESC;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-Q7. درصد تاخیر بیش از 10 دقیقه پروازها به تفکیک سال
-
-</div>
+پرسش 7 درصد پرواز به تاخیر افتاد برای بیش از 10 دقیقه, به سال
 
 ``` sql
 SELECT Year, c1/c2
@@ -308,82 +314,93 @@ JOIN
     from ontime
     GROUP BY Year
 ) USING (Year)
-ORDER BY Year
+ORDER BY Year;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-نسخه ی بهتر query
-
-</div>
+نسخه بهتر از پرس و جو همان:
 
 ``` sql
-SELECT Year, avg(DepDelay > 10)*100 FROM ontime GROUP BY Year ORDER BY Year
+SELECT Year, avg(DepDelay>10)*100
+FROM ontime
+GROUP BY Year
+ORDER BY Year;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-Q8. مقصدهای پرطرفدار براساس تعداد اتصال های مستقیم شهرها برای سال 2000 تا 2010
-
-</div>
+س8 محبوب ترین مقصد توسط تعدادی از شهرستانها به طور مستقیم متصل برای محدوده های مختلف سال
 
 ``` sql
-SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime WHERE Year >= 2000 and Year <= 2010 GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
+SELECT DestCityName, uniqExact(OriginCityName) AS u
+FROM ontime
+WHERE Year >= 2000 and Year <= 2010
+GROUP BY DestCityName
+ORDER BY u DESC LIMIT 10;
 ```
-
-<div markdown="1" markdown="1" dir="rtl">
 
 Q9.
 
-</div>
-
 ``` sql
-select Year, count(*) as c1 from ontime group by Year;
+SELECT Year, count(*) AS c1
+FROM ontime
+GROUP BY Year;
 ```
-
-<div markdown="1" markdown="1" dir="rtl">
 
 Q10.
 
-</div>
-
 ``` sql
-select
-   min(Year), max(Year), Carrier, count(*) as cnt,
-   sum(ArrDelayMinutes>30) as flights_delayed,
-   round(sum(ArrDelayMinutes>30)/count(*),2) as rate
+SELECT
+   min(Year), max(Year), Carrier, count(*) AS cnt,
+   sum(ArrDelayMinutes>30) AS flights_delayed,
+   round(sum(ArrDelayMinutes>30)/count(*),2) AS rate
 FROM ontime
 WHERE
-   DayOfWeek not in (6,7) and OriginState not in ('AK', 'HI', 'PR', 'VI')
-   and DestState not in ('AK', 'HI', 'PR', 'VI')
-   and FlightDate < '2010-01-01'
+   DayOfWeek NOT IN (6,7) AND OriginState NOT IN ('AK', 'HI', 'PR', 'VI')
+   AND DestState NOT IN ('AK', 'HI', 'PR', 'VI')
+   AND FlightDate < '2010-01-01'
 GROUP by Carrier
-HAVING cnt > 100000 and max(Year) > 1990
+HAVING cnt>100000 and max(Year)>1990
 ORDER by rate DESC
 LIMIT 1000;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-query های بیشتر:
-
-</div>
+پاداش:
 
 ``` sql
-SELECT avg(cnt) FROM (SELECT Year,Month,count(*) AS cnt FROM ontime WHERE DepDel15=1 GROUP BY Year,Month)
+SELECT avg(cnt)
+FROM
+(
+    SELECT Year,Month,count(*) AS cnt
+    FROM ontime
+    WHERE DepDel15=1
+    GROUP BY Year,Month
+);
 
-select avg(c1) from (select Year,Month,count(*) as c1 from ontime group by Year,Month)
+SELECT avg(c1) FROM
+(
+    SELECT Year,Month,count(*) AS c1
+    FROM ontime
+    GROUP BY Year,Month
+);
 
-SELECT DestCityName, uniqExact(OriginCityName) AS u FROM ontime GROUP BY DestCityName ORDER BY u DESC LIMIT 10;
+SELECT DestCityName, uniqExact(OriginCityName) AS u
+FROM ontime
+GROUP BY DestCityName
+ORDER BY u DESC
+LIMIT 10;
 
-SELECT OriginCityName, DestCityName, count() AS c FROM ontime GROUP BY OriginCityName, DestCityName ORDER BY c DESC LIMIT 10;
+SELECT OriginCityName, DestCityName, count() AS c
+FROM ontime
+GROUP BY OriginCityName, DestCityName
+ORDER BY c DESC
+LIMIT 10;
 
-SELECT OriginCityName, count() AS c FROM ontime GROUP BY OriginCityName ORDER BY c DESC LIMIT 10;
+SELECT OriginCityName, count() AS c
+FROM ontime
+GROUP BY OriginCityName
+ORDER BY c DESC
+LIMIT 10;
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-این تست های performance توسط Vadim Tkachenko انجام شده است. برای اطلاعات بیشتر به لینک های زیر مراجعه کنید:
+این تست عملکرد توسط وادیم تکچنکو ایجاد شد. ببینید:
 
 -   https://www.percona.com/blog/2009/10/02/analyzing-air-traffic-performance-with-infobright-and-monetdb/
 -   https://www.percona.com/blog/2009/10/26/air-traffic-queries-in-luciddb/
@@ -392,6 +409,4 @@ SELECT OriginCityName, count() AS c FROM ontime GROUP BY OriginCityName ORDER BY
 -   https://www.percona.com/blog/2016/01/07/apache-spark-with-air-ontime-performance-data/
 -   http://nickmakos.blogspot.ru/2012/08/analyzing-air-traffic-performance-with.html
 
-</div>
-
-[مقاله اصلی](https://clickhouse.tech/docs/fa/getting_started/example_datasets/ontime/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/getting_started/example_datasets/ontime/) <!--hide-->

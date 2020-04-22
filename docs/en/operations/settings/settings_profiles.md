@@ -1,3 +1,8 @@
+---
+toc_priority: 61
+toc_title: Settings Profiles
+---
+
 # Settings Profiles {#settings-profiles}
 
 A settings profile is a collection of settings grouped under the same name. Each ClickHouse user has a profile.

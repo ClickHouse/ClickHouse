@@ -57,7 +57,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 Также есть возможность установить пакеты вручную, скачав отсюда: https://repo.yandex.ru/clickhouse/rpm/stable/x86\_64.
 
-### Из tgz архивов {#from-tgz-archives}
+### Из Tgz архивов {#from-tgz-archives}
 
 Команда ClickHouse в Яндексе рекомендует использовать предкомпилированные бинарники из `tgz` архивов для всех дистрибутивов, где невозможна установка `deb` и `rpm` пакетов.
 
@@ -97,10 +97,10 @@ sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 
 Можно скомпилировать пакеты и установить их, либо использовать программы без установки пакетов. Также при ручой сборке можно отключить необходимость поддержки набора инструкций SSE 4.2 или собрать под процессоры архитектуры AArch64.
 
-    Client: dbms/programs/clickhouse-client
-    Server: dbms/programs/clickhouse-server
+    Client: programs/clickhouse-client
+    Server: programs/clickhouse-server
 
-Для работы собранного вручную сервера необходимо создать директории для данных и метаданных, а также сделать их `chown` для желаемого пользователя. Пути к этим директориям могут быть изменены в конфигурационном файле сервера (src/dbms/programs/server/config.xml), по умолчанию используются следующие:
+Для работы собранного вручную сервера необходимо создать директории для данных и метаданных, а также сделать их `chown` для желаемого пользователя. Пути к этим директориям могут быть изменены в конфигурационном файле сервера (src/programs/server/config.xml), по умолчанию используются следующие:
 
     /opt/clickhouse/data/default/
     /opt/clickhouse/metadata/default/

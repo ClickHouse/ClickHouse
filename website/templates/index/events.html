@@ -5,7 +5,7 @@
              {% set event = events[0] %}
              <h2>Upcoming Event</h2>
              <p class="lead">
-                 <a class="text-reset" rel="external nofollow" target="_blank"
+                 <a class="text-reset" rel="external nofollow noreferrer" target="_blank"
                     href="{{ event.signup_link  }}">
                     <span class="text-orange">{{ event.event_date }}</span>&nbsp;
                     {{ event.event_name }}
@@ -16,7 +16,7 @@
             <ul class="lead list-unstyled">
             {% for event in events %}
                 <li>
-                    <a class="text-reset" rel="external nofollow" target="_blank"
+                    <a class="text-reset" rel="external nofollow noreferrer" target="_blank"
                     href="{{ event.signup_link  }}">
                     <span class="text-orange">{{ event.event_date }}</span>&nbsp;
                     {{ event.event_name }}

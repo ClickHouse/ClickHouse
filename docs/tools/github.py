@@ -6,44 +6,63 @@ import os
 import sys
 import tarfile
 
-import jinja2
 import requests
 
 import util
 
 
-def choose_latest_releases():
+def yield_candidates():
+    for page in range(1, 100):
+        url = 'https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100&page=%d' % page
+        for candidate in requests.get(url).json():
+            yield candidate
+
+
+def choose_latest_releases(args):
     logging.info('Collecting release candidates')
     seen = collections.OrderedDict()
     candidates = []
-    for page in range(1, 10):
-        url = 'https://api.github.com/repos/ClickHouse/ClickHouse/tags?per_page=100&page=%d' % page
-        candidates += requests.get(url).json()
-    logging.info('Collected all release candidates')
+    stable_count = 0
+    lts_count = 0
 
-    for tag in candidates:
+    for tag in yield_candidates():
         if isinstance(tag, dict):
             name = tag.get('name', '')
-            is_unstable = ('stable' not in name) and ('lts' not in name)
+            is_stable = 'stable' in name
+            is_lts = 'lts' in name
+            is_unstable = not (is_stable or is_lts)
             is_in_blacklist = ('v18' in name) or ('prestable' in name) or ('v1.1' in name)
             if is_unstable or is_in_blacklist:
                 continue
             major_version = '.'.join((name.split('.', 2))[:2])
             if major_version not in seen:
-                seen[major_version] = (name, tag.get('tarball_url'),)
-                if len(seen) > 10:
+                if (stable_count >= args.stable_releases_limit) and (lts_count >= args.lts_releases_limit):
                     break
+
+                payload = (name, tag.get('tarball_url'), is_lts,)
+                if is_lts:
+                    if lts_count < args.lts_releases_limit:
+                        seen[major_version] = payload
+                    lts_count += 1
+                else:
+                    if stable_count < args.stable_releases_limit:
+                        seen[major_version] = payload
+                    stable_count += 1
+
+            logging.debug(
+                f'Stables: {stable_count}/{args.stable_releases_limit} LTS: {lts_count}/{args.lts_releases_limit}'
+            )
         else:
             logging.fatal('Unexpected GitHub response: %s', str(candidates))
             sys.exit(1)
 
-    logging.info('Found stable releases: %s', str(seen.keys()))
+    logging.info('Found stable releases: %s', ', '.join(seen.keys()))
     return seen.items()
 
 
 def process_release(args, callback, release):
-    name, (full_name, tarball_url,) = release
-    logging.info('Building docs for %s', full_name)
+    name, (full_name, tarball_url, is_lts,) = release
+    logging.info(f'Building docs for {full_name}')
     buf = io.BytesIO(requests.get(tarball_url).content)
     tar = tarfile.open(mode='r:gz', fileobj=buf)
     with util.temp_dir() as base_dir:
@@ -52,11 +71,7 @@ def process_release(args, callback, release):
         args.version_prefix = name
         args.is_stable_release = True
         args.docs_dir = os.path.join(base_dir, os.listdir(base_dir)[0], 'docs')
-        try:
-            callback(args)
-        except jinja2.exceptions.TemplateSyntaxError:
-            args.no_docs_macros = True
-            callback(args)
+        callback(args)
 
 
 def build_releases(args, callback):
@@ -84,3 +99,15 @@ def get_events(args):
                         'event_date':  tail[1].replace('on ', '').replace('.', '')
                     })
     return events
+
+
+if __name__ == '__main__':
+    class DummyArgs(object):
+        lts_releases_limit = 1
+        stable_releases_limit = 3
+    logging.basicConfig(
+        level=logging.DEBUG,
+        stream=sys.stderr
+    )
+    for item in choose_latest_releases(DummyArgs()):
+        print(item)
