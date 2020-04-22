@@ -1,7 +1,47 @@
+option (ENABLE_POCO_NETSSL "Use Poco NetSSL library" ${ENABLE_LIBRARIES})
+
+if (NOT ENABLE_SSL)
+    set (ENABLE_POCO_NETSSL OFF)
+endif ()
+
 option (USE_INTERNAL_POCO_LIBRARY "Use internal Poco library" ${NOT_UNBUNDLED})
 
 if (USE_INTERNAL_POCO_LIBRARY)
     set (LIBRARY_DIR ${ClickHouse_SOURCE_DIR}/contrib/poco)
+
+    # Poco::Crypto
+    if (ENABLE_POCO_NETSSL)
+        set (SRCS_CRYPTO
+            ${LIBRARY_DIR}/Crypto/src/Cipher.cpp
+            ${LIBRARY_DIR}/Crypto/src/CipherFactory.cpp
+            ${LIBRARY_DIR}/Crypto/src/CipherImpl.cpp
+            ${LIBRARY_DIR}/Crypto/src/CipherKey.cpp
+            ${LIBRARY_DIR}/Crypto/src/CipherKeyImpl.cpp
+            ${LIBRARY_DIR}/Crypto/src/CryptoException.cpp
+            ${LIBRARY_DIR}/Crypto/src/CryptoStream.cpp
+            ${LIBRARY_DIR}/Crypto/src/CryptoTransform.cpp
+            ${LIBRARY_DIR}/Crypto/src/DigestEngine.cpp
+            ${LIBRARY_DIR}/Crypto/src/ECDSADigestEngine.cpp
+            ${LIBRARY_DIR}/Crypto/src/ECKey.cpp
+            ${LIBRARY_DIR}/Crypto/src/ECKeyImpl.cpp
+            ${LIBRARY_DIR}/Crypto/src/EVPPKey.cpp
+            ${LIBRARY_DIR}/Crypto/src/KeyPair.cpp
+            ${LIBRARY_DIR}/Crypto/src/KeyPairImpl.cpp
+            ${LIBRARY_DIR}/Crypto/src/OpenSSLInitializer.cpp
+            ${LIBRARY_DIR}/Crypto/src/PKCS12Container.cpp
+            ${LIBRARY_DIR}/Crypto/src/RSACipherImpl.cpp
+            ${LIBRARY_DIR}/Crypto/src/RSADigestEngine.cpp
+            ${LIBRARY_DIR}/Crypto/src/RSAKey.cpp
+            ${LIBRARY_DIR}/Crypto/src/RSAKeyImpl.cpp
+            ${LIBRARY_DIR}/Crypto/src/X509Certificate.cpp
+        )
+
+        add_library (poco_crypto ${SRCS_CRYPTO})
+
+        target_compile_options (poco_crypto PUBLIC -Wno-newline-eof)
+        target_include_directories (poco_crypto PUBLIC ${LIBRARY_DIR}/Crypto/include)
+        target_link_libraries (poco_crypto PUBLIC poco_foundation ssl)
+    endif ()
 
     # Poco::Data
 
@@ -428,6 +468,45 @@ if (USE_INTERNAL_POCO_LIBRARY)
     )
     target_include_directories (poco_net PUBLIC ${LIBRARY_DIR}/Net/include)
     target_link_libraries (poco_net PUBLIC poco_foundation)
+
+    # Poco::NetSSL
+    if (ENABLE_POCO_NETSSL)
+        set (SRCS_NETSSL
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/AcceptCertificateHandler.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/CertificateHandlerFactory.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/CertificateHandlerFactoryMgr.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/ConsoleCertificateHandler.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/Context.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/HTTPSClientSession.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/HTTPSSessionInstantiator.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/HTTPSStreamFactory.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/InvalidCertificateHandler.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/KeyConsoleHandler.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/KeyFileHandler.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/PrivateKeyFactory.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/PrivateKeyFactoryMgr.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/PrivateKeyPassphraseHandler.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/RejectCertificateHandler.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/SecureServerSocket.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/SecureServerSocketImpl.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/SecureSMTPClientSession.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/SecureSocketImpl.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/SecureStreamSocket.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/SecureStreamSocketImpl.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/Session.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/SSLException.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/SSLManager.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/Utility.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/VerificationErrorArgs.cpp
+            ${LIBRARY_DIR}/NetSSL_OpenSSL/src/X509Certificate.cpp
+        )
+
+        add_library (poco_netssl ${SRCS_NETSSL})
+
+        target_compile_definitions (poco_netssl PUBLIC USE_POCO_NETSSL=1)
+        target_include_directories (poco_netssl PUBLIC ${LIBRARY_DIR}/NetSSL_OpenSSL/include)
+        target_link_libraries (poco_netssl PUBLIC poco_crypto poco_net poco_util)
+    endif ()
 
     # Poco::Util
 
