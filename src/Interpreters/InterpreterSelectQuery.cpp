@@ -676,7 +676,7 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & context)
 {
     /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
-    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList())
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.array_join_expression_list())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         return limit_length + limit_offset;
