@@ -46,7 +46,7 @@ Chunk::Chunk(MutableColumns columns_, UInt64 num_rows_, ChunkInfoPtr chunk_info_
 
 Chunk Chunk::clone() const
 {
-    return Chunk(getColumns(), getNumRows());
+    return Chunk(getColumns(), getNumRows(), chunk_info);
 }
 
 void Chunk::setColumns(Columns columns_, UInt64 num_rows_)
