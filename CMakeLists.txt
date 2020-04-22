@@ -221,6 +221,11 @@ if (COMPILER_CLANG)
 
     # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
     set(COMPILER_FLAGS "${COMPILER_FLAGS} -fdiagnostics-absolute-paths")
+
+    # Link time optimization
+    set (CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} -flto=thin")
+    set (CMAKE_CXX_FLAGS_RELWITHDEBINFO "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} -flto=thin")
+    set (CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO "${CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO} -flto=thin")
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
