@@ -857,8 +857,9 @@ public:
 class EOF_Packet : public WritePacket, public ReadPacket
 {
 public:
-    int warnings;
-    int status_flags;
+    UInt8 header = 0xfe;
+    int warnings = 0;
+    int status_flags = 0;
 
     EOF_Packet() = default;
     EOF_Packet(int warnings_, int status_flags_) : warnings(warnings_), status_flags(status_flags_)
@@ -871,14 +872,13 @@ public:
 
     void writePayloadImpl(WriteBuffer & buffer) const override
     {
-        buffer.write(0xfe); // EOF header
+        buffer.write(header); // EOF header
         buffer.write(reinterpret_cast<const char *>(&warnings), 2);
         buffer.write(reinterpret_cast<const char *>(&status_flags), 2);
     }
 
     void readPayloadImpl(ReadBuffer & payload) override
     {
-        UInt8 header = 0;
         payload.readStrict(reinterpret_cast<char *>(&header), 1);
         assert(header == 0xfe);
         payload.readStrict(reinterpret_cast<char *>(&warnings), 2);
@@ -889,6 +889,7 @@ public:
 class ERR_Packet : public WritePacket, public ReadPacket
 {
 public:
+    UInt8 header = 0xff;
     int error_code = 0;
     String sql_state;
     String error_message;
@@ -906,7 +907,7 @@ public:
 
     void writePayloadImpl(WriteBuffer & buffer) const override
     {
-        buffer.write(0xff);
+        buffer.write(header);
         buffer.write(reinterpret_cast<const char *>(&error_code), 2);
         buffer.write('#');
         buffer.write(sql_state.data(), sql_state.length());
@@ -915,7 +916,6 @@ public:
 
     void readPayloadImpl(ReadBuffer & payload) override
     {
-        UInt8 header = 0;
         payload.readStrict(reinterpret_cast<char *>(&header), 1);
         assert(header == 0xff);
 
@@ -923,9 +923,9 @@ public:
         payload.ignore(1);
 
         sql_state.resize(5);
-        payload.readStrict(reinterpret_cast<char *>(&sql_state), 5);
+        payload.readStrict(reinterpret_cast<char *>(sql_state.data()), 5);
 
-        readStringUntilEOF(error_message, payload);
+        readNullTerminated(error_message, payload);
     }
 };
 
@@ -941,7 +941,7 @@ public:
 
     void readPayloadImpl(ReadBuffer & payload) override
     {
-        UInt8 header = *payload.position();
+        UInt8 header = static_cast<unsigned char>(*payload.position());
         switch (header)
         {
             case PACKET_OK:
