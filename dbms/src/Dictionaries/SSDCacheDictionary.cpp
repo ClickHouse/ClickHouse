@@ -20,6 +20,7 @@
 #include <ext/bit_cast.h>
 #include <numeric>
 #include <filesystem>
+#include <city.h>
 
 namespace ProfileEvents
 {
@@ -61,6 +62,7 @@ namespace ErrorCodes
     extern const int TOO_SMALL_BUFFER_SIZE;
     extern const int TYPE_MISMATCH;
     extern const int UNSUPPORTED_METHOD;
+    extern const int CORRUPTED_DATA;
 }
 
 namespace
@@ -74,6 +76,7 @@ namespace
     constexpr size_t DEFAULT_MAX_STORED_KEYS = 100000;
 
     constexpr size_t BUFFER_ALIGNMENT = DEFAULT_AIO_FILE_BLOCK_SIZE;
+    constexpr size_t BLOCK_CHECKSUM_SIZE = 8;
     constexpr size_t BLOCK_SPECIAL_FIELDS_SIZE = 4;
 
     static constexpr UInt64 KEY_METADATA_EXPIRES_AT_MASK = std::numeric_limits<std::chrono::system_clock::time_point::rep>::max();
@@ -248,11 +251,12 @@ size_t CachePartition::appendBlock(
     if (!write_buffer)
     {
         write_buffer.emplace(memory->data() + current_memory_block_id * block_size, block_size);
-        uint32_t tmp = 0;
+        uint64_t tmp = 0;
+        write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_CHECKSUM_SIZE);
         write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_SPECIAL_FIELDS_SIZE);
         keys_in_block = 0;
-        // codec = CompressionCodecFactory::instance().get("NONE", std::nullopt);
-        // compressed_buffer.emplace(*write_buffer, codec);
+        //codec = CompressionCodecFactory::instance().get("NONE", std::nullopt);
+        //compressed_buffer.emplace(*write_buffer, codec);
         // hashing_buffer.emplace(*compressed_buffer);
     }
 
@@ -269,6 +273,9 @@ size_t CachePartition::appendBlock(
         if (sizeof(UInt64) > write_buffer->available())
         {
             write_buffer.reset();
+            std::memcpy(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, &keys_in_block, sizeof(keys_in_block)); // set count
+            uint64_t checksum = CityHash_v1_0_2::CityHash64(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE); // checksum
+            std::memcpy(memory->data() + block_size * current_memory_block_id, &checksum, sizeof(checksum));
             if (++current_memory_block_id == write_buffer_size)
                 flush();
             flushed = true;
@@ -291,7 +298,9 @@ size_t CachePartition::appendBlock(
                     if (sizeof(TYPE) > write_buffer->available()) \
                     { \
                         write_buffer.reset(); \
-                        std::memcpy(memory->data() + block_size * current_memory_block_id, &keys_in_block, sizeof(keys_in_block)); /* set count */ \
+                        std::memcpy(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, &keys_in_block, sizeof(keys_in_block)); /* set count */ \
+                        uint64_t checksum = CityHash_v1_0_2::CityHash64(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE); /* checksum */ \
+                        std::memcpy(memory->data() + block_size * current_memory_block_id, &checksum, sizeof(checksum)); \
                         if (++current_memory_block_id == write_buffer_size) \
                             flush(); \
                         flushed = true; \
@@ -328,7 +337,9 @@ size_t CachePartition::appendBlock(
                     if (sizeof(UInt64) + value.size() > write_buffer->available())
                     {
                         write_buffer.reset();
-                        std::memcpy(memory->data() + block_size * current_memory_block_id, &keys_in_block, sizeof(keys_in_block)); // set count
+                        std::memcpy(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, &keys_in_block, sizeof(keys_in_block)); // set count
+                        uint64_t checksum = CityHash_v1_0_2::CityHash64(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE); // checksum
+                        std::memcpy(memory->data() + block_size * current_memory_block_id, &checksum, sizeof(checksum));
                         if (++current_memory_block_id == write_buffer_size)
                             flush();
                         flushed = true;
@@ -354,7 +365,8 @@ size_t CachePartition::appendBlock(
         else //if (current_file_block_id < max_size) // next block in write buffer or flushed to ssd
         {
             write_buffer.emplace(memory->data() + current_memory_block_id * block_size, block_size);
-            uint32_t tmp = 0;
+            uint64_t tmp = 0;
+            write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_CHECKSUM_SIZE);
             write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_SPECIAL_FIELDS_SIZE);
             keys_in_block = 0;
         }
@@ -540,6 +552,7 @@ void CachePartition::getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, 
 template <typename SetFunc>
 void CachePartition::getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc & set) const
 {
+    // Do not check checksum while reading from memory.
     for (size_t i = 0; i < indices.size(); ++i)
     {
         const auto & index = indices[i];
@@ -637,6 +650,16 @@ void CachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, 
                 throw Exception("AIO failed to read file " + path + BIN_FILE_EXT + ". " +
                     "request_id= " + std::to_string(request.aio_data) + ", aio_nbytes=" + std::to_string(request.aio_nbytes) + ", aio_offset=" + std::to_string(request.aio_offset) +
                     "returned: " + std::to_string(events[i].res), ErrorCodes::AIO_READ_ERROR);
+
+            uint64_t checksum = 0;
+            ReadBufferFromMemory buf_special(reinterpret_cast<char *>(request.aio_buf), block_size);
+            readBinary(checksum, buf_special);
+            uint64_t calculated_checksum = CityHash_v1_0_2::CityHash64(reinterpret_cast<char *>(request.aio_buf) + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE);
+            if (checksum != calculated_checksum)
+            {
+                throw Exception("Cache data corrupted. From block = " + std::to_string(checksum) + " calculated = " + std::to_string(calculated_checksum) + ".", ErrorCodes::CORRUPTED_DATA);
+            }
+
             for (const size_t idx : blocks_to_indices[request_id])
             {
                 const auto & [file_index, out_index] = index_to_out[idx];
@@ -718,13 +741,21 @@ void CachePartition::clearOldestBlocks()
     for (size_t i = 0; i < write_buffer_size; ++i)
     {
         ReadBufferFromMemory read_buffer(read_buffer_memory.data() + i * block_size, block_size);
+
+        uint64_t checksum = 0;
+        readBinary(checksum, read_buffer);
+        uint64_t calculated_checksum = CityHash_v1_0_2::CityHash64(read_buffer_memory.data() + i * block_size + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE);
+        if (checksum != calculated_checksum)
+        {
+            throw Exception("Cache data corrupted. From block = " + std::to_string(checksum) + " calculated = " + std::to_string(calculated_checksum) + ".", ErrorCodes::CORRUPTED_DATA);
+        }
+
         uint32_t keys_in_current_block = 0;
         readBinary(keys_in_current_block, read_buffer);
         Poco::Logger::get("GC").information("keys in block: " + std::to_string(keys_in_current_block) + " offset=" + std::to_string(read_buffer.offset()));
         
         for (uint32_t j = 0; j < keys_in_current_block; ++j)
         {
-            //Poco::Logger::get("GC").information(std::to_string(j) + " " + std::to_string(read_buffer.offset()));
             keys.emplace_back();
             readBinary(keys.back(), read_buffer);
 
@@ -756,10 +787,8 @@ void CachePartition::clearOldestBlocks()
 
                 case AttributeUnderlyingType::utString:
                     {
-                        //Poco::Logger::get("GC").information("read string");
                         size_t size = 0;
                         readVarUInt(size, read_buffer);
-                        //Poco::Logger::get("GC").information("read string " + std::to_string(size));
                         read_buffer.ignore(size);
                     }
                     break;

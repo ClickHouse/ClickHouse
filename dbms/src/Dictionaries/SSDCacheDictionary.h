@@ -254,9 +254,9 @@ private:
     std::optional<Memory<>> memory;
     std::optional<WriteBuffer> write_buffer;
     uint32_t keys_in_block = 0;
-    // std::optional<CompressedWriteBuffer> compressed_buffer;
-    // std::optional<HashingWriteBuffer> hashing_buffer;
-    // CompressionCodecPtr codec;
+    //std::optional<CompressedWriteBuffer> compressed_buffer;
+    //std::optional<HashingWriteBuffer> hashing_buffer;
+    //CompressionCodecPtr codec;
 
     size_t current_memory_block_id = 0;
     size_t current_file_block_id = 0;
