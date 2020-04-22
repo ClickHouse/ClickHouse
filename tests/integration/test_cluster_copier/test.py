@@ -310,20 +310,19 @@ def test_copy_with_recovering_after_move_faults(started_cluster, use_sample_offs
 def test_copy_month_to_week_partition(started_cluster):
     execute_task(Task2(started_cluster), [])
 
-
-def test_copy_month_to_week_partition_with_recovering(started_cluster, use_sample_offset):
+def test_copy_month_to_week_partition_with_recovering(started_cluster):
     execute_task(Task2(started_cluster), ['--copy-fault-probability', str(COPYING_FAIL_PROBABILITY)])
 
-def test_copy_month_to_week_partition_with_recovering_after_move_faults(started_cluster, use_sample_offset):
+def test_copy_month_to_week_partition_with_recovering_after_move_faults(started_cluster):
     execute_task(Task2(started_cluster), ['--move-fault-probability', str(MOVING_FAIL_PROBABILITY)])
 
-def test_block_size(started_cluster, use_sample_offset):
+def test_block_size(started_cluster):
     execute_task(Task_test_block_size(started_cluster), [])
 
-def test_no_index(started_cluster, use_sample_offset):
+def test_no_index(started_cluster):
     execute_task(Task_no_index(started_cluster), [])
 
-def test_no_arg(started_cluster, use_sample_offset):
+def test_no_arg(started_cluster):
     execute_task(Task_no_arg(started_cluster), [])
 
 if __name__ == '__main__':
