@@ -105,6 +105,14 @@ static void fillLiteralInfo(DataTypes & nested_types, LiteralInfo & info)
         {
             field_type = Field::Types::String;
         }
+        else if (type_info.isArray())
+        {
+            field_type = Field::Types::Array;
+        }
+        else if (type_info.isTuple())
+        {
+            field_type = Field::Types::Tuple;
+        }
         else
             throw Exception("Unexpected literal type inside Array: " + nested_type->getName() + ". It's a bug",
                             ErrorCodes::LOGICAL_ERROR);
