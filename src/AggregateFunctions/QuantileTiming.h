@@ -189,14 +189,17 @@ namespace detail
             auto & array = const_cast<Array &>(elems);
             if (!array.empty())
             {
-                size_t prev_n = 0;
+                size_t interval_start = 0;
                 for (size_t i = 0; i < size; ++i)
                 {
                     auto level = levels[indices[i]];
                     size_t n = getElementNumber(level);
 
-                    std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
-                    prev_n = n;
+                    if (n + 1 == interval_start)
+                        continue;
+
+                    std::nth_element(array.begin() + interval_start, array.begin() + n, array.end());
+                    interval_start = n + 1;
                 }
             }
         }

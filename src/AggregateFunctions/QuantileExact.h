@@ -89,14 +89,17 @@ struct QuantileExact
     {
         if (!array.empty())
         {
-            size_t prev_n = 0;
+            size_t interval_start = 0;
             for (size_t i = 0; i < size; ++i)
             {
                 auto level = levels[indices[i]];
                 size_t n = getElementNumber(level);
 
-                std::nth_element(array.begin() + prev_n, array.begin() + n, array.end());
-                prev_n = n;
+                if (n + 1 == interval_start)
+                    continue;
+
+                std::nth_element(array.begin() + interval_start, array.begin() + n, array.end());
+                interval_start = n + 1;
             }
         }
     }
@@ -201,10 +204,13 @@ struct QuantileExactExclusive : public QuantileExact<Value>
                     std::swap(array.front(), *std::min_element(array.begin(), array.end()));
                 else
                 {
+                    if (prev_n == n)
+                        continue;
+
                     std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
                     std::swap(array[n], *std::min_element(array.begin() + n, array.end()));
 
-                    prev_n = n - 1;
+                    prev_n = n;
                 }
             }
         }
@@ -302,10 +308,13 @@ struct QuantileExactInclusive : public QuantileExact<Value>
                     std::swap(array.front(), *std::min_element(array.begin(), array.end()));
                 else
                 {
+                    if (prev_n == n)
+                        continue;
+
                     std::nth_element(array.begin() + prev_n, array.begin() + n - 1, array.end());
                     std::swap(array[n], *std::min_element(array.begin() + n, array.end()));
 
-                    prev_n = n - 1;
+                    prev_n = n;
                 }
             }
         }
