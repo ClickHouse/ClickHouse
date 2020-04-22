@@ -84,7 +84,7 @@ namespace
         try
         {
             Poco::File meta_file(metadata_path);
-            auto config = getDictionaryConfigurationFromAST(create_query, database.getDatabaseName());
+            auto config = getDictionaryConfigurationFromAST(create_query);
             time_t modification_time = meta_file.getLastModified().epochTime();
             database.attachDictionary(create_query.table, DictionaryAttachInfo{query, config, modification_time});
         }
@@ -137,6 +137,8 @@ void DatabaseOrdinary::loadStoredObjects(
             if (ast)
             {
                 auto * create_query = ast->as<ASTCreateQuery>();
+                create_query->attach = false;
+                create_query->database = getDatabaseName();
                 file_names[file_name] = ast;
                 total_dictionaries += create_query->is_dictionary;
             }

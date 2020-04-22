@@ -230,13 +230,7 @@ ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
         std::lock_guard lock{mutex};
         auto it = dictionaries.find(dictionary_name);
         if (it != dictionaries.end())
-        {
-            ASTPtr ast = it->second.create_query->clone();
-            auto & create_query = ast->as<ASTCreateQuery &>();
-            create_query.attach = false;
-            create_query.database = getDatabaseName();
-            return ast;
-        }
+            return it->second.create_query;
     }
 
     /// Try to get create query for non-attached dictionary.
