@@ -335,13 +335,7 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(const ASTExpres
         {
             ASTPtr default_expr = col_decl.default_expression->clone();
             if (col_decl.type)
-            {
-                const auto & deduced_type = defaults_sample_block.getByName(column.name + "_tmp").type;
                 column.type = name_type_it->type;
-
-                if (!column.type->equals(*deduced_type))
-                    default_expr = addTypeConversionToAST(std::move(default_expr), column.type->getName());
-            }
             else
                 column.type = defaults_sample_block.getByName(column.name).type;
 
