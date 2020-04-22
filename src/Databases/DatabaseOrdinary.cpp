@@ -84,7 +84,7 @@ namespace
         try
         {
             Poco::File meta_file(metadata_path);
-            auto config = getDictionaryConfigurationFromAST(create_query);
+            auto config = getDictionaryConfigurationFromAST(create_query, database.getDatabaseName());
             time_t modification_time = meta_file.getLastModified().epochTime();
             database.attachDictionary(create_query.table, DictionaryAttachInfo{query, config, modification_time});
         }
