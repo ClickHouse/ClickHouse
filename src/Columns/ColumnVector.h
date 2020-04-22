@@ -105,7 +105,9 @@ private:
 
 public:
     using ValueType = T;
-    using Container = PaddedPODArray<ValueType>;
+    using Container = std::conditional_t<sizeof(T) <= 16 && !std::is_same_v<T, bUInt128>,
+                                         PaddedPODArray<ValueType>,
+                                         std::vector<ValueType>>;
 
 private:
     ColumnVector() {}
@@ -141,15 +143,9 @@ public:
         data.push_back(T());
     }
 
-    virtual void insertManyDefaults(size_t length) override
-    {
-        data.resize_fill(data.size() + length, T());
-    }
+    void insertManyDefaults(size_t length) override;
 
-    void popBack(size_t n) override
-    {
-        data.resize_assume_reserved(data.size() - n);
-    }
+    void popBack(size_t n) override;
 
     StringRef serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const override;
 
@@ -164,15 +160,9 @@ public:
         return data.size() * sizeof(data[0]);
     }
 
-    size_t allocatedBytes() const override
-    {
-        return data.allocated_bytes();
-    }
+    size_t allocatedBytes() const override;
 
-    void protect() override
-    {
-        data.protect();
-    }
+    void protect() override;
 
     void insertValue(const T value)
     {
