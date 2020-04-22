@@ -307,7 +307,7 @@ bool TaskStatsInfoGetter::checkPermissions()
 TaskStatsInfoGetter::TaskStatsInfoGetter() = default;
 TaskStatsInfoGetter::~TaskStatsInfoGetter() = default;
 
-void TaskStatsInfoGetter::getStat(::taskstats &, pid_t)
+void TaskStatsInfoGetter::getStat(::taskstats &, pid_t) const
 {
 }
 
