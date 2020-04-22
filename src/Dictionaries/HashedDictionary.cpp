@@ -772,7 +772,7 @@ BlockInputStreamPtr HashedDictionary::getBlockInputStream(const Names & column_n
 
 void registerDictionaryHashed(DictionaryFactory & factory)
 {
-    auto create_layout = [=](const std::string & full_name,
+    auto create_layout = [](const std::string & full_name,
                              const DictionaryStructure & dict_struct,
                              const Poco::Util::AbstractConfiguration & config,
                              const std::string & config_prefix,
@@ -796,9 +796,9 @@ void registerDictionaryHashed(DictionaryFactory & factory)
     };
     using namespace std::placeholders;
     factory.registerLayout("hashed",
-        [&](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), /* sparse = */ false); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), /* sparse = */ false); }, false);
     factory.registerLayout("sparse_hashed",
-        [&](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), /* sparse = */ true); }, false);
+        [=](auto && a, auto && b, auto && c, auto && d, DictionarySourcePtr e){ return create_layout(a, b, c, d, std::move(e), /* sparse = */ true); }, false);
 }
 
 }
