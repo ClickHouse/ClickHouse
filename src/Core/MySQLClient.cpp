@@ -58,19 +58,19 @@ bool MySQLClient::handshake()
     Native41 native41(password, handshake.auth_plugin_data);
     String auth_plugin_data = native41.getAuthPluginData();
 
-    HandshakeResponse handshakeResponse(
+    HandshakeResponse handshake_response(
         client_capability_flags, max_packet_size, charset_utf8, user, database, auth_plugin_data, mysql_native_password);
-    packet_sender->sendPacket<HandshakeResponse>(handshakeResponse, true);
+    packet_sender->sendPacket<HandshakeResponse>(handshake_response, true);
 
-    PacketResponse packetResponse(handshake.capability_flags);
-    packet_sender->receivePacket(packetResponse);
-    if (packetResponse.getType() != PACKET_ERR)
+    PacketResponse packet_response(handshake.capability_flags);
+    packet_sender->receivePacket(packet_response);
+    if (packet_response.getType() != PACKET_ERR)
     {
         return true;
     }
     else
     {
-        last_error = packetResponse.err.error_message;
+        last_error = packet_response.err.error_message;
         return false;
     }
 }
