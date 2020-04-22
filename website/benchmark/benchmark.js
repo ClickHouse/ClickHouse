@@ -32,7 +32,7 @@ function update_hash() {
 
 
 function generate_selectors(elem) {
-    var html = '<table class="table table-borderless"><tbody><tr id="systems_selector"><th scope="row"><strong class="fake-btn">Compare</strong></th><td>';
+    var html = '<table class="table table-borderless"><tbody><tr id="systems_selector"><th scope="row" class="text-right w-15"><strong class="fake-btn">Compare</strong></th><td>';
 
     var available_results = results;
 
@@ -57,7 +57,7 @@ function generate_selectors(elem) {
 
     html += '</td></tr>';
     if (current_data_size) {
-        html += '<tr id="data_size_selector"><th scope="row"><strong class="fake-btn">Dataset size</strong></th><td>';
+        html += '<tr id="data_size_selector"><th scope="row" class="text-right w-15"><strong class="fake-btn">Dataset&nbsp;size</strong></th><td>';
 
         for (var i = 0; i < data_sizes.length; i++) {
             html += '<button type="button" class="btn btn-outline-dark mr-2 mb-2' + (data_sizes[i].id == current_data_size ? ' active' : '') + '" data-size-id="' + data_sizes[i].id + '">' + data_sizes[i].name + '</button>';
@@ -65,7 +65,7 @@ function generate_selectors(elem) {
     }
 
     html += '</td></tr>';
-    html += '<tr id="runs_selector"><th scope="row"><strong class="fake-btn">Run</strong></th><td>';
+    html += '<tr id="runs_selector"><th scope="row" class="text-right w-15"><strong class="fake-btn">Run</strong></th><td>';
 
     for (var i = 0; i < runs.length; i++) {
         html += '<button type="button" class="btn btn-outline-dark mr-2 mb-2' + (current_runs.indexOf(String(i)) != -1 ? ' active' : '') + '" data-run-id="' + i + '">' + runs[i] + '</button>';
@@ -144,7 +144,7 @@ function format_number_cell(value, ratio) {
 
     html += "<td style='background-color: " + color + "'>";
     html += value ?
-        (ratio == 1 ? "" : ("x" + ratio.toFixed(2))) + "&nbsp;<span style='color: #888;'>(" + value.toFixed(3) + "&nbsp;s.)</span>" :
+        (ratio == 1 ? "" : ("×" + ratio.toFixed(2))) + "&nbsp;<span style='color: #888;'>(" + value.toFixed(3) + "&nbsp;s.)</span>" :
         "—";
     html += "</td>";
 
@@ -172,10 +172,10 @@ function generate_comparison_table() {
 
     var html = "";
 
-    html += "<table class='table table-borderless'>";
+    html += "<table class='table table-bordered'>";
     html += "<tr>";
     html += "<th><input id='query_checkbox_toggler' type='checkbox' checked /></th>";
-    html += "<th style='text-align: left;'>Query</th>";
+    html += "<th>Query</th>";
     for (var j = 0; j < filtered_results.length; j++) {
         html += "<th colspan='" + current_runs.length + "'>" + filtered_results[j].system +
             (filtered_results[j].version ? " (" + filtered_results[j].version + ")" : "") + "</th>";
@@ -187,9 +187,9 @@ function generate_comparison_table() {
         html += "<td><input id='query_checkbox" + i + "' type='checkbox' " +
             ($('#query_checkbox' + i).length == 0 || $('#query_checkbox' + i).is(':checked') ? "checked" : "") + " /></td>";
 
-        html += "<td><div class='query_cell'>" + queries[i].query + "</div></td>";
+            html += "<td class='benchmark-query-cell-wrapper'><div class='benchmark-query-cell'>" + queries[i].query + "</div></td>";
 
-        // Max and min execution time per system, for each of three runs.
+        // Max and min execution time per system, for each of three runs
         var minimums = [0, 0, 0], maximums = [0, 0, 0];
 
         for (var j = 0; j < filtered_results.length; j++) {
@@ -200,7 +200,7 @@ function generate_comparison_table() {
                 if (value && (!minimums[k] || value < minimums[k])) {
                     minimums[k] = value;
 
-                    // Меньше 10 мс. не различаем.
+                    // Ignore below 10ms
                     if (minimums[k] < 0.01) {
                         minimums[k] = 0.01;
                     }
@@ -240,11 +240,11 @@ function generate_comparison_table() {
     if (current_systems.length) {
         html += "<tr>";
         html += "<td rowspan='2'></td>";
-        html += "<td rowspan='2'><div class='query_cell'>Geometric mean of ratios</div></td>";
+        html += "<td rowspan='2'>Geometric mean of ratios</td>";
 
         for (var j = 0; j < filtered_results.length; j++) {
             for (var k = 0; k < current_runs.length; k++) {
-                html += "<th id='totals" + j + "_" + current_runs[k] + "' class='number_cell' style='text-align: center; background-color: #FFF; font-weight: bold;'></th>";
+                html += "<th id='totals" + j + "_" + current_runs[k] + "' class='number_cell text-center'></th>";
             }
         }
 
@@ -252,7 +252,7 @@ function generate_comparison_table() {
         html += "<tr>";
 
         for (var j = 0; j < filtered_results.length; j++) {
-            html += "<th id='absolute_totals" + j + "' colspan='" + current_runs.length + "' class='number_cell' style='text-align: center; background-color: #FFF; font-weight: bold;'></th>";
+            html += "<th id='absolute_totals" + j + "' colspan='" + current_runs.length + "' class='number_cell text-center'></th>";
         }
 
         html += "</tr>";
@@ -369,16 +369,16 @@ function generate_diagram() {
         }
     }
 
-    html += "<table style='width: 100%'>";
+    html += "<table class='table table-borderless'>";
 
     for (var j = 0; j < filtered_results.length; j++) {
         var total_ratio = +$("#absolute_totals" + j).attr("data-ratio");
 
         html += "<tr>";
-        html += "<td style='text-align: right;'><b>" + filtered_results[j].system + "</b>" +
+        html += "<td class='text-right w-15'><strong>" + filtered_results[j].system + "</strong>" +
             (filtered_results[j].version ? "<br />(" + filtered_results[j].version.replace(/ /g, '&nbsp;') + ")" : "") + "</td>";
 
-        html += "<td style='width: 100%; padding-right: 20px;'>";
+        html += "<td class='w-75'>";
 
         for (var current_run_idx = 0; current_run_idx < current_runs.length; current_run_idx++) {
             var k = current_runs[current_run_idx];
@@ -397,7 +397,7 @@ function generate_diagram() {
 
         html += "</td>";
 
-        html += "<td style='text-align: right; font-weight: bold;'>" + (total_ratio / min_total_ratio).toFixed(2) + "</td>";
+        html += "<td class='align-middle'><strong>" + (total_ratio / min_total_ratio).toFixed(2) + "</strong></td>";
         html += "</tr>";
     }
 

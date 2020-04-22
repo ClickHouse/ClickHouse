@@ -170,3 +170,27 @@ a.btn-outline-yellow {
 .dots-cc {
     background: #fff url('/images/dots.svg') repeat-y 50% -17.5%;
 }
+
+.benchmark-query-cell {
+    width: 20rem;
+    white-space: pre;
+    overflow-x: hidden;
+}
+
+.benchmark-query-cell:hover {
+    width: auto;
+    background-color: #efefef;
+    position: absolute;
+    padding: 0.5rem;
+    margin: -0.5rem 0 0 -0.5rem;
+    overflow-x: auto;
+    white-space: normal;
+}
+
+.benchmark-query-cell-wrapper {
+    width: 22rem;
+}
+
+.w-15 {
+    width: 15% !important;
+}
