@@ -18,3 +18,6 @@ endif ()
 
 add_executable (mysql_client mysql_client.cpp)
 target_link_libraries (mysql_client PRIVATE dbms)
+
+add_executable (mysql_protocol mysql_protocol.cpp)
+target_link_libraries (mysql_protocol PRIVATE dbms)
