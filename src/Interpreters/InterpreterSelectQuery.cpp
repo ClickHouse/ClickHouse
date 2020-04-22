@@ -795,6 +795,7 @@ void InterpreterSelectQuery::executeImpl(QueryPlan & query_plan, const BlockInpu
             options.to_stage == QueryProcessingStage::WithMergeableState)
             intermediate_stage = true;
 
+        /// Support optimize_distributed_group_by_sharding_key
         /// Is running on the initiating server during distributed processing?
         if (from_stage == QueryProcessingStage::WithMergeableStateAfterAggregation)
             from_aggregation_stage = true;
