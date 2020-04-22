@@ -64,11 +64,11 @@ bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 {
-    std::lock_guard lock(mutex);
-    return detachTableUnlocked(table_name);
+    std::unique_lock lock(mutex);
+    return detachTableUnlocked(table_name, lock);
 }
 
-StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
+StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &)
 {
     StoragePtr res;
 
@@ -88,13 +88,13 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     return res;
 }
 
-void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path)
+void DatabaseWithOwnTablesBase::attachTable(const String & table_name, const StoragePtr & table, const String &)
 {
-    std::lock_guard lock(mutex);
-    attachTableUnlocked(table_name, table, relative_table_path);
+    std::unique_lock lock(mutex);
+    attachTableUnlocked(table_name, table, lock);
 }
 
-void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table, const String &)
+void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> &)
 {
     if (!tables.emplace(table_name, table).second)
         throw Exception("Table " + database_name + "." + table_name + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
@@ -144,7 +144,7 @@ DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
     }
 }
 
-StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name) const
+StoragePtr DatabaseWithOwnTablesBase::getTableUnlocked(const String & table_name, std::unique_lock<std::mutex> &) const
 {
     auto it = tables.find(table_name);
     if (it != tables.end())

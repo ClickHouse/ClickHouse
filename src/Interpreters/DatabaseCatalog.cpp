@@ -106,7 +106,7 @@ StoragePtr TemporaryTableHolder::getTable() const
 
 void DatabaseCatalog::loadDatabases()
 {
-    drop_delay_s = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_s", 60);
+    drop_delay_sec = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", 60);
 
     auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, *global_context);
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
@@ -499,11 +499,22 @@ DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()
 {
+    /// /clickhouse_root/metadata_dropped/ contains files with metadata of tables,
+    /// which where marked as dropped by Atomic databases.
+    /// Data directories of such tables still exists in store/
+    /// and metadata still exists in ZooKeeper for ReplicatedMergeTree tables.
+    /// If server restarts before such tables was completely dropped,
+    /// we should load them and enqueue cleanup to remove data from store/ and metadata from ZooKeeper
+
     std::map<String, StorageID> dropped_metadata;
     String path = global_context->getPath() + "metadata_dropped/";
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(path); it != dir_end; ++it)
     {
+        /// File name has the following format:
+        /// database_name.table_name.uuid.sql
+
+        /// Ignore unexpected files
         if (!it.name().ends_with(".sql"))
             continue;
 
@@ -555,12 +566,13 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
     assert(!table || table->getStorageID().uuid == table_id.uuid);
     assert(dropped_metadata_path == getPathForDroppedMetadata(table_id));
 
+    /// Table was removed from database. Enqueue removal of its data from disk.
     time_t drop_time;
     if (table)
         drop_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
     else
     {
-        /// Try load table from metadata to drop it correctly (e.g. remove metadata from zk)
+        /// Try load table from metadata to drop it correctly (e.g. remove metadata from zk or remove data from all volumes)
         LOG_INFO(log, "Trying load partially dropped table " << table_id.getNameForLogs() << " from " << dropped_metadata_path);
         ASTPtr ast = DatabaseOnDisk::parseQueryFromMetadata(log, *global_context, dropped_metadata_path, /*throw_on_error*/ false, /*remove_empty*/false);
         auto create = typeid_cast<ASTCreateQuery *>(ast.get());
@@ -599,10 +611,17 @@ void DatabaseCatalog::enqueueDroppedTableCleanup(StorageID table_id, StoragePtr 
         tables_marked_dropped.push_front({table_id, table, dropped_metadata_path, 0});
     else
         tables_marked_dropped.push_back({table_id, table, dropped_metadata_path, drop_time});
+    /// If list of dropped tables was empty, start a drop task
+    if (tables_marked_dropped.size() == 1)
+        (*drop_task)->schedule();
 }
 
 void DatabaseCatalog::dropTableDataTask()
 {
+    /// Background task that removes data of tables which were marked as dropped by Atomic databases.
+    /// Table can be removed when it's not used by queries and drop_delay_sec elapsed since it was marked as dropped.
+
+    bool need_reschedule = true;
     TableMarkedAsDropped table;
     try
     {
@@ -611,7 +630,7 @@ void DatabaseCatalog::dropTableDataTask()
         auto it = std::find_if(tables_marked_dropped.begin(), tables_marked_dropped.end(), [&](const auto & elem)
         {
             bool not_in_use = !elem.table || elem.table.unique();
-            bool old_enough = elem.drop_time + drop_delay_s < current_time;
+            bool old_enough = elem.drop_time + drop_delay_sec < current_time;
             return not_in_use && old_enough;
         });
         if (it != tables_marked_dropped.end())
@@ -620,6 +639,7 @@ void DatabaseCatalog::dropTableDataTask()
             LOG_INFO(log, "Will try drop " + table.table_id.getNameForLogs());
             tables_marked_dropped.erase(it);
         }
+        need_reschedule = !tables_marked_dropped.empty();
     }
     catch (...)
     {
@@ -640,11 +660,16 @@ void DatabaseCatalog::dropTableDataTask()
             {
                 std::lock_guard lock(tables_marked_dropped_mutex);
                 tables_marked_dropped.emplace_back(std::move(table));
+                /// If list of dropped tables was empty, schedule a task to retry deletion.
+                if (tables_marked_dropped.size() == 1)
+                    need_reschedule = true;
             }
         }
     }
 
-    (*drop_task)->scheduleAfter(reschedule_time_ms);
+    /// Do not schedule a task if there is no tables to drop
+    if (need_reschedule)
+        (*drop_task)->scheduleAfter(reschedule_time_ms);
 }
 
 void DatabaseCatalog::dropTableFinally(const TableMarkedAsDropped & table) const
