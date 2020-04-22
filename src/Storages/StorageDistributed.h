@@ -185,8 +185,8 @@ protected:
         std::unique_ptr<StorageDistributedDirectoryMonitor> directory_monitor;
         ConnectionPoolPtr conneciton_pool;
 
-        void flushAllData();
-        void shutdownAndDropAllData();
+        void flushAllData() const;
+        void shutdownAndDropAllData() const;
     };
     std::unordered_map<std::string, ClusterNodeData> cluster_nodes_data;
     std::mutex cluster_nodes_mutex;

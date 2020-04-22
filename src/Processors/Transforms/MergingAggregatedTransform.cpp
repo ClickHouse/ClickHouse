@@ -26,11 +26,11 @@ void MergingAggregatedTransform::consume(Chunk chunk)
     total_input_rows += chunk.getNumRows();
     ++total_input_blocks;
 
-    auto & info = chunk.getChunkInfo();
+    const auto & info = chunk.getChunkInfo();
     if (!info)
         throw Exception("Chunk info was not set for chunk in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 
-    auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+    const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
     if (!agg_info)
         throw Exception("Chunk should have AggregatedChunkInfo in MergingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 

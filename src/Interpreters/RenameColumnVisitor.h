@@ -14,7 +14,7 @@ struct RenameColumnData
     String column_name;
     String rename_to;
 
-    void visit(ASTIdentifier & identifier, ASTPtr & ast);
+    void visit(ASTIdentifier & identifier, ASTPtr & ast) const;
 };
 
 using RenameColumnMatcher = OneTypeMatcher<RenameColumnData>;

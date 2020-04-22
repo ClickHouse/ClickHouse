@@ -407,7 +407,7 @@ Cluster::Cluster(const Settings & settings, const std::vector<std::vector<String
     for (const auto & shard : names)
     {
         Addresses current;
-        for (auto & replica : shard)
+        for (const auto & replica : shard)
             current.emplace_back(replica, username, password, clickhouse_port, secure);
 
         addresses_with_failover.emplace_back(current);

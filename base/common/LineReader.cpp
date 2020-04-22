@@ -127,7 +127,7 @@ LineReader::InputStatus LineReader::readOneLine(const String & prompt)
 #ifdef OS_LINUX
     if (!readline_ptr)
     {
-        for (auto name : {"libreadline.so", "libreadline.so.0", "libeditline.so", "libeditline.so.0"})
+        for (const auto * name : {"libreadline.so", "libreadline.so.0", "libeditline.so", "libeditline.so.0"})
         {
             void * dl_handle = dlopen(name, RTLD_LAZY);
             if (dl_handle)

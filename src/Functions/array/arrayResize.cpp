@@ -44,7 +44,7 @@ public:
         if (arguments[0]->onlyNull())
             return arguments[0];
 
-        auto array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
+        const auto * array_type = typeid_cast<const DataTypeArray *>(arguments[0].get());
         if (!array_type)
             throw Exception("First argument for function " + getName() + " must be an array but it has type "
                             + arguments[0]->getName() + ".", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
@@ -99,20 +99,20 @@ public:
 
         bool is_const = false;
 
-        if (auto const_array_column = typeid_cast<const ColumnConst *>(array_column.get()))
+        if (const auto * const_array_column = typeid_cast<const ColumnConst *>(array_column.get()))
         {
             is_const = true;
             array_column = const_array_column->getDataColumnPtr();
         }
 
-        if (auto argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
+        if (const auto * argument_column_array = typeid_cast<const ColumnArray *>(array_column.get()))
             array_source = GatherUtils::createArraySource(*argument_column_array, is_const, size);
         else
             throw Exception{"First arguments for function " + getName() + " must be array.", ErrorCodes::LOGICAL_ERROR};
 
 
         bool is_appended_const = false;
-        if (auto const_appended_column = typeid_cast<const ColumnConst *>(appended_column.get()))
+        if (const auto * const_appended_column = typeid_cast<const ColumnConst *>(appended_column.get()))
         {
             is_appended_const = true;
             appended_column = const_appended_column->getDataColumnPtr();
