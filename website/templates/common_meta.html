@@ -9,7 +9,7 @@
 
 <meta property="og:title" content="{% if title %}{{ title }}{% else %}{{ _('ClickHouse DBMS') }}{% endif %}"/>
 <meta property="og:description" content="{{ description }}"/>
-<meta property="og:type" content="website" />
+<meta property="og:type" content="{{ og_type or 'website' }}" />
 <meta property="og:image" content="https://clickhouse.tech/images/logo.png" />
 {% if page and page.abs_url %}
     {% set url = 'https://clickhouse.tech' + page.abs_url %}
