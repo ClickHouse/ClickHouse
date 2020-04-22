@@ -264,7 +264,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
 
             for (size_t j = 0; j < current_block.columns(); ++j)
             {
-                auto & src_column = current_block.getByPosition(j).column;
+                const auto & src_column = current_block.getByPosition(j).column;
                 auto & dst_column = job.current_shard_block.getByPosition(j).column;
 
                 /// Zero permutation size has special meaning in IColumn::permute

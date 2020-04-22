@@ -84,7 +84,7 @@ static NamesAndTypesList getColumnsFromTableExpression(const ASTTableExpression 
     else if (table_expression.table_function)
     {
         const auto table_function = table_expression.table_function;
-        const auto * query_context = const_cast<Context *>(&context.getQueryContext());
+        auto * query_context = const_cast<Context *>(&context.getQueryContext());
         const auto & function_storage = query_context->executeTableFunction(table_function);
         const auto & columns = function_storage->getColumns();
         names_and_type_list = columns.getOrdinary();

@@ -73,7 +73,7 @@ static void assertIndexColumnsType(const Block & header)
 
     const DataTypes & columns_data_types = header.getDataTypes();
 
-    for (auto & type : columns_data_types)
+    for (const auto & type : columns_data_types)
     {
         const IDataType * actual_type = BloomFilter::getPrimitiveType(type).get();
         WhichDataType which(actual_type);
