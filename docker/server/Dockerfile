@@ -19,7 +19,6 @@ RUN apt-get update \
             clickhouse-client=$version \
             clickhouse-server=$version \
             locales \
-            tzdata \
             wget \
     && rm -rf \
         /var/lib/apt/lists/* \
