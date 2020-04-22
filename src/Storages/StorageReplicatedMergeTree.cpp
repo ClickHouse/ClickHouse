@@ -3035,7 +3035,7 @@ void StorageReplicatedMergeTree::foreachCommittedParts(const Func & func) const
 {
     auto max_added_blocks = getMaxAddedBlocks();
     auto lock = lockParts();
-    for (auto & part : getDataPartsStateRange(DataPartState::Committed))
+    for (const auto & part : getDataPartsStateRange(DataPartState::Committed))
     {
         if (part->isEmpty())
             continue;
@@ -4512,7 +4512,7 @@ void StorageReplicatedMergeTree::clearOldPartsAndRemoveFromZK()
 
     auto remove_parts_from_filesystem = [log=log] (const DataPartsVector & parts_to_remove)
     {
-        for (auto & part : parts_to_remove)
+        for (const auto & part : parts_to_remove)
         {
             try
             {
