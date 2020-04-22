@@ -127,7 +127,7 @@ void MemoryTracker::alloc(Int64 size)
 
     updatePeak(will_be);
 
-    if (auto loaded_next = parent.load(std::memory_order_relaxed))
+    if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->alloc(size);
 }
 
@@ -173,7 +173,7 @@ void MemoryTracker::free(Int64 size)
         }
     }
 
-    if (auto loaded_next = parent.load(std::memory_order_relaxed))
+    if (auto * loaded_next = parent.load(std::memory_order_relaxed))
         loaded_next->free(size);
 
     if (metric != CurrentMetrics::end())
@@ -227,7 +227,7 @@ namespace CurrentMemoryTracker
 {
     void alloc(Int64 size)
     {
-        if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = DB::CurrentThread::getMemoryTracker())
         {
             Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
             untracked += size;
@@ -250,7 +250,7 @@ namespace CurrentMemoryTracker
 
     void free(Int64 size)
     {
-        if (auto memory_tracker = DB::CurrentThread::getMemoryTracker())
+        if (auto * memory_tracker = DB::CurrentThread::getMemoryTracker())
         {
             Int64 & untracked = DB::CurrentThread::getUntrackedMemory();
             untracked -= size;
@@ -265,7 +265,7 @@ namespace CurrentMemoryTracker
 
 DB::SimpleActionLock getCurrentMemoryTrackerActionLock()
 {
-    auto memory_tracker = DB::CurrentThread::getMemoryTracker();
+    auto * memory_tracker = DB::CurrentThread::getMemoryTracker();
     if (!memory_tracker)
         return {};
     return memory_tracker->blocker.cancel();
