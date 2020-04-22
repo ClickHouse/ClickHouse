@@ -108,7 +108,7 @@ TEST(WeakHash32, ColumnVectorU8)
     auto col = ColumnUInt8::create();
     auto & data = col->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (size_t i = 0; i < 265; ++i)
             data.push_back(i);
@@ -125,7 +125,7 @@ TEST(WeakHash32, ColumnVectorI8)
     auto col = ColumnInt8::create();
     auto & data = col->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int i = -128; i < 128; ++i)
             data.push_back(i);
@@ -142,7 +142,7 @@ TEST(WeakHash32, ColumnVectorU16)
     auto col = ColumnUInt16::create();
     auto & data = col->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (size_t i = 0; i < 65536; ++i)
             data.push_back(i);
@@ -159,7 +159,7 @@ TEST(WeakHash32, ColumnVectorI16)
     auto col = ColumnInt16::create();
     auto & data = col->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int i = -32768; i < 32768; ++i)
             data.push_back(i);
@@ -176,7 +176,7 @@ TEST(WeakHash32, ColumnVectorU32)
     auto col = ColumnUInt32::create();
     auto & data = col->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (uint64_t i = 0; i < 65536; ++i)
             data.push_back(i << 16u);
@@ -193,7 +193,7 @@ TEST(WeakHash32, ColumnVectorI32)
     auto col = ColumnInt32::create();
     auto & data = col->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = -32768; i < 32768; ++i)
             data.push_back(i << 16); //-V610
@@ -210,7 +210,7 @@ TEST(WeakHash32, ColumnVectorU64)
     auto col = ColumnUInt64::create();
     auto & data = col->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (uint64_t i = 0; i < 65536; ++i)
             data.push_back(i << 32u);
@@ -227,7 +227,7 @@ TEST(WeakHash32, ColumnVectorI64)
     auto col = ColumnInt64::create();
     auto & data = col->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = -32768; i < 32768; ++i)
             data.push_back(i << 32); //-V610
@@ -246,7 +246,7 @@ TEST(WeakHash32, ColumnVectorU128)
     auto eq = ColumnUInt32::create();
     auto & eq_data = eq->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (uint64_t i = 0; i < 65536; ++i)
         {
@@ -267,7 +267,7 @@ TEST(WeakHash32, ColumnDecimal32)
     auto col = ColumnDecimal<Decimal32>::create(0, 0);
     auto & data = col->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = -32768; i < 32768; ++i)
             data.push_back(i << 16); //-V610
@@ -284,7 +284,7 @@ TEST(WeakHash32, ColumnDecimal64)
     auto col = ColumnDecimal<Decimal64>::create(0, 0);
     auto & data = col->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = -32768; i < 32768; ++i)
             data.push_back(i << 32); //-V610
@@ -303,7 +303,7 @@ TEST(WeakHash32, ColumnDecimal128)
     auto eq = ColumnUInt32::create();
     auto & eq_data = eq->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (uint64_t i = 0; i < 65536; ++i)
         {
@@ -319,13 +319,13 @@ TEST(WeakHash32, ColumnDecimal128)
     checkColumn(hash.getData(), eq_data, [&](size_t row) { return getHexUIntLowercase(col->getElement(row)); });
 }
 
-TEST(WeakHash32, ColumnString_1)
+TEST(WeakHash32, ColumnString1)
 {
     auto col = ColumnString::create();
     auto eq = ColumnUInt32::create();
     auto & data = eq->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = 0; i < 65536; ++i)
         {
@@ -341,7 +341,7 @@ TEST(WeakHash32, ColumnString_1)
     checkColumn(hash.getData(), data, [&](size_t row) { return col->getDataAt(row).toString(); });
 }
 
-TEST(WeakHash32, ColumnString_2)
+TEST(WeakHash32, ColumnString2)
 {
     auto col = ColumnString::create();
     auto eq = ColumnUInt32::create();
@@ -356,7 +356,7 @@ TEST(WeakHash32, ColumnString_2)
      * bb
      * bbb
      */
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         size_t max_size = 3000;
         char letter = 'a';
@@ -381,7 +381,7 @@ TEST(WeakHash32, ColumnString_2)
     checkColumn(hash.getData(), data, [&](size_t row) { return col->getDataAt(row).toString(); }, allowed_collisions);
 }
 
-TEST(WeakHash32, ColumnString_3)
+TEST(WeakHash32, ColumnString3)
 {
     auto col = ColumnString::create();
     auto eq = ColumnUInt32::create();
@@ -396,7 +396,7 @@ TEST(WeakHash32, ColumnString_3)
      * b\0
      * b\0\0
     */
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         size_t max_size = 3000;
         char letter = 'a';
@@ -426,7 +426,7 @@ TEST(WeakHash32, ColumnFixedString)
     auto eq = ColumnUInt32::create();
     auto & data = eq->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         char letter = 'a';
         for (int64_t i = 0; i < 65536; ++i)
@@ -467,7 +467,7 @@ TEST(WeakHash32, ColumnArray)
      * ...
      */
     UInt64 cur_off = 0;
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         UInt32 cur = 0;
         for (int64_t i = 0; i < 65536; ++i)
@@ -502,7 +502,7 @@ TEST(WeakHash32, ColumnArray)
     checkColumn(hash.getData(), eq_data, print_function);
 }
 
-TEST(WeakHash32, ColumnArray_2)
+TEST(WeakHash32, ColumnArray2)
 {
     auto val = ColumnUInt32::create();
     auto off = ColumnUInt64::create();
@@ -512,7 +512,7 @@ TEST(WeakHash32, ColumnArray_2)
     auto & off_data = off->getData();
 
     UInt64 cur_off = 0;
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (int64_t i = 0; i < 1000; ++i)
         {
@@ -568,7 +568,7 @@ TEST(WeakHash32, ColumnArrayArray)
      */
     UInt64 cur_off = 0;
     UInt64 cur_off2 = 0;
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         UInt32 cur = 1;
         for (int64_t i = 0; i < 3000; ++i)
@@ -603,8 +603,8 @@ TEST(WeakHash32, ColumnArrayArray)
     {
         auto & offsets2 = col_arr_arr->getOffsets();
         size_t s2 = offsets2[row2] - offsets2[row2 - 1];
-        auto & arr2 = typeid_cast<const ColumnArray &>(col_arr_arr->getData());
-        auto & offsets = arr2.getOffsets();
+        const auto & arr2 = typeid_cast<const ColumnArray &>(col_arr_arr->getData());
+        const auto & offsets = arr2.getOffsets();
         size_t row = offsets2[row2];
         size_t s = offsets[row] - offsets[row - 1];
         auto value = arr2.getData().getUInt(offsets[row]);
@@ -640,7 +640,7 @@ TEST(WeakHash32, ColumnLowcardinality)
     auto eq = ColumnUInt8::create();
     auto & data = eq->getData();
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (size_t i = 0; i < 65536; ++i)
         {
@@ -663,7 +663,7 @@ TEST(WeakHash32, ColumnNullable)
     auto & mask_data = mask->getData();
     PaddedPODArray<Int64> eq;
 
-    for (int _i [[maybe_unused]] : {1, 2})
+    for (int idx [[maybe_unused]] : {1, 2})
     {
         for (uint64_t i = 0; i < 65536; ++i)
         {
@@ -681,7 +681,7 @@ TEST(WeakHash32, ColumnNullable)
     checkColumn(hash.getData(), eq, [&](size_t row) { return eq[row] == -1 ? "Null" : std::to_string(eq[row]); });
 }
 
-TEST(WeakHash32, ColumnTuple_UInt64_UInt64)
+TEST(WeakHash32, ColumnTupleUInt64UInt64)
 {
     auto col1 = ColumnUInt64::create();
     auto col2 = ColumnUInt64::create();
@@ -689,9 +689,9 @@ TEST(WeakHash32, ColumnTuple_UInt64_UInt64)
     auto & data2 = col2->getData();
     PaddedPODArray<Int32> eq;
 
-    for (int _i [[maybe_unused]] : {0, 1, 2, 3})
+    for (int idx : {0, 1, 2, 3})
     {
-        auto l = _i % 2;
+        auto l = idx % 2;
 
         for (uint64_t i = 0; i < 65536; ++i)
         {
@@ -719,16 +719,16 @@ TEST(WeakHash32, ColumnTuple_UInt64_UInt64)
     checkColumn(hash.getData(), eq, print_func);
 }
 
-TEST(WeakHash32, ColumnTuple_UInt64_String)
+TEST(WeakHash32, ColumnTupleUInt64String)
 {
     auto col1 = ColumnUInt64::create();
     auto col2 = ColumnString::create();
     auto & data1 = col1->getData();
     PaddedPODArray<Int32> eq;
 
-    for (int _i [[maybe_unused]] : {0, 1, 2, 3})
+    for (int idx : {0, 1, 2, 3})
     {
-        auto l = _i % 2;
+        auto l = idx % 2;
 
         size_t max_size = 3000;
         char letter = 'a';
@@ -765,7 +765,7 @@ TEST(WeakHash32, ColumnTuple_UInt64_String)
     checkColumn(hash.getData(), eq, print_func, allowed_collisions);
 }
 
-TEST(WeakHash32, ColumnTuple_UInt64_FixedString)
+TEST(WeakHash32, ColumnTupleUInt64FixedString)
 {
     size_t max_size = 3000;
     auto col1 = ColumnUInt64::create();
@@ -773,9 +773,9 @@ TEST(WeakHash32, ColumnTuple_UInt64_FixedString)
     auto & data1 = col1->getData();
     PaddedPODArray<Int32> eq;
 
-    for (int _i [[maybe_unused]] : {0, 1, 2, 3})
+    for (int idx : {0, 1, 2, 3})
     {
-        auto l = _i % 2;
+        auto l = idx % 2;
 
         char letter = 'a';
         for (int64_t i = 0; i < 65536; ++i)
@@ -810,7 +810,7 @@ TEST(WeakHash32, ColumnTuple_UInt64_FixedString)
     checkColumn(hash.getData(), eq, print_func);
 }
 
-TEST(WeakHash32, ColumnTuple_UInt64_Array)
+TEST(WeakHash32, ColumnTupleUInt64Array)
 {
     size_t max_size = 3000;
     auto val = ColumnUInt32::create();
@@ -824,9 +824,9 @@ TEST(WeakHash32, ColumnTuple_UInt64_Array)
     auto & data1 = col1->getData();
 
     UInt64 cur_off = 0;
-    for (int _i [[maybe_unused]] : {0, 1, 2, 3})
+    for (int idx : {0, 1, 2, 3})
     {
-        auto l = _i % 2;
+        auto l = idx % 2;
 
         UInt32 cur = 0;
         for (int64_t i = 0; i < 65536; ++i)
@@ -858,8 +858,8 @@ TEST(WeakHash32, ColumnTuple_UInt64_Array)
     {
         std::string l = std::to_string(col_tuple->getColumn(0).getUInt(row));
 
-        auto * col_arr = typeid_cast<const ColumnArray *>(col_tuple->getColumnPtr(1).get());
-        auto & offsets = col_arr->getOffsets();
+        const auto * col_arr = typeid_cast<const ColumnArray *>(col_tuple->getColumnPtr(1).get());
+        const auto & offsets = col_arr->getOffsets();
         size_t s = offsets[row] - offsets[row - 1];
         auto value = col_arr->getData().getUInt(offsets[row]);
         auto r = std::string("[array of size ") + std::to_string(s) + " with values " + std::to_string(value) + "]";

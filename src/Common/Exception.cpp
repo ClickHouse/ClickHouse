@@ -158,12 +158,12 @@ static std::string getExtraExceptionInfo(const std::exception & e)
     String msg;
     try
     {
-        if (auto * file_exception = dynamic_cast<const Poco::FileException *>(&e))
+        if (const auto * file_exception = dynamic_cast<const Poco::FileException *>(&e))
         {
             if (file_exception->code() == ENOSPC)
                 getNoSpaceLeftInfoMessage(file_exception->message(), msg);
         }
-        else if (auto * errno_exception = dynamic_cast<const DB::ErrnoException *>(&e))
+        else if (const auto * errno_exception = dynamic_cast<const DB::ErrnoException *>(&e))
         {
             if (errno_exception->getErrno() == ENOSPC && errno_exception->getPath())
                 getNoSpaceLeftInfoMessage(errno_exception->getPath().value(), msg);

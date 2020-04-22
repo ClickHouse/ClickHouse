@@ -239,9 +239,9 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
     size_t num_array_join = 0;
     size_t num_using = 0;
 
-    for (auto & child : tables->children)
+    for (const auto & child : tables->children)
     {
-        auto table_element = child->as<ASTTablesInSelectQueryElement>();
+        auto * table_element = child->as<ASTTablesInSelectQueryElement>();
         if (!table_element)
             throw Exception("Logical error: TablesInSelectQueryElement expected", ErrorCodes::LOGICAL_ERROR);
 
@@ -260,7 +260,7 @@ bool getTables(ASTSelectQuery & select, std::vector<JoinedElement> & joined_tabl
             continue;
         }
 
-        if (auto * join = t.tableJoin())
+        if (const auto * join = t.tableJoin())
         {
             if (join->kind == ASTTableJoin::Kind::Cross ||
                 join->kind == ASTTableJoin::Kind::Comma)

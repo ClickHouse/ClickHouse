@@ -62,7 +62,7 @@ private:
     void updateMovesTTL(Block & block);
 
     UInt32 getTimestampByIndex(const IColumn * column, size_t ind);
-    bool isTTLExpired(time_t ttl);
+    bool isTTLExpired(time_t ttl) const;
 };
 
 }
