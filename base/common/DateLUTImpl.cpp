@@ -162,6 +162,8 @@ DateLUTImpl::DateLUTImpl(const std::string & time_zone_)
 }
 
 
+#if !defined(ARCADIA_BUILD) /// Arcadia's variant of CCTZ already has the same implementation.
+
 /// Prefer to load timezones from blobs linked to the binary.
 /// The blobs are provided by "tzdata" library.
 /// This allows to avoid dependency on system tzdata.
@@ -227,3 +229,5 @@ namespace cctz_extension
 
     ZoneInfoSourceFactory zone_info_source_factory = custom_factory;
 }
+
+#endif
