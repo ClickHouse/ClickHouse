@@ -168,7 +168,8 @@ public:
             StringRefs & refs, ArenaWithFreeLists & arena, std::vector<bool> & found,
             std::vector<size_t> & default_ids, std::chrono::system_clock::time_point now) const;
 
-    void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out, std::chrono::system_clock::time_point now) const;
+    void has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
+            std::vector<bool> & found, std::chrono::system_clock::time_point now) const;
 
     struct Attribute
     {
@@ -215,9 +216,8 @@ public:
     size_t getElementCount() const;
 
 private:
-    template <typename SetFunc, typename SetDefault>
-    void getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, SetDefault & set_default,
-        std::vector<bool> & found, std::chrono::system_clock::time_point now) const;
+    template <typename SetFunc>
+    void getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, std::vector<bool> & found) const;
 
     template <typename SetFunc>
     void getValueFromMemory(const PaddedPODArray<Index> & indices, SetFunc & set) const;
@@ -245,17 +245,15 @@ private:
         Metadata metadata{};
     };
 
-    //mutable std::unordered_map<UInt64, IndexAndMetadata> key_to_index_and_metadata;
     mutable CLRUCache<UInt64, IndexAndMetadata> key_to_index_and_metadata;
 
     Attribute keys_buffer;
+    //std::vector<Metadata> metadata_buffer;
     const std::vector<AttributeUnderlyingType> attributes_structure;
 
     std::optional<Memory<>> memory;
     std::optional<WriteBuffer> write_buffer;
     uint32_t keys_in_block = 0;
-    //std::optional<CompressedWriteBuffer> compressed_buffer;
-    //std::optional<HashingWriteBuffer> hashing_buffer;
     //CompressionCodecPtr codec;
 
     size_t current_memory_block_id = 0;

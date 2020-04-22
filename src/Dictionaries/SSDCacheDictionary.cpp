@@ -218,29 +218,25 @@ CachePartition::~CachePartition()
 size_t CachePartition::appendDefaults(
     const Attribute & new_keys, const PaddedPODArray<Metadata> & metadata, const size_t begin)
 {
-    std::unique_lock lock(rw_lock);
+    /*std::unique_lock lock(rw_lock);
 
     const auto & ids = std::get<Attribute::Container<UInt64>>(new_keys.values);
     for (size_t index = begin; index < ids.size(); ++index)
     {
-        //auto & index_and_metadata = key_to_index_and_metadata[ids[index]];
         IndexAndMetadata index_and_metadata;
         index_and_metadata.metadata = metadata[index];
         index_and_metadata.metadata.setDefault();
         key_to_index_and_metadata.set(ids[index], index_and_metadata);
     }
-
-    return ids.size() - begin;
+    */
+    return appendBlock(new_keys, Attributes{}, metadata, begin);
 }
 
 size_t CachePartition::appendBlock(
     const Attribute & new_keys, const Attributes & new_attributes, const PaddedPODArray<Metadata> & metadata, const size_t begin)
 {
     std::unique_lock lock(rw_lock);
-    //if (current_file_block_id >= max_size)
-    //    return 0;
-
-    if (new_attributes.size() != attributes_structure.size())
+    if (!new_attributes.empty() && new_attributes.size() != attributes_structure.size())
         throw Exception{"Wrong columns number in block.", ErrorCodes::BAD_ARGUMENTS};
 
     const auto & ids = std::get<Attribute::Container<UInt64>>(new_keys.values);
@@ -248,17 +244,33 @@ size_t CachePartition::appendBlock(
 
     if (!memory)
         memory.emplace(block_size * write_buffer_size, BUFFER_ALIGNMENT);
-    if (!write_buffer)
-    {
+
+    auto init_write_buffer = [&]() {
         write_buffer.emplace(memory->data() + current_memory_block_id * block_size, block_size);
         uint64_t tmp = 0;
         write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_CHECKSUM_SIZE);
         write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_SPECIAL_FIELDS_SIZE);
         keys_in_block = 0;
+    };
+
+    if (!write_buffer)
+    {
+        init_write_buffer();
         //codec = CompressionCodecFactory::instance().get("NONE", std::nullopt);
         //compressed_buffer.emplace(*write_buffer, codec);
         // hashing_buffer.emplace(*compressed_buffer);
     }
+
+    bool flushed = false;
+    auto finish_block = [&]() {
+        write_buffer.reset();
+        std::memcpy(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, &keys_in_block, sizeof(keys_in_block)); // set count
+        uint64_t checksum = CityHash_v1_0_2::CityHash64(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE); // checksum
+        std::memcpy(memory->data() + block_size * current_memory_block_id, &checksum, sizeof(checksum));
+        if (++current_memory_block_id == write_buffer_size)
+            flush();
+        flushed = true;
+    };
 
     for (size_t index = begin; index < ids.size();)
     {
@@ -268,28 +280,21 @@ size_t CachePartition::appendBlock(
         index_and_metadata.index.setAddressInBlock(write_buffer->offset());
         index_and_metadata.metadata = metadata[index];
 
-        bool flushed = false;
-
-        if (sizeof(UInt64) > write_buffer->available())
+        flushed = false;
+        if (2 * sizeof(UInt64) > write_buffer->available()) // place for key and metadata
         {
-            write_buffer.reset();
-            std::memcpy(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, &keys_in_block, sizeof(keys_in_block)); // set count
-            uint64_t checksum = CityHash_v1_0_2::CityHash64(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE); // checksum
-            std::memcpy(memory->data() + block_size * current_memory_block_id, &checksum, sizeof(checksum));
-            if (++current_memory_block_id == write_buffer_size)
-                flush();
-            flushed = true;
+            finish_block();
         }
         else
         {
             writeBinary(ids[index], *write_buffer);
+            writeBinary(metadata[index].data, *write_buffer);
         }
 
         for (const auto & attribute : new_attributes)
         {
             if (flushed)
                 break;
-            // TODO:: переделать через столбцы + getDataAt
             switch (attribute.type)
             {
 #define DISPATCH(TYPE) \
@@ -297,13 +302,7 @@ size_t CachePartition::appendBlock(
                 { \
                     if (sizeof(TYPE) > write_buffer->available()) \
                     { \
-                        write_buffer.reset(); \
-                        std::memcpy(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, &keys_in_block, sizeof(keys_in_block)); /* set count */ \
-                        uint64_t checksum = CityHash_v1_0_2::CityHash64(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE); /* checksum */ \
-                        std::memcpy(memory->data() + block_size * current_memory_block_id, &checksum, sizeof(checksum)); \
-                        if (++current_memory_block_id == write_buffer_size) \
-                            flush(); \
-                        flushed = true; \
+                        finish_block(); \
                         continue; \
                     } \
                     else \
@@ -336,13 +335,7 @@ size_t CachePartition::appendBlock(
                     const auto & value = std::get<Attribute::Container<String>>(attribute.values)[index];
                     if (sizeof(UInt64) + value.size() > write_buffer->available())
                     {
-                        write_buffer.reset();
-                        std::memcpy(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, &keys_in_block, sizeof(keys_in_block)); // set count
-                        uint64_t checksum = CityHash_v1_0_2::CityHash64(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE); // checksum
-                        std::memcpy(memory->data() + block_size * current_memory_block_id, &checksum, sizeof(checksum));
-                        if (++current_memory_block_id == write_buffer_size)
-                            flush();
-                        flushed = true;
+                        finish_block();
                         continue;
                     }
                     else
@@ -356,28 +349,15 @@ size_t CachePartition::appendBlock(
 
         if (!flushed)
         {
-            //key_to_index_and_metadata[ids[index]] = index_and_metadata;
             key_to_index_and_metadata.set(ids[index], index_and_metadata);
             ids_buffer.push_back(ids[index]);
             ++index;
             ++keys_in_block;
         }
-        else //if (current_file_block_id < max_size) // next block in write buffer or flushed to ssd
+        else  // next block in write buffer or flushed to ssd
         {
-            write_buffer.emplace(memory->data() + current_memory_block_id * block_size, block_size);
-            uint64_t tmp = 0;
-            write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_CHECKSUM_SIZE);
-            write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_SPECIAL_FIELDS_SIZE);
-            keys_in_block = 0;
+            init_write_buffer();
         }
-        /*else // flushed to ssd, end of current file
-        {
-            //write_buffer.emplace(memory->data() + current_memory_block_id * block_size + BLOCK_SPECIAL_FIELDS_SIZE, block_size - BLOCK_SPECIAL_FIELDS_SIZE);
-            keys_in_block = 0;
-            //clearOldestBlocks();
-            memory.reset();
-            return index - begin;
-        }*/
     }
     return ids.size() - begin;
 }
@@ -480,16 +460,27 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
 {
     auto set_value = [&](const size_t index, ReadBuffer & buf)
     {
-        ignoreFromBufferToAttributeIndex(attribute_index, buf);
-        readBinary(out[index], buf);
+        buf.ignore(sizeof(Key)); // key
+        Metadata metadata;
+        readVarUInt(metadata.data, buf);
+
+        if (metadata.expiresAt() > now) {
+            if (metadata.isDefault()) {
+                out[index] = get_default(index);     
+            } else {
+                ignoreFromBufferToAttributeIndex(attribute_index, buf);
+                readBinary(out[index], buf);
+            }
+            found[index] = true;
+        }
     };
 
-    auto set_default = [&](const size_t index)
+    /*auto set_default = [&](const size_t index)
     {
         out[index] = get_default(index);
-    };
+    };*/
 
-    getImpl(ids, set_value, set_default, found, now);
+    getImpl(ids, set_value, found);
 }
 
 void CachePartition::getString(const size_t attribute_index, const PaddedPODArray<UInt64> & ids,
@@ -498,26 +489,55 @@ void CachePartition::getString(const size_t attribute_index, const PaddedPODArra
 {
     auto set_value = [&](const size_t index, ReadBuffer & buf)
     {
-        ignoreFromBufferToAttributeIndex(attribute_index, buf);
-        size_t size = 0;
-        readVarUInt(size, buf);
-        char * string_ptr = arena.alloc(size);
-        memcpy(string_ptr, buf.position(), size);
-        refs[index].data = string_ptr;
-        refs[index].size = size;
+        buf.ignore(sizeof(Key)); // key
+        Metadata metadata;
+        readVarUInt(metadata.data, buf);
+
+        if (metadata.expiresAt() > now) {
+            if (metadata.isDefault()) {
+                default_ids.push_back(index);
+            } else {
+                ignoreFromBufferToAttributeIndex(attribute_index, buf);
+                size_t size = 0;
+                readVarUInt(size, buf);
+                char * string_ptr = arena.alloc(size);
+                memcpy(string_ptr, buf.position(), size);
+                refs[index].data = string_ptr;
+                refs[index].size = size;
+            }
+            found[index] = true;
+        }
     };
 
-    auto set_default = [&](const size_t index)
+    /*auto set_default = [&](const size_t index)
     {
+        buf.ignore(sizeof(UInt64)); // key
         default_ids.push_back(index);
-    };
+    };*/
 
-    getImpl(ids, set_value, set_default, found, now);
+    getImpl(ids, set_value, found);
 }
 
-template <typename SetFunc, typename SetDefault>
-void CachePartition::getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, SetDefault & set_default,
+void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
     std::vector<bool> & found, std::chrono::system_clock::time_point now) const
+{
+    auto set_value = [&](const size_t index, ReadBuffer & buf)
+    {
+        buf.ignore(sizeof(Key)); // key
+        Metadata metadata;
+        readVarUInt(metadata.data, buf);
+
+        if (metadata.expiresAt() > now) {
+            out[index] = !metadata.isDefault();
+        }
+    };
+
+    getImpl(ids, set_value, found);
+}
+
+template <typename SetFunc>
+void CachePartition::getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set,
+    std::vector<bool> & found) const
 {
     std::shared_lock lock(rw_lock);
     PaddedPODArray<Index> indices(ids.size());
@@ -528,16 +548,15 @@ void CachePartition::getImpl(const PaddedPODArray<UInt64> & ids, SetFunc & set, 
         {
             indices[i].setNotExists();
         }
-        else if (key_to_index_and_metadata.get(ids[i], index_and_metadata) && index_and_metadata.metadata.expiresAt() > now)
+        else if (key_to_index_and_metadata.get(ids[i], index_and_metadata)/* && index_and_metadata.metadata.expiresAt() > now*/)
         {
-            if (unlikely(index_and_metadata.metadata.isDefault()))
+            /*if (unlikely(index_and_metadata.metadata.isDefault()))
             {
                 indices[i].setNotExists();
-                set_default(i);
+                //set_default(i);
             }
-            else
-                indices[i] = index_and_metadata.index;
-            found[i] = true;
+            else*/
+            indices[i] = index_and_metadata.index;
         }
         else
         {
@@ -758,40 +777,45 @@ void CachePartition::clearOldestBlocks()
         {
             keys.emplace_back();
             readBinary(keys.back(), read_buffer);
-
-            for (size_t attr = 0; attr < attributes_structure.size(); ++attr)
+            Metadata metadata;
+            readBinary(metadata.data, read_buffer);
+            
+            if (!metadata.isDefault())
             {
-
-                switch (attributes_structure[attr])
+                for (size_t attr = 0; attr < attributes_structure.size(); ++attr)
                 {
-        #define DISPATCH(TYPE) \
-                case AttributeUnderlyingType::ut##TYPE: \
-                    read_buffer.ignore(sizeof(TYPE)); \
-                    break;
 
-                    DISPATCH(UInt8)
-                    DISPATCH(UInt16)
-                    DISPATCH(UInt32)
-                    DISPATCH(UInt64)
-                    DISPATCH(UInt128)
-                    DISPATCH(Int8)
-                    DISPATCH(Int16)
-                    DISPATCH(Int32)
-                    DISPATCH(Int64)
-                    DISPATCH(Decimal32)
-                    DISPATCH(Decimal64)
-                    DISPATCH(Decimal128)
-                    DISPATCH(Float32)
-                    DISPATCH(Float64)
-        #undef DISPATCH
-
-                case AttributeUnderlyingType::utString:
+                    switch (attributes_structure[attr])
                     {
-                        size_t size = 0;
-                        readVarUInt(size, read_buffer);
-                        read_buffer.ignore(size);
+            #define DISPATCH(TYPE) \
+                    case AttributeUnderlyingType::ut##TYPE: \
+                        read_buffer.ignore(sizeof(TYPE)); \
+                        break;
+
+                        DISPATCH(UInt8)
+                        DISPATCH(UInt16)
+                        DISPATCH(UInt32)
+                        DISPATCH(UInt64)
+                        DISPATCH(UInt128)
+                        DISPATCH(Int8)
+                        DISPATCH(Int16)
+                        DISPATCH(Int32)
+                        DISPATCH(Int64)
+                        DISPATCH(Decimal32)
+                        DISPATCH(Decimal64)
+                        DISPATCH(Decimal128)
+                        DISPATCH(Float32)
+                        DISPATCH(Float64)
+            #undef DISPATCH
+
+                    case AttributeUnderlyingType::utString:
+                        {
+                            size_t size = 0;
+                            readVarUInt(size, read_buffer);
+                            read_buffer.ignore(size);
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
@@ -813,7 +837,7 @@ void CachePartition::clearOldestBlocks()
 
 void CachePartition::ignoreFromBufferToAttributeIndex(const size_t attribute_index, ReadBuffer & buf) const
 {
-    buf.ignore(sizeof(UInt64));
+    //buf.ignore(2 * sizeof(UInt64)); // key and metadata
     for (size_t i = 0; i < attribute_index; ++i)
     {
         switch (attributes_structure[i])
@@ -850,23 +874,6 @@ void CachePartition::ignoreFromBufferToAttributeIndex(const size_t attribute_ind
     }
 }
 
-void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out, std::chrono::system_clock::time_point now) const
-{
-    std::shared_lock lock(rw_lock);
-    for (size_t i = 0; i < ids.size(); ++i)
-    {
-        IndexAndMetadata index_and_metadata;
-        if (!key_to_index_and_metadata.get(ids[i], index_and_metadata) || index_and_metadata.metadata.expiresAt() <= now)
-        {
-            out[i] = HAS_NOT_FOUND;
-        }
-        else
-        {
-            out[i] = !index_and_metadata.metadata.isDefault();
-        }
-    }
-}
-
 size_t CachePartition::getId() const
 {
     return file_id;
@@ -884,13 +891,13 @@ size_t CachePartition::getElementCount() const
     return key_to_index_and_metadata.size();
 }
 
-PaddedPODArray<CachePartition::Key> CachePartition::getCachedIds(const std::chrono::system_clock::time_point now) const
+PaddedPODArray<CachePartition::Key> CachePartition::getCachedIds(const std::chrono::system_clock::time_point /* now */) const
 {
     const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
 
     PaddedPODArray<Key> array;
     for (const auto & [key, index_and_metadata] : key_to_index_and_metadata)
-        if (!index_and_metadata.second.metadata.isDefault() && index_and_metadata.second.metadata.expiresAt() > now)
+        if (!index_and_metadata.second.metadata.isDefault() /* && index_and_metadata.second.metadata.expiresAt() > now */)
             array.push_back(key);
     return array;
 }
@@ -974,15 +981,20 @@ void CacheStorage::getString(const size_t attribute_index, const PaddedPODArray<
 void CacheStorage::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UInt8> & out,
      std::unordered_map<Key, std::vector<size_t>> & not_found, std::chrono::system_clock::time_point now) const
 {
+    for (size_t i = 0; i < ids.size(); ++i)
+        out[i] = HAS_NOT_FOUND;
+    std::vector<bool> found(ids.size(), false);
+
     {
         std::shared_lock lock(rw_lock);
         for (auto & partition : partitions)
-            partition->has(ids, out, now);
+            partition->has(ids, out, found, now);
 
         for (size_t i = 0; i < ids.size(); ++i)
             if (out[i] == HAS_NOT_FOUND)
                 not_found[ids[i]].push_back(i);
     }
+
     query_count.fetch_add(ids.size(), std::memory_order_relaxed);
     hit_count.fetch_add(ids.size() - not_found.size(), std::memory_order_release);
 }
