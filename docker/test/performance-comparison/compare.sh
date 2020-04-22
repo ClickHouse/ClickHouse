@@ -329,7 +329,7 @@ do
 clickhouse-local --query "
 create view queries as
     select * from file('queries.rep', TSVWithNamesAndTypes,
-        'short int, unstable int, changed int, left float, right float,
+        'short int, changed int, unstable int, left float, right float,
             diff float, rd Array(float), test text, query text');
 
 create view query_log as select *
