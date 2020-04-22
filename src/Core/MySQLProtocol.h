@@ -517,11 +517,9 @@ public:
         buffer.ignore(10);
         if (capability_flags & MySQLProtocol::CLIENT_SECURE_CONNECTION)
         {
-            UInt8 part2_length = (auth_plugin_data_length - AUTH_PLUGIN_DATA_PART_1_LENGTH) > 13
-                ? 13
-                : (auth_plugin_data_length - AUTH_PLUGIN_DATA_PART_1_LENGTH);
-            auth_plugin_data.resize(part2_length + AUTH_PLUGIN_DATA_PART_1_LENGTH - 1);
-            buffer.readStrict(auth_plugin_data.data() + AUTH_PLUGIN_DATA_PART_1_LENGTH, part2_length - 1);
+            UInt8 part2_length = (SCRAMBLE_LENGTH - AUTH_PLUGIN_DATA_PART_1_LENGTH);
+            auth_plugin_data.resize(SCRAMBLE_LENGTH);
+            buffer.readStrict(auth_plugin_data.data() + AUTH_PLUGIN_DATA_PART_1_LENGTH, part2_length);
             buffer.ignore(1);
         }
 
@@ -958,7 +956,7 @@ public:
                 packetType = PACKET_EOF;
                 eof.readPayloadImpl(payload);
                 break;
-        };
+        }
     }
 
     ResponsePacketType getType() { return packetType; }
