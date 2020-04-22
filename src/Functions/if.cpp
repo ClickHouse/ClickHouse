@@ -235,13 +235,13 @@ private:
         const IColumn * col_right_untyped = block.getByPosition(arguments[2]).column.get();
         UInt32 scale = decimalScale<T0, T1>(block, arguments);
 
-        if (auto col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
+        if (const auto * col_right_vec = checkAndGetColumn<ColVecT1>(col_right_untyped))
         {
             NumIfImpl<T0, T1, ResultType>::constantVector(
                 cond_col->getData(), col_left->template getValue<T0>(), col_right_vec->getData(), block, result, scale);
             return true;
         }
-        else if (auto col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
+        else if (const auto * col_right_const = checkAndGetColumnConst<ColVecT1>(col_right_untyped))
         {
             NumIfImpl<T0, T1, ResultType>::constantConstant(
                 cond_col->getData(), col_left->template getValue<T0>(), col_right_const->template getValue<T1>(), block, result, scale);
