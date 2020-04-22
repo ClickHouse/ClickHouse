@@ -8,6 +8,15 @@
 namespace DB
 {
 
+/// All tables in DatabaseAtomic have persistent UUID and store data in
+/// /clickhouse_path/store/xxx/xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy/
+/// where xxxyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy is UUID of the table.
+/// RENAMEs are performed without changing UUID and moving table data.
+/// Tables in Atomic databases can be accessed by UUID through DatabaseCatalog.
+/// On DROP TABLE no data is removed, DatabaseAtomic just marks table as dropped
+/// by moving metadata to /clickhouse_path/metadata_dropped/ and notifies DatabaseCatalog.
+/// Running queries still may use dropped table. Table will be actually removed when it's not in use.
+/// Allows to execute RENAME and DROP without IStorage-level RWLocks
 class DatabaseAtomic : public DatabaseOrdinary
 {
 public:
@@ -48,7 +57,7 @@ private:
 
     void assertDetachedTableNotInUse(const UUID & uuid);
     typedef std::unordered_map<UUID, StoragePtr> DetachedTables;
-    DetachedTables cleenupDetachedTables();
+    [[nodiscard]] DetachedTables cleenupDetachedTables();
 
     void tryCreateSymlink(const String & table_name, const String & actual_data_path);
     void tryRemoveSymlink(const String & table_name);

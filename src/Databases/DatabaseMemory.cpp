@@ -27,8 +27,8 @@ void DatabaseMemory::createTable(
     const StoragePtr & table,
     const ASTPtr & query)
 {
-    std::lock_guard lock{mutex};
-    attachTableUnlocked(table_name, table);
+    std::unique_lock lock{mutex};
+    attachTableUnlocked(table_name, table, lock);
     create_queries.emplace(table_name, query);
 }
 
@@ -37,8 +37,8 @@ void DatabaseMemory::dropTable(
     const String & table_name,
     bool /*no_delay*/)
 {
-    std::lock_guard lock{mutex};
-    auto table = detachTableUnlocked(table_name);
+    std::unique_lock lock{mutex};
+    auto table = detachTableUnlocked(table_name, lock);
     try
     {
         table->drop();
@@ -48,7 +48,7 @@ void DatabaseMemory::dropTable(
     }
     catch (...)
     {
-        attachTableUnlocked(table_name, table);
+        attachTableUnlocked(table_name, table, lock);
         throw;
     }
     table->is_dropped = true;

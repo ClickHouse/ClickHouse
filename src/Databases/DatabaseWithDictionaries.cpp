@@ -36,7 +36,7 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
 {
     String full_name = getDatabaseName() + "." + dictionary_name;
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
         auto [it, inserted] = dictionaries.emplace(dictionary_name, attach_info);
         if (!inserted)
             throw Exception("Dictionary " + full_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
@@ -49,7 +49,8 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
                 StorageDictionary::create(
                     StorageID(getDatabaseName(), dictionary_name),
                     full_name,
-                    ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config)));
+                    ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config)),
+                lock);
         }
         catch (...)
         {
@@ -76,7 +77,7 @@ void DatabaseWithDictionaries::detachDictionaryImpl(const String & dictionary_na
     String full_name = getDatabaseName() + "." + dictionary_name;
 
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
         auto it = dictionaries.find(dictionary_name);
         if (it == dictionaries.end())
             throw Exception("Dictionary " + full_name + " doesn't exist.", ErrorCodes::UNKNOWN_DICTIONARY);
@@ -86,7 +87,7 @@ void DatabaseWithDictionaries::detachDictionaryImpl(const String & dictionary_na
         /// Detach the dictionary as table too.
         try
         {
-            detachTableUnlocked(dictionary_name);
+            detachTableUnlocked(dictionary_name, lock);
         }
         catch (...)
         {

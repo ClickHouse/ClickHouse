@@ -46,9 +46,9 @@ protected:
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger);
 
-    void attachTableUnlocked(const String & table_name, const StoragePtr & table, const String & relative_table_path = {});
-    StoragePtr detachTableUnlocked(const String & table_name);
-    StoragePtr getTableUnlocked(const String & table_name) const;
+    void attachTableUnlocked(const String & table_name, const StoragePtr & table, std::unique_lock<std::mutex> & lock);
+    StoragePtr detachTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock);
+    StoragePtr getTableUnlocked(const String & table_name, std::unique_lock<std::mutex> & lock) const;
 };
 
 }
