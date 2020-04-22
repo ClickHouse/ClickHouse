@@ -248,11 +248,11 @@ IProcessor::Status GroupingAggregatedTransform::prepare()
 
 void GroupingAggregatedTransform::addChunk(Chunk chunk, size_t input)
 {
-    auto & info = chunk.getChunkInfo();
+    const auto & info = chunk.getChunkInfo();
     if (!info)
         throw Exception("Chunk info was not set for chunk in GroupingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 
-    auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+    const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
     if (!agg_info)
         throw Exception("Chunk should have AggregatedChunkInfo in GroupingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 
@@ -275,7 +275,7 @@ void GroupingAggregatedTransform::work()
 {
     if (!single_level_chunks.empty())
     {
-        auto & header = getInputs().front().getHeader();  /// Take header from input port. Output header is empty.
+        const auto & header = getInputs().front().getHeader();  /// Take header from input port. Output header is empty.
         auto block = header.cloneWithColumns(single_level_chunks.back().detachColumns());
         single_level_chunks.pop_back();
         auto blocks = params->aggregator.convertBlockToTwoLevel(block);
@@ -302,8 +302,8 @@ MergingAggregatedBucketTransform::MergingAggregatedBucketTransform(AggregatingTr
 
 void MergingAggregatedBucketTransform::transform(Chunk & chunk)
 {
-    auto & info = chunk.getChunkInfo();
-    auto * chunks_to_merge = typeid_cast<const ChunksToMerge *>(info.get());
+    const auto & info = chunk.getChunkInfo();
+    const auto * chunks_to_merge = typeid_cast<const ChunksToMerge *>(info.get());
 
     if (!chunks_to_merge)
         throw Exception("MergingAggregatedSimpleTransform chunk must have ChunkInfo with type ChunksToMerge.",
@@ -314,12 +314,12 @@ void MergingAggregatedBucketTransform::transform(Chunk & chunk)
     BlocksList blocks_list;
     for (auto & cur_chunk : *chunks_to_merge->chunks)
     {
-        auto & cur_info = cur_chunk.getChunkInfo();
+        const auto & cur_info = cur_chunk.getChunkInfo();
         if (!cur_info)
             throw Exception("Chunk info was not set for chunk in MergingAggregatedBucketTransform.",
                     ErrorCodes::LOGICAL_ERROR);
 
-        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(cur_info.get());
+        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(cur_info.get());
         if (!agg_info)
             throw Exception("Chunk should have AggregatedChunkInfo in MergingAggregatedBucketTransform.",
                     ErrorCodes::LOGICAL_ERROR);
@@ -374,11 +374,11 @@ bool SortingAggregatedTransform::tryPushChunk()
 
 void SortingAggregatedTransform::addChunk(Chunk chunk, size_t from_input)
 {
-    auto & info = chunk.getChunkInfo();
+    const auto & info = chunk.getChunkInfo();
     if (!info)
         throw Exception("Chunk info was not set for chunk in SortingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 
-    auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+    const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
     if (!agg_info)
         throw Exception("Chunk should have AggregatedChunkInfo in SortingAggregatedTransform.", ErrorCodes::LOGICAL_ERROR);
 
