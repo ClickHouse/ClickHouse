@@ -420,7 +420,7 @@ void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs
 }
 
 
-DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query)
+DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query, const std::string & database_)
 {
     checkAST(query);
 
@@ -438,7 +438,7 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
 
     AutoPtr<Poco::XML::Element> database_element(xml_document->createElement("database"));
     current_dictionary->appendChild(database_element);
-    AutoPtr<Text> database(xml_document->createTextNode(query.database));
+    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.database));
     database_element->appendChild(database);
 
     AutoPtr<Element> structure_element(xml_document->createElement("structure"));

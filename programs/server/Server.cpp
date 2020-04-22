@@ -231,7 +231,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
       */
-    global_context = std::make_unique<Context>(Context::createGlobal());
+    auto shared_context = Context::createShared();
+    auto global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+    global_context_ptr = global_context.get();
+
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
@@ -324,7 +327,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
+        global_context_ptr = nullptr;
         global_context.reset();
+        shared_context.reset();
         LOG_DEBUG(log, "Destroyed global context.");
     });
 
@@ -558,7 +563,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     format_schema_path.createDirectories();
 
     /// Limit on total memory usage
-    size_t max_server_memory_usage = settings.max_server_memory_usage;
+    size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);
 
     double max_server_memory_usage_to_ram_ratio = config().getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
     size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;

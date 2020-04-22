@@ -1475,7 +1475,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                     ErrorCodes::ILLEGAL_COLUMN);
             }
         }
-        else if (command.isModifyingData())
+        else if (command.isModifyingData(getInMemoryMetadata()))
         {
             if (columns_alter_type_forbidden.count(command.column_name))
                 throw Exception("Trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);
