@@ -1,14 +1,8 @@
 {% extends 'templates/base.html' %}
 
 {% set title = 'Performance comparison of database management systems' %}
-{% set extra_js = [
-    'queries.js?' + rev_short,
-    'results.js?' + rev_short,
-    '../benchmark.js?' + rev_short]
-%}
-{% set url = 'https://clickhouse.tech/benchmark/dbms/' %}
+{% set extra_js = ['queries.js', 'results.js', '../benchmark.js'] %}
 {% set no_footer = True %}
-
 
 {% block content %}
 <div class="container-fluid py-3">
