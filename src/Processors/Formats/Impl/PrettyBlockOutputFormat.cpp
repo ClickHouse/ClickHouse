@@ -34,7 +34,7 @@ void PrettyBlockOutputFormat::calculateWidths(
 {
     size_t num_rows = chunk.getNumRows();
     size_t num_columns = chunk.getNumColumns();
-    auto & columns = chunk.getColumns();
+    const auto & columns = chunk.getColumns();
 
     widths.resize(num_columns);
     max_widths.resize_fill(num_columns);
@@ -45,8 +45,8 @@ void PrettyBlockOutputFormat::calculateWidths(
     size_t prefix = 2; // Tab character adjustment
     for (size_t i = 0; i < num_columns; ++i)
     {
-        auto & elem = header.getByPosition(i);
-        auto & column = columns[i];
+        const auto & elem = header.getByPosition(i);
+        const auto & column = columns[i];
 
         widths[i].resize(num_rows);
 
@@ -86,8 +86,8 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
 
     auto num_rows = chunk.getNumRows();
     auto num_columns = chunk.getNumColumns();
-    auto & columns = chunk.getColumns();
-    auto & header = getPort(port_kind).getHeader();
+    const auto & columns = chunk.getColumns();
+    const auto & header = getPort(port_kind).getHeader();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -142,7 +142,7 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
         if (i != 0)
             writeCString(" ┃ ", out);
 
-        auto & col = header.getByPosition(i);
+        const auto & col = header.getByPosition(i);
 
         if (format_settings.pretty.color)
             writeCString("\033[1m", out);
@@ -181,7 +181,7 @@ void PrettyBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind)
             if (j != 0)
                 writeCString(" │ ", out);
 
-            auto & type = *header.getByPosition(j).type;
+            const auto & type = *header.getByPosition(j).type;
             writeValueWithPadding(*columns[j], type, i, widths[j].empty() ? max_widths[j] : widths[j][i], max_widths[j]);
         }
 
