@@ -14,8 +14,8 @@ function configure
     rm right/config/config.d/text_log.xml ||:
     cp -rv right/config left ||:
 
-    sed -i 's/<tcp_port>9000/<tcp_port>9001/g' left/config/config.xml
-    sed -i 's/<tcp_port>9000/<tcp_port>9002/g' right/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9001/g' left/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9002/g' right/config/config.xml
 
     # Start a temporary server to rename the tables
     while killall clickhouse-server; do echo . ; sleep 1 ; done
