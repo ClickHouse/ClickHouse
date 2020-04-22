@@ -1,6 +1,5 @@
 #include "BackgroundSchedulePool.h"
 #include <Common/MemoryTracker.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
 #include <Common/setThreadName.h>
 #include <Common/Stopwatch.h>
@@ -9,12 +8,6 @@
 #include <chrono>
 #include <ext/scope_guard.h>
 
-
-namespace CurrentMetrics
-{
-    extern const Metric BackgroundSchedulePoolTask;
-    extern const Metric MemoryTrackingInBackgroundSchedulePool;
-}
 
 namespace DB
 {
@@ -95,7 +88,7 @@ bool BackgroundSchedulePoolTaskInfo::activateAndSchedule()
 void BackgroundSchedulePoolTaskInfo::execute()
 {
     Stopwatch watch;
-    CurrentMetrics::Increment metric_increment{CurrentMetrics::BackgroundSchedulePoolTask};
+    CurrentMetrics::Increment metric_increment{pool.tasks_metric};
 
     std::lock_guard lock_exec(exec_mutex);
 
@@ -155,8 +148,10 @@ Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
 }
 
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size_)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric memory_metric_)
     : size(size_)
+    , tasks_metric(tasks_metric_)
+    , memory_metric(memory_metric_)
 {
     LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Create BackgroundSchedulePool with " << size << " threads");
 
@@ -252,7 +247,7 @@ void BackgroundSchedulePool::threadFunction()
     attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
     if (auto * memory_tracker = CurrentThread::getMemoryTracker())
-        memory_tracker->setMetric(CurrentMetrics::MemoryTrackingInBackgroundSchedulePool);
+        memory_tracker->setMetric(memory_metric);
 
     while (!shutdown)
     {
