@@ -88,7 +88,11 @@ void InternalTextLogsRowOutputStream::write(const Block & block)
         writeCString("> ", wb);
 
         auto source = column_source.getDataAt(row_num);
-        writeString(source, wb);
+        if (color)
+            writeString(setColor(StringRefHash()(source)), wb);
+        DB::writeString(source, wb);
+        if (color)
+            writeCString(resetColor(), wb);
         writeCString(": ", wb);
 
         auto text = column_text.getDataAt(row_num);
