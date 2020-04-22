@@ -21,8 +21,10 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_QUERY;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
 MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
@@ -100,8 +102,21 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
     assertIndexColumnsType(index_sample);
 
     double max_conflict_probability = 0.025;
-    if (node->type->arguments && !node->type->arguments->children.empty())
-        max_conflict_probability = typeid_cast<const ASTLiteral &>(*node->type->arguments->children[0]).value.get<Float64>();
+    const auto & arguments = node->type->arguments;
+
+    if (arguments && arguments->children.size() > 1)
+        throw Exception("BloomFilter index cannot have more than one parameter.", ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
+
+    if (arguments && !arguments->children.empty())
+    {
+        auto argument = arguments->children[0]->as<ASTLiteral>();
+
+        if (!argument || (argument->value.safeGet<Float64>() <= 0 || argument->value.safeGet<Float64>() >= 1))
+            throw Exception("The BloomFilter false positive must be a double number between 0 and 1.", ErrorCodes::BAD_ARGUMENTS);
+
+        max_conflict_probability = argument->value.safeGet<Float64>();
+    }
+
 
     const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(max_conflict_probability);
 
