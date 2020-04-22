@@ -100,7 +100,7 @@ function run_tests
     # changes.
     test_prefix=$([ "$PR_TO_TEST" == "0" ] && echo left || echo right)/performance
 
-    for x in {test-times,skipped-tests}.tsv
+    for x in {test-times,skipped-tests,wall-clock-times}.tsv
     do
         rm -v "$x" ||:
         touch "$x"

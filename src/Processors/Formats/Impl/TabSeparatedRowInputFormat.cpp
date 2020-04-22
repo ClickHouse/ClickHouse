@@ -126,7 +126,7 @@ void TabSeparatedRowInputFormat::fillUnreadColumnsWithDefaults(MutableColumns & 
 
 void TabSeparatedRowInputFormat::readPrefix()
 {
-    if (with_names || with_types)
+    if (with_names || with_types || data_types.at(0)->textCanContainOnlyValidUTF8())
     {
         /// In this format, we assume that column name or type cannot contain BOM,
         ///  so, if format has header,
