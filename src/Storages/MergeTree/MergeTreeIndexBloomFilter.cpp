@@ -109,9 +109,9 @@ std::unique_ptr<IMergeTreeIndex> bloomFilterIndexCreatorNew(
 
     if (arguments && !arguments->children.empty())
     {
-        auto argument = arguments->children[0]->as<ASTLiteral>();
+        const auto & argument = arguments->children[0]->as<ASTLiteral>();
 
-        if (!argument || (argument->value.safeGet<Float64>() <= 0 || argument->value.safeGet<Float64>() >= 1))
+        if (!argument || (argument->value.safeGet<Float64>() < 0 || argument->value.safeGet<Float64>() > 1))
             throw Exception("The BloomFilter false positive must be a double number between 0 and 1.", ErrorCodes::BAD_ARGUMENTS);
 
         max_conflict_probability = argument->value.safeGet<Float64>();
