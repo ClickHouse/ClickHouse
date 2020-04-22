@@ -100,6 +100,7 @@ using AttributeValueVariant = std::variant<
         Float64,
         String>;
 
+
 class CachePartition
 {
 public:
@@ -239,16 +240,9 @@ private:
 
     int fd = -1;
 
-    struct IndexAndMetadata final
-    {
-        Index index{};
-        Metadata metadata{};
-    };
-
-    mutable CLRUCache<UInt64, IndexAndMetadata> key_to_index_and_metadata;
+    mutable CLRUCache<UInt64, Index> key_to_index;
 
     Attribute keys_buffer;
-    //std::vector<Metadata> metadata_buffer;
     const std::vector<AttributeUnderlyingType> attributes_structure;
 
     std::optional<Memory<>> memory;
