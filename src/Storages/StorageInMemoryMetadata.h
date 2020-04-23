@@ -41,6 +41,37 @@ struct StorageInMemoryMetadata
     StorageInMemoryMetadata(const ColumnsDescription & columns_, const IndicesDescription & indices_, const ConstraintsDescription & constraints_);
 
     StorageInMemoryMetadata & operator=(const StorageInMemoryMetadata & other);
+
+    const ColumnsDescription & getColumns() const; /// returns combined set of columns
+    void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
+
+    const ColumnsDescription & getVirtuals() const;
+
+    /// NOTE: these methods should include virtual columns,
+    ///       but should NOT include ALIAS columns (they are treated separately).
+    NameAndTypePair getColumn(const String & column_name) const;
+    bool hasColumn(const String & column_name) const;
+    Block getSampleBlock() const; /// ordinary + materialized.
+    Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
+    Block getSampleBlockNonMaterialized() const; /// ordinary.
+    Block getSampleBlockForColumns(const Names & column_names) const; /// ordinary + materialized + aliases + virtuals.
+    /// Verify that all the requested names are in the table and are set correctly:
+    /// list of names is not empty and the names do not repeat.
+    void check(const Names & column_names, bool include_virtuals = false) const;
+
+    /// Check that all the requested names are in the table and have the correct types.
+    void check(const NamesAndTypesList & columns) const;
+
+    /// Check that all names from the intersection of `names` and `columns` are in the table and have the same types.
+    void check(const NamesAndTypesList & columns, const Names & column_names) const;
+
+    /// Check that the data block contains all the columns of the table with the correct types,
+    /// contains only the columns of the table, and all the columns are different.
+    /// If |need_all| is set, then checks that all the columns of the table are in the block.
+    void check(const Block & block, bool need_all = false) const;
+    /// Returns whether the column is virtual - by default all columns are real.
+    /// Initially reserved virtual column name may be shadowed by real column.
+    bool isVirtualColumn(const String & column_name) const;
 };
 
 }
