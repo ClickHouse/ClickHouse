@@ -175,13 +175,7 @@ int main(int, char **)
             return 1;
         }
 
-        if (!client1.initdb("default"))
-        {
-            std::cerr << "Connect Error: " << client1.error() << std::endl;
-            return 1;
-        }
-
-        if (!client1.query("select 1"))
+        if (!client1.register_slave(123))
         {
             std::cerr << "Connect Error: " << client1.error() << std::endl;
             return 1;
