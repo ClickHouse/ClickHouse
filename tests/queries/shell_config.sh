@@ -75,3 +75,5 @@ function clickhouse_client_removed_host_parameter()
 	# bash regex magic is arcane, but version dependant and weak; sed or awk are not really portable.
 	$(echo "$CLICKHOUSE_CLIENT"  | python -c "import sys, re; print re.sub('--host(\s+|=)[^\s]+', '', sys.stdin.read())") "$@"
 }
+
+export CLICKHOUSE_DATA_PATH=${CLICKHOUSE_DATA_PATH:="/etc/clickhouse-server/data"}
