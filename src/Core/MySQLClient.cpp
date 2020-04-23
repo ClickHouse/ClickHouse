@@ -54,7 +54,6 @@ bool MySQLClient::handshake()
             "Only support " + mysql_native_password + " auth plugin name, but got " + handshake.auth_plugin_name,
             ErrorCodes::UNKNOWN_PACKET_FROM_SERVER);
     }
-    server_capability_flags = handshake.capability_flags;
 
     Native41 native41(password, handshake.auth_plugin_data);
     String auth_plugin_data = native41.getAuthPluginData();
@@ -63,7 +62,7 @@ bool MySQLClient::handshake()
         client_capability_flags, max_packet_size, charset_utf8, user, database, auth_plugin_data, mysql_native_password);
     packet_sender->sendPacket<HandshakeResponse>(handshake_response, true);
 
-    PacketResponse packet_response(server_capability_flags);
+    PacketResponse packet_response(client_capability_flags);
     packet_sender->receivePacket(packet_response);
     packet_sender->resetSequenceId();
     if (packet_response.getType() == PACKET_ERR)
@@ -100,7 +99,7 @@ bool MySQLClient::writeCommand(char command, String query)
     WriteCommand write_command(command, query);
     packet_sender->sendPacket<WriteCommand>(write_command, true);
 
-    PacketResponse packet_response(server_capability_flags);
+    PacketResponse packet_response(client_capability_flags);
     packet_sender->receivePacket(packet_response);
     switch (packet_response.getType())
     {
