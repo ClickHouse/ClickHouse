@@ -176,7 +176,7 @@ void AsynchronousMetrics::update()
             for (auto iterator = db.second->getTablesIterator(); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
-                auto & table = iterator->table();
+                const auto & table = iterator->table();
                 StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
                 StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
 

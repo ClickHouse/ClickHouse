@@ -618,9 +618,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
     ///
 #if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
-    /// QueryProfiler cannot work reliably with any other libunwind or without PHDR cache.
+    /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
+    {
         global_context->initializeTraceCollector();
+
+        /// Set up server-wide memory profiler (for total memory tracker).
+        UInt64 total_memory_profiler_step = config().getUInt64("total_memory_profiler_step", 0);
+        if (total_memory_profiler_step)
+        {
+            total_memory_tracker.setOrRaiseProfilerLimit(total_memory_profiler_step);
+            total_memory_tracker.setProfilerStep(total_memory_profiler_step);
+        }
+    }
 #endif
 
     /// Describe multiple reasons when query profiler cannot work.

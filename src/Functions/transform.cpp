@@ -154,7 +154,7 @@ public:
 
         initialize(array_from->getValue<Array>(), array_to->getValue<Array>(), block, arguments);
 
-        const auto in = block.getByPosition(arguments.front()).column.get();
+        const auto * in = block.getByPosition(arguments.front()).column.get();
 
         if (isColumnConst(*in))
         {
@@ -167,7 +167,7 @@ public:
             default_column = block.getByPosition(arguments[3]).column.get();
 
         auto column_result = block.getByPosition(result).type->createColumn();
-        auto out = column_result.get();
+        auto * out = column_result.get();
 
         if (!executeNum<UInt8>(in, out, default_column)
             && !executeNum<UInt16>(in, out, default_column)
@@ -277,7 +277,7 @@ private:
 
     bool executeString(const IColumn * in_untyped, IColumn * out_untyped, const IColumn * default_untyped)
     {
-        if (const auto in = checkAndGetColumn<ColumnString>(in_untyped))
+        if (const auto * in = checkAndGetColumn<ColumnString>(in_untyped))
         {
             if (!default_untyped)
             {
@@ -379,7 +379,7 @@ private:
     template <typename T>
     bool executeNumToStringWithConstDefault(const ColumnVector<T> * in, IColumn * out_untyped)
     {
-        auto out = typeid_cast<ColumnString *>(out_untyped);
+        auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
             return false;
 
@@ -392,11 +392,11 @@ private:
     template <typename T>
     bool executeNumToStringWithNonConstDefault(const ColumnVector<T> * in, IColumn * out_untyped, const IColumn * default_untyped)
     {
-        auto out = typeid_cast<ColumnString *>(out_untyped);
+        auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
             return false;
 
-        auto default_col = checkAndGetColumn<ColumnString>(default_untyped);
+        const auto * default_col = checkAndGetColumn<ColumnString>(default_untyped);
         if (!default_col)
         {
             throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
@@ -460,7 +460,7 @@ private:
 
     bool executeStringToString(const ColumnString * in, IColumn * out_untyped)
     {
-        auto out = typeid_cast<ColumnString *>(out_untyped);
+        auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
             return false;
 
@@ -470,7 +470,7 @@ private:
 
     bool executeStringToStringWithConstDefault(const ColumnString * in, IColumn * out_untyped)
     {
-        auto out = typeid_cast<ColumnString *>(out_untyped);
+        auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
             return false;
 
@@ -482,11 +482,11 @@ private:
 
     bool executeStringToStringWithNonConstDefault(const ColumnString * in, IColumn * out_untyped, const IColumn * default_untyped)
     {
-        auto out = typeid_cast<ColumnString *>(out_untyped);
+        auto * out = typeid_cast<ColumnString *>(out_untyped);
         if (!out)
             return false;
 
-        auto default_col = checkAndGetColumn<ColumnString>(default_untyped);
+        const auto * default_col = checkAndGetColumn<ColumnString>(default_untyped);
         if (!default_col)
         {
             throw Exception{"Illegal column " + default_untyped->getName() + " of fourth argument of function " + getName(),
@@ -530,7 +530,7 @@ private:
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));    /// little endian.
             else
-                dst[i] = dst_default[i];
+                dst[i] = dst_default[i]; // NOLINT
         }
     }
 
@@ -613,7 +613,7 @@ private:
         {
             StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
             current_src_offset = src_offsets[i];
-            auto it = table.find(ref);
+            const auto * it = table.find(ref);
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
             else
@@ -634,11 +634,11 @@ private:
         {
             StringRef ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
             current_src_offset = src_offsets[i];
-            auto it = table.find(ref);
+            const auto * it = table.find(ref);
             if (it)
                 memcpy(&dst[i], &it->getMapped(), sizeof(dst[i]));
             else
-                dst[i] = dst_default[i];
+                dst[i] = dst_default[i]; // NOLINT
         }
     }
 
@@ -657,7 +657,7 @@ private:
             StringRef src_ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
             current_src_offset = src_offsets[i];
 
-            auto it = table.find(src_ref);
+            const auto * it = table.find(src_ref);
 
             StringRef dst_ref = it ? it->getMapped() : (with_default ? dst_default : src_ref);
             dst_data.resize(current_dst_offset + dst_ref.size);
@@ -697,7 +697,7 @@ private:
             StringRef src_ref{&src_data[current_src_offset], src_offsets[i] - current_src_offset};
             current_src_offset = src_offsets[i];
 
-            auto it = table.find(src_ref);
+            const auto * it = table.find(src_ref);
             StringRef dst_ref;
 
             if (it)

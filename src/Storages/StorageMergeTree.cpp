@@ -552,8 +552,12 @@ bool StorageMergeTree::merge(
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *)
+        auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *) -> bool
         {
+            /// This predicate is checked for the first part of each partition.
+            /// (left = nullptr, right = "first part of partition")
+            if (!left)
+                return !currently_merging_mutating_parts.count(right);
             return !currently_merging_mutating_parts.count(left) && !currently_merging_mutating_parts.count(right)
                 && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
         };

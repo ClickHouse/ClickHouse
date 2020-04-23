@@ -755,7 +755,7 @@ std::optional<UInt64> StorageBuffer::totalRows() const
         return underlying_rows;
 
     UInt64 rows = 0;
-    for (auto & buffer : buffers)
+    for (const auto & buffer : buffers)
     {
         std::lock_guard lock(buffer.mutex);
         rows += buffer.data.rows();
@@ -766,7 +766,7 @@ std::optional<UInt64> StorageBuffer::totalRows() const
 std::optional<UInt64> StorageBuffer::totalBytes() const
 {
     UInt64 bytes = 0;
-    for (auto & buffer : buffers)
+    for (const auto & buffer : buffers)
     {
         std::lock_guard lock(buffer.mutex);
         bytes += buffer.data.bytes();

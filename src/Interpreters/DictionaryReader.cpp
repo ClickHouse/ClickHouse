@@ -76,7 +76,7 @@ DictionaryReader::DictionaryReader(const String & dictionary_name, const Names &
 
     sample_block.insert(dict_name);
 
-    for (auto & columns_name : src_column_names)
+    for (const auto & columns_name : src_column_names)
     {
         ColumnWithTypeAndName name;
         name.name = "col_" + columns_name;
@@ -136,7 +136,7 @@ void DictionaryReader::readKeys(const IColumn & keys, Block & out_block, ColumnV
     size_t rows = key_column.column->size();
 
     /// calculate dictGet()
-    for (auto & func : functions_get)
+    for (const auto & func : functions_get)
         func.execute(working_block, rows);
 
     /// make result: copy header block with correct names and move data columns
@@ -154,7 +154,7 @@ void DictionaryReader::readKeys(const IColumn & keys, Block & out_block, ColumnV
 Block DictionaryReader::makeResultBlock(const NamesAndTypesList & names)
 {
     Block block;
-    for (auto & nm : names)
+    for (const auto & nm : names)
     {
         ColumnWithTypeAndName column{nullptr, nm.type, nm.name};
         if (column.type->isNullable())

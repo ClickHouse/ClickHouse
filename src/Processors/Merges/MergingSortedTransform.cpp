@@ -41,7 +41,7 @@ void MergingSortedTransform::onFinish()
     if (quiet)
         return;
 
-    auto & merged_data = algorithm.getMergedData();
+    const auto & merged_data = algorithm.getMergedData();
 
     auto * log = &Logger::get("MergingSortedTransform");
 

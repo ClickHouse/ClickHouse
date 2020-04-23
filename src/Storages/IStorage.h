@@ -197,7 +197,7 @@ private:
 
 private:
     RWLockImpl::LockHolder tryLockTimed(
-            const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout);
+            const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
 
 public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of

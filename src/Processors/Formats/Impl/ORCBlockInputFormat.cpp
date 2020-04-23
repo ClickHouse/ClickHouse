@@ -27,7 +27,7 @@ Chunk ORCBlockInputFormat::generate()
 {
     Chunk res;
 
-    auto &header = getPort().getHeader();
+    const auto & header = getPort().getHeader();
 
     if (!in.eof())
     {

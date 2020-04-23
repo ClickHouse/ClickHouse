@@ -96,7 +96,7 @@ StoragePtr StorageMerge::getFirstTable(F && predicate) const
 
     while (iterator->isValid())
     {
-        auto & table = iterator->table();
+        const auto & table = iterator->table();
         if (table.get() != this && predicate(table))
             return table;
 
@@ -146,7 +146,7 @@ QueryProcessingStage::Enum StorageMerge::getQueryProcessingStage(const Context &
 
     while (iterator->isValid())
     {
-        auto & table = iterator->table();
+        const auto & table = iterator->table();
         if (table.get() != this)
         {
             ++selected_table_size;
@@ -232,7 +232,7 @@ Pipes StorageMerge::read(
         remaining_streams -= current_streams;
         current_streams = std::max(size_t(1), current_streams);
 
-        auto & storage = std::get<0>(table);
+        const auto & storage = std::get<0>(table);
 
         /// If sampling requested, then check that table supports it.
         if (query_info.query->as<ASTSelectQuery>()->sampleSize() && !storage->supportsSampling())
@@ -258,7 +258,7 @@ Pipes StorageMerge::createSources(const SelectQueryInfo & query_info, const Quer
     const std::shared_ptr<Context> & modified_context, size_t streams_num, bool has_table_virtual_column,
     bool concat_streams)
 {
-    auto & [storage, struct_lock, table_name] = storage_with_lock;
+    const auto & [storage, struct_lock, table_name] = storage_with_lock;
     SelectQueryInfo modified_query_info = query_info;
     modified_query_info.query = query_info.query->clone();
 
@@ -363,7 +363,7 @@ StorageMerge::StorageListWithLocks StorageMerge::getSelectedTables(const String 
 
     while (iterator->isValid())
     {
-        auto & table = iterator->table();
+        const auto & table = iterator->table();
         if (table.get() != this)
             selected_tables.emplace_back(
                     table, table->lockStructureForShare(false, query_id, settings.lock_acquire_timeout), iterator->name());
