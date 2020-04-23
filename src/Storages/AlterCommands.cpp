@@ -455,7 +455,7 @@ void AlterCommand::apply(StorageInMemoryMetadata & metadata) const
         metadata.columns.rename(column_name, rename_to);
         RenameColumnData rename_data{column_name, rename_to};
         RenameColumnVisitor rename_visitor(rename_data);
-        for (auto & column : metadata.columns)
+        for (const auto & column : metadata.columns)
         {
             metadata.columns.modify(column.name, [&](ColumnDescription & column_to_modify)
             {
@@ -733,7 +733,7 @@ void AlterCommands::validate(const StorageInMemoryMetadata & metadata, const Con
     NameToNameMap renames_map;
     for (size_t i = 0; i < size(); ++i)
     {
-        auto & command = (*this)[i];
+        const auto & command = (*this)[i];
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)

@@ -30,7 +30,7 @@ CSVRowInputFormat::CSVRowInputFormat(const Block & header_, ReadBuffer & in_, co
         throw Exception(String("CSV format may not work correctly with delimiter '") + format_settings.csv.delimiter +
                         "'. Try use CustomSeparated format instead.", ErrorCodes::BAD_ARGUMENTS);
 
-    auto & sample = getPort().getHeader();
+    const auto & sample = getPort().getHeader();
     size_t num_columns = sample.columns();
 
     data_types.resize(num_columns);
@@ -152,7 +152,7 @@ void CSVRowInputFormat::readPrefix()
     skipBOMIfExists(in);
 
     size_t num_columns = data_types.size();
-    auto & header = getPort().getHeader();
+    const auto & header = getPort().getHeader();
 
     if (with_names)
     {
@@ -275,7 +275,7 @@ bool CSVRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns & columns,
 
         if (column_indexes_for_input_fields[file_column].has_value())
         {
-            auto & header = getPort().getHeader();
+            const auto & header = getPort().getHeader();
             size_t col_idx = column_indexes_for_input_fields[file_column].value();
             if (!deserializeFieldAndPrintDiagnosticInfo(header.getByPosition(col_idx).name, data_types[col_idx], *columns[col_idx],
                                                         out, file_column))

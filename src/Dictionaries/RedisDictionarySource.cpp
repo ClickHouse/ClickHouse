@@ -164,7 +164,7 @@ namespace DB
 
         RedisArray keys;
         auto key_type = storageTypeToKeyType(storage_type);
-        for (auto & key : all_keys)
+        for (const auto & key : all_keys)
             if (key_type == client->execute<String>(RedisCommand("TYPE").addRedisType(key)))
                 keys.addRedisType(std::move(key));
 

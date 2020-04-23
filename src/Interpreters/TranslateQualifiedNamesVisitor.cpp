@@ -37,7 +37,7 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
 
     const String & short_name = identifier.shortName();
     const Names & column_names = tables[table_pos].columns;
-    for (auto & known_name : column_names)
+    for (const auto & known_name : column_names)
     {
         if (short_name == known_name)
             return false;
@@ -48,7 +48,7 @@ bool TranslateQualifiedNamesMatcher::Data::unknownColumn(size_t table_pos, const
     }
 
     const Names & hidden_names = tables[table_pos].hidden_columns;
-    for (auto & known_name : hidden_names)
+    for (const auto & known_name : hidden_names)
     {
         if (short_name == known_name)
             return false;
@@ -109,7 +109,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTIdentifier & identifier, ASTPtr &,
 
             /// In case if column from the joined table are in source columns, change it's name to qualified.
             /// Also always leave unusual identifiers qualified.
-            auto & table = data.tables[table_pos].table;
+            const auto & table = data.tables[table_pos].table;
             if (table_pos && (data.hasColumn(short_name) || !isValidIdentifierBegin(short_name.at(0))))
                 IdentifierSemantic::setColumnLongName(identifier, table);
             else
@@ -157,7 +157,7 @@ void TranslateQualifiedNamesMatcher::visit(ASTTableJoin & join, const ASTPtr & ,
 
 void TranslateQualifiedNamesMatcher::visit(ASTSelectQuery & select, const ASTPtr & , Data & data)
 {
-    if (auto join = select.join())
+    if (const auto * join = select.join())
         extractJoinUsingColumns(join->table_join, data);
 
     /// If the WHERE clause or HAVING consists of a single qualified column, the reference must be translated not only in children,

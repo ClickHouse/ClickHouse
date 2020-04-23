@@ -66,7 +66,7 @@ std::optional<UUID> MultipleAccessStorage::findImpl(std::type_index type, const 
     std::vector<const Storage *> storages_with_duplicates;
     for (const auto & id : ids)
     {
-        auto * storage = findStorage(id);
+        const auto * storage = findStorage(id);
         if (storage)
             storages_with_duplicates.push_back(storage);
     }
@@ -207,7 +207,7 @@ void MultipleAccessStorage::updateImpl(const UUID & id, const UpdateFunc & updat
 
 ext::scope_guard MultipleAccessStorage::subscribeForChangesImpl(const UUID & id, const OnChangedHandler & handler) const
 {
-    auto storage = findStorage(id);
+    const auto * storage = findStorage(id);
     if (!storage)
         return {};
     return storage->subscribeForChanges(id, handler);

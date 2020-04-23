@@ -36,16 +36,18 @@ namespace ErrorCodes
 DatabasePtr DatabaseFactory::get(
     const String & database_name, const String & metadata_path, const ASTStorage * engine_define, Context & context)
 {
+    bool created = false;
+
     try
     {
-        Poco::File(metadata_path).createDirectory();
+        created = Poco::File(metadata_path).createDirectory();
         return getImpl(database_name, metadata_path, engine_define, context);
     }
     catch (...)
     {
         Poco::File metadata_dir(metadata_path);
 
-        if (metadata_dir.exists())
+        if (created && metadata_dir.exists())
             metadata_dir.remove(true);
 
         throw;

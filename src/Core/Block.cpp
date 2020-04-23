@@ -194,7 +194,7 @@ const ColumnWithTypeAndName * Block::findByName(const std::string & name) const
 
 const ColumnWithTypeAndName & Block::getByName(const std::string & name) const
 {
-    auto * result = findByName(name);
+    const auto * result = findByName(name);
     if (!result)
         throw Exception("Not found column " + name + " in block. There are only columns: " + dumpNames()
             , ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);

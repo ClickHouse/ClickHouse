@@ -94,7 +94,7 @@ cd docker/test/integration
 docker build -t yandex/clickhouse-integration-test .
 ```
 
-The helper container used by the `runner` script is in `tests/integration/image/Dockerfile`.
+The helper container used by the `runner` script is in `docker/test/integration/runner/Dockerfile`.
 
 ### Adding new tests
 

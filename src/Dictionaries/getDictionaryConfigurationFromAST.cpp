@@ -338,17 +338,17 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
         AutoPtr<Element> current_xml_element(doc->createElement(pair->first));
         root->appendChild(current_xml_element);
 
-        if (auto identifier = pair->second->as<const ASTIdentifier>(); identifier)
+        if (const auto * identifier = pair->second->as<const ASTIdentifier>(); identifier)
         {
             AutoPtr<Text> value(doc->createTextNode(identifier->name));
             current_xml_element->appendChild(value);
         }
-        else if (auto literal = pair->second->as<const ASTLiteral>(); literal)
+        else if (const auto * literal = pair->second->as<const ASTLiteral>(); literal)
         {
             AutoPtr<Text> value(doc->createTextNode(getFieldAsString(literal->value)));
             current_xml_element->appendChild(value);
         }
-        else if (auto list = pair->second->as<const ASTExpressionList>(); list)
+        else if (const auto * list = pair->second->as<const ASTExpressionList>(); list)
         {
             buildConfigurationFromFunctionWithKeyValueArguments(doc, current_xml_element, list);
         }
@@ -420,7 +420,7 @@ void checkPrimaryKey(const NamesToTypeNames & all_attrs, const Names & key_attrs
 }
 
 
-DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query)
+DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuery & query, const std::string & database_)
 {
     checkAST(query);
 
@@ -438,13 +438,13 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
 
     AutoPtr<Poco::XML::Element> database_element(xml_document->createElement("database"));
     current_dictionary->appendChild(database_element);
-    AutoPtr<Text> database(xml_document->createTextNode(query.database));
+    AutoPtr<Text> database(xml_document->createTextNode(!database_.empty() ? database_ : query.database));
     database_element->appendChild(database);
 
     AutoPtr<Element> structure_element(xml_document->createElement("structure"));
     current_dictionary->appendChild(structure_element);
     Names pk_attrs = getPrimaryKeyColumns(query.dictionary->primary_key);
-    auto dictionary_layout = query.dictionary->layout;
+    auto * dictionary_layout = query.dictionary->layout;
 
     bool complex = DictionaryFactory::instance().isComplex(dictionary_layout->layout_type);
 

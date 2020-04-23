@@ -66,7 +66,7 @@ void RowPolicyCache::PolicyInfo::setPolicy(const RowPolicyPtr & policy_)
             continue;
 
         auto previous_range = std::pair(std::begin(policy->conditions), std::begin(policy->conditions) + type);
-        auto previous_it = std::find(previous_range.first, previous_range.second, condition);
+        const auto * previous_it = std::find(previous_range.first, previous_range.second, condition);
         if (previous_it != previous_range.second)
         {
             /// The condition is already parsed before.

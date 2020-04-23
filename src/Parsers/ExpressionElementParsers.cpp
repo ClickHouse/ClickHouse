@@ -1000,6 +1000,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
 
     Collection arr;
     ParserLiteral literal_p;
+    ParserCollectionOfLiterals<Collection> collection_p(opening_bracket, closing_bracket);
 
     ++pos;
     while (pos.isValid())
@@ -1032,7 +1033,7 @@ bool ParserCollectionOfLiterals<Collection>::parseImpl(Pos & pos, ASTPtr & node,
         }
 
         ASTPtr literal_node;
-        if (!literal_p.parse(pos, literal_node, expected))
+        if (!literal_p.parse(pos, literal_node, expected) && !collection_p.parse(pos, literal_node, expected))
             return false;
 
         arr.push_back(literal_node->as<ASTLiteral &>().value);

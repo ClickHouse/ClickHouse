@@ -1,4 +1,3 @@
-
 # 表引擎 {#biao-yin-qing}
 
 表引擎（即表的类型）决定了：
@@ -14,16 +13,16 @@
 
 ## MergeTree {#mergetree}
 
-适用于高负载任务的最通用和功能最强大的表引擎。这些引擎的共同特点是可以快速插入数据并进行后续的后台数据处理。 MergeTree系列引擎支持数据复制（使用[复制\*](mergetree_family/replication.md) 的引擎版本），分区和一些其他引擎不支持的其他功能。
+适用于高负载任务的最通用和功能最强大的表引擎。这些引擎的共同特点是可以快速插入数据并进行后续的后台数据处理。 MergeTree系列引擎支持数据复制（使用[Replicated\*](mergetree_family/replication.md) 的引擎版本），分区和一些其他引擎不支持的其他功能。
 
 该类型的引擎：
-\* [MergeTree](mergetree_family/mergetree.md)
-\* [更换麦树](mergetree_family/replacingmergetree.md)
-\* [SummingMergeTree](mergetree_family/summingmergetree.md)
-\* [AggregatingMergeTree](mergetree_family/aggregatingmergetree.md)
-\* [折叠树](mergetree_family/collapsingmergetree.md)
-\* [版本集合在新树](mergetree_family/versionedcollapsingmergetree.md)
-\* [GraphiteMergeTree](mergetree_family/graphitemergetree.md)
+- [MergeTree](mergetree_family/mergetree.md)
+- [ReplacingMergeTree](mergetree_family/replacingmergetree.md)
+- [SummingMergeTree](mergetree_family/summingmergetree.md)
+- [AggregatingMergeTree](mergetree_family/aggregatingmergetree.md)
+- [CollapsingMergeTree](mergetree_family/collapsingmergetree.md)
+- [VersionedCollapsingMergeTree](mergetree_family/versionedcollapsingmergetree.md)
+- [GraphiteMergeTree](mergetree_family/graphitemergetree.md)
 
 ## 日志 {#log}
 
@@ -33,14 +32,14 @@
 
 -   [TinyLog](log_family/tinylog.md)
 -   [StripeLog](log_family/stripelog.md)
--   [日志](log_family/log.md)
+-   [Log](log_family/log.md)
 
 ## 集成引擎 {#integration-engines}
 
 用于与其他的数据存储与处理系统集成的引擎。
 该类型的引擎：
 
--   [卡夫卡](integrations/kafka.md)
+-   [Kafka](integrations/kafka.md)
 -   [MySQL](integrations/mysql.md)
 -   [ODBC](integrations/odbc.md)
 -   [JDBC](integrations/jdbc.md)
@@ -50,18 +49,18 @@
 
 该类型的引擎：
 
--   [分布](special/distributed.md)
+-   [Distributed](special/distributed.md)
 -   [MaterializedView](special/materializedview.md)
--   [字典](special/dictionary.md)
--   [合并](special/merge.md)
--   [文件](special/file.md)
+-   [Dictionary](special/dictionary.md)
+-   [Merge](special/merge.md)
+-   [File](special/file.md)
 -   [Null](special/null.md)
--   [设置](special/set.md)
--   [加入我们](special/join.md)
+-   [Set](special/set.md)
+-   [Join](special/join.md)
 -   [URL](special/url.md)
--   [查看](special/view.md)
--   [记忆](special/memory.md)
--   [缓冲区](special/buffer.md)
+-   [View](special/view.md)
+-   [Memory](special/memory.md)
+-   [Buffer](special/buffer.md)
 
 # 虚拟列 {#xu-ni-lie}
 
@@ -69,6 +68,6 @@
 
 您不能在 `CREATE TABLE` 中指定虚拟列，并且虚拟列不会包含在 `SHOW CREATE TABLE` 和 `DESCRIBE TABLE` 的查询结果中。虚拟列是只读的，所以您不能向虚拟列中写入数据。
 
-如果想要查询虚拟列中的数据，您必须在SELECT查询中包含虚拟列的名字。SELECT \* 不会返回虚拟列的内容。
+如果想要查询虚拟列中的数据，您必须在SELECT查询中包含虚拟列的名字。`SELECT *` 不会返回虚拟列的内容。
 
 若您创建的表中有一列与虚拟列的名字相同，那么虚拟列将不能再被访问。我们不建议您这样做。为了避免这种列名的冲突，虚拟列的名字一般都以下划线开头。

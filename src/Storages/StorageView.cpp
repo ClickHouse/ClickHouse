@@ -131,7 +131,7 @@ ASTPtr StorageView::getRuntimeViewQuery(ASTSelectQuery * outer_query, const Cont
         replaceTableNameWithSubquery(outer_query, runtime_view_query);
         if (context.getSettingsRef().joined_subquery_requires_alias && tables_with_columns.size() > 1)
         {
-            for (auto & pr : tables_with_columns)
+            for (const auto & pr : tables_with_columns)
                 if (pr.table.table.empty() && pr.table.alias.empty())
                     throw Exception("Not unique subquery in FROM requires an alias (or joined_subquery_requires_alias=0 to disable restriction).",
                                     ErrorCodes::ALIAS_REQUIRED);
