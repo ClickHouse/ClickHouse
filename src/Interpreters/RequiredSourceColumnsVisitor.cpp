@@ -122,7 +122,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTSelectQuery & select, const AS
     }
 
     std::vector<ASTPtr *> out;
-    for (auto & node : select.children)
+    for (const auto & node : select.children)
         if (node != select.select())
             Visitor(data).visit(node);
 
@@ -159,7 +159,7 @@ void RequiredSourceColumnsMatcher::visit(const ASTFunction & node, const ASTPtr 
 
 void RequiredSourceColumnsMatcher::visit(const ASTTablesInSelectQueryElement & node, const ASTPtr &, Data & data)
 {
-    for (auto & child : node.children)
+    for (const auto & child : node.children)
         if (child->as<ASTTableJoin>())
             data.has_table_join = true;
 }

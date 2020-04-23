@@ -559,7 +559,7 @@ public:
     bool hasAnyTTL() const override { return hasRowsTTL() || hasAnyMoveTTL() || hasAnyColumnTTL(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
+    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path) const;
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -877,7 +877,7 @@ protected:
     void setTTLExpressions(const ColumnsDescription & columns,
         const ASTPtr & new_ttl_table_ast, bool only_check = false);
 
-    void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy);
+    void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 
@@ -957,7 +957,7 @@ private:
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
-    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason);
+    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const;
 };
 
 }

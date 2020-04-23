@@ -14,8 +14,8 @@ function configure
     rm right/config/config.d/text_log.xml ||:
     cp -rv right/config left ||:
 
-    sed -i 's/<tcp_port>9000/<tcp_port>9001/g' left/config/config.xml
-    sed -i 's/<tcp_port>9000/<tcp_port>9002/g' right/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9001/g' left/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9002/g' right/config/config.xml
 
     # Start a temporary server to rename the tables
     while killall clickhouse-server; do echo . ; sleep 1 ; done
@@ -180,7 +180,7 @@ function get_profiles_watchdog
 {
     sleep 3000
 
-    echo "The trace collection did not finish in time." >> report-errors.rep
+    echo "The trace collection did not finish in time." >> profile-errors.log
 
     for pid in $(pgrep -f clickhouse)
     do
@@ -249,6 +249,8 @@ do
 done
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
+
+cat profile-errors.log >> report-errors.rep
 
 clickhouse-local --query "
 create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
@@ -447,7 +449,7 @@ unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
-grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' >> run-errors.tsv ||:
 }
 
 # Check that local and client are in PATH
