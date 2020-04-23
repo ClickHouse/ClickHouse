@@ -1,5 +1,6 @@
 #include <string>
 
+#include <Core/MySQLClient.h>
 #include <Core/MySQLProtocol.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
@@ -11,15 +12,7 @@ int main(int, char **)
     using namespace MySQLProtocol;
     using namespace MySQLProtocol::Authentication;
 
-    /*
-    UInt16 port = 9001;
-    String host = "127.0.0.1", user = "default", password = "123";
-    MySQLClient client(host, port, user, password, "");
-    if (!client.connect())
-    {
-        std::cerr << "Connect Error: " << client.error() << std::endl;
-    }
-     */
+
     String user = "default";
     String password = "123";
     String database = "";
@@ -90,9 +83,9 @@ int main(int, char **)
         server.writePayloadImpl(out0);
 
         // 2. Client reads packet
-        ReadBufferFromString in1(s0);
+        ReadBufferFromString in0(s0);
         PacketResponse client(server_capability_flags);
-        client.readPayloadImpl(in1);
+        client.readPayloadImpl(in0);
 
         // Check
         ASSERT(client.getType() == PACKET_OK);
@@ -110,16 +103,16 @@ int main(int, char **)
         server.writePayloadImpl(out0);
 
         // 2. Client reads packet
-        ReadBufferFromString in1(s0);
+        ReadBufferFromString in0(s0);
         PacketResponse client(server_capability_flags);
-        client.readPayloadImpl(in1);
+        client.readPayloadImpl(in0);
 
         // Check
         ASSERT(client.getType() == PACKET_ERR);
         ASSERT(client.err.header == server.header);
         ASSERT(client.err.error_code == server.error_code);
         ASSERT(client.err.sql_state == server.sql_state);
-        ASSERT(client.err.error_message == server.error_message);
+        ASSERT(client.err.error_message.data() == server.error_message);
     }
 
     /// EOF Packet
@@ -131,9 +124,9 @@ int main(int, char **)
         server.writePayloadImpl(out0);
 
         // 2. Client reads packet
-        ReadBufferFromString in1(s0);
+        ReadBufferFromString in0(s0);
         PacketResponse client(server_capability_flags);
-        client.readPayloadImpl(in1);
+        client.readPayloadImpl(in0);
 
         // Check
         ASSERT(client.getType() == PACKET_EOF);
@@ -142,5 +135,57 @@ int main(int, char **)
         ASSERT(client.eof.status_flags == server.status_flags);
     }
 
+    /// ColumnDefinition Packet
+    {
+        // 1. Server writes packet
+        std::string s0;
+        WriteBufferFromString out0(s0);
+        ColumnDefinition server("schema", "tbl", "org_tbl", "name", "org_name", 33, 0x00, MYSQL_TYPE_STRING, 0x00, 0x00);
+        server.writePayloadImpl(out0);
+
+        // 2. Client reads packet
+        ReadBufferFromString in0(s0);
+        ColumnDefinition client;
+        client.readPayloadImpl(in0);
+
+        // Check
+        ASSERT(client.column_type == server.column_type);
+        ASSERT(client.column_length == server.column_length);
+        ASSERT(client.next_length == server.next_length);
+        ASSERT(client.character_set == server.character_set);
+        ASSERT(client.decimals == server.decimals);
+        ASSERT(client.name == server.name);
+        ASSERT(client.org_name == server.org_name);
+        ASSERT(client.table == server.table);
+        ASSERT(client.org_table == server.org_table);
+        ASSERT(client.schema == server.schema);
+    }
+
+    {
+        MySQLClient client1("127.0.0.1", 9001, "default", "123", "");
+        if (!client1.connect())
+        {
+            std::cerr << "Connect Error: " << client1.error() << std::endl;
+            return 1;
+        }
+
+        if (!client1.ping())
+        {
+            std::cerr << "Connect Error: " << client1.error() << std::endl;
+            return 1;
+        }
+
+        if (!client1.initdb("default"))
+        {
+            std::cerr << "Connect Error: " << client1.error() << std::endl;
+            return 1;
+        }
+
+        if (!client1.query("select 1"))
+        {
+            std::cerr << "Connect Error: " << client1.error() << std::endl;
+            return 1;
+        }
+    }
     return 0;
 }
