@@ -12,6 +12,7 @@
 #include <Poco/String.h>
 
 #include <Parsers/ParserSetQuery.h>
+#include <Parsers/ParserSetQuery.cpp>
 
 namespace DB
 {
@@ -167,7 +168,7 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDictionaryLifetime lifetime_p;
     ParserDictionaryRange range_p;
     ParserDictionaryLayout layout_p;
-    ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
+    ParserDictionarySettings settings_p;
 
     ASTPtr primary_key;
     ASTPtr ast_source;
@@ -240,14 +241,22 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             continue;
         }
 
-        if (settings_keyword.ignore(pos, expected))
+        // std::cerr << "GETTING BOOL\n";
+        bool tmp = settings_keyword.ignore(pos, expected);
+        // std::cerr << tmp << "\n";
+        if (!ast_settings && tmp)
         {
+            std::cerr << "PARSING QUERY\n";
             if (!open.ignore(pos))
                 return false;
+
             if (!settings_p.parse(pos, ast_settings, expected))
                 return false;
+
             if (!close.ignore(pos))
                 return false;
+
+            continue;
         }
 
         break;
@@ -270,8 +279,14 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (ast_range)
         query->set(query->range, ast_range);
 
-    if (ast_settings)
+    // std::cerr << "LOL\n";
+    if (ast_settings) {
         query->set(query->dict_settings, ast_settings);
+
+        for (const auto & [name, value] : query->dict_settings->changes) {
+            std::cerr << "DEBUG: " << name << '\n';
+        }
+    }
 
     return true;
 }

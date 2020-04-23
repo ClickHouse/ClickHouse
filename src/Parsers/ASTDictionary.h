@@ -64,6 +64,18 @@ public:
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
 
+class ASTDictionarySettings : public IAST
+{
+public:
+    SettingsChanges changes;
+
+    String getID(char) const override { return "Dictionary settings"; }
+
+    ASTPtr clone() const override { return std::make_shared<ASTDictionarySettings>(*this); }
+
+    void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
+};
+
 
 /// AST contains all parts of external dictionary definition except attributes
 class ASTDictionary : public IAST
@@ -81,9 +93,8 @@ public:
     ASTDictionaryLayout * layout;
     /// Range for dictionary (only for range-hashed dictionaries)
     ASTDictionaryRange * range;
-
     /// Settings for dictionary (optionally)
-    ASTSetQuery * dict_settings;
+    ASTDictionarySettings * dict_settings;
 
     String getID(char) const override { return "Dictionary definition"; }
 
