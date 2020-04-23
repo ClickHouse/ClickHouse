@@ -384,7 +384,6 @@ void buildSourceConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, cons
     buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>());
 
     if (settings != nullptr) {
-        std::cerr << "PARSING SETTINGS TO XML\n";
         AutoPtr<Element> settings_element(doc->createElement("settings"));
         outer_element->appendChild(settings_element);
         for (const auto & [name, value] : settings->changes) {

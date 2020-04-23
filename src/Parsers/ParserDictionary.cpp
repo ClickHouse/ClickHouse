@@ -152,6 +152,31 @@ bool ParserDictionaryLayout::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     return true;
 }
 
+bool ParserDictionarySettings::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserToken s_comma(TokenType::Comma);
+
+    SettingsChanges changes;
+
+    while (true)
+    {
+        if (!changes.empty() && !s_comma.ignore(pos))
+            break;
+
+        changes.push_back(SettingChange{});
+
+        if (!parseNameValuePair(changes.back(), pos, expected))
+            return false;
+    }
+
+    auto query = std::make_shared<ASTDictionarySettings>();
+    query->changes = std::move(changes);
+
+    node = query;
+
+    return true;
+}
+
 
 bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
@@ -241,12 +266,8 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             continue;
         }
 
-        // std::cerr << "GETTING BOOL\n";
-        bool tmp = settings_keyword.ignore(pos, expected);
-        // std::cerr << tmp << "\n";
-        if (!ast_settings && tmp)
+        if (!ast_settings && settings_keyword.ignore(pos, expected))
         {
-            std::cerr << "PARSING QUERY\n";
             if (!open.ignore(pos))
                 return false;
 
@@ -279,14 +300,8 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (ast_range)
         query->set(query->range, ast_range);
 
-    // std::cerr << "LOL\n";
-    if (ast_settings) {
+    if (ast_settings)
         query->set(query->dict_settings, ast_settings);
-
-        for (const auto & [name, value] : query->dict_settings->changes) {
-            std::cerr << "DEBUG: " << name << '\n';
-        }
-    }
 
     return true;
 }

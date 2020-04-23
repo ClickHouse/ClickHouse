@@ -39,13 +39,11 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-class ParserDictionarySettings: public ParserSetQuery
+class ParserDictionarySettings: public IParserBase
 {
-public:
-    explicit ParserDictionarySettings() { parse_only_internals = true; }
-
 protected:
     const char * getName() const override { return "settings definition"; }
+    bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
 
