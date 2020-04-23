@@ -198,7 +198,8 @@ private:
     [[nodiscard]] UInt64 getRawValue(int event_type, int event_config) const;
 };
 
-struct PerfDescriptorsHolder {
+struct PerfDescriptorsHolder
+{
     int descriptors[PerfEventsCounters::NUMBER_OF_RAW_EVENTS]{};
 
     PerfDescriptorsHolder();
