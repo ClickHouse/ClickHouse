@@ -448,7 +448,7 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
         if (metadata.expiresAt() > now)
         {
             if (metadata.isDefault())
-                out[index] = get_default(index);     
+                out[index] = get_default(index);
             else
             {
                 ignoreFromBufferToAttributeIndex(attribute_index, buf);
@@ -471,7 +471,8 @@ void CachePartition::getString(const size_t attribute_index, const PaddedPODArra
         Metadata metadata;
         readVarUInt(metadata.data, buf);
 
-        if (metadata.expiresAt() > now) {
+        if (metadata.expiresAt() > now)
+        {
             if (metadata.isDefault())
                 default_ids.push_back(index);
             else
@@ -695,14 +696,16 @@ void CachePartition::clearOldestBlocks()
         io_event event{};
         AIOContext aio_context(1);
 
-        if (io_submit(aio_context.ctx, 1, &request_ptr) != 1)
+        while (io_submit(aio_context.ctx, 1, &request_ptr) != 1)
         {
-            throwFromErrno("io_submit: Failed to submit a request for asynchronous IO", ErrorCodes::CANNOT_IO_SUBMIT);
+            if (errno != EINTR)
+                throwFromErrno("io_submit: Failed to submit a request for asynchronous IO", ErrorCodes::CANNOT_IO_SUBMIT);
         }
 
-        if (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) != 1)
+        while (io_getevents(aio_context.ctx, 1, 1, &event, nullptr) != 1)
         {
-            throwFromErrno("io_getevents: Failed to get an event for asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
+            if (errno != EINTR)
+                throwFromErrno("io_getevents: Failed to get an event for asynchronous IO", ErrorCodes::CANNOT_IO_GETEVENTS);
         }
 
         if (event.res != static_cast<ssize_t>(request.aio_nbytes))

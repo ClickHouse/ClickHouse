@@ -1,24 +1,24 @@
 #pragma once
 
-#include <atomic>
-#include <chrono>
-#include <shared_mutex>
-#include <variant>
-#include <vector>
-#include <list>
-#include <Core/Block.h>
-#include <common/logger_useful.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnString.h>
-#include <pcg_random.hpp>
-#include <Common/ArenaWithFreeLists.h>
-#include <Common/CurrentMetrics.h>
 #include "DictionaryStructure.h"
 #include "IDictionary.h"
 #include "IDictionarySource.h"
-#include <IO/WriteBufferAIO.h>
+#include <atomic>
+#include <chrono>
+#include <Columns/ColumnDecimal.h>
+#include <Columns/ColumnString.h>
+#include <Common/ArenaWithFreeLists.h>
+#include <Common/CurrentMetrics.h>
+#include <common/logger_useful.h>
 #include <Compression/CompressedWriteBuffer.h>
+#include <Core/Block.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/WriteBufferAIO.h>
+#include <list>
+#include <pcg_random.hpp>
+#include <shared_mutex>
+#include <variant>
+#include <vector>
 
 namespace DB
 {
@@ -43,7 +43,7 @@ public:
             if (queue.size() > max_size)
             {
                 cache.erase(queue.front());
-                queue.pop_front();   
+                queue.pop_front();
             }
         }
         else
@@ -109,7 +109,6 @@ using AttributeValueVariant = std::variant<
         Float32,
         Float64,
         String>;
-
 
 class CachePartition
 {
