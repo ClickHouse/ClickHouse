@@ -7,7 +7,6 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/MemorySanitizer.h>
 #include <DataStreams/IBlockInputStream.h>
-#include <Poco/File.h>
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
 #include <IO/AIO.h>
@@ -187,9 +186,7 @@ CachePartition::CachePartition(
     keys_buffer.type = AttributeUnderlyingType::utUInt64;
     keys_buffer.values = CachePartition::Attribute::Container<UInt64>();
 
-    Poco::File directory(dir_path);
-    if (!directory.exists())
-        directory.createDirectory();
+    std::filesystem::create_directories(std::filesystem::path{dir_path});
 
     {
         ProfileEvents::increment(ProfileEvents::FileOpen);
@@ -234,7 +231,8 @@ size_t CachePartition::appendBlock(
     if (!memory)
         memory.emplace(block_size * write_buffer_size, BUFFER_ALIGNMENT);
 
-    auto init_write_buffer = [&]() {
+    auto init_write_buffer = [&]()
+    {
         write_buffer.emplace(memory->data() + current_memory_block_id * block_size, block_size);
         uint64_t tmp = 0;
         write_buffer->write(reinterpret_cast<char*>(&tmp), BLOCK_CHECKSUM_SIZE);
@@ -249,7 +247,8 @@ size_t CachePartition::appendBlock(
     }
 
     bool flushed = false;
-    auto finish_block = [&]() {
+    auto finish_block = [&]()
+    {
         write_buffer.reset();
         std::memcpy(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, &keys_in_block, sizeof(keys_in_block)); // set count
         uint64_t checksum = CityHash_v1_0_2::CityHash64(memory->data() + block_size * current_memory_block_id + BLOCK_CHECKSUM_SIZE, block_size - BLOCK_CHECKSUM_SIZE); // checksum
@@ -349,9 +348,8 @@ size_t CachePartition::appendBlock(
 
 void CachePartition::flush()
 {
-    if (current_file_block_id >= max_size) {
+    if (current_file_block_id >= max_size)
         clearOldestBlocks();
-    }
 
     const auto & ids = std::get<Attribute::Container<UInt64>>(keys_buffer.values);
     if (ids.empty())
@@ -418,7 +416,8 @@ void CachePartition::flush()
     for (size_t row = 0; row < ids.size(); ++row)
     {
         Index index;
-        if (key_to_index.get(ids[row], index)) {
+        if (key_to_index.get(ids[row], index))
+        {
             if (index.inMemory()) // Row can be inserted in the buffer twice, so we need to move to ssd only the last index.
             {
                 index.setInMemory(false);
@@ -446,10 +445,12 @@ void CachePartition::getValue(const size_t attribute_index, const PaddedPODArray
         Metadata metadata;
         readVarUInt(metadata.data, buf);
 
-        if (metadata.expiresAt() > now) {
-            if (metadata.isDefault()) {
+        if (metadata.expiresAt() > now)
+        {
+            if (metadata.isDefault())
                 out[index] = get_default(index);     
-            } else {
+            else
+            {
                 ignoreFromBufferToAttributeIndex(attribute_index, buf);
                 readBinary(out[index], buf);
             }
@@ -471,9 +472,10 @@ void CachePartition::getString(const size_t attribute_index, const PaddedPODArra
         readVarUInt(metadata.data, buf);
 
         if (metadata.expiresAt() > now) {
-            if (metadata.isDefault()) {
+            if (metadata.isDefault())
                 default_ids.push_back(index);
-            } else {
+            else
+            {
                 ignoreFromBufferToAttributeIndex(attribute_index, buf);
                 size_t size = 0;
                 readVarUInt(size, buf);
@@ -498,9 +500,8 @@ void CachePartition::has(const PaddedPODArray<UInt64> & ids, ResultArrayType<UIn
         Metadata metadata;
         readVarUInt(metadata.data, buf);
 
-        if (metadata.expiresAt() > now) {
+        if (metadata.expiresAt() > now)
             out[index] = !metadata.isDefault();
-        }
     };
 
     getImpl(ids, set_value, found);
@@ -654,9 +655,9 @@ void CachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, 
             ++to_pop;
 
         /// add new io tasks
-        const size_t new_tasks_count = std::min(read_buffer_size - (to_push - to_pop), requests.size() - to_push);
+        const int new_tasks_count = std::min(read_buffer_size - (to_push - to_pop), requests.size() - to_push);
 
-        size_t pushed = 0;
+        int pushed = 0;
         while (new_tasks_count > 0 && (pushed = io_submit(aio_context.ctx, new_tasks_count, &pointers[to_push])) < 0)
         {
             if (errno != EINTR)
@@ -731,14 +732,14 @@ void CachePartition::clearOldestBlocks()
         uint32_t keys_in_current_block = 0;
         readBinary(keys_in_current_block, read_buffer);
         Poco::Logger::get("GC").information("keys in block: " + std::to_string(keys_in_current_block) + " offset=" + std::to_string(read_buffer.offset()));
-        
+
         for (uint32_t j = 0; j < keys_in_current_block; ++j)
         {
             keys.emplace_back();
             readBinary(keys.back(), read_buffer);
             Metadata metadata;
             readBinary(metadata.data, read_buffer);
-            
+
             if (!metadata.isDefault())
             {
                 for (size_t attr = 0; attr < attributes_structure.size(); ++attr)
@@ -785,11 +786,11 @@ void CachePartition::clearOldestBlocks()
     for (const auto& key : keys)
     {
         Index index;
-        if (key_to_index.get(key, index)) {
+        if (key_to_index.get(key, index))
+        {
             size_t block_id = index.getBlockId();
-            if (start_block <= block_id && block_id < finish_block) {
+            if (start_block <= block_id && block_id < finish_block)
                 key_to_index.erase(key);
-            }
         }
     }
 }
@@ -1253,6 +1254,7 @@ SSDCacheDictionary::SSDCacheDictionary(
             path, max_partitions_count, partition_size, block_size, read_buffer_size, write_buffer_size, max_stored_keys)
     , log(&Poco::Logger::get("SSDCacheDictionary"))
 {
+    LOG_INFO(log, "Using storage path '" << path << "'.");
     if (!this->source_ptr->supportsSelectiveLoad())
         throw Exception{name + ": source cannot be used with CacheDictionary", ErrorCodes::UNSUPPORTED_METHOD};
 
@@ -1368,7 +1370,8 @@ void SSDCacheDictionary::getItemsNumberImpl(
     storage.update(
             source_ptr,
             required_ids,
-            [&](const auto id, const auto row, const auto & new_attributes) {
+            [&](const auto id, const auto row, const auto & new_attributes)
+            {
                 for (const size_t out_row : not_found_ids[id])
                     out[out_row] = std::get<CachePartition::Attribute::Container<OutputType>>(new_attributes[attribute_index].values)[row];
             },
@@ -1495,7 +1498,8 @@ void SSDCacheDictionary::has(const PaddedPODArray<Key> & ids, PaddedPODArray<UIn
     storage.update(
             source_ptr,
             required_ids,
-            [&](const auto id, const auto, const auto &) {
+            [&](const auto id, const auto, const auto &)
+            {
                 for (const size_t out_row : not_found_ids[id])
                     out[out_row] = true;
             },
@@ -1625,11 +1629,13 @@ void registerDictionarySSDCache(DictionaryFactory & factory)
         if (write_buffer_size % block_size != 0)
             throw Exception{name + ": write_buffer_size must be a multiple of block_size", ErrorCodes::BAD_ARGUMENTS};
 
-        const auto path = config.getString(layout_prefix + ".ssd.path");
+        auto path = config.getString(layout_prefix + ".ssd.path");
         if (path.empty())
             throw Exception{name + ": dictionary of layout 'ssdcache' cannot have empty path",
                             ErrorCodes::BAD_ARGUMENTS};
-        
+        if (path.at(0) != '/')
+            path = std::filesystem::path{config.getString("path")}.concat(path).string();
+
         const auto max_stored_keys = config.getInt64(layout_prefix + ".ssd.max_stored_keys", DEFAULT_MAX_STORED_KEYS);
         if (max_stored_keys <= 0)
             throw Exception{name + ": dictionary of layout 'ssdcache' cannot have 0 (or less) max_stored_keys", ErrorCodes::BAD_ARGUMENTS};
