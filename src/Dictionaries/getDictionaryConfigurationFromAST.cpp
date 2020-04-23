@@ -375,13 +375,25 @@ void buildConfigurationFromFunctionWithKeyValueArguments(
   *       </mysql>
   *   </source>
   */
-void buildSourceConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTFunctionWithKeyValueArguments * source)
+void buildSourceConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, const ASTFunctionWithKeyValueArguments * source, const ASTDictionarySettings * settings)
 {
     AutoPtr<Element> outer_element(doc->createElement("source"));
     root->appendChild(outer_element);
     AutoPtr<Element> source_element(doc->createElement(source->name));
     outer_element->appendChild(source_element);
     buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>());
+
+    if (settings != nullptr) {
+        std::cerr << "PARSING SETTINGS TO XML\n";
+        AutoPtr<Element> settings_element(doc->createElement("settings"));
+        outer_element->appendChild(settings_element);
+        for (const auto & [name, value] : settings->changes) {
+            AutoPtr<Element> setting_change_element(doc->createElement(name));
+            settings_element->appendChild(setting_change_element);
+            AutoPtr<Text> setting_value(doc->createTextNode(getFieldAsString(value)));
+            setting_change_element->appendChild(setting_value);
+        }
+    }
 }
 
 /** Check all AST fields are filled, throws exception
@@ -454,7 +466,7 @@ DictionaryConfigurationPtr getDictionaryConfigurationFromAST(const ASTCreateQuer
     buildPrimaryKeyConfiguration(xml_document, structure_element, complex, pk_attrs, query.dictionary_attributes_list);
 
     buildLayoutConfiguration(xml_document, current_dictionary, dictionary_layout);
-    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source);
+    buildSourceConfiguration(xml_document, current_dictionary, query.dictionary->source, query.dictionary->dict_settings);
     buildLifetimeConfiguration(xml_document, current_dictionary, query.dictionary->lifetime);
 
     if (query.dictionary->range)

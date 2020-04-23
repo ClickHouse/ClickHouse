@@ -27,8 +27,15 @@ const char * ParserKeyword::getName() const
 
 bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected)
 {
-    if (pos->type != TokenType::BareWord)
+    if (pos->type != TokenType::BareWord) {
+/*
+        if (strncasecmp(s, "SETTINGS", strlen(s)) == 0) {
+            std::cerr << "FALSE 0\n";
+            std::cerr << getTokenName(pos.get().type) << '\n';
+        }
+*/
         return false;
+    }
 
     const char * current_word = s;
 
@@ -41,17 +48,20 @@ bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected)
     while (true)
     {
         expected.add(pos, current_word);
-        if (pos->type != TokenType::BareWord)
+        if (pos->type != TokenType::BareWord) {
             return false;
+        }
 
         const char * next_whitespace = find_first_symbols<' ', '\0'>(current_word, s_end);
         size_t word_length = next_whitespace - current_word;
 
-        if (word_length != pos->size())
+        if (word_length != pos->size()) {
             return false;
+        }
 
-        if (0 != strncasecmp(pos->begin, current_word, word_length))
+        if (0 != strncasecmp(pos->begin, current_word, word_length)) {
             return false;
+        }
 
         ++pos;
 
