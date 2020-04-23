@@ -613,6 +613,7 @@ if (USE_INTERNAL_CCTZ)
         endforeach(TIMEZONE)
 
         add_library(tzdata STATIC ${TZ_OBJS})
+        set_target_properties(tzdata PROPERTIES LINKER_LANGUAGE C)
         target_link_libraries(cctz -Wl,--whole-archive tzdata -Wl,--no-whole-archive) # whole-archive prevents symbols from being discarded
     endif ()
 
