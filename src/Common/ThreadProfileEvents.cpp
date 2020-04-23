@@ -258,11 +258,6 @@ namespace DB
         current_thread_counters = nullptr;
     }
 
-    Logger * PerfDescriptorsHolder::getLogger()
-    {
-        return &Logger::get("PerfDescriptorsHolder");
-    }
-
     PerfDescriptorsHolder::PerfDescriptorsHolder()
     {
         for (int & descriptor : descriptors)
@@ -285,6 +280,12 @@ namespace DB
             descriptor = -1;
         }
     }
+
+    Logger * PerfDescriptorsHolder::getLogger()
+    {
+        return &Logger::get("PerfDescriptorsHolder");
+    }
+
 #else
 
     void PerfEventsCounters::initializeProfileEvents(PerfEventsCounters &) {}

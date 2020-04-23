@@ -153,8 +153,6 @@ struct PerfEventInfo
     ProfileEvents::Event profile_event;
 };
 
-#endif
-
 struct PerfDescriptorsHolder;
 
 struct PerfEventsCounters
@@ -172,17 +170,14 @@ struct PerfEventsCounters
     // that restricts perf_event_open() to processes with the CAP_SYS_ADMIN capability
     // todo: check whether perf_event_open() is available with CAP_SYS_ADMIN
 
-#if defined(__linux__)
     static constexpr size_t NUMBER_OF_RAW_EVENTS = 18;
 
     static const PerfEventInfo raw_events_info[];
-#endif
 
     static void initializeProfileEvents(PerfEventsCounters & counters);
 
     static void finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events);
 
-#if defined(__linux__)
 private:
     // used to write information about perf unavailability only once for all threads
     static std::atomic<bool> perf_unavailability_logged;
@@ -201,20 +196,29 @@ private:
     static bool initializeThreadLocalEvents(PerfEventsCounters & counters);
 
     [[nodiscard]] UInt64 getRawValue(int event_type, int event_config) const;
-#endif
 };
 
-#if defined(__linux__)
-
 struct PerfDescriptorsHolder {
-    static Logger * getLogger();
-
     int descriptors[PerfEventsCounters::NUMBER_OF_RAW_EVENTS]{};
 
     PerfDescriptorsHolder();
 
     ~PerfDescriptorsHolder();
+
+    static Logger * getLogger();
 };
+
+#else
+
+struct PerfEventsCounters
+{
+    static void initializeProfileEvents(PerfEventsCounters & counters);
+    static void finalizeProfileEvents(PerfEventsCounters & counters, ProfileEvents::Counters & profile_events);
+};
+
+#endif
+
+#if defined(__linux__)
 
 struct TasksStatsCounters
 {
