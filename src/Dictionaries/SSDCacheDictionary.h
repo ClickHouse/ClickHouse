@@ -26,54 +26,64 @@ namespace DB
 template <typename K, typename V>
 class CLRUCache
 {
-    using Iter = std::list<K>::iterator;
+    using Iter = typename std::list<K>::iterator;
 public:
-    CLRUCache(size_t max_size_) : max_size(max_size_) {
+    CLRUCache(size_t max_size_) : max_size(max_size_)
+    {
     }
 
-    void set(K key, V val) {
+    void set(K key, V val)
+    {
         auto it = cache.find(key);
-        if (it == std::end(cache)) {
+        if (it == std::end(cache))
+        {
             auto & item = cache[key];
             item.first = queue.insert(std::end(queue), key);
             item.second = val;
-            if (queue.size() > max_size) {
+            if (queue.size() > max_size)
+            {
                 cache.erase(queue.front());
                 queue.pop_front();   
             }
-        } else {
+        }
+        else
+        {
             queue.erase(it->second.first);
             it->second.first = queue.insert(std::end(queue), key);
             it->second.second = val;
         }
     }
 
-    bool get(K key, V & val) {
+    bool get(K key, V & val)
+    {
         auto it = cache.find(key);
-        if (it == std::end(cache)) {
+        if (it == std::end(cache))
             return false;
-        }
         val = it->second.second;
         queue.erase(it->second.first);
         it->second.first = queue.insert(std::end(queue), key);
         return true;
     }
 
-    void erase(K key) {
+    void erase(K key)
+    {
         auto it = cache.find(key);
         queue.erase(it->second.first);
         cache.erase(it);
     }
 
-    size_t size() const {
+    size_t size() const
+    {
         return cache.size();
     }
 
-    auto begin() {
+    auto begin()
+    {
         return std::begin(cache);
     }
 
-    auto end() {
+    auto end()
+    {
         return std::end(cache);
     }
 
@@ -401,7 +411,7 @@ public:
 
     bool hasHierarchy() const override { return false; }
 
-    void toParent(const PaddedPODArray<Key> & /* ids */, PaddedPODArray<Key> & /* out */ ) const override {}
+    void toParent(const PaddedPODArray<Key> &, PaddedPODArray<Key> &) const override { }
 
     std::exception_ptr getLastException() const override { return storage.getLastException(); }
 
@@ -489,10 +499,11 @@ private:
     template <typename AttributeType, typename OutputType, typename DefaultGetter>
     void getItemsNumberImpl(
             const size_t attribute_index, const PaddedPODArray<Key> & ids, ResultArrayType<OutputType> & out, DefaultGetter && get_default) const;
+
     template <typename DefaultGetter>
     void getItemsStringImpl(const size_t attribute_index, const PaddedPODArray<Key> & ids,
             ColumnString * out, DefaultGetter && get_default) const;
-    
+
     const std::string name;
     const DictionaryStructure dict_struct;
     mutable DictionarySourcePtr source_ptr;
