@@ -148,12 +148,13 @@ Coordination::WatchCallback BackgroundSchedulePoolTaskInfo::getWatchCallback()
 }
 
 
-BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric memory_metric_)
+BackgroundSchedulePool::BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric memory_metric_, const char *thread_name_)
     : size(size_)
     , tasks_metric(tasks_metric_)
     , memory_metric(memory_metric_)
+    , thread_name(thread_name_)
 {
-    LOG_INFO(&Logger::get("BackgroundSchedulePool"), "Create BackgroundSchedulePool with " << size << " threads");
+    LOG_INFO(&Logger::get("BackgroundSchedulePool/" + thread_name), "Create BackgroundSchedulePool with " << size << " threads");
 
     threads.resize(size);
     for (auto & thread : threads)
@@ -176,7 +177,7 @@ BackgroundSchedulePool::~BackgroundSchedulePool()
         queue.wakeUpAll();
         delayed_thread.join();
 
-        LOG_TRACE(&Logger::get("BackgroundSchedulePool"), "Waiting for threads to finish.");
+        LOG_TRACE(&Logger::get("BackgroundSchedulePool/" + thread_name), "Waiting for threads to finish.");
         for (auto & thread : threads)
             thread.join();
     }
@@ -242,7 +243,7 @@ void BackgroundSchedulePool::attachToThreadGroup()
 
 void BackgroundSchedulePool::threadFunction()
 {
-    setThreadName("BackgrSchedPool");
+    setThreadName(thread_name.c_str());
 
     attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
@@ -262,7 +263,7 @@ void BackgroundSchedulePool::threadFunction()
 
 void BackgroundSchedulePool::delayExecutionThreadFunction()
 {
-    setThreadName("BckSchPoolDelay");
+    setThreadName((thread_name + "/D").c_str());
 
     attachToThreadGroup();
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
