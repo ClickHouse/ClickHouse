@@ -107,6 +107,25 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
     settings.ostr << ")";
 }
 
+void ASTDictionarySettings::formatImpl(const FormatSettings & settings,
+                                        FormatState &,
+                                        FormatStateStacked) const
+{
+
+    settings.ostr << (settings.hilite ? hilite_keyword : "")
+                  << "SETTINGS"
+                  << (settings.hilite ? hilite_none : "")
+                  << "(";
+    for (auto it = changes.begin(); it != changes.end(); ++it)
+    {
+        if (it != changes.begin())
+            settings.ostr << ", ";
+
+        settings.ostr << it->name << " = " << applyVisitor(FieldVisitorToString(), it->value);
+    }
+    settings.ostr << (settings.hilite ? hilite_none : "") << ")";
+}
+
 
 ASTPtr ASTDictionary::clone() const
 {
@@ -127,6 +146,9 @@ ASTPtr ASTDictionary::clone() const
 
     if (range)
         res->set(res->range, range->clone());
+
+    if (dict_settings)
+        res->set(res->dict_settings, range->clone());
 
     return res;
 }
@@ -165,6 +187,12 @@ void ASTDictionary::formatImpl(const FormatSettings & settings, FormatState & st
     {
         settings.ostr << settings.nl_or_ws;
         range->formatImpl(settings, state, frame);
+    }
+
+    if (dict_settings)
+    {
+        settings.ostr << settings.nl_or_ws;
+        dict_settings->formatImpl(settings, state, frame);
     }
 }
 
