@@ -223,10 +223,11 @@ namespace cctz_extension
             if (sym_data && sym_size)
                 return std::make_unique<Source>(static_cast<const char *>(sym_data), unalignedLoad<size_t>(&sym_size));
 
-#if defined(NDEBUG)
+#if defined(NDEBUG) || !defined(USE_INTERNAL_CCTZ)
             return fallback(name);
 #else
-            /// In debug builds, ensure that only embedded timezones can be loaded - this is intended for tests.
+            /// In debug builds with internal cctz,
+            /// ensure that only embedded timezones can be loaded - this is intended for tests.
             (void)fallback;
             return nullptr;
 #endif
