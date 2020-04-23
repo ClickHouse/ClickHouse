@@ -29,7 +29,11 @@
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/getExecutablePath.h>
+<<<<<<< HEAD
 #include <Common/ThreadProfileEvents.h>
+=======
+#include <Common/TaskStatsInfoGetter.h>
+>>>>>>> progress  callback1
 #include <Common/ThreadStatus.h>
 #include <IO/HTTPCommon.h>
 #include <IO/UseSSL.h>
@@ -60,6 +64,10 @@
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
+<<<<<<< HEAD
+=======
+#include "GRPCHandler.h"
+>>>>>>> progress  callback1
 
 #if !defined(ARCADIA_BUILD)
 #    include <common/config_common.h>
@@ -310,6 +318,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->setPath(path);
 
+<<<<<<< HEAD
+=======
+    /// Create directories for 'path' and for default database, if not exist.
+    Poco::File(path + "data/" + default_database).createDirectories();
+    Poco::File(path + "metadata/" + default_database).createDirectories();
+
+>>>>>>> progress  callback1
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
@@ -400,11 +415,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
         Poco::File(dictionaries_lib_path).createDirectories();
     }
 
+<<<<<<< HEAD
     {
         /// Directory with metadata of tables, which was marked as dropped by Atomic database
         Poco::File(path + "metadata_dropped/").createDirectories();
     }
 
+=======
+>>>>>>> progress  callback1
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
         throw Exception("Both http and https interserver ports are specified", ErrorCodes::EXCESSIVE_ELEMENT_IN_CONFIG);
 
@@ -563,7 +581,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
     format_schema_path.createDirectories();
 
     /// Limit on total memory usage
+<<<<<<< HEAD
     size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);
+=======
+    size_t max_server_memory_usage = settings.max_server_memory_usage;
+>>>>>>> progress  callback1
 
     double max_server_memory_usage_to_ram_ratio = config().getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
     size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;
@@ -594,7 +616,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*DatabaseCatalog::instance().getSystemDatabase(), has_zookeeper);
         /// Then, load remaining databases
+<<<<<<< HEAD
         loadMetadata(*global_context, default_database);
+=======
+        loadMetadata(*global_context);
+>>>>>>> progress  callback1
         DatabaseCatalog::instance().loadDatabases();
     }
     catch (...)
@@ -618,6 +644,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
     ///
 #if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
+<<<<<<< HEAD
     /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
     {
@@ -637,6 +664,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
             total_memory_tracker.setSampleProbability(total_memory_tracker_sample_probability);
         }
     }
+=======
+    /// QueryProfiler cannot work reliably with any other libunwind or without PHDR cache.
+    if (hasPHDRCache())
+        global_context->initializeTraceCollector();
+>>>>>>> progress  callback1
 #endif
 
     /// Describe multiple reasons when query profiler cannot work.
@@ -680,6 +712,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
     }
 
 #if defined(OS_LINUX)
+<<<<<<< HEAD
     if (!TasksStatsCounters::checkIfAvailable())
     {
         LOG_INFO(log, "It looks like this system does not have procfs mounted at /proc location,"
@@ -687,6 +720,13 @@ int Server::main(const std::vector<std::string> & /*args*/)
             " 'taskstats' performance statistics will be disabled."
             " It could happen due to incorrect ClickHouse package installation."
             " You can try to resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
+=======
+    if (!TaskStatsInfoGetter::checkPermissions())
+    {
+        LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."
+            " It could happen due to incorrect ClickHouse package installation."
+            " You could resolve the problem manually with 'sudo setcap cap_net_admin=+ep " << executable_path << "'."
+>>>>>>> progress  callback1
             " Note that it will not work on 'nosuid' mounted filesystems."
             " It also doesn't work if you run clickhouse-server inside network namespace as it happens in some containers.");
     }
@@ -721,7 +761,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
             listen_hosts.emplace_back("127.0.0.1");
             listen_try = true;
         }
+<<<<<<< HEAD
 
+=======
+        std::vector<std::unique_ptr<GRPCServer>> gRPCServers;
+>>>>>>> progress  callback1
         auto make_socket_address = [&](const std::string & host, UInt16 port)
         {
             Poco::Net::SocketAddress socket_address;
@@ -814,9 +858,21 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
+<<<<<<< HEAD
 
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "HTTPHandler-factory"), server_pool, socket, http_params));
+=======
+                auto handler_factory = createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPHandler-factory");
+                if (config().has("prometheus") && config().getInt("prometheus.port", 0) == 0)
+                    handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
+
+                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                    handler_factory,
+                    server_pool,
+                    socket,
+                    http_params));
+>>>>>>> progress  callback1
 
                 LOG_INFO(log, "Listening for http://" + address.toString());
             });
@@ -830,7 +886,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+<<<<<<< HEAD
                     createHandlerFactory(*this, async_metrics, "HTTPSHandler-factory"), server_pool, socket, http_params));
+=======
+                    createDefaultHandlerFatory<HTTPHandler>(*this, "HTTPSHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
+>>>>>>> progress  callback1
 
                 LOG_INFO(log, "Listening for https://" + address.toString());
 #else
@@ -885,7 +948,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+<<<<<<< HEAD
                     createHandlerFactory(*this, async_metrics, "InterserverIOHTTPHandler-factory"), server_pool, socket, http_params));
+=======
+                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
+>>>>>>> progress  callback1
 
                 LOG_INFO(log, "Listening for replica communication (interserver): http://" + address.toString());
             });
@@ -898,7 +968,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+<<<<<<< HEAD
                     createHandlerFactory(*this, async_metrics, "InterserverIOHTTPSHandler-factory"), server_pool, socket, http_params));
+=======
+                    createDefaultHandlerFatory<InterserverIOHTTPHandler>(*this, "InterserverIOHTTPHandler-factory"),
+                    server_pool,
+                    socket,
+                    http_params));
+>>>>>>> progress  callback1
 
                 LOG_INFO(log, "Listening for secure replica communication (interserver): https://" + address.toString());
 #else
@@ -923,6 +1000,15 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 LOG_INFO(log, "Listening for MySQL compatibility protocol: " + address.toString());
             });
 
+<<<<<<< HEAD
+=======
+            create_server("grpc_port", [&](UInt16 port)
+             {   
+                 Poco::Net::SocketAddress server_address(listen_host, port);
+                 gRPCServers.emplace_back(new GRPCServer(server_address.toString(), *this));
+                 LOG_INFO(log, "Listening for gRPC protocol: " + server_address.toString());
+             });
+>>>>>>> progress  callback1
             /// Prometheus (if defined and not setup yet with http_port)
             create_server("prometheus.port", [&](UInt16 port)
             {
@@ -930,8 +1016,18 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 auto address = socket_bind_listen(socket, listen_host, port);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
                 socket.setSendTimeout(settings.http_send_timeout);
+<<<<<<< HEAD
                 servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
                     createHandlerFactory(*this, async_metrics, "PrometheusHandler-factory"), server_pool, socket, http_params));
+=======
+                auto handler_factory = new HTTPRequestHandlerFactoryMain(*this, "PrometheusHandler-factory");
+                handler_factory->addHandler<PrometheusHandlerFactory>(async_metrics);
+                servers.emplace_back(std::make_unique<Poco::Net::HTTPServer>(
+                    handler_factory,
+                    server_pool,
+                    socket,
+                    http_params));
+>>>>>>> progress  callback1
 
                 LOG_INFO(log, "Listening for Prometheus: http://" + address.toString());
             });
@@ -944,6 +1040,17 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
         for (auto & server : servers)
             server->start();
+<<<<<<< HEAD
+=======
+        for (auto & server : gRPCServers) {
+             if (server) {
+                 LOG_INFO(log, "GRPC OK");
+                 server_pool.start(*server);
+             } else {
+                 LOG_INFO(log, "NOT GRPC OK");
+             }
+         }
+>>>>>>> progress  callback1
 
         {
             String level_str = config().getString("text_log.level", "");
@@ -980,6 +1087,14 @@ int Server::main(const std::vector<std::string> & /*args*/)
                 server->stop();
                 current_connections += server->currentConnections();
             }
+<<<<<<< HEAD
+=======
+            for (auto & server : gRPCServers) {
+                 if (server) {
+                     server->stop();
+                 }
+             }
+>>>>>>> progress  callback1
 
             LOG_INFO(log,
                 "Closed all listening sockets."
@@ -1077,4 +1192,8 @@ int mainEntryClickHouseServer(int argc, char ** argv)
         auto code = DB::getCurrentExceptionCode();
         return code ? code : 1;
     }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> progress  callback1
