@@ -71,7 +71,7 @@
 #    include <Common/hasLinuxCapability.h>
 #endif
 
-#if USE_POCO_NETSSL
+#if USE_SSL
 #    include <Poco/Net/Context.h>
 #    include <Poco/Net/SecureServerSocket.h>
 #endif
@@ -820,7 +820,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             /// HTTPS
             create_server("https_port", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);
@@ -858,7 +858,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
             /// TCP with SSL
             create_server("tcp_port_secure", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.receive_timeout);
@@ -894,7 +894,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
             create_server("interserver_https_port", [&](UInt16 port)
             {
-#if USE_POCO_NETSSL
+#if USE_SSL
                 Poco::Net::SecureServerSocket socket;
                 auto address = socket_bind_listen(socket, listen_host, port, /* secure = */ true);
                 socket.setReceiveTimeout(settings.http_receive_timeout);

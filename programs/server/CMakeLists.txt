@@ -19,7 +19,20 @@ set(CLICKHOUSE_SERVER_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/MySQLHandlerFactory.cpp
 )
 
-set(CLICKHOUSE_SERVER_LINK PRIVATE clickhouse_dictionaries clickhouse_common_io clickhouse_common_config clickhouse_common_zookeeper clickhouse_parsers string_utils PUBLIC daemon PRIVATE clickhouse_storages_system clickhouse_functions clickhouse_aggregate_functions clickhouse_table_functions)
+set (CLICKHOUSE_SERVER_LINK
+    PRIVATE
+        clickhouse_aggregate_functions
+        clickhouse_common_config
+        clickhouse_common_io
+        clickhouse_common_zookeeper
+        clickhouse_dictionaries
+        clickhouse_functions
+        clickhouse_parsers
+        clickhouse_storages_system
+        clickhouse_table_functions
+        daemon
+        string_utils
+)
 
 clickhouse_program_add(server)
 

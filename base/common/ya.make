@@ -40,7 +40,7 @@ SRCS(
     LineReader.cpp
     mremap.cpp
     phdr_cache.cpp
-    preciseExp10.c
+    preciseExp10.cpp
     setTerminalEcho.cpp
     shift10.cpp
     sleep.cpp

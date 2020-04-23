@@ -71,7 +71,7 @@ target_link_libraries (common
         ${Boost_SYSTEM_LIBRARY}
         FastMemcpy
         poco_net
-        poco_netssl
+        poco_net_ssl
         poco_util
         replxx
 

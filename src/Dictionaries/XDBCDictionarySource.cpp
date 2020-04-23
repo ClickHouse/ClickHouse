@@ -18,13 +18,7 @@
 
 #include "registerDictionaries.h"
 
-#if !defined(ARCADIA_BUILD)
-#    include <Common/config.h>
-#endif
-
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
-#    include <Poco/Data/ODBC/Connector.h>
-#endif
+#include <Poco/Data/ODBC/Connector.h>
 
 namespace DB
 {
@@ -235,29 +229,17 @@ BlockInputStreamPtr XDBCDictionarySource::loadBase(const std::string & query) co
 
 void registerDictionarySourceXDBC(DictionarySourceFactory & factory)
 {
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
     Poco::Data::ODBC::Connector::registerConnector();
-#endif
 
     auto create_table_source = [=](const DictionaryStructure & dict_struct,
-                                 const Poco::Util::AbstractConfiguration & config,
-                                 const std::string & config_prefix,
-                                 Block & sample_block,
-                                 const Context & context,
-                                 bool /* check_config */) -> DictionarySourcePtr {
-#if USE_POCO_SQLODBC || USE_POCO_DATAODBC
+                                   const Poco::Util::AbstractConfiguration & config,
+                                   const std::string & config_prefix,
+                                   Block & sample_block,
+                                   const Context & context,
+                                   bool /* check_config */) -> DictionarySourcePtr {
         BridgeHelperPtr bridge = std::make_shared<XDBCBridgeHelper<ODBCBridgeMixin>>(
             context, context.getSettings().http_receive_timeout, config.getString(config_prefix + ".odbc.connection_string"));
         return std::make_unique<XDBCDictionarySource>(dict_struct, config, config_prefix + ".odbc", sample_block, context, bridge);
-#else
-        (void)dict_struct;
-        (void)config;
-        (void)config_prefix;
-        (void)sample_block;
-        (void)context;
-        throw Exception{"Dictionary source of type `odbc` is disabled because poco library was built without ODBC support.",
-                        ErrorCodes::SUPPORT_IS_DISABLED};
-#endif
     };
     factory.registerSource("odbc", create_table_source);
 }
@@ -277,6 +259,5 @@ void registerDictionarySourceJDBC(DictionarySourceFactory & factory)
     };
     factory.registerSource("jdbc", create_table_source);
 }
-
 
 }

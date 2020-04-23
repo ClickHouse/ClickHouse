@@ -8,7 +8,17 @@ list(REMOVE_ITEM clickhouse_dictionaries_sources DictionaryFactory.cpp Dictionar
 list(REMOVE_ITEM clickhouse_dictionaries_headers DictionaryFactory.h DictionarySourceFactory.h DictionaryStructure.h getDictionaryConfigurationFromAST.h)
 
 add_library(clickhouse_dictionaries ${clickhouse_dictionaries_sources})
-target_link_libraries(clickhouse_dictionaries PRIVATE dbms clickhouse_common_io string_utils ${BTRIE_LIBRARIES} poco_data)
+
+target_link_libraries(clickhouse_dictionaries
+    PRIVATE
+        ${BTRIE_LIBRARIES}
+        clickhouse_common_io
+        dbms
+        poco_data_odbc
+        poco_mongodb
+        poco_redis
+        string_utils
+)
 
 add_subdirectory(Embedded)
 
