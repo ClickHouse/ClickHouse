@@ -14,6 +14,7 @@ The following table lists cases when query feature works in ClickHouse, but beha
 
 | Feature ID | Feature Name                | Difference                                                                                                |
 |------------|-----------------------------|-----------------------------------------------------------------------------------------------------------|
+| E011       | Numeric data types          | Numeric literal with period is interpreted as approximate (`Float32`) instead of exact (`Decimal`)        |
 | E051-05    | Select items can be renamed | Item renames have a wider visibility scope than just the SELECT result                                    |
 | E141-01    | NOT NULL constraints        | Yes                                                                                                       |
 | E011-04    | Arithmetic operators        | ClickHouse overflows instead of checked arithmetic and changes the result data type based on custom rules |
