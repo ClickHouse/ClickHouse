@@ -78,7 +78,6 @@ namespace
 
 StorageDistributedDirectoryMonitor::StorageDistributedDirectoryMonitor(
     StorageDistributed & storage_, std::string path_, ConnectionPoolPtr pool_, ActionBlocker & monitor_blocker_, BackgroundSchedulePool & bg_pool_)
-    /// It's important to initialize members before `thread` to avoid race.
     : storage(storage_)
     , pool(std::move(pool_))
     , path{path_ + '/'}
@@ -103,7 +102,6 @@ StorageDistributedDirectoryMonitor::~StorageDistributedDirectoryMonitor()
     if (!quit)
     {
         quit = true;
-        cond.notify_one();
         task_handle->deactivate();
     }
 }
@@ -122,7 +120,6 @@ void StorageDistributedDirectoryMonitor::shutdownAndDropAllData()
     if (!quit)
     {
         quit = true;
-        cond.notify_one();
         task_handle->deactivate();
     }
 
