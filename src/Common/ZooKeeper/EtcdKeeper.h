@@ -162,8 +162,7 @@ namespace Coordination
         struct AsyncCall : virtual Call { 
             Status status;
             XID xid;
-            int responses;
-            // RequestInfo request_info;            
+            int responses;         
         };
 
         struct AsyncPutCall final : AsyncCall 
