@@ -1,4 +1,4 @@
-#include <Common/rename.h>
+#include <Common/renameat2.h>
 #include <Common/Exception.h>
 #include <Poco/File.h>
 
@@ -50,9 +50,9 @@ static bool supportsRenameat2Impl()
 static void renameat2(const std::string & old_path, const std::string & new_path, int flags)
 {
     if (old_path.empty() || new_path.empty())
-        throw Exception("Path is empty", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot rename " + old_path + " to " + new_path + ": path is empty", ErrorCodes::LOGICAL_ERROR);
     if (old_path[0] != '/' || new_path[0] != '/')
-        throw Exception("Path is relative", ErrorCodes::LOGICAL_ERROR);
+        throw Exception("Cannot rename " + old_path + " to " + new_path + ": path is relative", ErrorCodes::LOGICAL_ERROR);
 
     /// int olddirfd (ignored for absolute oldpath), const char *oldpath,
     /// int newdirfd (ignored for absolute newpath), const char *newpath,
@@ -61,10 +61,10 @@ static void renameat2(const std::string & old_path, const std::string & new_path
         return;
 
     if (errno == EEXIST)
-        throwFromErrnoWithPath("Cannot RENAME_NOREPLACE " + old_path + " to " + new_path, new_path, ErrorCodes::ATOMIC_RENAME_FAIL);
+        throwFromErrno("Cannot rename " + old_path + " to " + new_path + " because the second path already exists", ErrorCodes::ATOMIC_RENAME_FAIL);
     if (errno == ENOENT)
         throwFromErrno("Paths cannot be exchanged because " + old_path + " or " + new_path + " does not exist", ErrorCodes::ATOMIC_RENAME_FAIL);
-    throwFromErrnoWithPath("Cannot rename " + old_path + " to " + new_path, old_path, ErrorCodes::SYSTEM_ERROR);
+    throwFromErrnoWithPath("Cannot rename " + old_path + " to " + new_path, new_path, ErrorCodes::SYSTEM_ERROR);
 }
 
 #else

@@ -5,7 +5,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/Stopwatch.h>
 #include <Parsers/formatAST.h>
-#include <Common/rename.h>
+#include <Common/renameat2.h>
 #include <Storages/StorageMaterializedView.h>
 
 
@@ -30,7 +30,7 @@ public:
 
 
 DatabaseAtomic::DatabaseAtomic(String name_, String metadata_path_, Context & context_)
-    : DatabaseOrdinary(name_, metadata_path_, "store/", "DatabaseAtomic (" + name_ + ")", context_)
+    : DatabaseOrdinary(name_, std::move(metadata_path_), "store/", "DatabaseAtomic (" + name_ + ")", context_)
     , path_to_table_symlinks(context_.getPath() + "data/" + escapeForFileName(name_) + "/")
 {
     /// Symlinks in data/db_name/ directory are not used by ClickHouse,

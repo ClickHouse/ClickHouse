@@ -108,7 +108,11 @@ void loadMetadata(Context & context, const String & default_database_name)
         databases.emplace(unescapeForFileName(it.name()), it.path().toString());
     }
 
-    if (!default_database_name.empty() && !databases.count(default_database_name))
+    /// clickhouse-local creates DatabaseMemory as default database by itself
+    /// For clickhouse-server we need create default database
+    bool create_default_db_if_not_exists = !default_database_name.empty();
+    bool metadata_dir_for_default_db_already_exists = databases.count(default_database_name);
+    if (create_default_db_if_not_exists && !metadata_dir_for_default_db_already_exists)
         databases.emplace(default_database_name, path + "/" + escapeForFileName(default_database_name));
 
     for (const auto & [name, db_path] : databases)
