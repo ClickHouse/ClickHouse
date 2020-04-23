@@ -14,8 +14,8 @@ function configure
     rm right/config/config.d/text_log.xml ||:
     cp -rv right/config left ||:
 
-    sed -i 's/<tcp_port>9000/<tcp_port>9001/g' left/config/config.xml
-    sed -i 's/<tcp_port>9000/<tcp_port>9002/g' right/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9001/g' left/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9002/g' right/config/config.xml
 
     # Start a temporary server to rename the tables
     while killall clickhouse-server; do echo . ; sleep 1 ; done
@@ -100,7 +100,7 @@ function run_tests
     # changes.
     test_prefix=$([ "$PR_TO_TEST" == "0" ] && echo left || echo right)/performance
 
-    for x in {test-times,skipped-tests}.tsv
+    for x in {test-times,skipped-tests,wall-clock-times}.tsv
     do
         rm -v "$x" ||:
         touch "$x"
@@ -176,6 +176,28 @@ function run_tests
     wait
 }
 
+function get_profiles_watchdog
+{
+    sleep 3000
+
+    echo "The trace collection did not finish in time." >> profile-errors.log
+
+    for pid in $(pgrep -f clickhouse)
+    do
+        gdb -p $pid --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+    done
+    wait
+
+    for i in {1..10}
+    do
+        if ! pkill -f clickhouse
+        then
+            break
+        fi
+        sleep 1
+    done
+}
+
 function get_profiles
 {
     # Collect the profiles
@@ -227,6 +249,8 @@ do
 done
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
+
+cat profile-errors.log >> report-errors.rep
 
 clickhouse-local --query "
 create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
@@ -307,7 +331,7 @@ do
 clickhouse-local --query "
 create view queries as
     select * from file('queries.rep', TSVWithNamesAndTypes,
-        'short int, unstable int, changed int, left float, right float,
+        'short int, changed int, unstable int, left float, right float,
             diff float, rd Array(float), test text, query text');
 
 create view query_log as select *
@@ -425,7 +449,7 @@ unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
-grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' >> run-errors.tsv ||:
 }
 
 # Check that local and client are in PATH
@@ -446,10 +470,28 @@ case "$stage" in
     time run_tests ||:
     ;&
 "get_profiles")
+    # Getting profiles inexplicably hangs sometimes, so try to save some logs if
+    # this happens again. Give the servers 5 minutes to collect all info, then
+    # trace and kill. Start in a subshell, so that both function don't interfere
+    # with each other's jobs through `wait`. Also make the subshell have its own
+    # process group, so that we can then kill it with all its child processes.
+    # Somehow it doesn't kill the children by itself when dying.
+    set -m
+    ( get_profiles_watchdog ) &
+    watchdog_pid=$!
+    set +m
+    # Check that the watchdog started OK.
+    kill -0 $watchdog_pid
+
     # If the tests fail with OOM or something, still try to restart the servers
     # to collect the logs. Prefer not to restart, because addresses might change
-    # and we won't be able to process trace_log data.
-    time get_profiles || restart || get_profiles ||:
+    # and we won't be able to process trace_log data. Start in a subshell, so that
+    # it doesn't interfere with the watchdog through `wait`.
+    ( time get_profiles || restart || get_profiles ||: )
+
+    # Kill the whole process group, because somehow when the subshell is killed,
+    # the sleep inside remains alive and orphaned.
+    while env kill -- -$watchdog_pid ; do sleep 1; done
 
     # Stop the servers to free memory for the subsequent query analysis.
     while killall clickhouse; do echo . ; sleep 1 ; done
@@ -465,3 +507,7 @@ case "$stage" in
     time "$script_dir/report.py" > report.html
     ;&
 esac
+
+# Print some final debug info to help debug Weirdness, of which there is plenty.
+jobs
+pstree -apgT

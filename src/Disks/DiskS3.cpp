@@ -252,7 +252,6 @@ namespace
             return true;
         }
 
-    private:
         std::shared_ptr<Aws::S3::S3Client> client_ptr;
         const String & bucket;
         Metadata metadata;
@@ -328,7 +327,6 @@ namespace
             impl.swap(*this);
         }
 
-    private:
         WriteBufferFromS3 impl;
         bool finalized = false;
         Metadata metadata;

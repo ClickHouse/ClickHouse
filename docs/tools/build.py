@@ -127,8 +127,10 @@ def build_for_lang(lang, args):
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
+        site_name = site_names.get(lang, site_names['en']) % args.version_prefix
+        site_name = site_name.replace('  ', ' ')
         raw_config = dict(
-            site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
+            site_name=site_name,
             site_url=f'https://clickhouse.tech/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=site_dir,
@@ -360,9 +362,12 @@ def build(args):
     build_releases(args, build_docs)
 
     if not args.skip_website:
+        website.process_benchmark_results(args)
         website.minify_website(args)
 
     for static_redirect in [
+        ('benchmark.html', '/benchmark/dbms/'),
+        ('benchmark_hardware.html', '/benchmark/hardware/'),
         ('tutorial.html', '/docs/en/getting_started/tutorial/',),
         ('reference_en.html', '/docs/en/single/', ),
         ('reference_ru.html', '/docs/ru/single/',),

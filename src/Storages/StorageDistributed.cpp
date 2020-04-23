@@ -406,7 +406,7 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
     {
         for (auto & expr : select.select()->children)
         {
-            auto id = expr->as<ASTIdentifier>();
+            const auto * id = expr->as<ASTIdentifier>();
             if (!id)
                 return false;
             if (!sharding_key_expr->getSampleBlock().has(id->name))
@@ -435,7 +435,7 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
         if (group_exprs.empty())
             throw Exception("No ASTExpressionList in GROUP BY", ErrorCodes::LOGICAL_ERROR);
 
-        auto id = group_exprs[0]->as<ASTIdentifier>();
+        const auto * id = group_exprs[0]->as<ASTIdentifier>();
         if (!id)
             return false;
         if (!sharding_key_expr->getSampleBlock().has(id->name))
@@ -726,12 +726,12 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
     return cluster;
 }
 
-void StorageDistributed::ClusterNodeData::flushAllData()
+void StorageDistributed::ClusterNodeData::flushAllData() const
 {
     directory_monitor->flushAllData();
 }
 
-void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
+void StorageDistributed::ClusterNodeData::shutdownAndDropAllData() const
 {
     directory_monitor->shutdownAndDropAllData();
 }

@@ -252,7 +252,7 @@ bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_bloc
     if (right_keys.size() != 1)
         return false;
 
-    for (auto & col : sample_block)
+    for (const auto & col : sample_block)
     {
         String original = original_names.find(col.name)->second;
         if (col.name == right_keys[0])

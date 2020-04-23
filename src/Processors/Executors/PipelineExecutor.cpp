@@ -344,14 +344,14 @@ bool PipelineExecutor::prepareProcessor(UInt64 pid, size_t thread_number, Queue 
         {
             for (auto & edge_id : *node.post_updated_input_ports)
             {
-                auto edge = static_cast<Edge *>(edge_id);
+                auto * edge = static_cast<Edge *>(edge_id);
                 updated_back_edges.emplace_back(edge);
                 edge->update_info.trigger();
             }
 
             for (auto & edge_id : *node.post_updated_output_ports)
             {
-                auto edge = static_cast<Edge *>(edge_id);
+                auto * edge = static_cast<Edge *>(edge_id);
                 updated_direct_edges.emplace_back(edge);
                 edge->update_info.trigger();
             }
@@ -620,7 +620,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 Queue queue;
 
                 ++num_processing_executors;
-                while (auto task = expand_pipeline_task.load())
+                while (auto * task = expand_pipeline_task.load())
                     doExpandPipeline(task, true);
 
                 /// Execute again if can.
@@ -661,7 +661,7 @@ void PipelineExecutor::executeSingleThread(size_t thread_num, size_t num_threads
                 }
 
                 --num_processing_executors;
-                while (auto task = expand_pipeline_task.load())
+                while (auto * task = expand_pipeline_task.load())
                     doExpandPipeline(task, false);
             }
 
@@ -780,7 +780,7 @@ void PipelineExecutor::executeImpl(size_t num_threads)
 
 String PipelineExecutor::dumpPipeline() const
 {
-    for (auto & node : graph)
+    for (const auto & node : graph)
     {
         if (node.execution_state)
         {
@@ -802,7 +802,7 @@ String PipelineExecutor::dumpPipeline() const
     statuses.reserve(graph.size());
     proc_list.reserve(graph.size());
 
-    for (auto & proc : graph)
+    for (const auto & proc : graph)
     {
         proc_list.emplace_back(proc.processor);
         statuses.emplace_back(proc.last_processor_status);

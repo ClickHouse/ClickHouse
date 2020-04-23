@@ -71,7 +71,7 @@ inline size_t JSONEachRowRowInputFormat::columnIndex(const StringRef & name, siz
     }
     else
     {
-        const auto it = name_map.find(name);
+        auto * it = name_map.find(name);
 
         if (it)
         {
@@ -256,7 +256,7 @@ bool JSONEachRowRowInputFormat::readRow(MutableColumns & columns, RowReadExtensi
     nested_prefix_length = 0;
     readJSONObject(columns);
 
-    auto & header = getPort().getHeader();
+    const auto & header = getPort().getHeader();
     /// Fill non-visited columns with the default values.
     for (size_t i = 0; i < num_columns; ++i)
         if (!seen_columns[i])
