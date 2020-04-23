@@ -215,8 +215,8 @@ if args.report == 'main':
         attrs = ['' for c in columns]
         for r in unstable_rows:
             rd = ast.literal_eval(r[3])
-            # Note the zero-based array index, this is rd[3] in SQL.
-            if rd[2] > 0.2:
+            # Note the zero-based array index, this is rd[4] in SQL.
+            if rd[3] > 0.2:
                 very_unstable_queries += 1
                 attrs[3] = 'style="background: #ffb0a0"'
             else:
