@@ -47,6 +47,7 @@ private:
     Logger * log;
     DateLUTImpl date_lut;
 
+    /// TODO rewrite defaults logic to evaluteMissingDefaults
     std::unordered_map<String, String> defaults_result_column;
     ExpressionActionsPtr defaults_expression;
 
