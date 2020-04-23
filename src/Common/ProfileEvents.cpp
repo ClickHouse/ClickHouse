@@ -178,7 +178,7 @@
     M(OSReadChars, "Number of bytes read from filesystem, including page cache.") \
     M(OSWriteChars, "Number of bytes written to filesystem, including page cache.") \
     \
-    M(PERF_COUNT_HW_CPU_CYCLES, "Total cycles. Be wary of what happens during CPU frequency scaling.") \
+    M(PERF_COUNT_HW_CPU_CYCLES, "Total cycles. Be wary of what happens during CPU frequency scaling.")  \
     M(PERF_COUNT_HW_INSTRUCTIONS, "Retired instructions. Be careful, these can be affected by various issues, most notably hardware interrupt counts.") \
     M(PERF_COUNT_HW_CACHE_REFERENCES, "Cache accesses. Usually this indicates Last Level Cache accesses but this may vary depending on your CPU. This may include prefetches and coherency messages; again this depends on the design of your CPU.") \
     M(PERF_COUNT_HW_CACHE_MISSES, "Cache misses. Usually this indicates Last Level Cache misses; this is intended to be used in con‐junction with the PERF_COUNT_HW_CACHE_REFERENCES event to calculate cache miss rates.") \
