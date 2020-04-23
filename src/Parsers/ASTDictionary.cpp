@@ -67,6 +67,8 @@ ASTPtr ASTDictionaryLayout::clone() const
     auto res = std::make_shared<ASTDictionaryLayout>(*this);
     res->children.clear();
     res->layout_type = layout_type;
+    res->parameters.clear();
+    res->has_brackets = has_brackets;
     for (const auto & parameter : parameters)
     {
         res->parameters.emplace_back(parameter.first, nullptr);
