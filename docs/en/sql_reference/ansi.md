@@ -120,58 +120,58 @@ The following table lists cases when query feature works in ClickHouse, but beha
 | **E171**   | **SQLSTATE support**                                                                                                     | **No**      |                                                                                                                                                   |
 | **E182**   | **Host language binding**                                                                                                | **No**      |                                                                                                                                                   |
 | **F031** | **Basic schema manipulation** | **Partial** | |
-| F031-01 | CREATE TABLE statement to create persistent base tables | | |
-| F031-02 | CREATE VIEW statement | | |
-| F031-03 | GRANT statement | | |
-| F031-04 | ALTER TABLE statement: ADD COLUMN clause | | |
-| F031-13 | DROP TABLE statement: RESTRICT clause | | |
-| F031-16 | DROP VIEW statement: RESTRICT clause | | |
-| F031-19 | REVOKE statement: RESTRICT clause | | |
-| **F041** | **Basic joined table** | | |
-| F041-01 | Inner join (but not necessarily the INNER keyword) | | |
-| F041-02 | INNER keyword | | |
-| F041-03 | LEFT OUTER JOIN | | |
-| F041-04 | RIGHT OUTER JOIN | | |
-| F041-05 | Outer joins can be nested | | |
-| F041-07 | The inner table in a left or right outer join can also be used in an inner join | | |
-| F041-08 | All comparison operators are supported (rather than just =) | | |
-| F051 | **Basic date and time** | | |
-| F051-01 | DATE data type (including support of DATE literal) | | |
-| F051-02 | TIME data type (including support of TIME literal) with fractional seconds precision of at least 0 | | |
-| F051-03 | TIMESTAMP data type (including support of TIMES- TAMP literal) with fractional seconds precision of at least 0 and 6 | | |
-| F051-04 | Comparison predicate on DATE, TIME, and TIMES- TAMP data types | | |
-| F051-05 | Explicit CAST between datetime types and character string types | | |
-| F051-06 | CURRENT_DATE | | |
-| F051-07 | LOCALTIME | | |
-| F051-08 | LOCALTIMESTAMP | | |
-| **F081** | **UNION and EXCEPT in views** | | |
-| **F131** | **Grouped operations** | | |
-| F131-01 | WHERE, GROUP BY, and HAVING clauses supported in queries with grouped views | | |
-| F131-02 | Multiple tables supported in queries with grouped views | | |
-| F131-03 | Set functions supported in queries with grouped views | | |
-| F131-04 | Subqueries with GROUP BY and HAVING clauses and grouped views | | |
-| F131-05 | Single row SELECT with GROUP BY and HAVING clauses and grouped views | | |
-| **F181** | **Multiple module support** | | |
-| **F201** | **CAST function** | | |
-| **F221** | **Explicit defaults** | | |
-| **F261** | **CASE expression** | | |
-| F261-01 | Simple CASE | | |
-| F261-02 | Searched CASE | | |
-| F261-03 | NULLIF | | |
-| F261-04 | COALESCE | | |
-| **F311** | **Schema definition statement** | | |
-| F311-01 | CREATE SCHEMA | | |
-| F311-02 | CREATE TABLE for persistent base tables | | |
-| F311-03 | CREATE VIEW | | |
-| F311-04 | CREATE VIEW: WITH CHECK OPTION | | |
-| F311-05 | GRANT statement | | |
-| **F471** | **Scalar subquery values** | | |
-| **F481** | **Expanded NULL predicate** | | |
-| **F812** | **Basic flagging** | | |
-| **T321** | **Basic SQL-invoked routines** | | |
-| T321-01 | User-defined functions with no overloading | | |
-| T321-02 | User-defined stored procedures with no overloading | | |
-| T321-03 | Function invocation | | |
-| T321-04 | CALL statement | | |
-| T321-05 | RETURN statement | | |
-| **T631** | **IN predicate with one list element** | | |
+| F031-01 | CREATE TABLE statement to create persistent base tables | Partial | No `SYSTEM VERSIONING`, `ON COMMIT`, `GLOBAL`, `LOCAL`, `PRESERVE`, `DELETE`, `REF IS`, `WITH OPTIONS`, `UNDER`, `LIKE`, `PERIOD FOR` clauses and no support for user resolved data types |
+| F031-02 | CREATE VIEW statement | Partial | No `RECURSIVE`, `CHECK`, `UNDER`, `WITH OPTIONS` clauses and no support for user resolved data types |
+| F031-03 | GRANT statement | Yes | |
+| F031-04 | ALTER TABLE statement: ADD COLUMN clause | Partial | No support for `GENERATED` clause and system time period  |
+| F031-13 | DROP TABLE statement: RESTRICT clause | No | |
+| F031-16 | DROP VIEW statement: RESTRICT clause | No | |
+| F031-19 | REVOKE statement: RESTRICT clause | No | |
+| **F041** | **Basic joined table** | **Partial** | |
+| F041-01 | Inner join (but not necessarily the INNER keyword) | Yes | |
+| F041-02 | INNER keyword | Yes | |
+| F041-03 | LEFT OUTER JOIN | Yes | |
+| F041-04 | RIGHT OUTER JOIN | Yes | |
+| F041-05 | Outer joins can be nested | Yes | |
+| F041-07 | The inner table in a left or right outer join can also be used in an inner join | Yes  | |
+| F041-08 | All comparison operators are supported (rather than just =) | No | |
+| **F051** | **Basic date and time** | **Partial** | |
+| F051-01 | DATE data type (including support of DATE literal) | Partial | No literal |
+| F051-02 | TIME data type (including support of TIME literal) with fractional seconds precision of at least 0 | No | |
+| F051-03 | TIMESTAMP data type (including support of TIMESTAMP literal) with fractional seconds precision of at least 0 and 6 | No | `DateTime64` time provides similar functionality |
+| F051-04 | Comparison predicate on DATE, TIME, and TIMESTAMP data types | Partial | Only one data type available |
+| F051-05 | Explicit CAST between datetime types and character string types | Yes | |
+| F051-06 | CURRENT_DATE | No | `today()` is similar |
+| F051-07 | LOCALTIME | No | `now()` is similar |
+| F051-08 | LOCALTIMESTAMP | No | |
+| **F081** | **UNION and EXCEPT in views** | **Partial** | |
+| **F131** | **Grouped operations** | **Partial** | |
+| F131-01 | WHERE, GROUP BY, and HAVING clauses supported in queries with grouped views | Yes | |
+| F131-02 | Multiple tables supported in queries with grouped views | Yes | |
+| F131-03 | Set functions supported in queries with grouped views | Yes | |
+| F131-04 | Subqueries with GROUP BY and HAVING clauses and grouped views | Yes | |
+| F131-05 | Single row SELECT with GROUP BY and HAVING clauses and grouped views | No | |
+| **F181** | **Multiple module support** | **No** | |
+| **F201** | **CAST function** | **Yes** | |
+| **F221** | **Explicit defaults** | **No** | |
+| **F261** | **CASE expression** | **Yes** | |
+| F261-01 | Simple CASE | Yes | |
+| F261-02 | Searched CASE | Yes | |
+| F261-03 | NULLIF | Yes | |
+| F261-04 | COALESCE | Yes | |
+| **F311** | **Schema definition statement** | Partial | |
+| F311-01 | CREATE SCHEMA | No | |
+| F311-02 | CREATE TABLE for persistent base tables | Yes | |
+| F311-03 | CREATE VIEW | Yes | |
+| F311-04 | CREATE VIEW: WITH CHECK OPTION | No | |
+| F311-05 | GRANT statement | Yes | |
+| **F471** | **Scalar subquery values** | **Yes** | |
+| **F481** | **Expanded NULL predicate** | **Yes**| |
+| **F812** | **Basic flagging** | **No** | |
+| **T321** | **Basic SQL-invoked routines** | **No** | |
+| T321-01 | User-defined functions with no overloading | **No** | |
+| T321-02 | User-defined stored procedures with no overloading | **No** | |
+| T321-03 | Function invocation | **No** | |
+| T321-04 | CALL statement | **No** | |
+| T321-05 | RETURN statement | **No** | |
+| **T631** | **IN predicate with one list element** | **Yes** | |
