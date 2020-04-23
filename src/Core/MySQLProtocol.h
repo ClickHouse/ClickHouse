@@ -102,6 +102,7 @@ enum Command
     COM_TIME = 0xf,
     COM_DELAYED_INSERT = 0x10,
     COM_CHANGE_USER = 0x11,
+    COM_REGISTER_SLAVE = 0x15,
     COM_RESET_CONNECTION = 0x1f,
     COM_DAEMON = 0x1d
 };
@@ -1434,5 +1435,48 @@ private:
 
 }
 
+namespace ReplicationProtocol
+{
+    /// https://dev.mysql.com/doc/internals/en/com-register-slave.html
+    class RegisterSlave : public WritePacket
+    {
+    public:
+        UInt8 header = COM_REGISTER_SLAVE;
+        UInt32 server_id;
+        String slaves_hostname;
+        String slaves_users;
+        String slaves_password;
+        size_t slaves_mysql_port;
+        UInt32 replication_rank;
+        UInt32 master_id;
+
+        RegisterSlave(UInt32 server_id_)
+            : server_id(server_id_)
+            , slaves_mysql_port(0x00)
+            , replication_rank(0x00)
+            , master_id(0x00)
+        {
+        }
+
+        void writePayloadImpl(WriteBuffer & buffer) const override
+        {
+            buffer.write(header);
+            buffer.write(reinterpret_cast<const char *>(&server_id), 4);
+            writeLengthEncodedString(slaves_hostname, buffer);
+            writeLengthEncodedString(slaves_users, buffer);
+            writeLengthEncodedString(slaves_password, buffer);
+            buffer.write(reinterpret_cast<const char *>(&slaves_mysql_port), 2);
+            buffer.write(reinterpret_cast<const char *>(&replication_rank), 4);
+            buffer.write(reinterpret_cast<const char *>(&master_id), 4);
+        }
+
+    protected:
+        size_t getPayloadSize() const override
+        {
+            return 1 + 4 + getLengthEncodedStringSize(slaves_hostname) + getLengthEncodedStringSize(slaves_users)
+                + getLengthEncodedStringSize(slaves_password) + 2 + 4 + 4;
+        }
+    };
+}
 }
 }

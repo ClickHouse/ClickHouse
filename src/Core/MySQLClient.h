@@ -24,7 +24,7 @@ public:
     void disconnect();
     bool ping();
     bool initdb(String db);
-    bool query(String q);
+    bool register_slave(UInt32 server_id);
     String error();
 
 private:
@@ -50,7 +50,6 @@ private:
     std::shared_ptr<PacketSender> packet_sender;
 
     bool handshake();
-    bool readColumns(int column_length);
     bool writeCommand(char command, String query);
 };
 
