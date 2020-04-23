@@ -13,7 +13,6 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
-#include <Common/setThreadName.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/MemoryTracker.h>
 #include <Common/FieldVisitors.h>
@@ -76,6 +75,7 @@ StorageBuffer::StorageBuffer(
     , destination_id(destination_id_)
     , allow_materialized(allow_materialized_)
     , log(&Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
+    , bg_pool(global_context.getBufferFlushSchedulePool())
 {
     setColumns(columns_);
     setConstraints(constraints_);
@@ -83,12 +83,7 @@ StorageBuffer::StorageBuffer(
 
 StorageBuffer::~StorageBuffer()
 {
-    // Should not happen if shutdown was called
-    if (flush_thread.joinable())
-    {
-        shutdown_event.set();
-        flush_thread.join();
-    }
+    flush_handle->deactivate();
 }
 
 
@@ -168,7 +163,8 @@ Pipes StorageBuffer::read(
         if (destination.get() == this)
             throw Exception("Destination table is myself. Read will cause infinite loop.", ErrorCodes::INFINITE_LOOP);
 
-        auto destination_lock = destination->lockStructureForShare(false, context.getCurrentQueryId());
+        auto destination_lock = destination->lockStructureForShare(
+                false, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
         const bool dst_has_same_structure = std::all_of(column_names.begin(), column_names.end(), [this, destination](const String& column_name)
         {
@@ -224,7 +220,7 @@ Pipes StorageBuffer::read(
                             pipe.getHeader(), header_after_adding_defaults, getColumns().getDefaults(), context));
 
                     pipe.addSimpleTransform(std::make_shared<ConvertingTransform>(
-                            pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name, context));
+                            pipe.getHeader(), header, ConvertingTransform::MatchColumnsMode::Name));
                 }
             }
         }
@@ -396,6 +392,9 @@ public:
             least_busy_lock = std::unique_lock(least_busy_buffer->mutex);
         }
         insertIntoBuffer(block, *least_busy_buffer);
+        least_busy_lock.unlock();
+
+        storage.reschedule();
     }
 private:
     StorageBuffer & storage;
@@ -457,16 +456,15 @@ void StorageBuffer::startup()
             << " Set appropriate system_profile to fix this.");
     }
 
-    flush_thread = ThreadFromGlobalPool(&StorageBuffer::flushThread, this);
+
+    flush_handle = bg_pool.createTask(log->name() + "/Bg", [this]{ flushBack(); });
+    flush_handle->activateAndSchedule();
 }
 
 
 void StorageBuffer::shutdown()
 {
-    shutdown_event.set();
-
-    if (flush_thread.joinable())
-        flush_thread.join();
+    flush_handle->deactivate();
 
     try
     {
@@ -594,7 +592,7 @@ void StorageBuffer::flushBuffer(Buffer & buffer, bool check_thresholds, bool loc
 
     ProfileEvents::increment(ProfileEvents::StorageBufferFlush);
 
-    LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds.");
+    LOG_TRACE(log, "Flushing buffer with " << rows << " rows, " << bytes << " bytes, age " << time_passed << " seconds " << (check_thresholds ? "(bg)" : "(direct)") << ".");
 
     if (!destination_id)
         return;
@@ -662,7 +660,7 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
                     << " have different type of column " << backQuoteIfNeed(column.name) << " ("
                     << dst_col.type->getName() << " != " << column.type->getName()
                     << "). Block of data is converted.");
-                column.column = castColumn(column, dst_col.type, global_context);
+                column.column = castColumn(column, dst_col.type);
                 column.type = dst_col.type;
             }
 
@@ -696,21 +694,42 @@ void StorageBuffer::writeBlockToDestination(const Block & block, StoragePtr tabl
 }
 
 
-void StorageBuffer::flushThread()
+void StorageBuffer::flushBack()
 {
-    setThreadName("BufferFlush");
-
-    do
+    try
     {
-        try
-        {
-            flushAllBuffers(true);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    } while (!shutdown_event.tryWait(1000));
+        flushAllBuffers(true);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+
+    reschedule();
+}
+
+void StorageBuffer::reschedule()
+{
+    time_t min_first_write_time = std::numeric_limits<time_t>::max();
+    time_t rows = 0;
+
+    for (auto & buffer : buffers)
+    {
+        std::lock_guard lock(buffer.mutex);
+        min_first_write_time = buffer.first_write_time;
+        rows += buffer.data.rows();
+    }
+
+    /// will be rescheduled via INSERT
+    if (!rows)
+        return;
+
+    time_t current_time = time(nullptr);
+    time_t time_passed = current_time - min_first_write_time;
+
+    size_t min = std::max<ssize_t>(min_thresholds.time - time_passed, 1);
+    size_t max = std::max<ssize_t>(max_thresholds.time - time_passed, 1);
+    flush_handle->scheduleAfter(std::min(min, max) * 1000);
 }
 
 void StorageBuffer::checkAlterIsPossible(const AlterCommands & commands, const Settings & /* settings */)
@@ -736,7 +755,7 @@ std::optional<UInt64> StorageBuffer::totalRows() const
         return underlying_rows;
 
     UInt64 rows = 0;
-    for (auto & buffer : buffers)
+    for (const auto & buffer : buffers)
     {
         std::lock_guard lock(buffer.mutex);
         rows += buffer.data.rows();
@@ -747,7 +766,7 @@ std::optional<UInt64> StorageBuffer::totalRows() const
 std::optional<UInt64> StorageBuffer::totalBytes() const
 {
     UInt64 bytes = 0;
-    for (auto & buffer : buffers)
+    for (const auto & buffer : buffers)
     {
         std::lock_guard lock(buffer.mutex);
         bytes += buffer.data.bytes();
@@ -757,7 +776,7 @@ std::optional<UInt64> StorageBuffer::totalBytes() const
 
 void StorageBuffer::alter(const AlterCommands & params, const Context & context, TableStructureWriteLockHolder & table_lock_holder)
 {
-    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId());
+    lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
     auto table_id = getStorageID();
     checkAlterIsPossible(params, context.getSettingsRef());

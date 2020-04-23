@@ -15,7 +15,7 @@ Tests are located in `queries` directory. There are two subdirectories: `statele
 
 Each test can be one of two types: `.sql` and `.sh`. `.sql` test is the simple SQL script that is piped to `clickhouse-client --multiquery --testmode`. `.sh` test is a script that is run by itself.
 
-To run all tests, use `testskhouse-test` tool. Look `--help` for the list of possible options. You can simply run all tests or run subset of tests filtered by substring in test name: `./clickhouse-test substring`.
+To run all tests, use `clickhouse-test` tool. Look `--help` for the list of possible options. You can simply run all tests or run subset of tests filtered by substring in test name: `./clickhouse-test substring`.
 
 The most simple way to invoke functional tests is to copy `clickhouse-client` to `/usr/bin/`, run `clickhouse-server` and then run `./clickhouse-test` from its own directory.
 
@@ -34,13 +34,13 @@ disable these groups of tests using `--no-zookeeper`, `--no-shard` and
 
 ## Known Bugs {#known-bugs}
 
-If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `queries/bugs` directory. These tests will be moved to `teststests_stateless` when bugs are fixed.
+If we know some bugs that can be easily reproduced by functional tests, we place prepared functional tests in `tests/queries/bugs` directory. These tests will be moved to `tests/queries/0_stateless` when bugs are fixed.
 
 ## Integration Tests {#integration-tests}
 
 Integration tests allow to test ClickHouse in clustered configuration and ClickHouse interaction with other servers like MySQL, Postgres, MongoDB. They are useful to emulate network splits, packet drops, etc. These tests are run under Docker and create multiple containers with various software.
 
-See `testsgration/README.md` on how to run these tests.
+See `tests/integration/README.md` on how to run these tests.
 
 Note that integration of ClickHouse with third-party drivers is not tested. Also we currently don’t have integration tests with our JDBC and ODBC drivers.
 
@@ -54,7 +54,7 @@ It’s not necessarily to have unit tests if the code is already covered by func
 
 Performance tests allow to measure and compare performance of some isolated part of ClickHouse on synthetic queries. Tests are located at `tests/performance`. Each test is represented by `.xml` file with description of test case. Tests are run with `clickhouse performance-test` tool (that is embedded in `clickhouse` binary). See `--help` for invocation.
 
-Each test run one or miltiple queries (possibly with combinations of parameters) in a loop with some conditions for stop (like “maximum execution speed is not changing in three seconds”) and measure some metrics about query performance (like “maximum execution speed”). Some tests can contain preconditions on preloaded test dataset.
+Each test run one or multiple queries (possibly with combinations of parameters) in a loop with some conditions for stop (like “maximum execution speed is not changing in three seconds”) and measure some metrics about query performance (like “maximum execution speed”). Some tests can contain preconditions on preloaded test dataset.
 
 If you want to improve performance of ClickHouse in some scenario, and if improvements can be observed on simple queries, it is highly recommended to write a performance test. It always makes sense to use `perf top` or other perf tools during your tests.
 
@@ -64,13 +64,13 @@ Some programs in `tests` directory are not prepared tests, but are test tools. F
 
 You can also place pair of files `.sh` and `.reference` along with the tool to run it on some predefined input - then script result can be compared to `.reference` file. These kind of tests are not automated.
 
-## Miscellanous Tests {#miscellanous-tests}
+## Miscellaneous Tests {#miscellaneous-tests}
 
 There are tests for external dictionaries located at `tests/external_dictionaries` and for machine learned models in `tests/external_models`. These tests are not updated and must be transferred to integration tests.
 
 There is separate test for quorum inserts. This test run ClickHouse cluster on separate servers and emulate various failure cases: network split, packet drop (between ClickHouse nodes, between ClickHouse and ZooKeeper, between ClickHouse server and client, etc.), `kill -9`, `kill -STOP` and `kill -CONT` , like [Jepsen](https://aphyr.com/tags/Jepsen). Then the test checks that all acknowledged inserts was written and all rejected inserts was not.
 
-Quorum test was written by separate team before ClickHouse was open-sourced. This team no longer work with ClickHouse. Test was accidentially written in Java. For these reasons, quorum test must be rewritten and moved to integration tests.
+Quorum test was written by separate team before ClickHouse was open-sourced. This team no longer work with ClickHouse. Test was accidentally written in Java. For these reasons, quorum test must be rewritten and moved to integration tests.
 
 ## Manual Testing {#manual-testing}
 

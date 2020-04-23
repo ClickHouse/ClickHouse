@@ -74,6 +74,9 @@ toc_title: "\u06CC\u06A9\u067E\u0627\u0631\u0686\u06AF\u06CC"
         -   [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) (استفاده [اطالعات.کلیک \_شورم](https://github.com/Infinidat/infi.clickhouse_orm))
     -   [پانداها](https://pandas.pydata.org)
         -   [پانداهاوس](https://github.com/kszucs/pandahouse)
+- PHP
+    -   [Doctrine](https://www.doctrine-project.org/)
+        -   [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
 -   R
     -   [هواپیمای دوباله](https://db.rstudio.com/dplyr/)
         -   [خانه روستایی](https://github.com/IMSMWU/RClickhouse) (استفاده [صفحه اصلی](https://github.com/artpaul/clickhouse-cpp))

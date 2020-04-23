@@ -46,7 +46,7 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
             char point;
             std::istringstream iss_range(buffer);
             iss_range >> range_begin >> point >> point >> range_end;
-            assert(iss_range.good());
+            assert(!iss_range.fail());
             bool leading_zeros = buffer[0] == '0';
             size_t num_len = std::to_string(range_end).size();
             if (leading_zeros)

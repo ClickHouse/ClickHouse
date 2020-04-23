@@ -34,7 +34,7 @@ namespace ErrorCodes
 }
 
 /**
- * distance compression algorigthm implementation
+ * distance compression algorithm implementation
  * http://jmlr.org/papers/volume11/ben-haim10a/ben-haim10a.pdf
  */
 class AggregateFunctionHistogramData

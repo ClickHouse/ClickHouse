@@ -15,7 +15,6 @@
 #include <ext/scope_guard.h>
 #include <common/logger_useful.h>
 #include <common/phdr_cache.h>
-#include <common/config_common.h>
 #include <common/ErrorHandlers.h>
 #include <common/getMemoryAmount.h>
 #include <common/coverage.h>
@@ -26,7 +25,6 @@
 #include <Common/StringUtils/StringUtils.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
-#include "config_core.h"
 #include <common/getFQDNOrHostName.h>
 #include <Common/getMultipleKeysFromConfig.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
@@ -59,25 +57,31 @@
 #include "MetricsTransmitter.h"
 #include <Common/StatusFile.h>
 #include "TCPHandlerFactory.h"
-#include "Common/config_version.h"
 #include <Common/SensitiveDataMasker.h>
 #include <Common/ThreadFuzzer.h>
 #include "MySQLHandlerFactory.h"
 
+#if !defined(ARCADIA_BUILD)
+#    include <common/config_common.h>
+#    include "config_core.h"
+#    include "Common/config_version.h"
+#endif
+
 #if defined(OS_LINUX)
-#include <Common/hasLinuxCapability.h>
-#include <sys/mman.h>
+#    include <sys/mman.h>
+#    include <Common/hasLinuxCapability.h>
 #endif
 
 #if USE_POCO_NETSSL
-#include <Poco/Net/Context.h>
-#include <Poco/Net/SecureServerSocket.h>
+#    include <Poco/Net/Context.h>
+#    include <Poco/Net/SecureServerSocket.h>
 #endif
 
 namespace CurrentMetrics
 {
     extern const Metric Revision;
     extern const Metric VersionInteger;
+    extern const Metric MemoryTracking;
 }
 
 namespace
@@ -227,7 +231,10 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /** Context contains all that query execution is dependent:
       *  settings, available functions, data types, aggregate functions, databases...
       */
-    global_context = std::make_unique<Context>(Context::createGlobal());
+    auto shared_context = Context::createShared();
+    auto global_context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
+    global_context_ptr = global_context.get();
+
     global_context->makeGlobalContext();
     global_context->setApplicationType(Context::ApplicationType::SERVER);
 
@@ -248,7 +255,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     const auto memory_amount = getMemoryAmount();
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     std::string executable_path = getExecutablePath();
     if (executable_path.empty())
         executable_path = "/usr/bin/clickhouse";    /// It is used for information messages.
@@ -324,7 +331,9 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /** Explicitly destroy Context. It is more convenient than in destructor of Server, because logger is still available.
           * At this moment, no one could own shared part of Context.
           */
+        global_context_ptr = nullptr;
         global_context.reset();
+        shared_context.reset();
         LOG_DEBUG(log, "Destroyed global context.");
     });
 
@@ -552,6 +561,28 @@ int Server::main(const std::vector<std::string> & /*args*/)
     global_context->setFormatSchemaPath(format_schema_path.path());
     format_schema_path.createDirectories();
 
+    /// Limit on total memory usage
+    size_t max_server_memory_usage = config().getUInt64("max_server_memory_usage", 0);
+
+    double max_server_memory_usage_to_ram_ratio = config().getDouble("max_server_memory_usage_to_ram_ratio", 0.9);
+    size_t default_max_server_memory_usage = memory_amount * max_server_memory_usage_to_ram_ratio;
+
+    if (max_server_memory_usage == 0)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was set to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage));
+    }
+    else if (max_server_memory_usage > default_max_server_memory_usage)
+    {
+        max_server_memory_usage = default_max_server_memory_usage;
+        LOG_INFO(log, "Setting max_server_memory_usage was lowered to " << formatReadableSizeWithBinarySuffix(max_server_memory_usage)
+            << " because the system has low amount of memory");
+    }
+
+    total_memory_tracker.setOrRaiseHardLimit(max_server_memory_usage);
+    total_memory_tracker.setDescription("(total)");
+    total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
     LOG_INFO(log, "Loading metadata from " + path);
 
     try
@@ -586,9 +617,19 @@ int Server::main(const std::vector<std::string> & /*args*/)
     /// Look at compiler-rt/lib/sanitizer_common/sanitizer_stacktrace.h
     ///
 #if USE_UNWIND && !WITH_COVERAGE && !defined(SANITIZER)
-    /// QueryProfiler cannot work reliably with any other libunwind or without PHDR cache.
+    /// Profilers cannot work reliably with any other libunwind or without PHDR cache.
     if (hasPHDRCache())
+    {
         global_context->initializeTraceCollector();
+
+        /// Set up server-wide memory profiler (for total memory tracker).
+        UInt64 total_memory_profiler_step = config().getUInt64("total_memory_profiler_step", 0);
+        if (total_memory_profiler_step)
+        {
+            total_memory_tracker.setOrRaiseProfilerLimit(total_memory_profiler_step);
+            total_memory_tracker.setProfilerStep(total_memory_profiler_step);
+        }
+    }
 #endif
 
     /// Describe multiple reasons when query profiler cannot work.
@@ -631,7 +672,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         dns_cache_updater = std::make_unique<DNSCacheUpdater>(*global_context, config().getInt("dns_cache_update_period", 15));
     }
 
-#if defined(__linux__)
+#if defined(OS_LINUX)
     if (!TaskStatsInfoGetter::checkPermissions())
     {
         LOG_INFO(log, "It looks like the process has no CAP_NET_ADMIN capability, 'taskstats' performance statistics will be disabled."

@@ -3,6 +3,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Columns/ColumnConst.h>
 
 namespace DB
 {
@@ -62,7 +63,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     }
 }
 
-bool TTLBlockInputStream::isTTLExpired(time_t ttl)
+bool TTLBlockInputStream::isTTLExpired(time_t ttl) const
 {
     return (ttl && (ttl <= current_time));
 }

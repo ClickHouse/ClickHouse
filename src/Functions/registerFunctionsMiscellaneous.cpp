@@ -1,4 +1,6 @@
-#include <config_core.h>
+#if !defined(ARCADIA_BUILD)
+#    include <config_core.h>
+#endif
 
 namespace DB
 {
@@ -56,6 +58,7 @@ void registerFunctionBasename(FunctionFactory &);
 void registerFunctionTransform(FunctionFactory &);
 void registerFunctionGetMacro(FunctionFactory &);
 void registerFunctionGetScalar(FunctionFactory &);
+void registerFunctionIsConstant(FunctionFactory &);
 
 #if USE_ICU
 void registerFunctionConvertCharset(FunctionFactory &);
@@ -114,6 +117,7 @@ void registerFunctionsMiscellaneous(FunctionFactory & factory)
     registerFunctionTransform(factory);
     registerFunctionGetMacro(factory);
     registerFunctionGetScalar(factory);
+    registerFunctionIsConstant(factory);
 
 #if USE_ICU
     registerFunctionConvertCharset(factory);

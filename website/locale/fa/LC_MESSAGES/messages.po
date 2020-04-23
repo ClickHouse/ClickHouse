@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-03-30 15:12+0300\n"
+"POT-Creation-Date: 2020-04-15 13:19+0000\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: fa\n"
@@ -78,11 +78,15 @@ msgstr ""
 " کنار پایگاه داده اصلی خانه کلیک زندگی می کند و منتظر سخنرانان مادری "
 "همکار به انسان بیشتر قابل خواندن است."
 
+#: templates/docs/content.html:7
+msgid "You can also use the original English version as a reference."
+msgstr "شما همچنین می توانید نسخه اصلی انگلیسی به عنوان یک مرجع استفاده کنید."
+
 #: templates/docs/content.html:10
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "راهنما مستندات تاتر با ویرایش این صفحه"
 
-#: templates/docs/content.html:31
+#: templates/docs/content.html:27
 msgid "Built from"
 msgstr "ساخته شده از"
 
@@ -182,15 +186,15 @@ msgstr "بحث های ایمیل"
 msgid "Like ClickHouse?"
 msgstr "مانند خانه کلیک?"
 
-#: templates/index/community.html:142
+#: templates/index/community.html:143
 msgid "Help to spread the word about it via"
 msgstr "کمک به گسترش این کلمه از طریق"
 
-#: templates/index/community.html:143
+#: templates/index/community.html:144
 msgid "and"
 msgstr "و"
 
-#: templates/index/community.html:155
+#: templates/index/community.html:153
 msgid "Hosting ClickHouse Meetups"
 msgstr "میزبانی اکسسوری تاتر"
 

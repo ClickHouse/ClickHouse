@@ -317,9 +317,11 @@ struct ContextShared
     MergeList merge_list;                                   /// The list of executable merge (for (Replicated)?MergeTree)
     ConfigurationPtr users_config;                          /// Config with the users, profiles and quotas sections.
     InterserverIOHandler interserver_io_handler;            /// Handler for interserver communication.
+    std::optional<BackgroundSchedulePool> buffer_flush_schedule_pool; /// A thread pool that can do background flush for Buffer tables.
     std::optional<BackgroundProcessingPool> background_pool; /// The thread pool for the background work performed by the tables.
     std::optional<BackgroundProcessingPool> background_move_pool; /// The thread pool for the background moves performed by the tables.
     std::optional<BackgroundSchedulePool> schedule_pool;    /// A thread pool that can run different jobs in background (used in replicated tables)
+    std::optional<BackgroundSchedulePool> distributed_schedule_pool; /// A thread pool that can run different jobs in background (used for distributed sends)
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker;                  /// Process ddl commands from zk.
     /// Rules for selecting the compression settings, depending on the size of the part.
@@ -413,9 +415,11 @@ struct ContextShared
         embedded_dictionaries.reset();
         external_dictionaries_loader.reset();
         external_models_loader.reset();
+        buffer_flush_schedule_pool.reset();
         background_pool.reset();
         background_move_pool.reset();
         schedule_pool.reset();
+        distributed_schedule_pool.reset();
         ddl_worker.reset();
 
         /// Stop trace collector if any
@@ -441,12 +445,26 @@ Context::Context() = default;
 Context::Context(const Context &) = default;
 Context & Context::operator=(const Context &) = default;
 
+SharedContextHolder::SharedContextHolder(SharedContextHolder &&) noexcept = default;
+SharedContextHolder & SharedContextHolder::operator=(SharedContextHolder &&) = default;
+SharedContextHolder::SharedContextHolder() = default;
+SharedContextHolder::~SharedContextHolder() = default;
+SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextShared> shared_context)
+    : shared(std::move(shared_context)) {}
 
-Context Context::createGlobal()
+void SharedContextHolder::reset() { shared.reset(); }
+
+
+Context Context::createGlobal(ContextShared * shared)
 {
     Context res;
-    res.shared = std::make_shared<ContextShared>();
+    res.shared = shared;
     return res;
+}
+
+SharedContextHolder Context::createShared()
+{
+    return SharedContextHolder(std::make_unique<ContextShared>());
 }
 
 Context::~Context() = default;
@@ -802,7 +820,7 @@ Tables Context::getExternalTables() const
     auto lock = getLock();
 
     Tables res;
-    for (auto & table : external_tables_mapping)
+    for (const auto & table : external_tables_mapping)
         res[table.first] = table.second->getTable();
 
     if (query_context && query_context != this)
@@ -907,7 +925,6 @@ void Context::setSettings(const Settings & settings_)
     auto old_allow_introspection_functions = settings.allow_introspection_functions;
 
     settings = settings_;
-    active_default_settings = nullptr;
 
     if ((settings.readonly != old_readonly) || (settings.allow_ddl != old_allow_ddl) || (settings.allow_introspection_functions != old_allow_introspection_functions))
         calculateAccessRights();
@@ -917,7 +934,6 @@ void Context::setSettings(const Settings & settings_)
 void Context::setSetting(const StringRef & name, const String & value)
 {
     auto lock = getLock();
-    active_default_settings = nullptr;
     if (name == "profile")
     {
         setProfile(value);
@@ -933,7 +949,6 @@ void Context::setSetting(const StringRef & name, const String & value)
 void Context::setSetting(const StringRef & name, const Field & value)
 {
     auto lock = getLock();
-    active_default_settings = nullptr;
     if (name == "profile")
     {
         setProfile(value.safeGet<String>());
@@ -957,20 +972,6 @@ void Context::applySettingsChanges(const SettingsChanges & changes)
     auto lock = getLock();
     for (const SettingChange & change : changes)
         applySettingChange(change);
-}
-
-
-void Context::resetSettingsToDefault()
-{
-    auto lock = getLock();
-    auto default_settings = getAccess()->getDefaultSettings();
-    if (default_settings && (default_settings == active_default_settings))
-        return;
-    if (default_settings)
-        setSettings(*default_settings);
-    else
-        setSettings(Settings{});
-    active_default_settings = default_settings;
 }
 
 
@@ -1313,7 +1314,7 @@ BackgroundProcessingPool & Context::getBackgroundPool()
     if (!shared->background_pool)
     {
         BackgroundProcessingPool::PoolSettings pool_settings;
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
         pool_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
         pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
         pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
@@ -1332,7 +1333,7 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
     if (!shared->background_move_pool)
     {
         BackgroundProcessingPool::PoolSettings pool_settings;
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
         pool_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
         pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_move_processing_pool_thread_sleep_seconds_random_part", 1.0);
         pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
@@ -1347,12 +1348,28 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
     return *shared->background_move_pool;
 }
 
+BackgroundSchedulePool & Context::getBufferFlushSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->buffer_flush_schedule_pool)
+        shared->buffer_flush_schedule_pool.emplace(settings.background_buffer_flush_schedule_pool_size);
+    return *shared->buffer_flush_schedule_pool;
+}
+
 BackgroundSchedulePool & Context::getSchedulePool()
 {
     auto lock = getLock();
     if (!shared->schedule_pool)
         shared->schedule_pool.emplace(settings.background_schedule_pool_size);
     return *shared->schedule_pool;
+}
+
+BackgroundSchedulePool & Context::getDistributedSchedulePool()
+{
+    auto lock = getLock();
+    if (!shared->distributed_schedule_pool)
+        shared->distributed_schedule_pool.emplace(settings.background_distributed_schedule_pool_size);
+    return *shared->distributed_schedule_pool;
 }
 
 void Context::setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker)
@@ -1445,7 +1462,7 @@ UInt16 Context::getTCPPort() const
 {
     auto lock = getLock();
 
-    auto & config = getConfigRef();
+    const auto & config = getConfigRef();
     return config.getInt("tcp_port", DBMS_DEFAULT_PORT);
 }
 
@@ -1453,7 +1470,7 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 {
     auto lock = getLock();
 
-    auto & config = getConfigRef();
+    const auto & config = getConfigRef();
     if (config.has("tcp_port_secure"))
         return config.getInt("tcp_port_secure");
     return {};
@@ -1486,7 +1503,7 @@ void Context::reloadClusterConfig()
             cluster_config = shared->clusters_config;
         }
 
-        auto & config = cluster_config ? *cluster_config : getConfigRef();
+        const auto & config = cluster_config ? *cluster_config : getConfigRef();
         auto new_clusters = std::make_unique<Clusters>(config, settings);
 
         {
@@ -1508,7 +1525,7 @@ Clusters & Context::getClusters() const
     std::lock_guard lock(shared->clusters_mutex);
     if (!shared->clusters)
     {
-        auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
+        const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
         shared->clusters = std::make_unique<Clusters>(config, settings);
     }
 
@@ -1638,7 +1655,7 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
     if (!shared->compression_codec_selector)
     {
         constexpr auto config_name = "compression";
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
 
         if (config.has(config_name))
             shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
@@ -1667,7 +1684,7 @@ DiskSelectorPtr Context::getDiskSelector() const
     if (!shared->merge_tree_disk_selector)
     {
         constexpr auto config_name = "storage_configuration.disks";
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
 
         shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, *this);
     }
@@ -1692,7 +1709,7 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector() const
     if (!shared->merge_tree_storage_policy_selector)
     {
         constexpr auto config_name = "storage_configuration.policies";
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
 
         shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector());
     }
@@ -1727,7 +1744,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
     if (!shared->merge_tree_settings)
     {
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
         MergeTreeSettings mt_settings;
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);

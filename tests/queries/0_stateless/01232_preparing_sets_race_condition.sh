@@ -18,7 +18,7 @@ echo "
     insert into tableB select number, number % 100000, addDays(toDate('2020-01-01'), number % 90) from numbers(50000000);
 " | $CLICKHOUSE_CLIENT -n
 
-for i in {1..10}; do echo "
+for i in {1..1}; do echo "
 SELECT tableName
 FROM 
     (

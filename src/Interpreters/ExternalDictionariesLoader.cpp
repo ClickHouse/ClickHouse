@@ -1,6 +1,10 @@
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Dictionaries/DictionaryFactory.h>
-#include "config_core.h"
+#include <Dictionaries/DictionaryStructure.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 #if USE_MYSQL
 #   include <mysqlxx/PoolFactory.h>
@@ -30,11 +34,24 @@ ExternalLoader::LoadablePtr ExternalDictionariesLoader::create(
     return DictionaryFactory::instance().create(name, config, key_in_config, context, dictionary_from_database);
 }
 
+
+DictionaryStructure
+ExternalDictionariesLoader::getDictionaryStructure(const Poco::Util::AbstractConfiguration & config, const std::string & key_in_config)
+{
+    return {config, key_in_config + ".structure"};
+}
+
+DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const ObjectConfig & config)
+{
+    return getDictionaryStructure(*config.config, config.key_in_config);
+}
+
+
 void ExternalDictionariesLoader::resetAll()
 {
-    #if USE_MYSQL
-        mysqlxx::PoolFactory::instance().reset();
-    #endif
+#if USE_MYSQL
+    mysqlxx::PoolFactory::instance().reset();
+#endif
 }
 
 }

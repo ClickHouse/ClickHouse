@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-03-30 15:12+0300\n"
+"POT-Creation-Date: 2020-04-15 13:19+0000\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ru\n"
@@ -64,7 +64,7 @@ msgstr "ООО «Яндекс»"
 
 #: templates/docs/content.html:6
 msgid "Help wanted!"
-msgstr "Помощь нужна!"
+msgstr "Нужна помощь!"
 
 #: templates/docs/content.html:7
 msgid ""
@@ -74,17 +74,23 @@ msgid ""
 "codebase and waits for fellow native speakers to make it more human-"
 "readable."
 msgstr ""
-"Следующее содержание этой страницы документации было переведено на "
-"машинный язык. Но в отличие от других сайтов, это делается не на лету. "
+"Нижеследующее содержание этой страницы документации было создано через "
+"машинный перевод. Но в отличие от других сайтов, это делается не на лету. "
 "Этот переведенный текст живет в репозитории GitHub вместе с основной "
 "кодовой базой ClickHouse и ждет, когда другие носители языка сделают его "
-"более удобочитаемым для человека."
+"более удобочитаемым."
+
+#: templates/docs/content.html:7
+msgid "You can also use the original English version as a reference."
+msgstr ""
+"Вы также можете использовать оригинальную английскую версию в качестве "
+"образца."
 
 #: templates/docs/content.html:10
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "Помогите документации ClickHouse, отредактировав эту страницу"
 
-#: templates/docs/content.html:31
+#: templates/docs/content.html:27
 msgid "Built from"
 msgstr "Собрано из"
 
@@ -184,15 +190,15 @@ msgstr "Обсуждения по электронной почте"
 msgid "Like ClickHouse?"
 msgstr "Нравится ClickHouse?"
 
-#: templates/index/community.html:142
+#: templates/index/community.html:143
 msgid "Help to spread the word about it via"
 msgstr "Помогите распространить информацию о нём через"
 
-#: templates/index/community.html:143
+#: templates/index/community.html:144
 msgid "and"
 msgstr "и"
 
-#: templates/index/community.html:155
+#: templates/index/community.html:153
 msgid "Hosting ClickHouse Meetups"
 msgstr "Таких Встреч ClickHouse "
 

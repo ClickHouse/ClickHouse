@@ -38,18 +38,9 @@ namespace std
 }
 #endif
 
-#include <DataStreams/ExpressionBlockInputStream.h>
-#include <DataStreams/FilterBlockInputStream.h>
 #include <DataStreams/CollapsingFinalBlockInputStream.h>
-#include <DataStreams/AddingConstColumnBlockInputStream.h>
 #include <DataStreams/CreatingSetsBlockInputStream.h>
-#include <DataStreams/MergingSortedBlockInputStream.h>
-#include <DataStreams/NullBlockInputStream.h>
-#include <DataStreams/SummingSortedBlockInputStream.h>
-#include <DataStreams/ReplacingSortedBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
-#include <DataStreams/AggregatingSortedBlockInputStream.h>
-#include <DataStreams/VersionedCollapsingSortedBlockInputStream.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -58,7 +49,11 @@ namespace std
 #include <Processors/Transforms/AddingConstColumnTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
-#include <Processors/Transforms/MergingSortedTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
+#include <Processors/Merges/SummingSortedTransform.h>
+#include <Processors/Merges/AggregatingSortedTransform.h>
+#include <Processors/Merges/ReplacingSortedTransform.h>
+#include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/ConcatProcessor.h>
@@ -1096,16 +1091,14 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
     };
 
     BlockInputStreamPtr merged;
+    ProcessorPtr merged_processor;
     switch (data.merging_params.mode)
     {
         case MergeTreeData::MergingParams::Ordinary:
         {
-            auto merged_processor =
-                    std::make_shared<MergingSortedTransform>(header, pipes.size(), sort_description, max_block_size);
-            Pipe pipe(std::move(pipes), std::move(merged_processor));
-            pipes = Pipes();
-            pipes.emplace_back(std::move(pipe));
-            return pipes;
+            merged_processor = std::make_shared<MergingSortedTransform>(header, pipes.size(),
+                    sort_description, max_block_size);
+            break;
         }
 
         case MergeTreeData::MergingParams::Collapsing:
@@ -1114,26 +1107,34 @@ Pipes MergeTreeDataSelectExecutor::spreadMarkRangesAmongStreamsFinal(
             break;
 
         case MergeTreeData::MergingParams::Summing:
-            merged = std::make_shared<SummingSortedBlockInputStream>(streams_to_merge(),
+            merged_processor = std::make_shared<SummingSortedTransform>(header, pipes.size(),
                     sort_description, data.merging_params.columns_to_sum, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::Aggregating:
-            merged = std::make_shared<AggregatingSortedBlockInputStream>(streams_to_merge(), sort_description, max_block_size);
+            merged_processor = std::make_shared<AggregatingSortedTransform>(header, pipes.size(),
+                    sort_description, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::Replacing:    /// TODO Make ReplacingFinalBlockInputStream
-            merged = std::make_shared<ReplacingSortedBlockInputStream>(streams_to_merge(),
+            merged_processor = std::make_shared<ReplacingSortedTransform>(header, pipes.size(),
                     sort_description, data.merging_params.version_column, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::VersionedCollapsing: /// TODO Make VersionedCollapsingFinalBlockInputStream
-            merged = std::make_shared<VersionedCollapsingSortedBlockInputStream>(
-                    streams_to_merge(), sort_description, data.merging_params.sign_column, max_block_size);
+            merged_processor = std::make_shared<VersionedCollapsingTransform>(header, pipes.size(),
+                    sort_description, data.merging_params.sign_column, max_block_size);
             break;
 
         case MergeTreeData::MergingParams::Graphite:
             throw Exception("GraphiteMergeTree doesn't support FINAL", ErrorCodes::LOGICAL_ERROR);
+    }
+
+    if (merged_processor)
+    {
+        Pipe pipe(std::move(pipes), std::move(merged_processor));
+        pipes = Pipes();
+        pipes.emplace_back(std::move(pipe));
     }
 
     if (merged)
@@ -1201,11 +1202,33 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             * If fits, split it into smaller ones and put them on the stack. If not, discard it.
             * If the segment is already of one mark length, add it to response and discard it.
             */
-        std::vector<MarkRange> ranges_stack{ {0, marks_count} };
+        std::vector<MarkRange> ranges_stack = { {0, marks_count} };
+
+        std::function<void(size_t, size_t, FieldRef &)> create_field_ref;
+        /// If there are no monotonic functions, there is no need to save block reference.
+        /// Passing explicit field to FieldRef allows to optimize ranges and shows better performance.
+        if (key_condition.hasMonotonicFunctionsChain())
+        {
+            auto index_block = std::make_shared<Block>();
+            for (size_t i = 0; i < used_key_size; ++i)
+                index_block->insert({index[i], data.primary_key_data_types[i], data.primary_key_columns[i]});
+
+            create_field_ref = [index_block](size_t row, size_t column, FieldRef & field)
+            {
+                field = {index_block.get(), row, column};
+            };
+        }
+        else
+        {
+            create_field_ref = [&index](size_t row, size_t column, FieldRef & field)
+            {
+                index[column]->get(row, field);
+            };
+        }
 
         /// NOTE Creating temporary Field objects to pass to KeyCondition.
-        Row index_left(used_key_size);
-        Row index_right(used_key_size);
+        std::vector<FieldRef> index_left(used_key_size);
+        std::vector<FieldRef> index_right(used_key_size);
 
         while (!ranges_stack.empty())
         {
@@ -1216,7 +1239,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             if (range.end == marks_count && !has_final_mark)
             {
                 for (size_t i = 0; i < used_key_size; ++i)
-                    index[i]->get(range.begin, index_left[i]);
+                    create_field_ref(range.begin, i, index_left[i]);
 
                 may_be_true = key_condition.mayBeTrueAfter(
                     used_key_size, index_left.data(), data.primary_key_data_types);
@@ -1228,8 +1251,8 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
                 for (size_t i = 0; i < used_key_size; ++i)
                 {
-                    index[i]->get(range.begin, index_left[i]);
-                    index[i]->get(range.end, index_right[i]);
+                    create_field_ref(range.begin, i, index_left[i]);
+                    create_field_ref(range.end, i, index_right[i]);
                 }
 
                 may_be_true = key_condition.mayBeTrueInRange(
@@ -1254,9 +1277,9 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                 size_t end;
 
                 for (end = range.end; end > range.begin + step; end -= step)
-                    ranges_stack.push_back(MarkRange(end - step, end));
+                    ranges_stack.emplace_back(end - step, end);
 
-                ranges_stack.push_back(MarkRange(range.begin, end));
+                ranges_stack.emplace_back(range.begin, end);
             }
         }
     }

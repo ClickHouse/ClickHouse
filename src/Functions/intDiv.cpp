@@ -1,8 +1,8 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
 
-#ifdef __SSE2__
-    #define LIBDIVIDE_USE_SSE2 1
+#if defined(__SSE2__)
+#    define LIBDIVIDE_SSE2 1
 #endif
 
 #include <libdivide.h>
@@ -45,7 +45,7 @@ struct DivideIntegralByConstantImpl
 
         const A * a_end = a_pos + size;
 
-#ifdef __SSE2__
+#if defined(__SSE2__)
         static constexpr size_t values_per_sse_register = 16 / sizeof(A);
         const A * a_end_sse = a_pos + size / values_per_sse_register * values_per_sse_register;
 

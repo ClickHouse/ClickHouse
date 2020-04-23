@@ -72,6 +72,7 @@
 #include <ext/scope_guard.h>
 #include <memory>
 
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Sources/SourceFromInputStream.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -84,10 +85,8 @@
 #include <Processors/Transforms/PartialSortingTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
-#include <Processors/Transforms/MergingSortedTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
-#include <Processors/Transforms/ExtremesTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
@@ -138,7 +137,7 @@ String InterpreterSelectQuery::generateFilterActions(ExpressionActionsPtr & acti
     for (const auto & column_str : prerequisite_columns)
     {
         ParserExpression expr_parser;
-        expr_list->children.push_back(parseQuery(expr_parser, column_str, 0));
+        expr_list->children.push_back(parseQuery(expr_parser, column_str, 0, context->getSettingsRef().max_parser_depth));
     }
 
     select_ast->setExpression(ASTSelectQuery::Expression::TABLES, std::make_shared<ASTTablesInSelectQuery>());
@@ -255,7 +254,8 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     if (storage)
     {
-        table_lock = storage->lockStructureForShare(false, context->getInitialQueryId());
+        table_lock = storage->lockStructureForShare(
+                false, context->getInitialQueryId(), context->getSettingsRef().lock_acquire_timeout);
         table_id = storage->getStorageID();
     }
 
@@ -305,12 +305,13 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     max_streams = settings.max_threads;
     ASTSelectQuery & query = getSelectQuery();
+    std::shared_ptr<TableJoin> table_join = joined_tables.makeTableJoin(query);
 
     auto analyze = [&] (bool try_move_to_prewhere = true)
     {
         syntax_analyzer_result = SyntaxAnalyzer(*context).analyzeSelect(
                 query_ptr, SyntaxAnalyzerResult(source_header.getNamesAndTypesList(), storage),
-                options, joined_tables.tablesWithColumns(), required_result_column_names);
+                options, joined_tables.tablesWithColumns(), required_result_column_names, table_join);
 
         /// Save scalar sub queries's results in the query context
         if (context->hasQueryContext())
@@ -551,10 +552,10 @@ Block InterpreterSelectQuery::getSampleBlockImpl(bool try_move_to_prewhere)
 
         Block res;
 
-        for (auto & key : query_analyzer->aggregationKeys())
+        for (const auto & key : query_analyzer->aggregationKeys())
             res.insert({nullptr, header.getByName(key.name).type, key.name});
 
-        for (auto & aggregate : query_analyzer->aggregates())
+        for (const auto & aggregate : query_analyzer->aggregates())
         {
             size_t arguments_size = aggregate.argument_names.size();
             DataTypes argument_types(arguments_size);
@@ -686,8 +687,8 @@ static std::pair<UInt64, UInt64> getLimitLengthAndOffset(const ASTSelectQuery & 
 
 static UInt64 getLimitForSorting(const ASTSelectQuery & query, const Context & context)
 {
-    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY.
-    if (!query.distinct && !query.limitBy() && !query.limit_with_ties)
+    /// Partial sort can be done if there is LIMIT but no DISTINCT or LIMIT BY, neither ARRAY JOIN.
+    if (!query.distinct && !query.limitBy() && !query.limit_with_ties && !query.arrayJoinExpressionList())
     {
         auto [limit_length, limit_offset] = getLimitLengthAndOffset(query, context);
         return limit_length + limit_offset;
@@ -715,7 +716,7 @@ void InterpreterSelectQuery::executeImpl(TPipeline & pipeline, const BlockInputS
     auto & query = getSelectQuery();
     const Settings & settings = context->getSettingsRef();
     auto & expressions = analysis_result;
-    auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
+    const auto & subqueries_for_sets = query_analyzer->getSubqueriesForSets();
     bool intermediate_stage = false;
 
     if (options.only_analyze)
@@ -1550,7 +1551,7 @@ void InterpreterSelectQuery::executeFetchColumns(
                     auto header = stream->getHeader();
                     auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
                     if (!blocksHaveEqualStructure(first_header, header))
-                        stream = std::make_shared<ConvertingBlockInputStream>(*context, stream, first_header, mode);
+                        stream = std::make_shared<ConvertingBlockInputStream>(stream, first_header, mode);
                 }
             }
 
@@ -1712,7 +1713,8 @@ void InterpreterSelectQuery::executeAggregation(QueryPipeline & pipeline, const 
 
     auto transform_params = std::make_shared<AggregatingTransformParams>(params, final);
 
-    pipeline.dropTotalsIfHas();
+    /// Forget about current totals and extremes. They will be calculated again after aggregation if needed.
+    pipeline.dropTotalsAndExtremes();
 
     /// If there are several sources, then we perform parallel aggregation
     if (pipeline.getNumStreams() > 1)
@@ -2541,8 +2543,7 @@ void InterpreterSelectQuery::executeExtremes(QueryPipeline & pipeline)
     if (!context->getSettingsRef().extremes)
         return;
 
-    auto transform = std::make_shared<ExtremesTransform>(pipeline.getHeader());
-    pipeline.addExtremesTransform(std::move(transform));
+    pipeline.addExtremesTransform();
 }
 
 
@@ -2592,7 +2593,7 @@ void InterpreterSelectQuery::unifyStreams(Pipeline & pipeline, Block header)
         auto mode = ConvertingBlockInputStream::MatchColumnsMode::Name;
 
         if (!blocksHaveEqualStructure(header, stream_header))
-            stream = std::make_shared<ConvertingBlockInputStream>(*context, stream, header, mode);
+            stream = std::make_shared<ConvertingBlockInputStream>(stream, header, mode);
     }
 }
 

@@ -1,25 +1,27 @@
-#include "config_core.h"
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_MYSQL
+#    include <Core/Defines.h>
+#    include <DataTypes/DataTypeString.h>
+#    include <DataTypes/DataTypesNumber.h>
+#    include <DataTypes/convertMySQLDataType.h>
+#    include <Formats/MySQLBlockInputStream.h>
+#    include <IO/Operators.h>
+#    include <Interpreters/evaluateConstantExpression.h>
+#    include <Parsers/ASTFunction.h>
+#    include <Parsers/ASTLiteral.h>
+#    include <Storages/StorageMySQL.h>
+#    include <TableFunctions/ITableFunction.h>
+#    include <TableFunctions/TableFunctionFactory.h>
+#    include <TableFunctions/TableFunctionMySQL.h>
+#    include <Common/Exception.h>
+#    include <Common/parseAddress.h>
+#    include <Common/quoteString.h>
+#    include "registerTableFunctions.h"
 
-#include <DataTypes/DataTypesNumber.h>
-#include <DataTypes/DataTypeString.h>
-#include <Formats/MySQLBlockInputStream.h>
-#include <Interpreters/evaluateConstantExpression.h>
-#include <Parsers/ASTFunction.h>
-#include <Parsers/ASTLiteral.h>
-#include <Storages/StorageMySQL.h>
-#include <TableFunctions/ITableFunction.h>
-#include <TableFunctions/TableFunctionFactory.h>
-#include <TableFunctions/TableFunctionMySQL.h>
-#include <Core/Defines.h>
-#include <Common/Exception.h>
-#include <Common/parseAddress.h>
-#include <Common/quoteString.h>
-#include <DataTypes/convertMySQLDataType.h>
-#include <IO/Operators.h>
-#include "registerTableFunctions.h"
-
-#include <mysqlxx/Pool.h>
+#    include <mysqlxx/Pool.h>
 
 
 namespace DB

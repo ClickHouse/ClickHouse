@@ -112,7 +112,7 @@ StorageSet::StorageSet(
     const ConstraintsDescription & constraints_,
     const Context & context_)
     : StorageSetOrJoinBase{relative_path_, table_id_, columns_, constraints_, context_},
-    set(std::make_shared<Set>(SizeLimits(), false))
+    set(std::make_shared<Set>(SizeLimits(), false, true))
 {
     Block header = getSampleBlock();
     header = header.sortColumns();
@@ -137,7 +137,7 @@ void StorageSet::truncate(const ASTPtr &, const Context &, TableStructureWriteLo
     header = header.sortColumns();
 
     increment = 0;
-    set = std::make_shared<Set>(SizeLimits(), false);
+    set = std::make_shared<Set>(SizeLimits(), false, true);
     set->setHeader(header);
 }
 
@@ -151,7 +151,7 @@ void StorageSetOrJoinBase::restore()
         return;
     }
 
-    static const auto file_suffix = ".bin";
+    static const char * file_suffix = ".bin";
     static const auto file_suffix_size = strlen(".bin");
 
     Poco::DirectoryIterator dir_end;

@@ -1,4 +1,5 @@
 #include <Core/Settings.h>
+#include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 
 #include <Interpreters/SyntaxAnalyzer.h>
@@ -28,9 +29,9 @@
 #include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/ParserTablesInSelectQuery.h>
-#include <Parsers/parseQuery.h>
 #include <Parsers/queryToString.h>
+
+#include <Functions/FunctionFactory.h>
 
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -60,25 +61,40 @@ namespace
 
 using LogAST = DebugASTLog<false>; /// set to true to enable logs
 
-/// Select implementation of countDistinct based on settings.
+/// Select implementation of a function based on settings.
 /// Important that it is done as query rewrite. It means rewritten query
 ///  will be sent to remote servers during distributed query execution,
 ///  and on all remote servers, function implementation will be same.
+template <char const * func_name>
 struct CustomizeFunctionsData
 {
     using TypeToVisit = ASTFunction;
 
-    const String & count_distinct;
+    const String & customized_func_name;
 
     void visit(ASTFunction & func, ASTPtr &)
     {
-        if (Poco::toLower(func.name) == "countdistinct")
-            func.name = count_distinct;
+        if (Poco::toLower(func.name) == func_name)
+        {
+            func.name = customized_func_name;
+        }
     }
 };
 
-using CustomizeFunctionsMatcher = OneTypeMatcher<CustomizeFunctionsData>;
-using CustomizeFunctionsVisitor = InDepthNodeVisitor<CustomizeFunctionsMatcher, true>;
+char countdistinct[] = "countdistinct";
+using CustomizeFunctionsVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<countdistinct>>, true>;
+
+char in[] = "in";
+using CustomizeInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<in>>, true>;
+
+char notIn[] = "notin";
+using CustomizeNotInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<notIn>>, true>;
+
+char globalIn[] = "globalin";
+using CustomizeGlobalInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<globalIn>>, true>;
+
+char globalNotIn[] = "globalnotin";
+using CustomizeGlobalNotInVisitor = InDepthNodeVisitor<OneTypeMatcher<CustomizeFunctionsData<globalNotIn>>, true>;
 
 
 /// Translate qualified names such as db.table.column, table.column, table_alias.column to names' normal form.
@@ -200,28 +216,6 @@ void executeScalarSubqueries(ASTPtr & query, const Context & context, size_t sub
     ExecuteScalarSubqueriesVisitor(visitor_data, log.stream()).visit(query);
 }
 
-/** Calls to these functions in the GROUP BY statement would be
-  * replaced by their immediate argument.
-  */
-const std::unordered_set<String> injective_function_names
-{
-        "negate",
-        "bitNot",
-        "reverse",
-        "reverseUTF8",
-        "toString",
-        "toFixedString",
-        "IPv4NumToString",
-        "IPv4StringToNum",
-        "hex",
-        "unhex",
-        "bitmaskToList",
-        "bitmaskToArray",
-        "tuple",
-        "regionToName",
-        "concatAssumeInjective",
-};
-
 const std::unordered_set<String> possibly_injective_function_names
 {
         "dictGetString",
@@ -262,6 +256,8 @@ void appendUnusedGroupByColumn(ASTSelectQuery * select_query, const NameSet & so
 /// Eliminates injective function calls and constant expressions from group by statement.
 void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_columns, const Context & context)
 {
+    const FunctionFactory & function_factory = FunctionFactory::instance();
+
     if (!select_query->groupBy())
     {
         // If there is a HAVING clause without GROUP BY, make sure we have some aggregation happen.
@@ -311,7 +307,7 @@ void optimizeGroupBy(ASTSelectQuery * select_query, const NameSet & source_colum
                     continue;
                 }
             }
-            else if (!injective_function_names.count(function->name))
+            else if (!function_factory.get(function->name, context)->isInjective(Block{}))
             {
                 ++i;
                 continue;
@@ -549,34 +545,6 @@ void collectJoinedColumns(TableJoin & analyzed_join, const ASTSelectQuery & sele
     }
 }
 
-void replaceJoinedTable(const ASTSelectQuery & select_query)
-{
-    const ASTTablesInSelectQueryElement * join = select_query.join();
-    if (!join || !join->table_expression)
-        return;
-
-    /// TODO: Push down for CROSS JOIN is not OK [disabled]
-    const auto & table_join = join->table_join->as<ASTTableJoin &>();
-    if (table_join.kind == ASTTableJoin::Kind::Cross)
-        return;
-
-    auto & table_expr = join->table_expression->as<ASTTableExpression &>();
-    if (table_expr.database_and_table_name)
-    {
-        const auto & table_id = table_expr.database_and_table_name->as<ASTIdentifier &>();
-        String expr = "(select * from " + table_id.name + ") as " + table_id.shortName();
-
-        // FIXME: since the expression "a as b" exposes both "a" and "b" names, which is not equivalent to "(select * from a) as b",
-        //        we can't replace aliased tables.
-        // FIXME: long table names include database name, which we can't save within alias.
-        if (table_id.alias.empty() && table_id.isShort())
-        {
-            ParserTableExpression parser;
-            table_expr = parseQuery(parser, expr, 0)->as<ASTTableExpression &>();
-        }
-    }
-}
-
 std::vector<const ASTFunction *> getAggregates(ASTPtr & query, const ASTSelectQuery & select_query)
 {
     /// There can not be aggregate functions inside the WHERE and PREWHERE.
@@ -641,7 +609,7 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
         /// Add columns obtained by JOIN (if needed).
         for (const auto & joined_column : analyzed_join->columnsFromJoinedTable())
         {
-            auto & name = joined_column.name;
+            const auto & name = joined_column.name;
             if (available_columns.count(name))
                 continue;
 
@@ -783,7 +751,8 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     SyntaxAnalyzerResult && result,
     const SelectQueryOptions & select_options,
     const std::vector<TableWithColumnNamesAndTypes> & tables_with_columns,
-    const Names & required_result_columns) const
+    const Names & required_result_columns,
+    std::shared_ptr<TableJoin> table_join) const
 {
     auto * select_query = query->as<ASTSelectQuery>();
     if (!select_query)
@@ -795,13 +764,12 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     const auto & settings = context.getSettingsRef();
 
     const NameSet & source_columns_set = result.source_columns_set;
-    result.analyzed_join = std::make_shared<TableJoin>(settings, context.getTemporaryVolume());
+    result.analyzed_join = table_join;
+    if (!result.analyzed_join) /// ExpressionAnalyzer expects some not empty object here
+        result.analyzed_join = std::make_shared<TableJoin>();
 
     if (remove_duplicates)
         renameDuplicatedColumns(select_query);
-
-    if (settings.enable_optimize_predicate_expression)
-        replaceJoinedTable(*select_query);
 
     /// TODO: Remove unneeded conversion
     std::vector<TableWithColumnNames> tables_with_column_names;
@@ -888,6 +856,21 @@ void SyntaxAnalyzer::normalize(ASTPtr & query, Aliases & aliases, const Settings
 {
     CustomizeFunctionsVisitor::Data data{settings.count_distinct_implementation};
     CustomizeFunctionsVisitor(data).visit(query);
+
+    if (settings.transform_null_in)
+    {
+        CustomizeInVisitor::Data data_null_in{"nullIn"};
+        CustomizeInVisitor(data_null_in).visit(query);
+
+        CustomizeNotInVisitor::Data data_not_null_in{"notNullIn"};
+        CustomizeNotInVisitor(data_not_null_in).visit(query);
+
+        CustomizeGlobalInVisitor::Data data_global_null_in{"globalNullIn"};
+        CustomizeGlobalInVisitor(data_global_null_in).visit(query);
+
+        CustomizeGlobalNotInVisitor::Data data_global_not_null_in{"globalNotNullIn"};
+        CustomizeGlobalNotInVisitor(data_global_not_null_in).visit(query);
+    }
 
     /// Creates a dictionary `aliases`: alias -> ASTPtr
     QueryAliasesVisitor(aliases).visit(query);

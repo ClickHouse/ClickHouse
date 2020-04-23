@@ -109,7 +109,7 @@ namespace
         {
             if (std::exchange(need_comma, true))
                 settings.ostr << ", ";
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "NAME REGEXP " << (settings.hilite ? IAST::hilite_none : "");
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "REGEXP " << (settings.hilite ? IAST::hilite_none : "");
             bool need_comma2 = false;
             for (const auto & host_regexp : name_regexps)
             {

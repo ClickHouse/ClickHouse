@@ -69,7 +69,6 @@ template <typename T>
 inline void readDecimalNumber(T & res, size_t num_digits, const char * src)
 {
 #define READ_DECIMAL_NUMBER(N) do { res *= common::exp10_i32(N); readDecimalNumber<N>(res, src); src += (N); num_digits -= (N); } while (false)
-
     while (num_digits)
     {
         switch (num_digits)
@@ -80,7 +79,7 @@ inline void readDecimalNumber(T & res, size_t num_digits, const char * src)
             default: READ_DECIMAL_NUMBER(4); break;
         }
     }
-#undef DECIMAL_NUMBER_CASE
+#undef READ_DECIMAL_NUMBER
 }
 
 struct DateTimeSubsecondPart
@@ -90,7 +89,12 @@ struct DateTimeSubsecondPart
 };
 
 template <typename ReturnType>
-ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeSubsecondPart * fractional = nullptr)
+ReturnType parseDateTimeBestEffortImpl(
+    time_t & res,
+    ReadBuffer & in,
+    const DateLUTImpl & local_time_zone,
+    const DateLUTImpl & utc_time_zone,
+    DateTimeSubsecondPart * fractional)
 {
     auto on_error = [](const std::string & message [[maybe_unused]], int code [[maybe_unused]])
     {
@@ -367,7 +371,10 @@ ReturnType parseDateTimeBestEffortImpl(time_t & res, ReadBuffer & in, const Date
         {
             char c = *in.position();
 
-            if (c == ' ' || c == 'T')
+            /// 'T' is a separator between date and time according to ISO 8601.
+            /// But don't skip it if we didn't read the date part yet, because 'T' is also a prefix for 'Tue' and 'Thu'.
+
+            if (c == ' ' || (c == 'T' && year && !has_time))
             {
                 ++in.position();
             }
@@ -582,12 +589,12 @@ ReturnType parseDateTime64BestEffortImpl(DateTime64 & res, UInt32 scale, ReadBuf
 
 void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    parseDateTimeBestEffortImpl<void>(res, in, local_time_zone, utc_time_zone);
+    parseDateTimeBestEffortImpl<void>(res, in, local_time_zone, utc_time_zone, nullptr);
 }
 
 bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
 {
-    return parseDateTimeBestEffortImpl<bool>(res, in, local_time_zone, utc_time_zone);
+    return parseDateTimeBestEffortImpl<bool>(res, in, local_time_zone, utc_time_zone, nullptr);
 }
 
 void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)

@@ -49,6 +49,11 @@ or
 LIFETIME(MIN 300 MAX 360)
 ```
 
+If `<min>0</min>` and `<max>0</max>`, ClickHouse does not reload the dictionary by timeout. 
+In this case, ClickHouse can reload the dictionary earlier if the dictionary configuration file was changed or the `SYSTEM RELOAD DICTIONARY` command was executed.
+ 
+When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [source](external_dicts_dict_sources.md):
+
 When upgrading the dictionaries, the ClickHouse server applies different logic depending on the type of [source](external_dicts_dict_sources.md):
 
 -   For a text file, it checks the time of modification. If the time differs from the previously recorded time, the dictionary is updated.
