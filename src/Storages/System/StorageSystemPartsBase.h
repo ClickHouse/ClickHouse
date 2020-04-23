@@ -36,6 +36,8 @@ public:
 
 private:
     String query_id;
+    Settings settings;
+
 
     ColumnPtr database_column;
     ColumnPtr table_column;

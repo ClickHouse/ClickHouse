@@ -27,7 +27,7 @@ bool DatabaseWithOwnTablesBase::isTableExist(
     const String & table_name) const
 {
     std::lock_guard lock(mutex);
-    return tables.find(table_name) != tables.end() || dictionaries.find(table_name) != dictionaries.end();
+    return tables.find(table_name) != tables.end();
 }
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
@@ -58,7 +58,7 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Con
 bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const
 {
     std::lock_guard lock(mutex);
-    return tables.empty() && dictionaries.empty();
+    return tables.empty();
 }
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
@@ -70,8 +70,6 @@ StoragePtr DatabaseWithOwnTablesBase::detachTable(const String & table_name)
 StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_name)
 {
     StoragePtr res;
-    if (dictionaries.count(table_name))
-        throw Exception("Cannot detach dictionary " + database_name + "." + table_name + " as table, use DETACH DICTIONARY query.", ErrorCodes::UNKNOWN_TABLE);
 
     auto it = tables.find(table_name);
     if (it == tables.end())
@@ -127,7 +125,6 @@ void DatabaseWithOwnTablesBase::shutdown()
 
     std::lock_guard lock(mutex);
     tables.clear();
-    dictionaries.clear();
 }
 
 DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()

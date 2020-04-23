@@ -27,7 +27,8 @@ try
 
     WriteBufferFromOStream out_buf(std::cout);
 
-    auto context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    auto context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
     QueryProcessingStage::Enum stage = table->getQueryProcessingStage(context);
 

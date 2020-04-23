@@ -99,7 +99,7 @@ public:
     void addSimpleTransform(const ProcessorGetterWithStreamKind & getter);
     void addPipe(Processors pipe);
     void addTotalsHavingTransform(ProcessorPtr transform);
-    void addExtremesTransform(ProcessorPtr transform);
+    void addExtremesTransform();
     void addCreatingSetsTransform(ProcessorPtr transform);
     void setOutput(ProcessorPtr output);
 
@@ -109,7 +109,8 @@ public:
     /// Add already calculated totals.
     void addTotals(ProcessorPtr source);
 
-    void dropTotalsIfHas();
+    /// Forget about current totals and extremes. It is needed before aggregation, cause they will be calculated again.
+    void dropTotalsAndExtremes();
 
     /// Will read from this stream after all data was read from other streams.
     void addDelayedStream(ProcessorPtr source);
@@ -121,7 +122,7 @@ public:
 
     void enableQuotaForCurrentStreams();
 
-    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header, const Context & context);
+    void unitePipelines(std::vector<QueryPipeline> && pipelines, const Block & common_header);
 
     PipelineExecutorPtr execute();
 

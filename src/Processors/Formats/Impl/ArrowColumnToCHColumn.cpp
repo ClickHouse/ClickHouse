@@ -292,11 +292,11 @@ namespace DB
 
             if (arrow_type == arrow::Type::DECIMAL)
             {
-                const auto decimal_type = static_cast<arrow::DecimalType *>(arrow_column->type().get());
+                const auto * decimal_type = static_cast<arrow::DecimalType *>(arrow_column->type().get());
                 internal_nested_type = std::make_shared<DataTypeDecimal<Decimal128>>(decimal_type->precision(),
                                                                                      decimal_type->scale());
             }
-            else if (auto internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
+            else if (const auto * internal_type_it = std::find_if(arrow_type_to_internal_type.begin(), arrow_type_to_internal_type.end(),
                 [=](auto && elem) { return elem.first == arrow_type; });
                 internal_type_it != arrow_type_to_internal_type.end())
             {

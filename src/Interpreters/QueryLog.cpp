@@ -125,8 +125,8 @@ void QueryLogElement::appendToBlock(Block & block) const
 
     if (profile_counters)
     {
-        auto column_names = columns[i++].get();
-        auto column_values = columns[i++].get();
+        auto * column_names = columns[i++].get();
+        auto * column_values = columns[i++].get();
         ProfileEvents::dumpToArrayColumns(*profile_counters, column_names, column_values, true);
     }
     else
@@ -137,8 +137,8 @@ void QueryLogElement::appendToBlock(Block & block) const
 
     if (query_settings)
     {
-        auto column_names = columns[i++].get();
-        auto column_values = columns[i++].get();
+        auto * column_names = columns[i++].get();
+        auto * column_values = columns[i++].get();
         query_settings->dumpToArrayColumns(column_names, column_values, true);
     }
     else

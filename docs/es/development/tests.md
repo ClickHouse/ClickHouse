@@ -17,7 +17,7 @@ Las pruebas se encuentran en `queries` directorio. Hay dos subdirectorios: `stat
 
 Cada prueba puede ser de dos tipos: `.sql` y `.sh`. `.sql` test es el script SQL simple que se canaliza a `clickhouse-client --multiquery --testmode`. `.sh` test es un script que se ejecuta por sí mismo.
 
-Para ejecutar todas las pruebas, use `testskhouse-test` herramienta. Mira `--help` para la lista de posibles opciones. Simplemente puede ejecutar todas las pruebas o ejecutar un subconjunto de pruebas filtradas por subcadena en el nombre de la prueba: `./clickhouse-test substring`.
+Para ejecutar todas las pruebas, use `clickhouse-test` herramienta. Mira `--help` para la lista de posibles opciones. Simplemente puede ejecutar todas las pruebas o ejecutar un subconjunto de pruebas filtradas por subcadena en el nombre de la prueba: `./clickhouse-test substring`.
 
 La forma más sencilla de invocar pruebas funcionales es copiar `clickhouse-client` a `/usr/bin/`, ejecutar `clickhouse-server` y luego ejecutar `./clickhouse-test` de su propio directorio.
 
@@ -36,13 +36,13 @@ deshabilitar estos grupos de pruebas utilizando `--no-zookeeper`, `--no-shard` y
 
 ## Bugs conocidos {#known-bugs}
 
-Si conocemos algunos errores que se pueden reproducir fácilmente mediante pruebas funcionales, colocamos pruebas funcionales preparadas en `queries/bugs` directorio. Estas pruebas se moverán a `teststests_stateless` cuando se corrigen errores.
+Si conocemos algunos errores que se pueden reproducir fácilmente mediante pruebas funcionales, colocamos pruebas funcionales preparadas en `tests/queries/bugs` directorio. Estas pruebas se moverán a `tests/queries/0_stateless` cuando se corrigen errores.
 
 ## Pruebas de integración {#integration-tests}
 
 Las pruebas de integración permiten probar ClickHouse en la configuración agrupada y la interacción de ClickHouse con otros servidores como MySQL, Postgres, MongoDB. Son útiles para emular divisiones de red, caídas de paquetes, etc. Estas pruebas se ejecutan bajo Docker y crean múltiples contenedores con varios software.
 
-Ver `testsgration/README.md` sobre cómo ejecutar estas pruebas.
+Ver `tests/integration/README.md` sobre cómo ejecutar estas pruebas.
 
 Tenga en cuenta que la integración de ClickHouse con controladores de terceros no se ha probado. Además, actualmente no tenemos pruebas de integración con nuestros controladores JDBC y ODBC.
 

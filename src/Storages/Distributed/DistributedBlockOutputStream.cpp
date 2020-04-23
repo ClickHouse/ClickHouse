@@ -12,6 +12,8 @@
 #include <IO/WriteBufferFromString.h>
 #include <DataStreams/NativeBlockOutputStream.h>
 #include <DataStreams/RemoteBlockOutputStream.h>
+#include <DataStreams/ConvertingBlockInputStream.h>
+#include <DataStreams/OneBlockInputStream.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/ExpressionActions.h>
@@ -57,6 +59,26 @@ namespace ErrorCodes
     extern const int TIMEOUT_EXCEEDED;
     extern const int TYPE_MISMATCH;
     extern const int CANNOT_LINK;
+}
+
+static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
+{
+    if (!blocksHaveEqualStructure(out->getHeader(), block))
+    {
+        ConvertingBlockInputStream convert(
+            std::make_shared<OneBlockInputStream>(block),
+            out->getHeader(),
+            ConvertingBlockInputStream::MatchColumnsMode::Name);
+        auto adopted_block = convert.read();
+
+        for (size_t i = 0; i < repeats; ++i)
+            out->write(adopted_block);
+    }
+    else
+    {
+        for (size_t i = 0; i < repeats; ++i)
+            out->write(block);
+    }
 }
 
 
@@ -242,7 +264,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
 
             for (size_t j = 0; j < current_block.columns(); ++j)
             {
-                auto & src_column = current_block.getByPosition(j).column;
+                const auto & src_column = current_block.getByPosition(j).column;
                 auto & dst_column = job.current_shard_block.getByPosition(j).column;
 
                 /// Zero permutation size has special meaning in IColumn::permute
@@ -306,14 +328,12 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
 
                 InterpreterInsertQuery interp(query_ast, *job.local_context);
                 auto block_io = interp.execute();
-                assertBlocksHaveEqualStructure(block_io.out->getHeader(), shard_block, "flushing shard block for " + storage.getStorageID().getNameForLogs());
+
                 job.stream = block_io.out;
                 job.stream->writePrefix();
             }
 
-            size_t num_repetitions = shard_info.getLocalNodeCount();
-            for (size_t i = 0; i < num_repetitions; ++i)
-                job.stream->write(shard_block);
+            writeBlockConvert(job.stream, shard_block, shard_info.getLocalNodeCount());
         }
 
         job.blocks_written += 1;
@@ -547,13 +567,8 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 
     auto block_io = interp.execute();
 
-    assertBlocksHaveEqualStructure(block_io.out->getHeader(), block, "flushing " + storage.getStorageID().getNameForLogs());
-
     block_io.out->writePrefix();
-
-    for (size_t i = 0; i < repeats; ++i)
-        block_io.out->write(block);
-
+    writeBlockConvert(block_io.out, block, repeats);
     block_io.out->writeSuffix();
 }
 
@@ -574,8 +589,8 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         const std::string path(disk + data_path + dir_name + '/');
 
         /// ensure shard subdirectory creation and notify storage
-        if (Poco::File(path).createDirectory())
-            storage.requireDirectoryMonitor(disk, dir_name);
+        Poco::File(path).createDirectory();
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
 
         const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
         const auto & block_file_path = path + file_name;
@@ -617,6 +632,9 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             stream.writePrefix();
             stream.write(block);
             stream.writeSuffix();
+
+            auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
+            directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
         }
 
         if (link(first_file_tmp_path.data(), block_file_path.data()))

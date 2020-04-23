@@ -15,24 +15,18 @@ CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(..
 
 ### Clauses {#clauses}
 
--   `IF NOT EXISTS`
+-   `IF NOT EXISTS`  
+  If the `db_name` database already exists, then ClickHouse doesn't create a new database and:
+    - Doesn't throw an exception if clause is specified.
+    - Throws an exception if clause isn't specified.
 
-        If the `db_name` database already exists, then ClickHouse doesn't create a new database and:
-
-        - Doesn't throw an exception if clause is specified.
-        - Throws an exception if clause isn't specified.
-
--   `ON CLUSTER`
-
-        ClickHouse creates the `db_name` database on all the servers of a specified cluster.
+-   `ON CLUSTER`  
+    ClickHouse creates the `db_name` database on all the servers of a specified cluster.
 
 -   `ENGINE`
-
-        - [MySQL](../engines/database_engines/mysql.md)
-
-            Allows you to retrieve data from the remote MySQL server.
-
-        By default, ClickHouse uses its own [database engine](../engines/database_engines/index.md).
+    - [MySQL](../../engines/database_engines/mysql.md)  
+    Allows you to retrieve data from the remote MySQL server.  
+  By default, ClickHouse uses its own [database engine](../../engines/database_engines/index.md).
 
 ## CREATE TABLE {#create-table-query}
 
@@ -185,7 +179,7 @@ CREATE TABLE codec_example
 ENGINE = MergeTree()
 ```
 
-#### Common Purpose Codecs {#create-query-common-purpose-codecs}
+#### General Purpose Codecs {#create-query-general-purpose-codecs}
 
 Codecs:
 

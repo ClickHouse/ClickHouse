@@ -63,12 +63,22 @@ namespace
         });
     }
 
-    bool parseLimit(IParserBase::Pos & pos, Expected & expected, ResourceType & resource_type, ResourceAmount & max)
+    bool parseLimit(IParserBase::Pos & pos, Expected & expected, bool first, ResourceType & resource_type, ResourceAmount & max)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
-            if (!ParserKeyword{"MAX"}.ignore(pos, expected))
-                return false;
+            if (first)
+            {
+                if (!ParserKeyword{"MAX"}.ignore(pos, expected))
+                    return false;
+            }
+            else
+            {
+                if (!ParserToken{TokenType::Comma}.ignore(pos, expected))
+                    return false;
+
+                ParserKeyword{"MAX"}.ignore(pos, expected);
+            }
 
             bool resource_type_set = false;
             for (auto rt : ext::range_with_static_cast<Quota::ResourceType>(Quota::MAX_RESOURCE_TYPE))
@@ -83,9 +93,6 @@ namespace
             if (!resource_type_set)
                 return false;
 
-            if (!ParserToken{TokenType::Equals}.ignore(pos, expected))
-                return false;
-
             ASTPtr max_ast;
             if (ParserNumber{}.parse(pos, max_ast, expected))
             {
@@ -95,10 +102,6 @@ namespace
                 else
                     max = applyVisitor(FieldVisitorConvertToNumber<ResourceAmount>(), max_field);
             }
-            else if (ParserKeyword{"ANY"}.ignore(pos, expected))
-            {
-                max = Quota::UNLIMITED;
-            }
             else
                 return false;
 
@@ -106,18 +109,7 @@ namespace
         });
     }
 
-    bool parseCommaAndLimit(IParserBase::Pos & pos, Expected & expected, ResourceType & resource_type, ResourceAmount & max)
-    {
-        return IParserBase::wrapParseImpl(pos, [&]
-        {
-            if (!ParserToken{TokenType::Comma}.ignore(pos, expected))
-                return false;
-
-            return parseLimit(pos, expected, resource_type, max);
-        });
-    }
-
-    bool parseLimits(IParserBase::Pos & pos, Expected & expected, bool alter, ASTCreateQuotaQuery::Limits & limits)
+    bool parseLimits(IParserBase::Pos & pos, Expected & expected, ASTCreateQuotaQuery::Limits & limits)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -142,23 +134,22 @@ namespace
 
             new_limits.duration = std::chrono::seconds(static_cast<UInt64>(num_intervals * interval_kind.toAvgSeconds()));
 
-            if (alter && ParserKeyword{"UNSET TRACKING"}.ignore(pos, expected))
+            if (ParserKeyword{"NO LIMITS"}.ignore(pos, expected))
             {
-                new_limits.unset_tracking = true;
+                new_limits.drop = true;
             }
-            else if (ParserKeyword{"SET TRACKING"}.ignore(pos, expected) || ParserKeyword{"TRACKING"}.ignore(pos, expected))
+            else if (ParserKeyword{"TRACKING ONLY"}.ignore(pos, expected))
             {
             }
             else
             {
-                ParserKeyword{"SET"}.ignore(pos, expected);
                 ResourceType resource_type;
                 ResourceAmount max;
-                if (!parseLimit(pos, expected, resource_type, max))
+                if (!parseLimit(pos, expected, true, resource_type, max))
                     return false;
 
                 new_limits.max[resource_type] = max;
-                while (parseCommaAndLimit(pos, expected, resource_type, max))
+                while (parseLimit(pos, expected, false, resource_type, max))
                     new_limits.max[resource_type] = max;
             }
 
@@ -167,7 +158,7 @@ namespace
         });
     }
 
-    bool parseAllLimits(IParserBase::Pos & pos, Expected & expected, bool alter, std::vector<ASTCreateQuotaQuery::Limits> & all_limits)
+    bool parseAllLimits(IParserBase::Pos & pos, Expected & expected, std::vector<ASTCreateQuotaQuery::Limits> & all_limits)
     {
         return IParserBase::wrapParseImpl(pos, [&]
         {
@@ -175,7 +166,7 @@ namespace
             do
             {
                 ASTCreateQuotaQuery::Limits limits;
-                if (!parseLimits(pos, expected, alter, limits))
+                if (!parseLimits(pos, expected, limits))
                 {
                     all_limits.resize(old_size);
                     return false;
@@ -197,6 +188,14 @@ namespace
 
             roles = std::static_pointer_cast<ASTExtendedRoleSet>(node);
             return true;
+        });
+    }
+
+    bool parseOnCluster(IParserBase::Pos & pos, Expected & expected, String & cluster)
+    {
+        return IParserBase::wrapParseImpl(pos, [&]
+        {
+            return ParserKeyword{"ON"}.ignore(pos, expected) && ASTQueryWithOnCluster::parse(pos, cluster, expected);
         });
     }
 }
@@ -238,16 +237,10 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     if (!parseIdentifierOrStringLiteral(pos, expected, name))
         return false;
 
-    String cluster;
-    if (ParserKeyword{"ON"}.ignore(pos, expected))
-    {
-        if (!ASTQueryWithOnCluster::parse(pos, cluster, expected))
-            return false;
-    }
-
     String new_name;
     std::optional<KeyType> key_type;
     std::vector<ASTCreateQuotaQuery::Limits> all_limits;
+    String cluster;
 
     while (true)
     {
@@ -257,7 +250,10 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (!key_type && parseKeyType(pos, expected, key_type))
             continue;
 
-        if (parseAllLimits(pos, expected, alter, all_limits))
+        if (parseAllLimits(pos, expected, all_limits))
+            continue;
+
+        if (cluster.empty() && parseOnCluster(pos, expected, cluster))
             continue;
 
         break;
@@ -265,6 +261,9 @@ bool ParserCreateQuotaQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
 
     std::shared_ptr<ASTExtendedRoleSet> roles;
     parseToRoles(pos, expected, attach_mode, roles);
+
+    if (cluster.empty())
+        parseOnCluster(pos, expected, cluster);
 
     auto query = std::make_shared<ASTCreateQuotaQuery>();
     node = query;

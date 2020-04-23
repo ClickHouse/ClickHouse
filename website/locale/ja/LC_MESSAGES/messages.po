@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: PROJECT VERSION\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
-"POT-Creation-Date: 2020-03-30 15:12+0300\n"
+"POT-Creation-Date: 2020-04-15 13:19+0000\n"
 "PO-Revision-Date: 2020-03-26 10:19+0300\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language: ja\n"
@@ -71,11 +71,15 @@ msgstr ""
 "このドキュメントページの以下の内容は機械翻訳されています。 異な他のウェブサイトで行われませんができます。 "
 "この翻訳テキスト生活をGitHubリポジトリとClickHouseコードベース、待ち員ネイティブスピーカーで人間が読む."
 
+#: templates/docs/content.html:7
+msgid "You can also use the original English version as a reference."
+msgstr "また、参照として、元の英語版を使用することができます。"
+
 #: templates/docs/content.html:10
 msgid "Help ClickHouse documentation by editing this page"
 msgstr "このページを編集してClickHouseの文書を編集する"
 
-#: templates/docs/content.html:31
+#: templates/docs/content.html:27
 msgid "Built from"
 msgstr "から構築"
 
@@ -175,15 +179,15 @@ msgstr "メールでの議論"
 msgid "Like ClickHouse?"
 msgstr "ClickHouseのような？"
 
-#: templates/index/community.html:142
+#: templates/index/community.html:143
 msgid "Help to spread the word about it via"
 msgstr "それについての言葉を広めるのに役立ちます"
 
-#: templates/index/community.html:143
+#: templates/index/community.html:144
 msgid "and"
 msgstr "と"
 
-#: templates/index/community.html:155
+#: templates/index/community.html:153
 msgid "Hosting ClickHouse Meetups"
 msgstr "開催ClickHouse Meetups"
 

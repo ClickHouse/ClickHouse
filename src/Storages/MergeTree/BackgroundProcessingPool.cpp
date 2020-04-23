@@ -137,7 +137,7 @@ void BackgroundProcessingPool::threadFunction()
     }
 
     SCOPE_EXIT({ CurrentThread::detachQueryIfNotDetached(); });
-    if (auto memory_tracker = CurrentThread::getMemoryTracker())
+    if (auto * memory_tracker = CurrentThread::getMemoryTracker())
         memory_tracker->setMetric(settings.memory_metric);
 
     pcg64 rng(randomSeed());

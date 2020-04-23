@@ -5,6 +5,8 @@
 #include <Core/Settings.h>
 #include <Core/Block.h>
 
+#include <Common/StringUtils/StringUtils.h>
+
 #include <DataTypes/DataTypeNullable.h>
 
 
@@ -79,7 +81,9 @@ void TableJoin::deduplicateAndQualifyColumnNames(const NameSet & left_table_colu
         dedup_columns.push_back(column);
         auto & inserted = dedup_columns.back();
 
-        if (left_table_columns.count(column.name))
+        /// Also qualify unusual column names - that does not look like identifiers.
+
+        if (left_table_columns.count(column.name) || !isValidIdentifierBegin(column.name.at(0)))
             inserted.name = right_table_prefix + column.name;
 
         original_names[inserted.name] = column.name;
@@ -155,22 +159,26 @@ NamesWithAliases TableJoin::getRequiredColumns(const Block & sample, const Names
     return getNamesWithAliases(required_columns);
 }
 
+bool TableJoin::leftBecomeNullable(const DataTypePtr & column_type) const
+{
+    return forceNullableLeft() && column_type->canBeInsideNullable();
+}
+
+bool TableJoin::rightBecomeNullable(const DataTypePtr & column_type) const
+{
+    return forceNullableRight() && column_type->canBeInsideNullable();
+}
+
 void TableJoin::addJoinedColumn(const NameAndTypePair & joined_column)
 {
-    if (join_use_nulls && isLeftOrFull(table_join.kind))
-    {
-        auto type = joined_column.type->canBeInsideNullable() ? makeNullable(joined_column.type) : joined_column.type;
-        columns_added_by_join.emplace_back(NameAndTypePair(joined_column.name, std::move(type)));
-    }
+    if (rightBecomeNullable(joined_column.type))
+        columns_added_by_join.emplace_back(NameAndTypePair(joined_column.name, makeNullable(joined_column.type)));
     else
         columns_added_by_join.push_back(joined_column);
 }
 
 void TableJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) const
 {
-    bool right_or_full_join = isRightOrFull(table_join.kind);
-    bool left_or_full_join = isLeftOrFull(table_join.kind);
-
     for (auto & col : sample_block)
     {
         /// Materialize column.
@@ -179,9 +187,7 @@ void TableJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) cons
         if (col.column)
             col.column = nullptr;
 
-        bool make_nullable = join_use_nulls && right_or_full_join;
-
-        if (make_nullable && col.type->canBeInsideNullable())
+        if (leftBecomeNullable(col.type))
             col.type = makeNullable(col.type);
     }
 
@@ -189,9 +195,7 @@ void TableJoin::addJoinedColumnsAndCorrectNullability(Block & sample_block) cons
     {
         auto res_type = col.type;
 
-        bool make_nullable = join_use_nulls && left_or_full_join;
-
-        if (make_nullable && res_type->canBeInsideNullable())
+        if (rightBecomeNullable(res_type))
             res_type = makeNullable(res_type);
 
         sample_block.insert(ColumnWithTypeAndName(nullptr, res_type, col.name));
@@ -236,6 +240,33 @@ bool TableJoin::allowMergeJoin() const
 
     bool allow_merge_join = (isLeft(kind()) && (is_any || is_all || is_semi)) || (isInner(kind()) && is_all);
     return allow_merge_join;
+}
+
+bool TableJoin::allowDictJoin(const String & dict_key, const Block & sample_block, Names & names, NamesAndTypesList & result_columns) const
+{
+    /// Support ALL INNER, [ANY | ALL | SEMI | ANTI] LEFT
+    if (!isLeft(kind()) && !(isInner(kind()) && strictness() == ASTTableJoin::Strictness::All))
+        return false;
+
+    const Names & right_keys = keyNamesRight();
+    if (right_keys.size() != 1)
+        return false;
+
+    for (const auto & col : sample_block)
+    {
+        String original = original_names.find(col.name)->second;
+        if (col.name == right_keys[0])
+        {
+            if (original != dict_key)
+                return false; /// JOIN key != Dictionary key
+            continue; /// do not extract key column
+        }
+
+        names.push_back(original);
+        result_columns.push_back({col.name, col.type});
+    }
+
+    return true;
 }
 
 }

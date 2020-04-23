@@ -1,5 +1,5 @@
 ---
-toc_priority: 3
+toc_priority: 0
 toc_title: Overview
 ---
 
@@ -77,48 +77,6 @@ See the difference?
 3.  Due to the reduced I/O, more data fits in the system cache.
 
 For example, the query “count the number of records for each advertising platform” requires reading one “advertising platform ID” column, which takes up 1 byte uncompressed. If most of the traffic was not from advertising platforms, you can expect at least 10-fold compression of this column. When using a quick compression algorithm, data decompression is possible at a speed of at least several gigabytes of uncompressed data per second. In other words, this query can be processed at a speed of approximately several billion rows per second on a single server. This speed is actually achieved in practice.
-
-<details markdown="1">
-
-<summary>Example</summary>
-
-``` bash
-$ clickhouse-client
-ClickHouse client version 0.0.52053.
-Connecting to localhost:9000.
-Connected to ClickHouse server version 0.0.52053.
-```
-
-``` sql
-SELECT CounterID, count() FROM hits GROUP BY CounterID ORDER BY count() DESC LIMIT 20
-```
-
-``` text
-┌─CounterID─┬──count()─┐
-│    114208 │ 56057344 │
-│    115080 │ 51619590 │
-│      3228 │ 44658301 │
-│     38230 │ 42045932 │
-│    145263 │ 42042158 │
-│     91244 │ 38297270 │
-│    154139 │ 26647572 │
-│    150748 │ 24112755 │
-│    242232 │ 21302571 │
-│    338158 │ 13507087 │
-│     62180 │ 12229491 │
-│     82264 │ 12187441 │
-│    232261 │ 12148031 │
-│    146272 │ 11438516 │
-│    168777 │ 11403636 │
-│   4120072 │ 11227824 │
-│  10938808 │ 10519739 │
-│     74088 │  9047015 │
-│    115079 │  8837972 │
-│    337234 │  8205961 │
-└───────────┴──────────┘
-```
-
-</details>
 
 ### CPU {#cpu}
 

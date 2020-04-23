@@ -298,6 +298,16 @@ enum class LogsLevel
 };
 using SettingLogsLevel = SettingEnum<LogsLevel>;
 
+// Make it signed for compatibility with DataTypeEnum8
+enum QueryLogElementType : int8_t
+{
+    QUERY_START = 1,
+    QUERY_FINISH = 2,
+    EXCEPTION_BEFORE_START = 3,
+    EXCEPTION_WHILE_PROCESSING = 4,
+};
+using SettingLogQueriesType = SettingEnum<QueryLogElementType>;
+
 
 enum class SettingsBinaryFormat
 {
@@ -514,8 +524,8 @@ public:
     bool tryGet(const StringRef & name, String & value) const;
 
     /// Compares two collections of settings.
-    bool operator ==(const Derived & rhs) const;
-    bool operator!=(const Derived & rhs) const { return !(*this == rhs); }
+    bool operator ==(const SettingsCollection & rhs) const;
+    bool operator!=(const SettingsCollection & rhs) const { return !(*this == rhs); }
 
     /// Gathers all changed values (e.g. for applying them later to another collection of settings).
     SettingsChanges changes() const;

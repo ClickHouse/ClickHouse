@@ -176,8 +176,9 @@ int ODBCBridge::main(const std::vector<std::string> & /*args*/)
     http_params->setTimeout(http_timeout);
     http_params->setKeepAliveTimeout(keep_alive_timeout);
 
-    context = std::make_shared<Context>(Context::createGlobal());
-    context->makeGlobalContext();
+    auto shared_context = Context::createShared();
+    Context context(Context::createGlobal(shared_context.get()));
+    context.makeGlobalContext();
 
     if (config().has("query_masking_rules"))
     {

@@ -32,6 +32,7 @@
 #include <Interpreters/InterpreterShowCreateAccessEntityQuery.h>
 #include <Interpreters/InterpreterShowGrantsQuery.h>
 #include <Common/quoteString.h>
+#include <Core/Defines.h>
 #include <boost/range/adaptor/map.hpp>
 #include <boost/range/algorithm/copy.hpp>
 #include <boost/range/algorithm_ext/push_back.hpp>
@@ -93,7 +94,7 @@ namespace
         const char * end = begin + file_contents.size();
         while (pos < end)
         {
-            queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0));
+            queries.emplace_back(parseQueryAndMovePosition(parser, pos, end, "", true, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH));
             while (isWhitespaceASCII(*pos) || *pos == ';')
                 ++pos;
         }
@@ -108,42 +109,42 @@ namespace
 
         for (const auto & query : queries)
         {
-            if (auto create_user_query = query->as<ASTCreateUserQuery>())
+            if (auto * create_user_query = query->as<ASTCreateUserQuery>())
             {
                 if (res)
                     throw Exception("Two access entities in one file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
                 res = user = std::make_unique<User>();
                 InterpreterCreateUserQuery::updateUserFromQuery(*user, *create_user_query);
             }
-            else if (auto create_role_query = query->as<ASTCreateRoleQuery>())
+            else if (auto * create_role_query = query->as<ASTCreateRoleQuery>())
             {
                 if (res)
                     throw Exception("Two access entities in one file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
                 res = role = std::make_unique<Role>();
                 InterpreterCreateRoleQuery::updateRoleFromQuery(*role, *create_role_query);
             }
-            else if (auto create_policy_query = query->as<ASTCreateRowPolicyQuery>())
+            else if (auto * create_policy_query = query->as<ASTCreateRowPolicyQuery>())
             {
                 if (res)
                     throw Exception("Two access entities in one file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
                 res = policy = std::make_unique<RowPolicy>();
                 InterpreterCreateRowPolicyQuery::updateRowPolicyFromQuery(*policy, *create_policy_query);
             }
-            else if (auto create_quota_query = query->as<ASTCreateQuotaQuery>())
+            else if (auto * create_quota_query = query->as<ASTCreateQuotaQuery>())
             {
                 if (res)
                     throw Exception("Two access entities are attached in the same file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
                 res = quota = std::make_unique<Quota>();
                 InterpreterCreateQuotaQuery::updateQuotaFromQuery(*quota, *create_quota_query);
             }
-            else if (auto create_profile_query = query->as<ASTCreateSettingsProfileQuery>())
+            else if (auto * create_profile_query = query->as<ASTCreateSettingsProfileQuery>())
             {
                 if (res)
                     throw Exception("Two access entities are attached in the same file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
                 res = profile = std::make_unique<SettingsProfile>();
                 InterpreterCreateSettingsProfileQuery::updateSettingsProfileFromQuery(*profile, *create_profile_query);
             }
-            else if (auto grant_query = query->as<ASTGrantQuery>())
+            else if (auto * grant_query = query->as<ASTGrantQuery>())
             {
                 if (!user && !role)
                     throw Exception("A user or role should be attached before grant in file " + file_path.string(), ErrorCodes::INCORRECT_ACCESS_ENTITY_DEFINITION);
@@ -560,7 +561,7 @@ std::vector<UUID> DiskAccessStorage::findAllImpl(std::type_index type) const
 bool DiskAccessStorage::existsImpl(const UUID & id) const
 {
     std::lock_guard lock{mutex};
-    return id_to_entry_map.contains(id);
+    return id_to_entry_map.count(id);
 }
 
 
@@ -571,7 +572,7 @@ AccessEntityPtr DiskAccessStorage::readImpl(const UUID & id) const
     if (it == id_to_entry_map.end())
         throwNotFound(id);
 
-    auto & entry = it->second;
+    const auto & entry = it->second;
     if (!entry.entity)
         entry.entity = readAccessEntityFromDisk(id);
     return entry.entity;
@@ -709,7 +710,7 @@ void DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     if (name_changed)
     {
         const auto & name_to_id_map = name_to_id_maps.at(type);
-        if (name_to_id_map.contains(new_name))
+        if (name_to_id_map.count(new_name))
             throwNameCollisionCannotRename(type, String{old_name}, new_name);
         scheduleWriteLists(type);
     }

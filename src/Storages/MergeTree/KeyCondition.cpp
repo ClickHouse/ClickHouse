@@ -318,7 +318,7 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
         return result_node;
     }
 
-    const auto cloned_node = node->clone();
+    auto cloned_node = node->clone();
 
     if (func && inverse_relations.find(func->name) != inverse_relations.cend())
     {
@@ -336,44 +336,6 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
 
 inline bool Range::equals(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateEquals(), lhs, rhs); }
 inline bool Range::less(const Field & lhs, const Field & rhs) { return applyVisitor(FieldVisitorAccurateLess(), lhs, rhs); }
-
-
-FieldWithInfinity::FieldWithInfinity(const Field & field_)
-    : field(field_),
-    type(Type::NORMAL)
-{
-}
-
-FieldWithInfinity::FieldWithInfinity(Field && field_)
-    : field(std::move(field_)),
-    type(Type::NORMAL)
-{
-}
-
-FieldWithInfinity::FieldWithInfinity(const Type type_)
-    : type(type_)
-{
-}
-
-FieldWithInfinity FieldWithInfinity::getMinusInfinity()
-{
-    return FieldWithInfinity(Type::MINUS_INFINITY);
-}
-
-FieldWithInfinity FieldWithInfinity::getPlusInfinity()
-{
-    return FieldWithInfinity(Type::PLUS_INFINITY);
-}
-
-bool FieldWithInfinity::operator<(const FieldWithInfinity & other) const
-{
-    return type < other.type || (type == other.type && type == Type::NORMAL && field < other.field);
-}
-
-bool FieldWithInfinity::operator==(const FieldWithInfinity & other) const
-{
-    return type == other.type && (type != Type::NORMAL || field == other.field);
-}
 
 
 /** Calculate expressions, that depend only on constants.
@@ -480,24 +442,41 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
 }
 
 
-static void applyFunction(
+static Field applyFunctionForField(
     const FunctionBasePtr & func,
-    const DataTypePtr & arg_type, const Field & arg_value,
-    DataTypePtr & res_type, Field & res_value)
+    const DataTypePtr & arg_type,
+    const Field & arg_value)
 {
-    res_type = func->getReturnType();
-
     Block block
     {
         { arg_type->createColumnConst(1, arg_value), arg_type, "x" },
-        { nullptr, res_type, "y" }
+        { nullptr, func->getReturnType(), "y" }
     };
 
     func->execute(block, {0}, 1, 1);
-
-    block.safeGetByPosition(1).column->get(0, res_value);
+    return (*block.safeGetByPosition(1).column)[0];
 }
 
+static FieldRef applyFunction(FunctionBasePtr & func, const DataTypePtr & current_type, const FieldRef & field)
+{
+    /// Fallback for fields without block reference.
+    if (field.isExplicit())
+        return applyFunctionForField(func, current_type, field);
+
+    String result_name = "_" + func->getName() + "_" + toString(field.column_idx);
+    size_t result_idx;
+    const auto & block = field.block;
+    if (!block->has(result_name))
+    {
+        result_idx = block->columns();
+        field.block->insert({nullptr, func->getReturnType(), result_name});
+        func->execute(*block, {field.column_idx}, result_idx, block->rows());
+    }
+    else
+        result_idx = block->getPositionByName(result_name);
+
+    return {field.block, field.row_idx, result_idx};
+}
 
 void KeyCondition::traverseAST(const ASTPtr & node, const Context & context, Block & block_with_constants)
 {
@@ -569,12 +548,8 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
                 return false;
 
             // Apply the next transformation step
-            DataTypePtr new_type;
-            applyFunction(a.function_base, out_type, out_value, new_type, out_value);
-            if (!new_type)
-                return false;
-
-            out_type.swap(new_type);
+            out_value = applyFunctionForField(a.function_base, out_type, out_value);
+            out_type = a.function_base->getReturnType();
             expr_name = a.result_name;
 
             // Transformation results in a key expression, accept
@@ -957,8 +932,8 @@ String KeyCondition::toString() const
 template <typename F>
 static BoolMask forAnyHyperrectangle(
     size_t key_size,
-    const Field * key_left,
-    const Field * key_right,
+    const FieldRef * key_left,
+    const FieldRef * key_right,
     bool left_bounded,
     bool right_bounded,
     std::vector<Range> & hyperrectangle,
@@ -1049,8 +1024,8 @@ static BoolMask forAnyHyperrectangle(
 
 BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
-    const Field * left_key,
-    const Field * right_key,
+    const FieldRef * left_key,
+    const FieldRef * right_key,
     const DataTypes & data_types,
     bool right_bounded,
     BoolMask initial_mask) const
@@ -1102,19 +1077,12 @@ std::optional<Range> KeyCondition::applyMonotonicFunctionsChainToRange(
             return {};
         }
 
-        /// Apply the function.
-        DataTypePtr new_type;
         if (!key_range.left.isNull())
-            applyFunction(func, current_type, key_range.left, new_type, key_range.left);
+            key_range.left = applyFunction(func, current_type, key_range.left);
         if (!key_range.right.isNull())
-            applyFunction(func, current_type, key_range.right, new_type, key_range.right);
+            key_range.right = applyFunction(func, current_type, key_range.right);
 
-        if (!new_type)
-        {
-            return {};
-        }
-
-        current_type.swap(new_type);
+        current_type = func->getReturnType();
 
         if (!monotonicity.is_positive)
             key_range.swapLeftAndRight();
@@ -1220,8 +1188,8 @@ BoolMask KeyCondition::checkInHyperrectangle(
 
 BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
-    const Field * left_key,
-    const Field * right_key,
+    const FieldRef * left_key,
+    const FieldRef * right_key,
     const DataTypes & data_types,
     BoolMask initial_mask) const
 {
@@ -1231,8 +1199,8 @@ BoolMask KeyCondition::checkInRange(
 
 bool KeyCondition::mayBeTrueInRange(
     size_t used_key_size,
-    const Field * left_key,
-    const Field * right_key,
+    const FieldRef * left_key,
+    const FieldRef * right_key,
     const DataTypes & data_types) const
 {
     return checkInRange(used_key_size, left_key, right_key, data_types, true, BoolMask::consider_only_can_be_true).can_be_true;
@@ -1241,7 +1209,7 @@ bool KeyCondition::mayBeTrueInRange(
 
 BoolMask KeyCondition::checkAfter(
     size_t used_key_size,
-    const Field * left_key,
+    const FieldRef * left_key,
     const DataTypes & data_types,
     BoolMask initial_mask) const
 {
@@ -1251,7 +1219,7 @@ BoolMask KeyCondition::checkAfter(
 
 bool KeyCondition::mayBeTrueAfter(
     size_t used_key_size,
-    const Field * left_key,
+    const FieldRef * left_key,
     const DataTypes & data_types) const
 {
     return checkInRange(used_key_size, left_key, nullptr, data_types, false, BoolMask::consider_only_can_be_true).can_be_true;
@@ -1380,6 +1348,15 @@ size_t KeyCondition::getMaxKeyColumn() const
         }
     }
     return res;
+}
+
+bool KeyCondition::hasMonotonicFunctionsChain() const
+{
+    for (const auto & element : rpn)
+        if (!element.monotonic_functions_chain.empty()
+            || (element.set_index && element.set_index->hasMonotonicFunctionsChain()))
+            return true;
+    return false;
 }
 
 }

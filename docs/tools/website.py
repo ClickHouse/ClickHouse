@@ -1,4 +1,5 @@
 import hashlib
+import json
 import logging
 import os
 import shutil
@@ -11,21 +12,6 @@ import jinja2
 import jsmin
 
 import mdx_clickhouse
-
-
-def copy_icons(args):
-    logging.info('Copying icons')
-    icons_dir = os.path.join(args.output_dir, 'images', 'icons')
-    os.makedirs(icons_dir)
-    for icon in [
-        'github',
-        'edit',
-        'external-link'
-    ]:
-        icon = '%s.svg' % icon
-        icon_src = os.path.join(args.website_dir, 'images', 'feathericons', 'icons', icon)
-        icon_dst = os.path.join(icons_dir, icon)
-        shutil.copy2(icon_src, icon_dst)
 
 
 def build_website(args):
@@ -51,13 +37,14 @@ def build_website(args):
             '*.md',
             '*.sh',
             '*.css',
-            '*.js',
+            'js/*.js',
             'build',
             'docs',
             'public',
             'node_modules',
             'templates',
-            'feathericons'
+            'feathericons',
+            'locale'
         )
     )
 
@@ -67,7 +54,7 @@ def build_website(args):
                 continue
 
             path = os.path.join(root, filename)
-            if not (filename.endswith('.html') or filename.endswith('.js')):
+            if not filename.endswith('.html'):
                 continue
             logging.info('Processing %s', path)
             with open(path, 'rb') as f:
@@ -130,11 +117,12 @@ def minify_website(args):
         logging.info(closure_args)
         if closure.run(*closure_args):
             raise RuntimeError('failed to run closure compiler')
-            
+
     else:
-        logging.info(command)
         js_in = ' '.join(js_in)
-        output = subprocess.check_output(f'cat {js_in} > {js_out}', shell=True)
+        command = f'cat {js_in} > {js_out}'
+        logging.info(command)
+        output = subprocess.check_output(command, shell=True)
         logging.debug(output)
     with open(js_out, 'rb') as f:
         js_digest = hashlib.sha3_224(f.read()).hexdigest()[0:8]
@@ -164,3 +152,19 @@ def minify_website(args):
                     content = jsmin.jsmin(content)
                 with open(path, 'wb') as f:
                     f.write(content.encode('utf-8'))
+
+
+def process_benchmark_results(args):
+    benchmark_root = os.path.join(args.website_dir, 'benchmark')
+    for benchmark_kind in ['dbms', 'hardware']:
+        results = []
+        results_root = os.path.join(benchmark_root, benchmark_kind, 'results')
+        for result in sorted(os.listdir(results_root)):
+            result_file = os.path.join(results_root, result)
+            logging.debug(f'Reading benchmark result from {result_file}')
+            with open(result_file, 'r') as f:
+                results += json.loads(f.read())
+        results_js = os.path.join(args.output_dir, 'benchmark', benchmark_kind, 'results.js')
+        with open(results_js, 'w') as f:
+            data = json.dumps(results)
+            f.write(f'var results = {data};')

@@ -64,7 +64,7 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
 }
 
 template<typename Collection>
-static Block createBlockFromCollection(const Collection & collection, const DataTypes & types)
+static Block createBlockFromCollection(const Collection & collection, const DataTypes & types, const Context & context)
 {
     size_t columns_num = types.size();
     MutableColumns columns(columns_num);
@@ -77,7 +77,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
         if (columns_num == 1)
         {
             auto field = convertFieldToType(value, *types[0]);
-            if (!field.isNull())
+            if (!field.isNull() || context.getSettingsRef().transform_null_in)
                 columns[0]->insert(std::move(field));
         }
         else
@@ -100,7 +100,7 @@ static Block createBlockFromCollection(const Collection & collection, const Data
             for (; i < tuple_size; ++i)
             {
                 tuple_values[i] = convertFieldToType(tuple[i], *types[i]);
-                if (tuple_values[i].isNull())
+                if (tuple_values[i].isNull() && !context.getSettingsRef().transform_null_in)
                     break;
             }
 
@@ -131,7 +131,7 @@ SetPtr makeExplicitSet(
     const DataTypePtr & left_arg_type = sample_block.getByName(left_arg->getColumnName()).type;
 
     DataTypes set_element_types = {left_arg_type};
-    auto left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
+    const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(left_arg_type.get());
     if (left_tuple_type && left_tuple_type->getElements().size() != 1)
         set_element_types = left_tuple_type->getElements();
 
@@ -148,9 +148,9 @@ SetPtr makeExplicitSet(
     std::function<size_t(const DataTypePtr &)> get_type_depth;
     get_type_depth = [&get_type_depth](const DataTypePtr & type) -> size_t
     {
-        if (auto array_type = typeid_cast<const DataTypeArray *>(type.get()))
+        if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
             return 1 + get_type_depth(array_type->getNestedType());
-        else if (auto tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
+        else if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
             return 1 + (tuple_type->getElements().empty() ? 0 : get_type_depth(tuple_type->getElements().at(0)));
 
         return 0;
@@ -170,37 +170,29 @@ SetPtr makeExplicitSet(
     if (left_type_depth == right_type_depth)
     {
         Array array{right_arg_value};
-        block = createBlockFromCollection(array, set_element_types);
+        block = createBlockFromCollection(array, set_element_types, context);
     }
     /// 1 in (1, 2); (1, 2) in ((1, 2), (3, 4)); etc.
     else if (left_type_depth + 1 == right_type_depth)
     {
         auto type_index = right_arg_type->getTypeId();
         if (type_index == TypeIndex::Tuple)
-            block = createBlockFromCollection(DB::get<const Tuple &>(right_arg_value), set_element_types);
+            block = createBlockFromCollection(DB::get<const Tuple &>(right_arg_value), set_element_types, context);
         else if (type_index == TypeIndex::Array)
-            block = createBlockFromCollection(DB::get<const Array &>(right_arg_value), set_element_types);
+            block = createBlockFromCollection(DB::get<const Array &>(right_arg_value), set_element_types, context);
         else
             throw_unsupported_type(right_arg_type);
     }
     else
         throw_unsupported_type(right_arg_type);
 
-    SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set);
+    SetPtr set = std::make_shared<Set>(size_limits, create_ordered_set, context.getSettingsRef().transform_null_in);
 
     set->setHeader(block);
     set->insertFromBlock(block);
 
     prepared_sets[set_key] = set;
     return set;
-}
-
-static String getUniqueName(const Block & block, const String & prefix)
-{
-    int i = 1;
-    while (block.has(prefix + toString(i)))
-        ++i;
-    return prefix + toString(i);
 }
 
 ScopeStack::ScopeStack(const ExpressionActionsPtr & actions, const Context & context_)
@@ -431,7 +423,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     for (size_t arg = 0; arg < node.arguments->children.size(); ++arg)
     {
         auto & child = node.arguments->children[arg];
-        auto child_column_name = child->getColumnName();
 
         const auto * lambda = child->as<ASTFunction>();
         const auto * identifier = child->as<ASTIdentifier>();
@@ -459,9 +450,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             /// If the argument is a set given by an enumeration of values (so, the set was already built), give it a unique name,
             ///  so that sets with the same literal representation do not fuse together (they can have different types).
             if (!prepared_set->empty())
-                column.name = getUniqueName(data.getSampleBlock(), "__set");
+                column.name = data.getUniqueName("__set");
             else
-                column.name = child_column_name;
+                column.name = child->getColumnName();
 
             if (!data.hasColumn(column.name))
             {
@@ -487,7 +478,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             ColumnWithTypeAndName column(
                 ColumnConst::create(std::move(column_string), 1),
                 std::make_shared<DataTypeString>(),
-                getUniqueName(data.getSampleBlock(), "__joinGet"));
+                data.getUniqueName("__joinGet"));
             data.addAction(ExpressionAction::addColumn(column));
             argument_types.push_back(column.type);
             argument_names.push_back(column.name);
@@ -496,6 +487,18 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         {
             /// If the argument is not a lambda expression, call it recursively and find out its type.
             visit(child, data);
+
+            // In the above visit() call, if the argument is a literal, we
+            // generated a unique column name for it. Use it instead of a generic
+            // display name.
+            auto child_column_name = child->getColumnName();
+            const auto * as_literal = child->as<ASTLiteral>();
+            if (as_literal)
+            {
+                assert(!as_literal->unique_column_name.empty());
+                child_column_name = as_literal->unique_column_name;
+            }
+
             if (data.hasColumn(child_column_name))
             {
                 argument_types.push_back(data.getSampleBlock().getByName(child_column_name).type);
@@ -556,7 +559,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
 
                 /// We can not name `getColumnName()`,
                 ///  because it does not uniquely define the expression (the types of arguments can be different).
-                String lambda_name = getUniqueName(data.getSampleBlock(), "__lambda");
+                String lambda_name = data.getUniqueName("__lambda");
 
                 auto function_capture = std::make_unique<FunctionCaptureOverloadResolver>(
                         lambda_actions, captured, lambda_arguments, result_type, result_name);
@@ -587,18 +590,53 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
     }
 }
 
-void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & ast, Data & data)
+void ActionsMatcher::visit(const ASTLiteral & literal, const ASTPtr & /* ast */,
+    Data & data)
 {
-    CachedColumnName column_name;
-    if (data.hasColumn(column_name.get(ast)))
-        return;
-
     DataTypePtr type = applyVisitor(FieldToDataType(), literal.value);
+    const auto value = convertFieldToType(literal.value, *type);
+
+    // FIXME why do we have a second pass with a clean sample block over the same
+    // AST here? Anyway, do not modify the column name if it is set already.
+    if (literal.unique_column_name.empty())
+    {
+        const auto default_name = literal.getColumnName();
+        const auto & block = data.getSampleBlock();
+        const auto * existing_column = block.findByName(default_name);
+
+        /*
+         * To approximate CSE, bind all identical literals to a single temporary
+         * columns. We try to find the column by its default name, but after that
+         * we have to check that it contains the correct data. This might not be
+         * the case if it is a user-supplied column, or it is from under a join,
+         * etc.
+         * Overall, this is a hack around a generally poor name-based notion of
+         * column identity we currently use.
+         */
+        if (existing_column
+            && existing_column->column
+            && isColumnConst(*existing_column->column)
+            && existing_column->column->size() == 1
+            && existing_column->column->operator[](0) == value)
+        {
+            const_cast<ASTLiteral &>(literal).unique_column_name = default_name;
+        }
+        else
+        {
+            const_cast<ASTLiteral &>(literal).unique_column_name
+                = data.getUniqueName(default_name);
+        }
+    }
+
+    if (data.hasColumn(literal.unique_column_name))
+    {
+        return;
+    }
 
     ColumnWithTypeAndName column;
-    column.column = type->createColumnConst(1, convertFieldToType(literal.value, *type));
+    column.name = literal.unique_column_name;
+    column.column = type->createColumnConst(1, value);
     column.type = type;
-    column.name = column_name.get(ast);
 
     data.addAction(ExpressionAction::addColumn(column));
 }
@@ -654,7 +692,7 @@ SetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool no_su
             return subquery_for_set.set;
         }
 
-        SetPtr set = std::make_shared<Set>(data.set_size_limit, false);
+        SetPtr set = std::make_shared<Set>(data.set_size_limit, false, data.context.getSettingsRef().transform_null_in);
 
         /** The following happens for GLOBAL INs:
           * - in the addExternalStorage function, the IN (SELECT ...) subquery is replaced with IN _data1,

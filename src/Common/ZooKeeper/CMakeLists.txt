@@ -7,6 +7,10 @@ add_library(clickhouse_common_zookeeper ${clickhouse_common_zookeeper_headers} $
 target_link_libraries (clickhouse_common_zookeeper PUBLIC clickhouse_common_io common PRIVATE string_utils PUBLIC ${Poco_Util_LIBRARY})
 target_include_directories(clickhouse_common_zookeeper PUBLIC ${DBMS_INCLUDE_DIR})
 
+if (USE_POCO_NETSSL)
+    target_link_libraries (clickhouse_common_zookeeper PRIVATE ${Poco_NetSSL_LIBRARY} ${Poco_Crypto_LIBRARY})
+endif()
+
 if (ENABLE_TESTS)
     add_subdirectory (tests)
 endif ()

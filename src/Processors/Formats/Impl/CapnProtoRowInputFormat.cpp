@@ -192,7 +192,7 @@ CapnProtoRowInputFormat::CapnProtoRowInputFormat(ReadBuffer & in_, Block header,
      * Here we gather the list of fields and sort them in a way so that fields in the same structure are adjacent,
      * and the nesting level doesn't decrease to make traversal easier.
      */
-    auto & sample = getPort().getHeader();
+    const auto & sample = getPort().getHeader();
     NestedFieldList list;
     size_t num_columns = sample.columns();
     for (size_t i = 0; i < num_columns; ++i)

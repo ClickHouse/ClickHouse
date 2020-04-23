@@ -1,7 +1,3 @@
----
-en_copy: true
----
-
 Row 1:
 ──────
 count(): 6344

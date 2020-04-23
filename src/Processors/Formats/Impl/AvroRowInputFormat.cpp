@@ -102,10 +102,6 @@ private:
     ReadBuffer & in;
 };
 
-static void deserializeNoop(IColumn &, avro::Decoder &)
-{
-}
-
 /// Insert value with conversion to the column of target type.
 template <typename T>
 static void insertNumber(IColumn & column, WhichDataType type, T value)
@@ -420,7 +416,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
             }
             return [field_skip_fns](avro::Decoder & decoder)
             {
-                for (auto & skip_fn : field_skip_fns)
+                for (const auto & skip_fn : field_skip_fns)
                     skip_fn(decoder);
             };
         }
@@ -441,8 +437,43 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(avro::NodePtr root_node)
     }
 }
 
+void AvroDeserializer::createActions(const Block & header, const avro::NodePtr& node, std::string current_path)
+{
+    if (node->type() == avro::AVRO_RECORD)
+    {
+        for (size_t i = 0; i < node->leaves(); ++i)
+        {
+            const auto & field_node = node->leafAt(i);
+            const auto & field_name = node->nameAt(i);
+            auto field_path = current_path.empty() ? field_name : current_path + "." + field_name;
+            createActions(header, field_node, field_path);
+        }
+    }
+    else
+    {
+        if (header.has(current_path))
+        {
+            auto target_column_idx = header.getPositionByName(current_path);
+            const auto & column = header.getByPosition(target_column_idx);
+            try
+            {
+                actions.emplace_back(target_column_idx, createDeserializeFn(node, column.type));
+            }
+            catch (Exception & e)
+            {
+                e.addMessage("column " + column.name);
+                throw;
+            }
+            column_found[target_column_idx] = true;
+        }
+        else
+        {
+            actions.emplace_back(createSkipFn(node));
+        }
+    }
+}
 
-AvroDeserializer::AvroDeserializer(const ColumnsWithTypeAndName & columns, avro::ValidSchema schema)
+AvroDeserializer::AvroDeserializer(const Block & header, avro::ValidSchema schema)
 {
     const auto & schema_root = schema.root();
     if (schema_root->type() != avro::AVRO_RECORD)
@@ -450,48 +481,23 @@ AvroDeserializer::AvroDeserializer(const ColumnsWithTypeAndName & columns, avro:
         throw Exception("Root schema must be a record", ErrorCodes::TYPE_MISMATCH);
     }
 
-    field_mapping.resize(schema_root->leaves(), -1);
+    column_found.resize(header.columns());
+    createActions(header, schema_root);
 
-    for (size_t i = 0; i < schema_root->leaves(); ++i)
+    for (size_t i = 0; i < header.columns(); ++i)
     {
-        skip_fns.push_back(createSkipFn(schema_root->leafAt(i)));
-        deserialize_fns.push_back(&deserializeNoop);
-    }
-
-    for (size_t i = 0; i < columns.size(); ++i)
-    {
-        const auto & column = columns[i];
-        size_t field_index = 0;
-        if (!schema_root->nameIndex(column.name, field_index))
+        if (!column_found[i])
         {
-            throw Exception("Field " + column.name + " not found in Avro schema", ErrorCodes::THERE_IS_NO_COLUMN);
+            throw Exception("Field " + header.getByPosition(i).name + " not found in Avro schema", ErrorCodes::THERE_IS_NO_COLUMN);
         }
-        auto field_schema = schema_root->leafAt(field_index);
-        try
-        {
-            deserialize_fns[field_index] = createDeserializeFn(field_schema, column.type);
-        }
-        catch (Exception & e)
-        {
-            e.addMessage("column " + column.name);
-            throw;
-        }
-        field_mapping[field_index] = i;
     }
 }
 
 void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & decoder) const
 {
-    for (size_t i = 0; i < field_mapping.size(); i++)
+    for (const auto& action : actions)
     {
-        if (field_mapping[i] >= 0)
-        {
-            deserialize_fns[i](*columns[field_mapping[i]], decoder);
-        }
-        else
-        {
-            skip_fns[i](decoder);
-        }
+        action.execute(columns, decoder);
     }
 }
 
@@ -499,7 +505,7 @@ void AvroDeserializer::deserializeRow(MutableColumns & columns, avro::Decoder & 
 AvroRowInputFormat::AvroRowInputFormat(const Block & header_, ReadBuffer & in_, Params params_)
     : IRowInputFormat(header_, in_, params_)
     , file_reader(std::make_unique<InputStreamReadBufferAdapter>(in_))
-    , deserializer(header_.getColumnsWithTypeAndName(), file_reader.dataSchema())
+    , deserializer(output.getHeader(), file_reader.dataSchema())
 {
     file_reader.init();
 }
@@ -555,7 +561,7 @@ private:
                 session->sendRequest(request);
 
                 Poco::Net::HTTPResponse response;
-                auto response_body = receiveResponse(*session, request, response, false);
+                auto * response_body = receiveResponse(*session, request, response, false);
 
                 Poco::JSON::Parser parser;
                 auto json_body = parser.parse(*response_body).extract<Poco::JSON::Object::Ptr>();
@@ -584,7 +590,6 @@ private:
         }
     }
 
-private:
     Poco::URI base_url;
     LRUCache<uint32_t, avro::ValidSchema> schema_cache;
 };
@@ -626,8 +631,7 @@ static uint32_t readConfluentSchemaId(ReadBuffer & in)
 
 AvroConfluentRowInputFormat::AvroConfluentRowInputFormat(
     const Block & header_, ReadBuffer & in_, Params params_, const FormatSettings & format_settings_)
-    : IRowInputFormat(header_.cloneEmpty(), in_, params_)
-    , header_columns(header_.getColumnsWithTypeAndName())
+    : IRowInputFormat(header_, in_, params_)
     , schema_registry(getConfluentSchemaRegistry(format_settings_))
     , input_stream(std::make_unique<InputStreamReadBufferAdapter>(in))
     , decoder(avro::binaryDecoder())
@@ -643,7 +647,7 @@ bool AvroConfluentRowInputFormat::readRow(MutableColumns & columns, RowReadExten
         return false;
     }
     SchemaId schema_id = readConfluentSchemaId(in);
-    auto & deserializer = getOrCreateDeserializer(schema_id);
+    const auto & deserializer = getOrCreateDeserializer(schema_id);
     deserializer.deserializeRow(columns, *decoder);
     decoder->drain();
     return true;
@@ -655,7 +659,7 @@ const AvroDeserializer & AvroConfluentRowInputFormat::getOrCreateDeserializer(Sc
     if (it == deserializer_cache.end())
     {
         auto schema = schema_registry->getSchema(schema_id);
-        AvroDeserializer deserializer(header_columns, schema);
+        AvroDeserializer deserializer(output.getHeader(), schema);
         it = deserializer_cache.emplace(schema_id, deserializer).first;
     }
     return it->second;

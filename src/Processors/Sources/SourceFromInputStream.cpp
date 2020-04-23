@@ -20,7 +20,7 @@ SourceFromInputStream::SourceFromInputStream(BlockInputStreamPtr stream_, bool f
 
 void SourceFromInputStream::init()
 {
-    auto & sample = getPort().getHeader();
+    const auto & sample = getPort().getHeader();
     for (auto & type : sample.getDataTypes())
         if (typeid_cast<const DataTypeAggregateFunction *>(type.get()))
             has_aggregate_functions = true;
@@ -28,11 +28,20 @@ void SourceFromInputStream::init()
 
 void SourceFromInputStream::addTotalsPort()
 {
-    if (has_totals_port)
+    if (totals_port)
         throw Exception("Totals port was already added for SourceFromInputStream.", ErrorCodes::LOGICAL_ERROR);
 
     outputs.emplace_back(outputs.front().getHeader(), this);
-    has_totals_port = true;
+    totals_port = &outputs.back();
+}
+
+void SourceFromInputStream::addExtremesPort()
+{
+    if (extremes_port)
+        throw Exception("Extremes port was already added for SourceFromInputStream.", ErrorCodes::LOGICAL_ERROR);
+
+    outputs.emplace_back(outputs.front().getHeader(), this);
+    extremes_port = &outputs.back();
 }
 
 IProcessor::Status SourceFromInputStream::prepare()
@@ -47,23 +56,32 @@ IProcessor::Status SourceFromInputStream::prepare()
         if (!is_stream_finished && !isCancelled())
             return Status::Ready;
 
-        if (has_totals_port)
+        if (totals_port && !totals_port->isFinished())
         {
-            auto & totals_out = outputs.back();
-
-            if (totals_out.isFinished())
-                return Status::Finished;
-
             if (has_totals)
             {
-                if (!totals_out.canPush())
+                if (!totals_port->canPush())
                     return Status::PortFull;
 
-                totals_out.push(std::move(totals));
+                totals_port->push(std::move(totals));
                 has_totals = false;
             }
 
-            totals_out.finish();
+            totals_port->finish();
+        }
+
+        if (extremes_port && !extremes_port->isFinished())
+        {
+            if (has_extremes)
+            {
+                if (!extremes_port->canPush())
+                    return Status::PortFull;
+
+                extremes_port->push(std::move(extremes));
+                has_extremes = false;
+            }
+
+            extremes_port->finish();
         }
     }
 
@@ -97,7 +115,7 @@ void SourceFromInputStream::work()
 
     if (rows_before_limit)
     {
-        auto & info = stream->getProfileInfo();
+        const auto & info = stream->getProfileInfo();
         if (info.hasAppliedLimit())
             rows_before_limit->add(info.getRowsBeforeLimit());
     }
@@ -129,7 +147,7 @@ Chunk SourceFromInputStream::generate()
     {
         if (rows_before_limit)
         {
-            auto & info = stream->getProfileInfo();
+            const auto & info = stream->getProfileInfo();
             if (info.hasAppliedLimit())
                 rows_before_limit->add(info.getRowsBeforeLimit());
         }
@@ -138,16 +156,28 @@ Chunk SourceFromInputStream::generate()
 
         if (auto totals_block = stream->getTotals())
         {
-            if (totals_block.rows() == 1) /// Sometimes we can get empty totals. Skip it.
+            if (totals_block.rows() > 0) /// Sometimes we can get empty totals. Skip it.
             {
-                totals.setColumns(totals_block.getColumns(), 1);
+                totals.setColumns(totals_block.getColumns(), totals_block.rows());
                 has_totals = true;
+            }
+        }
+
+        if (auto extremes_block = stream->getExtremes())
+        {
+            if (extremes_block.rows() > 0) /// Sometimes we can get empty extremes. Skip it.
+            {
+                extremes.setColumns(extremes_block.getColumns(), extremes_block.rows());
+                has_extremes = true;
             }
         }
 
         is_stream_finished = true;
         return {};
     }
+
+    if (isCancelled())
+        return {};
 
 #ifndef NDEBUG
     assertBlocksHaveEqualStructure(getPort().getHeader(), block, "SourceFromInputStream");

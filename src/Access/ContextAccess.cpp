@@ -147,9 +147,9 @@ void ContextAccess::setUser(const UserPtr & user_) const
         current_roles.reserve(params.current_roles.size());
         for (const auto & id : params.current_roles)
         {
-            if (user->granted_roles.contains(id))
+            if (user->granted_roles.count(id))
                 current_roles.push_back(id);
-            if (user->granted_roles_with_admin_option.contains(id))
+            if (user->granted_roles_with_admin_option.count(id))
                 current_roles_with_admin_option.push_back(id);
         }
     }
@@ -196,7 +196,7 @@ bool ContextAccess::isClientHostAllowed() const
 
 
 template <int mode, bool grant_option, typename... Args>
-bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags, const Args &... args) const
+bool ContextAccess::calculateResultAccessAndCheck(Poco::Logger * log_, const AccessFlags & flags, const Args &... args) const
 {
     auto access = calculateResultAccess(grant_option);
     bool is_granted = access->isGranted(flags, args...);
@@ -268,6 +268,22 @@ bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & fla
 
 
 template <int mode, bool grant_option>
+bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags) const
+{
+    return calculateResultAccessAndCheck<mode, grant_option>(log_, flags);
+}
+
+template <int mode, bool grant_option, typename... Args>
+bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessFlags & flags, const std::string_view & database, const Args &... args) const
+{
+    if (database.empty())
+        return calculateResultAccessAndCheck<mode, grant_option>(log_, flags, params.current_database, args...);
+    else
+        return calculateResultAccessAndCheck<mode, grant_option>(log_, flags, database, args...);
+}
+
+
+template <int mode, bool grant_option>
 bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessRightsElement & element) const
 {
     if (element.any_database)
@@ -276,24 +292,15 @@ bool ContextAccess::checkAccessImpl(Poco::Logger * log_, const AccessRightsEleme
     }
     else if (element.any_table)
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database);
     }
     else if (element.any_column)
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database, element.table);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table);
     }
     else
     {
-        if (element.database.empty())
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, params.current_database, element.table, element.columns);
-        else
-            return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table, element.columns);
+        return checkAccessImpl<mode, grant_option>(log_, element.access_flags, element.database, element.table, element.columns);
     }
 }
 
@@ -351,7 +358,7 @@ void ContextAccess::checkAdminOption(const UUID & role_id) const
         return;
 
     auto roles_with_admin_option_loaded = roles_with_admin_option.load();
-    if (roles_with_admin_option_loaded && roles_with_admin_option_loaded->contains(role_id))
+    if (roles_with_admin_option_loaded && roles_with_admin_option_loaded->count(role_id))
         return;
 
     std::optional<String> role_name = manager->readName(role_id);
@@ -408,9 +415,10 @@ boost::shared_ptr<const AccessRights> ContextAccess::calculateResultAccess(bool 
     static const AccessFlags dictionary_ddl = AccessType::CREATE_DICTIONARY | AccessType::DROP_DICTIONARY;
     static const AccessFlags table_and_dictionary_ddl = table_ddl | dictionary_ddl;
     static const AccessFlags write_table_access = AccessType::INSERT | AccessType::OPTIMIZE;
+    static const AccessFlags write_dcl_access = AccessType::ACCESS_MANAGEMENT - AccessType::SHOW_ACCESS;
 
     if (readonly_)
-        merged_access->revoke(write_table_access | table_and_dictionary_ddl | AccessType::SYSTEM | AccessType::KILL_QUERY | AccessType::ACCESS_MANAGEMENT);
+        merged_access->revoke(write_table_access | table_and_dictionary_ddl | write_dcl_access | AccessType::SYSTEM | AccessType::KILL_QUERY);
 
     if (readonly_ == 1)
     {
