@@ -293,7 +293,7 @@ DatabaseTablesIteratorPtr DatabaseAtomic::getTablesIterator(const IDatabase::Fil
 
 UUID DatabaseAtomic::tryGetTableUUID(const String & table_name) const
 {
-    if (auto table = tryGetTable(global_context, table_name))
+    if (auto table = tryGetTable(table_name))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }

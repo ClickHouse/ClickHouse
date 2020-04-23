@@ -99,7 +99,7 @@ int main()
     Context context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
 
-    auto system_database = std::make_shared<DatabaseMemory>("system", context);
+    auto system_database = std::make_shared<DatabaseMemory>("system");
     DatabaseCatalog::instance().attachDatabase("system", system_database);
     //context.setCurrentDatabase("system");
     system_database->attachTable("one", StorageSystemOne::create("one"), {});

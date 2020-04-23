@@ -130,22 +130,16 @@ public:
     virtual void loadStoredObjects(Context & /*context*/, bool /*has_force_restore_data_flag*/) {}
 
     /// Check the existence of the table.
-    virtual bool isTableExist(
-        const Context & context,
-        const String & name) const = 0;
+    virtual bool isTableExist(const String & name) const = 0;
 
     /// Check the existence of the dictionary
-    virtual bool isDictionaryExist(
-        const Context & /*context*/,
-        const String & /*name*/) const
+    virtual bool isDictionaryExist(const String & /*name*/) const
     {
         return false;
     }
 
     /// Get the table for work. Return nullptr if there is no table.
-    virtual StoragePtr tryGetTable(
-        const Context & context,
-        const String & name) const = 0;
+    virtual StoragePtr tryGetTable(const String & name) const = 0;
 
     virtual UUID tryGetTableUUID(const String & /*table_name*/) const { return UUIDHelpers::Nil; }
 
@@ -162,7 +156,7 @@ public:
     }
 
     /// Is the database empty.
-    virtual bool empty(const Context & context) const = 0;
+    virtual bool empty() const = 0;
 
     /// Add the table to the database. Record its presence in the metadata.
     virtual void createTable(
@@ -255,25 +249,25 @@ public:
     }
 
     /// Get the CREATE TABLE query for the table. It can also provide information for detached tables for which there is metadata.
-    ASTPtr tryGetCreateTableQuery(const Context & context, const String & name) const noexcept
+    ASTPtr tryGetCreateTableQuery(const String & name) const noexcept
     {
-        return getCreateTableQueryImpl(context, name, false);
+        return getCreateTableQueryImpl(name, false);
     }
 
-    ASTPtr getCreateTableQuery(const Context & context, const String & name) const
+    ASTPtr getCreateTableQuery(const String & name) const
     {
-        return getCreateTableQueryImpl(context, name, true);
+        return getCreateTableQueryImpl(name, true);
     }
 
     /// Get the CREATE DICTIONARY query for the dictionary. Returns nullptr if dictionary doesn't exists.
-    ASTPtr tryGetCreateDictionaryQuery(const Context & context, const String & name) const noexcept
+    ASTPtr tryGetCreateDictionaryQuery(const String & name) const noexcept
     {
-        return getCreateDictionaryQueryImpl(context, name, false);
+        return getCreateDictionaryQueryImpl(name, false);
     }
 
-    ASTPtr getCreateDictionaryQuery(const Context & context, const String & name) const
+    ASTPtr getCreateDictionaryQuery(const String & name) const
     {
-        return getCreateDictionaryQueryImpl(context, name, true);
+        return getCreateDictionaryQueryImpl(name, true);
     }
 
     virtual Poco::AutoPtr<Poco::Util::AbstractConfiguration> getDictionaryConfiguration(const String & /*name*/) const
@@ -282,7 +276,7 @@ public:
     }
 
     /// Get the CREATE DATABASE query for current database.
-    virtual ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const = 0;
+    virtual ASTPtr getCreateDatabaseQuery() const = 0;
 
     /// Get name of database.
     String getDatabaseName() const { return database_name; }
@@ -310,14 +304,14 @@ public:
     virtual ~IDatabase() {}
 
 protected:
-    virtual ASTPtr getCreateTableQueryImpl(const Context & /*context*/, const String & /*name*/, bool throw_on_error) const
+    virtual ASTPtr getCreateTableQueryImpl(const String & /*name*/, bool throw_on_error) const
     {
         if (throw_on_error)
             throw Exception("There is no SHOW CREATE TABLE query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_TABLE_QUERY);
         return nullptr;
     }
 
-    virtual ASTPtr getCreateDictionaryQueryImpl(const Context & /*context*/, const String & /*name*/, bool throw_on_error) const
+    virtual ASTPtr getCreateDictionaryQueryImpl(const String & /*name*/, bool throw_on_error) const
     {
         if (throw_on_error)
             throw Exception("There is no SHOW CREATE DICTIONARY query for Database" + getEngineName(), ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY);

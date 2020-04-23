@@ -103,18 +103,14 @@ void DatabaseLazy::alterTable(
     throw Exception("ALTER query is not supported for Lazy database.", ErrorCodes::UNSUPPORTED_METHOD);
 }
 
-bool DatabaseLazy::isTableExist(
-    const Context & /* context */,
-    const String & table_name) const
+bool DatabaseLazy::isTableExist(const String & table_name) const
 {
     SCOPE_EXIT({ clearExpiredTables(); });
     std::lock_guard lock(mutex);
     return tables_cache.find(table_name) != tables_cache.end();
 }
 
-StoragePtr DatabaseLazy::tryGetTable(
-    const Context & /*context*/,
-    const String & table_name) const
+StoragePtr DatabaseLazy::tryGetTable(const String & table_name) const
 {
     SCOPE_EXIT({ clearExpiredTables(); });
     {
@@ -149,7 +145,7 @@ DatabaseTablesIteratorPtr DatabaseLazy::getTablesIterator(const FilterByNameFunc
     return std::make_unique<DatabaseLazyIterator>(*this, std::move(filtered_tables));
 }
 
-bool DatabaseLazy::empty(const Context & /* context */) const
+bool DatabaseLazy::empty() const
 {
     return tables_cache.empty();
 }
@@ -309,7 +305,7 @@ void DatabaseLazyIterator::next()
 {
     current_storage.reset();
     ++iterator;
-    while (isValid() && !database.isTableExist(database.global_context, *iterator))
+    while (isValid() && !database.isTableExist(*iterator))
         ++iterator;
 }
 
@@ -326,7 +322,7 @@ const String & DatabaseLazyIterator::name() const
 const StoragePtr & DatabaseLazyIterator::table() const
 {
     if (!current_storage)
-        current_storage = database.tryGetTable(database.global_context, *iterator);
+        current_storage = database.tryGetTable(*iterator);
     return current_storage;
 }
 

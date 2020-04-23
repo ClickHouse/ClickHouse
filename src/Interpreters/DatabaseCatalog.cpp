@@ -97,7 +97,7 @@ StorageID TemporaryTableHolder::getGlobalTableID() const
 
 StoragePtr TemporaryTableHolder::getTable() const
 {
-    auto table = temporary_tables->tryGetTable(*global_context, "_tmp_" + toString(id));
+    auto table = temporary_tables->tryGetTable("_tmp_" + toString(id));
     if (!table)
         throw Exception("Temporary table " + getGlobalTableID().getNameForLogs() + " not found", ErrorCodes::LOGICAL_ERROR);
     return table;
@@ -108,7 +108,7 @@ void DatabaseCatalog::loadDatabases()
 {
     drop_delay_sec = global_context->getConfigRef().getInt("database_atomic_delay_before_drop_table_sec", 60);
 
-    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE, *global_context);
+    auto db_for_temporary_and_external_tables = std::make_shared<DatabaseMemory>(TEMPORARY_DATABASE);
     attachDatabase(TEMPORARY_DATABASE, db_for_temporary_and_external_tables);
 
     loadMarkedAsDroppedTables();
@@ -159,7 +159,6 @@ DatabaseAndTable DatabaseCatalog::tryGetByUUID(const UUID & uuid) const
 
 DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID & table_id,
-    const Context & local_context,
     std::optional<Exception> * exception) const
 {
     if (!table_id)
@@ -207,7 +206,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         database = it->second;
     }
 
-    auto table = database->tryGetTable(local_context, table_id.table_name);
+    auto table = database->tryGetTable(table_id.table_name);
     if (!table && exception)
             exception->emplace("Table " + table_id.getNameForLogs() + " doesn't exist.", ErrorCodes::UNKNOWN_TABLE);
 
@@ -262,7 +261,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
 
         if (check_empty)
         {
-            if (!db->empty(*global_context))
+            if (!db->empty())
                 throw Exception("New table appeared in database being dropped or detached. Try again.",
                                 ErrorCodes::DATABASE_NOT_EMPTY);
             auto database_atomic = typeid_cast<DatabaseAtomic *>(db.get());
@@ -332,7 +331,7 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id) const
         if (iter != databases.end())
             db = iter->second;
     }
-    return db && db->isTableExist(*global_context, table_id.table_name);
+    return db && db->isTableExist(table_id.table_name);
 }
 
 void DatabaseCatalog::assertTableDoesntExist(const StorageID & table_id) const
@@ -466,13 +465,13 @@ std::unique_ptr<DDLGuard> DatabaseCatalog::getDDLGuard(const String & database, 
 bool DatabaseCatalog::isDictionaryExist(const StorageID & table_id) const
 {
     auto db = tryGetDatabase(table_id.getDatabaseName());
-    return db && db->isDictionaryExist(*global_context, table_id.getTableName());
+    return db && db->isDictionaryExist(table_id.getTableName());
 }
 
 StoragePtr DatabaseCatalog::getTable(const StorageID & table_id) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, *global_context, &exc);
+    auto res = getTableImpl(table_id, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res.second;
@@ -480,13 +479,13 @@ StoragePtr DatabaseCatalog::getTable(const StorageID & table_id) const
 
 StoragePtr DatabaseCatalog::tryGetTable(const StorageID & table_id) const
 {
-    return getTableImpl(table_id, *global_context, nullptr).second;
+    return getTableImpl(table_id, nullptr).second;
 }
 
 DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id) const
 {
     std::optional<Exception> exc;
-    auto res = getTableImpl(table_id, *global_context, &exc);
+    auto res = getTableImpl(table_id, &exc);
     if (!res.second)
         throw Exception(*exc);
     return res;
@@ -494,7 +493,7 @@ DatabaseAndTable DatabaseCatalog::getDatabaseAndTable(const StorageID & table_id
 
 DatabaseAndTable DatabaseCatalog::tryGetDatabaseAndTable(const StorageID & table_id) const
 {
-    return getTableImpl(table_id, *global_context, nullptr);
+    return getTableImpl(table_id, nullptr);
 }
 
 void DatabaseCatalog::loadMarkedAsDroppedTables()

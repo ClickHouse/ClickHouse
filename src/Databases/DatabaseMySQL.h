@@ -28,15 +28,15 @@ public:
 
     String getEngineName() const override { return "MySQL"; }
 
-    bool empty(const Context & context) const override;
+    bool empty() const override;
 
     DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name) override;
 
-    ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const override;
+    ASTPtr getCreateDatabaseQuery() const override;
 
-    bool isTableExist(const Context & context, const String & name) const override;
+    bool isTableExist(const String & name) const override;
 
-    StoragePtr tryGetTable(const Context & context, const String & name) const override;
+    StoragePtr tryGetTable(const String & name) const override;
 
     time_t getObjectMetadataModificationTime(const String & name) const override;
 
@@ -57,7 +57,7 @@ public:
     void attachTable(const String & table_name, const StoragePtr & storage, const String & relative_table_path) override;
 
 protected:
-    ASTPtr getCreateTableQueryImpl(const Context & context, const String & name, bool throw_on_error) const override;
+    ASTPtr getCreateTableQueryImpl(const String & name, bool throw_on_error) const override;
 
 private:
     const Context & global_context;

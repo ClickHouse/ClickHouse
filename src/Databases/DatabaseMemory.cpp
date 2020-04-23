@@ -15,9 +15,8 @@ namespace ErrorCodes
     extern const int UNKNOWN_TABLE;
 }
 
-DatabaseMemory::DatabaseMemory(const String & name_, const Context & global_context_)
+DatabaseMemory::DatabaseMemory(const String & name_)
     : DatabaseWithOwnTablesBase(name_, "DatabaseMemory(" + name_ + ")")
-    , global_context(global_context_.getGlobalContext())
     , data_path("data/" + escapeForFileName(database_name) + "/")
 {}
 
@@ -55,7 +54,7 @@ void DatabaseMemory::dropTable(
     create_queries.erase(table_name);
 }
 
-ASTPtr DatabaseMemory::getCreateDatabaseQuery(const Context & /*context*/) const
+ASTPtr DatabaseMemory::getCreateDatabaseQuery() const
 {
     auto create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = database_name;
@@ -64,7 +63,7 @@ ASTPtr DatabaseMemory::getCreateDatabaseQuery(const Context & /*context*/) const
     return create_query;
 }
 
-ASTPtr DatabaseMemory::getCreateTableQueryImpl(const Context &, const String & table_name, bool throw_on_error) const
+ASTPtr DatabaseMemory::getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const
 {
     std::lock_guard lock{mutex};
     auto it = create_queries.find(table_name);
@@ -80,7 +79,7 @@ ASTPtr DatabaseMemory::getCreateTableQueryImpl(const Context &, const String & t
 
 UUID DatabaseMemory::tryGetTableUUID(const String & table_name) const
 {
-    if (auto table = tryGetTable(global_context, table_name))
+    if (auto table = tryGetTable(table_name))
         return table->getStorageID().uuid;
     return UUIDHelpers::Nil;
 }

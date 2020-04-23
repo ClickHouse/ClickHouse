@@ -18,7 +18,7 @@ public:
 
     void removeDictionary(const Context & context, const String & dictionary_name) override;
 
-    bool isDictionaryExist(const Context & context, const String & dictionary_name) const override;
+    bool isDictionaryExist(const String & dictionary_name) const override;
 
     DatabaseDictionariesIteratorPtr getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name) override;
 
@@ -26,7 +26,7 @@ public:
 
     time_t getObjectMetadataModificationTime(const String & object_name) const override;
 
-    bool empty(const Context & context) const override;
+    bool empty() const override;
 
     void shutdown() override;
 
@@ -41,8 +41,7 @@ protected:
 
     void detachDictionaryImpl(const String & dictionary_name, DictionaryAttachInfo & attach_info);
 
-    ASTPtr getCreateDictionaryQueryImpl(const Context & context,
-                                        const String & dictionary_name,
+    ASTPtr getCreateDictionaryQueryImpl(const String & dictionary_name,
                                         bool throw_on_error) const override;
 
     std::unordered_map<String, DictionaryAttachInfo> dictionaries;

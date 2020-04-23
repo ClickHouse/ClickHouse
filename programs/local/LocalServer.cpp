@@ -119,13 +119,13 @@ void LocalServer::tryInitPath()
 }
 
 
-static void attachSystemTables(const Context & context)
+static void attachSystemTables()
 {
     DatabasePtr system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
     if (!system_database)
     {
         /// TODO: add attachTableDelayed into DatabaseMemory to speedup loading
-        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
+        system_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE);
         DatabaseCatalog::instance().attachDatabase(DatabaseCatalog::SYSTEM_DATABASE, system_database);
     }
 
@@ -203,7 +203,7 @@ try
       *  if such tables will not be dropped, clickhouse-server will not be able to load them due to security reasons.
       */
     std::string default_database = config().getString("default_database", "_local");
-    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database, *context));
+    DatabaseCatalog::instance().attachDatabase(default_database, std::make_shared<DatabaseMemory>(default_database));
     context->setCurrentDatabase(default_database);
     applyCmdOptions();
 
@@ -214,14 +214,14 @@ try
 
         LOG_DEBUG(log, "Loading metadata from " << context->getPath());
         loadMetadataSystem(*context);
-        attachSystemTables(*context);
+        attachSystemTables();
         loadMetadata(*context);
         DatabaseCatalog::instance().loadDatabases();
         LOG_DEBUG(log, "Loaded metadata.");
     }
     else
     {
-        attachSystemTables(*context);
+        attachSystemTables();
     }
 
     processQueries();

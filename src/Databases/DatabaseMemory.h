@@ -19,7 +19,7 @@ namespace DB
 class DatabaseMemory final : public DatabaseWithOwnTablesBase
 {
 public:
-    DatabaseMemory(const String & name_, const Context & global_context_);
+    DatabaseMemory(const String & name_);
 
     String getEngineName() const override { return "Memory"; }
 
@@ -34,8 +34,8 @@ public:
         const String & table_name,
         bool no_delay) override;
 
-    ASTPtr getCreateTableQueryImpl(const Context & /*context*/, const String & name, bool throw_on_error) const override;
-    ASTPtr getCreateDatabaseQuery(const Context & /*context*/) const override;
+    ASTPtr getCreateTableQueryImpl(const String & name, bool throw_on_error) const override;
+    ASTPtr getCreateDatabaseQuery() const override;
 
     /// DatabaseMemory allows to create tables, which store data on disk.
     /// It's needed to create such tables in default database of clickhouse-local.
@@ -47,7 +47,6 @@ public:
     UUID tryGetTableUUID(const String & table_name) const override;
 
 private:
-    const Context & global_context;
     String data_path;
     using NameToASTCreate = std::unordered_map<String, ASTPtr>;
     NameToASTCreate create_queries;

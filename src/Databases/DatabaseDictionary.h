@@ -29,26 +29,22 @@ public:
         return "Dictionary";
     }
 
-    bool isTableExist(
-        const Context & context,
-        const String & table_name) const override;
+    bool isTableExist(const String & table_name) const override;
 
-    StoragePtr tryGetTable(
-        const Context & context,
-        const String & table_name) const override;
+    StoragePtr tryGetTable(const String & table_name) const override;
 
     DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name) override;
 
-    bool empty(const Context & context) const override;
+    bool empty() const override;
 
-    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
+    ASTPtr getCreateDatabaseQuery() const override;
 
     bool shouldBeEmptyOnDetach() const override { return false; }
 
     void shutdown() override;
 
 protected:
-    ASTPtr getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const override;
+    ASTPtr getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const override;
 
 private:
     mutable std::mutex mutex;

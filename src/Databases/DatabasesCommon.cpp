@@ -23,17 +23,13 @@ DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const
 {
 }
 
-bool DatabaseWithOwnTablesBase::isTableExist(
-    const Context & /*context*/,
-    const String & table_name) const
+bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name) const
 {
     std::lock_guard lock(mutex);
     return tables.find(table_name) != tables.end();
 }
 
-StoragePtr DatabaseWithOwnTablesBase::tryGetTable(
-    const Context & /*context*/,
-    const String & table_name) const
+StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name) const
 {
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
@@ -56,7 +52,7 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(const Fil
     return std::make_unique<DatabaseTablesSnapshotIterator>(std::move(filtered_tables));
 }
 
-bool DatabaseWithOwnTablesBase::empty(const Context & /*context*/) const
+bool DatabaseWithOwnTablesBase::empty() const
 {
     std::lock_guard lock(mutex);
     return tables.empty();

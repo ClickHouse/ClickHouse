@@ -50,16 +50,12 @@ Tables DatabaseDictionary::listTables(const FilterByNameFunction & filter_by_nam
     return tables;
 }
 
-bool DatabaseDictionary::isTableExist(
-    const Context & context,
-    const String & table_name) const
+bool DatabaseDictionary::isTableExist(const String & table_name) const
 {
-    return context.getExternalDictionariesLoader().getCurrentStatus(table_name) != ExternalLoader::Status::NOT_EXIST;
+    return global_context.getExternalDictionariesLoader().getCurrentStatus(table_name) != ExternalLoader::Status::NOT_EXIST;
 }
 
-StoragePtr DatabaseDictionary::tryGetTable(
-    const Context & /*context*/,
-    const String & table_name) const
+StoragePtr DatabaseDictionary::tryGetTable(const String & table_name) const
 {
     auto load_result = global_context.getExternalDictionariesLoader().getLoadResult(table_name);
     return createStorageDictionary(getDatabaseName(), load_result);
@@ -70,13 +66,12 @@ DatabaseTablesIteratorPtr DatabaseDictionary::getTablesIterator(const FilterByNa
     return std::make_unique<DatabaseTablesSnapshotIterator>(listTables(filter_by_table_name));
 }
 
-bool DatabaseDictionary::empty(const Context & /*context*/) const
+bool DatabaseDictionary::empty() const
 {
     return !global_context.getExternalDictionariesLoader().hasObjects();
 }
 
-ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
-                                                   const String & table_name, bool throw_on_error) const
+ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const
 {
     String query;
     {
@@ -96,7 +91,7 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
         buffer << ") Engine = Dictionary(" << backQuoteIfNeed(table_name) << ")";
     }
 
-    auto settings = context.getSettingsRef();
+    auto settings = global_context.getSettingsRef();
     ParserCreateQuery parser;
     const char * pos = query.data();
     std::string error_message;
@@ -109,14 +104,14 @@ ASTPtr DatabaseDictionary::getCreateTableQueryImpl(const Context & context,
     return ast;
 }
 
-ASTPtr DatabaseDictionary::getCreateDatabaseQuery(const Context & context) const
+ASTPtr DatabaseDictionary::getCreateDatabaseQuery() const
 {
     String query;
     {
         WriteBufferFromString buffer(query);
         buffer << "CREATE DATABASE " << backQuoteIfNeed(database_name) << " ENGINE = Dictionary";
     }
-    auto settings = context.getSettingsRef();
+    auto settings = global_context.getSettingsRef();
     ParserCreateQuery parser;
     return parseQuery(parser, query.data(), query.data() + query.size(), "", 0, settings.max_parser_depth);
 }

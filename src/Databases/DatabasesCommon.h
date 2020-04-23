@@ -19,15 +19,11 @@ class Context;
 class DatabaseWithOwnTablesBase : public IDatabase
 {
 public:
-    bool isTableExist(
-        const Context & context,
-        const String & table_name) const override;
+    bool isTableExist(const String & table_name) const override;
 
-    StoragePtr tryGetTable(
-        const Context & context,
-        const String & table_name) const override;
+    StoragePtr tryGetTable(const String & table_name) const override;
 
-    bool empty(const Context & context) const override;
+    bool empty() const override;
 
     void attachTable(const String & table_name, const StoragePtr & table, const String & relative_table_path) override;
 

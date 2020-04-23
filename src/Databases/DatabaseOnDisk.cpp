@@ -156,11 +156,11 @@ void DatabaseOnDisk::createTable(
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
 
 
-    if (isDictionaryExist(context, table_name))
+    if (isDictionaryExist(table_name))
         throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.",
             ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
-    if (isTableExist(context, table_name))
+    if (isTableExist(table_name))
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(table_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
     if (create.attach_short_syntax)
@@ -267,7 +267,7 @@ void DatabaseOnDisk::renameTable(
     String table_metadata_path;
     ASTPtr attach_query;
     /// DatabaseLazy::detachTable may return nullptr even if table exists, so we need tryGetTable for this case.
-    StoragePtr table = tryGetTable(context, table_name);
+    StoragePtr table = tryGetTable(table_name);
     detachTable(table_name);
     try
     {
@@ -304,14 +304,14 @@ void DatabaseOnDisk::renameTable(
     Poco::File(table_metadata_path).remove();
 }
 
-ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const String & table_name, bool throw_on_error) const
+ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const
 {
     ASTPtr ast;
-    bool has_table = tryGetTable(context, table_name) != nullptr;
+    bool has_table = tryGetTable(table_name) != nullptr;
     auto table_metadata_path = getObjectMetadataPath(table_name);
     try
     {
-        ast = getCreateQueryFromMetadata(context, table_metadata_path, throw_on_error);
+        ast = getCreateQueryFromMetadata(table_metadata_path, throw_on_error);
     }
     catch (const Exception & e)
     {
@@ -324,14 +324,14 @@ ASTPtr DatabaseOnDisk::getCreateTableQueryImpl(const Context & context, const St
     return ast;
 }
 
-ASTPtr DatabaseOnDisk::getCreateDatabaseQuery(const Context & context) const
+ASTPtr DatabaseOnDisk::getCreateDatabaseQuery() const
 {
     ASTPtr ast;
 
-    auto settings = context.getSettingsRef();
+    auto settings = global_context.getSettingsRef();
     auto metadata_dir_path = getMetadataPath();
     auto database_metadata_path = metadata_dir_path.substr(0, metadata_dir_path.size() - 1) + ".sql";
-    ast = getCreateQueryFromMetadata(context, database_metadata_path, true);
+    ast = getCreateQueryFromMetadata(database_metadata_path, true);
     if (!ast)
     {
         /// Handle databases (such as default) for which there are no database.sql files.
@@ -474,9 +474,9 @@ ASTPtr DatabaseOnDisk::parseQueryFromMetadata(Poco::Logger * loger, const Contex
     return ast;
 }
 
-ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const Context & context, const String & database_metadata_path, bool throw_on_error) const
+ASTPtr DatabaseOnDisk::getCreateQueryFromMetadata(const String & database_metadata_path, bool throw_on_error) const
 {
-    ASTPtr ast = parseQueryFromMetadata(log, context, database_metadata_path, throw_on_error);
+    ASTPtr ast = parseQueryFromMetadata(log, global_context, database_metadata_path, throw_on_error);
 
     if (ast)
     {
