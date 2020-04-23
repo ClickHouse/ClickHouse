@@ -9,15 +9,16 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/parseAddress.h>
-#include "config_core.h"
 #include "DatabaseFactory.h"
 #include <Poco/File.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_MYSQL
-
-#include <Databases/DatabaseMySQL.h>
-#include <Interpreters/evaluateConstantExpression.h>
-
+#    include <Databases/DatabaseMySQL.h>
+#    include <Interpreters/evaluateConstantExpression.h>
 #endif
 
 
@@ -35,16 +36,18 @@ namespace ErrorCodes
 DatabasePtr DatabaseFactory::get(
     const String & database_name, const String & metadata_path, const ASTStorage * engine_define, Context & context)
 {
+    bool created = false;
+
     try
     {
-        Poco::File(metadata_path).createDirectory();
+        created = Poco::File(metadata_path).createDirectory();
         return getImpl(database_name, metadata_path, engine_define, context);
     }
     catch (...)
     {
         Poco::File metadata_dir(metadata_path);
 
-        if (metadata_dir.exists())
+        if (created && metadata_dir.exists())
             metadata_dir.remove(true);
 
         throw;

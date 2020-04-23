@@ -127,11 +127,11 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
     if (overflow_row)
     {
-        auto & info = chunk.getChunkInfo();
+        const auto & info = chunk.getChunkInfo();
         if (!info)
             throw Exception("Chunk info was not set for chunk in TotalsHavingTransform.", ErrorCodes::LOGICAL_ERROR);
 
-        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)
             throw Exception("Chunk should have AggregatedChunkInfo in TotalsHavingTransform.", ErrorCodes::LOGICAL_ERROR);
 
@@ -159,7 +159,7 @@ void TotalsHavingTransform::transform(Chunk & chunk)
     else
     {
         /// Compute the expression in HAVING.
-        auto & cur_header = final ? finalized_header : getInputPort().getHeader();
+        const auto & cur_header = final ? finalized_header : getInputPort().getHeader();
         auto finalized_block = cur_header.cloneWithColumns(finalized.detachColumns());
         expression->execute(finalized_block);
         auto columns = finalized_block.getColumns();

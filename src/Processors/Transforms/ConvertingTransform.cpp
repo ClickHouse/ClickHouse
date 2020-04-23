@@ -39,8 +39,8 @@ ConvertingTransform::ConvertingTransform(
     : ISimpleTransform(std::move(source_header_), std::move(result_header_), false)
     , conversion(getOutputPort().getHeader().columns())
 {
-    auto & source = getInputPort().getHeader();
-    auto & result = getOutputPort().getHeader();
+    const auto & source = getInputPort().getHeader();
+    const auto & result = getOutputPort().getHeader();
 
     size_t num_input_columns = source.columns();
     size_t num_result_columns = result.columns();
@@ -71,9 +71,9 @@ ConvertingTransform::ConvertingTransform(
 
         /// Check constants.
 
-        if (auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get()))
+        if (const auto * res_const = typeid_cast<const ColumnConst *>(res_elem.column.get()))
         {
-            if (auto * src_const = typeid_cast<const ColumnConst *>(src_elem.column.get()))
+            if (const auto * src_const = typeid_cast<const ColumnConst *>(src_elem.column.get()))
             {
                 if (res_const->getField() != src_const->getField())
                     throw Exception("Cannot convert column " + backQuoteIfNeed(res_elem.name) + " because "
@@ -94,8 +94,8 @@ ConvertingTransform::ConvertingTransform(
 
 void ConvertingTransform::transform(Chunk & chunk)
 {
-    auto & source = getInputPort().getHeader();
-    auto & result = getOutputPort().getHeader();
+    const auto & source = getInputPort().getHeader();
+    const auto & result = getOutputPort().getHeader();
 
     auto num_rows = chunk.getNumRows();
     auto src_columns = chunk.detachColumns();

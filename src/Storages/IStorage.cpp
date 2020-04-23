@@ -1,5 +1,8 @@
 #include <Storages/IStorage.h>
 
+#include <sparsehash/dense_hash_map>
+#include <sparsehash/dense_hash_set>
+
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -8,9 +11,6 @@
 #include <Common/quoteString.h>
 
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
-
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/dense_hash_set>
 
 
 namespace DB
@@ -126,8 +126,13 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 
 namespace
 {
-    using NamesAndTypesMap = ::google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = ::google::dense_hash_set<StringRef, StringRefHash>;
+#if !defined(ARCADIA_BUILD)
+    using NamesAndTypesMap = google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
+#else
+    using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
+#endif
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
@@ -316,7 +321,7 @@ bool IStorage::isVirtualColumn(const String & column_name) const
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout)
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const
 {
     auto lock_holder = rwlock->getLock(type, query_id, std::chrono::milliseconds(acquire_timeout.totalMilliseconds()));
     if (!lock_holder)

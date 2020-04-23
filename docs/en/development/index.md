@@ -1,5 +1,5 @@
 ---
-toc_folder_title: Разработка
+toc_folder_title: Development
 toc_hidden: true
 toc_priority: 58
 toc_title: hidden

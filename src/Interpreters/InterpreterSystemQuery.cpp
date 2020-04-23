@@ -1,7 +1,6 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Common/DNSResolver.h>
 #include <Common/ActionLock.h>
-#include "config_core.h"
 #include <Common/typeid_cast.h>
 #include <Common/getNumberOfPhysicalCPUCores.h>
 #include <Common/ThreadPool.h>
@@ -31,6 +30,10 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <csignal>
 #include <algorithm>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 
 namespace DB
@@ -390,7 +393,7 @@ void InterpreterSystemQuery::syncReplica(ASTSystemQuery &)
     context.checkAccess(AccessType::SYSTEM_SYNC_REPLICA, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id);
 
-    if (auto storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
     {
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for it to become empty");
         if (!storage_replicated->waitForShrinkingQueueSize(0, context.getSettingsRef().receive_timeout.totalMilliseconds()))
@@ -410,7 +413,7 @@ void InterpreterSystemQuery::flushDistributed(ASTSystemQuery &)
 {
     context.checkAccess(AccessType::SYSTEM_FLUSH_DISTRIBUTED, table_id);
 
-    if (auto storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id).get()))
+    if (auto * storage_distributed = dynamic_cast<StorageDistributed *>(DatabaseCatalog::instance().getTable(table_id).get()))
         storage_distributed->flushClusterNodesAllData();
     else
         throw Exception("Table " + table_id.getNameForLogs() + " is not distributed", ErrorCodes::BAD_ARGUMENTS);

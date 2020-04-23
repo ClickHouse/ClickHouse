@@ -42,7 +42,6 @@ public:
 protected:
     mutable std::mutex mutex;
     Tables tables;
-    Dictionaries dictionaries;
     Poco::Logger * log;
 
     DatabaseWithOwnTablesBase(const String & name_, const String & logger);

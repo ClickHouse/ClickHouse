@@ -1,6 +1,8 @@
 #pragma once
 
-#include <Common/config.h>
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_AWS_S3
 #    include "DiskFactory.h"

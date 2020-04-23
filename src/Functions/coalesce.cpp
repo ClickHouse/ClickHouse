@@ -160,9 +160,9 @@ public:
         /// if last argument is not nullable, result should be also not nullable
         if (!block.getByPosition(multi_if_args.back()).column->isNullable() && res->isNullable())
         {
-            if (auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(*res))
+            if (const auto * column_lc = checkAndGetColumn<ColumnLowCardinality>(*res))
                 res = checkAndGetColumn<ColumnNullable>(*column_lc->convertToFullColumn())->getNestedColumnPtr();
-            else if (auto * column_const = checkAndGetColumn<ColumnConst>(*res))
+            else if (const auto * column_const = checkAndGetColumn<ColumnConst>(*res))
                 res = checkAndGetColumn<ColumnNullable>(column_const->getDataColumn())->getNestedColumnPtr();
             else
                 res = checkAndGetColumn<ColumnNullable>(*res)->getNestedColumnPtr();

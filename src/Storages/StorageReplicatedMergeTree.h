@@ -464,6 +464,9 @@ private:
     /// With the quorum being tracked, add a replica to the quorum for the part.
     void updateQuorum(const String & part_name);
 
+    /// Deletes info from quorum/last_part node for particular partition_id.
+    void cleanLastPartNode(const String & partition_id);
+
     /// Creates new block number if block with such block_id does not exist
     std::optional<EphemeralLockInZooKeeper> allocateBlockNumber(
         const String & partition_id, zkutil::ZooKeeperPtr & zookeeper,

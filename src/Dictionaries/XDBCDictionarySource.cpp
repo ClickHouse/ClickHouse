@@ -16,8 +16,11 @@
 #include "DictionaryStructure.h"
 #include "readInvalidateQuery.h"
 
-#include <Common/config.h>
 #include "registerDictionaries.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 #if USE_POCO_SQLODBC || USE_POCO_DATAODBC
 #    include <Poco/Data/ODBC/Connector.h>
