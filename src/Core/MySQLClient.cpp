@@ -2,6 +2,7 @@
 
 namespace DB
 {
+using namespace ReplicationProtocol;
 using namespace MySQLProtocol::Authentication;
 
 namespace ErrorCodes
@@ -72,6 +73,22 @@ bool MySQLClient::handshake()
     return (packet_response.getType() != PACKET_ERR);
 }
 
+
+bool MySQLClient::register_slave(UInt32 server_id)
+{
+    RegisterSlave register_slave(server_id);
+    packet_sender->sendPacket<RegisterSlave>(register_slave, true);
+
+    PacketResponse packet_response(client_capability_flags);
+    packet_sender->receivePacket(packet_response);
+    packet_sender->resetSequenceId();
+    if (packet_response.getType() == PACKET_ERR)
+    {
+        last_error = packet_response.err.error_message;
+    }
+    return (packet_response.getType() != PACKET_ERR);
+}
+
 bool MySQLClient::ping()
 {
     return writeCommand(Command::COM_PING, "");
@@ -80,11 +97,6 @@ bool MySQLClient::ping()
 bool MySQLClient::initdb(String db)
 {
     return writeCommand(Command::COM_INIT_DB, db);
-}
-
-bool MySQLClient::query(String q)
-{
-    return writeCommand(Command::COM_QUERY, q);
 }
 
 String MySQLClient::error()
@@ -107,22 +119,12 @@ bool MySQLClient::writeCommand(char command, String query)
             last_error = packet_response.err.error_message;
             break;
         case PACKET_OK:
-            ret = readColumns(packet_response.column_length);
+            ret = true;
             break;
         default:
             break;
     }
     packet_sender->resetSequenceId();
     return ret;
-}
-
-bool MySQLClient::readColumns(int column_length)
-{
-    for (auto i = 0; i < column_length; i++)
-    {
-        ColumnDefinition cd;
-        packet_sender->receivePacket(cd);
-    }
-    return true;
 }
 }
