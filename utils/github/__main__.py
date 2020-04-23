@@ -36,6 +36,7 @@ CHECK_MARK = colored('🗸', 'green')
 CROSS_MARK = colored('🗙', 'red')
 BACKPORT_LABEL_MARK = colored('🏷', 'yellow')
 CONFLICT_LABEL_MARK = colored('☁', 'yellow')
+NO_BACKPORT_LABEL_MARK = colored('━', 'yellow')
 CLOCK_MARK = colored('↻', 'cyan')
 
 
@@ -131,6 +132,8 @@ if need_backporting:
     re_vlabel = re.compile(r'^v\d+\.\d+$')
     re_vlabel_backported = re.compile(r'^v\d+\.\d+-backported$')
     re_vlabel_conflicts = re.compile(r'^v\d+\.\d+-conflicts$')
+    re_vlabel_no_backport = re.compile(r'^v\d+\.\d+-no-backport$')
+    label_no_backport = 'pr-no-backport'
 
     print('\nPull-requests need to be backported:')
     for pull_request in reversed(sorted(need_backporting, key=lambda x: x['number'])):
@@ -138,6 +141,7 @@ if need_backporting:
         good = set()
         backport_labeled = set()
         conflict_labeled = set()
+        no_backport_labeled = set()
         wait = set()
 
         for stable in stables:
@@ -153,6 +157,12 @@ if need_backporting:
                     if re_vlabel_conflicts.match(label['name']):
                         if f'v{stable[0]}-conflicts' == label['name']:
                             conflict_labeled.add(stable[0])
+                    if re_vlabel_no_backport.match(label['name']):
+                        if f'v{stable[0]}-no-backport' == label['name']:
+                            no_backport_labeled.add(stable[0])
+                    if label['name'] == label_no_backport:
+                        no_backport_labeled.add(stable[0])
+                    
 
         for event in github.get_timeline(pull_request):
             if(event['isCrossRepository'] or
@@ -174,7 +184,7 @@ if need_backporting:
                 wait.add(event['source']['baseRefName'])
 
         # print pull-request's status
-        if len(good) + len(backport_labeled) + len(conflict_labeled) == len(targets):
+        if len(good) + len(backport_labeled) + len(conflict_labeled) + len(no_backport_labeled) == len(targets):
             print(f'{CHECK_MARK}', end=' ')
         else:
             print(f'{CROSS_MARK}', end=' ')
@@ -186,6 +196,8 @@ if need_backporting:
                 print(f'\t{BACKPORT_LABEL_MARK} {target}', end='')
             elif target in conflict_labeled:
                 print(f'\t{CONFLICT_LABEL_MARK} {target}', end='')
+            elif target in no_backport_labeled:
+                print(f'\t{NO_BACKPORT_LABEL_MARK} {target}', end='')
             elif target in wait:
                 print(f'\t{CLOCK_MARK} {target}', end='')
             else:
@@ -198,6 +210,7 @@ print(f'{CHECK_MARK} - good')
 print(f'{CROSS_MARK} - bad')
 print(f'{BACKPORT_LABEL_MARK} - backport is detected via label')
 print(f'{CONFLICT_LABEL_MARK} - backport conflict is detected via label')
+print(f'{NO_BACKPORT_LABEL_MARK} - no need to backport is detected via label')
 print(f'{CLOCK_MARK} - backport is waiting to merge')
 
 # print API costs
