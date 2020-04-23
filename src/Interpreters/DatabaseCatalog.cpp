@@ -264,7 +264,7 @@ DatabasePtr DatabaseCatalog::detachDatabase(const String & database_name, bool d
             if (!db->empty())
                 throw Exception("New table appeared in database being dropped or detached. Try again.",
                                 ErrorCodes::DATABASE_NOT_EMPTY);
-            auto database_atomic = typeid_cast<DatabaseAtomic *>(db.get());
+            auto * database_atomic = typeid_cast<DatabaseAtomic *>(db.get());
             if (!drop && database_atomic)
                 database_atomic->assertCanBeDetached(false);
         }
