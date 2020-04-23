@@ -50,7 +50,8 @@ public:
 
     size_t getNumberOfThreads() const { return size; }
 
-    BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric memory_metric_);
+    /// thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
+    BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric memory_metric_, const char *thread_name_);
     ~BackgroundSchedulePool();
 
 private:
@@ -85,6 +86,7 @@ private:
 
     CurrentMetrics::Metric tasks_metric;
     CurrentMetrics::Metric memory_metric;
+    std::string thread_name;
 
     void attachToThreadGroup();
 };
