@@ -119,5 +119,59 @@ The following table lists cases when query feature works in ClickHouse, but beha
 | **E161**   | **SQL comments using leading double minus**                                                                              | **Yes**     |                                                                                                                                                   |
 | **E171**   | **SQLSTATE support**                                                                                                     | **No**      |                                                                                                                                                   |
 | **E182**   | **Host language binding**                                                                                                | **No**      |                                                                                                                                                   |
-
-To be continued…
+| **F031** | **Basic schema manipulation** | **Partial** | |
+| F031-01 | CREATE TABLE statement to create persistent base tables | | |
+| F031-02 | CREATE VIEW statement | | |
+| F031-03 | GRANT statement | | |
+| F031-04 | ALTER TABLE statement: ADD COLUMN clause | | |
+| F031-13 | DROP TABLE statement: RESTRICT clause | | |
+| F031-16 | DROP VIEW statement: RESTRICT clause | | |
+| F031-19 | REVOKE statement: RESTRICT clause | | |
+| **F041** | **Basic joined table** | | |
+| F041-01 | Inner join (but not necessarily the INNER keyword) | | |
+| F041-02 | INNER keyword | | |
+| F041-03 | LEFT OUTER JOIN | | |
+| F041-04 | RIGHT OUTER JOIN | | |
+| F041-05 | Outer joins can be nested | | |
+| F041-07 | The inner table in a left or right outer join can also be used in an inner join | | |
+| F041-08 | All comparison operators are supported (rather than just =) | | |
+| F051 | **Basic date and time** | | |
+| F051-01 | DATE data type (including support of DATE literal) | | |
+| F051-02 | TIME data type (including support of TIME literal) with fractional seconds precision of at least 0 | | |
+| F051-03 | TIMESTAMP data type (including support of TIMES- TAMP literal) with fractional seconds precision of at least 0 and 6 | | |
+| F051-04 | Comparison predicate on DATE, TIME, and TIMES- TAMP data types | | |
+| F051-05 | Explicit CAST between datetime types and character string types | | |
+| F051-06 | CURRENT_DATE | | |
+| F051-07 | LOCALTIME | | |
+| F051-08 | LOCALTIMESTAMP | | |
+| **F081** | **UNION and EXCEPT in views** | | |
+| **F131** | **Grouped operations** | | |
+| F131-01 | WHERE, GROUP BY, and HAVING clauses supported in queries with grouped views | | |
+| F131-02 | Multiple tables supported in queries with grouped views | | |
+| F131-03 | Set functions supported in queries with grouped views | | |
+| F131-04 | Subqueries with GROUP BY and HAVING clauses and grouped views | | |
+| F131-05 | Single row SELECT with GROUP BY and HAVING clauses and grouped views | | |
+| **F181** | **Multiple module support** | | |
+| **F201** | **CAST function** | | |
+| **F221** | **Explicit defaults** | | |
+| **F261** | **CASE expression** | | |
+| F261-01 | Simple CASE | | |
+| F261-02 | Searched CASE | | |
+| F261-03 | NULLIF | | |
+| F261-04 | COALESCE | | |
+| **F311** | **Schema definition statement** | | |
+| F311-01 | CREATE SCHEMA | | |
+| F311-02 | CREATE TABLE for persistent base tables | | |
+| F311-03 | CREATE VIEW | | |
+| F311-04 | CREATE VIEW: WITH CHECK OPTION | | |
+| F311-05 | GRANT statement | | |
+| **F471** | **Scalar subquery values** | | |
+| **F481** | **Expanded NULL predicate** | | |
+| **F812** | **Basic flagging** | | |
+| **T321** | **Basic SQL-invoked routines** | | |
+| T321-01 | User-defined functions with no overloading | | |
+| T321-02 | User-defined stored procedures with no overloading | | |
+| T321-03 | Function invocation | | |
+| T321-04 | CALL statement | | |
+| T321-05 | RETURN statement | | |
+| **T631** | **IN predicate with one list element** | | |
