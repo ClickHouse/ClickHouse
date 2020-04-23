@@ -107,6 +107,15 @@ void ASTDictionaryLayout::formatImpl(const FormatSettings & settings,
     settings.ostr << ")";
 }
 
+ASTPtr ASTDictionarySettings::clone() const
+{
+    auto res = std::make_shared<ASTDictionarySettings>(*this);
+    res->children.clear();
+    res->changes = changes;
+
+    return res;
+}
+
 void ASTDictionarySettings::formatImpl(const FormatSettings & settings,
                                         FormatState &,
                                         FormatStateStacked) const
@@ -148,7 +157,7 @@ ASTPtr ASTDictionary::clone() const
         res->set(res->range, range->clone());
 
     if (dict_settings)
-        res->set(res->dict_settings, range->clone());
+        res->set(res->dict_settings, dict_settings->clone());
 
     return res;
 }

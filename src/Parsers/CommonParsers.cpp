@@ -27,15 +27,8 @@ const char * ParserKeyword::getName() const
 
 bool ParserKeyword::parseImpl(Pos & pos, ASTPtr & /*node*/, Expected & expected)
 {
-    if (pos->type != TokenType::BareWord) {
-/*
-        if (strncasecmp(s, "SETTINGS", strlen(s)) == 0) {
-            std::cerr << "FALSE 0\n";
-            std::cerr << getTokenName(pos.get().type) << '\n';
-        }
-*/
+    if (pos->type != TokenType::BareWord)
         return false;
-    }
 
     const char * current_word = s;
 

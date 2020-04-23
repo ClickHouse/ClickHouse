@@ -71,7 +71,7 @@ public:
 
     String getID(char) const override { return "Dictionary settings"; }
 
-    ASTPtr clone() const override { return std::make_shared<ASTDictionarySettings>(*this); }
+    ASTPtr clone() const override; // { return std::make_shared<ASTDictionarySettings>(*this); }
 
     void formatImpl(const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const override;
 };
