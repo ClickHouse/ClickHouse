@@ -1,5 +1,5 @@
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/etcd_protos)
-get_filename_component(rpc_proto "${CMAKE_CURRENT_SOURCE_DIR}/grpc_protos/helloworld.proto" ABSOLUTE)
+get_filename_component(rpc_proto "${CMAKE_CURRENT_SOURCE_DIR}/grpc_protos/GrpcConnection.proto" ABSOLUTE)
 
 include_directories(${Protobuf_INCLUDE_DIRS})
 include_directories(${CMAKE_CURRENT_BINARY_DIR})

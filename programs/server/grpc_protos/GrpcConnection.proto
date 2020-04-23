@@ -1,31 +1,36 @@
 syntax = "proto3";
 
-package GRPCConnection;
+ package GRPCConnection;
 
-message HelloRequest {
-  string username = 1;
-}
+ message HelloRequest {
+   string username = 1;
+ }
 
-message HelloResponse {
-  string response = 1;
-}
+ message HelloResponse {
+   string response = 1;
+ }
 
-message QueryRequest {
-  string query = 1;
-  string user = 2;
-  string password = 3;
-  string quota_key = 4;
-  string query_id = 5;
-}
+ message QueryRequest {
+   string query = 1;
+   string X_ClickHouse_User = 2;
+   string X_ClickHouse_Key = 3;
+   string X_ClickHouse_Quota = 4;
+   string query_id = 5;
+   string session_id = 6;
+   string session_timeout = 7;
+   uint64 interactive_delay = 8;
+ }
 
-message QueryResponse {
-  string query_id = 1;
-  string server_display_name = 2;
-  string content_type = 3;
-  string current_query_id = 4;
-}
+ message QueryResponse {
+   string query_id = 1;
+   string server_display_name = 2;
+   string content_type = 3;
+   string current_query_id = 4;
+   string exception_occured = 5;
+   string progress = 6;
+ }
 
-service GRPC {
-  rpc SayHello(HelloRequest) returns (HelloResponse) {}
-  rpc Query(QueryRequest) returns (QueryResponse) {}
-}
+ service GRPC {
+   rpc SayHello(HelloRequest) returns (HelloResponse) {}
+   rpc Query(QueryRequest) returns (stream QueryResponse) {}
+ } 
