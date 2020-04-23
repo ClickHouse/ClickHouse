@@ -50,7 +50,7 @@ public:
         const String & to_table_name,
         bool exchange) override;
 
-    ASTPtr getCreateDatabaseQuery(const Context & context) const override;
+    ASTPtr getCreateDatabaseQuery() const override;
 
     void drop(const Context & context) override;
 
@@ -74,11 +74,10 @@ protected:
     void iterateMetadataFiles(const Context & context, const IteratingFunction & process_metadata_file) const;
 
     ASTPtr getCreateTableQueryImpl(
-        const Context & context,
         const String & table_name,
         bool throw_on_error) const override;
 
-    ASTPtr getCreateQueryFromMetadata(const Context & context, const String & metadata_path, bool throw_on_error) const;
+    ASTPtr getCreateQueryFromMetadata(const String & metadata_path, bool throw_on_error) const;
 
     virtual void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                                    const String & table_metadata_tmp_path, const String & table_metadata_path);

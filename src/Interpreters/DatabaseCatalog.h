@@ -137,7 +137,7 @@ public:
     StoragePtr tryGetTable(const StorageID & table_id) const;
     DatabaseAndTable getDatabaseAndTable(const StorageID & table_id) const;
     DatabaseAndTable tryGetDatabaseAndTable(const StorageID & table_id) const;
-    DatabaseAndTable getTableImpl(const StorageID & table_id, const Context & local_context, std::optional<Exception> * exception = nullptr) const;
+    DatabaseAndTable getTableImpl(const StorageID & table_id, std::optional<Exception> * exception = nullptr) const;
 
     void addDependency(const StorageID & from, const StorageID & where);
     void removeDependency(const StorageID & from, const StorageID & where);

@@ -330,7 +330,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        create_ast = database->getCreateTableQuery(system_context, replica.table_name);
+        create_ast = database->getCreateTableQuery(replica.table_name);
 
         database->detachTable(replica.table_name);
     }

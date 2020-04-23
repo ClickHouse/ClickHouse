@@ -39,7 +39,7 @@ LoadablesConfigurationPtr ExternalLoaderDatabaseConfigRepository::load(const std
 
 bool ExternalLoaderDatabaseConfigRepository::exists(const std::string & loadable_definition_name)
 {
-    return database.isDictionaryExist(context, trimDatabaseName(loadable_definition_name, database));
+    return database.isDictionaryExist(trimDatabaseName(loadable_definition_name, database));
 }
 
 Poco::Timestamp ExternalLoaderDatabaseConfigRepository::getUpdateTime(const std::string & loadable_definition_name)

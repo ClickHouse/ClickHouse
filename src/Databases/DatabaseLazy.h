@@ -51,15 +51,11 @@ public:
 
     time_t getObjectMetadataModificationTime(const String & table_name) const override;
 
-    bool isTableExist(
-        const Context & context,
-        const String & table_name) const override;
+    bool isTableExist(const String & table_name) const override;
 
-    StoragePtr tryGetTable(
-        const Context & context,
-        const String & table_name) const override;
+    StoragePtr tryGetTable(const String & table_name) const override;
 
-    bool empty(const Context & context) const override;
+    bool empty() const override;
 
     DatabaseTablesIteratorPtr getTablesIterator(const FilterByNameFunction & filter_by_table_name) override;
 

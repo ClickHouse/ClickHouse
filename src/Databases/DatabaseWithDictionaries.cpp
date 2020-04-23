@@ -117,7 +117,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
 
     /// A race condition would be possible if a dictionary with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
-    if (isDictionaryExist(context, dictionary_name))
+    if (isDictionaryExist(dictionary_name))
         throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
     /// A dictionary with the same full name could be defined in *.xml config files.
@@ -127,7 +127,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
                 "Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.",
                 ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
-    if (isTableExist(context, dictionary_name))
+    if (isTableExist(dictionary_name))
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
 
@@ -215,14 +215,13 @@ DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterato
     return std::make_unique<DatabaseDictionariesSnapshotIterator>(std::move(filtered_dictionaries));
 }
 
-bool DatabaseWithDictionaries::isDictionaryExist(const Context & /*context*/, const String & dictionary_name) const
+bool DatabaseWithDictionaries::isDictionaryExist(const String & dictionary_name) const
 {
     std::lock_guard lock(mutex);
     return dictionaries.find(dictionary_name) != dictionaries.end();
 }
 
 ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
-        const Context & context,
         const String & dictionary_name,
         bool throw_on_error) const
 {
@@ -245,7 +244,7 @@ ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
     try
     {
         auto dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
-        ast = getCreateQueryFromMetadata(context, dictionary_metadata_path, throw_on_error);
+        ast = getCreateQueryFromMetadata(dictionary_metadata_path, throw_on_error);
     }
     catch (const Exception & e)
     {
@@ -286,7 +285,7 @@ time_t DatabaseWithDictionaries::getObjectMetadataModificationTime(const String 
 }
 
 
-bool DatabaseWithDictionaries::empty(const Context &) const
+bool DatabaseWithDictionaries::empty() const
 {
     std::lock_guard lock{mutex};
     return tables.empty() && dictionaries.empty();

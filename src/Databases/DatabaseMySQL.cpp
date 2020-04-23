@@ -73,7 +73,7 @@ DatabaseMySQL::DatabaseMySQL(
 {
 }
 
-bool DatabaseMySQL::empty(const Context &) const
+bool DatabaseMySQL::empty() const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -103,12 +103,12 @@ DatabaseTablesIteratorPtr DatabaseMySQL::getTablesIterator(const FilterByNameFun
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables);
 }
 
-bool DatabaseMySQL::isTableExist(const Context & context, const String & name) const
+bool DatabaseMySQL::isTableExist(const String & name) const
 {
-    return bool(tryGetTable(context, name));
+    return bool(tryGetTable(name));
 }
 
-StoragePtr DatabaseMySQL::tryGetTable(const Context &, const String & mysql_table_name) const
+StoragePtr DatabaseMySQL::tryGetTable(const String & mysql_table_name) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -155,7 +155,7 @@ static ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr
     return create_table_query;
 }
 
-ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const Context &, const String & table_name, bool throw_on_error) const
+ASTPtr DatabaseMySQL::getCreateTableQueryImpl(const String & table_name, bool throw_on_error) const
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -184,7 +184,7 @@ time_t DatabaseMySQL::getObjectMetadataModificationTime(const String & table_nam
     return time_t(local_tables_cache[table_name].first);
 }
 
-ASTPtr DatabaseMySQL::getCreateDatabaseQuery(const Context & /*context*/) const
+ASTPtr DatabaseMySQL::getCreateDatabaseQuery() const
 {
     const auto & create_query = std::make_shared<ASTCreateQuery>();
     create_query->database = database_name;
@@ -490,7 +490,7 @@ DatabaseMySQL::~DatabaseMySQL()
     }
 }
 
-void DatabaseMySQL::createTable(const Context & context, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
+void DatabaseMySQL::createTable(const Context &, const String & table_name, const StoragePtr & storage, const ASTPtr & create_query)
 {
     const auto & create = create_query->as<ASTCreateQuery>();
 
@@ -501,7 +501,7 @@ void DatabaseMySQL::createTable(const Context & context, const String & table_na
     /// XXX: hack
     /// In order to prevent users from broken the table structure by executing attach table database_name.table_name (...)
     /// we should compare the old and new create_query to make them completely consistent
-    const auto & origin_create_query = getCreateTableQuery(context, table_name);
+    const auto & origin_create_query = getCreateTableQuery(table_name);
     origin_create_query->as<ASTCreateQuery>()->attach = true;
 
     if (queryToString(origin_create_query) != queryToString(create_query))

@@ -144,7 +144,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
 
     DatabasePtr database = tryGetDatabase(database_name, if_exists);
 
-    if (!database || !database->isDictionaryExist(context, dictionary_name))
+    if (!database || !database->isDictionaryExist(dictionary_name))
     {
         if (!if_exists)
             throw Exception(
