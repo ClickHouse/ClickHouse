@@ -37,7 +37,6 @@ private:
     bool connected = false;
     String last_error;
     UInt32 client_capability_flags = 0;
-    UInt32 server_capability_flags = 0;
 
     uint8_t seq = 0;
     UInt8 charset_utf8 = 33;
