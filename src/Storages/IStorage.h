@@ -183,7 +183,7 @@ protected: /// still thread-unsafe part.
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
-    virtual bool isVirtualColumn(const String & column_name) const;
+    bool isVirtualColumn(const String & column_name) const;
 
 
 private:
