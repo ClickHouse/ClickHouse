@@ -100,7 +100,9 @@ StorageMaterializedView::StorageMaterializedView(
     bool attach_)
     : IStorage(table_id_), global_context(local_context.getGlobalContext())
 {
-    setColumns(columns_);
+    StorageInMemoryMetadata current_metadata;
+    current_metadata.setColumns(columns_);
+    setInMemoryMetadata(current_metadata);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);
@@ -152,6 +154,8 @@ StorageMaterializedView::StorageMaterializedView(
 
     if (!select_table_id.empty())
         DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
+
+    setInMemoryMetadata(getInMemoryMetadataImpl());
 }
 
 NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
@@ -164,7 +168,7 @@ bool StorageMaterializedView::hasColumn(const String & column_name) const
     return getTargetTable()->hasColumn(column_name);
 }
 
-StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
+StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadataImpl() const
 {
     StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());
     result.select = getSelectQuery();
@@ -263,13 +267,13 @@ void StorageMaterializedView::alter(
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadata();
+    params.apply(new_metadata);
 
     /// start modify query
     if (context.getSettingsRef().allow_experimental_alter_materialized_view_structure)
     {
-        auto & new_select = metadata.select->as<ASTSelectWithUnionQuery &>();
+        auto & new_select = new_metadata.select->as<ASTSelectWithUnionQuery &>();
 
         if (new_select.list_of_selects->children.size() != 1)
             throw Exception("UNION is not supported for MATERIALIZED VIEW", ErrorCodes::QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW);
@@ -282,13 +286,13 @@ void StorageMaterializedView::alter(
         DatabaseCatalog::instance().updateDependency(select_table_id, table_id, new_select_table_id, table_id);
 
         select_table_id = new_select_table_id;
-        select = metadata.select;
+        select = new_metadata.select;
         inner_query = new_inner_query;
     }
     /// end modify query
 
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
-    setColumns(std::move(metadata.columns));
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, new_metadata);
+    setInMemoryMetadata(new_metadata);
 }
 
 

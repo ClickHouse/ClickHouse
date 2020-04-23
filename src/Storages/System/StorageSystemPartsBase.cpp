@@ -288,7 +288,9 @@ StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesL
     add_alias("bytes", "bytes_on_disk");
     add_alias("marks_size", "marks_bytes");
 
-    setColumns(tmp_columns);
+    auto meta = *getInMemoryMetadata();
+    meta.setColumns(tmp_columns);
+    setInMemoryMetadata(meta);
 }
 
 }

@@ -21,7 +21,9 @@ namespace ErrorCodes
 StorageInput::StorageInput(const StorageID & table_id, const ColumnsDescription & columns_)
     : IStorage(table_id)
 {
-    setColumns(columns_);
+    auto meta = *getInMemoryMetadata();
+    meta.setColumns(columns_);
+    setInMemoryMetadata(meta);
 }
 
 

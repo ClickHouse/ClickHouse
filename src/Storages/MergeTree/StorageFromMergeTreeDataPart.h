@@ -47,7 +47,7 @@ public:
         return part->storage.getColumnDependencies(updated_columns);
     }
 
-    StorageInMemoryMetadata getInMemoryMetadata() const override
+    StorageMetadataPtr getInMemoryMetadata() const override
     {
         return part->storage.getInMemoryMetadata();
     }
@@ -61,7 +61,7 @@ protected:
         : IStorage(getIDFromPart(part_), ColumnsDescription(part_->storage.getColumns().getVirtuals(), true))
         , part(part_)
     {
-        setColumns(part_->storage.getColumns());
+        setInMemoryMetadata(*part_->storage.getInMemoryMetadata());
         setIndices(part_->storage.getIndices());
     }
 

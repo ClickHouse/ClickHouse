@@ -56,7 +56,9 @@ StorageMerge::StorageMerge(
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
 {
-    setColumns(columns_);
+    StorageInMemoryMetadata meta = *getInMemoryMetadata();
+    meta.setColumns(columns_);
+    setInMemoryMetadata(meta);
 }
 
 
@@ -441,10 +443,10 @@ void StorageMerge::alter(
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
 
-    StorageInMemoryMetadata storage_metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata storage_metadata = *getInMemoryMetadata();
     params.apply(storage_metadata);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, storage_metadata);
-    setColumns(storage_metadata.columns);
+    setInMemoryMetadata(storage_metadata);
 }
 
 Block StorageMerge::getQueryHeader(

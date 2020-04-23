@@ -207,7 +207,9 @@ StorageS3::StorageS3(
     , client(S3::ClientFactory::instance().create(uri_.endpoint, access_key_id_, secret_access_key_))
 {
     context_global.getRemoteHostFilter().checkURL(uri_.uri);
-    setColumns(columns_);
+    StorageInMemoryMetadata meta = *getInMemoryMetadata();
+    meta.setColumns(columns_);
+    setInMemoryMetadata(meta);
     setConstraints(constraints_);
 }
 

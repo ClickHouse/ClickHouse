@@ -385,7 +385,10 @@ StorageGenerateRandom::StorageGenerateRandom(const StorageID & table_id_, const 
     : IStorage(table_id_), max_array_length(max_array_length_), max_string_length(max_string_length_)
 {
     random_seed = random_seed_ ? sipHash64(*random_seed_) : randomSeed();
-    setColumns(columns_);
+    auto meta = *getInMemoryMetadata();
+    meta.setColumns(columns_);
+    setInMemoryMetadata(meta);
+
 }
 
 

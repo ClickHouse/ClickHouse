@@ -43,7 +43,9 @@ IStorageURLBase::IStorageURLBase(
     , format_name(format_name_)
 {
     context_global.getRemoteHostFilter().checkURL(uri);
-    setColumns(columns_);
+    auto meta = *getInMemoryMetadata();
+    meta.setColumns(columns_);
+    setInMemoryMetadata(meta);
     setConstraints(constraints_);
 }
 

@@ -471,7 +471,7 @@ void StorageReplicatedMergeTree::checkTableStructure(const String & zookeeper_pr
 
 void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff)
 {
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata metadata = *getInMemoryMetadata();
     if (new_columns != metadata.columns)
         metadata.columns = new_columns;
 
@@ -3284,13 +3284,14 @@ void StorageReplicatedMergeTree::alter(
                 table_lock_holder, query_context.getCurrentQueryId(), query_context.getSettingsRef().lock_acquire_timeout);
         /// We don't replicate storage_settings_ptr ALTER. It's local operation.
         /// Also we don't upgrade alter lock to table structure lock.
-        StorageInMemoryMetadata metadata = getInMemoryMetadata();
+        StorageInMemoryMetadata metadata = *getInMemoryMetadata();
         params.apply(metadata);
 
 
         changeSettings(metadata.settings_ast, table_lock_holder);
 
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, metadata);
+        setInMemoryMetadata(metadata);
         return;
     }
 
@@ -3316,7 +3317,7 @@ void StorageReplicatedMergeTree::alter(
             throw Exception("Can't ALTER readonly table", ErrorCodes::TABLE_IS_READ_ONLY);
 
 
-        StorageInMemoryMetadata current_metadata = getInMemoryMetadata();
+        StorageInMemoryMetadata current_metadata = *getInMemoryMetadata();
 
         StorageInMemoryMetadata future_metadata = current_metadata;
         params.apply(future_metadata);

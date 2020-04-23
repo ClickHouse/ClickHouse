@@ -4,6 +4,7 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/ConstraintsDescription.h>
 #include <Parsers/IAST_fwd.h>
+#include <Common/MultiVersion.h>
 
 namespace DB
 {
@@ -45,8 +46,6 @@ struct StorageInMemoryMetadata
     const ColumnsDescription & getColumns() const; /// returns combined set of columns
     void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
 
-    const ColumnsDescription & getVirtuals() const;
-
     /// NOTE: these methods should include virtual columns,
     ///       but should NOT include ALIAS columns (they are treated separately).
     NameAndTypePair getColumn(const String & column_name) const;
@@ -73,5 +72,8 @@ struct StorageInMemoryMetadata
     /// Initially reserved virtual column name may be shadowed by real column.
     bool isVirtualColumn(const String & column_name) const;
 };
+
+using MultiVersionStorageMetadata = MultiVersion<StorageInMemoryMetadata>;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 }

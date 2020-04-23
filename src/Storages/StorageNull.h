@@ -59,7 +59,9 @@ protected:
     StorageNull(const StorageID & table_id_, ColumnsDescription columns_description_, ConstraintsDescription constraints_)
         : IStorage(table_id_)
     {
-        setColumns(std::move(columns_description_));
+        auto meta = *getInMemoryMetadata();
+        meta.setColumns(std::move(columns_description_));
+        setInMemoryMetadata(meta);
         setConstraints(std::move(constraints_));
     }
 };

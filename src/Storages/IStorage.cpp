@@ -31,7 +31,10 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
 }
 
-IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), columns(std::move(virtuals_))
+IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_)
+    : storage_id(std::move(storage_id_))
+    , columns(virtuals_)
+    , metadata(std::make_unique<StorageInMemoryMetadata>(std::move(virtuals_), IndicesDescription{}, ConstraintsDescription{}))
 {
 }
 
@@ -287,20 +290,20 @@ void IStorage::check(const Block & block, bool need_all) const
     }
 }
 
-void IStorage::setColumns(ColumnsDescription columns_)
-{
-    if (columns_.getOrdinary().empty())
-        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-    ColumnsDescription old_virtuals(columns.getVirtuals(), true);
-
-    columns = std::move(columns_);
-
-    for (const auto & column : old_virtuals)
-    {
-        if (!columns.has(column.name))
-            columns.add(column);
-    }
-}
+//void IStorage::setColumns(ColumnsDescription columns_)
+//{
+//    if (columns_.getOrdinary().empty())
+//        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+//    ColumnsDescription old_virtuals(columns.getVirtuals(), true);
+//
+//    columns = std::move(columns_);
+//
+//    for (const auto & column : old_virtuals)
+//    {
+//        if (!columns.has(column.name))
+//            columns.add(column);
+//    }
+//}
 
 void IStorage::setIndices(IndicesDescription indices_)
 {
@@ -379,9 +382,14 @@ TableStructureWriteLockHolder IStorage::lockExclusively(const String & query_id,
     return result;
 }
 
-StorageInMemoryMetadata IStorage::getInMemoryMetadata() const
+StorageMetadataPtr IStorage::getInMemoryMetadata() const
 {
-    return StorageInMemoryMetadata(getColumns(), getIndices(), getConstraints());
+    return metadata.get();
+}
+
+void IStorage::setInMemoryMetadata(StorageInMemoryMetadata new_metadata)
+{
+    metadata.set(std::make_unique<const StorageInMemoryMetadata>(std::move(new_metadata)));
 }
 
 void IStorage::alter(
@@ -391,10 +399,10 @@ void IStorage::alter(
 {
     lockStructureExclusively(table_lock_holder, context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
     auto table_id = getStorageID();
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
-    setColumns(std::move(metadata.columns));
+    auto current_metadata = *getInMemoryMetadata();
+    params.apply(current_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, current_metadata);
+    setInMemoryMetadata(current_metadata);
 }
 
 

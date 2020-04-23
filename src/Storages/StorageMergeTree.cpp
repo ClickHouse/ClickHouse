@@ -216,7 +216,7 @@ void StorageMergeTree::alter(
 {
     auto table_id = getStorageID();
 
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata metadata = *getInMemoryMetadata();
     auto maybe_mutation_commands = commands.getMutationCommands(metadata);
     commands.apply(metadata);
 

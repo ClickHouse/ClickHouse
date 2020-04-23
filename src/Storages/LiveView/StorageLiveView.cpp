@@ -250,7 +250,9 @@ StorageLiveView::StorageLiveView(
     live_view_context = std::make_unique<Context>(global_context);
     live_view_context->makeQueryContext();
 
-    setColumns(columns_);
+    auto meta = *getInMemoryMetadata();
+    meta.setColumns(columns_);
+    setInMemoryMetadata(meta);
 
     if (!query.select)
         throw Exception("SELECT query is not specified for " + getName(), ErrorCodes::INCORRECT_QUERY);

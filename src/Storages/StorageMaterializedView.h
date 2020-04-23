@@ -25,7 +25,7 @@ public:
     NameAndTypePair getColumn(const String & column_name) const override;
     bool hasColumn(const String & column_name) const override;
 
-    StorageInMemoryMetadata getInMemoryMetadata() const override;
+    StorageInMemoryMetadata getInMemoryMetadataImpl() const;
 
     bool supportsSampling() const override { return getTargetTable()->supportsSampling(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }

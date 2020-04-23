@@ -77,7 +77,9 @@ StorageBuffer::StorageBuffer(
     , log(&Logger::get("StorageBuffer (" + table_id_.getFullTableName() + ")"))
     , bg_pool(global_context.getBufferFlushSchedulePool())
 {
-    setColumns(columns_);
+    StorageInMemoryMetadata meta;
+    meta.setColumns(columns_);
+    setInMemoryMetadata(meta);
     setConstraints(constraints_);
 }
 
@@ -784,10 +786,10 @@ void StorageBuffer::alter(const AlterCommands & params, const Context & context,
     /// So that no blocks of the old structure remain.
     optimize({} /*query*/, {} /*partition_id*/, false /*final*/, false /*deduplicate*/, context);
 
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
-    params.apply(metadata);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
-    setColumns(std::move(metadata.columns));
+    StorageInMemoryMetadata new_metadata = *getInMemoryMetadata();
+    params.apply(new_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, new_metadata);
+    setInMemoryMetadata(new_metadata);
 }
 
 

@@ -345,18 +345,20 @@ void StorageInMemoryMetadata::check(const Block & block, bool need_all) const
     }
 }
 
-//void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
-//{
-//    if (columns_.getOrdinary().empty())
-//        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-//    columns = std::move(columns_);
-//
-//    for (const auto & column : virtuals)
-//    {
-//        if (!columns.has(column.name))
-//            columns.add(column);
-//    }
-//}
+void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
+{
+    if (columns_.getOrdinary().empty())
+        throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    ColumnsDescription old_virtuals(columns.getVirtuals(), true);
+
+    columns = std::move(columns_);
+
+    for (const auto & column : old_virtuals)
+    {
+        if (!columns.has(column.name))
+            columns.add(column);
+    }
+}
 
 
 }

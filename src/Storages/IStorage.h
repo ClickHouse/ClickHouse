@@ -143,7 +143,7 @@ public:
 
 public: /// thread-unsafe part. lockStructure must be acquired
     virtual const ColumnsDescription & getColumns() const; /// returns combined set of columns
-    virtual void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
+    //virtual void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
     const IndicesDescription & getIndices() const;
 
     const ConstraintsDescription & getConstraints() const;
@@ -151,7 +151,8 @@ public: /// thread-unsafe part. lockStructure must be acquired
 
     /// Returns storage metadata copy. Direct modification of
     /// result structure doesn't affect storage.
-    virtual StorageInMemoryMetadata getInMemoryMetadata() const;
+    virtual StorageMetadataPtr getInMemoryMetadata() const;
+    virtual void setInMemoryMetadata(StorageInMemoryMetadata new_metadata); //new columns
 
     /// NOTE: these methods should include virtual columns,
     ///       but should NOT include ALIAS columns (they are treated separately).
@@ -190,6 +191,7 @@ private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
     ColumnsDescription columns; /// combined real and virtual columns
+    MultiVersionStorageMetadata metadata;
     IndicesDescription indices;
     ConstraintsDescription constraints;
 

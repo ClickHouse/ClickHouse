@@ -244,10 +244,11 @@ MergeTreeData::MergeTreeData(
     String reason;
     if (!canUsePolymorphicParts(*settings, &reason) && !reason.empty())
         LOG_WARNING(log, reason + " Settings 'min_bytes_for_wide_part' and 'min_bytes_for_wide_part' will be ignored.");
+    setInMemoryMetadata(getInMemoryMetadataImpl());
 }
 
 
-StorageInMemoryMetadata MergeTreeData::getInMemoryMetadata() const
+StorageInMemoryMetadata MergeTreeData::getInMemoryMetadataImpl() const
 {
     StorageInMemoryMetadata metadata(getColumns(), getIndices(), getConstraints());
 
@@ -462,7 +463,7 @@ void MergeTreeData::setProperties(const StorageInMemoryMetadata & metadata, bool
 
     if (!only_check)
     {
-        setColumns(std::move(metadata.columns));
+        setInMemoryMetadata(metadata);
 
         order_by_ast = metadata.order_by_ast;
         sorting_key_columns = std::move(new_sorting_key_columns);
@@ -1404,7 +1405,7 @@ bool isMetadataOnlyConversion(const IDataType * from, const IDataType * to)
 void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const Settings & settings)
 {
     /// Check that needed transformations can be applied to the list of columns without considering type conversions.
-    StorageInMemoryMetadata metadata = getInMemoryMetadata();
+    StorageInMemoryMetadata metadata = *getInMemoryMetadata();
     commands.apply(metadata);
     if (getIndices().empty() && !metadata.indices.empty() &&
             !settings.allow_experimental_data_skipping_indices)
@@ -1477,7 +1478,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, const S
                     ErrorCodes::ILLEGAL_COLUMN);
             }
         }
-        else if (command.isModifyingData(getInMemoryMetadata()))
+        else if (command.isModifyingData(*getInMemoryMetadata()))
         {
             if (columns_alter_type_forbidden.count(command.column_name))
                 throw Exception("Trying to ALTER key column " + command.column_name, ErrorCodes::ILLEGAL_COLUMN);

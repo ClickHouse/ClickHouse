@@ -13,7 +13,8 @@ namespace ErrorCodes
 StorageSystemDisks::StorageSystemDisks(const std::string & name_)
     : IStorage({"system", name_})
 {
-    setColumns(ColumnsDescription(
+    auto meta = *getInMemoryMetadata();
+    meta.setColumns(ColumnsDescription(
     {
         {"name", std::make_shared<DataTypeString>()},
         {"path", std::make_shared<DataTypeString>()},
@@ -21,6 +22,7 @@ StorageSystemDisks::StorageSystemDisks(const std::string & name_)
         {"total_space", std::make_shared<DataTypeUInt64>()},
         {"keep_free_space", std::make_shared<DataTypeUInt64>()},
     }));
+    setInMemoryMetadata(meta);
 }
 
 Pipes StorageSystemDisks::read(
