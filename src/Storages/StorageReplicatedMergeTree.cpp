@@ -2721,7 +2721,7 @@ void StorageReplicatedMergeTree::cleanLastPartNode(const String & partition_id)
             parts_with_quorum.fromString(old_added_parts);
 
         /// Delete information about particular partition.
-        if (!parts_with_quorum.added_parts.contains(partition_id))
+        if (!parts_with_quorum.added_parts.count(partition_id))
         {
             /// There is no information about interested part.
             break;
