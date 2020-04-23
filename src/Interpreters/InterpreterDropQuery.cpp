@@ -241,7 +241,7 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
                 }
             }
 
-            auto database_atomic = typeid_cast<DatabaseAtomic *>(database.get());
+            auto * database_atomic = typeid_cast<DatabaseAtomic *>(database.get());
             if (!drop && database_atomic)
                 database_atomic->assertCanBeDetached(true);
 
