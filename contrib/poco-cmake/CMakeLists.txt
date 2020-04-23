@@ -451,6 +451,12 @@ if (USE_INTERNAL_POCO_LIBRARY)
 
     add_library (poco_net ${SRCS_NET})
 
+    if (OS_LINUX)
+        target_compile_definitions (poco_net PUBLIC POCO_HAVE_FD_EPOLL)
+    elseif (OS_DARWIN OR OS_FREEBSD)
+        target_compile_definitions (poco_net PUBLIC POCO_HAVE_FD_POLL)
+    endif ()
+
     if (COMPILER_CLANG)
         # clang-specific warnings
         target_compile_options (poco_net
