@@ -141,6 +141,7 @@ enum ResponsePacketType
     PACKET_OK = 0x00,
     PACKET_ERR = 0xff,
     PACKET_EOF = 0xfe,
+    PACKET_LOCALINFILE = 0xfb,
 };
 
 // https://dev.mysql.com/doc/dev/mysql-server/latest/group__group__cs__column__definition__flags.html
@@ -422,6 +423,13 @@ public:
 
 uint64_t readLengthEncodedNumber(ReadBuffer & ss);
 
+inline void readLengthEncodedString(String & s, ReadBuffer & buffer)
+{
+    uint64_t len = readLengthEncodedNumber(buffer);
+    s.resize(len);
+    buffer.readStrict(reinterpret_cast<char *>(s.data()), len);
+}
+
 void writeLengthEncodedNumber(uint64_t x, WriteBuffer & buffer);
 
 inline void writeLengthEncodedString(const String & s, WriteBuffer & buffer)
@@ -453,7 +461,7 @@ public:
     String auth_plugin_name;
     String auth_plugin_data;
 
-    Handshake() = default;
+    Handshake() : connection_id(0x00), capability_flags(0x00), character_set(0x00), status_flags(0x00) { }
 
     Handshake(uint32_t capability_flags_, uint32_t connection_id_, String server_version_, String auth_plugin_name_, String auth_plugin_data_)
         : protocol_version(0xa)
@@ -489,43 +497,43 @@ public:
         writeChar(0x0, 1, buffer);
     }
 
-    void readPayloadImpl(ReadBuffer & buffer) override
+    void readPayloadImpl(ReadBuffer & payload) override
     {
-        buffer.readStrict(reinterpret_cast<char *>(&protocol_version), 1);
-        readNullTerminated(server_version, buffer);
-        buffer.readStrict(reinterpret_cast<char *>(&connection_id), 4);
+        payload.readStrict(reinterpret_cast<char *>(&protocol_version), 1);
+        readNullTerminated(server_version, payload);
+        payload.readStrict(reinterpret_cast<char *>(&connection_id), 4);
 
         auth_plugin_data.resize(AUTH_PLUGIN_DATA_PART_1_LENGTH);
-        buffer.readStrict(auth_plugin_data.data(), AUTH_PLUGIN_DATA_PART_1_LENGTH);
+        payload.readStrict(auth_plugin_data.data(), AUTH_PLUGIN_DATA_PART_1_LENGTH);
 
-        buffer.ignore(1);
-        buffer.readStrict(reinterpret_cast<char *>(&capability_flags), 2);
-        buffer.readStrict(reinterpret_cast<char *>(&character_set), 1);
-        buffer.readStrict(reinterpret_cast<char *>(&status_flags), 2);
-        buffer.readStrict((reinterpret_cast<char *>(&capability_flags)) + 2, 2);
+        payload.ignore(1);
+        payload.readStrict(reinterpret_cast<char *>(&capability_flags), 2);
+        payload.readStrict(reinterpret_cast<char *>(&character_set), 1);
+        payload.readStrict(reinterpret_cast<char *>(&status_flags), 2);
+        payload.readStrict((reinterpret_cast<char *>(&capability_flags)) + 2, 2);
 
         UInt8 auth_plugin_data_length = 0;
         if (capability_flags & MySQLProtocol::CLIENT_PLUGIN_AUTH)
         {
-            buffer.readStrict(reinterpret_cast<char *>(&auth_plugin_data_length), 1);
+            payload.readStrict(reinterpret_cast<char *>(&auth_plugin_data_length), 1);
         }
         else
         {
-            buffer.ignore(1);
+            payload.ignore(1);
         }
 
-        buffer.ignore(10);
+        payload.ignore(10);
         if (capability_flags & MySQLProtocol::CLIENT_SECURE_CONNECTION)
         {
             UInt8 part2_length = (SCRAMBLE_LENGTH - AUTH_PLUGIN_DATA_PART_1_LENGTH);
             auth_plugin_data.resize(SCRAMBLE_LENGTH);
-            buffer.readStrict(auth_plugin_data.data() + AUTH_PLUGIN_DATA_PART_1_LENGTH, part2_length);
-            buffer.ignore(1);
+            payload.readStrict(auth_plugin_data.data() + AUTH_PLUGIN_DATA_PART_1_LENGTH, part2_length);
+            payload.ignore(1);
         }
 
         if (capability_flags & MySQLProtocol::CLIENT_PLUGIN_AUTH)
         {
-            readNullTerminated(auth_plugin_name, buffer);
+            readNullTerminated(auth_plugin_name, payload);
         }
     }
 };
@@ -649,9 +657,7 @@ public:
 
         if (capability_flags & CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA)
         {
-            auto len = readLengthEncodedNumber(payload);
-            auth_response.resize(len);
-            payload.readStrict(auth_response.data(), len);
+            readLengthEncodedString(auth_response, payload);
         }
         else if (capability_flags & CLIENT_SECURE_CONNECTION)
         {
@@ -837,14 +843,10 @@ public:
 
         if (capabilities & CLIENT_SESSION_TRACK)
         {
-            auto len = readLengthEncodedNumber(payload);
-            info.resize(len);
-            payload.readStrict(info.data(), len);
+            readLengthEncodedString(info, payload);
             if (status_flags & SERVER_SESSION_STATE_CHANGED)
             {
-                len = readLengthEncodedNumber(payload);
-                session_state_changes.resize(len);
-                payload.readStrict(session_state_changes.data(), len);
+                readLengthEncodedString(session_state_changes, payload);
             }
         }
         else
@@ -920,12 +922,16 @@ public:
         assert(header == 0xff);
 
         payload.readStrict(reinterpret_cast<char *>(&error_code), 2);
-        payload.ignore(1);
 
-        sql_state.resize(5);
-        payload.readStrict(reinterpret_cast<char *>(sql_state.data()), 5);
-
-        readNullTerminated(error_message, payload);
+        /// SQL State [optional: # + 5bytes string]
+        UInt8 sharp = static_cast<unsigned char>(*payload.position());
+        if (sharp == 0x23)
+        {
+            payload.ignore(1);
+            sql_state.resize(5);
+            payload.readStrict(reinterpret_cast<char *>(sql_state.data()), 5);
+        }
+        readString(error_message, payload);
     }
 };
 
@@ -936,12 +942,13 @@ public:
     OK_Packet ok;
     ERR_Packet err;
     EOF_Packet eof;
+    UInt64 column_length = 0;
 
     PacketResponse(UInt32 server_capability_flags_) : ok(OK_Packet(server_capability_flags_)) { }
 
     void readPayloadImpl(ReadBuffer & payload) override
     {
-        UInt8 header = static_cast<unsigned char>(*payload.position());
+        UInt16 header = static_cast<unsigned char>(*payload.position());
         switch (header)
         {
             case PACKET_OK:
@@ -956,6 +963,11 @@ public:
                 packetType = PACKET_EOF;
                 eof.readPayloadImpl(payload);
                 break;
+            case PACKET_LOCALINFILE:
+                packetType = PACKET_LOCALINFILE;
+                break;
+            default:
+                column_length = readLengthEncodedNumber(payload);
         }
     }
 
@@ -965,8 +977,9 @@ private:
     ResponsePacketType packetType = PACKET_OK;
 };
 
-class ColumnDefinition : public WritePacket
+class ColumnDefinition : public WritePacket, public ReadPacket
 {
+public:
     String schema;
     String table;
     String org_table;
@@ -978,7 +991,9 @@ class ColumnDefinition : public WritePacket
     ColumnType column_type;
     uint16_t flags;
     uint8_t decimals = 0x00;
-public:
+
+    ColumnDefinition() : character_set(0x00), column_length(0), column_type(MYSQL_TYPE_DECIMAL), flags(0x00) { }
+
     ColumnDefinition(
         String schema_,
         String table_,
@@ -1009,7 +1024,6 @@ public:
     {
     }
 
-protected:
     size_t getPayloadSize() const override
     {
         return 13 + getLengthEncodedStringSize("def") + getLengthEncodedStringSize(schema) + getLengthEncodedStringSize(table) + getLengthEncodedStringSize(org_table) + \
@@ -1031,6 +1045,25 @@ protected:
         buffer.write(reinterpret_cast<const char *>(&flags), 2);
         buffer.write(reinterpret_cast<const char *>(&decimals), 2);
         writeChar(0x0, 2, buffer);
+    }
+
+    void readPayloadImpl(ReadBuffer & payload) override
+    {
+        String def;
+        readLengthEncodedString(def, payload);
+        assert(def == "def");
+        readLengthEncodedString(schema, payload);
+        readLengthEncodedString(table, payload);
+        readLengthEncodedString(org_table, payload);
+        readLengthEncodedString(name, payload);
+        readLengthEncodedString(org_name, payload);
+        next_length = readLengthEncodedNumber(payload);
+        payload.readStrict(reinterpret_cast<char *>(&character_set), 2);
+        payload.readStrict(reinterpret_cast<char *>(&column_length), 4);
+        payload.readStrict(reinterpret_cast<char *>(&column_type), 1);
+        payload.readStrict(reinterpret_cast<char *>(&flags), 2);
+        payload.readStrict(reinterpret_cast<char *>(&decimals), 2);
+        payload.ignore(2);
     }
 };
 

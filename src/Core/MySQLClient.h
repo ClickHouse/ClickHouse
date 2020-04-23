@@ -21,7 +21,10 @@ class MySQLClient
 public:
     MySQLClient(const String & host_, UInt16 port_, const String & user_, const String & password_, const String & database_);
     bool connect();
-    void close();
+    void disconnect();
+    bool ping();
+    bool initdb(String db);
+    bool query(String q);
     String error();
 
 private:
@@ -32,8 +35,9 @@ private:
     String database;
 
     bool connected = false;
-    UInt32 client_capability_flags = 0;
     String last_error;
+    UInt32 client_capability_flags = 0;
+    UInt32 server_capability_flags = 0;
 
     uint8_t seq = 0;
     UInt8 charset_utf8 = 33;
@@ -47,5 +51,27 @@ private:
     std::shared_ptr<PacketSender> packet_sender;
 
     bool handshake();
+    bool readColumns(int column_length);
+    bool writeCommand(char command, String query);
+};
+
+class WriteCommand : public WritePacket
+{
+public:
+    char command;
+    String query;
+
+    WriteCommand(char command_, String query_) : command(command_), query(query_) { }
+
+    size_t getPayloadSize() const override { return 1 + query.size(); }
+
+    void writePayloadImpl(WriteBuffer & buffer) const override
+    {
+        buffer.write(static_cast<char>(command));
+        if (!query.empty())
+        {
+            buffer.write(query.data(), query.size());
+        }
+    }
 };
 }
