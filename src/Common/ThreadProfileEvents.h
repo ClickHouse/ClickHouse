@@ -155,6 +155,8 @@ struct PerfEventInfo
 
 #endif
 
+struct PerfDescriptorsHolder;
+
 struct PerfEventsCounters
 {
     // cat /proc/sys/kernel/perf_event_paranoid - if perf_event_paranoid is set to 3, all calls to `perf_event_open` are rejected (even for the current process)
@@ -173,12 +175,7 @@ struct PerfEventsCounters
 #if defined(__linux__)
     static constexpr size_t NUMBER_OF_RAW_EVENTS = 18;
 
-    static const PerfEventInfo perf_raw_events_info[];
-
-    int events_descriptors[NUMBER_OF_RAW_EVENTS]{};
-    // temp array just to not create it each time event processing finishes
-    Int64 raw_event_values[NUMBER_OF_RAW_EVENTS]{};
-    bool perf_events_recording = false;
+    static const PerfEventInfo raw_events_info[];
 #endif
 
     static void initializeProfileEvents(PerfEventsCounters & counters);
@@ -192,13 +189,32 @@ private:
     // used to write information about particular perf events unavailability only once for all threads
     static std::atomic<bool> particular_events_unavailability_logged;
 
+    static thread_local PerfDescriptorsHolder thread_events_descriptors_holder;
+    static thread_local bool thread_events_descriptors_opened;
+    static thread_local PerfEventsCounters * current_thread_counters;
+
+    // temp array just to not create it each time event processing finishes
+    Int64 raw_event_values[NUMBER_OF_RAW_EVENTS]{};
+
     static Logger * getLogger();
+
+    static bool initializeThreadLocalEvents(PerfEventsCounters & counters);
 
     [[nodiscard]] Int64 getRawValue(int event_type, int event_config) const;
 #endif
 };
 
 #if defined(__linux__)
+
+struct PerfDescriptorsHolder {
+    static Logger * getLogger();
+
+    int descriptors[PerfEventsCounters::NUMBER_OF_RAW_EVENTS]{};
+
+    PerfDescriptorsHolder();
+
+    ~PerfDescriptorsHolder();
+};
 
 struct TasksStatsCounters
 {
