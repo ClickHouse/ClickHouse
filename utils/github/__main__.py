@@ -210,7 +210,7 @@ print(f'{CHECK_MARK} - good')
 print(f'{CROSS_MARK} - bad')
 print(f'{BACKPORT_LABEL_MARK} - backport is detected via label')
 print(f'{CONFLICT_LABEL_MARK} - backport conflict is detected via label')
-print(f'{NO_BACKPORT_LABEL_MARK} - no need to backport is detected via label')
+print(f'{NO_BACKPORT_LABEL_MARK} - backport to this release is not needed')
 print(f'{CLOCK_MARK} - backport is waiting to merge')
 
 # print API costs
