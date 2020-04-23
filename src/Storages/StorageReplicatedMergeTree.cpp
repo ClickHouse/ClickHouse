@@ -5127,8 +5127,8 @@ void StorageReplicatedMergeTree::replacePartitionFrom(const StoragePtr & source_
 
 void StorageReplicatedMergeTree::movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, const Context & query_context)
 {
-    auto lock1 = lockStructureForShare(false, context.getCurrentQueryId());
-    auto lock2 = dest_table->lockStructureForShare(false, context.getCurrentQueryId());
+    auto lock1 = lockStructureForShare(false, query_context.getCurrentQueryId());
+    auto lock2 = dest_table->lockStructureForShare(false, query_context.getCurrentQueryId());
 
     auto dest_table_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(dest_table);
     if (!dest_table_storage)
