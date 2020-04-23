@@ -76,7 +76,7 @@ namespace DB
         return &Logger::get("PerfEventsCounters");
     }
 
-    Int64 PerfEventsCounters::getRawValue(int event_type, int event_config) const
+    UInt64 PerfEventsCounters::getRawValue(int event_type, int event_config) const
     {
         for (size_t i = 0; i < NUMBER_OF_RAW_EVENTS; ++i)
         {
@@ -190,7 +190,7 @@ namespace DB
         if (!initializeThreadLocalEvents(counters))
             return;
 
-        for (Int64 & raw_value : counters.raw_event_values)
+        for (UInt64 & raw_value : counters.raw_event_values)
             raw_value = 0;
 
         for (int fd : thread_events_descriptors_holder.descriptors)
@@ -242,13 +242,13 @@ namespace DB
         }
 
         // process custom events which depend on the raw ones
-        Int64 hw_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES);
-        Int64 hw_ref_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES);
+        UInt64 hw_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_CPU_CYCLES);
+        UInt64 hw_ref_cpu_cycles = counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES);
 
-        Int64 instructions_per_cpu_scaled = hw_cpu_cycles != 0
+        UInt64 instructions_per_cpu_scaled = hw_cpu_cycles != 0
                 ? counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS) / hw_cpu_cycles
                 : 0;
-        Int64 instructions_per_cpu = hw_ref_cpu_cycles != 0
+        UInt64 instructions_per_cpu = hw_ref_cpu_cycles != 0
                 ? counters.getRawValue(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS) / hw_ref_cpu_cycles
                 : 0;
 

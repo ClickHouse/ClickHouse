@@ -194,13 +194,13 @@ private:
     static thread_local PerfEventsCounters * current_thread_counters;
 
     // temp array just to not create it each time event processing finishes
-    Int64 raw_event_values[NUMBER_OF_RAW_EVENTS]{};
+    UInt64 raw_event_values[NUMBER_OF_RAW_EVENTS]{};
 
     static Logger * getLogger();
 
     static bool initializeThreadLocalEvents(PerfEventsCounters & counters);
 
-    [[nodiscard]] Int64 getRawValue(int event_type, int event_config) const;
+    [[nodiscard]] UInt64 getRawValue(int event_type, int event_config) const;
 #endif
 };
 
