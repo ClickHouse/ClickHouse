@@ -9,11 +9,12 @@
 #include <sstream>
 #include <iomanip>
 #include <iostream>
+#include <unordered_map>
 
 
 namespace Coordination
 {
-    std::atomic<int32_t> seq {0};
+    std::unordered_map<std::string, int32_t> seqs;
 
     enum class WatchConnType {
         READ = 1,
@@ -267,7 +268,7 @@ namespace Coordination
         create_request.set_key(key);
         request.mutable_create_request()->CopyFrom(create_request);
         stream_->Write(request, (void*)WatchConnType::WRITE);
-        LOG_FATAL(log, "WATCH " << key << list_watch);
+        LOG_DEBUG(log, "WATCH " << key << list_watch);
     }
 
     void EtcdKeeper::readWatchResponse()
@@ -312,44 +313,54 @@ namespace Coordination
  
     struct EtcdKeeperRequest : virtual Request
     {
+        std::string process_path;
         EtcdKeeper::XID xid = 0;
+        bool composite = false;
+        EtcdKeeper::TxnRequests pre_txn_requests;
         EtcdKeeper::TxnRequests txn_requests;
         virtual bool isMutable() const { return false; }
-        virtual void testCall(EtcdKeeper::AsyncCall& call,
+        bool pre_call_called = false;
+        virtual void call(EtcdKeeper::AsyncCall& call,
             std::unique_ptr<KV::Stub>& kv_stub_,
             CompletionQueue& kv_cq_) const
-        { 
+        {
+            if (composite && !pre_call_called)
+            {
+                // pre_call_called = true;
                 callRequest(call, kv_stub_, kv_cq_, txn_requests);
+            }
+            else
+            {
+                callRequest(call, kv_stub_, kv_cq_, txn_requests);
+            }
         }
         virtual EtcdKeeperResponsePtr makeResponse() const = 0;
         virtual void prepareCall() const = 0;
+        virtual EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) = 0;
+        EtcdKeeperResponsePtr makeResponseFromRepeatedPtrField(bool compare_result, google::protobuf::RepeatedPtrField<ResponseOp> fields)
+        {
+            std::vector<ResponseOp> responses;
+            for (auto field : fields) {
+                responses.push_back(field);
+            }
+            return makeResponseFromResponses(compare_result, responses);
+        }
+        EtcdKeeperResponsePtr makeResponseFromTag(void* got_tag)
+        {
+            EtcdKeeper::AsyncTxnCall* call = static_cast<EtcdKeeper::AsyncTxnCall*>(got_tag);
+            return makeResponseFromRepeatedPtrField(call->response.succeeded(), call->response.responses());
+        }
     };
 
     using EtcdRequestPtr = std::shared_ptr<EtcdKeeperRequest>;
     using EtcdRequests = std::vector<EtcdRequestPtr>;
 
     struct EtcdKeeperResponse : virtual Response {
-        std::string process_path;
         virtual ~EtcdKeeperResponse() {}
-        virtual void readFromResponses(bool compare_result, std::vector<ResponseOp> responses) = 0;
-        void readFromRepeatedPtrField(bool compare_result, google::protobuf::RepeatedPtrField<ResponseOp> fields)
-        {
-            std::vector<ResponseOp> responses;
-            for (auto field : fields) {
-                responses.push_back(field);
-            }
-            readFromResponses(compare_result, responses);
-        }
-        void readFromTag(void* got_tag)
-        {
-            EtcdKeeper::AsyncTxnCall* call = static_cast<EtcdKeeper::AsyncTxnCall*>(got_tag);
-            readFromRepeatedPtrField(call->response.succeeded(), call->response.responses());
-        }
     };
 
     struct EtcdKeeperCreateRequest final : CreateRequest, EtcdKeeperRequest
     {
-        std::string process_path;
         EtcdKeeperCreateRequest() {}
         EtcdKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
         EtcdKeeperResponsePtr makeResponse() const override;
@@ -358,10 +369,10 @@ namespace Coordination
             std::string process_path_ = path;
             if (is_sequential)
             {
-                seq.fetch_add(1);
+                int32_t seq_num = seqs[parentPath(path)]++;
 
                 std::stringstream seq_num_str;
-                seq_num_str << std::setw(10) << std::setfill('0') << seq;
+                seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
 
                 process_path_ += seq_num_str.str();
             }
@@ -373,21 +384,23 @@ namespace Coordination
             std::cout << "CREATE " << process_path << std::endl;
             txn_requests.success_puts.push_back(preparePutRequest(process_path, data));
         }
+        EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) override;
     };
 
     struct EtcdKeeperCreateResponse final : CreateResponse, EtcdKeeperResponse
     {
-        void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
-        {
-            error = Error::ZNODEEXISTS;
-            for (auto resp: responses) {
-                if(ResponseOp::ResponseCase::kResponsePut == resp.response_case())
-                {
-                    auto put_resp = resp.response_put();
-                    error = Error::ZOK;
-                }
-            }
-        }
+        // void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
+        // {
+        //     error = Error::ZNODEEXISTS;
+        //     for (auto resp: responses) {
+        //         if(ResponseOp::ResponseCase::kResponsePut == resp.response_case())
+        //         {
+        //             auto put_resp = resp.response_put();
+        //             error = Error::ZOK;
+        //             seqs[process_path] = 0;
+        //         }
+        //     }
+        // }
     };
  
     struct EtcdKeeperRemoveRequest final : RemoveRequest, EtcdKeeperRequest
@@ -400,31 +413,9 @@ namespace Coordination
             std::cout << "REMOVE " << path << std::endl;
             txn_requests.success_delete_ranges.emplace_back(prepareDeleteRangeRequest(path));
         }
+        EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) override;
     };
-
-    struct EtcdKeeperRemoveResponse final : RemoveResponse, EtcdKeeperResponse
-    {
-        void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
-        {
-            error = Error::ZNONODE;
-            for (auto resp: responses) {
-                if(ResponseOp::ResponseCase::kResponseDeleteRange == resp.response_case())
-                {
-                    auto delete_range_resp = resp.response_delete_range();
-                    if (delete_range_resp.deleted())
-                    {
-                        for (auto kv : delete_range_resp.prev_kvs())
-                        {
-                            if (kv.key() == process_path) {
-                                error = Error::ZOK;
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
+    struct EtcdKeeperRemoveResponse final : RemoveResponse, EtcdKeeperResponse {};
  
     struct EtcdKeeperExistsRequest final : ExistsRequest, EtcdKeeperRequest
     {
@@ -434,28 +425,10 @@ namespace Coordination
             std::cout << "EXISTS " << path << std::endl;
             txn_requests.success_ranges.push_back(prepareRangeRequest(path));
         }
+        EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) override;
     };
 
-    struct EtcdKeeperExistsResponse final : ExistsResponse, EtcdKeeperResponse
-    {
-        void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
-        {
-            error = Error::ZNONODE;
-            for (auto resp: responses) {
-                if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
-                {
-                    auto range_resp = resp.response_range();
-                    for (auto kv : range_resp.kvs())
-                    {
-                        if (kv.key() == process_path) {
-                            error = Error::ZOK;
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    };
+    struct EtcdKeeperExistsResponse final : ExistsResponse, EtcdKeeperResponse {};
  
     struct EtcdKeeperGetRequest final : GetRequest, EtcdKeeperRequest
     {
@@ -466,33 +439,10 @@ namespace Coordination
             std::cout << "GET " << path << std::endl;
             txn_requests.success_ranges.push_back(prepareRangeRequest(path));
         }
+        EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) override;
     };
 
-    struct EtcdKeeperGetResponse final : GetResponse, EtcdKeeperResponse
-    {
-        void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
-        {
-            error = Error::ZNONODE;
-            if (compare_result) {
-                for (auto resp: responses) {
-                    if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
-                    {
-                        auto range_resp = resp.response_range();
-                        for (auto kv : range_resp.kvs())
-                        {
-                            std::cout << "P" << kv.key() << std::endl;
-                            if (kv.key() == process_path) {
-                                data = kv.value();
-                                stat = Stat();
-                                error = Error::ZOK;
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
+    struct EtcdKeeperGetResponse final : GetResponse, EtcdKeeperResponse {};
  
     struct EtcdKeeperSetRequest final : SetRequest, EtcdKeeperRequest
     {
@@ -513,42 +463,10 @@ namespace Coordination
             // txn_requests.failure_ranges.push_back(prepareRangeRequest(path));
             txn_requests.success_puts.push_back(preparePutRequest(path, data));
         }
+        EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) override;
     };
 
-    struct EtcdKeeperSetResponse final : SetResponse, EtcdKeeperResponse
-    {
-        void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
-        {
-            error = Error::ZNONODE;
-            if (!compare_result) {
-                for (auto resp: responses) {
-                    if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
-                    {
-                        auto range_resp = resp.response_range();
-                        for (auto kv : range_resp.kvs())
-                        {
-                            if (kv.key() == process_path) {
-                                error = Error::ZBADVERSION;
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-            else
-            {
-                for (auto resp: responses) {
-                    if(ResponseOp::ResponseCase::kResponsePut == resp.response_case())
-                    {
-                        auto put_resp = resp.response_put();
-                        if (put_resp.prev_kv().key() == process_path) {
-                            error = Error::ZOK;
-                        }
-                    }
-                }
-            }
-        }
-    };
+    struct EtcdKeeperSetResponse final : SetResponse, EtcdKeeperResponse {};
  
     struct EtcdKeeperListRequest final : ListRequest, EtcdKeeperRequest
     {
@@ -560,42 +478,10 @@ namespace Coordination
             txn_requests.compares.push_back(prepareCompare(path, compare_target, compare_result, -1, 0, 0));
             txn_requests.success_ranges.push_back(prepareRangeRequest(path + "/", true));
         }
+        EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) override;
     };
 
-    struct EtcdKeeperListResponse final : ListResponse, EtcdKeeperResponse
-    {
-        void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
-        {
-            if (!compare_result)
-            {
-                error = Error::ZNONODE;
-            }
-            else
-            {
-                error = Error::ZOK;
-            }
-            for (auto resp : responses) {
-                if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
-                {
-                    auto range_resp = resp.response_range();
-                    for (auto kv : range_resp.kvs())
-                    {
-                        std::cout << "KEY" << kv.key() << std::endl;
-                        if (kv.key().rfind(process_path, 0) == 0)
-                        {
-                            for (auto kv : range_resp.kvs())
-                            {
-                                names.emplace_back(baseName(kv.key()));
-                            }
-                            error = Error::ZOK;
-                            return;
-                        }
-                    }
-                }
-            }
-            
-        }
-    };
+    struct EtcdKeeperListResponse final : ListResponse, EtcdKeeperResponse {};
  
     struct EtcdKeeperCheckRequest final : CheckRequest, EtcdKeeperRequest
     {
@@ -613,48 +499,22 @@ namespace Coordination
             txn_requests.compares.push_back(prepareCompare(path, compare_target, compare_result, version, 0, 0));
             txn_requests.failure_ranges.push_back(prepareRangeRequest(path));
         }
+        EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) override;
     };
 
-    struct EtcdKeeperCheckResponse final : CheckResponse, EtcdKeeperResponse
-    {
-        void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
-        {
-
-            if (compare_result) 
-            {
-                error = Error::ZOK;
-            }
-            else
-            {
-                error = Error::ZNODEEXISTS;
-                for (auto resp: responses) {
-                    if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
-                    {
-                        auto range_resp = resp.response_range();
-                        for (auto kv : range_resp.kvs())
-                        {
-                            if (kv.key() == process_path) {
-                                error = Error::ZBADVERSION;
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    };
+    struct EtcdKeeperCheckResponse final : CheckResponse, EtcdKeeperResponse {};
  
-using EtcdKeeperResponsePtr = std::shared_ptr<EtcdKeeperResponse>;
-using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
+using EtcdKeeperRequestPtr = std::shared_ptr<EtcdKeeperRequest>;
+using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
 
     struct EtcdKeeperMultiRequest final : MultiRequest, EtcdKeeperRequest
     {
-        EtcdKeeperResponses resps;
+        EtcdKeeperRequests etcd_requests;
 
         EtcdKeeperMultiRequest(const Requests & generic_requests)
         {
             std::cout << "MULTI " << std::endl;
-            resps.reserve(generic_requests.size());
+            etcd_requests.reserve(generic_requests.size());
             for (const auto & generic_request : generic_requests)
             {
                 if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
@@ -662,28 +522,28 @@ using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
                     auto request = std::make_shared<EtcdKeeperCreateRequest>(*concrete_request_create);
                     request->prepareCall();
                     txn_requests += request->txn_requests;
-                    resps.push_back(request->makeResponse());
+                    etcd_requests.push_back(std::move(request));
                 }
                 else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
                 {
                     auto request = std::make_shared<EtcdKeeperRemoveRequest>(*concrete_request_remove);
                     request->prepareCall();
                     txn_requests += request->txn_requests;
-                    resps.push_back(request->makeResponse());
+                    etcd_requests.push_back(std::move(request));
                 }
                 else if (auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
                 {
                     auto request = std::make_shared<EtcdKeeperSetRequest>(*concrete_request_set);
                     request->prepareCall();
                     txn_requests += request->txn_requests;
-                    resps.push_back(request->makeResponse());
+                    etcd_requests.push_back(std::move(request));
                 }
                 else if (auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
                 {
                     auto request = std::make_shared<EtcdKeeperCheckRequest>(*concrete_request_check);
                     request->prepareCall();
                     txn_requests += request->txn_requests;
-                    resps.push_back(request->makeResponse());
+                    etcd_requests.push_back(std::move(request));
                 }
                 else
                 {
@@ -695,80 +555,211 @@ using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
         void prepareCall() const override {
             txn_requests.interaction();
         }
- 
+
+        EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) override;
         EtcdKeeperResponsePtr makeResponse() const override;
     };
 
-    struct EtcdKeeperMultiResponse final : MultiResponse, EtcdKeeperResponse
+    struct EtcdKeeperMultiResponse final : MultiResponse, EtcdKeeperResponse {};
+  
+    EtcdKeeperResponsePtr EtcdKeeperCreateRequest::makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses)
     {
-        EtcdKeeperResponses resps;
-
-        void readFromResponses(bool compare_result, std::vector<ResponseOp> responses_)
-        {
-            if (compare_result) {
-                for (int i; i != resps.size(); i++) {
-                    resps[i]->readFromResponses(compare_result, responses_);
-                    responses.push_back(resps[i]);
-                }
-            }
-            else
+        auto response = std::make_shared<EtcdKeeperCreateResponse>();
+        response->path_created = process_path;
+        response->error = Error::ZNODEEXISTS;
+        for (auto resp: responses) {
+            if(ResponseOp::ResponseCase::kResponsePut == resp.response_case())
             {
-                for (int i; i != responses.size(); i++) {
-                    responses[i]->error = Error::ZNONODE;
+                auto put_resp = resp.response_put();
+                response->error = Error::ZOK;
+                seqs[process_path] = 0;
+            }
+        }
+        return response;
+    }
+    EtcdKeeperResponsePtr EtcdKeeperRemoveRequest::makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses)
+    {
+        auto response = std::make_shared<EtcdKeeperRemoveResponse>();
+        response->error = Error::ZNONODE;
+        for (auto resp: responses) {
+            if(ResponseOp::ResponseCase::kResponseDeleteRange == resp.response_case())
+            {
+                auto delete_range_resp = resp.response_delete_range();
+                if (delete_range_resp.deleted())
+                {
+                    for (auto kv : delete_range_resp.prev_kvs())
+                    {
+                        if (kv.key() == path) {
+                            response->error = Error::ZOK;
+                            return response;
+                        }
+                    }
                 }
             }
         }
-    };
-  
-    EtcdKeeperResponsePtr EtcdKeeperCreateRequest::makeResponse() const
-    {
-        auto resp = std::make_shared<EtcdKeeperCreateResponse>();
-        resp->process_path = process_path;
-        resp->path_created = process_path;
-        return resp;
+        return response;
     }
-    EtcdKeeperResponsePtr EtcdKeeperRemoveRequest::makeResponse() const 
+    EtcdKeeperResponsePtr EtcdKeeperExistsRequest::makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses)
     {
-        auto resp = std::make_shared<EtcdKeeperRemoveResponse>();
-        resp->process_path = path;
-        return resp;
+        auto response = std::make_shared<EtcdKeeperExistsResponse>();
+        response->error = Error::ZNONODE;
+        for (auto resp: responses) {
+            if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
+            {
+                auto range_resp = resp.response_range();
+                for (auto kv : range_resp.kvs())
+                {
+                    if (kv.key() == path) {
+                        response->error = Error::ZOK;
+                        return response;
+                    }
+                }
+            }
+        }
+        return response;
     }
-    EtcdKeeperResponsePtr EtcdKeeperExistsRequest::makeResponse() const 
+    EtcdKeeperResponsePtr EtcdKeeperGetRequest::makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses)
     {
-        auto resp = std::make_shared<EtcdKeeperExistsResponse>();
-        resp->process_path = path;
-        return resp;
+        auto response = std::make_shared<EtcdKeeperGetResponse>();
+        response->error = Error::ZNONODE;
+        if (compare_result) {
+            for (auto resp: responses)
+            {
+                if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
+                {
+                    auto range_resp = resp.response_range();
+                    for (auto kv : range_resp.kvs())
+                    {
+                        std::cout << "P" << kv.key() << std::endl;
+                        if (kv.key() == path) {
+                            response->data = kv.value();
+                            response->stat = Stat();
+                            response->error = Error::ZOK;
+                            return response;
+                        }
+                    }
+                }
+            }
+        }
+        return response;
     }
-    EtcdKeeperResponsePtr EtcdKeeperGetRequest::makeResponse() const 
+    EtcdKeeperResponsePtr EtcdKeeperSetRequest::makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses)
     {
-        auto resp = std::make_shared<EtcdKeeperGetResponse>();
-        resp->process_path = path;
-        return resp;
+        auto response = std::make_shared<EtcdKeeperSetResponse>();
+        response->error = Error::ZNONODE;
+        if (!compare_result) {
+            for (auto resp: responses) {
+                if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
+                {
+                    auto range_resp = resp.response_range();
+                    for (auto kv : range_resp.kvs())
+                    {
+                        if (kv.key() == path) {
+                            response->error = Error::ZBADVERSION;
+                            return response;
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            for (auto resp: responses) {
+                if(ResponseOp::ResponseCase::kResponsePut == resp.response_case())
+                {
+                    auto put_resp = resp.response_put();
+                    if (put_resp.prev_kv().key() == process_path) {
+                        response->error = Error::ZOK;
+                    }
+                }
+            }
+        }
+        return response;
     }
-    EtcdKeeperResponsePtr EtcdKeeperSetRequest::makeResponse() const
+    EtcdKeeperResponsePtr EtcdKeeperListRequest::makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses)
     {
-        auto resp = std::make_shared<EtcdKeeperSetResponse>();
-        resp->process_path = path;
-        return resp;
+        auto response = std::make_shared<EtcdKeeperListResponse>();
+        if (!compare_result)
+        {
+            response->error = Error::ZNONODE;
+        }
+        else
+        {
+            response->error = Error::ZOK;
+        }
+        for (auto resp : responses) {
+            if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
+            {
+                auto range_resp = resp.response_range();
+                for (auto kv : range_resp.kvs())
+                {
+                    std::cout << "KEY" << kv.key() << std::endl;
+                    if (kv.key().rfind(path, 0) == 0)
+                    {
+                        for (auto kv : range_resp.kvs())
+                        {
+                            response->names.emplace_back(baseName(kv.key()));
+                        }
+                        response->error = Error::ZOK;
+                        return response;
+                    }
+                }
+            }
+        }
+        return response;
     }
-    EtcdKeeperResponsePtr EtcdKeeperListRequest::makeResponse() const 
+    EtcdKeeperResponsePtr EtcdKeeperCheckRequest::makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses)
     {
-        auto resp = std::make_shared<EtcdKeeperListResponse>();
-        resp->process_path = path + "/";
-        return resp;
+        auto response = std::make_shared<EtcdKeeperCheckResponse>();
+        if (compare_result) 
+        {
+            response->error = Error::ZOK;
+        }
+        else
+        {
+            response->error = Error::ZNODEEXISTS;
+            for (auto resp: responses) {
+                if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
+                {
+                    auto range_resp = resp.response_range();
+                    for (auto kv : range_resp.kvs())
+                    {
+                        if (kv.key() == path) {
+                            response->error = Error::ZBADVERSION;
+                            return response;
+                        }
+                    }
+                }
+            }
+        }
+        return response;
     }
-    EtcdKeeperResponsePtr EtcdKeeperCheckRequest::makeResponse() const 
-    {
-        auto resp = std::make_shared<EtcdKeeperCheckResponse>();
-        resp->process_path = path;
-        return resp;
-    }
-    EtcdKeeperResponsePtr EtcdKeeperMultiRequest::makeResponse() const 
+    EtcdKeeperResponsePtr EtcdKeeperMultiRequest::makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses_)
     { 
-        auto resp = std::make_shared<EtcdKeeperMultiResponse>();
-        resp->resps = resps;
-        return resp;
+        auto response = std::make_shared<EtcdKeeperMultiResponse>();
+        if (compare_result) {
+            for (int i; i != etcd_requests.size(); i++) {
+                response->responses.push_back(etcd_requests[i]->makeResponseFromResponses(compare_result, responses_));
+            }
+        }
+        else
+        {
+            // response->responses.reserve(etcd_requests.size());
+            // for (int i; i != etcd_requests.size(); i++) {
+            //     response->responses[i]->error = Error::ZNONODE;
+            // }
+        }
+        return response;
     }
+
+    EtcdKeeperResponsePtr EtcdKeeperCreateRequest::makeResponse() const { return std::make_shared<EtcdKeeperCreateResponse>(); }
+    EtcdKeeperResponsePtr EtcdKeeperRemoveRequest::makeResponse() const { return std::make_shared<EtcdKeeperRemoveResponse>(); }
+    EtcdKeeperResponsePtr EtcdKeeperExistsRequest::makeResponse() const { return std::make_shared<EtcdKeeperExistsResponse>(); }
+    EtcdKeeperResponsePtr EtcdKeeperGetRequest::makeResponse() const { return std::make_shared<EtcdKeeperGetResponse>(); }
+    EtcdKeeperResponsePtr EtcdKeeperSetRequest::makeResponse() const { return std::make_shared<EtcdKeeperSetResponse>(); }
+    EtcdKeeperResponsePtr EtcdKeeperListRequest::makeResponse() const { return std::make_shared<EtcdKeeperListResponse>(); }
+    EtcdKeeperResponsePtr EtcdKeeperCheckRequest::makeResponse() const { return std::make_shared<EtcdKeeperCheckResponse>(); }
+    EtcdKeeperResponsePtr EtcdKeeperMultiRequest::makeResponse() const { return std::make_shared<EtcdKeeperMultiResponse>(); }
  
  
     EtcdKeeper::EtcdKeeper(const String & root_path_, Poco::Timespan operation_timeout_)
@@ -802,7 +793,7 @@ using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
     EtcdKeeper::~EtcdKeeper()
     {
 
-        LOG_FATAL(log, "DESTR");
+        LOG_DEBUG(log, "DESTR");
         try
         {
             finalize();
@@ -838,7 +829,7 @@ using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
 
                     if (info.watch)
                     {
-                        LOG_FATAL(log, "WATCH IN REQUEST");
+                        LOG_DEBUG(log, "WATCH IN REQUEST");
                         bool list_watch = false;
                         if (dynamic_cast<const ListRequest *>(info.request.get())) {
                             list_watch = true;
@@ -858,9 +849,7 @@ using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
                     call->xid = info.request->xid;
 
                     info.request->prepareCall();
-                    std::cout << "prepareCall" << std::endl;
-                    info.request->testCall(*call, kv_stub_, kv_cq_);
-                    std::cout << "testCall" << std::endl;
+                    info.request->call(*call, kv_stub_, kv_cq_);
                 }
             }
         }
@@ -883,7 +872,7 @@ using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
             bool ok = false;
 
             while (kv_cq_.Next(&got_tag, &ok)) {
-                LOG_FATAL(log, "GOT TAG" << got_tag);
+                LOG_DEBUG(log, "GOT TAG" << got_tag);
 
                 GPR_ASSERT(ok);
                 if (got_tag)
@@ -892,7 +881,7 @@ using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
 
                     XID xid = call->xid;
 
-                    LOG_FATAL(log, "XID" << xid);
+                    LOG_DEBUG(log, "XID" << xid);
 
                     auto it = operations.find(xid);
                     if (it == operations.end())
@@ -901,17 +890,18 @@ using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
                     request_info = std::move(it->second);
                     operations.erase(it);
 
-                    response = request_info.request->makeResponse();
+                    // response = request_info.request->makeResponse();
 
                     if (!call->status.ok())
                     {
-                        LOG_FATAL(log, "RPC FAILED" << call->status.error_message());
+                        LOG_DEBUG(log, "RPC FAILED" << call->status.error_message());
                     }
                     else
                     {
-                        LOG_FATAL(log, "READ RPC RESPONSE");
+                        LOG_DEBUG(log, "READ RPC RESPONSE");
 
-                        response->readFromTag(got_tag);
+                        // response->readFromTag(got_tag);
+                        response = request_info.request->makeResponseFromTag(got_tag);
                         response->removeRootPath(root_path);
                     }
                     
@@ -980,7 +970,7 @@ using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
  
     void EtcdKeeper::finalize()
     {
-        LOG_FATAL(log, "FINALIZE");
+        LOG_DEBUG(log, "FINALIZE");
 
         {
             std::lock_guard lock(push_request_mutex);
@@ -1071,7 +1061,7 @@ using EtcdKeeperResponses = std::vector<EtcdKeeperResponsePtr>;
             if (!info.request->xid)
             {
                 info.request->xid = next_xid.fetch_add(1);
-                LOG_FATAL(log, "XID" << next_xid);
+                LOG_DEBUG(log, "XID" << next_xid);
 
                 if (info.request->xid < 0)
                     throw Exception("XID overflow", ZSESSIONEXPIRED);
