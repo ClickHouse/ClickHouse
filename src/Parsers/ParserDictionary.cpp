@@ -11,6 +11,8 @@
 
 #include <Poco/String.h>
 
+#include <Parsers/ParserSetQuery.h>
+
 namespace DB
 {
 
@@ -157,6 +159,7 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserKeyword lifetime_keyword("LIFETIME");
     ParserKeyword range_keyword("RANGE");
     ParserKeyword layout_keyword("LAYOUT");
+    ParserKeyword settings_keyword("SETTINGS");
     ParserToken open(TokenType::OpeningRoundBracket);
     ParserToken close(TokenType::ClosingRoundBracket);
     ParserFunctionWithKeyValueArguments key_value_pairs_p;
@@ -164,12 +167,14 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ParserDictionaryLifetime lifetime_p;
     ParserDictionaryRange range_p;
     ParserDictionaryLayout layout_p;
+    ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
 
     ASTPtr primary_key;
     ASTPtr ast_source;
     ASTPtr ast_lifetime;
     ASTPtr ast_layout;
     ASTPtr ast_range;
+    ASTPtr ast_settings;
 
     /// Primary is required to be the first in dictionary definition
     if (primary_key_keyword.ignore(pos) && !expression_list_p.parse(pos, primary_key, expected))
@@ -235,6 +240,16 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             continue;
         }
 
+        if (settings_keyword.ignore(pos, expected))
+        {
+            if (!open.ignore(pos))
+                return false;
+            if (!settings_p.parse(pos, ast_settings, expected))
+                return false;
+            if (!close.ignore(pos))
+                return false;
+        }
+
         break;
     }
 
@@ -254,6 +269,9 @@ bool ParserDictionary::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (ast_range)
         query->set(query->range, ast_range);
+
+    if (ast_settings)
+        query->set(query->dict_settings, ast_settings);
 
     return true;
 }

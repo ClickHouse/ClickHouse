@@ -5,6 +5,10 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 
+#include <Parsers/ASTSetQuery.h>
+
+#include <Parsers/ParserSetQuery.h>
+
 namespace DB
 {
 
@@ -77,6 +81,9 @@ public:
     ASTDictionaryLayout * layout;
     /// Range for dictionary (only for range-hashed dictionaries)
     ASTDictionaryRange * range;
+
+    /// Settings for dictionary (optionally)
+    ASTSetQuery * dict_settings;
 
     String getID(char) const override { return "Dictionary definition"; }
 
