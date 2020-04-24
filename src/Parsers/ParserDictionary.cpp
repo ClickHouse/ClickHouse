@@ -11,7 +11,7 @@
 
 #include <Poco/String.h>
 
-#include <Parsers/ParserSetQuery.cpp>
+#include <Parsers/ParserSetQuery.h>
 
 namespace DB
 {
@@ -164,7 +164,7 @@ bool ParserDictionarySettings::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
 
         changes.push_back(SettingChange{});
 
-        if (!parseNameValuePair(changes.back(), pos, expected))
+        if (!ParserSetQuery::parseNameValuePair(changes.back(), pos, expected))
             return false;
     }
 
