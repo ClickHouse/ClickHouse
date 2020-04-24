@@ -383,10 +383,12 @@ void buildSourceConfiguration(AutoPtr<Document> doc, AutoPtr<Element> root, cons
     outer_element->appendChild(source_element);
     buildConfigurationFromFunctionWithKeyValueArguments(doc, source_element, source->elements->as<const ASTExpressionList>());
 
-    if (settings != nullptr) {
+    if (settings != nullptr)
+    {
         AutoPtr<Element> settings_element(doc->createElement("settings"));
         outer_element->appendChild(settings_element);
-        for (const auto & [name, value] : settings->changes) {
+        for (const auto & [name, value] : settings->changes)
+        {
             AutoPtr<Element> setting_change_element(doc->createElement(name));
             settings_element->appendChild(setting_change_element);
             AutoPtr<Text> setting_value(doc->createTextNode(getFieldAsString(value)));
