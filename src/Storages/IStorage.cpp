@@ -50,18 +50,6 @@ const ConstraintsDescription & IStorage::getConstraints() const
     return constraints;
 }
 
-NameAndTypePair IStorage::getColumn(const String & column_name) const
-{
-    /// By default, we assume that there are no virtual columns in the storage.
-    return getColumns().getPhysical(column_name);
-}
-
-bool IStorage::hasColumn(const String & column_name) const
-{
-    /// By default, we assume that there are no virtual columns in the storage.
-    return getColumns().hasPhysical(column_name);
-}
-
 Block IStorage::getSampleBlock() const
 {
     Block res;
@@ -110,9 +98,8 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
         }
         else
         {
-            /// Virtual columns.
-            NameAndTypePair elem = getColumn(name);
-            res.insert({elem.type->createColumn(), elem.type, elem.name});
+            throw Exception(
+                "Column " + backQuote(name) + " not found in table " + getStorageID().getNameForLogs(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
 

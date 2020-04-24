@@ -59,36 +59,6 @@ StorageMerge::StorageMerge(
     setColumns(columns_);
 }
 
-
-/// NOTE: structure of underlying tables as well as their set are not constant,
-///       so the results of these methods may become obsolete after the call.
-
-NameAndTypePair StorageMerge::getColumn(const String & column_name) const
-{
-    if (!IStorage::hasColumn(column_name))
-    {
-        auto first_table = getFirstTable([](auto &&) { return true; });
-        if (first_table)
-            return first_table->getColumn(column_name);
-    }
-
-    return IStorage::getColumn(column_name);
-}
-
-
-bool StorageMerge::hasColumn(const String & column_name) const
-{
-    if (!IStorage::hasColumn(column_name))
-    {
-        auto first_table = getFirstTable([](auto &&) { return true; });
-        if (first_table)
-            return first_table->hasColumn(column_name);
-    }
-
-    return true;
-}
-
-
 template <typename F>
 StoragePtr StorageMerge::getFirstTable(F && predicate) const
 {
@@ -494,8 +464,8 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
         if (!header_column.type->equals(*before_column.type.get()) && processed_stage > QueryProcessingStage::FetchColumns)
         {
             NamesAndTypesList source_columns = getSampleBlock().getNamesAndTypesList();
-            NameAndTypePair virtual_column = getColumn("_table");
-            source_columns.insert(source_columns.end(), virtual_column);
+            auto virtual_column = getColumns().get("_table");
+            source_columns.emplace_back(NameAndTypePair{virtual_column.name, virtual_column.type});
             auto syntax_result = SyntaxAnalyzer(context).analyze(where_expression, source_columns);
             ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context}.getActions(false, false);
             Names required_columns = actions->getRequiredColumns();

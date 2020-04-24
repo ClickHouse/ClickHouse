@@ -154,16 +154,6 @@ StorageMaterializedView::StorageMaterializedView(
         DatabaseCatalog::instance().addDependency(select_table_id, getStorageID());
 }
 
-NameAndTypePair StorageMaterializedView::getColumn(const String & column_name) const
-{
-    return getTargetTable()->getColumn(column_name);
-}
-
-bool StorageMaterializedView::hasColumn(const String & column_name) const
-{
-    return getTargetTable()->hasColumn(column_name);
-}
-
 StorageInMemoryMetadata StorageMaterializedView::getInMemoryMetadata() const
 {
     StorageInMemoryMetadata result(getColumns(), getIndices(), getConstraints());

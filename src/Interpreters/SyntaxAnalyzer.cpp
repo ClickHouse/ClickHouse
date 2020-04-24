@@ -693,11 +693,13 @@ void SyntaxAnalyzerResult::collectUsedColumns(const ASTPtr & query)
     /// in columns list, so that when further processing they are also considered.
     if (storage)
     {
+        const auto storage_virtuals = storage->getColumns().getVirtuals();
         for (auto it = unknown_required_source_columns.begin(); it != unknown_required_source_columns.end();)
         {
-            if (storage->hasColumn(*it))
+            auto column = storage_virtuals.tryGetByName(*it);
+            if (column)
             {
-                source_columns.push_back(storage->getColumn(*it));
+                source_columns.push_back(*column);
                 unknown_required_source_columns.erase(it++);
             }
             else

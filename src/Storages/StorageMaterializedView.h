@@ -22,8 +22,8 @@ public:
     ASTPtr getSelectQuery() const { return select->clone(); }
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
 
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
+    //NameAndTypePair getColumn(const String & column_name) const override;
+    //bool hasColumn(const String & column_name) const override;
 
     StorageInMemoryMetadata getInMemoryMetadata() const override;
 
