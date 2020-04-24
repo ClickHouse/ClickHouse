@@ -310,10 +310,6 @@ int Server::main(const std::vector<std::string> & /*args*/)
 
     global_context->setPath(path);
 
-    /// Create directories for 'path' and for default database, if not exist.
-    Poco::File(path + "data/" + default_database).createDirectories();
-    Poco::File(path + "metadata/" + default_database).createDirectories();
-
     StatusFile status{path + "status"};
 
     SCOPE_EXIT({
@@ -402,6 +398,11 @@ int Server::main(const std::vector<std::string> & /*args*/)
         std::string dictionaries_lib_path = config().getString("dictionaries_lib_path", path + "dictionaries_lib/");
         global_context->setDictionariesLibPath(dictionaries_lib_path);
         Poco::File(dictionaries_lib_path).createDirectories();
+    }
+
+    {
+        /// Directory with metadata of tables, which was marked as dropped by Atomic database
+        Poco::File(path + "metadata_dropped/").createDirectories();
     }
 
     if (config().has("interserver_http_port") && config().has("interserver_https_port"))
@@ -593,7 +594,7 @@ int Server::main(const std::vector<std::string> & /*args*/)
         /// After the system database is created, attach virtual system tables (in addition to query_log and part_log)
         attachSystemTablesServer(*DatabaseCatalog::instance().getSystemDatabase(), has_zookeeper);
         /// Then, load remaining databases
-        loadMetadata(*global_context);
+        loadMetadata(*global_context, default_database);
         DatabaseCatalog::instance().loadDatabases();
     }
     catch (...)

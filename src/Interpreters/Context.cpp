@@ -406,7 +406,7 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
-        DatabaseCatalog::instance().shutdown();
+        DatabaseCatalog::shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
         /// TODO: Get rid of this.
@@ -1988,7 +1988,7 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
     auto lock = getLock();
 
     if (!shared->action_locks_manager)
-        shared->action_locks_manager = std::make_shared<ActionLocksManager>(getGlobalContext());
+        shared->action_locks_manager = std::make_shared<ActionLocksManager>();
 
     return shared->action_locks_manager;
 }
@@ -2063,11 +2063,16 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
-    auto lock = getLock();
+    StorageID resolved = StorageID::createEmpty();
     std::optional<Exception> exc;
-    auto resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
+    {
+        auto lock = getLock();
+        resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
+    }
     if (exc)
         throw Exception(*exc);
+    if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+        resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
     return resolved;
 }
 
@@ -2076,8 +2081,18 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
-    auto lock = getLock();
-    return resolveStorageIDImpl(std::move(storage_id), where, nullptr);
+    StorageID resolved = StorageID::createEmpty();
+    {
+        auto lock = getLock();
+        resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
+    }
+    if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
+        if (db)
+            resolved.uuid = db->tryGetTableUUID(resolved.table_name);
+    }
+    return resolved;
 }
 
 StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const

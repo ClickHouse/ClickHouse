@@ -24,7 +24,7 @@ def started_cluster():
         cluster.start()
 
         instance.query('''
-            CREATE DATABASE mydb;
+            CREATE DATABASE mydb ENGINE=Ordinary;
 
             CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a;
             INSERT INTO mydb.filtered_table1 values (0, 0), (0, 1), (1, 0), (1, 1);
@@ -42,7 +42,7 @@ def started_cluster():
             INSERT INTO mydb.`.filtered_table4` values (0, 0), (0, 1), (1, 0), (1, 1);
         ''')
         instance2.query('''
-            CREATE DATABASE mydb;
+            CREATE DATABASE mydb ENGINE=Ordinary;
 
             CREATE TABLE mydb.filtered_table1 (a UInt8, b UInt8) ENGINE MergeTree ORDER BY a;
             INSERT INTO mydb.filtered_table1 values (0, 0), (0, 1), (1, 0), (1, 1);

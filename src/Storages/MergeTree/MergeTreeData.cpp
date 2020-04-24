@@ -1294,9 +1294,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
     }
 }
 
-void MergeTreeData::rename(
-    const String & new_table_path, const String & new_database_name,
-    const String & new_table_name, TableStructureWriteLockHolder &)
+void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
 {
     auto disks = getStoragePolicy()->getDisks();
 
@@ -1309,14 +1307,14 @@ void MergeTreeData::rename(
     for (const auto & disk : disks)
     {
         auto new_table_path_parent = parentPath(new_table_path);
-        disk->createDirectory(new_table_path_parent);
+        disk->createDirectories(new_table_path_parent);
         disk->moveDirectory(relative_data_path, new_table_path);
     }
 
     global_context.dropCaches();
 
     relative_data_path = new_table_path;
-    renameInMemory(new_database_name, new_table_name);
+    renameInMemory(new_table_id);
 }
 
 void MergeTreeData::dropAllData()
