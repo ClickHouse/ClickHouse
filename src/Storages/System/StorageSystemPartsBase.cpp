@@ -258,8 +258,10 @@ Pipes StorageSystemPartsBase::read(
 
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
     : IStorage(
-        {"system", name_},
-        ColumnsDescription({NameAndTypePair("_state", std::make_shared<DataTypeString>())}, true))
+        StorageID{"system", name_},
+        ColumnsDescription(
+            {NameAndTypePair("_state", std::make_shared<DataTypeString>())},
+            /* all_virtual = */ true))
 {
     ColumnsDescription tmp_columns(std::move(columns_));
 
