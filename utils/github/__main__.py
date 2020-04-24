@@ -91,14 +91,17 @@ def print_responsible(pull_request):
     else:
         return f'{pull_request["author"]["login"]} → {pull_request["mergedBy"]["login"]}'
 
+LABEL_NO_BACKPORT = 'pr-no-backport'
 bad_pull_requests = []  # collect and print if not empty
 need_backporting = []
 for pull_request in pull_requests:
 
     def find_label():
-        for label in github.get_labels(pull_request):
+        labels = github.get_labels(pull_request)
+        backport_allowed = LABEL_NO_BACKPORT not in map(lambda label: label['name'], labels)
+        for label in labels:
             if label['name'].startswith('pr-'):
-                if label['color'] == 'ff0000':
+                if label['color'] == 'ff0000' and backport_allowed:
                     need_backporting.append(pull_request)
                 return True
         return False
@@ -133,7 +136,6 @@ if need_backporting:
     re_vlabel_backported = re.compile(r'^v\d+\.\d+-backported$')
     re_vlabel_conflicts = re.compile(r'^v\d+\.\d+-conflicts$')
     re_vlabel_no_backport = re.compile(r'^v\d+\.\d+-no-backport$')
-    label_no_backport = 'pr-no-backport'
 
     print('\nPull-requests need to be backported:')
     for pull_request in reversed(sorted(need_backporting, key=lambda x: x['number'])):
@@ -160,9 +162,6 @@ if need_backporting:
                     if re_vlabel_no_backport.match(label['name']):
                         if f'v{stable[0]}-no-backport' == label['name']:
                             no_backport_labeled.add(stable[0])
-                    if label['name'] == label_no_backport:
-                        no_backport_labeled.add(stable[0])
-                    
 
         for event in github.get_timeline(pull_request):
             if(event['isCrossRepository'] or
