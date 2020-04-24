@@ -153,11 +153,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// result structure doesn't affect storage.
     virtual StorageInMemoryMetadata getInMemoryMetadata() const;
 
-    /// NOTE: these methods should include virtual columns,
-    ///       but should NOT include ALIAS columns (they are treated separately).
-    virtual NameAndTypePair getColumn(const String & column_name) const;
-    virtual bool hasColumn(const String & column_name) const;
-
     Block getSampleBlock() const; /// ordinary + materialized.
     Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
     Block getSampleBlockNonMaterialized() const; /// ordinary.
