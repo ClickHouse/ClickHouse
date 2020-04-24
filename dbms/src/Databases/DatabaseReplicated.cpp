@@ -100,6 +100,8 @@ DatabaseReplicated::DatabaseReplicated(
         // return;
     }
 
+    // can the zk path exist and no metadata on disk be available at the same moment? if so, in such a case, the db instance must be restored.
+
     current_zookeeper->createIfNotExists(zookeeper_path, String());
     current_zookeeper->createIfNotExists(replica_path, String());
     // TODO what to do?
@@ -115,6 +117,7 @@ void DatabaseReplicated::createTable(
 {
     // try
     DatabaseOnDisk::createTable(context, table_name, table, query);
+
     // replicated stuff
     String statement = getObjectDefinitionFromCreateQuery(query);
     auto zookeeper = getZooKeeper();
