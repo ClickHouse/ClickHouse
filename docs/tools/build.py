@@ -148,11 +148,12 @@ def build_for_lang(lang, args):
                 'stable_releases': args.stable_releases,
                 'version_prefix': args.version_prefix,
                 'single_page': False,
-                'rev':       args.rev,
+                'rev': args.rev,
                 'rev_short': args.rev_short,
-                'rev_url':   args.rev_url,
-                'events':    args.events,
-                'languages': languages
+                'rev_url': args.rev_url,
+                'events': args.events,
+                'languages': languages,
+                'includes_dir':  os.path.join(os.path.dirname(__file__), '..', '_includes')
             }
         )
 
