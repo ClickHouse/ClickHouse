@@ -11,7 +11,6 @@
 
 #include <Poco/String.h>
 
-#include <Parsers/ParserSetQuery.h>
 #include <Parsers/ParserSetQuery.cpp>
 
 namespace DB
