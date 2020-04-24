@@ -459,25 +459,20 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
 {
     const std::string path(volume->getNextDisk()->getPath());
 
-    std::unique_ptr<TemporaryFile> file;
-    if (blocks.size() > 1)
-    {
-        BlockInputStreams inputs;
-        inputs.reserve(blocks.size());
-        for (auto & block : blocks)
-            if (block.rows())
-                inputs.push_back(std::make_shared<OneBlockInputStream>(block));
-
-        MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
-        file = flushToFile(path, sample_block, sorted_input);
-    }
-    else
+    if (blocks.size() <= 1)
     {
         OneBlockInputStream sorted_input(blocks.front());
-        file = flushToFile(path, sample_block, sorted_input);
+        return flushToFile(path, sample_block, sorted_input);
     }
 
-    return file;
+    BlockInputStreams inputs;
+    inputs.reserve(blocks.size());
+    for (auto & block : blocks)
+        if (block.rows())
+            inputs.push_back(std::make_shared<OneBlockInputStream>(block));
+
+    MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
+    return flushToFile(path, sample_block, sorted_input);
 }
 
 SortedBlocksWriter::SortedFiles SortedBlocksWriter::merge(std::function<void(const Block &)> callback)
