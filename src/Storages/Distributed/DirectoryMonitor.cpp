@@ -588,7 +588,7 @@ bool StorageDistributedDirectoryMonitor::scheduleAfter(size_t ms)
 {
     if (quit)
         return false;
-    return task_handle->scheduleAfter(ms);
+    return task_handle->scheduleAfter(ms, false);
 }
 
 void StorageDistributedDirectoryMonitor::processFilesWithBatching(const std::map<UInt64, std::string> & files)
