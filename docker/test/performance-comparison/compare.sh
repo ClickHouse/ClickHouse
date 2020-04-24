@@ -126,7 +126,7 @@ function run_tests
     # Run only explicitly specified tests, if any
     if [ -v CHPC_TEST_GREP ]
     then
-        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP")
+        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
     fi
 
     if [ "$test_files" == "" ]
