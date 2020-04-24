@@ -21,6 +21,7 @@ RUN apt-get update \
             libgcc-7-dev \
             locales \
             tzdata \
+            ca-certificates \
             wget \
     && rm -rf \
         /var/lib/apt/lists/* \
