@@ -20,6 +20,7 @@ RUN apt-get update \
             clickhouse-server=$version \
             locales \
             tzdata \
+            ca-certificates \
             wget \
     && rm -rf \
         /var/lib/apt/lists/* \
