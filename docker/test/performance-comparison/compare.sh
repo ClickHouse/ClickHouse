@@ -124,11 +124,9 @@ function run_tests
     fi
 
     # Run only explicitly specified tests, if any
-    if [ -v CHPC_TEST_GLOB ]
+    if [ -v CHPC_TEST_GREP ]
     then
-        # I do want to expand the globs in the variable.
-        # shellcheck disable=SC2086
-        test_files=$(ls "$test_prefix"/$CHPC_TEST_GLOB.xml)
+        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
     fi
 
     if [ "$test_files" == "" ]
@@ -178,7 +176,7 @@ function run_tests
 
 function get_profiles_watchdog
 {
-    sleep 3000
+    sleep 6000
 
     echo "The trace collection did not finish in time." >> profile-errors.log
 
@@ -221,6 +219,11 @@ function get_profiles
     clickhouse-client --port 9002 --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
 
     wait
+
+    # Just check that the servers are alive so that we return a proper exit code.
+    # We don't consistently check the return codes of the above background jobs.
+    clickhouse-client --port 9001 --query "select 1"
+    clickhouse-client --port 9002 --query "select 1"
 }
 
 # Build and analyze randomization distribution for all queries.
@@ -471,7 +474,7 @@ case "$stage" in
     ;&
 "get_profiles")
     # Getting profiles inexplicably hangs sometimes, so try to save some logs if
-    # this happens again. Give the servers 5 minutes to collect all info, then
+    # this happens again. Give the servers some time to collect all info, then
     # trace and kill. Start in a subshell, so that both function don't interfere
     # with each other's jobs through `wait`. Also make the subshell have its own
     # process group, so that we can then kill it with all its child processes.
