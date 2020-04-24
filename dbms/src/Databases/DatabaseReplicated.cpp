@@ -190,4 +190,26 @@ void DatabaseReplicated::drop(const Context & context)
     // zookeeper path. does it work recursively? hope so...
 }
 
+void DatabaseOrdinary::loadStoredObjects(
+    Context & context,
+    bool has_force_restore_data_flag)
+{
+    syncReplicaState(context);
+    updateMetadata(context);
+
+    DatabaseOrdinary::loadStoredObjects(context, has_force_restore_data_flag);
+
+}
+
+// sync replica's zookeeper metadata
+void syncReplicaState(Context & context) {
+
+}
+
+// get the up to date metadata from zookeeper to local metadata dir
+// for replicated (only?) tables
+void updateMetadata(Context & context) {
+
+}
+
 }
