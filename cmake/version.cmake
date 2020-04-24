@@ -1,1 +1,1 @@
-dbms/cmake/version.cmake
+../dbms/cmake/version.cmake
