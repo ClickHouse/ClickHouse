@@ -1,6 +1,11 @@
 # docker build -t yandex/clickhouse-stateless-pytest .
 FROM yandex/clickhouse-deb-builder
 
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+        python-pip \
+        python-setuptools
+
 RUN pip install \
     pytest \
     pytest-html \
