@@ -55,9 +55,6 @@ public:
     }
     StoragePtr getParentStorage() const { return DatabaseCatalog::instance().getTable(select_table_id); }
 
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
-
     ASTPtr getInnerQuery() const { return inner_query->clone(); }
     ASTPtr getInnerSubQuery() const
     {

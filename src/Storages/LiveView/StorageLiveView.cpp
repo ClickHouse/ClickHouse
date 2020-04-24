@@ -245,7 +245,12 @@ StorageLiveView::StorageLiveView(
     Context & local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage(table_id_), global_context(local_context.getGlobalContext())
+    : IStorage(
+        table_id_,
+        ColumnsDescription(
+            {NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())},
+            /* all_virtual = */ true))
+    , global_context(local_context.getGlobalContext())
 {
     live_view_context = std::make_unique<Context>(global_context);
     live_view_context->makeQueryContext();
@@ -275,22 +280,6 @@ StorageLiveView::StorageLiveView(
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
-}
-
-NameAndTypePair StorageLiveView::getColumn(const String & column_name) const
-{
-    if (column_name == "_version")
-        return NameAndTypePair("_version", std::make_shared<DataTypeUInt64>());
-
-    return IStorage::getColumn(column_name);
-}
-
-bool StorageLiveView::hasColumn(const String & column_name) const
-{
-    if (column_name == "_version")
-        return true;
-
-    return IStorage::hasColumn(column_name);
 }
 
 Block StorageLiveView::getHeader() const
