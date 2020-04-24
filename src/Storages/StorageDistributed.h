@@ -62,9 +62,6 @@ public:
     bool supportsPrewhere() const override { return true; }
     StoragePolicyPtr getStoragePolicy() const override;
 
-    NameAndTypePair getColumn(const String & column_name) const override;
-    bool hasColumn(const String & column_name) const override;
-
     bool isRemote() const override { return true; }
 
     /// Return true if distributed_group_by_no_merge may be applied.

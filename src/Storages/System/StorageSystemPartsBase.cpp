@@ -255,24 +255,11 @@ Pipes StorageSystemPartsBase::read(
     return pipes;
 }
 
-NameAndTypePair StorageSystemPartsBase::getColumn(const String & column_name) const
-{
-    if (column_name == "_state")
-        return NameAndTypePair("_state", std::make_shared<DataTypeString>());
-
-    return IStorage::getColumn(column_name);
-}
-
-bool StorageSystemPartsBase::hasColumn(const String & column_name) const
-{
-    if (column_name == "_state")
-        return true;
-
-    return IStorage::hasColumn(column_name);
-}
 
 StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesList && columns_)
-    : IStorage({"system", name_})
+    : IStorage(
+        {"system", name_},
+        ColumnsDescription({NameAndTypePair("_state", std::make_shared<DataTypeString>())}, true))
 {
     ColumnsDescription tmp_columns(std::move(columns_));
 

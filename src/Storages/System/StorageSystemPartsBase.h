@@ -55,10 +55,6 @@ private:
 class StorageSystemPartsBase : public IStorage
 {
 public:
-    NameAndTypePair getColumn(const String & column_name) const override;
-
-    bool hasColumn(const String & column_name) const override;
-
     Pipes read(
             const Names & column_names,
             const SelectQueryInfo & query_info,

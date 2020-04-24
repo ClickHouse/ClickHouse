@@ -270,6 +270,19 @@ QueryProcessingStage::Enum getQueryProcessingStageImpl(const Context & context, 
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
 StorageDistributed::~StorageDistributed() = default;
 
+/// NOTE This is weird. Get rid of this.
+static const ColumnsDescription DISTRIBUTED_VIRTUALS = ColumnsDescription(
+    {
+        NameAndTypePair("_table", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_part", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
+        NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
+        NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()),
+    },
+    /* all_virtual = */ true);
+
+
 StorageDistributed::StorageDistributed(
     const StorageID & id_,
     const ColumnsDescription & columns_,
@@ -282,12 +295,7 @@ StorageDistributed::StorageDistributed(
     const String & storage_policy_,
     const String & relative_data_path_,
     bool attach_)
-    : IStorage(id_,
-               ColumnsDescription(
-                   {
-                       {"_shard_num", std::make_shared<DataTypeUInt32>()},
-                   },
-               true))
+    : IStorage(id_, DISTRIBUTED_VIRTUALS)
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , global_context(context_)
@@ -597,44 +605,11 @@ void StorageDistributed::truncate(const ASTPtr &, const Context &, TableStructur
     }
 }
 
-
-namespace
-{
-    /// NOTE This is weird. Get rid of this.
-    std::map<String, String> virtual_columns =
-    {
-        {"_table", "String"},
-        {"_part", "String"},
-        {"_part_index", "UInt64"},
-        {"_partition_id", "String"},
-        {"_sample_factor", "Float64"},
-    };
-}
-
-
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const
 {
     if (storage_policy.empty())
         return {};
     return global_context.getStoragePolicySelector()->get(storage_policy);
-}
-
-NameAndTypePair StorageDistributed::getColumn(const String & column_name) const
-{
-    if (getColumns().hasPhysical(column_name))
-        return getColumns().getPhysical(column_name);
-
-    auto it = virtual_columns.find(column_name);
-    if (it != virtual_columns.end())
-        return { it->first, DataTypeFactory::instance().get(it->second) };
-
-    throw Exception("There is no column " + column_name + " in table.", ErrorCodes::NO_SUCH_COLUMN_IN_TABLE);
-}
-
-
-bool StorageDistributed::hasColumn(const String & column_name) const
-{
-    return virtual_columns.count(column_name) || getColumns().hasPhysical(column_name);
 }
 
 void StorageDistributed::createDirectoryMonitors(const std::string & disk)

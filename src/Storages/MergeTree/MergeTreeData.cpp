@@ -114,6 +114,14 @@ namespace ErrorCodes
 
 const char * DELETE_ON_DESTROY_MARKER_PATH = "delete-on-destroy.txt";
 
+static const ColumnsDescription MERGE_TREE_VIRTUALS(
+    {
+        NameAndTypePair("_part", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
+        NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
+    },
+    /* all_virtual = */ true);
 
 MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
@@ -126,7 +134,7 @@ MergeTreeData::MergeTreeData(
     bool require_part_metadata_,
     bool attach,
     BrokenPartCallback broken_part_callback_)
-    : IStorage(table_id_)
+    : IStorage(table_id_, MERGE_TREE_VIRTUALS)
     , global_context(context_)
     , merging_params(merging_params_)
     , partition_by_ast(metadata.partition_by_ast)
