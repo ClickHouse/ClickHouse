@@ -219,6 +219,11 @@ function get_profiles
     clickhouse-client --port 9002 --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
 
     wait
+
+    # Just check that the servers are alive so that we return a proper exit code.
+    # We don't consistently check the return codes of the above background jobs.
+    clickhouse-client --port 9001 --query "select 1"
+    clickhouse-client --port 9002 --query "select 1"
 }
 
 # Build and analyze randomization distribution for all queries.
