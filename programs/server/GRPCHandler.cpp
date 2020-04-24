@@ -108,127 +108,74 @@
         responder.Finish(response, grpc::Status::OK, this);
     } else {
         GPR_ASSERT(status == FINISH);
+        delete this;
     }
  }
-
-void CallDataQuery::Execute() {
-    auto in = std::make_unique<ReadBufferFromString>(request.query());
-    try{
-        executeQuery(*in, *used_output, /* allow_into_outfile = */ false, context, 
-            [this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
-                {
-                }
-            );
-        progress_query.store(2);
-    } catch(...) {
-        progress_query.store(2);
-        LOG_TRACE(log, "Fault");
-    }
-}
-
  void CallDataQuery::Proceed(bool ok) {
     if (status == CREATE) {
         status = PROCESS;
         Service->RequestQuery(&gRPCcontext, &request, &responder, CompilationQueue, CompilationQueue, this);
     } else if (status == PROCESS) {
-        if(!new_responder_created)
+        new CallDataQuery(Service, CompilationQueue, iServer, log);
+        LOG_TRACE(log, "Process query");
+            
+        String out;
+        auto in = std::make_unique<ReadBufferFromString>(request.query());
+        auto used_output = std::make_unique<WriteBufferFromString>(out);
+
+        String server_display_name = iServer.config().getString("display_name", getFQDNOrHostName());
+
+        CurrentThread::QueryScope query_scope(context);
+
+        Poco::Net::SocketAddress user_adress(ParseGrpcPeer(gRPCcontext));
+        LOG_TRACE(log, "Request adress: " << user_adress.toString());
+
+        std::string user = request.x_clickhouse_user();
+        std::string password = request.x_clickhouse_key();
+        std::string quota_key = request.x_clickhouse_quota();
+        if (user.empty() && password.empty() && quota_key.empty())
         {
-            new CallDataQuery(Service, CompilationQueue, iServer, log);
-            new_responder_created = true ;
+            user =  "default";
+            password = "";
+            quota_key = "";
+        } else if (user.empty() || password.empty()){
+            throw Exception("Invalid authentication: required password", ErrorCodes::REQUIRED_PASSWORD);
         }
-        if (progress_query.load() == 0) {
-            LOG_TRACE(log, "Process query");
-            
-            
-            used_output = std::make_unique<WriteBufferFromString>(out);
 
-            String server_display_name = iServer.config().getString("display_name", getFQDNOrHostName());
+        context.setUser(user, password, user_adress, quota_key);
+        context.setCurrentQueryId(request.query_id());
 
-            CurrentThread::QueryScope query_scope(context);
+        const auto & config = iServer.config();
+        std::shared_ptr<NamedSession> session;
+        String session_id;
+        std::chrono::steady_clock::duration session_timeout;
+        if (!request.session_id().empty())
+        {
+            session_id = request.session_id();
+            session_timeout = parseSessionTimeout(config, request);
 
-            Poco::Net::SocketAddress user_adress(ParseGrpcPeer(gRPCcontext));
-            LOG_TRACE(log, "Request adress: " << user_adress.toString());
+            session = context.acquireNamedSession(session_id, session_timeout, true);
 
-            std::string user = request.x_clickhouse_user();
-            std::string password = request.x_clickhouse_key();
-            std::string quota_key = request.x_clickhouse_quota();
-            if (user.empty() && password.empty() && quota_key.empty())
-            {
-                user =  "default";
-                password = "";
-                quota_key = "";
-            } else if (user.empty() || password.empty()){
-                throw Exception("Invalid authentication: required password", ErrorCodes::REQUIRED_PASSWORD);
-            }
-
-            context.setUser(user, password, user_adress, quota_key);
-            context.setCurrentQueryId(request.query_id());
-
-            const auto & config = iServer.config();
-            std::shared_ptr<NamedSession> session;
-            String session_id;
-            std::chrono::steady_clock::duration session_timeout;
-            if (!request.session_id().empty())
-            {
-                session_id = request.session_id();
-                session_timeout = parseSessionTimeout(config, request);
-
-                session = context.acquireNamedSession(session_id, session_timeout, true);
-
-                context = session->context;
-                context.setSessionContext(session->context);
-            }
-
-            SCOPE_EXIT({
-                if (session)
-                    session->release();
-            });
-            auto appendCallback = [this] (ProgressCallback callback)
-            {
-                auto prev = context.getProgressCallback();
-
-                context.setProgressCallback([prev, callback] (const Progress & progress)
-                {
-                    if (prev)
-                        prev(progress);
-
-                    callback(progress);
-                });
-            };
-            if (request.interactive_delay() != 0)
-                appendCallback([this] (const Progress & progress) {
-                    accumulated_progress.incrementPiecewiseAtomically(progress);
-                });
-            
-            std::thread execute1 (&CallDataQuery::Execute, this);
-            execute = std::move(execute1);
-            int zero = 0;
-            progress_query.compare_exchange_strong(zero, 1);
-            response.set_progress("Executing" + std::to_string(progress_query.load()));
-            responder.Write(response, (void*)this);
-            LOG_TRACE(log, "Sent proccess");
-            
-        } else if (progress_query.load() == 1) {
-            while (progress_watch.elapsed() < request.interactive_delay() * 1000000 and progress_query.load() == 1) {
-                // LOG_TRACE(log, "Delay: " + std::to_string(request.interactive_delay()));
-            }
-            LOG_TRACE(log, "Delay: " + std::to_string(request.interactive_delay()));
-            progress_watch.restart();
-            WriteBufferFromOwnString progress_string_writer;
-            accumulated_progress.writeJSON(progress_string_writer);
-            response.set_progress(progress_string_writer.str());
-            responder.Write(response, (void*)this);   
-
-        } else if (progress_query.load() == 2) {
-            execute.join();
-            response.set_progress("");
-            response.set_query_id("Resut: "+ out);
-            responder.Write(response, (void*)this);
-            status = FINISH;
-            responder.Finish(grpc::Status(), (void*)this);
+            context = session->context;
+            context.setSessionContext(session->context);
         }
+
+        SCOPE_EXIT({
+            if (session)
+                session->release();
+        });
+        executeQuery(*in, *used_output, /* allow_into_outfile = */ false, context, 
+        [this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
+            {
+            }
+        );
+        used_output.out->finalize();
+        response.set_query_id("Result: "+ out);
+        status = FINISH;
+        responder.Finish(response, grpc::Status::OK, this);
     } else {
         GPR_ASSERT(status == FINISH);
+        delete this;
     }
  }
 

@@ -32,10 +32,11 @@
      grpc::ServerCompletionQueue* CompilationQueue;
      grpc::ServerContext gRPCcontext;
      IServer& iServer;
-     bool with_stacktrace = true;
+     bool with_stacktrace = false;
  	enum CallStatus { CREATE, PROCESS, FINISH };
      CallStatus status;
      Poco::Logger * log;
+     std::unique_ptr<CommonCallData> next_client;
 
  	public:
  		explicit CommonCallData(GRPC::AsyncService* Service_, grpc::ServerCompletionQueue* CompilationQueue_, IServer & iServer_, Poco::Logger * log_)
@@ -76,32 +77,22 @@
  class CallDataQuery : public CommonCallData {
  	public:
  		CallDataQuery(GRPC::AsyncService* Service_, grpc::ServerCompletionQueue* CompilationQueue_, IServer& server_, Poco::Logger * log_)
- 		: CommonCallData(Service_, CompilationQueue_, server_, log_), responder(&gRPCcontext), new_responder_created(false), context(iServer.context()) {
+ 		: CommonCallData(Service_, CompilationQueue_, server_, log_), responder(&gRPCcontext), context(iServer.context()) {
  			Proceed(true);
  		}
  		void Proceed(bool ok);
  		void HandleExceptions(const std::string& ex) {
  		    response.set_exception_occured(ex);
  		    status = FINISH;
- 			responder.Finish(grpc::Status(), (void*)this);
+ 		    responder.Finish(response, grpc::Status(), (void*)this);
  		}
           void Execute();
  	private:
-          std::mutex mutex;
  		QueryRequest request;
- 		bool new_responder_created;
      	QueryResponse response;
-     	grpc::ServerAsyncWriter<QueryResponse> responder;
-          //progress
-          Progress accumulated_progress;
-          Stopwatch progress_watch;
+     	grpc::ServerAsyncResponseWriter<QueryResponse> responder;
 
-          std::atomic_int progress_query{0};
-
-          String out;
-          std::unique_ptr<WriteBufferFromString> used_output;
           Context context;
-          std::thread execute;
  };
 
  class GRPCServer final : public Poco::Runnable {
@@ -126,8 +117,8 @@
  	}
  	void HandleRpcs() {
  		// ThreadStatus thread_status;
- 		std::unique_ptr<CallDataHello> hello(new CallDataHello(&Service, CompilationQueue.get(), iServer, log));
- 		std::unique_ptr<CallDataQuery> query(new CallDataQuery(&Service, CompilationQueue.get(), iServer, log));
+ 		new CallDataHello(&Service, CompilationQueue.get(), iServer, log);
+ 		new CallDataQuery(&Service, CompilationQueue.get(), iServer, log);
  		void* tag;
  		bool ok;
  		while (true) {
