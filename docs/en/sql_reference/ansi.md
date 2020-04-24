@@ -12,7 +12,7 @@ toc_title: ANSI Compatibility
 
 The following table lists cases when query feature works in ClickHouse, but behaves not as specified in ANSI SQL.
 
-| Feature ID | Feature Name                | Difference                                                                                                |
+| Feature ID | Feature Name                | Difference                                                                                                |
 |------------|-----------------------------|-----------------------------------------------------------------------------------------------------------|
 | E011       | Numeric data types          | Numeric literal with period is interpreted as approximate (`Float32`) instead of exact (`Decimal`)        |
 | E051-05    | Select items can be renamed | Item renames have a wider visibility scope than just the SELECT result                                    |
@@ -21,7 +21,7 @@ The following table lists cases when query feature works in ClickHouse, but beha
 
 ## Feature Status {#feature-status}
 
-| Feature ID | Feature Name                                                                                                             | Status      | Comment                                                                                                                                                                                   |
+| Feature ID | Feature Name                                                                                                             | Status      | Comment                                                                                                                                                                                   |
 |------------|--------------------------------------------------------------------------------------------------------------------------|-------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | **E011**   | **Numeric data types**                                                                                                   | **Partial** |                                                                                                                                                                                           |
 | E011-01    | INTEGER and SMALLINT data types                                                                                          | Yes         |                                                                                                                                                                                           |
