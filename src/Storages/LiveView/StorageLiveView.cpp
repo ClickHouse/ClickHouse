@@ -271,6 +271,11 @@ StorageLiveView::StorageLiveView(
         is_temporary = true;
         temporary_live_view_timeout = *query.live_view_timeout;
     }
+    if (query.live_view_auto_refresh)
+    {
+        is_auto_refreshed = true;
+        auto_refresh_live_view_interval = *query.live_view_auto_refresh;
+    }
 
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
@@ -371,6 +376,7 @@ bool StorageLiveView::getNewBlocks()
             (*blocks_ptr) = new_blocks;
             (*blocks_metadata_ptr) = new_blocks_metadata;
             updated = true;
+            wakeupEventsThread(LiveViewEvent::NEW_BLOCKS);
         }
     }
     return updated;
@@ -387,34 +393,44 @@ void StorageLiveView::checkTableCanBeDropped() const
     }
 }
 
-void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, const UInt64 & timeout)
+void StorageLiveView::eventsThread(std::shared_ptr<StorageLiveView> storage)
 {
-    bool drop_table = false;
-
     if (storage->shutdown_called)
         return;
 
     auto table_id = storage->getStorageID();
+    UInt64 next_event_timeout = 15;
+    unsigned int event = 0;
+    UInt64 event_timestamp_usec = 0;
+
+    while (true)
     {
-        while (true)
+        std::unique_lock lock(storage->events_thread_wakeup_mutex);
+        if (storage->events_thread_condition.wait_for(lock, std::chrono::seconds(next_event_timeout), [&] { return storage->events_thread_wakeup; }))
         {
-            std::unique_lock lock(storage->no_users_thread_wakeup_mutex);
-            if (!storage->no_users_thread_condition.wait_for(lock, std::chrono::seconds(timeout), [&] { return storage->no_users_thread_wakeup; }))
-            {
-                storage->no_users_thread_wakeup = false;
-                if (storage->shutdown_called)
-                    return;
-                if (storage->hasUsers())
-                    return;
-                if (!DatabaseCatalog::instance().getDependencies(table_id).empty())
-                    continue;
-                drop_table = true;
-            }
-            break;
+            storage->events_thread_wakeup = false;
+            event = storage->events_thread_event;
+            event_timestamp_usec = storage->events_thread_event_timestamp_usec;
+            storage->events_thread_event = 0;
+            storage->events_thread_event_timestamp_usec = 0;
+            std::cerr << "!!!: eventsThread got EVENT " << event << "\n";
+
+            if (storage->shutdown_called || event == LiveViewEvent::SHUTDOWN)
+                return;
+
+            //if (storage->hasUsers())
+            //    return;
+            //if (!DatabaseCatalog::instance().getDependencies(table_id).empty())
+            //    continue;
+            //if (storage->isTemporary())
+            //    drop_table = true;
+            continue;
         }
+        // timeout sleeping
+        std::cerr << "!!!: eventsThread timeout\n";
     }
 
-    if (drop_table)
+    /*if (drop_table)
     {
         if (DatabaseCatalog::instance().tryGetTable(table_id))
         {
@@ -434,46 +450,49 @@ void StorageLiveView::noUsersThread(std::shared_ptr<StorageLiveView> storage, co
                 tryLogCurrentException(__PRETTY_FUNCTION__);
             }
         }
+    }*/
+}
+
+void StorageLiveView::wakeupEventsThread(const LiveViewEvent & event)
+{
+    std::lock_guard events_thread_lock(events_thread_mutex);
+    if (events_thread.joinable())
+    {
+        std::lock_guard lock(events_thread_wakeup_mutex);
+        events_thread_wakeup = true;
+        events_thread_event |= event;
+        events_thread_event_timestamp_usec = static_cast<UInt64>(Poco::Timestamp().epochMicroseconds());
+
+        if (event == LiveViewEvent::NEW_USER)
+            events_thread_event &= ~static_cast<unsigned int>(LiveViewEvent::LAST_USER);
+        else if (event == LiveViewEvent::LAST_USER)
+            events_thread_event &= ~static_cast<unsigned int>(LiveViewEvent::NEW_USER);
+
+        events_thread_condition.notify_one();
     }
 }
 
-void StorageLiveView::startNoUsersThread(const UInt64 & timeout)
+void StorageLiveView::startEventsThread()
 {
-    bool expected = false;
-    if (!start_no_users_thread_called.compare_exchange_strong(expected, true))
-        return;
-
-    if (is_temporary)
+    if (is_temporary || is_auto_refreshed)
     {
-        std::lock_guard no_users_thread_lock(no_users_thread_mutex);
+        std::lock_guard events_thread_lock(events_thread_mutex);
 
-        if (shutdown_called)
+        if (events_thread.joinable())
             return;
 
-        if (no_users_thread.joinable())
         {
-            {
-                std::lock_guard lock(no_users_thread_wakeup_mutex);
-                no_users_thread_wakeup = true;
-                no_users_thread_condition.notify_one();
-            }
-            no_users_thread.join();
+            std::lock_guard lock(events_thread_wakeup_mutex);
+            events_thread_wakeup = false;
         }
-        {
-            std::lock_guard lock(no_users_thread_wakeup_mutex);
-            no_users_thread_wakeup = false;
-        }
-        if (!is_dropped)
-            no_users_thread = std::thread(&StorageLiveView::noUsersThread,
-                std::static_pointer_cast<StorageLiveView>(shared_from_this()), timeout);
+        events_thread = std::thread(&StorageLiveView::eventsThread,
+            std::static_pointer_cast<StorageLiveView>(shared_from_this()));
     }
-
-    start_no_users_thread_called = false;
 }
 
 void StorageLiveView::startup()
 {
-    startNoUsersThread(temporary_live_view_timeout);
+    startEventsThread();
 }
 
 void StorageLiveView::shutdown()
@@ -484,13 +503,14 @@ void StorageLiveView::shutdown()
         return;
 
     {
-        std::lock_guard no_users_thread_lock(no_users_thread_mutex);
-        if (no_users_thread.joinable())
+        std::lock_guard events_thread_lock(events_thread_mutex);
+        if (events_thread.joinable())
         {
             {
-                std::lock_guard lock(no_users_thread_wakeup_mutex);
-                no_users_thread_wakeup = true;
-                no_users_thread_condition.notify_one();
+                std::lock_guard lock(events_thread_wakeup_mutex);
+                events_thread_wakeup = true;
+                events_thread_event = LiveViewEvent::SHUTDOWN;
+                events_thread_condition.notify_one();
             }
         }
     }
@@ -501,9 +521,9 @@ StorageLiveView::~StorageLiveView()
     shutdown();
 
     {
-        std::lock_guard lock(no_users_thread_mutex);
-        if (no_users_thread.joinable())
-            no_users_thread.detach();
+        std::lock_guard lock(events_thread_mutex);
+        if (events_thread.joinable())
+            events_thread.detach();
     }
 }
 
@@ -572,18 +592,9 @@ BlockInputStreams StorageLiveView::watch(
         auto reader = std::make_shared<LiveViewEventsBlockInputStream>(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
-            context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
-            temporary_live_view_timeout);
+            context.getSettingsRef().live_view_heartbeat_interval.totalSeconds());
 
-        {
-            std::lock_guard no_users_thread_lock(no_users_thread_mutex);
-            if (no_users_thread.joinable())
-            {
-                std::lock_guard lock(no_users_thread_wakeup_mutex);
-                no_users_thread_wakeup = true;
-                no_users_thread_condition.notify_one();
-            }
-        }
+        wakeupEventsThread(LiveViewEvent::NEW_USER);
 
         {
             std::lock_guard lock(mutex);
@@ -603,18 +614,9 @@ BlockInputStreams StorageLiveView::watch(
         auto reader = std::make_shared<LiveViewBlockInputStream>(
             std::static_pointer_cast<StorageLiveView>(shared_from_this()),
             blocks_ptr, blocks_metadata_ptr, active_ptr, has_limit, limit,
-            context.getSettingsRef().live_view_heartbeat_interval.totalSeconds(),
-            temporary_live_view_timeout);
+            context.getSettingsRef().live_view_heartbeat_interval.totalSeconds());
 
-        {
-            std::lock_guard no_users_thread_lock(no_users_thread_mutex);
-            if (no_users_thread.joinable())
-            {
-                std::lock_guard lock(no_users_thread_wakeup_mutex);
-                no_users_thread_wakeup = true;
-                no_users_thread_condition.notify_one();
-            }
-        }
+        wakeupEventsThread(LiveViewEvent::NEW_USER);
 
         {
             std::lock_guard lock(mutex);
