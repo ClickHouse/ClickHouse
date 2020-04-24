@@ -52,7 +52,7 @@ optional settings are available:
 or
 ``` sql
 SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
-SETTINGS(format_csv_allow_single_quotes = 1)
+SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
 
