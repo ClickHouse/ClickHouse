@@ -270,7 +270,6 @@ QueryProcessingStage::Enum getQueryProcessingStageImpl(const Context & context, 
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
 StorageDistributed::~StorageDistributed() = default;
 
-/// NOTE This is weird. Get rid of this.
 static const ColumnsDescription DISTRIBUTED_VIRTUALS = ColumnsDescription(
     {
         NameAndTypePair("_table", std::make_shared<DataTypeString>()),
