@@ -40,7 +40,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
     <format>TabSeparated</format>
   </file>
   <settings>
-      <format_csv_allow_single_quotes>0/format_csv_allow_single_quotes>
+      <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
   </settings>
 </source>
 ```
