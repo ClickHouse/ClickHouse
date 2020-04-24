@@ -6,7 +6,7 @@ toc_title: ANSI Compatibility
 # ANSI SQL Compatibility of ClickHouse SQL Dialect {#ansi-sql-compatibility-of-clickhouse-sql-dialect}
 
 !!! note "Note"
-    This article relies on Table 38, “Feature taxonomy and definition for mandatory features”, Annex F of ISO/IEC CD 9075-2:2013.
+    This article relies on Table 38, “Feature taxonomy and definition for mandatory features”, Annex&nbsp;F of ISO/IEC&nbsp;CD&nbsp;9075-2:2013.
 
 ## Differences in Behaviour {#differences-in-behaviour}
 
