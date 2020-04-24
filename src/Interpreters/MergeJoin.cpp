@@ -489,6 +489,8 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::merge(std::function<void(con
     }
 
     BlockInputStreams inputs;
+    inputs.reserve(sorted_files.size() + blocks_to_flush.blocks.size());
+
     for (const auto & file : sorted_files)
         inputs.emplace_back(std::make_shared<TemporaryFileLazyInputStream>(file->path(), sample_block));
     for (auto & block : blocks_to_flush.blocks)
