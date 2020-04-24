@@ -79,6 +79,13 @@ def nodejs_container():
     yield docker.from_env().containers.get(cluster.project_name + '_mysqljs1_1')
 
 
+@pytest.fixture(scope='module')
+def java_container():
+    docker_compose = os.path.join(SCRIPT_DIR, 'clients', 'java', 'docker_compose.yml')
+    subprocess.check_call(['docker-compose', '-p', cluster.project_name, '-f', docker_compose, 'up', '--no-recreate', '-d', '--build'])
+    yield docker.from_env().containers.get(cluster.project_name + '_java1_1')
+
+
 def test_mysql_client(mysql_client, server_address):
     # type: (Container, str) -> None
     code, (stdout, stderr) = mysql_client.exec_run('''
@@ -264,6 +271,35 @@ def test_mysqljs_client(server_address, nodejs_container):
 
     code, (_, _) = nodejs_container.exec_run('node test.js {host} {port} user_with_empty_password 123'.format(host=server_address, port=server_port), demux=True)
     assert code == 1
+
+
+def test_java_client(server_address, java_container):
+    # type: (str, Container) -> None
+    with open(os.path.join(SCRIPT_DIR, 'clients', 'java', '0.reference')) as fp:
+        reference = fp.read()
+
+    # database not exists exception.
+    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
+                                                       'abc'.format(host=server_address, port=server_port), demux=True)
+    assert code == 1
+
+    # empty password passed.
+    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_empty_password --database '
+                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == reference
+
+    # non-empty password passed.
+    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user default --password 123 --database '
+                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == reference
+
+    # double-sha1 password passed.
+    code, (stdout, stderr) = java_container.exec_run('java JavaConnectorTest --host {host} --port {port} --user user_with_double_sha1 --password abacaba  --database '
+                                                       'default'.format(host=server_address, port=server_port), demux=True)
+    assert code == 0
+    assert stdout == reference
 
 
 def test_types(server_address):

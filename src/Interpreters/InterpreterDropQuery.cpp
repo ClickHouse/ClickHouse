@@ -93,7 +93,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             context.checkAccess(table->isView() ? AccessType::DROP_VIEW : AccessType::DROP_TABLE, table_id);
             table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+            auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table from memory, don't touch data and metadata
             database->detachTable(table_name);
         }
@@ -103,7 +103,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             table->checkTableCanBeDropped();
 
             /// If table was already dropped by anyone, an exception will be thrown
-            auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+            auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
             /// Drop table data, don't touch metadata
             table->truncate(query_ptr, context, table_lock);
         }
@@ -115,7 +115,7 @@ BlockIO InterpreterDropQuery::executeToTable(
             table->shutdown();
             /// If table was already dropped by anyone, an exception will be thrown
 
-            auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+            auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
 
             const std::string metadata_file_without_extension = database->getMetadataPath() + escapeForFileName(table_id.table_name);
             const auto prev_metadata_name = metadata_file_without_extension + ".sql";
@@ -188,7 +188,7 @@ BlockIO InterpreterDropQuery::executeToDictionary(
     {
         /// Drop dictionary from memory, don't touch data and metadata
         context.checkAccess(AccessType::DROP_DICTIONARY, database_name, dictionary_name);
-        database->detachDictionary(dictionary_name, context);
+        database->detachDictionary(dictionary_name);
     }
     else if (kind == ASTDropQuery::Kind::Truncate)
     {
@@ -216,7 +216,8 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
             if (kind == ASTDropQuery::Kind::Truncate)
             {
                 /// If table was already dropped by anyone, an exception will be thrown
-                auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+                auto table_lock =
+                        table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                 /// Drop table data, don't touch metadata
                 table->truncate(query_ptr, context, table_lock);
             }
@@ -225,7 +226,8 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
                 context_handle.removeExternalTable(table_name);
                 table->shutdown();
                 /// If table was already dropped by anyone, an exception will be thrown
-                auto table_lock = table->lockExclusively(context.getCurrentQueryId());
+                auto table_lock =
+                        table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
                 /// Delete table data
                 table->drop(table_lock);
                 table->is_dropped = true;
@@ -252,21 +254,26 @@ BlockIO InterpreterDropQuery::executeToDatabase(const String & database_name, AS
             bool drop = kind == ASTDropQuery::Kind::Drop;
             context.checkAccess(AccessType::DROP_DATABASE, database_name);
 
-            /// DETACH or DROP all tables and dictionaries inside database
-            for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+            if (database->shouldBeEmptyOnDetach())
             {
-                String current_table_name = iterator->name();
-                executeToTable(database_name, current_table_name, kind, false, false, false);
-            }
+                /// DETACH or DROP all tables and dictionaries inside database.
+                /// First we should DETACH or DROP dictionaries because StorageDictionary
+                /// must be detached only by detaching corresponding dictionary.
+                for (auto iterator = database->getDictionariesIterator(context); iterator->isValid(); iterator->next())
+                {
+                    String current_dictionary = iterator->name();
+                    executeToDictionary(database_name, current_dictionary, kind, false, false, false);
+                }
 
-            for (auto iterator = database->getDictionariesIterator(context); iterator->isValid(); iterator->next())
-            {
-                String current_dictionary = iterator->name();
-                executeToDictionary(database_name, current_dictionary, kind, false, false, false);
+                for (auto iterator = database->getTablesIterator(context); iterator->isValid(); iterator->next())
+                {
+                    String current_table_name = iterator->name();
+                    executeToTable(database_name, current_table_name, kind, false, false, false);
+                }
             }
 
             /// DETACH or DROP database itself
-            DatabaseCatalog::instance().detachDatabase(database_name, drop);
+            DatabaseCatalog::instance().detachDatabase(database_name, drop, database->shouldBeEmptyOnDetach());
         }
     }
 

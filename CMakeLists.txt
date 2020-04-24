@@ -213,10 +213,14 @@ if (COMPILER_CLANG)
     # TODO investigate that
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+
     if (OS_DARWIN)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -Wl,-U,_inside_main")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-U,_inside_main")
     endif()
+
+    # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fdiagnostics-absolute-paths")
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
@@ -343,6 +347,7 @@ include (cmake/find/rapidjson.cmake)
 include (cmake/find/fastops.cmake)
 include (cmake/find/orc.cmake)
 include (cmake/find/avro.cmake)
+include (cmake/find/msgpack.cmake)
 
 find_contrib_lib(cityhash)
 find_contrib_lib(farmhash)

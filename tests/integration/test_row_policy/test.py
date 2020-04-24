@@ -102,8 +102,8 @@ def test_join():
 
 def test_cannot_trick_row_policy_with_keyword_with():
     assert instance.query("WITH 0 AS a SELECT * FROM mydb.filtered_table1") == "1\t0\n1\t1\n"
-    assert instance.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1") == "1\t0\n1\t1\n"
-    assert instance.query("WITH 0 AS a SELECT a FROM mydb.filtered_table1") == "1\n1\n"
+    assert instance.query("WITH 0 AS a SELECT a, b FROM mydb.filtered_table1") == "0\t0\n0\t1\n"
+    assert instance.query("WITH 0 AS a SELECT a FROM mydb.filtered_table1") == "0\n0\n"
     assert instance.query("WITH 0 AS a SELECT b FROM mydb.filtered_table1") == "0\n1\n"
 
 
@@ -112,6 +112,9 @@ def test_prewhere_not_supported():
     assert expected_error in instance.query_and_get_error("SELECT * FROM mydb.filtered_table1 PREWHERE 1")
     assert expected_error in instance.query_and_get_error("SELECT * FROM mydb.filtered_table2 PREWHERE 1")
     assert expected_error in instance.query_and_get_error("SELECT * FROM mydb.filtered_table3 PREWHERE 1")
+
+    # However PREWHERE should still work for user without filtering.
+    assert instance.query("SELECT * FROM mydb.filtered_table1 PREWHERE 1", user="another") == "0\t0\n0\t1\n1\t0\n1\t1\n"
 
 
 def test_single_table_name():

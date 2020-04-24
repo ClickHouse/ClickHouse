@@ -4,18 +4,21 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/formatAST.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/parseAddress.h>
-#include "config_core.h"
 #include "DatabaseFactory.h"
 #include <Poco/File.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_MYSQL
-
-#include <Databases/DatabaseMySQL.h>
-
+#    include <Databases/DatabaseMySQL.h>
+#    include <Interpreters/evaluateConstantExpression.h>
 #endif
 
 
@@ -33,20 +36,31 @@ namespace ErrorCodes
 DatabasePtr DatabaseFactory::get(
     const String & database_name, const String & metadata_path, const ASTStorage * engine_define, Context & context)
 {
+    bool created = false;
+
     try
     {
-        Poco::File(metadata_path).createDirectory();
+        created = Poco::File(metadata_path).createDirectory();
         return getImpl(database_name, metadata_path, engine_define, context);
     }
     catch (...)
     {
         Poco::File metadata_dir(metadata_path);
 
-        if (metadata_dir.exists())
+        if (created && metadata_dir.exists())
             metadata_dir.remove(true);
 
         throw;
     }
+}
+
+template <typename ValueType>
+static inline ValueType safeGetLiteralValue(const ASTPtr &ast, const String &engine_name)
+{
+    if (!ast || !ast->as<ASTLiteral>())
+        throw Exception("Database engine " + engine_name + " requested literal argument.", ErrorCodes::BAD_ARGUMENTS);
+
+    return ast->as<ASTLiteral>()->value.safeGet<ValueType>();
 }
 
 DatabasePtr DatabaseFactory::getImpl(
@@ -79,11 +93,14 @@ DatabasePtr DatabaseFactory::getImpl(
             throw Exception("MySQL Database require mysql_hostname, mysql_database_name, mysql_username, mysql_password arguments.",
                             ErrorCodes::BAD_ARGUMENTS);
 
-        const auto & arguments = engine->arguments->children;
-        const auto & host_name_and_port = arguments[0]->as<ASTLiteral>()->value.safeGet<String>();
-        const auto & database_name_in_mysql = arguments[1]->as<ASTLiteral>()->value.safeGet<String>();
-        const auto & mysql_user_name = arguments[2]->as<ASTLiteral>()->value.safeGet<String>();
-        const auto & mysql_user_password = arguments[3]->as<ASTLiteral>()->value.safeGet<String>();
+
+        ASTs & arguments = engine->arguments->children;
+        arguments[1] = evaluateConstantExpressionOrIdentifierAsLiteral(arguments[1], context);
+
+        const auto & host_name_and_port = safeGetLiteralValue<String>(arguments[0], "MySQL");
+        const auto & database_name_in_mysql = safeGetLiteralValue<String>(arguments[1], "MySQL");
+        const auto & mysql_user_name = safeGetLiteralValue<String>(arguments[2], "MySQL");
+        const auto & mysql_user_password = safeGetLiteralValue<String>(arguments[3], "MySQL");
 
         try
         {
@@ -114,7 +131,7 @@ DatabasePtr DatabaseFactory::getImpl(
 
         const auto & arguments = engine->arguments->children;
 
-        const auto cache_expiration_time_seconds = arguments[0]->as<ASTLiteral>()->value.safeGet<UInt64>();
+        const auto cache_expiration_time_seconds = safeGetLiteralValue<UInt64>(arguments[0], "Lazy");
         return std::make_shared<DatabaseLazy>(database_name, metadata_path, cache_expiration_time_seconds, context);
     }
 

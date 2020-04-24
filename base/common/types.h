@@ -11,6 +11,10 @@ using Int16 = int16_t;
 using Int32 = int32_t;
 using Int64 = int64_t;
 
+#if __cplusplus <= 201703L
+using char8_t = unsigned char;
+#endif
+
 using UInt8 = char8_t;
 using UInt16 = uint16_t;
 using UInt32 = uint32_t;

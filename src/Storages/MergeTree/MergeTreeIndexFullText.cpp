@@ -19,6 +19,15 @@
 
 #include <boost/algorithm/string.hpp>
 
+#if defined(__SSE2__)
+#include <immintrin.h>
+
+#if defined(__SSE4_2__)
+#include <nmmintrin.h>
+#endif
+
+#endif
+
 
 namespace DB
 {
@@ -199,8 +208,7 @@ bool MergeTreeConditionFullText::mayBeTrueOnGranule(MergeTreeIndexGranulePtr idx
         else if (element.function == RPNElement::FUNCTION_EQUALS
              || element.function == RPNElement::FUNCTION_NOT_EQUALS)
         {
-            rpn_stack.emplace_back(
-                    granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
+            rpn_stack.emplace_back(granule->bloom_filters[element.key_column].contains(*element.bloom_filter), true);
 
             if (element.function == RPNElement::FUNCTION_NOT_EQUALS)
                 rpn_stack.back() = !rpn_stack.back();
@@ -606,8 +614,67 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
 {
     *token_start = *pos;
     *token_len = 0;
+
     while (*pos < len)
     {
+#if defined(__SSE2__)
+        // NOTE: we assume that `data` string is padded from the right with 15 bytes.
+        const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(data + *pos));
+        const size_t haystack_length = 16;
+
+#if defined(__SSE4_2__)
+        // With the help of https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
+        const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
+                '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
+        // Every bit represents if `haystack` character is in the ranges (1) or not (0)
+        const int result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
+#else
+        // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
+        const auto number_begin =      _mm_set1_epi8('0' - 1);
+        const auto number_end =        _mm_set1_epi8('9' + 1);
+        const auto alpha_lower_begin = _mm_set1_epi8('a' - 1);
+        const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
+        const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
+        const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
+        const auto zero  =             _mm_set1_epi8(0);
+
+        // every bit represents if `haystack` character `c` statisfies condition:
+        // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
+        // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
+        const int result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
+                _mm_cmplt_epi8(haystack, zero),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end))),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
+                _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_upper_begin), _mm_cmplt_epi8(haystack, alpha_upper_end))));
+#endif
+        if (result_bitmask == 0)
+        {
+            if (*token_len != 0)
+                // end of token started on previous haystack
+                return true;
+
+            *pos += haystack_length;
+            continue;
+        }
+
+        const auto token_start_pos_in_current_haystack = getTrailingZeroBitsUnsafe(result_bitmask);
+        if (*token_len == 0)
+            // new token
+            *token_start = *pos + token_start_pos_in_current_haystack;
+        else if (token_start_pos_in_current_haystack != 0)
+            // end of token starting in one of previous haystacks
+            return true;
+
+        const auto token_bytes_in_current_haystack = getTrailingZeroBitsUnsafe(~(result_bitmask >> token_start_pos_in_current_haystack));
+        *token_len += token_bytes_in_current_haystack;
+
+        *pos += token_start_pos_in_current_haystack + token_bytes_in_current_haystack;
+        if (token_start_pos_in_current_haystack + token_bytes_in_current_haystack == haystack_length)
+            // check if there are leftovers in next `haystack`
+            continue;
+
+        break;
+#else
         if (isASCII(data[*pos]) && !isAlphaNumericASCII(data[*pos]))
         {
             /// Finish current token if any
@@ -621,7 +688,16 @@ bool SplitTokenExtractor::next(const char * data, size_t len, size_t * pos, size
             ++*pos;
             ++*token_len;
         }
+#endif
     }
+
+#if defined(__SSE2__)
+    // Could happen only if string is not padded with zeroes, and we accidentally hopped over end of data.
+    if (*token_start > len)
+        return false;
+    *token_len = std::min(len - *token_start, *token_len);
+#endif
+
     return *token_len > 0;
 }
 

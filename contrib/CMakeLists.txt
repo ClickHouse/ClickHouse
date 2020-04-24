@@ -333,6 +333,5 @@ add_subdirectory(grpc-cmake)
 
 add_subdirectory(replxx-cmake)
 add_subdirectory(FastMemcpy)
-add_subdirectory(widecharwidth)
 add_subdirectory(consistent-hashing)
 add_subdirectory(consistent-hashing-sumbur)

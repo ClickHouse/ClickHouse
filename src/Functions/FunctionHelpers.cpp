@@ -69,12 +69,12 @@ static Block createBlockWithNestedColumnsImpl(const Block & block, const std::un
             {
                 res.insert({nullptr, nested_type, col.name});
             }
-            else if (auto * nullable = checkAndGetColumn<ColumnNullable>(*col.column))
+            else if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*col.column))
             {
                 const auto & nested_col = nullable->getNestedColumnPtr();
                 res.insert({nested_col, nested_type, col.name});
             }
-            else if (auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
+            else if (const auto * const_column = checkAndGetColumn<ColumnConst>(*col.column))
             {
                 const auto & nested_col = checkAndGetColumn<ColumnNullable>(const_column->getDataColumn())->getNestedColumnPtr();
                 res.insert({ ColumnConst::create(nested_col, col.column->size()), nested_type, col.name});

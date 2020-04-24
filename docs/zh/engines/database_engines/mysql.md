@@ -7,8 +7,6 @@ MySQL引擎用于将远程的MySQL服务器中的表映射到ClickHouse中，并
 
 但您无法对其执行以下操作：
 
--   `ATTACH`/`DETACH`
--   `DROP`
 -   `RENAME`
 -   `CREATE TABLE`
 -   `ALTER`
@@ -17,7 +15,7 @@ MySQL引擎用于将远程的MySQL服务器中的表映射到ClickHouse中，并
 
 ``` sql
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
-ENGINE = MySQL('host:port', 'database', 'user', 'password')
+ENGINE = MySQL('host:port', ['database' | database], 'user', 'password')
 ```
 
 **MySQL数据库引擎参数**

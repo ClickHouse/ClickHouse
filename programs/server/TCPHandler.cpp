@@ -6,7 +6,6 @@
 #include <Common/Stopwatch.h>
 #include <Common/NetException.h>
 #include <Common/setThreadName.h>
-#include <Common/config_version.h>
 #include <IO/Progress.h>
 #include <Compression/CompressedReadBuffer.h>
 #include <Compression/CompressedWriteBuffer.h>
@@ -32,6 +31,10 @@
 #include <Processors/Formats/LazyOutputFormat.h>
 
 #include "TCPHandler.h"
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config_version.h>
+#endif
 
 
 namespace DB
@@ -146,10 +149,6 @@ void TCPHandler::runImpl()
         /// If we need to shut down, or client disconnects.
         if (server.isCancelled() || in->eof())
             break;
-
-        /// receiveHello() has set the default settings for the current user,
-        /// but this default itself could change while we were waiting for a packet from the client.
-        connection_context.resetSettingsToDefault();
 
         /// Set context of request.
         query_context = connection_context;

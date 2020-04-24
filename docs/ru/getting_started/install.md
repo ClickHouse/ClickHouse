@@ -57,7 +57,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 Также есть возможность установить пакеты вручную, скачав отсюда: https://repo.yandex.ru/clickhouse/rpm/stable/x86\_64.
 
-### Из tgz архивов {#from-tgz-archives}
+### Из Tgz архивов {#from-tgz-archives}
 
 Команда ClickHouse в Яндексе рекомендует использовать предкомпилированные бинарники из `tgz` архивов для всех дистрибутивов, где невозможна установка `deb` и `rpm` пакетов.
 

@@ -28,6 +28,8 @@ from .client import Client
 from .hdfs_api import HDFSApi
 
 HELPERS_DIR = p.dirname(__file__)
+CLICKHOUSE_ROOT_DIR = p.join(p.dirname(__file__), "../../..")
+DOCKER_COMPOSE_DIR = p.join(CLICKHOUSE_ROOT_DIR, "docker/test/integration/compose/")
 DEFAULT_ENV_NAME = 'env_file'
 
 SANITIZER_SIGN = "=================="
@@ -139,12 +141,13 @@ class ClickHouseCluster:
             cmd += " client"
         return cmd
 
-    def add_instance(self, name, config_dir=None, main_configs=[], user_configs=[], macros={},
+    def add_instance(self, name, config_dir=None, main_configs=None, user_configs=None, macros=None,
                      with_zookeeper=False, with_mysql=False, with_kafka=False, clickhouse_path_dir=None,
                      with_odbc_drivers=False, with_postgres=False, with_hdfs=False, with_mongo=False,
                      with_redis=False, with_minio=False,
-                     hostname=None, env_variables={}, image="yandex/clickhouse-integration-test",
-                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=[]):
+                     hostname=None, env_variables=None, image="yandex/clickhouse-integration-test",
+                     stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None,
+                     zookeeper_docker_compose_path=None):
         """Add an instance to the cluster.
 
         name - the name of the instance directory and the value of the 'instance' macro in ClickHouse.
@@ -161,97 +164,101 @@ class ClickHouseCluster:
             raise Exception("Can\'t add instance `%s': there is already an instance with the same name!" % name)
 
         instance = ClickHouseInstance(
-            self, self.base_dir, name, config_dir, main_configs, user_configs, macros, with_zookeeper,
+            self, self.base_dir, name, config_dir, main_configs or [], user_configs or [], macros or {},
+            with_zookeeper,
             self.zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio,
             self.base_configs_dir, self.server_bin_path,
             self.odbc_bridge_bin_path, clickhouse_path_dir, with_odbc_drivers, hostname=hostname,
-            env_variables=env_variables, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
+            env_variables=env_variables or {}, image=image, stay_alive=stay_alive, ipv4_address=ipv4_address,
             ipv6_address=ipv6_address,
-            with_installed_binary=with_installed_binary, tmpfs=tmpfs)
+            with_installed_binary=with_installed_binary, tmpfs=tmpfs or [])
 
         self.instances[name] = instance
         if ipv4_address is not None or ipv6_address is not None:
             self.with_net_trics = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_net.yml')])
 
         self.base_cmd.extend(['--file', instance.docker_compose_path])
 
         cmds = []
         if with_zookeeper and not self.with_zookeeper:
+            if not zookeeper_docker_compose_path:
+                zookeeper_docker_compose_path = p.join(DOCKER_COMPOSE_DIR, 'docker_compose_zookeeper.yml')
+
             self.with_zookeeper = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')])
+            self.base_cmd.extend(['--file', zookeeper_docker_compose_path])
             self.base_zookeeper_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_zookeeper.yml')]
+                                       self.project_name, '--file', zookeeper_docker_compose_path]
             cmds.append(self.base_zookeeper_cmd)
 
         if with_mysql and not self.with_mysql:
             self.with_mysql = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')])
             self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')]
 
             cmds.append(self.base_mysql_cmd)
 
         if with_postgres and not self.with_postgres:
             self.with_postgres = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')])
             self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                      self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+                                      self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')]
             cmds.append(self.base_postgres_cmd)
 
         if with_odbc_drivers and not self.with_odbc_drivers:
             self.with_odbc_drivers = True
             if not self.with_mysql:
                 self.with_mysql = True
-                self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')])
+                self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')])
                 self.base_mysql_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                       self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mysql.yml')]
+                                       self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mysql.yml')]
                 cmds.append(self.base_mysql_cmd)
 
             if not self.with_postgres:
                 self.with_postgres = True
-                self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_postgres.yml')])
+                self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')])
                 self.base_postgres_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
                                           self.project_name, '--file',
-                                          p.join(HELPERS_DIR, 'docker_compose_postgres.yml')]
+                                          p.join(DOCKER_COMPOSE_DIR, 'docker_compose_postgres.yml')]
                 cmds.append(self.base_postgres_cmd)
 
         if with_kafka and not self.with_kafka:
             self.with_kafka = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_kafka.yml')])
             self.base_kafka_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_kafka.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_kafka.yml')]
             cmds.append(self.base_kafka_cmd)
 
         if with_hdfs and not self.with_hdfs:
             self.with_hdfs = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_hdfs.yml')])
             self.base_hdfs_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                  self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_hdfs.yml')]
+                                  self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_hdfs.yml')]
             cmds.append(self.base_hdfs_cmd)
 
         if with_mongo and not self.with_mongo:
             self.with_mongo = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mongo.yml')])
             self.base_mongo_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_mongo.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_mongo.yml')]
             cmds.append(self.base_mongo_cmd)
 
         if self.with_net_trics:
             for cmd in cmds:
-                cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_net.yml')])
+                cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_net.yml')])
 
         if with_redis and not self.with_redis:
             self.with_redis = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_redis.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_redis.yml')])
             self.base_redis_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_redis.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_redis.yml')]
 
         if with_minio and not self.with_minio:
             self.with_minio = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_minio.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_minio.yml')])
             self.base_minio_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                   self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_minio.yml')]
+                                   self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_minio.yml')]
             cmds.append(self.base_minio_cmd)
 
         return instance
@@ -580,17 +587,17 @@ class ClickHouseInstance:
             self, cluster, base_path, name, custom_config_dir, custom_main_configs, custom_user_configs, macros,
             with_zookeeper, zookeeper_config_path, with_mysql, with_kafka, with_mongo, with_redis, with_minio,
             base_configs_dir, server_bin_path, odbc_bridge_bin_path,
-            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables={},
+            clickhouse_path_dir, with_odbc_drivers, hostname=None, env_variables=None,
             image="yandex/clickhouse-integration-test",
-            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=[]):
+            stay_alive=False, ipv4_address=None, ipv6_address=None, with_installed_binary=False, tmpfs=None):
 
         self.name = name
-        self.base_cmd = cluster.base_cmd[:]
+        self.base_cmd = cluster.base_cmd
         self.docker_id = cluster.get_instance_docker_id(self.name)
         self.cluster = cluster
         self.hostname = hostname if hostname is not None else self.name
 
-        self.tmpfs = tmpfs[:]
+        self.tmpfs = tmpfs or []
         self.custom_config_dir = p.abspath(p.join(base_path, custom_config_dir)) if custom_config_dir else None
         self.custom_main_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_main_configs]
         self.custom_user_config_paths = [p.abspath(p.join(base_path, c)) for c in custom_user_configs]
@@ -611,7 +618,7 @@ class ClickHouseInstance:
 
         self.path = p.join(self.cluster.instances_dir, name)
         self.docker_compose_path = p.join(self.path, 'docker_compose.yml')
-        self.env_variables = env_variables
+        self.env_variables = env_variables or {}
         if with_odbc_drivers:
             self.odbc_ini_path = os.path.dirname(self.docker_compose_path) + "/odbc.ini:/etc/odbc.ini"
             self.with_mysql = True
@@ -923,6 +930,7 @@ class ClickHouseInstance:
 
         # The file is named with 0_ prefix to be processed before other configuration overloads.
         shutil.copy(p.join(HELPERS_DIR, '0_common_instance_config.xml'), self.config_d_dir)
+        shutil.copy(p.join(HELPERS_DIR, '0_common_instance_users.xml'), users_d_dir)
 
         # Generate and write macros file
         macros = self.macros.copy()

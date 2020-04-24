@@ -13,7 +13,7 @@
 #include "readInvalidateQuery.h"
 #include "writeParenthesisedString.h"
 #include "DictionaryFactory.h"
-
+#include "DictionarySourceHelpers.h"
 
 namespace DB
 {
@@ -50,6 +50,7 @@ static ConnectionPoolWithFailoverPtr createPool(
 ClickHouseDictionarySource::ClickHouseDictionarySource(
     const DictionaryStructure & dict_struct_,
     const Poco::Util::AbstractConfiguration & config,
+    const std::string & path_to_settings,
     const std::string & config_prefix,
     const Block & sample_block_,
     const Context & context_)
@@ -74,8 +75,11 @@ ClickHouseDictionarySource::ClickHouseDictionarySource(
 {
     /// We should set user info even for the case when the dictionary is loaded in-process (without TCP communication).
     context.setUser(user, password, Poco::Net::SocketAddress("127.0.0.1", 0), {});
+    context = copyContextAndApplySettings(path_to_settings, context, config);
+
     /// Processors are not supported here yet.
     context.setSetting("experimental_use_processors", false);
+
     /// Query context is needed because some code in executeQuery function may assume it exists.
     /// Current example is Context::getSampleBlockCache from InterpreterSelectWithUnionQuery::getSampleBlock.
     context.makeQueryContext();
@@ -132,7 +136,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadAll()
     {
         BlockIO res = executeQuery(load_all_query, context, true);
         /// FIXME res.in may implicitly use some objects owned be res, but them will be destructed after return
-        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        res.in = std::make_shared<ConvertingBlockInputStream>(res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
         return res.in;
     }
     return std::make_shared<RemoteBlockInputStream>(pool, load_all_query, sample_block, context);
@@ -144,7 +148,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::loadUpdatedAll()
     if (is_local)
     {
         auto res = executeQuery(load_update_query, context, true);
-        res.in = std::make_shared<ConvertingBlockInputStream>(context, res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+        res.in = std::make_shared<ConvertingBlockInputStream>(res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
         return res.in;
     }
     return std::make_shared<RemoteBlockInputStream>(pool, load_update_query, sample_block, context);
@@ -192,7 +196,7 @@ BlockInputStreamPtr ClickHouseDictionarySource::createStreamForSelectiveLoad(con
     {
         auto res = executeQuery(query, context, true);
         res.in = std::make_shared<ConvertingBlockInputStream>(
-            context, res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
+            res.in, sample_block, ConvertingBlockInputStream::MatchColumnsMode::Position);
         return res.in;
     }
 
@@ -227,7 +231,7 @@ void registerDictionarySourceClickHouse(DictionarySourceFactory & factory)
                                  const Context & context,
                                  bool /* check_config */) -> DictionarySourcePtr
     {
-        return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix + ".clickhouse", sample_block, context);
+        return std::make_unique<ClickHouseDictionarySource>(dict_struct, config, config_prefix, config_prefix + ".clickhouse", sample_block, context);
     };
     factory.registerSource("clickhouse", create_table_source);
 }

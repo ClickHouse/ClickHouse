@@ -180,7 +180,7 @@ def test_reload_users_xml_by_timer():
 
 def test_dcl_introspection():
     assert instance.query("SHOW QUOTAS") == "myQuota\n"
-    assert instance.query("SHOW CREATE QUOTA myQuota") == "CREATE QUOTA myQuota KEYED BY \\'user name\\' FOR INTERVAL 1 YEAR MAX QUERIES = 1000, MAX READ ROWS = 1000 TO default\n"
+    assert instance.query("SHOW CREATE QUOTA myQuota") == "CREATE QUOTA myQuota KEYED BY \\'user name\\' FOR INTERVAL 1 YEAR MAX QUERIES 1000, READ ROWS 1000 TO default\n"
     expected_usage = "myQuota key=\\\\'default\\\\' interval=\[.*\] queries=0/1000 errors=0 result_rows=0 result_bytes=0 read_rows=0/1000 read_bytes=0 execution_time=0"
     assert re.match(expected_usage, instance.query("SHOW QUOTA USAGE"))
     assert re.match(expected_usage, instance.query("SHOW QUOTA USAGE CURRENT"))
@@ -193,7 +193,7 @@ def test_dcl_introspection():
     # Add interval.
     copy_quota_xml('two_intervals.xml')
     assert instance.query("SHOW QUOTAS") == "myQuota\n"
-    assert instance.query("SHOW CREATE QUOTA myQuota") == "CREATE QUOTA myQuota KEYED BY \\'user name\\' FOR INTERVAL 1 YEAR MAX QUERIES = 1000, MAX READ ROWS = 1000, FOR RANDOMIZED INTERVAL 2 YEAR MAX RESULT BYTES = 30000, MAX READ BYTES = 20000, MAX EXECUTION TIME = 120 TO default\n"
+    assert instance.query("SHOW CREATE QUOTA myQuota") == "CREATE QUOTA myQuota KEYED BY \\'user name\\' FOR INTERVAL 1 YEAR MAX QUERIES 1000, READ ROWS 1000, FOR RANDOMIZED INTERVAL 2 YEAR MAX RESULT BYTES 30000, READ BYTES 20000, EXECUTION TIME 120 TO default\n"
     expected_usage = "myQuota key=\\\\'default\\\\' interval=\[.*\] queries=1/1000 errors=0 result_rows=50 result_bytes=200 read_rows=50/1000 read_bytes=200 execution_time=.*\n"\
                      "myQuota key=\\\\'default\\\\' interval=\[.*\] queries=0 errors=0 result_rows=0 result_bytes=0/30000 read_rows=0 read_bytes=0/20000 execution_time=0/120"
     assert re.match(expected_usage, instance.query("SHOW QUOTA USAGE"))
@@ -201,8 +201,8 @@ def test_dcl_introspection():
     # Drop interval, add quota.
     copy_quota_xml('two_quotas.xml')
     assert instance.query("SHOW QUOTAS") == "myQuota\nmyQuota2\n"
-    assert instance.query("SHOW CREATE QUOTA myQuota") == "CREATE QUOTA myQuota KEYED BY \\'user name\\' FOR INTERVAL 1 YEAR MAX QUERIES = 1000, MAX READ ROWS = 1000 TO default\n"
-    assert instance.query("SHOW CREATE QUOTA myQuota2") == "CREATE QUOTA myQuota2 KEYED BY \\'client key or user name\\' FOR RANDOMIZED INTERVAL 1 HOUR MAX RESULT ROWS = 4000, MAX RESULT BYTES = 400000, MAX READ ROWS = 4000, MAX READ BYTES = 400000, MAX EXECUTION TIME = 60, FOR INTERVAL 1 MONTH MAX EXECUTION TIME = 1800\n"
+    assert instance.query("SHOW CREATE QUOTA myQuota") == "CREATE QUOTA myQuota KEYED BY \\'user name\\' FOR INTERVAL 1 YEAR MAX QUERIES 1000, READ ROWS 1000 TO default\n"
+    assert instance.query("SHOW CREATE QUOTA myQuota2") == "CREATE QUOTA myQuota2 KEYED BY \\'client key or user name\\' FOR RANDOMIZED INTERVAL 1 HOUR MAX RESULT ROWS 4000, RESULT BYTES 400000, READ ROWS 4000, READ BYTES 400000, EXECUTION TIME 60, FOR INTERVAL 1 MONTH MAX EXECUTION TIME 1800\n"
     expected_usage = "myQuota key=\\\\'default\\\\' interval=\[.*\] queries=1/1000 errors=0 result_rows=50 result_bytes=200 read_rows=50/1000 read_bytes=200 execution_time=.*"
     assert re.match(expected_usage, instance.query("SHOW QUOTA USAGE"))
 
@@ -212,9 +212,9 @@ def test_dcl_management():
     assert instance.query("SHOW QUOTAS") == ""
     assert instance.query("SHOW QUOTA USAGE") == ""
     
-    instance.query("CREATE QUOTA qA FOR INTERVAL 15 MONTH SET MAX QUERIES = 123 TO CURRENT_USER")
+    instance.query("CREATE QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES 123 TO CURRENT_USER")
     assert instance.query("SHOW QUOTAS") == "qA\n"
-    assert instance.query("SHOW CREATE QUOTA qA") == "CREATE QUOTA qA KEYED BY \\'none\\' FOR INTERVAL 5 QUARTER MAX QUERIES = 123 TO default\n"
+    assert instance.query("SHOW CREATE QUOTA qA") == "CREATE QUOTA qA KEYED BY \\'none\\' FOR INTERVAL 5 QUARTER MAX QUERIES 123 TO default\n"
     expected_usage = "qA key=\\\\'\\\\' interval=\[.*\] queries=0/123 errors=0 result_rows=0 result_bytes=0 read_rows=0 read_bytes=0 execution_time=.*"
     assert re.match(expected_usage, instance.query("SHOW QUOTA USAGE"))
    
@@ -222,14 +222,14 @@ def test_dcl_management():
     expected_usage = "qA key=\\\\'\\\\' interval=\[.*\] queries=1/123 errors=0 result_rows=50 result_bytes=200 read_rows=50 read_bytes=200 execution_time=.*"
     assert re.match(expected_usage, instance.query("SHOW QUOTA USAGE"))
 
-    instance.query("ALTER QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES = 321, MAX ERRORS = 10, FOR INTERVAL 0.5 HOUR MAX EXECUTION TIME = 0.5")
-    assert instance.query("SHOW CREATE QUOTA qA") == "CREATE QUOTA qA KEYED BY \\'none\\' FOR INTERVAL 30 MINUTE MAX EXECUTION TIME = 0.5, FOR INTERVAL 5 QUARTER MAX QUERIES = 321, MAX ERRORS = 10 TO default\n"
+    instance.query("ALTER QUOTA qA FOR INTERVAL 15 MONTH MAX QUERIES 321, MAX ERRORS 10, FOR INTERVAL 0.5 HOUR MAX EXECUTION TIME 0.5")
+    assert instance.query("SHOW CREATE QUOTA qA") == "CREATE QUOTA qA KEYED BY \\'none\\' FOR INTERVAL 30 MINUTE MAX EXECUTION TIME 0.5, FOR INTERVAL 5 QUARTER MAX QUERIES 321, ERRORS 10 TO default\n"
     expected_usage = "qA key=\\\\'\\\\' interval=\[.*\] queries=0 errors=0 result_rows=0 result_bytes=0 read_rows=0 read_bytes=0 execution_time=.*/0.5\n"\
                      "qA key=\\\\'\\\\' interval=\[.*\] queries=1/321 errors=0/10 result_rows=50 result_bytes=200 read_rows=50 read_bytes=200 execution_time=.*"
     assert re.match(expected_usage, instance.query("SHOW QUOTA USAGE"))
 
-    instance.query("ALTER QUOTA qA FOR INTERVAL 15 MONTH UNSET TRACKING, FOR RANDOMIZED INTERVAL 16 MONTH SET TRACKING, FOR INTERVAL 1800 SECOND UNSET TRACKING")
-    assert instance.query("SHOW CREATE QUOTA qA") == "CREATE QUOTA qA KEYED BY \\'none\\' FOR RANDOMIZED INTERVAL 16 MONTH TRACKING TO default\n"
+    instance.query("ALTER QUOTA qA FOR INTERVAL 15 MONTH NO LIMITS, FOR RANDOMIZED INTERVAL 16 MONTH TRACKING ONLY, FOR INTERVAL 1800 SECOND NO LIMITS")
+    assert instance.query("SHOW CREATE QUOTA qA") == "CREATE QUOTA qA KEYED BY \\'none\\' FOR RANDOMIZED INTERVAL 16 MONTH TRACKING ONLY TO default\n"
     expected_usage = "qA key=\\\\'\\\\' interval=\[.*\] queries=0 errors=0 result_rows=0 result_bytes=0 read_rows=0 read_bytes=0 execution_time=.*"
     assert re.match(expected_usage, instance.query("SHOW QUOTA USAGE"))
 
@@ -238,7 +238,7 @@ def test_dcl_management():
     assert re.match(expected_usage, instance.query("SHOW QUOTA USAGE"))
 
     instance.query("ALTER QUOTA qA RENAME TO qB")
-    assert instance.query("SHOW CREATE QUOTA qB") == "CREATE QUOTA qB KEYED BY \\'none\\' FOR RANDOMIZED INTERVAL 16 MONTH TRACKING TO default\n"
+    assert instance.query("SHOW CREATE QUOTA qB") == "CREATE QUOTA qB KEYED BY \\'none\\' FOR RANDOMIZED INTERVAL 16 MONTH TRACKING ONLY TO default\n"
     expected_usage = "qB key=\\\\'\\\\' interval=\[.*\] queries=1 errors=0 result_rows=50 result_bytes=200 read_rows=50 read_bytes=200 execution_time=.*"
     assert re.match(expected_usage, instance.query("SHOW QUOTA USAGE"))
 

@@ -13,7 +13,6 @@
 #include <Common/LRUCache.h>
 #include <Common/MultiVersion.h>
 #include <Common/ThreadPool.h>
-#include "config_core.h"
 #include <Storages/IStorage_fwd.h>
 #include <atomic>
 #include <chrono>
@@ -24,6 +23,10 @@
 #include <optional>
 #include <thread>
 #include <Common/RemoteHostFilter.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
 
 
 namespace Poco
@@ -128,6 +131,23 @@ struct IHostContext
 
 using IHostContextPtr = std::shared_ptr<IHostContext>;
 
+/// A small class which owns ContextShared.
+/// We don't use something like unique_ptr directly to allow ContextShared type to be incomplete.
+struct SharedContextHolder
+{
+    ~SharedContextHolder();
+    SharedContextHolder();
+    SharedContextHolder(std::unique_ptr<ContextShared> shared_context);
+    SharedContextHolder(SharedContextHolder &&) noexcept;
+
+    SharedContextHolder & operator=(SharedContextHolder &&);
+
+    ContextShared * get() const { return shared.get(); }
+    void reset();
+private:
+    std::unique_ptr<ContextShared> shared;
+};
+
 /** A set of known objects that can be used in the query.
   * Consists of a shared part (always common to all sessions and queries)
   *  and copied part (which can be its own for each session or query).
@@ -137,8 +157,7 @@ using IHostContextPtr = std::shared_ptr<IHostContext>;
 class Context
 {
 private:
-    using Shared = std::shared_ptr<ContextShared>;
-    Shared shared;
+    ContextShared * shared;
 
     ClientInfo client_info;
     ExternalTablesInitializer external_tables_initializer_callback;
@@ -151,7 +170,6 @@ private:
     bool use_default_roles = false;
     std::shared_ptr<const ContextAccess> access;
     std::shared_ptr<const EnabledRowPolicies> initial_row_policy;
-    std::shared_ptr<const Settings> active_default_settings;
     String current_database;
     Settings settings;                                  /// Setting for query execution.
     using ProgressCallback = std::function<void(const Progress & progress)>;
@@ -191,7 +209,8 @@ private:
 
 public:
     /// Create initial Context with ContextShared and etc.
-    static Context createGlobal();
+    static Context createGlobal(ContextShared * shared);
+    static SharedContextHolder createShared();
 
     Context(const Context &);
     Context & operator=(const Context &);
@@ -346,9 +365,6 @@ public:
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
-    /// Reset settings to the default values for the current user.
-    void resetSettingsToDefault();
-
     /// Checks the constraints.
     void checkSettingsConstraints(const SettingChange & change) const;
     void checkSettingsConstraints(const SettingsChanges & changes) const;
@@ -472,9 +488,11 @@ public:
       */
     void dropCaches() const;
 
+    BackgroundSchedulePool & getBufferFlushSchedulePool();
     BackgroundProcessingPool & getBackgroundPool();
     BackgroundProcessingPool & getBackgroundMovePool();
     BackgroundSchedulePool & getSchedulePool();
+    BackgroundSchedulePool & getDistributedSchedulePool();
 
     void setDDLWorker(std::unique_ptr<DDLWorker> ddl_worker);
     DDLWorker & getDDLWorker() const;

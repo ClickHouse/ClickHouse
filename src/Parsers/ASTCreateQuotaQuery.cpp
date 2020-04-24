@@ -28,16 +28,17 @@ namespace
     }
 
 
-    void formatLimit(ResourceType resource_type, ResourceAmount max, const IAST::FormatSettings & settings)
+    void formatLimit(ResourceType resource_type, ResourceAmount max, bool first, const IAST::FormatSettings & settings)
     {
-        settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX " << Quota::resourceTypeToKeyword(resource_type)
-                      << (settings.hilite ? IAST::hilite_none : "");
+        if (first)
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " MAX" << (settings.hilite ? IAST::hilite_none : "");
+        else
+            settings.ostr << ",";
 
-        settings.ostr << (settings.hilite ? IAST::hilite_operator : "") << " = " << (settings.hilite ? IAST::hilite_none : "");
+        settings.ostr << " " << (settings.hilite ? IAST::hilite_keyword : "") << Quota::resourceTypeToKeyword(resource_type)
+                      << (settings.hilite ? IAST::hilite_none : "") << " ";
 
-        if (max == Quota::UNLIMITED)
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << "ANY" << (settings.hilite ? IAST::hilite_none : "");
-        else if (resource_type == Quota::EXECUTION_TIME)
+        if (resource_type == Quota::EXECUTION_TIME)
             settings.ostr << Quota::executionTimeToSeconds(max);
         else
             settings.ostr << max;
@@ -59,9 +60,9 @@ namespace
                       << interval_kind.toKeyword()
                       << (settings.hilite ? IAST::hilite_none : "");
 
-        if (limits.unset_tracking)
+        if (limits.drop)
         {
-            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " UNSET TRACKING" << (settings.hilite ? IAST::hilite_none : "");
+            settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " NO LIMITS" << (settings.hilite ? IAST::hilite_none : "");
         }
         else
         {
@@ -70,21 +71,19 @@ namespace
             {
                 if (limits.max[resource_type])
                 {
-                    if (limit_found)
-                        settings.ostr << ",";
+                    formatLimit(resource_type, *limits.max[resource_type], !limit_found, settings);
                     limit_found = true;
-                    formatLimit(resource_type, *limits.max[resource_type], settings);
                 }
             }
             if (!limit_found)
-                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TRACKING" << (settings.hilite ? IAST::hilite_none : "");
+                settings.ostr << (settings.hilite ? IAST::hilite_keyword : "") << " TRACKING ONLY" << (settings.hilite ? IAST::hilite_none : "");
         }
     }
 
     void formatAllLimits(const std::vector<ASTCreateQuotaQuery::Limits> & all_limits, const IAST::FormatSettings & settings)
     {
         bool need_comma = false;
-        for (auto & limits : all_limits)
+        for (const auto & limits : all_limits)
         {
             if (need_comma)
                 settings.ostr << ",";
@@ -150,7 +149,7 @@ void ASTCreateQuotaQuery::formatImpl(const FormatSettings & settings, FormatStat
 }
 
 
-void ASTCreateQuotaQuery::replaceCurrentUserTagWithName(const String & current_user_name)
+void ASTCreateQuotaQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
 {
     if (roles)
         roles->replaceCurrentUserTagWithName(current_user_name);

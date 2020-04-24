@@ -7,7 +7,6 @@
 
 #include <DataStreams/OneBlockInputStream.h>
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/CollapsingSortedBlockInputStream.h>
 #include <DataStreams/CollapsingFinalBlockInputStream.h>
 #include <DataStreams/copyData.h>
 #include <Interpreters/Context.h>
@@ -67,7 +66,8 @@ try
     //CollapsingSortedBlockInputStream collapsed(inputs, descr, "Sign", 1048576);
     CollapsingFinalBlockInputStream collapsed(inputs, descr, "Sign");
 
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
     WriteBufferFromFileDescriptor out_buf(STDERR_FILENO);
     BlockOutputStreamPtr output = context.getOutputFormat("TabSeparated", out_buf, block1);

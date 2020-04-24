@@ -53,7 +53,7 @@ public:
 
         void finalize();
 
-        void sync();
+        void sync() const;
 
         void addToChecksums(IMergeTreeDataPart::Checksums & checksums);
     };
@@ -102,13 +102,12 @@ public:
         written_offset_columns = written_offset_columns_;
     }
 
-    using SkipIndices = std::vector<MergeTreeIndexPtr>;
-    const SkipIndices & getSkipIndices() { return skip_indices; }
+    const MergeTreeIndices & getSkipIndices() { return skip_indices; }
 
     void initSkipIndices();
     void initPrimaryIndex();
 
-    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums, bool sync = false) = 0;
+    virtual void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) = 0;
     void finishPrimaryIndexSerialization(MergeTreeData::DataPart::Checksums & checksums);
     void finishSkipIndicesSerialization(MergeTreeData::DataPart::Checksums & checksums);
 
@@ -126,7 +125,7 @@ protected:
 
     CompressionCodecPtr default_codec;
 
-    std::vector<MergeTreeIndexPtr> skip_indices;
+    MergeTreeIndices skip_indices;
 
     MergeTreeWriterSettings settings;
 
