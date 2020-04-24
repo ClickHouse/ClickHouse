@@ -141,7 +141,6 @@ def build_for_lang(lang, args):
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
             edit_uri=f'edit/master/docs/{lang}',
-            extra_css=[f'assets/stylesheets/custom.css?{args.rev_short}'],
             markdown_extensions=markdown_extensions,
             plugins=plugins,
             extra={
