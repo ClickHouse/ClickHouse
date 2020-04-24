@@ -145,11 +145,11 @@ public:
 
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t) override
     {
-        auto starts = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
-        auto const_starts = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
+        const auto * starts = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
+        const auto * const_starts = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[0]).column.get());
 
-        auto durations = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
-        auto const_durations = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
+        const auto * durations = checkAndGetColumn<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
+        const auto * const_durations = checkAndGetColumnConst<ColumnUInt32>(block.getByPosition(arguments[1]).column.get());
 
         auto res = ColumnArray::create(ColumnUInt32::create());
         ColumnUInt32::Container & res_values = typeid_cast<ColumnUInt32 &>(res->getData()).getData();
@@ -158,7 +158,7 @@ public:
 
         if (arguments.size() == 3)
         {
-            auto time_slot_column = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[2]).column.get());
+            const auto * time_slot_column = checkAndGetColumn<ColumnConst>(block.getByPosition(arguments[2]).column.get());
             if (!time_slot_column)
                 throw Exception("Third argument for function " + getName() + " must be constant UInt32", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
 

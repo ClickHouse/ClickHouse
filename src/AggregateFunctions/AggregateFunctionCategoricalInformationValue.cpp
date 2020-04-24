@@ -31,7 +31,7 @@ AggregateFunctionPtr createAggregateFunctionCategoricalIV(
             "Aggregate function " + name + " requires two or more arguments",
             ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH);
 
-    for (auto & argument : arguments)
+    for (const auto & argument : arguments)
     {
         if (!WhichDataType(argument).isUInt8())
             throw Exception(

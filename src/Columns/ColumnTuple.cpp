@@ -121,7 +121,7 @@ void ColumnTuple::insertData(const char *, size_t)
 
 void ColumnTuple::insert(const Field & x)
 {
-    auto & tuple = DB::get<const Tuple &>(x);
+    const auto & tuple = DB::get<const Tuple &>(x);
 
     const size_t tuple_size = columns.size();
     if (tuple.size() != tuple_size)
@@ -158,7 +158,7 @@ void ColumnTuple::popBack(size_t n)
 StringRef ColumnTuple::serializeValueIntoArena(size_t n, Arena & arena, char const *& begin) const
 {
     StringRef res(begin, 0);
-    for (auto & column : columns)
+    for (const auto & column : columns)
     {
         auto value_ref = column->serializeValueIntoArena(n, arena, begin);
         res.data = value_ref.data - res.size;
@@ -178,7 +178,7 @@ const char * ColumnTuple::deserializeAndInsertFromArena(const char * pos)
 
 void ColumnTuple::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    for (auto & column : columns)
+    for (const auto & column : columns)
         column->updateHashWithValue(n, hash);
 }
 
@@ -190,7 +190,7 @@ void ColumnTuple::updateWeakHash32(WeakHash32 & hash) const
         throw Exception("Size of WeakHash32 does not match size of column: column size is " + std::to_string(s) +
                         ", hash size is " + std::to_string(hash.getData().size()), ErrorCodes::LOGICAL_ERROR);
 
-    for (auto & column : columns)
+    for (const auto & column : columns)
         column->updateWeakHash32(hash);
 }
 
@@ -385,7 +385,7 @@ void ColumnTuple::forEachSubcolumn(ColumnCallback callback)
 
 bool ColumnTuple::structureEquals(const IColumn & rhs) const
 {
-    if (auto rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
+    if (const auto * rhs_tuple = typeid_cast<const ColumnTuple *>(&rhs))
     {
         const size_t tuple_size = columns.size();
         if (tuple_size != rhs_tuple->columns.size())

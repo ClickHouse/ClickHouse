@@ -507,14 +507,14 @@ Yapılandırma yapısı:
 <storage_configuration>
     <disks>
         <disk_name_1> <!-- disk name -->
-            <path>/mnt/fast_ssd/clickhouse</path>
+            <path>/mnt/fast_ssd/clickhouse/</path>
         </disk_name_1>
         <disk_name_2>
-            <path>/mnt/hdd1/clickhouse</path>
+            <path>/mnt/hdd1/clickhouse/</path>
             <keep_free_space_bytes>10485760</keep_free_space_bytes>
         </disk_name_2>
         <disk_name_3>
-            <path>/mnt/hdd2/clickhouse</path>
+            <path>/mnt/hdd2/clickhouse/</path>
             <keep_free_space_bytes>10485760</keep_free_space_bytes>
         </disk_name_3>
 

@@ -14,8 +14,8 @@ function configure
     rm right/config/config.d/text_log.xml ||:
     cp -rv right/config left ||:
 
-    sed -i 's/<tcp_port>9000/<tcp_port>9001/g' left/config/config.xml
-    sed -i 's/<tcp_port>9000/<tcp_port>9002/g' right/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9001/g' left/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9002/g' right/config/config.xml
 
     # Start a temporary server to rename the tables
     while killall clickhouse-server; do echo . ; sleep 1 ; done
@@ -124,11 +124,9 @@ function run_tests
     fi
 
     # Run only explicitly specified tests, if any
-    if [ -v CHPC_TEST_GLOB ]
+    if [ -v CHPC_TEST_GREP ]
     then
-        # I do want to expand the globs in the variable.
-        # shellcheck disable=SC2086
-        test_files=$(ls "$test_prefix"/$CHPC_TEST_GLOB.xml)
+        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP")
     fi
 
     if [ "$test_files" == "" ]
@@ -178,9 +176,9 @@ function run_tests
 
 function get_profiles_watchdog
 {
-    sleep 3000
+    sleep 6000
 
-    echo "The trace collection did not finish in time." >> report-errors.rep
+    echo "The trace collection did not finish in time." >> profile-errors.log
 
     for pid in $(pgrep -f clickhouse)
     do
@@ -249,6 +247,8 @@ do
 done
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
+
+cat profile-errors.log >> report-errors.rep
 
 clickhouse-local --query "
 create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
@@ -329,7 +329,7 @@ do
 clickhouse-local --query "
 create view queries as
     select * from file('queries.rep', TSVWithNamesAndTypes,
-        'short int, unstable int, changed int, left float, right float,
+        'short int, changed int, unstable int, left float, right float,
             diff float, rd Array(float), test text, query text');
 
 create view query_log as select *
@@ -447,7 +447,7 @@ unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
-grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' >> run-errors.tsv ||:
 }
 
 # Check that local and client are in PATH
@@ -469,7 +469,7 @@ case "$stage" in
     ;&
 "get_profiles")
     # Getting profiles inexplicably hangs sometimes, so try to save some logs if
-    # this happens again. Give the servers 5 minutes to collect all info, then
+    # this happens again. Give the servers some time to collect all info, then
     # trace and kill. Start in a subshell, so that both function don't interfere
     # with each other's jobs through `wait`. Also make the subshell have its own
     # process group, so that we can then kill it with all its child processes.

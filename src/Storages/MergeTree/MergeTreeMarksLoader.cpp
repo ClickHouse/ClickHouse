@@ -96,7 +96,7 @@ void MergeTreeMarksLoader::loadMarks()
         auto key = mark_cache->hash(mrk_path);
         if (save_marks_in_cache)
         {
-            auto callback = std::bind(&MergeTreeMarksLoader::loadMarksImpl, this);
+            auto callback = [this]{ return loadMarksImpl(); };
             marks = mark_cache->getOrSet(key, callback);
         }
         else

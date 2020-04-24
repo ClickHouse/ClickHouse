@@ -619,7 +619,7 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
             const auto str_size = string.size();
             if (str_size != 0)
             {
-                auto string_ptr = string_arena->alloc(str_size + 1);
+                auto * string_ptr = string_arena->alloc(str_size + 1);
                 std::copy(string.data(), string.data() + str_size + 1, string_ptr);
                 string_ref = StringRef{string_ptr, str_size};
             }
@@ -896,7 +896,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
                         break;
                 }
 
-                const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
+                const auto * id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
                 if (!id_column)
                     throw Exception{name + ": id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
 

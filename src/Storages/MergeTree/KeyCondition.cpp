@@ -318,7 +318,7 @@ ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_inversio
         return result_node;
     }
 
-    const auto cloned_node = node->clone();
+    auto cloned_node = node->clone();
 
     if (func && inverse_relations.find(func->name) != inverse_relations.cend())
     {

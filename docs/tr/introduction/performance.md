@@ -7,7 +7,7 @@ toc_title: Performans
 
 # Performans {#performance}
 
-Yandex'deki dahili test sonuçlarına göre, ClickHouse, test için mevcut olan sınıfının sistemleri arasında karşılaştırılabilir işletim senaryoları için en iyi performansı (hem uzun sorgular için en yüksek verim hem de kısa sorgularda en düşük gecikme süresi) gösterir. Test sonuçlarını bir [ayrı sayfa](https://clickhouse.tech/benchmark.html).
+Yandex'deki dahili test sonuçlarına göre, ClickHouse, test için mevcut olan sınıfının sistemleri arasında karşılaştırılabilir işletim senaryoları için en iyi performansı (hem uzun sorgular için en yüksek verim hem de kısa sorgularda en düşük gecikme süresi) gösterir. Test sonuçlarını bir [ayrı sayfa](https://clickhouse.tech/benchmark/dbms/).
 
 Çok sayıda bağımsız kriterler benzer sonuçlara geldi. Bir internet araması kullanarak bulmak zor değildir veya görebilirsiniz [ilgili bağlantı ourlardan oluşan küçük koleksiyon collectionumuz](https://clickhouse.tech/#independent-benchmarks).
 

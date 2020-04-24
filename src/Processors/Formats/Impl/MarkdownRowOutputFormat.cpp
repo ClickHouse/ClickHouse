@@ -9,7 +9,7 @@ MarkdownRowOutputFormat::MarkdownRowOutputFormat(WriteBuffer & out_, const Block
 
 void MarkdownRowOutputFormat::writePrefix()
 {
-    auto & header = getPort(PortKind::Main).getHeader();
+    const auto & header = getPort(PortKind::Main).getHeader();
     size_t columns = header.columns();
 
     writeChar('|', out);
