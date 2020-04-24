@@ -36,6 +36,7 @@ CHECK_MARK = colored('🗸', 'green')
 CROSS_MARK = colored('🗙', 'red')
 BACKPORT_LABEL_MARK = colored('🏷', 'yellow')
 CONFLICT_LABEL_MARK = colored('☁', 'yellow')
+NO_BACKPORT_LABEL_MARK = colored('━', 'yellow')
 CLOCK_MARK = colored('↻', 'cyan')
 
 
@@ -90,14 +91,17 @@ def print_responsible(pull_request):
     else:
         return f'{pull_request["author"]["login"]} → {pull_request["mergedBy"]["login"]}'
 
+LABEL_NO_BACKPORT = 'pr-no-backport'
 bad_pull_requests = []  # collect and print if not empty
 need_backporting = []
 for pull_request in pull_requests:
 
     def find_label():
-        for label in github.get_labels(pull_request):
+        labels = github.get_labels(pull_request)
+        backport_allowed = LABEL_NO_BACKPORT not in map(lambda label: label['name'], labels)
+        for label in labels:
             if label['name'].startswith('pr-'):
-                if label['color'] == 'ff0000':
+                if label['color'] == 'ff0000' and backport_allowed:
                     need_backporting.append(pull_request)
                 return True
         return False
@@ -131,6 +135,7 @@ if need_backporting:
     re_vlabel = re.compile(r'^v\d+\.\d+$')
     re_vlabel_backported = re.compile(r'^v\d+\.\d+-backported$')
     re_vlabel_conflicts = re.compile(r'^v\d+\.\d+-conflicts$')
+    re_vlabel_no_backport = re.compile(r'^v\d+\.\d+-no-backport$')
 
     print('\nPull-requests need to be backported:')
     for pull_request in reversed(sorted(need_backporting, key=lambda x: x['number'])):
@@ -138,6 +143,7 @@ if need_backporting:
         good = set()
         backport_labeled = set()
         conflict_labeled = set()
+        no_backport_labeled = set()
         wait = set()
 
         for stable in stables:
@@ -153,6 +159,9 @@ if need_backporting:
                     if re_vlabel_conflicts.match(label['name']):
                         if f'v{stable[0]}-conflicts' == label['name']:
                             conflict_labeled.add(stable[0])
+                    if re_vlabel_no_backport.match(label['name']):
+                        if f'v{stable[0]}-no-backport' == label['name']:
+                            no_backport_labeled.add(stable[0])
 
         for event in github.get_timeline(pull_request):
             if(event['isCrossRepository'] or
@@ -174,7 +183,7 @@ if need_backporting:
                 wait.add(event['source']['baseRefName'])
 
         # print pull-request's status
-        if len(good) + len(backport_labeled) + len(conflict_labeled) == len(targets):
+        if len(good) + len(backport_labeled) + len(conflict_labeled) + len(no_backport_labeled) == len(targets):
             print(f'{CHECK_MARK}', end=' ')
         else:
             print(f'{CROSS_MARK}', end=' ')
@@ -186,6 +195,8 @@ if need_backporting:
                 print(f'\t{BACKPORT_LABEL_MARK} {target}', end='')
             elif target in conflict_labeled:
                 print(f'\t{CONFLICT_LABEL_MARK} {target}', end='')
+            elif target in no_backport_labeled:
+                print(f'\t{NO_BACKPORT_LABEL_MARK} {target}', end='')
             elif target in wait:
                 print(f'\t{CLOCK_MARK} {target}', end='')
             else:
@@ -198,6 +209,7 @@ print(f'{CHECK_MARK} - good')
 print(f'{CROSS_MARK} - bad')
 print(f'{BACKPORT_LABEL_MARK} - backport is detected via label')
 print(f'{CONFLICT_LABEL_MARK} - backport conflict is detected via label')
+print(f'{NO_BACKPORT_LABEL_MARK} - backport to this release is not needed')
 print(f'{CLOCK_MARK} - backport is waiting to merge')
 
 # print API costs
