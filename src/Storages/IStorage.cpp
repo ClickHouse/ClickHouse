@@ -31,18 +31,13 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
 }
 
-IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), virtuals(std::move(virtuals_))
+IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), columns(std::move(virtuals_))
 {
 }
 
 const ColumnsDescription & IStorage::getColumns() const
 {
     return columns;
-}
-
-const ColumnsDescription & IStorage::getVirtuals() const
-{
-    return virtuals;
 }
 
 const IndicesDescription & IStorage::getIndices() const
@@ -296,9 +291,11 @@ void IStorage::setColumns(ColumnsDescription columns_)
 {
     if (columns_.getOrdinary().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    ColumnsDescription old_virtuals(columns.getVirtuals(), true);
+
     columns = std::move(columns_);
 
-    for (const auto & column : virtuals)
+    for (const auto & column : old_virtuals)
     {
         if (!columns.has(column.name))
             columns.add(column);

@@ -144,7 +144,6 @@ public:
 public: /// thread-unsafe part. lockStructure must be acquired
     virtual const ColumnsDescription & getColumns() const; /// returns combined set of columns
     virtual void setColumns(ColumnsDescription columns_); /// sets only real columns, possibly overwrites virtual ones.
-    const ColumnsDescription & getVirtuals() const;
     const IndicesDescription & getIndices() const;
 
     const ConstraintsDescription & getConstraints() const;
@@ -184,14 +183,13 @@ protected: /// still thread-unsafe part.
 
     /// Returns whether the column is virtual - by default all columns are real.
     /// Initially reserved virtual column name may be shadowed by real column.
-    virtual bool isVirtualColumn(const String & column_name) const;
+    bool isVirtualColumn(const String & column_name) const;
 
 
 private:
     StorageID storage_id;
     mutable std::mutex id_mutex;
     ColumnsDescription columns; /// combined real and virtual columns
-    const ColumnsDescription virtuals = {};
     IndicesDescription indices;
     ConstraintsDescription constraints;
 
