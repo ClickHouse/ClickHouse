@@ -20,28 +20,69 @@ struct MergeJoinEqualRange;
 class Volume;
 using VolumePtr = std::shared_ptr<Volume>;
 
-struct MiniLSM
+struct SortedBlocksWriter
 {
-    using SortedFiles = std::vector<std::unique_ptr<TemporaryFile>>;
+    using TmpFilePtr = std::unique_ptr<TemporaryFile>;
+    using SortedFiles = std::vector<TmpFilePtr>;
 
+    struct Blocks
+    {
+        BlocksList blocks;
+        size_t row_count = 0;
+        size_t bytes = 0;
+
+        bool empty() const { return blocks.empty(); }
+
+        void insert(Block && block)
+        {
+            countBlockSize(block);
+            blocks.emplace_back(std::move(block));
+        }
+
+        void countBlockSize(const Block & block)
+        {
+            row_count += block.rows();
+            bytes += block.bytes();
+        }
+
+        void clear()
+        {
+            blocks.clear();
+            row_count = 0;
+            bytes = 0;
+        }
+    };
+
+    std::mutex insert_mutex;
+    std::condition_variable flush_condvar;
+    const SizeLimits & size_limits;
     VolumePtr volume;
     const Block & sample_block;
     const SortDescription & sort_description;
+    Blocks & blocks_to_flush;
     const size_t rows_in_block;
-    const size_t max_size;
-    std::vector<SortedFiles> sorted_files;
+    SortedFiles sorted_files;
+    size_t row_count_in_flush = 0;
+    size_t bytes_in_flush = 0;
+    size_t flush_number = 0;
+    size_t flush_inflight = 0;
 
-    MiniLSM(VolumePtr volume_, const Block & sample_block_, const SortDescription & description,
-            size_t rows_in_block_, size_t max_size_ = 16)
-        : volume(volume_)
+    SortedBlocksWriter(const SizeLimits & size_limits_, VolumePtr volume_, const Block & sample_block_, const SortDescription & description,
+                       Blocks & blocks, size_t rows_in_block_)
+        : size_limits(size_limits_)
+        , volume(volume_)
         , sample_block(sample_block_)
         , sort_description(description)
+        , blocks_to_flush(blocks)
         , rows_in_block(rows_in_block_)
-        , max_size(max_size_)
-    {}
+    {
+        sorted_files.emplace_back(flush(blocks_to_flush.blocks));
+        blocks_to_flush.clear();
+    }
 
-    void insert(const BlocksList & blocks);
-    void merge(std::function<void(const Block &)> callback = [](const Block &){});
+    void insert(Block && block);
+    TmpFilePtr flush(const BlocksList & blocks);
+    SortedFiles merge(std::function<void(const Block &)> callback = [](const Block &){});
 };
 
 
@@ -55,8 +96,8 @@ public:
     void joinTotals(Block &) const override;
     void setTotals(const Block &) override;
     bool hasTotals() const override { return totals; }
-    size_t getTotalRowCount() const override { return right_blocks_row_count; }
-    size_t getTotalByteCount() const override { return right_blocks_bytes; }
+    size_t getTotalRowCount() const override { return right_blocks.row_count; }
+    size_t getTotalByteCount() const override { return right_blocks.bytes; }
 
 private:
     struct NotProcessed : public ExtraBlock
@@ -85,16 +126,14 @@ private:
     Block right_sample_block;
     Block right_table_keys;
     Block right_columns_to_add;
-    BlocksList right_blocks;
+    SortedBlocksWriter::Blocks right_blocks;
     Blocks min_max_right_blocks;
     std::unique_ptr<Cache> cached_right_blocks;
     std::vector<std::shared_ptr<Block>> loaded_right_blocks;
-    std::unique_ptr<MiniLSM> lsm;
-    MiniLSM::SortedFiles flushed_right_blocks;
+    std::unique_ptr<SortedBlocksWriter> disk_writer;
+    SortedBlocksWriter::SortedFiles flushed_right_blocks;
     Block totals;
-    size_t right_blocks_row_count = 0;
-    size_t right_blocks_bytes = 0;
-    bool is_in_memory = true;
+    std::atomic<bool> is_in_memory{true};
     const bool nullable_right_side;
     const bool is_any_join;
     const bool is_all_join;
@@ -130,23 +169,9 @@ private:
                   MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & skip_right);
 
     bool saveRightBlock(Block && block);
-    void flushRightBlocks();
 
     void mergeInMemoryRightBlocks();
     void mergeFlushedRightBlocks();
-
-    void clearRightBlocksList()
-    {
-        right_blocks.clear();
-        right_blocks_row_count = 0;
-        right_blocks_bytes = 0;
-    }
-
-    void countBlockSize(const Block & block)
-    {
-        right_blocks_row_count += block.rows();
-        right_blocks_bytes += block.bytes();
-    }
 };
 
 }
