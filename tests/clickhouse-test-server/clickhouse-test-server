@@ -4,8 +4,8 @@ set -x
 set -o errexit
 set -o pipefail
 
-CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd ../.. && pwd)
+CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) # directory with clickhouse-server-test script(this file)
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd ../.. && pwd) # repo root or / for clickhouse-test.deb default installation path
 DATA_DIR=${DATA_DIR:=`mktemp -d /tmp/clickhouse.test..XXXXX`}
 DATA_DIR_PATTERN=${DATA_DIR_PATTERN:=/tmp/clickhouse} # path from config file, will be replaced to temporary
 LOG_DIR=${LOG_DIR:=$DATA_DIR/log}
@@ -22,19 +22,20 @@ BUILD_DIR=${BUILD_DIR:=$ROOT_DIR}
 [ -x "$BIN_DIR/${CLICKHOUSE_BINARY_NAME}-extract-from-config" ] && CLICKHOUSE_EXTRACT=${CLICKHOUSE_EXTRACT:=$BIN_DIR/${CLICKHOUSE_BINARY_NAME}-extract-from-config}
 [ -x "$BIN_DIR/${CLICKHOUSE_BINARY_NAME}" ] && CLICKHOUSE_EXTRACT=${CLICKHOUSE_EXTRACT:=$BIN_DIR/${CLICKHOUSE_BINARY_NAME} extract-from-config}
 
-[ -f "$CUR_DIR/server-test.xml" ] && CONFIG_DIR=${CONFIG_DIR=$CUR_DIR}/
+[ -f "$CUR_DIR/../config/server-test.xml" ] && CONFIG_DIR=${CONFIG_DIR=$CUR_DIR/../config}/
 CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR=$CONFIG_DIR}
 CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR=$CONFIG_DIR}
-[ ! -f "${CONFIG_CLIENT_DIR}client-test.xml" ] && CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR:=/etc/clickhouse-client/}
-[ ! -f "${CONFIG_SERVER_DIR}server-test.xml" ] && CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR:=/etc/clickhouse-server/}
+#Fallback for clickhouse-test.deb
+[ ! -f "${CONFIG_CLIENT_DIR}client-test.xml" ] && [ -f "/etc/clickhouse-client/client-test.xml"] && CONFIG_CLIENT_DIR=${CONFIG_CLIENT_DIR:=/etc/clickhouse-client/}
+[ ! -f "${CONFIG_SERVER_DIR}server-test.xml" ] && [ -f "/etc/clickhouse-client/client-test.xml"] && CONFIG_SERVER_DIR=${CONFIG_SERVER_DIR:=/etc/clickhouse-server/}
 export CLICKHOUSE_CONFIG_CLIENT=${CLICKHOUSE_CONFIG_CLIENT:=${CONFIG_CLIENT_DIR}client-test.xml}
 export CLICKHOUSE_CONFIG=${CLICKHOUSE_CONFIG:=${CONFIG_SERVER_DIR}server-test.xml}
 CLICKHOUSE_CONFIG_USERS=${CONFIG_SERVER_DIR}users.xml
-[ ! -f "$CLICKHOUSE_CONFIG_USERS" ] && CLICKHOUSE_CONFIG_USERS=$CUR_DIR/../programs/server/users.xml
+[ ! -f "$CLICKHOUSE_CONFIG_USERS" ] && CLICKHOUSE_CONFIG_USERS=$CUR_DIR/../../programs/server/users.xml
 CLICKHOUSE_CONFIG_USERS_D=${CONFIG_SERVER_DIR}users.d
-[ ! -d "$CLICKHOUSE_CONFIG_USERS_D" ] && CLICKHOUSE_CONFIG_USERS_D=$CUR_DIR/../programs/server/users.d
-[ -x "$CUR_DIR/clickhouse-test" ] && TEST_DIR=${TEST_DIR=$CUR_DIR/}
-[ -d "$CUR_DIR/queries" ] && QUERIES_DIR=${QUERIES_DIR=$CUR_DIR/queries}
+[ ! -d "$CLICKHOUSE_CONFIG_USERS_D" ] && CLICKHOUSE_CONFIG_USERS_D=$CUR_DIR/../../programs/server/users.d
+[ -x "$CUR_DIR/../clickhouse-test" ] && TEST_DIR=${TEST_DIR=$CUR_DIR/../}
+[ -d "$CUR_DIR/../queries" ] && QUERIES_DIR=${QUERIES_DIR=$CUR_DIR/../queries}
 [ ! -d "$QUERIES_DIR" ] && [ -d "/usr/local/share/clickhouse-test/queries" ] && QUERIES_DIR=${QUERIES_DIR=/usr/local/share/clickhouse-test/queries}
 [ ! -d "$QUERIES_DIR" ] && [ -d "/usr/share/clickhouse-test/queries" ] && QUERIES_DIR=${QUERIES_DIR=/usr/share/clickhouse-test/queries}
 
@@ -57,9 +58,11 @@ if [ "$DATA_DIR_PATTERN" != "$DATA_DIR" ]; then
     export CLICKHOUSE_CONFIG=$DATA_DIR/etc/server-config.xml
     cp $CLICKHOUSE_CONFIG_USERS $DATA_DIR/etc
     cp -R -L $CLICKHOUSE_CONFIG_USERS_D $DATA_DIR/etc
-    cat ${CONFIG_SERVER_DIR}/ints_dictionary.xml | sed -e s!9000!$CLICKHOUSE_PORT_TCP! > $DATA_DIR/etc/ints_dictionary.xml
-    cat ${CONFIG_SERVER_DIR}/strings_dictionary.xml | sed -e s!9000!$CLICKHOUSE_PORT_TCP! > $DATA_DIR/etc/strings_dictionary.xml
-    cat ${CONFIG_SERVER_DIR}/decimals_dictionary.xml | sed -e s!9000!$CLICKHOUSE_PORT_TCP! > $DATA_DIR/etc/decimals_dictionary.xml
+    DICTIONARIES_EXAMPLES=${CONFIG_SERVER_DIR}dict_examples/*_dictionary.xml
+    mkdir $DATA_DIR/etc/dict_examples || true
+    for DICT in $DICTIONARIES_EXAMPLES
+        do cat $DICT |  sed -e s!9000!$CLICKHOUSE_PORT_TCP! > $DATA_DIR/etc/dict_examples/$(basename -- "$DICT")
+    done
 fi
 
 CLICKHOUSE_EXTRACT_CONFIG=${CLICKHOUSE_EXTRACT_CONFIG:="${CLICKHOUSE_EXTRACT} --config=$CLICKHOUSE_CONFIG"}

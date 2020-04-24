@@ -66,11 +66,12 @@ ln -s /usr/share/clickhouse-test/config/ints_dictionary.xml /etc/clickhouse-serv
 ln -s /usr/share/clickhouse-test/config/strings_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/decimals_dictionary.xml /etc/clickhouse-server/
 ln -s /usr/share/clickhouse-test/config/macros.xml /etc/clickhouse-server/config.d/
+ln -s /usr/share/clickhouse-test/config/dict_examples/ /etc/clickhouse-server/
+
 
 # Retain any pre-existing config and allow ClickHouse to load those if required
 ln -s --backup=simple --suffix=_original.xml \
     /usr/share/clickhouse-test/config/query_masking_rules.xml /etc/clickhouse-server/config.d/
-
 
 service zookeeper start
 

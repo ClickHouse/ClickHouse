@@ -1,4 +1,4 @@
--- Must use `system` database and these tables - they're configured in tests/*_dictionary.xml
+-- Must use `system` database and these tables - they're configured in tests/config/dict_examples/*_dictionary.xml
 use system;
 drop table if exists ints;
 drop table if exists strings;

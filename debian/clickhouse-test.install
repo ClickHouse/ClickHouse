@@ -1,5 +1,5 @@
 usr/bin/clickhouse-test
 usr/bin/clickhouse-test-server
-usr/share/clickhouse-test/*
-etc/clickhouse-client/client-test.xml
-etc/clickhouse-server/server-test.xml
+usr/share/clickhouse-test/queries/*
+usr/share/clickhouse-test/config/*
+usr/share/clickhouse-test/performance/*

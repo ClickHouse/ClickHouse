@@ -34,6 +34,7 @@ def check_args_and_update_paths(args):
 
     if not args.bridge_binary:
         args.bridge_binary = os.path.join(os.path.dirname(args.binary), 'clickhouse-odbc-bridge')
+
     elif not os.path.isabs(args.bridge_binary):
         args.bridge_binary = os.path.abspath(os.path.join(CURRENT_WORK_DIR, args.bridge_binary))
 
