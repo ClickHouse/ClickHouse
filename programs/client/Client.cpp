@@ -812,7 +812,7 @@ private:
                 insert->tryFindInputFunction(input_function);
 
             /// INSERT query for which data transfer is needed (not an INSERT SELECT or input()) is processed separately.
-            if (insert && (!insert->select || input_function))
+            if (insert && (!insert->select || input_function) && !insert->watch)
             {
                 if (input_function && insert->format.empty())
                     throw Exception("FORMAT must be specified for function input()", ErrorCodes::INVALID_USAGE_OF_INPUT);
