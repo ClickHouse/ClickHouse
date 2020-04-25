@@ -22,6 +22,12 @@
 #endif
 
 
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
+
+
 namespace DB
 {
 
@@ -146,6 +152,7 @@ void AsynchronousMetrics::update()
         /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
         /// See https://github.com/ClickHouse/ClickHouse/issues/10293
         total_memory_tracker.set(data.resident);
+        CurrentMetrics::set(CurrentMetrics::MemoryTracking, data.resident);
     }
 #endif
 
