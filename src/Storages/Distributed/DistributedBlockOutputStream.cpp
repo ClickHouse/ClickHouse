@@ -567,9 +567,7 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         const auto & [disk, data_path] = storage.getPath();
         const std::string path(disk + data_path + dir_name + '/');
 
-        /// ensure shard subdirectory creation and notify storage
         Poco::File(path).createDirectory();
-        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
 
         const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
         const auto & block_file_path = path + file_name;
@@ -611,14 +609,20 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             stream.writePrefix();
             stream.write(block);
             stream.writeSuffix();
-
-            auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
-            directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
         }
 
         if (link(first_file_tmp_path.data(), block_file_path.data()))
             throwFromErrnoWithPath("Could not link " + block_file_path + " to " + first_file_tmp_path, block_file_path,
                                    ErrorCodes::CANNOT_LINK);
+    }
+
+    /// notify the storage
+    for (const auto & dir_name : dir_names)
+    {
+        const auto & [disk, _] = storage.getPath();
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
+        auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
+        directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
     }
 
     /** remove the temporary file, enabling the OS to reclaim inode after all threads
