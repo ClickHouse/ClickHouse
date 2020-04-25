@@ -13,3 +13,6 @@ target_link_libraries (string_ref_hash PRIVATE clickhouse_common_io)
 
 add_executable (mysql_protocol mysql_protocol.cpp)
 target_link_libraries (mysql_protocol PRIVATE dbms)
+if(USE_SSL)
+    target_include_directories (mysql_protocol SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
+endif()

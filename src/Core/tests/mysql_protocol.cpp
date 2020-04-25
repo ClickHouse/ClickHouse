@@ -176,7 +176,7 @@ int main(int, char **)
             return 1;
         }
 
-        if (!client1.binlogDump(slave_id, "", 0))
+        if (!client1.binlogDump(slave_id, "", 315))
         {
             std::cerr << "Connect Error: " << client1.error() << std::endl;
             assert(0);

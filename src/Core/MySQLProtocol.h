@@ -1451,13 +1451,7 @@ namespace ReplicationProtocol
         UInt32 replication_rank;
         UInt32 master_id;
 
-        RegisterSlave(UInt32 server_id_)
-            : server_id(server_id_)
-            , slaves_mysql_port(0x00)
-            , replication_rank(0x00)
-            , master_id(0x00)
-        {
-        }
+        RegisterSlave(UInt32 server_id_) : server_id(server_id_), slaves_mysql_port(0x00), replication_rank(0x00), master_id(0x00) { }
 
         void writePayloadImpl(WriteBuffer & buffer) const override
         {
@@ -1507,6 +1501,66 @@ namespace ReplicationProtocol
     protected:
         size_t getPayloadSize() const override { return 1 + 4 + 2 + 4 + binlog_file_name.size() + 1; }
     };
+
+    class BinlogEvent
+    {
+    public:
+        BinlogEvent() = default;
+
+        virtual bool isValid();
+
+        virtual void parseEvents(ReadBuffer & payload);
+
+        virtual ~BinlogEvent();
+    };
+
+    class MySQLBinlogEvent : public BinlogEvent
+    {
+    public:
+        MySQLBinlogEvent() = default;
+
+        void parseEvents(ReadBuffer & payload) override
+        {
+            UInt16 header = 0;
+            payload.readStrict(reinterpret_cast<char *>(&header), 1);
+        }
+    };
+
+    class IFlavor
+    {
+    public:
+        virtual String getName() = 0;
+
+        virtual BinlogEvent readBinlogEvent(ReadBuffer & payload);
+
+        virtual ~IFlavor() = default;
+    };
+
+    class MySQLFlavor : public IFlavor
+    {
+    public:
+        MySQLFlavor() = default;
+
+        BinlogEvent readBinlogEvent(ReadBuffer & payload) override
+        {
+            UInt16 header = 0;
+            payload.readStrict(reinterpret_cast<char *>(&header), 1);
+            switch (header)
+            {
+                case PACKET_EOF:
+                    throw Exception("Master maybe lost", ErrorCodes::UNKNOWN_EXCEPTION);
+                case PACKET_ERR:
+                    ERR_Packet err;
+                    err.readPayloadImpl(payload);
+                    throw Exception(err.error_message, ErrorCodes::UNKNOWN_EXCEPTION);
+            }
+
+            MySQLBinlogEvent binlog_event;
+            binlog_event.parseEvents(payload);
+            return binlog_event;
+        }
+    };
 }
+
 }
 }
