@@ -449,6 +449,16 @@ void optimizeIf(ASTPtr & query, Aliases & aliases, bool if_chain_to_miltiif)
         OptimizeIfChainsVisitor().visit(query);
 }
 
+void optimizeArithmeticOperationsInAgr(ASTPtr & query, bool optimize_arithmetic_operations_in_agr_func)
+{
+    if (optimize_arithmetic_operations_in_agr_func)
+    {
+        /// Removing arithmetic operations from functions
+        ArithmeticOperationsInAgrFuncVisitor::Data data = {false};
+        ArithmeticOperationsInAgrFuncVisitor(data).visit(query);
+    }
+}
+
 void getArrayJoinedColumns(ASTPtr & query, SyntaxAnalyzerResult & result, const ASTSelectQuery * select_query,
                            const NamesAndTypesList & source_columns, const NameSet & source_columns_set)
 {
@@ -851,8 +861,7 @@ SyntaxAnalyzerResultPtr SyntaxAnalyzer::analyzeSelect(
     {
         optimizeIf(query, result.aliases, settings.optimize_if_chain_to_miltiif);
 
-        /// Removing arithmetic operations from functions
-        ArithmeticOperationsInAgrFuncVisitor().visit(query);
+        optimizeArithmeticOperationsInAgr(query, settings.optimize_arithmetic_operations_in_agr_func);
 
         /// Push the predicate expression down to the subqueries.
         result.rewrite_subqueries = PredicateExpressionsOptimizer(context, tables_with_column_names, settings).optimize(*select_query);
