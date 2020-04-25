@@ -39,11 +39,11 @@ namespace
 
     const AggregatedChunkInfo * getInfoFromChunk(const Chunk & chunk)
     {
-        auto & info = chunk.getChunkInfo();
+        const auto & info = chunk.getChunkInfo();
         if (!info)
             throw Exception("Chunk info was not set for chunk.", ErrorCodes::LOGICAL_ERROR);
 
-        auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
+        const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(info.get());
         if (!agg_info)
             throw Exception("Chunk should have AggregatedChunkInfo.", ErrorCodes::LOGICAL_ERROR);
 
@@ -294,7 +294,6 @@ private:
         return Status::PortFull;
     }
 
-private:
     AggregatingTransformParamsPtr params;
     ManyAggregatedDataVariantsPtr data;
     ConvertingAggregatedToChunksSource::SharedDataPtr shared_data;
@@ -413,6 +412,9 @@ AggregatingTransform::~AggregatingTransform() = default;
 
 IProcessor::Status AggregatingTransform::prepare()
 {
+    /// There are one or two input ports.
+    /// The first one is used at aggregation step, the second one - while reading merged data from ConvertingAggregated
+
     auto & output = outputs.front();
     /// Last output is current. All other outputs should already be closed.
     auto & input = inputs.back();
@@ -432,7 +434,12 @@ IProcessor::Status AggregatingTransform::prepare()
 
     /// Finish data processing, prepare to generating.
     if (is_consume_finished && !is_generate_initialized)
+    {
+        /// Close input port in case max_rows_to_group_by was reached but not all data was read.
+        inputs.front().close();
+
         return Status::Ready;
+    }
 
     if (is_generate_initialized && !is_pipeline_created && !processors.empty())
         return Status::ExpandPipeline;

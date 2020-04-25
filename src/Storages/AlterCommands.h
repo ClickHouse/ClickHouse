@@ -108,7 +108,7 @@ struct AlterCommand
     ///    * column files (data and marks)
     ///    * each part meta (columns.txt)
     /// in each part on disk (it's not lightweight alter).
-    bool isModifyingData() const;
+    bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
 
     bool isRequireMutationStage(const StorageInMemoryMetadata & metadata) const;
 
@@ -151,7 +151,7 @@ public:
     void apply(StorageInMemoryMetadata & metadata) const;
 
     /// At least one command modify data on disk.
-    bool isModifyingData() const;
+    bool isModifyingData(const StorageInMemoryMetadata & metadata) const;
 
     /// At least one command modify settings.
     bool isSettingsAlter() const;

@@ -32,7 +32,6 @@ public:
     };
 
     ConvertingBlockInputStream(
-        const Context & context,
         const BlockInputStreamPtr & input,
         const Block & result_header,
         MatchColumnsMode mode);
@@ -43,7 +42,6 @@ public:
 private:
     Block readImpl() override;
 
-    const Context & context;
     Block header;
 
     /// How to construct result block. Position in source block, where to get each column.

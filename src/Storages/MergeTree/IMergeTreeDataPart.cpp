@@ -731,34 +731,42 @@ void IMergeTreeDataPart::remove() const
         return;
     }
 
-    try
+    if (checksums.empty())
     {
-        /// Remove each expected file in directory, then remove directory itself.
-
-#if !__clang__
-#    pragma GCC diagnostic push
-#    pragma GCC diagnostic ignored "-Wunused-variable"
-#endif
-        for (const auto & [file, _] : checksums.files)
-            disk->remove(to + "/" + file);
-#if !__clang__
-#    pragma GCC diagnostic pop
-#endif
-
-        for (const auto & file : {"checksums.txt", "columns.txt"})
-            disk->remove(to + "/" + file);
-        disk->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_PATH);
-
-        disk->remove(to);
-    }
-    catch (...)
-    {
-        /// Recursive directory removal does many excessive "stat" syscalls under the hood.
-
-        LOG_ERROR(storage.log, "Cannot quickly remove directory " << fullPath(disk, to) << " by removing files; fallback to recursive removal. Reason: "
-            << getCurrentExceptionMessage(false));
-
+        /// If the part is not completely written, we cannot use fast path by listing files.
         disk->removeRecursive(to + "/");
+    }
+    else
+    {
+        try
+        {
+            /// Remove each expected file in directory, then remove directory itself.
+
+    #if !__clang__
+    #    pragma GCC diagnostic push
+    #    pragma GCC diagnostic ignored "-Wunused-variable"
+    #endif
+            for (const auto & [file, _] : checksums.files)
+                disk->remove(to + "/" + file);
+    #if !__clang__
+    #    pragma GCC diagnostic pop
+    #endif
+
+            for (const auto & file : {"checksums.txt", "columns.txt"})
+                disk->remove(to + "/" + file);
+            disk->removeIfExists(to + "/" + DELETE_ON_DESTROY_MARKER_PATH);
+
+            disk->remove(to);
+        }
+        catch (...)
+        {
+            /// Recursive directory removal does many excessive "stat" syscalls under the hood.
+
+            LOG_ERROR(storage.log, "Cannot quickly remove directory " << fullPath(disk, to) << " by removing files; fallback to recursive removal. Reason: "
+                << getCurrentExceptionMessage(false));
+
+            disk->removeRecursive(to + "/");
+        }
     }
 }
 

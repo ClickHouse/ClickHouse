@@ -1,3 +1,4 @@
+#include <Databases/DatabaseAtomic.h>
 #include <Databases/DatabaseDictionary.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseLazy.h>
@@ -9,15 +10,16 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/parseAddress.h>
-#include "config_core.h"
 #include "DatabaseFactory.h"
 #include <Poco/File.h>
 
+#if !defined(ARCADIA_BUILD)
+#    include "config_core.h"
+#endif
+
 #if USE_MYSQL
-
-#include <Databases/DatabaseMySQL.h>
-#include <Interpreters/evaluateConstantExpression.h>
-
+#    include <Databases/DatabaseMySQL.h>
+#    include <Interpreters/evaluateConstantExpression.h>
 #endif
 
 
@@ -35,16 +37,18 @@ namespace ErrorCodes
 DatabasePtr DatabaseFactory::get(
     const String & database_name, const String & metadata_path, const ASTStorage * engine_define, Context & context)
 {
+    bool created = false;
+
     try
     {
-        Poco::File(metadata_path).createDirectory();
+        created = Poco::File(metadata_path).createDirectory();
         return getImpl(database_name, metadata_path, engine_define, context);
     }
     catch (...)
     {
         Poco::File metadata_dir(metadata_path);
 
-        if (metadata_dir.exists())
+        if (created && metadata_dir.exists())
             metadata_dir.remove(true);
 
         throw;
@@ -75,10 +79,12 @@ DatabasePtr DatabaseFactory::getImpl(
 
     if (engine_name == "Ordinary")
         return std::make_shared<DatabaseOrdinary>(database_name, metadata_path, context);
+    else if (engine_name == "Atomic")
+        return std::make_shared<DatabaseAtomic>(database_name, metadata_path, context);
     else if (engine_name == "Memory")
         return std::make_shared<DatabaseMemory>(database_name);
     else if (engine_name == "Dictionary")
-        return std::make_shared<DatabaseDictionary>(database_name);
+        return std::make_shared<DatabaseDictionary>(database_name, context);
 
 #if USE_MYSQL
 
@@ -107,7 +113,7 @@ DatabasePtr DatabaseFactory::getImpl(
             auto mysql_database = std::make_shared<DatabaseMySQL>(
                 context, database_name, metadata_path, engine_define, database_name_in_mysql, std::move(mysql_pool));
 
-            mysql_database->empty(context); /// test database is works fine.
+            mysql_database->empty(); /// test database is works fine.
             return mysql_database;
         }
         catch (...)
