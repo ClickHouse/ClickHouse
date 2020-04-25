@@ -13,6 +13,7 @@ limitations under the License. */
 
 #include <ext/shared_ptr_helper.h>
 #include <Storages/IStorage.h>
+#include <Storages/LiveView/Events.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -72,6 +73,7 @@ public:
     bool supportsFinal() const override { return true; }
 
     bool isTemporary() { return is_temporary; }
+    bool isAutoRefreshed() { return is_auto_refreshed; }
 
     /// Check if we have any readers
     /// must be called with mutex locked
@@ -86,11 +88,14 @@ public:
     {
         return active_ptr.use_count() > 1;
     }
-    /// No users thread mutex, predicate and wake up condition
-    void startNoUsersThread(const UInt64 & timeout);
-    std::mutex no_users_thread_wakeup_mutex;
-    bool no_users_thread_wakeup = false;
-    std::condition_variable no_users_thread_condition;
+
+    /// events thread mutex, predicate and wake up condition
+    void wakeupEventsThread(const LiveViewEvent & event);
+    std::mutex events_thread_wakeup_mutex;
+    bool events_thread_wakeup = false;
+    unsigned int events_thread_event = 0;
+    UInt64 events_thread_event_timestamp_usec = 0;
+    std::condition_variable events_thread_condition;
     /// Get blocks hash
     /// must be called with mutex locked
     String getBlocksHashKey()
@@ -174,6 +179,7 @@ private:
     std::unique_ptr<Context> live_view_context;
 
     bool is_temporary = false;
+    bool is_auto_refreshed = false;
     /// Mutex to protect access to sample block and inner_blocks_query
     mutable std::mutex sample_block_lock;
     mutable Block sample_block;
@@ -192,14 +198,15 @@ private:
     std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr;
     MergeableBlocksPtr mergeable_blocks;
 
-    /// Background thread for temporary tables
-    /// which drops this table if there are no users
-    static void noUsersThread(std::shared_ptr<StorageLiveView> storage, const UInt64 & timeout);
-    std::mutex no_users_thread_mutex;
-    std::thread no_users_thread;
+    /// Background events thread for temporary and auto refresh tables
+    void startEventsThread();
+    static void eventsThread(std::shared_ptr<StorageLiveView> storage);
+    std::mutex events_thread_mutex;
+    std::thread events_thread;
     std::atomic<bool> shutdown_called = false;
-    std::atomic<bool> start_no_users_thread_called = false;
+    std::atomic<bool> start_events_thread_called = false;
     UInt64 temporary_live_view_timeout;
+    UInt64 auto_refresh_live_view_interval;
 
     StorageLiveView(
         const StorageID & table_id_,

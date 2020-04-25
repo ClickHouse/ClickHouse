@@ -1,13 +1,13 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
-
+#include <Storages/LiveView/Events.h>
 
 namespace DB
 {
 
 /** Implements LIVE VIEW table WATCH input stream.
- *  Keeps stream alive by outputing blocks with no rows
+ *  Keeps stream alive by outputting blocks with no rows
  *  based on period specified by the heartbeat interval.
  */
 class LiveViewBlockInputStream : public IBlockInputStream
@@ -18,10 +18,9 @@ using NonBlockingResult = std::pair<Block, bool>;
 public:
     ~LiveViewBlockInputStream() override
     {
-        /// Start storage no users thread
-        /// if we are the last active user
+        /// Wakeup storage events thread if we are the last active user
         if (!storage->is_dropped && blocks_ptr.use_count() < 3)
-            storage->startNoUsersThread(temporary_live_view_timeout_sec);
+            storage->wakeupEventsThread(LiveViewEvent::LAST_USER);
     }
 
     LiveViewBlockInputStream(std::shared_ptr<StorageLiveView> storage_,
@@ -29,14 +28,12 @@ public:
         std::shared_ptr<BlocksMetadataPtr> blocks_metadata_ptr_,
         std::shared_ptr<bool> active_ptr_,
         const bool has_limit_, const UInt64 limit_,
-        const UInt64 heartbeat_interval_sec_,
-        const UInt64 temporary_live_view_timeout_sec_)
+        const UInt64 heartbeat_interval_sec_)
         : storage(std::move(storage_)), blocks_ptr(std::move(blocks_ptr_)),
           blocks_metadata_ptr(std::move(blocks_metadata_ptr_)),
           active_ptr(std::move(active_ptr_)),
           has_limit(has_limit_), limit(limit_),
-          heartbeat_interval_usec(heartbeat_interval_sec_ * 1000000),
-          temporary_live_view_timeout_sec(temporary_live_view_timeout_sec_)
+          heartbeat_interval_usec(heartbeat_interval_sec_ * 1000000)
     {
         /// grab active pointer
         active = active_ptr.lock();
@@ -205,7 +202,6 @@ private:
     Int64 num_updates = -1;
     bool end_of_blocks = false;
     UInt64 heartbeat_interval_usec;
-    UInt64 temporary_live_view_timeout_sec;
     UInt64 last_event_timestamp_usec = 0;
 };
 

@@ -45,8 +45,8 @@ public:
 
             (*storage.blocks_ptr) = new_blocks;
             (*storage.blocks_metadata_ptr) = new_blocks_metadata;
-
             storage.condition.notify_all();
+            storage.wakeupEventsThread(LiveViewEvent::NEW_BLOCKS);
         }
 
         new_blocks.reset();
