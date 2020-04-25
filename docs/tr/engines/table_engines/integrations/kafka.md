@@ -136,7 +136,7 @@ Konu verilerini almayı durdurmak veya dönüşüm mantığını değiştirmek i
 
 ``` sql
   DETACH TABLE consumer;
-  ATTACH MATERIALIZED VIEW consumer;
+  ATTACH TABLE consumer;
 ```
 
 Kullanarak hedef tabloyu değiştirmek istiyorsanız `ALTER` hedef tablo ile görünümdeki veriler arasındaki tutarsızlıkları önlemek için malzeme görünümünü devre dışı bırakmanızı öneririz.
