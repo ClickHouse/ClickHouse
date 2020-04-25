@@ -41,6 +41,7 @@ public:
 
     void set(K key, V val)
     {
+        std::lock_guard lock(mutex);
         auto it = cache.find(key);
         if (it == std::end(cache))
         {
@@ -63,6 +64,7 @@ public:
 
     bool get(K key, V & val)
     {
+        std::lock_guard lock(mutex);
         auto it = cache.find(key);
         if (it == std::end(cache))
             return false;
@@ -74,6 +76,7 @@ public:
 
     bool erase(K key)
     {
+        std::lock_guard lock(mutex);
         auto it = cache.find(key);
         if (it == std::end(cache))
             return false;
@@ -82,18 +85,21 @@ public:
         return true;
     }
 
-    size_t size() const
+    size_t size()
     {
+        std::lock_guard lock(mutex);
         return cache.size();
     }
 
     auto begin()
     {
+        std::lock_guard lock(mutex);
         return std::begin(cache);
     }
 
     auto end()
     {
+        std::lock_guard lock(mutex);
         return std::end(cache);
     }
 
@@ -101,6 +107,7 @@ private:
     std::unordered_map<K, Cell> cache;
     std::list<K> queue;
     size_t max_size;
+    std::mutex mutex;
 };
 
 using AttributeValueVariant = std::variant<
@@ -357,7 +364,7 @@ private:
     mutable std::chrono::system_clock::time_point backoff_end_time;
 
     // stats
-    mutable size_t bytes_allocated = 0;
+    //mutable size_t bytes_allocated = 0;
 
     mutable std::atomic<size_t> hit_count{0};
     mutable std::atomic<size_t> query_count{0};

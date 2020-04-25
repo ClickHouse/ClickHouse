@@ -615,7 +615,7 @@ void CachePartition::getValueFromStorage(const PaddedPODArray<Index> & indices, 
     while (to_pop < requests.size())
     {
         /// get io tasks from previous iteration
-        size_t popped = 0;
+        int popped = 0;
         while (to_pop < to_push && (popped = io_getevents(aio_context.ctx, to_push - to_pop, to_push - to_pop, &events[to_pop], nullptr)) < 0)
         {
             if (errno != EINTR)
@@ -857,8 +857,7 @@ size_t CachePartition::getElementCount() const
 
 PaddedPODArray<CachePartition::Key> CachePartition::getCachedIds(const std::chrono::system_clock::time_point /* now */) const
 {
-    const ProfilingScopedReadRWLock read_lock{rw_lock, ProfileEvents::DictCacheLockReadNs};
-
+    std::unique_lock lock(rw_lock); // Begin and end iterators can be changed.
     PaddedPODArray<Key> array;
     for (const auto & [key, index] : key_to_index)
         array.push_back(key); // TODO: exclude default
