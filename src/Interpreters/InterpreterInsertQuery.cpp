@@ -230,7 +230,7 @@ BlockIO InterpreterInsertQuery::execute()
 
             /// Do not squash blocks if it is a sync INSERT into Distributed, since it lead to double bufferization on client and server side.
             /// Client-side bufferization might cause excessive timeouts (especially in case of big blocks).
-            if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash)
+            if (!(context.getSettingsRef().insert_distributed_sync && table->isRemote()) && !no_squash && !query.watch)
             {
                 out = std::make_shared<SquashingBlockOutputStream>(
                     out,
