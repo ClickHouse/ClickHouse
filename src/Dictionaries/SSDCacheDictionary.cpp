@@ -786,6 +786,7 @@ void CachePartition::clearOldestBlocks()
 
     const size_t start_block = current_file_block_id % max_size;
     const size_t finish_block = start_block + block_size * write_buffer_size;
+    Poco::Logger::get("ClearOldestBlocks").information("> erasing keys <");
     for (const auto& key : keys)
     {
         Index index;
