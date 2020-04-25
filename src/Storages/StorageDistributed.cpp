@@ -570,6 +570,9 @@ void StorageDistributed::startup()
 
 void StorageDistributed::shutdown()
 {
+    monitors_blocker.cancelForever();
+
+    std::lock_guard lock(cluster_nodes_mutex);
     cluster_nodes_data.clear();
 }
 
