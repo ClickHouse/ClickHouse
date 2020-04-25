@@ -162,6 +162,7 @@ int main(int, char **)
     }
 
     {
+        UInt32 slave_id = 123;
         MySQLClient client1("127.0.0.1", 9001, "default", "123", "");
         if (!client1.connect())
         {
@@ -175,10 +176,10 @@ int main(int, char **)
             return 1;
         }
 
-        if (!client1.register_slave(123))
+        if (!client1.binlog_dump(slave_id, "", 0))
         {
             std::cerr << "Connect Error: " << client1.error() << std::endl;
-            return 1;
+            assert(0);
         }
     }
     return 0;
