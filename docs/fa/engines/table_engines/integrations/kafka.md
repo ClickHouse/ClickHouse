@@ -136,7 +136,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 ``` sql
   DETACH TABLE consumer;
-  ATTACH MATERIALIZED VIEW consumer;
+  ATTACH TABLE consumer;
 ```
 
 اگر شما می خواهید به تغییر جدول هدف با استفاده از `ALTER` توصیه می کنیم دیدگاه مادی را غیرفعال کنید تا از اختلاف بین جدول هدف و داده ها از نظر جلوگیری شود.
