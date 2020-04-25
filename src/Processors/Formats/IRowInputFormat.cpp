@@ -138,7 +138,7 @@ Chunk IRowInputFormat::generate()
 
     if (columns.empty() || columns[0]->empty())
     {
-        if (params.allow_errors_num > 0 || params.allow_errors_ratio > 0)
+        if (num_errors && (params.allow_errors_num > 0 || params.allow_errors_ratio > 0))
         {
             Logger * log = &Logger::get("IRowInputFormat");
             LOG_TRACE(log, "Skipped " << num_errors << " rows with errors while reading the input stream");
