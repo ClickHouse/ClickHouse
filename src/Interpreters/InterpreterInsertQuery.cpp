@@ -121,12 +121,6 @@ BlockIO InterpreterInsertQuery::execute()
     BlockOutputStreams out_streams;
     bool is_distributed_insert_select = false;
 
-    std::cerr << "!!! processing INSERT INTO\n";
-    if (query.watch)
-        std::cerr << "!!! processing INSERT INTO WATCH\n";
-    else
-        std::cerr << "!!! processing INSERT INTO that is not watch\n";
-
     if (query.select && table->isRemote() && settings.parallel_distributed_insert_select)
     {
         // Distributed INSERT SELECT
