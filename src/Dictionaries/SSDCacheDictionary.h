@@ -27,6 +27,13 @@ template <typename K, typename V>
 class CLRUCache
 {
     using Iter = typename std::list<K>::iterator;
+
+    struct Cell
+    {
+        Iter iter;
+        V val;
+    };
+
 public:
     CLRUCache(size_t max_size_) : max_size(max_size_)
     {
@@ -38,8 +45,8 @@ public:
         if (it == std::end(cache))
         {
             auto & item = cache[key];
-            item.first = queue.insert(std::end(queue), key);
-            item.second = val;
+            item.iter = queue.insert(std::end(queue), key);
+            item.val = val;
             if (queue.size() > max_size)
             {
                 cache.erase(queue.front());
@@ -48,9 +55,9 @@ public:
         }
         else
         {
-            queue.erase(it->second.first);
-            it->second.first = queue.insert(std::end(queue), key);
-            it->second.second = val;
+            queue.erase(it->second.iter);
+            it->second.iter = queue.insert(std::end(queue), key);
+            it->second.val = val;
         }
     }
 
@@ -59,17 +66,20 @@ public:
         auto it = cache.find(key);
         if (it == std::end(cache))
             return false;
-        val = it->second.second;
-        queue.erase(it->second.first);
-        it->second.first = queue.insert(std::end(queue), key);
+        val = it->second.val;
+        queue.erase(it->second.iter);
+        it->second.iter = queue.insert(std::end(queue), key);
         return true;
     }
 
-    void erase(K key)
+    bool erase(K key)
     {
         auto it = cache.find(key);
-        queue.erase(it->second.first);
+        if (it == std::end(cache))
+            return false;
+        queue.erase(it->second.iter);
         cache.erase(it);
+        return true;
     }
 
     size_t size() const
@@ -88,7 +98,7 @@ public:
     }
 
 private:
-    std::unordered_map<K, std::pair<Iter, V>> cache;
+    std::unordered_map<K, Cell> cache;
     std::list<K> queue;
     size_t max_size;
 };
