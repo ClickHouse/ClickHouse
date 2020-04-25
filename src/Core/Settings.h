@@ -406,7 +406,6 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, validate_polygons, true, "Throw exception if polygon is invalid in function pointInPolygon (e.g. self-tangent, self-intersecting). If the setting is false, the function will accept invalid polygons but may silently return wrong result.", 0) \
     M(SettingUInt64, max_parser_depth, 1000, "Maximum parser depth.", 0) \
     M(SettingSeconds, temporary_live_view_timeout, DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC, "Timeout after which temporary live view is deleted.", 0) \
-    M(SettingSeconds, auto_refresh_live_view_interval, DEFAULT_AUTO_REFRESH_LIVE_VIEW_INTERVAL_SEC, "The interval in seconds after which auto refreshed live view is refreshed.", 0) \
     M(SettingBool, transform_null_in, false, "If enabled, NULL values will be matched with 'IN' operator as if they are considered equal.", 0) \
     M(SettingBool, allow_nondeterministic_mutations, false, "Allow non-deterministic functions in ALTER UPDATE/ALTER DELETE statements", 0) \
     M(SettingSeconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, "How long locking request should wait before failing", 0) \

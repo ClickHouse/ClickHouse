@@ -234,16 +234,9 @@ void ASTCreateQuery::formatQueryImpl(const FormatSettings & settings, FormatStat
                 << (if_not_exists ? "IF NOT EXISTS " : "")
             << (settings.hilite ? hilite_none : "")
             << (!database.empty() ? backQuoteIfNeed(database) + "." : "") << backQuoteIfNeed(table);
-        if (live_view_timeout || live_view_auto_refresh)
-        {
-            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH " << (settings.hilite ? hilite_none : "");
-            if (live_view_timeout)
-                settings.ostr << (settings.hilite ? hilite_keyword : "") << "TIMEOUT " << (settings.hilite ? hilite_none : "")
-                    << *live_view_timeout;
-            if (live_view_auto_refresh)
-                settings.ostr << (live_view_timeout ? ", " : "")  << (settings.hilite ? hilite_keyword : "") << "AUTO REFRESH " << (settings.hilite ? hilite_none : "")
-                    << *live_view_auto_refresh;
-        }
+        if (live_view_timeout)
+            settings.ostr << (settings.hilite ? hilite_keyword : "") << " WITH TIMEOUT " << (settings.hilite ? hilite_none : "")
+                          << *live_view_timeout;
         formatOnCluster(settings);
     }
     else

@@ -510,7 +510,6 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
     ASTPtr as_table;
     ASTPtr select;
     ASTPtr live_view_timeout;
-    ASTPtr live_view_auto_refresh;
 
     String cluster_str;
     bool attach = false;
@@ -543,27 +542,10 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
             return false;
     }
 
-    if (ParserKeyword{"WITH"}.ignore(pos, expected))
+    if (ParserKeyword{"WITH TIMEOUT"}.ignore(pos, expected))
     {
-        do
-        {
-            if (!live_view_timeout && ParserKeyword{"TIMEOUT"}.ignore(pos, expected))
-            {
-                if (!ParserNumber{}.parse(pos, live_view_timeout, expected))
-                    live_view_timeout = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC));
-            }
-            else if (!live_view_auto_refresh && ParserKeyword{"AUTO REFRESH"}.ignore(pos, expected))
-            {
-                if (!ParserNumber{}.parse(pos, live_view_auto_refresh, expected))
-                    live_view_auto_refresh = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_AUTO_REFRESH_LIVE_VIEW_INTERVAL_SEC));
-            }
-            else
-                return false;
-        }
-        while ((!live_view_timeout || !live_view_auto_refresh) && ParserToken{TokenType::Comma}.ignore(pos, expected));
-
-        if (!live_view_timeout && !live_view_auto_refresh)
-            return false;
+        if (!ParserNumber{}.parse(pos, live_view_timeout, expected))
+            live_view_timeout = std::make_shared<ASTLiteral>(static_cast<UInt64>(DEFAULT_TEMPORARY_LIVE_VIEW_TIMEOUT_SEC));
     }
 
     if (ParserKeyword{"ON"}.ignore(pos, expected))
@@ -626,8 +608,6 @@ bool ParserCreateLiveViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & e
 
     if (live_view_timeout)
         query->live_view_timeout.emplace(live_view_timeout->as<ASTLiteral &>().value.safeGet<UInt64>());
-    if (live_view_auto_refresh)
-        query->live_view_auto_refresh.emplace(live_view_auto_refresh->as<ASTLiteral &>().value.safeGet<UInt64>());
 
     return true;
 }

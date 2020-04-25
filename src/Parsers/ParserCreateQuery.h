@@ -312,7 +312,7 @@ protected:
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 };
 
-/// CREATE|ATTACH LIVE VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] [WITH {TIMEOUT | AUTO REFRESH} [num]} [,...]] AS SELECT ...
+/// CREATE|ATTACH LIVE VIEW [IF NOT EXISTS] [db.]name [TO [db.]name] AS SELECT ...
 class ParserCreateLiveViewQuery : public IParserBase
 {
 protected:
