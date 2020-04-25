@@ -73,7 +73,6 @@ public:
     ASTSelectWithUnionQuery * select = nullptr;
     ASTDictionary * dictionary = nullptr; /// dictionary definition (layout, primary key, etc.)
     std::optional<UInt64> live_view_timeout;    /// For CREATE LIVE VIEW ... WITH TIMEOUT ...
-    std::optional<UInt64> live_view_auto_refresh;    /// For CREATE LIVE VIEW ... WITH AUTO REFRESH ...
 
     /** Get the text that identifies this element. */
     String getID(char delim) const override { return (attach ? "AttachQuery" : "CreateQuery") + (delim + database) + delim + table; }
