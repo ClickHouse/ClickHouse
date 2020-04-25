@@ -73,46 +73,6 @@ bool MySQLClient::handshake()
     return (packet_response.getType() != PACKET_ERR);
 }
 
-bool MySQLClient::ping()
-{
-    return writeCommand(Command::COM_PING, "");
-}
-
-bool MySQLClient::register_slave(UInt32 slave_id)
-{
-    RegisterSlave register_slave(slave_id);
-    packet_sender->sendPacket<RegisterSlave>(register_slave, true);
-
-    PacketResponse packet_response(client_capability_flags);
-    packet_sender->receivePacket(packet_response);
-    packet_sender->resetSequenceId();
-    if (packet_response.getType() == PACKET_ERR)
-    {
-        last_error = packet_response.err.error_message;
-    }
-    return (packet_response.getType() != PACKET_ERR);
-}
-
-bool MySQLClient::binlog_dump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos)
-{
-    BinlogDump binlog_dump(binlog_pos, binlog_file_name, slave_id);
-    packet_sender->sendPacket<BinlogDump>(binlog_dump, true);
-
-    PacketResponse packet_response(client_capability_flags);
-    packet_sender->receivePacket(packet_response);
-    packet_sender->resetSequenceId();
-    if (packet_response.getType() == PACKET_ERR)
-    {
-        last_error = packet_response.err.error_message;
-    }
-    return (packet_response.getType() != PACKET_ERR);
-}
-
-String MySQLClient::error()
-{
-    return last_error;
-}
-
 bool MySQLClient::writeCommand(char command, String query)
 {
     bool ret = false;
@@ -135,5 +95,45 @@ bool MySQLClient::writeCommand(char command, String query)
     }
     packet_sender->resetSequenceId();
     return ret;
+}
+
+bool MySQLClient::ping()
+{
+    return writeCommand(Command::COM_PING, "");
+}
+
+bool MySQLClient::registerSlave(UInt32 slave_id)
+{
+    RegisterSlave register_slave(slave_id);
+    packet_sender->sendPacket<RegisterSlave>(register_slave, true);
+
+    PacketResponse packet_response(client_capability_flags);
+    packet_sender->receivePacket(packet_response);
+    packet_sender->resetSequenceId();
+    if (packet_response.getType() == PACKET_ERR)
+    {
+        last_error = packet_response.err.error_message;
+    }
+    return (packet_response.getType() != PACKET_ERR);
+}
+
+bool MySQLClient::binlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos)
+{
+    BinlogDump binlog_dump(binlog_pos, binlog_file_name, slave_id);
+    packet_sender->sendPacket<BinlogDump>(binlog_dump, true);
+
+    PacketResponse packet_response(client_capability_flags);
+    packet_sender->receivePacket(packet_response);
+    packet_sender->resetSequenceId();
+    if (packet_response.getType() == PACKET_ERR)
+    {
+        last_error = packet_response.err.error_message;
+    }
+    return (packet_response.getType() != PACKET_ERR);
+}
+
+String MySQLClient::error()
+{
+    return last_error;
 }
 }

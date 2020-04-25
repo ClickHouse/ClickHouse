@@ -23,8 +23,8 @@ public:
     bool connect();
     void disconnect();
     bool ping();
-    bool register_slave(UInt32 slave_id);
-    bool binlog_dump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos);
+    bool registerSlave(UInt32 slave_id);
+    bool binlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos);
     String error();
 
 private:
