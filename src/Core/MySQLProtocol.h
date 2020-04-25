@@ -102,6 +102,7 @@ enum Command
     COM_TIME = 0xf,
     COM_DELAYED_INSERT = 0x10,
     COM_CHANGE_USER = 0x11,
+    COM_BINLOG_DUMP = 0x12,
     COM_REGISTER_SLAVE = 0x15,
     COM_RESET_CONNECTION = 0x1f,
     COM_DAEMON = 0x1d
@@ -1476,6 +1477,35 @@ namespace ReplicationProtocol
             return 1 + 4 + getLengthEncodedStringSize(slaves_hostname) + getLengthEncodedStringSize(slaves_users)
                 + getLengthEncodedStringSize(slaves_password) + 2 + 4 + 4;
         }
+    };
+
+    /// https://dev.mysql.com/doc/internals/en/com-binlog-dump.html
+    class BinlogDump : public WritePacket
+    {
+    public:
+        UInt8 header = COM_BINLOG_DUMP;
+        UInt32 binlog_pos;
+        UInt16 flags;
+        UInt32 server_id;
+        String binlog_file_name;
+
+        BinlogDump(UInt32 binlog_pos_, String binlog_file_name_, UInt32 server_id_)
+            : binlog_pos(binlog_pos_), flags(0x00), server_id(server_id_), binlog_file_name(std::move(binlog_file_name_))
+        {
+        }
+
+        void writePayloadImpl(WriteBuffer & buffer) const override
+        {
+            buffer.write(header);
+            buffer.write(reinterpret_cast<const char *>(&binlog_pos), 4);
+            buffer.write(reinterpret_cast<const char *>(&flags), 2);
+            buffer.write(reinterpret_cast<const char *>(&server_id), 4);
+            buffer.write(binlog_file_name.data(), binlog_file_name.length());
+            buffer.write(0x00);
+        }
+
+    protected:
+        size_t getPayloadSize() const override { return 1 + 4 + 2 + 4 + binlog_file_name.size() + 1; }
     };
 }
 }
