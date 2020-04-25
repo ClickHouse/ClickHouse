@@ -368,7 +368,7 @@ std::unique_ptr<TemporaryFile> flushToFile(const String & tmp_path, const Block 
 }
 
 SortedBlocksWriter::SortedFiles flushToManyFiles(const String & tmp_path, const Block & header, IBlockInputStream & stream,
-                                                 std::function<void(const Block &)> callback)
+                                                 std::function<void(const Block &)> callback = [](const Block &){})
 {
     std::vector<std::unique_ptr<TemporaryFile>> files;
 
@@ -392,10 +392,6 @@ SortedBlocksWriter::SortedFiles flushToManyFiles(const String & tmp_path, const 
 
 void SortedBlocksWriter::insert(Block && block)
 {
-    /// Allow to flush data if new data is (1/num_pieces) of limits big.
-    /// So we should have up to num_pieces writing streams.
-    static constexpr const size_t num_pieces = 2;
-
     bool can_insert_more = false;
     bool has_data_to_flush = false;
 
@@ -408,24 +404,24 @@ void SortedBlocksWriter::insert(Block && block)
         std::lock_guard lock{insert_mutex};
 
         /// insert bock into BlocksList undef lock
-        blocks_to_flush.insert(std::move(block));
+        inserted_blocks.insert(std::move(block));
 
-        size_t total_row_count = blocks_to_flush.row_count + row_count_in_flush;
-        size_t total_bytes = blocks_to_flush.bytes + bytes_in_flush;
+        size_t total_row_count = inserted_blocks.row_count + row_count_in_flush;
+        size_t total_bytes = inserted_blocks.bytes + bytes_in_flush;
 
         can_insert_more = size_limits.softCheck(total_row_count, total_bytes);
-        has_data_to_flush = !size_limits.softCheck(blocks_to_flush.row_count * num_pieces, blocks_to_flush.bytes * num_pieces);
+        has_data_to_flush = !size_limits.softCheck(inserted_blocks.row_count * num_streams, inserted_blocks.bytes * num_streams);
 
         if (has_data_to_flush)
         {
             ++flush_inflight;
-            current_blocks.swap(blocks_to_flush.blocks);
+            current_blocks.swap(inserted_blocks.blocks);
             row_count_in_flush = total_row_count;
             bytes_in_flush = total_bytes;
 
-            row_count = blocks_to_flush.row_count;
-            bytes = blocks_to_flush.bytes;
-            blocks_to_flush.clear();
+            row_count = inserted_blocks.row_count;
+            bytes = inserted_blocks.bytes;
+            inserted_blocks.clear();
         }
         else if (can_insert_more)
             flush_no = flush_number;
@@ -433,12 +429,13 @@ void SortedBlocksWriter::insert(Block && block)
 
     if (has_data_to_flush)
     {
-        /// flush BlocksList without lock
-        TmpFilePtr file = flush(current_blocks);
+        /// flush new blocks without lock
+        auto flushed = flush(current_blocks);
+        current_blocks.clear();
 
         std::lock_guard lock{insert_mutex};
 
-        sorted_files.emplace_back(std::move(file));
+        sorted_files.emplace_back(std::move(flushed));
         row_count_in_flush -= row_count;
         bytes_in_flush -= bytes;
 
@@ -455,11 +452,14 @@ void SortedBlocksWriter::insert(Block && block)
     }
 }
 
-SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & blocks)
+SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & blocks) const
 {
-    const std::string path(volume->getNextDisk()->getPath());
+    const std::string path = getPath();
 
-    if (blocks.size() <= 1)
+    if (blocks.empty())
+        return {};
+
+    if (blocks.size() == 1)
     {
         OneBlockInputStream sorted_input(blocks.front());
         return flushToFile(path, sample_block, sorted_input);
@@ -475,34 +475,64 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
     return flushToFile(path, sample_block, sorted_input);
 }
 
-SortedBlocksWriter::SortedFiles SortedBlocksWriter::merge(std::function<void(const Block &)> callback)
+SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<void(const Block &)> callback)
 {
-    /// wait flushes if any
+    /// wait other flushes if any
     {
         std::unique_lock lock{insert_mutex};
         flush_condvar.wait(lock, [&]{ return !flush_inflight; });
     }
 
+    /// flush not flushed
+    if (!inserted_blocks.empty())
+        sorted_files.emplace_back(flush(inserted_blocks.blocks));
+    inserted_blocks.clear();
+
     BlockInputStreams inputs;
-    inputs.reserve(sorted_files.size() + blocks_to_flush.blocks.size());
+    inputs.reserve(num_files_for_merge);
 
-    for (const auto & file : sorted_files)
-        inputs.emplace_back(std::make_shared<TemporaryFileLazyInputStream>(file->path(), sample_block));
-    for (auto & block : blocks_to_flush.blocks)
-        inputs.emplace_back(std::make_shared<OneBlockInputStream>(block));
+    /// Merge by parts to save memory. It's possible to exchange disk I/O and memory by num_files_for_merge.
+    {
+        SortedFiles new_files;
+        new_files.reserve(sorted_files.size() / num_files_for_merge + 1);
 
-    /// recalculate counters in callback
-    blocks_to_flush.row_count = 0;
-    blocks_to_flush.bytes = 0;
+        while (sorted_files.size() > num_files_for_merge)
+        {
+            for (const auto & file : sorted_files)
+            {
+                inputs.emplace_back(streamFromFile(file));
 
-    MergingSortedBlockInputStream sorted_stream(inputs, sort_description, rows_in_block);
+                if (inputs.size() == num_files_for_merge || &file == &sorted_files.back())
+                {
+                    MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
+                    new_files.emplace_back(flushToFile(getPath(), sample_block, sorted_input));
+                    inputs.clear();
+                }
+            }
 
-    const std::string path(volume->getNextDisk()->getPath());
-    SortedFiles out = flushToManyFiles(path, sample_block, sorted_stream, callback);
+            sorted_files.clear();
+            sorted_files.swap(new_files);
+        }
 
+        for (const auto & file : sorted_files)
+            inputs.emplace_back(streamFromFile(file));
+    }
+
+    MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
+
+    SortedFiles out = flushToManyFiles(getPath(), sample_block, sorted_input, callback);
     sorted_files.clear();
-    blocks_to_flush.blocks.clear(); /// clear blocks but keep counters
-    return out;
+    return out; /// There're also inserted_blocks counters as indirect output
+}
+
+BlockInputStreamPtr SortedBlocksWriter::streamFromFile(const TmpFilePtr & file) const
+{
+    return std::make_shared<TemporaryFileLazyInputStream>(file->path(), sample_block);
+}
+
+String SortedBlocksWriter::getPath() const
+{
+    return volume->getNextDisk()->getPath();
 }
 
 
@@ -519,6 +549,7 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     , skip_not_intersected(table_join->enablePartialMergeJoinOptimizations())
     , max_joined_block_rows(table_join->maxJoinedBlockRows())
     , max_rows_in_right_block(table_join->maxRowsInRightBlock())
+    , max_files_to_merge(table_join->maxFilesToMerge())
 {
     if (!isLeft(table_join->kind()) && !isInner(table_join->kind()))
         throw Exception("Not supported. PartialMergeJoin supports LEFT and INNER JOINs kinds.", ErrorCodes::NOT_IMPLEMENTED);
@@ -534,6 +565,9 @@ MergeJoin::MergeJoin(std::shared_ptr<TableJoin> table_join_, const Block & right
     }
 
     if (!max_rows_in_right_block)
+        throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
+
+    if (max_files_to_merge < 2)
         throw Exception("partial_merge_join_rows_in_right_blocks cannot be zero", ErrorCodes::PARAMETER_OUT_OF_BOUND);
 
     if (!size_limits.hasLimits())
@@ -617,7 +651,7 @@ void MergeJoin::mergeFlushedRightBlocks()
         right_blocks.countBlockSize(block);
     };
 
-    flushed_right_blocks = disk_writer->merge(callback);
+    flushed_right_blocks = disk_writer->finishMerge(callback);
     disk_writer.reset();
 
     /// Get memory limit or approximate it from row limit and bytes per row factor
@@ -647,7 +681,7 @@ bool MergeJoin::saveRightBlock(Block && block)
         if (!has_memory)
         {
             disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTemporaryVolume(),
-                                                        right_sample_block, right_sort_description, right_blocks, max_rows_in_right_block);
+                                right_sample_block, right_sort_description, right_blocks, max_rows_in_right_block, max_files_to_merge);
             is_in_memory = false;
         }
     }

@@ -53,14 +53,17 @@ struct SortedBlocksWriter
         }
     };
 
+    static constexpr const size_t num_streams = 2;
+
     std::mutex insert_mutex;
     std::condition_variable flush_condvar;
     const SizeLimits & size_limits;
     VolumePtr volume;
     const Block & sample_block;
     const SortDescription & sort_description;
-    Blocks & blocks_to_flush;
+    Blocks & inserted_blocks;
     const size_t rows_in_block;
+    const size_t num_files_for_merge;
     SortedFiles sorted_files;
     size_t row_count_in_flush = 0;
     size_t bytes_in_flush = 0;
@@ -68,21 +71,25 @@ struct SortedBlocksWriter
     size_t flush_inflight = 0;
 
     SortedBlocksWriter(const SizeLimits & size_limits_, VolumePtr volume_, const Block & sample_block_, const SortDescription & description,
-                       Blocks & blocks, size_t rows_in_block_)
+                       Blocks & blocks, size_t rows_in_block_, size_t num_files_to_merge_)
         : size_limits(size_limits_)
         , volume(volume_)
         , sample_block(sample_block_)
         , sort_description(description)
-        , blocks_to_flush(blocks)
+        , inserted_blocks(blocks)
         , rows_in_block(rows_in_block_)
+        , num_files_for_merge(num_files_to_merge_)
     {
-        sorted_files.emplace_back(flush(blocks_to_flush.blocks));
-        blocks_to_flush.clear();
+        sorted_files.emplace_back(flush(inserted_blocks.blocks));
+        inserted_blocks.clear();
     }
 
+    String getPath() const;
+    BlockInputStreamPtr streamFromFile(const TmpFilePtr & file) const;
+
     void insert(Block && block);
-    TmpFilePtr flush(const BlocksList & blocks);
-    SortedFiles merge(std::function<void(const Block &)> callback = [](const Block &){});
+    TmpFilePtr flush(const BlocksList & blocks) const;
+    SortedFiles finishMerge(std::function<void(const Block &)> callback = [](const Block &){});
 };
 
 
@@ -143,6 +150,7 @@ private:
     const bool skip_not_intersected;
     const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
+    const size_t max_files_to_merge;
 
     void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);

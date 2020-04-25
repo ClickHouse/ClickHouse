@@ -48,6 +48,7 @@ public:
     TemporaryFileLazyInputStream(const std::string & path_, const Block & header_)
         : path(path_)
         , header(header_)
+        , done(false)
     {}
 
     String getName() const override { return "TemporaryFile"; }
@@ -57,14 +58,25 @@ public:
 protected:
     Block readImpl() override
     {
+        if (done)
+            return {};
+
         if (!stream)
             stream = std::make_unique<TemporaryFileStream>(path, header);
-        return stream->block_in->read();
+
+        auto block = stream->block_in->read();
+        if (!block)
+        {
+            done = true;
+            stream.reset();
+        }
+        return block;
     }
 
 private:
     const std::string path;
     Block header;
+    bool done;
     std::unique_ptr<TemporaryFileStream> stream;
 };
 

@@ -25,6 +25,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , join_algorithm(settings.join_algorithm)
     , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
+    , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
     , tmp_volume(tmp_volume_)
 {
     if (settings.partial_merge_join)
