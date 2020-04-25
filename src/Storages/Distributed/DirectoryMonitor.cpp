@@ -166,15 +166,8 @@ void StorageDistributedDirectoryMonitor::run()
             break;
     }
 
-    if (!quit)
-    {
-        /// If there is no error, then it will be scheduled by the DistributedBlockOutputStream,
-        /// so this is just in case, hence it is distributed_directory_monitor_max_sleep_time_ms
-        if (error_count)
-            task_handle->scheduleAfter(sleep_time.count());
-        else
-            task_handle->scheduleAfter(max_sleep_time.count());
-    }
+    if (!quit && error_count)
+        task_handle->scheduleAfter(sleep_time.count());
 }
 
 
