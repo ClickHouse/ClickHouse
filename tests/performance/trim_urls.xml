@@ -1,0 +1,24 @@
+<test>
+
+    <preconditions>
+        <table_exists>hits_100m_single</table_exists>
+    </preconditions>
+
+
+
+    <substitutions>
+        <substitution>
+           <name>func</name>
+           <values>
+               <value>trim(</value>
+               <value>ltrim(</value>
+               <value>rtrim(</value>
+               <value>trim(LEADING 'htpsw:/' FROM </value>
+               <value>trim(TRAILING '/' FROM </value>
+               <value>trim(BOTH 'htpsw:/' FROM </value>
+           </values>
+       </substitution>
+    </substitutions>
+
+    <query>SELECT count() FROM hits_100m_single WHERE NOT ignore({func}URL))</query>
+</test>

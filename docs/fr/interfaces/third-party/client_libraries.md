@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: f865c9653f9df092694258e0ccdd733c339112f5
+toc_priority: 26
+toc_title: "Biblioth\xE8ques Clientes"
 ---
 
 # Bibliothèques clientes de développeurs tiers {#client-libraries-from-third-party-developers}
@@ -33,6 +36,7 @@ machine_translated: true
     -   [AnyEvent-ClickHouse](https://metacpan.org/release/AnyEvent-ClickHouse)
 -   Rubis
     -   [ClickHouse (Ruby)](https://github.com/shlima/click_house)
+    -   [clickhouse-activerecord](https://github.com/PNixx/clickhouse-activerecord)
 -   R
     -   [clickhouse-r](https://github.com/hannesmuehleisen/clickhouse-r)
     -   [RClickhouse](https://github.com/IMSMWU/RClickhouse)

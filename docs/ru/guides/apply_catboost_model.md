@@ -178,7 +178,7 @@ LIMIT 10
 ```
 
 !!! note "Примечание"
-    Функция [modelEvaluate](../query_language/functions/other_functions.md#function-modelevaluate) возвращает кортежи (tuple) с исходными прогнозами по классам для моделей с несколькими классами.
+    Функция [modelEvaluate](../sql_reference/functions/other_functions.md#function-modelevaluate) возвращает кортежи (tuple) с исходными прогнозами по классам для моделей с несколькими классами.
 
 Спрогнозируйте вероятность:
 
@@ -201,7 +201,7 @@ LIMIT 10
 ```
 
 !!! note "Примечание"
-    Подробнее про функцию [exp()](../query_language/functions/math_functions.md).
+    Подробнее про функцию [exp()](../sql_reference/functions/math_functions.md).
 
 Посчитайте логистическую функцию потерь (LogLoss) на всей выборке:
 
@@ -227,4 +227,4 @@ FROM
 ```
 
 !!! note "Примечание"
-    Подробнее про функции [avg()](../query_language/agg_functions/reference.md#agg_function-avg), [log()](../query_language/functions/math_functions.md).
+    Подробнее про функции [avg()](../sql_reference/aggregate_functions/reference.md#agg_function-avg), [log()](../sql_reference/functions/math_functions.md).

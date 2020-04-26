@@ -23,9 +23,9 @@ report_stage_end('start')
 parser = argparse.ArgumentParser(description='Run performance test.')
 # Explicitly decode files as UTF-8 because sometimes we have Russian characters in queries, and LANG=C is set.
 parser.add_argument('file', metavar='FILE', type=argparse.FileType('r', encoding='utf-8'), nargs=1, help='test description file')
-parser.add_argument('--host', nargs='*', default=['127.0.0.1', '127.0.0.1'], help="Server hostname. Parallel to '--port'.")
-parser.add_argument('--port', nargs='*', default=[9001, 9002], help="Server port. Parallel to '--host'.")
-parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 7)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
+parser.add_argument('--host', nargs='*', default=['localhost'], help="Server hostname(s). Corresponds to '--port' options.")
+parser.add_argument('--port', nargs='*', default=[9000], help="Server port(s). Corresponds to '--host' options.")
+parser.add_argument('--runs', type=int, default=int(os.environ.get('CHPC_RUNS', 13)), help='Number of query runs per server. Defaults to CHPC_RUNS environment variable.')
 parser.add_argument('--no-long', type=bool, default=True, help='Skip the tests tagged as long.')
 args = parser.parse_args()
 
@@ -140,9 +140,16 @@ report_stage_end('substitute2')
 for q in test_queries:
     # Prewarm: run once on both servers. Helps to bring the data into memory,
     # precompile the queries, etc.
-    for conn_index, c in enumerate(connections):
-        res = c.execute(q, query_id = 'prewarm {} {}'.format(0, q))
-        print('prewarm\t' + tsv_escape(q) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+    try:
+        for conn_index, c in enumerate(connections):
+            res = c.execute(q, query_id = 'prewarm {} {}'.format(0, q))
+            print('prewarm\t' + tsv_escape(q) + '\t' + str(conn_index) + '\t' + str(c.last_query.elapsed))
+    except:
+        # If prewarm fails for some query -- skip it, and try to test the others.
+        # This might happen if the new test introduces some function that the
+        # old server doesn't support. Still, report it as an error.
+        print(traceback.format_exc(), file=sys.stderr)
+        continue
 
     # Now, perform measured runs.
     # Track the time spent by the client to process this query, so that we can notice

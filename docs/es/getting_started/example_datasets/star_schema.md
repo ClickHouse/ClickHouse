@@ -1,5 +1,8 @@
 ---
 machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 20
+toc_title: Estrella Schema Benchmark
 ---
 
 # Estrella Schema Benchmark {#star-schema-benchmark}
@@ -15,7 +18,7 @@ $ make
 Generación de datos:
 
 !!! warning "Atención"
-    Desventaja `-s 100` dbgen genera 600 millones de filas (67 GB), mientras que `-s 1000` genera 6 mil millones de filas (lo que lleva mucho tiempo)
+    Con `-s 100` dbgen genera 600 millones de filas (67 GB), mientras que `-s 1000` genera 6 mil millones de filas (lo que lleva mucho tiempo)
 
 ``` bash
 $ ./dbgen -s 1000 -T c
@@ -90,7 +93,7 @@ CREATE TABLE supplier
 ENGINE = MergeTree ORDER BY S_SUPPKEY;
 ```
 
-Inserte datos:
+Insertar datos:
 
 ``` bash
 $ clickhouse-client --query "INSERT INTO customer FORMAT CSV" < customer.tbl
@@ -155,7 +158,7 @@ INNER JOIN part AS p ON p.P_PARTKEY = l.LO_PARTKEY;
 
 Las consultas:
 
-Número de teléfono
+Q1.1
 
 ``` sql
 SELECT sum(LO_EXTENDEDPRICE * LO_DISCOUNT) AS revenue
@@ -163,7 +166,7 @@ FROM lineorder_flat
 WHERE toYear(LO_ORDERDATE) = 1993 AND LO_DISCOUNT BETWEEN 1 AND 3 AND LO_QUANTITY < 25;
 ```
 
-¿Qué puedes encontrar en Neodigit
+Q1.2
 
 ``` sql
 SELECT sum(LO_EXTENDEDPRICE * LO_DISCOUNT) AS revenue
@@ -171,7 +174,7 @@ FROM lineorder_flat
 WHERE toYYYYMM(LO_ORDERDATE) = 199401 AND LO_DISCOUNT BETWEEN 4 AND 6 AND LO_QUANTITY BETWEEN 26 AND 35;
 ```
 
-¿Qué puedes encontrar en Neodigit
+Q1.3
 
 ``` sql
 SELECT sum(LO_EXTENDEDPRICE * LO_DISCOUNT) AS revenue
@@ -180,7 +183,7 @@ WHERE toISOWeek(LO_ORDERDATE) = 6 AND toYear(LO_ORDERDATE) = 1994
   AND LO_DISCOUNT BETWEEN 5 AND 7 AND LO_QUANTITY BETWEEN 26 AND 35;
 ```
 
-Preguntas frecuentes
+Q2.1
 
 ``` sql
 SELECT
@@ -197,7 +200,7 @@ ORDER BY
     P_BRAND;
 ```
 
-Preguntas frecuentes
+Q2.2
 
 ``` sql
 SELECT
@@ -214,7 +217,7 @@ ORDER BY
     P_BRAND;
 ```
 
-Preguntas más frecuentes
+Q2.3
 
 ``` sql
 SELECT
@@ -231,7 +234,7 @@ ORDER BY
     P_BRAND;
 ```
 
-¿Qué puedes encontrar en Neodigit
+Q3.1
 
 ``` sql
 SELECT
@@ -250,7 +253,7 @@ ORDER BY
     revenue DESC;
 ```
 
-¿Qué puedes encontrar en Neodigit
+Q3.2
 
 ``` sql
 SELECT
@@ -269,7 +272,7 @@ ORDER BY
     revenue DESC;
 ```
 
-¿Qué puedes encontrar en Neodigit
+Q3.3
 
 ``` sql
 SELECT
@@ -288,7 +291,7 @@ ORDER BY
     revenue DESC;
 ```
 
-¿Qué puedes encontrar en Neodigit
+Q3.4
 
 ``` sql
 SELECT
@@ -307,7 +310,7 @@ ORDER BY
     revenue DESC;
 ```
 
-Preguntas más frecuentes
+Q4.1
 
 ``` sql
 SELECT
@@ -324,7 +327,7 @@ ORDER BY
     C_NATION ASC;
 ```
 
-Preguntas más frecuentes
+Q4.2
 
 ``` sql
 SELECT
@@ -344,7 +347,7 @@ ORDER BY
     P_CATEGORY ASC;
 ```
 
-Preguntas más frecuentes
+Q4.3
 
 ``` sql
 SELECT
@@ -364,4 +367,4 @@ ORDER BY
     P_BRAND ASC;
 ```
 
-[Artículo Original](https://clickhouse.tech/docs/es/getting_started/example_datasets/star_schema/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/getting_started/example_datasets/star_schema/) <!--hide-->

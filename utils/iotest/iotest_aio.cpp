@@ -15,9 +15,6 @@ int main(int, char **) { return 0; }
 #include <Common/Stopwatch.h>
 #include <IO/BufferWithOwnMemory.h>
 #include <IO/ReadHelpers.h>
-#include <stdlib.h>
-#include <fcntl.h>
-#include <stdlib.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>

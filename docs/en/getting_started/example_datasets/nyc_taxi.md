@@ -1,3 +1,8 @@
+---
+toc_priority: 16
+toc_title: New York Taxi Data
+---
+
 # New York Taxi Data {#new-york-taxi-data}
 
 This dataset can be obtained in two ways:
@@ -375,7 +380,7 @@ We ran queries using a client located in a Yandex datacenter in Finland on a clu
 ## Summary {#summary}
 
 | servers | Q1    | Q2    | Q3    | Q4    |
-|---------|-------|-------|-------|-------|
+|-------|-----|-----|-----|-----|
 | 1       | 0.490 | 1.224 | 2.104 | 3.593 |
 | 3       | 0.212 | 0.438 | 0.733 | 1.241 |
 | 140     | 0.028 | 0.043 | 0.051 | 0.072 |

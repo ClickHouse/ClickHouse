@@ -1,3 +1,5 @@
+# 安装 {#clickhouse-an-zhuang}
+
 ## 系统要求 {#xi-tong-yao-qiu}
 
 ClickHouse可以在任何具有x86\_64，AArch64或PowerPC64LE CPU架构的Linux，FreeBSD或Mac OS X上运行。
@@ -21,7 +23,7 @@ $ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not 
 deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
 ```
 
-如果你想使用最新的测试版本，请使用’testing’替换’stable’。
+如果你想使用最新的测试版本，请使用'testing'替换'stable'。
 
 然后运行：
 
@@ -34,8 +36,8 @@ sudo apt-get install clickhouse-client clickhouse-server
 
 你也可以从这里手动下载安装包：https://repo.yandex.ru/clickhouse/deb/stable/main/。
 
-ClickHouse包含访问控制配置，它们位于`users.xml`文件中(与’config.xml’同目录)。
-默认情况下，允许从任何地方使用默认的‘default’用户无密码的访问ClickHouse。参考‘user/default/networks’。
+ClickHouse包含访问控制配置，它们位于`users.xml`文件中(与'config.xml'同目录)。
+默认情况下，允许从任何地方使用默认的'default'用户无密码的访问ClickHouse。参考'user/default/networks'。
 有关更多信息，请参考«Configuration files»部分。
 
 ### 来自RPM包 {#from-rpm-packages}
@@ -62,7 +64,7 @@ sudo yum install clickhouse-server clickhouse-client
 
 ### 来自Docker {#from-docker-image}
 
-要在Docker中运行ClickHouse，请遵循[Docker Hub](https://hub.docker.com/r/yandex/clickhouse-server/)上的指南。那些图像使用官方的`deb`包。
+要在Docker中运行ClickHouse，请遵循[码头工人中心](https://hub.docker.com/r/yandex/clickhouse-server/)上的指南。那些图像使用官方的`deb`包。
 
 ### 使用源码安装 {#from-sources}
 
@@ -72,8 +74,8 @@ sudo yum install clickhouse-server clickhouse-client
 你也可以直接使用而不进行安装。
 
 ``` text
-Client: dbms/programs/clickhouse-client
-Server: dbms/programs/clickhouse-server
+Client: programs/clickhouse-client
+Server: programs/clickhouse-server
 ```
 
 在服务器中为数据创建如下目录：
@@ -84,9 +86,9 @@ Server: dbms/programs/clickhouse-server
 ```
 
 (它们可以在server config中配置。)
-为需要的用户运行‘chown’
+为需要的用户运行'chown'
 
-日志的路径可以在server config (src/dbms/programs/server/config.xml)中配置。
+日志的路径可以在server config (src/programs/server/config.xml)中配置。
 
 ## 启动 {#qi-dong}
 
@@ -107,7 +109,7 @@ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
 
 在这种情况下，日志将被打印到控制台中，这在开发过程中很方便。
-如果配置文件在当前目录中，你可以不指定‘–config-file’参数。它默认使用‘./config.xml’。
+如果配置文件在当前目录中，你可以不指定'–config-file'参数。它默认使用'./config.xml'。
 
 你可以使用命令行客户端连接到服务：
 
@@ -115,7 +117,7 @@ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 clickhouse-client
 ```
 
-默认情况下它使用‘default’用户无密码的与localhost:9000服务建立连接。
+默认情况下它使用'default'用户无密码的与localhost:9000服务建立连接。
 客户端也可以用于连接远程服务，例如：
 
 ``` bash
@@ -127,7 +129,7 @@ clickhouse-client --host=example.com
 检查系统是否工作：
 
 ``` bash
-milovidov@hostname:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
+milovidov@hostname:~/work/metrica/src/src/Client$ ./clickhouse-client
 ClickHouse client version 0.0.18749.
 Connecting to localhost:9000.
 Connected to ClickHouse server version 0.0.18749.
@@ -149,4 +151,4 @@ SELECT 1
 
 为了继续进行实验，你可以尝试下载测试数据集。
 
-[Original article](https://clickhouse.tech/docs/en/getting_started/install/) <!--hide-->
+[原始文章](https://clickhouse.tech/docs/en/getting_started/install/) <!--hide-->

@@ -1,3 +1,8 @@
+---
+toc_priority: 18
+toc_title: WikiStat
+---
+
 # WikiStat {#wikistat}
 
 See: http://dumps.wikimedia.org/other/pagecounts-raw/
