@@ -227,6 +227,20 @@ namespace Coordination
                 remove_duplicate_keys(this->success_puts, this->success_delete_ranges);
                 remove_duplicate_keys(this->failure_puts, this->failure_delete_ranges);
             }
+            bool empty()
+            {
+                return (success_ranges.size() + success_puts.size() + success_delete_ranges.size() + failure_ranges.size() + failure_puts.size() + failure_delete_ranges.size()) == 0;
+            }
+            void clear()
+            {
+                compares.clear();
+                success_ranges.clear();
+                success_puts.clear();
+                success_delete_ranges.clear();
+                failure_ranges.clear();
+                failure_puts.clear();
+                failure_delete_ranges.clear();
+            }
         };
 
         // struct AsyncWatchCall final : AsyncCall 
