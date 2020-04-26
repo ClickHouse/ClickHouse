@@ -53,45 +53,51 @@ namespace ErrorCodes
 
 
 StorageRabbitMQ::StorageRabbitMQ(
-        const StorageID & table_id_,
-        Context & context_,
-        const ColumnsDescription & columns_,
-        const String & host_port_,
-        const Names & routing_keys_,
-        const String & exchange_name_,
-        const String & format_name_,
-        char row_delimiter_,
-        size_t num_consumers_,
-        UInt64 max_block_size_,
-        size_t skip_broken_)
-        : IStorage(table_id_,
-                   ColumnsDescription({
-                                              {"_exchange", std::make_shared<DataTypeString>()},
-                                              {"_routingKey", std::make_shared<DataTypeString>()},
-                                              {"_deliveryTag", std::make_shared<DataTypeString>()}
-                                      }, true))
-        , global_context(context_.getGlobalContext())
-        , host_port(global_context.getMacros()->expand(host_port_))
-        , routing_keys(global_context.getMacros()->expand(routing_keys_))
-        , exchange_name(exchange_name_)
-        , format_name(global_context.getMacros()->expand(format_name_))
-        , row_delimiter(row_delimiter_)
-        , num_consumers(num_consumers_)
-        , max_block_size(max_block_size_)
-        , skip_broken(skip_broken_)
-        , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
-        , semaphore(0, num_consumers_)
-        , connection_handler(parseAddress(host_port, 5672), log)
-        , connection(&connection_handler,
-                     AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()), "/")
+    const StorageID & table_id_,
+    Context & context_,
+    const ColumnsDescription & columns_,
+    const String & host_port_,
+    const Names & routing_keys_,
+    const String & exchange_name_,
+    const String & format_name_,
+    char row_delimiter_,
+    size_t num_consumers_,
+    UInt64 max_block_size_,
+    size_t skip_broken_)
+    : IStorage(
+        table_id_,
+        ColumnsDescription(
+            {{"_exchange", std::make_shared<DataTypeString>()},
+             {"_routingKey", std::make_shared<DataTypeString>()},
+             {"_deliveryTag", std::make_shared<DataTypeString>()}},
+            true))
+    , global_context(context_.getGlobalContext())
+    , host_port(global_context.getMacros()->expand(host_port_))
+    , routing_keys(global_context.getMacros()->expand(routing_keys_))
+    , exchange_name(exchange_name_)
+    , format_name(global_context.getMacros()->expand(format_name_))
+    , row_delimiter(row_delimiter_)
+    , num_consumers(num_consumers_)
+    , max_block_size(max_block_size_)
+    , skip_broken(skip_broken_)
+    , log(&Logger::get("StorageRabbitMQ (" + table_id_.table_name + ")"))
+    , event_loop(event_base_new())
+    , semaphore(0, num_consumers_)
+    , connection_handler(event_loop, log)
+    , connection(
+          &connection_handler,
+          AMQP::Address("localhost", 5672, AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()), "/"))
 {
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
     task->deactivate();
-
+    while(!connection.ready())
+    {
+        event_base_loop(event_loop, EVLOOP_NONBLOCK | EVLOOP_ONCE);
+        event_base_loop(event_loop, EVLOOP_NONBLOCK | EVLOOP_ONCE);
+    }
     LOG_DEBUG(log, "Is connection ready? - " + std::to_string(connection.ready()));
     LOG_DEBUG(log, "Is connection usable? - " + std::to_string(connection.usable()));
-    LOG_DEBUG(log, "Is connection waiting for the answer from server? - " + std::to_string(connection.waiting()));
 }
 
 
@@ -149,8 +155,8 @@ void StorageRabbitMQ::startup()
 
     /// if connection failed report about what has failed
     // TODO:it will also close the connection, so it has to be restored
-    if (!connection.usable() || !connection.ready())
-        connection.fail("Connection failed.");
+    //if (!connection.usable() || !connection.ready())
+        //connection.fail("Connection failed.");
 
 }
 
@@ -217,7 +223,7 @@ ProducerBufferPtr StorageRabbitMQ::createWriteBuffer()
     /// Sharing one channel between publishers
     if (!publishing_channel)
     {
-        publishing_channel = std::make_shared<AMQP::Channel>(&connection);
+        publishing_channel = std::make_shared<AMQP::TcpChannel>(&connection);
 
         publishing_channel->confirmSelect()
             .onSuccess([&]()
@@ -248,7 +254,7 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
     if (!batch_size)
         batch_size = settings.max_block_size.value;
 
-    return std::make_shared<ReadBufferFromRabbitMQConsumer>(std::make_shared<AMQP::Channel>(&connection),
+    return std::make_shared<ReadBufferFromRabbitMQConsumer>(std::make_shared<AMQP::TcpChannel>(&connection),
             log, batch_size, stream_cancelled);
 }
 
@@ -528,7 +534,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
 
         return StorageRabbitMQ::create(
                 args.table_id, args.context, args.columns,
-                host_port, routing_keys, exchange, 
+                host_port, routing_keys, exchange,
                 format, row_delimiter, num_consumers, max_block_size, skip_broken);
     };
 

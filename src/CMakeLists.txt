@@ -320,7 +320,7 @@ add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Alg
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)
     add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
-    target_link_libraries (dbms PRIVATE jemalloc)
+    target_link_libraries (dbms PRIVATE jemalloc -levent)
     set (all_modules dbms)
 else()
     add_library (dbms SHARED ${dbms_headers} ${dbms_sources})

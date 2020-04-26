@@ -53,7 +53,7 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 void ReadBufferFromRabbitMQConsumer::subscribe(const String & exchange_name, const Names & routing_keys)
 {
     consumer_channel->setQos(batch_size, false);
-        
+
     for (auto key : routing_keys)
     {
         LOG_DEBUG(log, "Attempt to subscribe to - " + key);
@@ -87,7 +87,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & exchange_name, con
 
                         messages.push_back(RabbitMQMessage(const_cast<char *>(message.body()), message.bodySize(),
                         message.exchange(), message.routingkey(), deliveryTag, redelivered));
-                        this->stalled = false; 
+                        this->stalled = false;
                     })
                     .onError([&](const char * message)
                     {
@@ -117,7 +117,7 @@ void ReadBufferFromRabbitMQConsumer::subscribe(const String & exchange_name, con
 
                         messages.push_back(RabbitMQMessage(const_cast<char *>(message.body()), message.bodySize(),
                         message.exchange(), message.routingkey(), deliveryTag, redelivered));
-                        this->stalled = false; 
+                        this->stalled = false;
                     })
                     .onError([&](const char *message)
                     {
@@ -144,10 +144,10 @@ void ReadBufferFromRabbitMQConsumer::unsubscribe()
 }
 
 
-void ReadBufferFromRabbitMQConsumer::start_consuming(RabbitMQHandler & handler)
+void ReadBufferFromRabbitMQConsumer::start_consuming(RabbitMQHandler & /*handler*/)
 {
     LOG_TRACE(log, "Consumer started consuming...");
-    handler.process();
+    //handler.process();
 }
 
 

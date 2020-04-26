@@ -6,6 +6,7 @@
 
 #include <Storages/RabbitMQ/Buffer_fwd.h>
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
+#include <event2/event.h>
 
 #include <Poco/Semaphore.h>
 #include <ext/shared_ptr_helper.h>
@@ -59,7 +60,7 @@ protected:
             const StorageID & table_id_,
             Context & context_,
             const ColumnsDescription & columns_,
-            const String & host_port_, const Names & routing_keys_, const String & exchange_name, 
+            const String & host_port_, const Names & routing_keys_, const String & exchange_name,
             const String & format_name_, char row_delimiter_,
             size_t num_consumers_, UInt64 max_block_size_, size_t skip_broken);
 
@@ -78,13 +79,13 @@ private:
     size_t skip_broken;
 
     Poco::Logger * log;
-
+    event_base * event_loop;
     Poco::Semaphore semaphore;
     std::mutex mutex;
     std::vector<ConsumerBufferPtr> buffers; /// available buffers for RabbitMQ consumers
 
     RabbitMQHandler connection_handler;
-    AMQP::Connection connection;
+    AMQP::TcpConnection connection;
 
     ChannelPtr publishing_channel; /// Shared between all publishers
     ChannelPtr consumer_channel; /// Unique to consumer

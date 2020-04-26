@@ -2,11 +2,13 @@
 
 #include <memory>
 #include <amqpcpp.h>
-#include <amqpcpp/linux_tcp.h>
-#include <Poco/Net/StreamSocket.h>
-#include <common/types.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+#include <amqpcpp/libevent.h>
+#include <amqpcpp/linux_tcp.h>
+#include <event2/event.h>
+#include <Poco/Net/StreamSocket.h>
+#include <common/types.h>
 
 
 namespace DB
@@ -19,15 +21,15 @@ namespace DB
  */
 
 class ConnectionImpl;
-class RabbitMQHandler: public AMQP::ConnectionHandler
+class RabbitMQHandler: public AMQP::LibEventHandler
 {
 public:
 
-    RabbitMQHandler(const std::pair<std::string, UInt16> & parsedAddress_, Poco::Logger * log_);
+    RabbitMQHandler(event_base * event, Poco::Logger * log_);
     ~RabbitMQHandler() override;
 
     bool connected() const;
-    void process();
+    //void process();
 
     RabbitMQHandler(const RabbitMQHandler&) = delete;
     RabbitMQHandler& operator=(const RabbitMQHandler&) = delete;
@@ -35,11 +37,9 @@ public:
     const String & get_user_name() { return user_name; }
     const String & get_password() { return password; }
 
-private:
-    void onReady(AMQP::Connection * conection) override;
-    void onData(AMQP::Connection * connection, const char *data, size_t size) override;
-    void onError(AMQP::Connection * connection, const char *message) override;
-    void onClosed(AMQP::Connection * connection) override;
+    //void onReady(AMQP::TcpConnection * conection) override;
+    //void onError(AMQP::TcpConnection * connection, const char *message) override;
+    //void onClosed(AMQP::TcpConnection * connection) override;
 
 private:
     Poco::Logger * log;
@@ -60,9 +60,8 @@ public:
             readable(false)
     {
     }
-    Poco::Net::StreamSocket socket;
     bool connected = false;
-    AMQP::Connection * connection;
+    AMQP::TcpConnection * connection;
     bool closed;
     bool readable;
 
