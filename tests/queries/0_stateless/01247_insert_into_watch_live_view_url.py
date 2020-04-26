@@ -37,19 +37,19 @@ with client(name='client1>', log=log) as client1, client(name='client2>', log=lo
     client1.expect(r'0.*1' + end_of_block)
     time.sleep(0.25)
     sys.stdout.write("-- first insert --\n")
-    sys.stdout.write(server.out.read())
+    sys.stdout.write(server.out.read() + "\n")
 
     client2.send('INSERT INTO test.mt VALUES (1),(2),(3)')
     client2.expect(prompt)
     time.sleep(0.25)
     sys.stdout.write("-- second insert --\n")
-    sys.stdout.write(server.out.read())
+    sys.stdout.write(server.out.read() + "\n")
 
     client2.send('INSERT INTO test.mt VALUES (4),(5),(6)')
     client2.expect(prompt)
     time.sleep(0.25)
     sys.stdout.write("-- third insert --\n")
-    sys.stdout.write(server.out.read())
+    sys.stdout.write(server.out.read() + "\n")
  
     # send Ctrl-C
     client1.send('\x03', eol='')
