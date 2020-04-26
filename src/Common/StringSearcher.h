@@ -68,9 +68,11 @@ private:
 
 #ifdef __SSE4_1__
     /// vectors filled with `l` and `u`, for determining leftmost position of the first symbol
-    __m128i patl, patu;
+    __m128i patl;
+    __m128i patu;
     /// lower and uppercase vectors of first 16 characters of `needle`
-    __m128i cachel = _mm_setzero_si128(), cacheu = _mm_setzero_si128();
+    __m128i cachel = _mm_setzero_si128();
+    __m128i cacheu = _mm_setzero_si128();
     int cachemask{};
     size_t cache_valid_len{};
     size_t cache_actual_len{};
