@@ -21,8 +21,8 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
 
     size_t num_rows = chunk.getNumRows();
     size_t num_columns = chunk.getNumColumns();
-    auto & header = getPort(port_kind).getHeader();
-    auto & columns = chunk.getColumns();
+    const auto & header = getPort(port_kind).getHeader();
+    const auto & columns = chunk.getColumns();
 
     WidthsPerColumn widths;
     Widths max_widths;
@@ -69,7 +69,7 @@ void PrettySpaceBlockOutputFormat::write(const Chunk & chunk, PortKind port_kind
             if (column != 0)
                 writeCString("   ", out);
 
-            auto & type = *header.getByPosition(column).type;
+            const auto & type = *header.getByPosition(column).type;
             auto & cur_width = widths[column].empty() ? max_widths[column] : widths[column][row];
             writeValueWithPadding(*columns[column], type, row, cur_width, max_widths[column]);
         }

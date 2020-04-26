@@ -27,7 +27,7 @@ Block LazyOutputFormat::getBlock(UInt64 milliseconds)
 
     if (auto chunk_info = chunk.getChunkInfo())
     {
-        if (auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
+        if (const auto * agg_info = typeid_cast<const AggregatedChunkInfo *>(chunk_info.get()))
         {
             block.info.bucket_num = agg_info->bucket_num;
             block.info.is_overflows = agg_info->is_overflows;

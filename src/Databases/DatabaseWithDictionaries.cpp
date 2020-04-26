@@ -36,7 +36,7 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
 {
     String full_name = getDatabaseName() + "." + dictionary_name;
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
         auto [it, inserted] = dictionaries.emplace(dictionary_name, attach_info);
         if (!inserted)
             throw Exception("Dictionary " + full_name + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
@@ -49,7 +49,8 @@ void DatabaseWithDictionaries::attachDictionary(const String & dictionary_name, 
                 StorageDictionary::create(
                     StorageID(getDatabaseName(), dictionary_name),
                     full_name,
-                    ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config)));
+                    ExternalDictionariesLoader::getDictionaryStructure(*attach_info.config)),
+                lock);
         }
         catch (...)
         {
@@ -76,7 +77,7 @@ void DatabaseWithDictionaries::detachDictionaryImpl(const String & dictionary_na
     String full_name = getDatabaseName() + "." + dictionary_name;
 
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
         auto it = dictionaries.find(dictionary_name);
         if (it == dictionaries.end())
             throw Exception("Dictionary " + full_name + " doesn't exist.", ErrorCodes::UNKNOWN_DICTIONARY);
@@ -86,7 +87,7 @@ void DatabaseWithDictionaries::detachDictionaryImpl(const String & dictionary_na
         /// Detach the dictionary as table too.
         try
         {
-            detachTableUnlocked(dictionary_name);
+            detachTableUnlocked(dictionary_name, lock);
         }
         catch (...)
         {
@@ -116,7 +117,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
 
     /// A race condition would be possible if a dictionary with the same name is simultaneously created using CREATE and using ATTACH.
     /// But there is protection from it - see using DDLGuard in InterpreterCreateQuery.
-    if (isDictionaryExist(context, dictionary_name))
+    if (isDictionaryExist(dictionary_name))
         throw Exception("Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
     /// A dictionary with the same full name could be defined in *.xml config files.
@@ -126,7 +127,7 @@ void DatabaseWithDictionaries::createDictionary(const Context & context, const S
                 "Dictionary " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.",
                 ErrorCodes::DICTIONARY_ALREADY_EXISTS);
 
-    if (isTableExist(context, dictionary_name))
+    if (isTableExist(dictionary_name))
         throw Exception("Table " + backQuote(getDatabaseName()) + "." + backQuote(dictionary_name) + " already exists.", ErrorCodes::TABLE_ALREADY_EXISTS);
 
 
@@ -201,7 +202,7 @@ void DatabaseWithDictionaries::removeDictionary(const Context &, const String & 
     }
 }
 
-DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterator(const Context & /*context*/, const FilterByNameFunction & filter_by_dictionary_name)
+DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterator(const FilterByNameFunction & filter_by_dictionary_name)
 {
     std::lock_guard lock(mutex);
     if (!filter_by_dictionary_name)
@@ -214,14 +215,13 @@ DatabaseDictionariesIteratorPtr DatabaseWithDictionaries::getDictionariesIterato
     return std::make_unique<DatabaseDictionariesSnapshotIterator>(std::move(filtered_dictionaries));
 }
 
-bool DatabaseWithDictionaries::isDictionaryExist(const Context & /*context*/, const String & dictionary_name) const
+bool DatabaseWithDictionaries::isDictionaryExist(const String & dictionary_name) const
 {
     std::lock_guard lock(mutex);
     return dictionaries.find(dictionary_name) != dictionaries.end();
 }
 
 ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
-        const Context & context,
         const String & dictionary_name,
         bool throw_on_error) const
 {
@@ -244,7 +244,7 @@ ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
     try
     {
         auto dictionary_metadata_path = getObjectMetadataPath(dictionary_name);
-        ast = getCreateQueryFromMetadata(context, dictionary_metadata_path, throw_on_error);
+        ast = getCreateQueryFromMetadata(dictionary_metadata_path, throw_on_error);
     }
     catch (const Exception & e)
     {
@@ -263,7 +263,6 @@ ASTPtr DatabaseWithDictionaries::getCreateDictionaryQueryImpl(
                         ErrorCodes::CANNOT_GET_CREATE_DICTIONARY_QUERY};
     return nullptr;
 }
-
 
 Poco::AutoPtr<Poco::Util::AbstractConfiguration> DatabaseWithDictionaries::getDictionaryConfiguration(const String & dictionary_name) const
 {
@@ -286,7 +285,7 @@ time_t DatabaseWithDictionaries::getObjectMetadataModificationTime(const String 
 }
 
 
-bool DatabaseWithDictionaries::empty(const Context &) const
+bool DatabaseWithDictionaries::empty() const
 {
     std::lock_guard lock{mutex};
     return tables.empty() && dictionaries.empty();

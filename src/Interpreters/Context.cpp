@@ -406,7 +406,7 @@ struct ContextShared
         if (system_logs)
             system_logs->shutdown();
 
-        DatabaseCatalog::instance().shutdown();
+        DatabaseCatalog::shutdown();
 
         /// Preemptive destruction is important, because these objects may have a refcount to ContextShared (cyclic reference).
         /// TODO: Get rid of this.
@@ -445,12 +445,26 @@ Context::Context() = default;
 Context::Context(const Context &) = default;
 Context & Context::operator=(const Context &) = default;
 
+SharedContextHolder::SharedContextHolder(SharedContextHolder &&) noexcept = default;
+SharedContextHolder & SharedContextHolder::operator=(SharedContextHolder &&) = default;
+SharedContextHolder::SharedContextHolder() = default;
+SharedContextHolder::~SharedContextHolder() = default;
+SharedContextHolder::SharedContextHolder(std::unique_ptr<ContextShared> shared_context)
+    : shared(std::move(shared_context)) {}
 
-Context Context::createGlobal()
+void SharedContextHolder::reset() { shared.reset(); }
+
+
+Context Context::createGlobal(ContextShared * shared)
 {
     Context res;
-    res.shared = std::make_shared<ContextShared>();
+    res.shared = shared;
     return res;
+}
+
+SharedContextHolder Context::createShared()
+{
+    return SharedContextHolder(std::make_unique<ContextShared>());
 }
 
 Context::~Context() = default;
@@ -806,7 +820,7 @@ Tables Context::getExternalTables() const
     auto lock = getLock();
 
     Tables res;
-    for (auto & table : external_tables_mapping)
+    for (const auto & table : external_tables_mapping)
         res[table.first] = table.second->getTable();
 
     if (query_context && query_context != this)
@@ -1300,7 +1314,7 @@ BackgroundProcessingPool & Context::getBackgroundPool()
     if (!shared->background_pool)
     {
         BackgroundProcessingPool::PoolSettings pool_settings;
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
         pool_settings.thread_sleep_seconds = config.getDouble("background_processing_pool_thread_sleep_seconds", 10);
         pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_processing_pool_thread_sleep_seconds_random_part", 1.0);
         pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
@@ -1319,7 +1333,7 @@ BackgroundProcessingPool & Context::getBackgroundMovePool()
     if (!shared->background_move_pool)
     {
         BackgroundProcessingPool::PoolSettings pool_settings;
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
         pool_settings.thread_sleep_seconds = config.getDouble("background_move_processing_pool_thread_sleep_seconds", 10);
         pool_settings.thread_sleep_seconds_random_part = config.getDouble("background_move_processing_pool_thread_sleep_seconds_random_part", 1.0);
         pool_settings.thread_sleep_seconds_if_nothing_to_do = config.getDouble("background_move_processing_pool_thread_sleep_seconds_if_nothing_to_do", 0.1);
@@ -1448,7 +1462,7 @@ UInt16 Context::getTCPPort() const
 {
     auto lock = getLock();
 
-    auto & config = getConfigRef();
+    const auto & config = getConfigRef();
     return config.getInt("tcp_port", DBMS_DEFAULT_PORT);
 }
 
@@ -1456,7 +1470,7 @@ std::optional<UInt16> Context::getTCPPortSecure() const
 {
     auto lock = getLock();
 
-    auto & config = getConfigRef();
+    const auto & config = getConfigRef();
     if (config.has("tcp_port_secure"))
         return config.getInt("tcp_port_secure");
     return {};
@@ -1489,7 +1503,7 @@ void Context::reloadClusterConfig()
             cluster_config = shared->clusters_config;
         }
 
-        auto & config = cluster_config ? *cluster_config : getConfigRef();
+        const auto & config = cluster_config ? *cluster_config : getConfigRef();
         auto new_clusters = std::make_unique<Clusters>(config, settings);
 
         {
@@ -1511,7 +1525,7 @@ Clusters & Context::getClusters() const
     std::lock_guard lock(shared->clusters_mutex);
     if (!shared->clusters)
     {
-        auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
+        const auto & config = shared->clusters_config ? *shared->clusters_config : getConfigRef();
         shared->clusters = std::make_unique<Clusters>(config, settings);
     }
 
@@ -1641,7 +1655,7 @@ CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double par
     if (!shared->compression_codec_selector)
     {
         constexpr auto config_name = "compression";
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
 
         if (config.has(config_name))
             shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
@@ -1670,7 +1684,7 @@ DiskSelectorPtr Context::getDiskSelector() const
     if (!shared->merge_tree_disk_selector)
     {
         constexpr auto config_name = "storage_configuration.disks";
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
 
         shared->merge_tree_disk_selector = std::make_shared<DiskSelector>(config, config_name, *this);
     }
@@ -1695,7 +1709,7 @@ StoragePolicySelectorPtr Context::getStoragePolicySelector() const
     if (!shared->merge_tree_storage_policy_selector)
     {
         constexpr auto config_name = "storage_configuration.policies";
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
 
         shared->merge_tree_storage_policy_selector = std::make_shared<StoragePolicySelector>(config, config_name, getDiskSelector());
     }
@@ -1730,7 +1744,7 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
     if (!shared->merge_tree_settings)
     {
-        auto & config = getConfigRef();
+        const auto & config = getConfigRef();
         MergeTreeSettings mt_settings;
         mt_settings.loadFromConfig("merge_tree", config);
         shared->merge_tree_settings.emplace(mt_settings);
@@ -1974,7 +1988,7 @@ std::shared_ptr<ActionLocksManager> Context::getActionLocksManager()
     auto lock = getLock();
 
     if (!shared->action_locks_manager)
-        shared->action_locks_manager = std::make_shared<ActionLocksManager>(getGlobalContext());
+        shared->action_locks_manager = std::make_shared<ActionLocksManager>();
 
     return shared->action_locks_manager;
 }
@@ -2049,11 +2063,16 @@ StorageID Context::resolveStorageID(StorageID storage_id, StorageNamespace where
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
-    auto lock = getLock();
+    StorageID resolved = StorageID::createEmpty();
     std::optional<Exception> exc;
-    auto resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
+    {
+        auto lock = getLock();
+        resolved = resolveStorageIDImpl(std::move(storage_id), where, &exc);
+    }
     if (exc)
         throw Exception(*exc);
+    if (!resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+        resolved.uuid = DatabaseCatalog::instance().getDatabase(resolved.database_name)->tryGetTableUUID(resolved.table_name);
     return resolved;
 }
 
@@ -2062,8 +2081,18 @@ StorageID Context::tryResolveStorageID(StorageID storage_id, StorageNamespace wh
     if (storage_id.uuid != UUIDHelpers::Nil)
         return storage_id;
 
-    auto lock = getLock();
-    return resolveStorageIDImpl(std::move(storage_id), where, nullptr);
+    StorageID resolved = StorageID::createEmpty();
+    {
+        auto lock = getLock();
+        resolved = resolveStorageIDImpl(std::move(storage_id), where, nullptr);
+    }
+    if (resolved && !resolved.hasUUID() && resolved.database_name != DatabaseCatalog::TEMPORARY_DATABASE)
+    {
+        auto db = DatabaseCatalog::instance().tryGetDatabase(resolved.database_name);
+        if (db)
+            resolved.uuid = db->tryGetTableUUID(resolved.table_name);
+    }
+    return resolved;
 }
 
 StorageID Context::resolveStorageIDImpl(StorageID storage_id, StorageNamespace where, std::optional<Exception> * exception) const

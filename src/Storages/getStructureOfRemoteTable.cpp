@@ -35,7 +35,7 @@ ColumnsDescription getStructureOfRemoteTable(
 
     std::string fail_messages;
 
-    for (auto & shard_info : shards_info)
+    for (const auto & shard_info : shards_info)
     {
         try
         {

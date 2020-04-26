@@ -105,7 +105,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
          */
 
         size_t sym_cnt = 0;
-        for (auto it = dyn_begin; it->d_tag != DT_NULL; ++it)
+        for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
             // TODO: this branch leads to invalid address of the hash table. Need further investigation.
             // if (it->d_tag == DT_HASH)
@@ -148,7 +148,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
             continue;
 
         const char * strtab = nullptr;
-        for (auto it = dyn_begin; it->d_tag != DT_NULL; ++it)
+        for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
             if (it->d_tag == DT_STRTAB)
             {
@@ -160,7 +160,7 @@ void collectSymbolsFromProgramHeaders(dl_phdr_info * info,
         if (!strtab)
             continue;
 
-        for (auto it = dyn_begin; it->d_tag != DT_NULL; ++it)
+        for (const auto * it = dyn_begin; it->d_tag != DT_NULL; ++it)
         {
             if (it->d_tag == DT_SYMTAB)
             {

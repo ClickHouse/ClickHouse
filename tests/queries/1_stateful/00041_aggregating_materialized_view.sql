@@ -14,8 +14,8 @@ ENGINE = AggregatingMergeTree(StartDate, (CounterID, StartDate), 8192)
 AS SELECT
     CounterID,
     StartDate,
-    sumState(Sign) 						AS Visits,
-    uniqState(UserID)					AS Users
+    sumState(Sign)                  AS Visits,
+    uniqState(UserID)               AS Users
 FROM test.visits_null
 GROUP BY CounterID, StartDate;
 
@@ -30,8 +30,8 @@ FROM test.visits;
 
 SELECT
     StartDate,
-    sumMerge(Visits)				AS Visits,
-    uniqMerge(Users)				AS Users
+    sumMerge(Visits)                AS Visits,
+    uniqMerge(Users)                AS Users
 FROM test.basic
 GROUP BY StartDate
 ORDER BY StartDate;
@@ -39,8 +39,8 @@ ORDER BY StartDate;
 
 SELECT
     StartDate,
-    sumMerge(Visits)				AS Visits,
-    uniqMerge(Users)				AS Users
+    sumMerge(Visits)                AS Visits,
+    uniqMerge(Users)                AS Users
 FROM test.basic
 WHERE CounterID = 942285
 GROUP BY StartDate
@@ -49,8 +49,8 @@ ORDER BY StartDate;
 
 SELECT
     StartDate,
-    sum(Sign) 						AS Visits,
-    uniq(UserID)					AS Users
+    sum(Sign)                       AS Visits,
+    uniq(UserID)                    AS Users
 FROM test.visits
 WHERE CounterID = 942285
 GROUP BY StartDate

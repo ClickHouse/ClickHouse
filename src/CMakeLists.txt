@@ -311,6 +311,8 @@ add_object_library(clickhouse_processors_formats Processors/Formats)
 add_object_library(clickhouse_processors_formats_impl Processors/Formats/Impl)
 add_object_library(clickhouse_processors_transforms Processors/Transforms)
 add_object_library(clickhouse_processors_sources Processors/Sources)
+add_object_library(clickhouse_processors_merges Processors/Merges)
+add_object_library(clickhouse_processors_merges_algorithms Processors/Merges/Algorithms)
 
 
 if (MAKE_STATIC_LIBRARIES OR NOT SPLIT_SHARED_LIBRARIES)

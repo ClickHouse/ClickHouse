@@ -38,8 +38,8 @@ Then see the `report.html` in the `output` directory.
 
 There are some environment variables that influence what the test does:
  * `-e CHCP_RUNS` -- the number of runs;
- * `-e CHPC_TEST_GLOB` -- the names of the tests (xml files) to run, interpreted
- as a shell glob.
+ * `-e CHPC_TEST_GREP` -- the names of the tests (xml files) to run, interpreted
+ as a grep pattern.
 
 #### Re-genarate report with your tweaks
 From the workspace directory (extracted test output archive):
