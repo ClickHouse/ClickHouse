@@ -8,7 +8,17 @@
             <url>/test_predefine_handler_get</url>
             <handler>
                 <type>predefine_query_handler</type>
-                <query>SELECT * FROM system.settings WHERE name = {setting_name:String}</query>
+                <query>SELECT name, value FROM system.settings WHERE name = {setting_name:String}</query>
+            </handler>
+        </routing_rule>
+        <routing_rule>
+            <url><![CDATA[regex:/query_param_with_url/(?P<setting_name_1>[^/]+)]]></url>
+            <headers>
+                <XXX><![CDATA[regex:(?P<setting_name_2>.+)]]></XXX>
+            </headers>
+            <handler>
+                <type>predefine_query_handler</type>
+                <query>SELECT name, value FROM system.settings WHERE name = {setting_name_1:String} OR name = {setting_name_2:String}</query>
             </handler>
         </routing_rule>
     </routing_rules>
