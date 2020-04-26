@@ -28,6 +28,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/escapeForFileName.h>
 #include <Common/CurrentThread.h>
+#include <Common/createHardLink.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
 #include <ext/scope_guard.h>
@@ -57,7 +58,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
-    extern const int CANNOT_LINK;
 }
 
 static void writeBlockConvert(const BlockOutputStreamPtr & out, const Block & block, const size_t repeats)
@@ -554,79 +554,66 @@ void DistributedBlockOutputStream::writeToLocal(const Block & block, const size_
 
 void DistributedBlockOutputStream::writeToShard(const Block & block, const std::vector<std::string> & dir_names)
 {
-    /** tmp directory is used to ensure atomicity of transactions
-      *  and keep monitor thread out from reading incomplete data
-      */
+    /// tmp directory is used to ensure atomicity of transactions
+    /// and keep monitor thread out from reading incomplete data
     std::string first_file_tmp_path{};
 
-    auto first = true;
+    const auto & [disk, data_path] = storage.getPath();
 
-    /// write first file, hardlink the others
-    for (const auto & dir_name : dir_names)
+    /// on first iteration write block to a temporary directory for subsequent
+    /// hardlinking to ensure the inode is not freed until we're done
     {
-        const auto & [disk, data_path] = storage.getPath();
-        const std::string path(disk + data_path + dir_name + '/');
-
+        const std::string path(disk + data_path + dir_names.front());
         Poco::File(path).createDirectory();
 
-        const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
-        const auto & block_file_path = path + file_name;
+        const std::string tmp_path(path + "/tmp/");
+        Poco::File(tmp_path).createDirectory();
 
-        /** on first iteration write block to a temporary directory for subsequent hardlinking to ensure
-            *  the inode is not freed until we're done */
-        if (first)
-        {
-            first = false;
+        first_file_tmp_path = tmp_path + toString(storage.file_names_increment.get()) + ".bin";
 
-            const auto & tmp_path = path + "tmp/";
-            Poco::File(tmp_path).createDirectory();
-            const auto & block_file_tmp_path = tmp_path + file_name;
+        WriteBufferFromFile out{first_file_tmp_path};
+        CompressedWriteBuffer compress{out};
+        NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
 
-            first_file_tmp_path = block_file_tmp_path;
+        /// Prepare the header.
+        /// We wrap the header into a string for compatibility with older versions:
+        /// a shard will able to read the header partly and ignore other parts based on its version.
+        WriteBufferFromOwnString header_buf;
+        writeVarUInt(ClickHouseRevision::get(), header_buf);
+        writeStringBinary(query_string, header_buf);
+        context.getSettingsRef().serialize(header_buf);
+        context.getClientInfo().write(header_buf, ClickHouseRevision::get());
 
-            WriteBufferFromFile out{block_file_tmp_path};
-            CompressedWriteBuffer compress{out};
-            NativeBlockOutputStream stream{compress, ClickHouseRevision::get(), block.cloneEmpty()};
+        /// Add new fields here, for example:
+        /// writeVarUInt(my_new_data, header_buf);
 
-            /// Prepare the header.
-            /// We wrap the header into a string for compatibility with older versions:
-            /// a shard will able to read the header partly and ignore other parts based on its version.
-            WriteBufferFromOwnString header_buf;
-            writeVarUInt(ClickHouseRevision::get(), header_buf);
-            writeStringBinary(query_string, header_buf);
-            context.getSettingsRef().serialize(header_buf);
-            context.getClientInfo().write(header_buf, ClickHouseRevision::get());
+        /// Write the header.
+        const StringRef header = header_buf.stringRef();
+        writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
+        writeStringBinary(header, out);
+        writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
 
-            /// Add new fields here, for example:
-            /// writeVarUInt(my_new_data, header_buf);
-
-            /// Write the header.
-            const StringRef header = header_buf.stringRef();
-            writeVarUInt(DBMS_DISTRIBUTED_SIGNATURE_HEADER, out);
-            writeStringBinary(header, out);
-            writePODBinary(CityHash_v1_0_2::CityHash128(header.data, header.size), out);
-
-            stream.writePrefix();
-            stream.write(block);
-            stream.writeSuffix();
-        }
-
-        if (link(first_file_tmp_path.data(), block_file_path.data()))
-            throwFromErrnoWithPath("Could not link " + block_file_path + " to " + first_file_tmp_path, block_file_path,
-                                   ErrorCodes::CANNOT_LINK);
+        stream.writePrefix();
+        stream.write(block);
+        stream.writeSuffix();
     }
 
-    /// notify the storage
+    auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
+    /// hardlink and notify
     for (const auto & dir_name : dir_names)
     {
-        const auto & [disk, _] = storage.getPath();
+        const std::string path(disk + data_path + dir_name);
+        Poco::File(path).createDirectory();
+        const std::string block_file_path(path + '/' + toString(storage.file_names_increment.get()) + ".bin");
+
+        createHardLink(first_file_tmp_path, block_file_path);
+
         auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
-        auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
         directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
     }
 
-    /** remove the temporary file, enabling the OS to reclaim inode after all threads
-        *  have removed their corresponding files */
+    /// remove the temporary file, enabling the OS to reclaim inode after all threads
+    /// have removed their corresponding files
     Poco::File(first_file_tmp_path).remove();
 }
 
