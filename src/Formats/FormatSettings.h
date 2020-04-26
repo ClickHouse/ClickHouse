@@ -13,6 +13,8 @@ namespace DB
   */
 struct FormatSettings
 {
+    bool enable_streaming = false;
+
     struct JSON
     {
         bool quote_64bit_integers = true;
