@@ -131,7 +131,7 @@ static void fillArrowArrayWithDateColumnData(
 static void fillArrowArrayWithDateTimeColumnData(
     ColumnPtr write_column, std::shared_ptr<arrow::Array> & arrow_array, const PaddedPODArray<UInt8> * null_bytemap)
 {
-    auto & internal_data = assert_cast<const ColumnVector<UInt32> &>(*write_column).getData();
+    const auto & internal_data = assert_cast<const ColumnVector<UInt32> &>(*write_column).getData();
     //arrow::Date64Builder builder;
     arrow::UInt32Builder builder;
     arrow::Status status;
@@ -291,7 +291,7 @@ private:
 
 void ParquetBlockOutputFormat::consume(Chunk chunk)
 {
-    auto & header = getPort(PortKind::Main).getHeader();
+    const auto & header = getPort(PortKind::Main).getHeader();
     const size_t columns_num = chunk.getNumColumns();
 
     /// For arrow::Schema and arrow::Table creation

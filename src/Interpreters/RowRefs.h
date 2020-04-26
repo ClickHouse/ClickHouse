@@ -18,8 +18,10 @@ class Block;
 /// Reference to the row in block.
 struct RowRef
 {
+    using SizeT = uint32_t; /// Do not use size_t cause of memory economy
+
     const Block * block = nullptr;
-    size_t row_num = 0;
+    SizeT row_num = 0;
 
     RowRef() {}
     RowRef(const Block * block_, size_t row_num_) : block(block_), row_num(row_num_) {}
@@ -33,7 +35,7 @@ struct RowRefList : RowRef
     {
         static constexpr size_t MAX_SIZE = 7; /// Adequate values are 3, 7, 15, 31.
 
-        size_t size = 0;
+        SizeT size = 0; /// It's smaller than size_t but keeps align in Arena.
         Batch * next;
         RowRef row_refs[MAX_SIZE];
 

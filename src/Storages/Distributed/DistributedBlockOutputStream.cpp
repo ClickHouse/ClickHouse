@@ -264,7 +264,7 @@ ThreadPool::Job DistributedBlockOutputStream::runWritingJob(DistributedBlockOutp
 
             for (size_t j = 0; j < current_block.columns(); ++j)
             {
-                auto & src_column = current_block.getByPosition(j).column;
+                const auto & src_column = current_block.getByPosition(j).column;
                 auto & dst_column = job.current_shard_block.getByPosition(j).column;
 
                 /// Zero permutation size has special meaning in IColumn::permute
@@ -589,8 +589,8 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
         const std::string path(disk + data_path + dir_name + '/');
 
         /// ensure shard subdirectory creation and notify storage
-        if (Poco::File(path).createDirectory())
-            storage.requireDirectoryMonitor(disk, dir_name);
+        Poco::File(path).createDirectory();
+        auto & directory_monitor = storage.requireDirectoryMonitor(disk, dir_name);
 
         const auto & file_name = toString(storage.file_names_increment.get()) + ".bin";
         const auto & block_file_path = path + file_name;
@@ -632,6 +632,9 @@ void DistributedBlockOutputStream::writeToShard(const Block & block, const std::
             stream.writePrefix();
             stream.write(block);
             stream.writeSuffix();
+
+            auto sleep_ms = context.getSettingsRef().distributed_directory_monitor_sleep_time_ms;
+            directory_monitor.scheduleAfter(sleep_ms.totalMilliseconds());
         }
 
         if (link(first_file_tmp_path.data(), block_file_path.data()))

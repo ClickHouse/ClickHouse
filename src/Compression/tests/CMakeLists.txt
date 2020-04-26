@@ -6,6 +6,5 @@ target_link_libraries (cached_compressed_read_buffer PRIVATE dbms)
 
 if (ENABLE_FUZZING)
     add_executable (compressed_buffer_fuzz compressed_buffer_fuzz.cpp)
-    target_link_libraries (compressed_buffer_fuzz PRIVATE dbms)
-    set_target_properties(compressed_buffer_fuzz PROPERTIES LINK_FLAGS ${LIBFUZZER_CMAKE_CXX_FLAGS})
+    target_link_libraries (compressed_buffer_fuzz PRIVATE dbms ${LIB_FUZZING_ENGINE})
 endif ()

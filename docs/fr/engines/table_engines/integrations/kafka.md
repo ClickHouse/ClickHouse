@@ -136,7 +136,7 @@ Pour arrêter de recevoir des données de rubrique ou pour modifier la logique d
 
 ``` sql
   DETACH TABLE consumer;
-  ATTACH MATERIALIZED VIEW consumer;
+  ATTACH TABLE consumer;
 ```
 
 Si vous souhaitez modifier la table cible en utilisant `ALTER`, nous vous recommandons de désactiver la vue matériel pour éviter les divergences entre la table cible et les données de la vue.

@@ -14,7 +14,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <DataStreams/GraphiteRollupSortedBlockInputStream.h>
+#include <Processors/Merges/Algorithms/Graphite.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
@@ -521,8 +521,7 @@ public:
     /// Moves the entire data directory.
     /// Flushes the uncompressed blocks cache and the marks cache.
     /// Must be called with locked lockStructureForAlter().
-    void rename(const String & new_table_path, const String & new_database_name,
-        const String & new_table_name, TableStructureWriteLockHolder &) override;
+    void rename(const String & new_table_path, const StorageID & new_table_id) override;
 
     /// Check if the ALTER can be performed:
     /// - all needed columns are present.
@@ -560,7 +559,7 @@ public:
     bool hasAnyTTL() const override { return hasRowsTTL() || hasAnyMoveTTL() || hasAnyColumnTTL(); }
 
     /// Check that the part is not broken and calculate the checksums for it if they are not present.
-    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path);
+    MutableDataPartPtr loadPartAndFixMetadata(const DiskPtr & disk, const String & relative_path) const;
 
     /** Create local backup (snapshot) for parts with specified prefix.
       * Backup is created in directory clickhouse_dir/shadow/i/, where i - incremental number,
@@ -619,6 +618,8 @@ public:
     {
         return storage_settings.get();
     }
+
+    String getRelativeDataPath() const { return relative_data_path; }
 
     /// Get table path on disk
     String getFullPathOnDisk(const DiskPtr & disk) const;
@@ -876,7 +877,7 @@ protected:
     void setTTLExpressions(const ColumnsDescription & columns,
         const ASTPtr & new_ttl_table_ast, bool only_check = false);
 
-    void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy);
+    void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
     void setStoragePolicy(const String & new_storage_policy_name, bool only_check = false);
 
@@ -956,7 +957,7 @@ private:
     /// Check selected parts for movements. Used by ALTER ... MOVE queries.
     CurrentlyMovingPartsTagger checkPartsForMove(const DataPartsVector & parts, SpacePtr space);
 
-    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason);
+    bool canUsePolymorphicParts(const MergeTreeSettings & settings, String * out_reason) const;
 };
 
 }

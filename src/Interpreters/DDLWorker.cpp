@@ -632,13 +632,13 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
             String rewritten_query = queryToString(rewritten_ast);
             LOG_DEBUG(log, "Executing query: " << rewritten_query);
 
-            if (auto query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(rewritten_ast.get()); query_with_table)
+            if (auto * query_with_table = dynamic_cast<ASTQueryWithTableAndOutput *>(rewritten_ast.get()); query_with_table)
             {
                 StoragePtr storage;
                 if (!query_with_table->table.empty())
                 {
                     /// It's not CREATE DATABASE
-                    auto table_id = context.resolveStorageID(*query_with_table, Context::ResolveOrdinary);
+                    auto table_id = context.tryResolveStorageID(*query_with_table, Context::ResolveOrdinary);
                     storage = DatabaseCatalog::instance().tryGetTable(table_id);
                 }
 
@@ -683,7 +683,7 @@ void DDLWorker::processTask(DDLTask & task, const ZooKeeperPtr & zookeeper)
 bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr ast_ddl, const StoragePtr storage)
 {
     /// Pure DROP queries have to be executed on each node separately
-    if (auto query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)
+    if (auto * query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)
         return false;
 
     if (!ast_ddl->as<ASTAlterQuery>() && !ast_ddl->as<ASTOptimizeQuery>() && !ast_ddl->as<ASTDropQuery>())
@@ -1239,7 +1239,6 @@ private:
         return diff;
     }
 
-private:
     String node_path;
     const Context & context;
     Stopwatch watch;

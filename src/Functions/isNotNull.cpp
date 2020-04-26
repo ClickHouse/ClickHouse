@@ -40,7 +40,7 @@ public:
     void executeImpl(Block & block, const ColumnNumbers & arguments, size_t result, size_t input_rows_count) override
     {
         const ColumnWithTypeAndName & elem = block.getByPosition(arguments[0]);
-        if (auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
+        if (const auto * nullable = checkAndGetColumn<ColumnNullable>(*elem.column))
         {
             /// Return the negated null map.
             auto res_column = ColumnUInt8::create(input_rows_count);

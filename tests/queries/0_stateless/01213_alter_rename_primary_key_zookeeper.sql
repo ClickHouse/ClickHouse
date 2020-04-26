@@ -23,7 +23,8 @@ ALTER TABLE table_for_rename_pk RENAME COLUMN key3 TO renamed_key3; --{serverErr
 
 ALTER TABLE table_for_rename_pk RENAME COLUMN key2 TO renamed_key2; --{serverError 44}
 
-DROP TABLE IF EXISTS table_for_rename_pk;
+DROP TABLE IF EXISTS table_for_rename_pk NO DELAY;
+SELECT sleep(1) FORMAT Null;
 
 DROP TABLE IF EXISTS table_for_rename_with_primary_key;
 

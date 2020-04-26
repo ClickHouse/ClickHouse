@@ -78,7 +78,8 @@ try
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser, input.data(), input.data() + input.size(), "", 0, 0);
 
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
 
     context.setPath("./");

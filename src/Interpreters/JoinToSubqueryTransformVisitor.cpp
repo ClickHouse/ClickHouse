@@ -98,7 +98,7 @@ private:
         data.new_select_expression_list = std::make_shared<ASTExpressionList>();
         data.new_select_expression_list->children.reserve(node.children.size());
 
-        for (auto & child : node.children)
+        for (const auto & child : node.children)
         {
             if (child->as<ASTAsterisk>())
             {
@@ -237,7 +237,7 @@ struct ColumnAliasesMatcher
 
         if (auto table_pos = IdentifierSemantic::chooseTable(node, data.tables))
         {
-            auto & table = data.tables[*table_pos];
+            const auto & table = data.tables[*table_pos];
             IdentifierSemantic::setColumnLongName(node, table); /// table_name.column_name -> table_alias.column_name
             long_name = node.name;
             if (&table == &data.tables.back())
@@ -483,13 +483,13 @@ struct TableNeededColumns
 
         String table_name = table.getQualifiedNamePrefix(false);
 
-        for (auto & column : no_clashes)
+        for (const auto & column : no_clashes)
             addShortName(column, expression_list);
 
-        for (auto & column : alias_clashes)
+        for (const auto & column : alias_clashes)
             addShortName(column, expression_list);
 
-        for (auto & [column, alias] : column_clashes)
+        for (const auto & [column, alias] : column_clashes)
             addAliasedName(table_name, column, alias, expression_list);
     }
 
@@ -538,7 +538,7 @@ private:
 size_t countTablesWithColumn(const std::vector<TableWithColumnNamesAndTypes> & tables, const String & short_name)
 {
     size_t count = 0;
-    for (auto & table : tables)
+    for (const auto & table : tables)
         if (table.hasColumn(short_name))
             ++count;
     return count;
@@ -579,7 +579,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
     NameSet restored_names;
     std::vector<TableNeededColumns> needed_columns;
     needed_columns.reserve(tables.size());
-    for (auto & table : tables)
+    for (const auto & table : tables)
         needed_columns.push_back(TableNeededColumns{table.table});
 
     for (ASTIdentifier * ident : identifiers)
@@ -602,7 +602,7 @@ std::vector<TableNeededColumns> normalizeColumnNamesExtractNeeded(
 
                 if (count > 1 || aliases.count(short_name))
                 {
-                    auto & table = tables[*table_pos];
+                    const auto & table = tables[*table_pos];
                     IdentifierSemantic::setColumnLongName(*ident, table.table); /// table.column -> table_alias.column
                     auto & unique_long_name = ident->name;
 
@@ -652,7 +652,7 @@ std::shared_ptr<ASTExpressionList> subqueryExpressionList(
     /// Add needed right table columns
     needed_columns[table_pos].fillExpressionList(*expression_list);
 
-    for (auto & expr : alias_pushdown[table_pos])
+    for (const auto & expr : alias_pushdown[table_pos])
         expression_list->children.emplace_back(std::move(expr));
 
     return expression_list;

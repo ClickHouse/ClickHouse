@@ -20,6 +20,11 @@ void ClusterCopierApp::initialize(Poco::Util::Application & self)
     if (config().has("move-fault-probability"))
         move_fault_probability = std::max(std::min(config().getDouble("move-fault-probability"), 1.0), 0.0);
     base_dir = (config().has("base-dir")) ? config().getString("base-dir") : Poco::Path::current();
+
+
+    if (config().has("experimental-use-sample-offset"))
+        experimental_use_sample_offset = config().getBool("experimental-use-sample-offset");
+
     // process_id is '<hostname>#<start_timestamp>_<pid>'
     time_t timestamp = Poco::Timestamp().epochTime();
     auto curr_pid = Poco::Process::id();
@@ -75,6 +80,8 @@ void ClusterCopierApp::defineOptions(Poco::Util::OptionSet & options)
                           .argument("log-level").binding("log-level"));
     options.addOption(Poco::Util::Option("base-dir", "", "base directory for copiers, consecutive copier launches will populate /base-dir/launch_id/* directories")
                           .argument("base-dir").binding("base-dir"));
+    options.addOption(Poco::Util::Option("experimental-use-sample-offset", "", "Use SAMPLE OFFSET query instead of cityHash64(PRIMARY KEY) % n == k")
+                          .argument("experimental-use-sample-offset").binding("experimental-use-sample-offset"));
 
     using Me = std::decay_t<decltype(*this)>;
     options.addOption(Poco::Util::Option("help", "", "produce this help message").binding("help")
@@ -94,7 +101,8 @@ void ClusterCopierApp::mainImpl()
         << "path " << process_path << ", "
         << "revision " << ClickHouseRevision::get() << ")");
 
-    auto context = std::make_unique<Context>(Context::createGlobal());
+    SharedContextHolder shared_context = Context::createShared();
+    auto context = std::make_unique<Context>(Context::createGlobal(shared_context.get()));
     context->makeGlobalContext();
     SCOPE_EXIT(context->shutdown());
 
@@ -120,6 +128,8 @@ void ClusterCopierApp::mainImpl()
     copier->setSafeMode(is_safe_mode);
     copier->setCopyFaultProbability(copy_fault_probability);
     copier->setMoveFaultProbability(move_fault_probability);
+
+    copier->setExperimentalUseSampleOffset(experimental_use_sample_offset);
 
     auto task_file = config().getString("task-file", "");
     if (!task_file.empty())
