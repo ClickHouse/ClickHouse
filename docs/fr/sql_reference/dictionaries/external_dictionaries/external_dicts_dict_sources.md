@@ -37,6 +37,20 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 
 La source est configurée dans le `source` section.
 
+Pour les sources de types [Fichier Local](#dicts-external_dicts_dict_sources-local_file), [Fichier exécutable](#dicts-external_dicts_dict_sources-executable), [HTTP(s)](#dicts-external_dicts_dict_sources-http), [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+les paramètres optionnels sont possibles:
+
+``` xml
+@@ -53,6 +49,12 @@ optional settings are available:
+  </settings>
+</source>
+```
+ou
+``` sql
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SETTINGS(format_csv_allow_single_quotes = 1)
+```
+
 Les Types de sources (`source_type`):
 
 -   [Fichier Local](#dicts-external_dicts_dict_sources-local_file)

@@ -30,11 +30,7 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
 
 Источник настраивается в разделе `source`.
 
-Для типов источников
-[Локальный файл](#dicts-external_dicts_dict_sources-local_file),
-[Исполняемый файл](#dicts-external_dicts_dict_sources-executable),
-[HTTP(s)](#dicts-external_dicts_dict_sources-http),
-[ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
+Для типов источников [Локальный файл](#dicts-external_dicts_dict_sources-local_file), [Исполняемый файл](#dicts-external_dicts_dict_sources-executable), [HTTP(s)](#dicts-external_dicts_dict_sources-http), [ClickHouse](#dicts-external_dicts_dict_sources-clickhouse)
 доступны дополнительные настройки:
 
 ``` xml
@@ -47,6 +43,11 @@ SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
       <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
   </settings>
 </source>
+```
+или
+``` sql
+SOURCE(FILE(path '/opt/dictionaries/os.tsv' format 'TabSeparated'))
+SETTINGS(format_csv_allow_single_quotes = 0)
 ```
 
 Типы источников (`source_type`):
