@@ -63,7 +63,7 @@ SRCS(
     MergeTree/MergeTreeReadPool.cpp
     MergeTree/MergeTreeReverseSelectProcessor.cpp
     MergeTree/MergeTreeSelectProcessor.cpp
-    MergeTree/MergeTreeSequentialBlockInputStream.cpp
+    MergeTree/MergeTreeSequentialSource.cpp
     MergeTree/MergeTreeSettings.cpp
     MergeTree/MergeTreeThreadSelectBlockInputProcessor.cpp
     MergeTree/MergeTreeWhereOptimizer.cpp

@@ -3,6 +3,8 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Columns/ColumnConst.h>
+#include <Interpreters/addTypeConversionToAST.h>
 
 namespace DB
 {
@@ -30,7 +32,8 @@ TTLBlockInputStream::TTLBlockInputStream(
     children.push_back(input_);
     header = children.at(0)->getHeader();
 
-    const auto & column_defaults = storage.getColumns().getDefaults();
+    const auto & storage_columns = storage.getColumns();
+    const auto & column_defaults = storage_columns.getDefaults();
     ASTPtr default_expr_list = std::make_shared<ASTExpressionList>();
     for (const auto & [name, ttl_info] : old_ttl_infos.columns_ttl)
     {
@@ -43,8 +46,9 @@ TTLBlockInputStream::TTLBlockInputStream(
 
             if (it != column_defaults.end())
             {
+                auto column = storage_columns.get(name);
                 auto expression = it->second.expression->clone();
-                default_expr_list->children.emplace_back(setAlias(expression, it->first));
+                default_expr_list->children.emplace_back(setAlias(addTypeConversionToAST(std::move(expression), column.type->getName()), it->first));
             }
         }
         else
@@ -62,7 +66,7 @@ TTLBlockInputStream::TTLBlockInputStream(
     }
 }
 
-bool TTLBlockInputStream::isTTLExpired(time_t ttl)
+bool TTLBlockInputStream::isTTLExpired(time_t ttl) const
 {
     return (ttl && (ttl <= current_time));
 }

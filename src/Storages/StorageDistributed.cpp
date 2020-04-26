@@ -14,6 +14,8 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/AlterCommands.h>
 
+#include <Columns/ColumnConst.h>
+
 #include <Common/Macros.h>
 #include <Common/escapeForFileName.h>
 #include <Common/typeid_cast.h>
@@ -404,7 +406,7 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
     {
         for (auto & expr : select.select()->children)
         {
-            auto id = expr->as<ASTIdentifier>();
+            const auto * id = expr->as<ASTIdentifier>();
             if (!id)
                 return false;
             if (!sharding_key_expr->getSampleBlock().has(id->name))
@@ -433,7 +435,7 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
         if (group_exprs.empty())
             throw Exception("No ASTExpressionList in GROUP BY", ErrorCodes::LOGICAL_ERROR);
 
-        auto id = group_exprs[0]->as<ASTIdentifier>();
+        const auto * id = group_exprs[0]->as<ASTIdentifier>();
         if (!id)
             return false;
         if (!sharding_key_expr->getSampleBlock().has(id->name))
@@ -540,7 +542,7 @@ void StorageDistributed::alter(const AlterCommands & params, const Context & con
     checkAlterIsPossible(params, context.getSettingsRef());
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }
 
@@ -568,6 +570,9 @@ void StorageDistributed::startup()
 
 void StorageDistributed::shutdown()
 {
+    monitors_blocker.cancelForever();
+
+    std::lock_guard lock(cluster_nodes_mutex);
     cluster_nodes_data.clear();
 }
 
@@ -724,12 +729,12 @@ ClusterPtr StorageDistributed::getOptimizedCluster(const Context & context, cons
     return cluster;
 }
 
-void StorageDistributed::ClusterNodeData::flushAllData()
+void StorageDistributed::ClusterNodeData::flushAllData() const
 {
     directory_monitor->flushAllData();
 }
 
-void StorageDistributed::ClusterNodeData::shutdownAndDropAllData()
+void StorageDistributed::ClusterNodeData::shutdownAndDropAllData() const
 {
     directory_monitor->shutdownAndDropAllData();
 }
@@ -796,12 +801,11 @@ void StorageDistributed::flushClusterNodesAllData()
         node.second.flushAllData();
 }
 
-void StorageDistributed::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name,
-                                TableStructureWriteLockHolder &)
+void StorageDistributed::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!relative_data_path.empty())
         renameOnDisk(new_path_to_table_data);
-    renameInMemory(new_database_name, new_table_name);
+    renameInMemory(new_table_id);
 }
 void StorageDistributed::renameOnDisk(const String & new_path_to_table_data)
 {

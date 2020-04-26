@@ -319,7 +319,7 @@ ASTPtr parseQuery(
     size_t max_query_size,
     size_t max_parser_depth)
 {
-    auto pos = begin;
+    const char * pos = begin;
     return parseQueryAndMovePosition(parser, pos, end, query_description, false, max_query_size, max_parser_depth);
 }
 

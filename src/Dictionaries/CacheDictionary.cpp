@@ -10,12 +10,14 @@
 #include <Common/ProfilingScopedRWLock.h>
 #include <Common/randomSeed.h>
 #include <Common/typeid_cast.h>
+#include <Core/Defines.h>
 #include <ext/range.h>
 #include <ext/size.h>
 #include <Common/setThreadName.h>
 #include "CacheDictionary.inc.h"
 #include "DictionaryBlockInputStream.h"
 #include "DictionaryFactory.h"
+
 
 namespace ProfileEvents
 {
@@ -144,7 +146,7 @@ void CacheDictionary::isInImpl(const PaddedPODArray<Key> & child_ids, const Ance
     PaddedPODArray<Key> children(out_size, 0);
     PaddedPODArray<Key> parents(child_ids.begin(), child_ids.end());
 
-    while (true)
+    for (size_t i = 0; i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
     {
         size_t out_idx = 0;
         size_t parents_idx = 0;
@@ -218,7 +220,7 @@ void CacheDictionary::isInConstantVector(const Key child_id, const PaddedPODArra
     std::vector<Key> ancestors(1, child_id);
 
     /// Iteratively find all ancestors for child.
-    while (true)
+    for (size_t i = 0; i < DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH; ++i)
     {
         toParent(child, parent);
 
@@ -617,7 +619,7 @@ void CacheDictionary::setAttributeValue(Attribute & attribute, const Key idx, co
             const auto str_size = string.size();
             if (str_size != 0)
             {
-                auto string_ptr = string_arena->alloc(str_size + 1);
+                auto * string_ptr = string_arena->alloc(str_size + 1);
                 std::copy(string.data(), string.data() + str_size + 1, string_ptr);
                 string_ref = StringRef{string_ptr, str_size};
             }
@@ -894,7 +896,7 @@ void CacheDictionary::update(BunchUpdateUnit & bunch_update_unit) const
                         break;
                 }
 
-                const auto id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
+                const auto * id_column = typeid_cast<const ColumnUInt64 *>(block.safeGetByPosition(0).column.get());
                 if (!id_column)
                     throw Exception{name + ": id column has type different from UInt64.", ErrorCodes::TYPE_MISMATCH};
 
