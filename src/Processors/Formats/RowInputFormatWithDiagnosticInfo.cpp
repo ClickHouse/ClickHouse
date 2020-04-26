@@ -30,8 +30,8 @@ void DB::RowInputFormatWithDiagnosticInfo::updateDiagnosticInfo()
 
 String DB::RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
 {
-    if (in.eof())        /// Buffer has gone, cannot extract information about what has been parsed.
-        return {};
+    if (in.eof())
+        return "Buffer has gone, cannot extract information about what has been parsed.";
 
     WriteBufferFromOwnString out;
 
@@ -94,18 +94,18 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
         << "name: " << alignedName(col_name, max_length_of_column_name)
         << "type: " << alignedName(type->getName(), max_length_of_data_type_name);
 
-    auto prev_position = in.position();
-    auto curr_position = in.position();
+    auto * prev_position = in.position();
     std::exception_ptr exception;
 
     try
     {
-        tryDeserializeFiled(type, column, file_column, prev_position, curr_position);
+        tryDeserializeField(type, column, file_column);
     }
     catch (...)
     {
         exception = std::current_exception();
     }
+    auto * curr_position = in.position();
 
     if (curr_position < prev_position)
         throw Exception("Logical error: parsing is non-deterministic.", ErrorCodes::LOGICAL_ERROR);

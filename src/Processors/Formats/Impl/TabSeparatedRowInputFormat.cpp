@@ -318,10 +318,8 @@ bool TabSeparatedRowInputFormat::parseRowAndPrintDiagnosticInfo(MutableColumns &
     return true;
 }
 
-void TabSeparatedRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, IColumn & column, size_t file_column,
-                                                     ReadBuffer::Position & prev_pos, ReadBuffer::Position & curr_pos)
+void TabSeparatedRowInputFormat::tryDeserializeField(const DataTypePtr & type, IColumn & column, size_t file_column)
 {
-    prev_pos = in.position();
     if (column_indexes_for_input_fields[file_column])
     {
         const bool is_last_file_column = file_column + 1 == column_indexes_for_input_fields.size();
@@ -332,7 +330,6 @@ void TabSeparatedRowInputFormat::tryDeserializeFiled(const DataTypePtr & type, I
         NullSink null_sink;
         readEscapedStringInto(null_sink, in);
     }
-    curr_pos = in.position();
 }
 
 void TabSeparatedRowInputFormat::syncAfterError()
