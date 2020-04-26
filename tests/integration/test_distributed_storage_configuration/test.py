@@ -41,7 +41,7 @@ def test_different_versions(start_cluster):
         'default'
     )
     """)
-    # manual only
+    # manual only (but only for remote node)
     node.query('SYSTEM STOP DISTRIBUTED SENDS test.dist_foo')
 
     node.query('INSERT INTO test.dist_foo SELECT * FROM numbers(100)')
