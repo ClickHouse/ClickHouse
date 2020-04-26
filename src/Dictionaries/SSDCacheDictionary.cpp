@@ -1079,40 +1079,40 @@ void CacheStorage::update(DictionarySourcePtr & source_ptr, const std::vector<Ke
     new_keys.values = CachePartition::Attribute::Container<UInt64>();
 
     PaddedPODArray<CachePartition::Metadata> metadata;
-
-    for (const auto & id_found_pair : remaining_ids)
-    {
-        if (id_found_pair.second)
-        {
-            ++found_num;
-            continue;
-        }
-        ++not_found_num;
-
-        const auto id = id_found_pair.first;
-
-        if (update_error_count)
-        {
-            /// TODO: юзать старые значения.
-
-            /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
-            std::rethrow_exception(last_update_exception);
-        }
-
-        // Set key
-        std::get<CachePartition::Attribute::Container<UInt64>>(new_keys.values).push_back(id);
-
-        std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
-        metadata.emplace_back();
-        metadata.back().setExpiresAt(now + std::chrono::seconds(distribution(rnd_engine)));
-        metadata.back().setDefault();
-
-        /// inform caller that the cell has not been found
-        on_id_not_found(id);
-    }
-
     {
         const ProfilingScopedWriteRWLock write_lock{rw_lock, ProfileEvents::DictCacheLockWriteNs};
+
+        for (const auto & id_found_pair : remaining_ids)
+        {
+            if (id_found_pair.second)
+            {
+                ++found_num;
+                continue;
+            }
+            ++not_found_num;
+
+            const auto id = id_found_pair.first;
+
+            if (update_error_count)
+            {
+                /// TODO: юзать старые значения.
+
+                /// We don't have expired data for that `id` so all we can do is to rethrow `last_exception`.
+                std::rethrow_exception(last_update_exception);
+            }
+
+            // Set key
+            std::get<CachePartition::Attribute::Container<UInt64>>(new_keys.values).push_back(id);
+
+            std::uniform_int_distribution<UInt64> distribution{lifetime.min_sec, lifetime.max_sec};
+            metadata.emplace_back();
+            metadata.back().setExpiresAt(now + std::chrono::seconds(distribution(rnd_engine)));
+            metadata.back().setDefault();
+
+            /// inform caller that the cell has not been found
+            on_id_not_found(id);
+        }
+
         if (not_found_num)
             append_defaults(new_keys, metadata);
     }
