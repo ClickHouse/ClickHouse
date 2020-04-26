@@ -128,7 +128,7 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
 
     BlockInputStreams inputs;
     inputs.reserve(blocks.size());
-    for (auto & block : blocks)
+    for (const auto & block : blocks)
         if (block.rows())
             inputs.push_back(std::make_shared<OneBlockInputStream>(block));
 
