@@ -24,7 +24,7 @@ MergeTreeDataPartWriterWide::MergeTreeDataPartWriterWide(
     const MergeTreeIndexGranularity & index_granularity_)
     : IMergeTreeDataPartWriter(disk_, part_path_,
         storage_, columns_list_, indices_to_recalc_,
-        marks_file_extension_, default_codec_, settings_, index_granularity_, false)
+        marks_file_extension_, default_codec_, settings_, index_granularity_)
 {
     const auto & columns = storage.getColumns();
     for (const auto & it : columns_list)
@@ -85,7 +85,10 @@ void MergeTreeDataPartWriterWide::write(const Block & block,
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
     if (compute_granularity)
-        fillIndexGranularity(block);
+    {
+        size_t index_granularity_for_block = computeIndexGranularity(block);
+        fillIndexGranularity(index_granularity_for_block, block.rows());
+    }
 
     auto offset_columns = written_offset_columns ? *written_offset_columns : WrittenOffsetColumns{};
 

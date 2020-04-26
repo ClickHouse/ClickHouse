@@ -18,7 +18,7 @@ MergeTreeDataPartWriterCompact::MergeTreeDataPartWriterCompact(
 : IMergeTreeDataPartWriter(disk_, part_path_,
     storage_, columns_list_,
     indices_to_recalc_, marks_file_extension_,
-    default_codec_, settings_, index_granularity_, true)
+    default_codec_, settings_, index_granularity_)
 {
     using DataPart = MergeTreeDataPartCompact;
     String data_file_name = DataPart::DATA_FILE_NAME;
@@ -42,7 +42,10 @@ void MergeTreeDataPartWriterCompact::write(
     /// if it's unknown (in case of insert data or horizontal merge,
     /// but not in case of vertical merge)
     if (compute_granularity)
-        fillIndexGranularity(block);
+    {
+        size_t index_granularity_for_block = computeIndexGranularity(block);
+        fillIndexGranularity(index_granularity_for_block, block.rows());
+    }
 
     Block result_block;
 
@@ -161,6 +164,49 @@ void MergeTreeDataPartWriterCompact::finishDataSerialization(IMergeTreeDataPart:
     stream->finalize();
     stream->addToChecksums(checksums);
     stream.reset();
+}
+
+void fillIndexGranularityImpl(
+    MergeTreeIndexGranularity & index_granularity,
+    size_t & index_offset,
+    size_t index_granularity_for_block,
+    size_t rows_in_block)
+{
+    bool initial_marks_count = index_granularity.getMarksCount();
+    for (size_t current_row = index_offset; current_row < rows_in_block; current_row += index_granularity_for_block)
+    {
+        size_t rows_left_in_block = rows_in_block - current_row;
+
+        /// Try to extend last granule if block is large enough
+        ///  or it isn't first in granule (index_offset != 0).
+        if (rows_left_in_block < index_granularity_for_block &&
+            (rows_in_block >= index_granularity_for_block || index_offset != 0))
+        {
+            // If enough rows are left, create a new granule. Otherwise, extend previous granule.
+            // So, real size of granule differs from index_granularity_for_block not more than 50%.
+            if (rows_left_in_block * 2 >= index_granularity_for_block)
+                index_granularity.appendMark(rows_left_in_block);
+            else
+                index_granularity.addRowsToLastMark(rows_left_in_block);
+        }
+        else
+        {
+            index_granularity.appendMark(index_granularity_for_block);
+        }
+    }
+
+    /// Primary index shouldn't be written, if there was no granule added
+    if (initial_marks_count == index_granularity.getMarksCount())
+        index_offset = std::max(index_offset, rows_in_block);
+}
+
+void MergeTreeDataPartWriterCompact::fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block)
+{
+    fillIndexGranularityImpl(
+        index_granularity,
+        index_offset,
+        index_granularity_for_block,
+        rows_in_block);
 }
 
 void MergeTreeDataPartWriterCompact::ColumnsBuffer::add(MutableColumns && columns)
