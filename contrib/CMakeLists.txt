@@ -77,9 +77,7 @@ endif ()
 
 add_subdirectory (cctz-cmake)
 
-if (ENABLE_JEMALLOC AND USE_INTERNAL_JEMALLOC_LIBRARY)
-    add_subdirectory (jemalloc-cmake)
-endif ()
+add_subdirectory (jemalloc-cmake)
 
 if (USE_INTERNAL_CPUID_LIBRARY)
     add_subdirectory (libcpuid)
@@ -340,6 +338,5 @@ if (USE_AMQPCPP)
 endif()
 
 add_subdirectory(FastMemcpy)
-add_subdirectory(widecharwidth)
 add_subdirectory(consistent-hashing)
 add_subdirectory(consistent-hashing-sumbur)

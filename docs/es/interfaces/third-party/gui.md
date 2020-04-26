@@ -1,3 +1,10 @@
+---
+machine_translated: true
+machine_translated_rev: 3e185d24c9fe772c7cf03d5475247fb829a21dfa
+toc_priority: 28
+toc_title: Interfaces Visuales
+---
+
 # Interfaces visuales de desarrolladores de terceros {#visual-interfaces-from-third-party-developers}
 
 ## De código abierto {#open-source}
@@ -84,7 +91,7 @@ Función:
 
 ### Sistema abierto. {#clickhouse-flamegraph}
 
-[Sistema abierto.](https://github.com/Slach/clickhouse-flamegraph) es una herramienta especializada para visualizar el `system.trace_log` como [Gráfico de llamas](http://www.brendangregg.com/flamegraphs.html).
+[Sistema abierto.](https://github.com/Slach/clickhouse-flamegraph) es una herramienta especializada para visualizar el `system.trace_log` como [Flamegraph](http://www.brendangregg.com/flamegraphs.html).
 
 ## Comercial {#commercial}
 
@@ -119,7 +126,7 @@ Nivel de Cifrado WEP [disponible de forma gratuita](https://cloud.yandex.com/doc
 
 ### Software de Holística {#holistics-software}
 
-[Holística](https://www.holistics.io/) Este es una plataforma de datos de pila completa y una herramienta de inteligencia de negocios.
+[Holística](https://www.holistics.io/) es una plataforma de datos de pila completa y una herramienta de inteligencia de negocios.
 
 Función:
 
@@ -142,4 +149,4 @@ Función:
 
 [Cómo configurar ClickHouse en Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 
-[Artículo Original](https://clickhouse.tech/docs/es/interfaces/third-party/gui/) <!--hide-->
+[Artículo Original](https://clickhouse.tech/docs/en/interfaces/third-party/gui/) <!--hide-->

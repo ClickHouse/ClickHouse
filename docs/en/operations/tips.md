@@ -1,3 +1,8 @@
+---
+toc_priority: 58
+toc_title: Usage Recommendations
+---
+
 # Usage Recommendations {#usage-recommendations}
 
 ## CPU Scaling Governor {#cpu-scaling-governor}
@@ -241,4 +246,4 @@ script
 end script
 ```
 
-[Original article](https://clickhouse.tech/docs/en/operations/tips/) <!--hide-->
+{## [Original article](https://clickhouse.tech/docs/en/operations/tips/) ##}

@@ -1,171 +1,173 @@
-<div markdown="1" markdown="1" dir="rtl">
+---
+machine_translated: true
+machine_translated_rev: d734a8e46ddd7465886ba4133bff743c55190626
+toc_priority: 11
+toc_title: "\u0646\u0635\u0628 \u0648 \u0631\u0627\u0647 \u0627\u0646\u062F\u0627\u0632\
+  \u06CC"
+---
 
-# ﯼﺯﺍﺪﻧﺍ ﻩﺍﺭ ﻭ ﺐﺼﻧ
+# نصب و راه اندازی {#installation}
 
-## نیازمندی های سیستم {#nyzmndy-hy-systm}
+## سیستم مورد نیاز {#system-requirements}
 
-ClickHouse ﺲﮐﻮﻨﯿﻟ ﻉﻮﻧ ﺮﻫ ﯼﻭﺭ ﺮﺑ ﺪﻧﺍﻮﺗ ﯽﻣ ، FreeBSD ﺎﯾ Mac OS X ﯼﺭﺎﻤﻌﻣ ﺎﺑ CPU x
+ClickHouse می تواند اجرا بر روی هر Linux, FreeBSD یا سیستم عامل Mac OS X با x86\_64, AArch64 یا PowerPC64LE معماری CPU.
 
-:ﺖﺳﺍ ﻩﺪﻣﺁ ، ﺪﻨﮐ ﯽﻣ ﯽﻧﺎﺒﯿﺘﺸﭘ SSE 4.2 ﺯﺍ ﯽﻠﻌﻓ CPU ﺎﯾﺁ ﻪﮑﻨﯾﺍ ﯽﺳﺭﺮﺑ ﯼﺍﺮﺑ ﺭﻮﺘﺳﺩ ﻦﯾﺍ
-
-</div>
+رسمی از پیش ساخته شده باینری به طور معمول وارد شده برای ایکس86\_64 و اهرم بورس تحصیلی 4.2 مجموعه دستورالعمل, بنابراین مگر اینکه در غیر این صورت اعلام کرد استفاده از پردازنده است که پشتیبانی می شود یک سیستم اضافی مورد نیاز. در اینجا دستور برای بررسی اگر پردازنده فعلی دارای پشتیبانی برای اس اس 4.2:
 
 ``` bash
-grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
+$ grep -q sse4_2 /proc/cpuinfo && echo "SSE 4.2 supported" || echo "SSE 4.2 not supported"
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
+برای اجرای clickhouse در پردازنده هایی که پشتیبانی نمی sse 4.2 یا aarch64 یا powerpc64le معماری شما باید [ساخت کلیک از منابع](#from-sources) با تنظیمات پیکربندی مناسب.
 
-ﺪﯾﺎﺑ ، ﺪﻧﺭﺍﺪﻧ PowerPC64LE ﺎﯾ AArch64 ﯼﺭﺎﻤﻌﻣ ﺎﯾ ﺪﻨﻨﮐ ﯽﻤﻧ ﯽﻧﺎﺒﯿﺘﺸﭘ SSE 4.2 ﺯﺍ ﻪﮐ[ClickHouse ﺪﯿﻨﮐ ﺩﺎﺠﯾﺍ ﻊﺑﺎﻨﻣ ﺯﺍ ﺍﺭ](#from-sources) ﺐﺳﺎﻨﻣ ﺕﺎﻤﯿﻈﻨﺗ ﺎﺑ
+## گزینه های نصب موجود {#available-installation-options}
 
-## ﺩﻮﺟﻮﻣ ﺐﺼﻧ ﯼﺎﻫ ﻪﻨﯾﺰﮔ
+### از بسته های دب {#install-from-deb-packages}
 
-<a name="install-from-deb-packages"></a>
-\#\#\# نصب از طریق پکیج های Debian/Ubuntu {\#from-deb-packages}
+توصیه می شود به استفاده از رسمی از پیش وارد شده `deb` بسته برای دبیان یا اوبونتو.
 
-در فایل `/etc/apt/sources.list` (یا در یک فایل جدا `/etc/apt/sources.list.d/clickhouse.list`)، Repo زیر را اضافه کنید:
+برای نصب بسته های رسمی اضافه کردن مخزن یاندکس در `/etc/apt/sources.list` یا در یک جداگانه `/etc/apt/sources.list.d/clickhouse.list` پرونده:
 
-</div>
+      deb http://repo.clickhouse.tech/deb/stable/ main/
 
-    deb http://repo.yandex.ru/clickhouse/deb/stable/ main/
+اگر شما می خواهید به استفاده از نسخه های اخیر, جایگزین کردن `stable` با `testing` (این است که برای محیط های تست خود را توصیه می شود).
 
-<div markdown="1" markdown="1" dir="rtl">
-
-اگر شما میخوایید جدیدترین نسخه ی تست را استفاده کنید، ‘stable’ رو به ‘testing’ تغییر بدید.
-
-سپس دستورات زیر را اجرا کنید:
-
-</div>
+سپس این دستورات را برای نصب بسته ها اجرا کنید:
 
 ``` bash
-sudo apt-get install dirmngr    # optional
+sudo apt-get install dirmngr # optional
 sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
+شما همچنین می توانید بسته ها را به صورت دستی از اینجا دانلود و نصب کنید: https://repo.yandex.ru/clickhouse/deb/stable/main/.
 
-شما همچنین می توانید از طریق لینک زیر پکیج ClickHouse را به صورت دستی دانلود و نصب کنید: https://repo.yandex.ru/clickhouse/deb/stable/main/.
+#### بستهها {#packages}
 
-ClickHouse دارای تنظیمات محدودیت دسترسی می باشد. این تنظیمات در فایل ‘users.xml’ (کنار ‘config.xml’) می باشد. به صورت پیش فرض دسترسی برای کاربر ‘default’ از همه جا بدون نیاز به پسورد وجود دارد. ‘user/default/networks’ را مشاهده کنید. برای اطلاعات بیشتر قسمت «تنظیمات فایل ها» را مشاهده کنید.
+-   `clickhouse-common-static` — Installs ClickHouse compiled binary files.
+-   `clickhouse-server` — Creates a symbolic link for `clickhouse-server` و نصب پیکربندی سرور به طور پیش فرض.
+-   `clickhouse-client` — Creates a symbolic link for `clickhouse-client` و دیگر ابزار مربوط به مشتری. و نصب فایل های پیکربندی مشتری.
+-   `clickhouse-common-static-dbg` — Installs ClickHouse compiled binary files with debug info.
 
-### RPM ﯼﺎﻫ ﻪﺘﺴﺑ ﺯﺍ {#from-rpm-packages}
+### از بسته های دور در دقیقه {#from-rpm-packages}
 
-.ﺪﻨﮐ ﯽﻣ ﻪﯿﺻﻮﺗ ﺲﮐﻮﻨﯿﻟ ﺮﺑ ﯽﻨﺘﺒﻣ rpm ﺮﺑ ﯽﻨﺘﺒﻣ ﯼﺎﻫ ﻊﯾﺯﻮﺗ ﺮﯾﺎﺳ ﻭ CentOS ، RedHat ﯼﺍ
+توصیه می شود به استفاده از رسمی از پیش وارد شده `rpm` بسته برای لینوکس لینوکس, کلاه قرمز, و همه توزیع های لینوکس مبتنی بر دور در دقیقه دیگر.
 
-                                             :ﺪﯿﻨﮐ ﻪﻓﺎﺿﺍ ﺍﺭ ﯽﻤﺳﺭ ﻥﺰﺨﻣ ﺪﯾﺎﺑ ﺍﺪﺘﺑﺍ
+اولین, شما نیاز به اضافه کردن مخزن رسمی:
 
 ``` bash
 sudo yum install yum-utils
-sudo rpm --import https://repo.yandex.ru/clickhouse/CLICKHOUSE-KEY.GPG
-sudo yum-config-manager --add-repo https://repo.yandex.ru/clickhouse/rpm/stable/x86_64
+sudo rpm --import https://repo.clickhouse.tech/CLICKHOUSE-KEY.GPG
+sudo yum-config-manager --add-repo https://repo.clickhouse.tech/rpm/stable/x86_64
 ```
 
-.(ﺩﻮﺷ ﯽﻣ ﻪﯿﺻﻮﺗ ﺎﻤﺷ ﺶﯾﺎﻣﺯﺁ ﯼﺎﻫ ﻂﯿﺤﻣ ﯼﺍﺮﺑ ﻦﯾﺍ) ﺪﯿﻨﮐ ﻦﯾﺰﮕﯾﺎﺟ «ﺖﺴﺗ» ﺎﺑ ﺍﺭ «ﺭﺍﺪﯾﺎﭘ»
+اگر شما می خواهید به استفاده از نسخه های اخیر, جایگزین کردن `stable` با `testing` (این است که برای محیط های تست خود را توصیه می شود). این `prestable` برچسب است که گاهی اوقات در دسترس بیش از حد.
 
-                    :ﺪﯿﻨﮐ ﺐﺼﻧ ﺍﺭ ﺎﻫ ﻪﺘﺴﺑ ﻊﻗﺍﻭ ﺭﺩ ﺎﺗ ﺪﯿﻨﮐ ﺍﺮﺟﺍ ﺍﺭ ﺕﺍﺭﻮﺘﺳﺩ ﻦﯾﺍ ﺲﭙﺳ
+سپس این دستورات را برای نصب بسته ها اجرا کنید:
 
 ``` bash
 sudo yum install clickhouse-server clickhouse-client
 ```
 
-.https://repo.yandex.ru/clickhouse/rpm/stable/x86\_64 :ﺪﯿﻨﮐ ﺐﺼﻧ ﻭ ﯼﺮﯿﮔﺭﺎﺑ ﺎﺠﻨ
+شما همچنین می توانید بسته ها را به صورت دستی از اینجا دانلود و نصب کنید: https://repo.فاحشه خانه.تکنولوژی/دور در دقیقه/پایدار / ایکس86\_64.
 
-                                                             Docker Image ﺯﺍ ###
+### از بایگانی {#from-tgz-archives}
 
-.ﺪﻨﻨﮐ ﯽﻣ ﻩﺩﺎﻔﺘﺳﺍ ﻞﺧﺍﺩ ﺭﺩ «deb» ﯽﻤﺳﺭ ﯼﺎﻫ ﻪﺘﺴﺑ ﺯﺍ ﺮﯾﻭﺎﺼﺗ ﻦﯾﺍ .ﺪﯿﻨﮐ ﻝﺎﺒﻧﺩ ﺍﺭ (/ht
+توصیه می شود به استفاده از رسمی از پیش وارد شده `tgz` بایگانی برای همه توزیع های لینوکس, که نصب و راه اندازی `deb` یا `rpm` بسته امکان پذیر نیست.
 
-### نصب از طریق Source {#from-sources}
-
-برای Compile، دستورالعمل های فایل build.md را دنبال کنید:
-
-شما میتوانید پکیج را compile و نصب کنید. شما همچنین می توانید بدون نصب پکیج از برنامه ها استفاده کنید.
-
-</div>
-
-    Client: dbms/programs/clickhouse-client
-    Server: dbms/programs/clickhouse-server
-
-<div markdown="1" markdown="1" dir="rtl">
-
-برای سرور، یک کاتالوگ با دیتا بسازید، مانند
-
-</div>
-
-    /opt/clickhouse/data/default/
-    /opt/clickhouse/metadata/default/
-
-<div markdown="1" markdown="1" dir="rtl">
-
-(قابل تنظیم در تنظیمات سرور). ‘chown’ را برای کاربر دلخواه اجرا کنید.
-
-به مسیر لاگ ها در تنظیمات سرور توجه کنید (src/dbms/programs/config.xml).
-
-### روش های دیگر نصب {#from-docker-image}
-
-Docker image: https://hub.docker.com/r/yandex/clickhouse-server/
-
-پکیج RPM برای CentOS یا RHEL: https://github.com/Altinity/clickhouse-rpm-install
-
-Gentoo: `emerge clickhouse`
-
-## راه اندازی {#rh-ndzy}
-
-برای استارت سرور (به صورت daemon)، دستور زیر را اجرا کنید:
-
-</div>
+نسخه مورد نیاز را می توان با دانلود `curl` یا `wget` از مخزن https://repo.yandex.ru/clickhouse/tgz/.
+پس از که دانلود بایگانی باید غیر بستهای و نصب شده با اسکریپت نصب و راه اندازی. به عنوان مثال برای جدیدترین نسخه:
 
 ``` bash
-sudo service clickhouse-server start
+export LATEST_VERSION=`curl https://api.github.com/repos/ClickHouse/ClickHouse/tags 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | head -n 1`
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-server-$LATEST_VERSION.tgz
+curl -O https://repo.clickhouse.tech/tgz/clickhouse-client-$LATEST_VERSION.tgz
+
+tar -xzvf clickhouse-common-static-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-common-static-dbg-$LATEST_VERSION.tgz
+sudo clickhouse-common-static-dbg-$LATEST_VERSION/install/doinst.sh
+
+tar -xzvf clickhouse-server-$LATEST_VERSION.tgz
+sudo clickhouse-server-$LATEST_VERSION/install/doinst.sh
+sudo /etc/init.d/clickhouse-server start
+
+tar -xzvf clickhouse-client-$LATEST_VERSION.tgz
+sudo clickhouse-client-$LATEST_VERSION/install/doinst.sh
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
+برای محیط های تولید توصیه می شود از جدیدترین استفاده کنید `stable`- نسخه شما می توانید شماره خود را در صفحه گیتهاب پیدا https://github.com/ClickHouse/ClickHouse/tags با پسوند `-stable`.
 
-لاگ های دایرکتوری `/var/log/clickhouse-server/` directory. را مشاهده کنید.
+### از تصویر کارگر بارانداز {#from-docker-image}
 
-اگر سرور استارت نشد، فایل تنظیمات را بررسی کنید `/etc/clickhouse-server/config.xml.`
+برای اجرای کلیک در داخل کارگر بارانداز راهنمای دنبال کنید [داکر توپی](https://hub.docker.com/r/yandex/clickhouse-server/). این تصاویر استفاده رسمی `deb` بسته در داخل.
 
-شما همچنین می توانید سرور را از طریق کنسول راه اندازی کنید:
+### از منابع {#from-sources}
 
-</div>
+به صورت دستی کامپایل فاحشه خانه, دستورالعمل برای دنبال [لینوکس](../development/build.md) یا [سیستم عامل مک ایکس](../development/build_osx.md).
+
+شما می توانید بسته های کامپایل و نصب و یا استفاده از برنامه های بدون نصب بسته. همچنین با ساخت دستی شما می توانید ثانیه 4.2 مورد نیاز غیر فعال کردن و یا ساخت برای ایالت64 پردازنده.
+
+      Client: programs/clickhouse-client
+      Server: programs/clickhouse-server
+
+شما نیاز به ایجاد یک داده ها و پوشه ابرداده و `chown` برای کاربر مورد نظر. مسیر خود را می توان در پیکربندی سرور تغییر (سری سی/برنامه/سرور/پیکربندی.به طور پیش فرض:
+
+      /opt/clickhouse/data/default/
+      /opt/clickhouse/metadata/default/
+
+در جنتو, شما فقط می توانید استفاده کنید `emerge clickhouse` برای نصب کلیک از منابع.
+
+## راهاندازی {#launch}
+
+برای شروع سرور به عنوان یک شبح, اجرا:
 
 ``` bash
-clickhouse-server --config-file=/etc/clickhouse-server/config.xml
+$ sudo service clickhouse-server start
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
-
-در این مورد که مناسب زمان توسعه می باشد، لاگ ها در کنسول پرینت می شوند. اگر فایل تنظیمات در دایرکتوری جاری باشد، نیازی به مشخص کردن ‘–config-file’ نمی باشد. به صورت پیش فرض از ‘./config.xml’ استفاده می شود.
-
-شما می توانید از کلاینت command-line برای اتصال به سرور استفاده کنید:
-
-</div>
+اگر شما لازم نیست `service` فرمان, اجرا به عنوان
 
 ``` bash
-clickhouse-client
+$ sudo /etc/init.d/clickhouse-server start
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
+سیاهههای مربوط در `/var/log/clickhouse-server/` فهرست راهنما.
 
-پارامترهای پیش فرض، نشان از اتصال به localhost:9000 از طرف کاربر ‘default’ بدون پسورد را می دهد. از کلاینت میتوان برای اتصال به یک سرور remote استفاده کرد. مثال:
+اگر سرور شروع نمی کند, بررسی تنظیمات در فایل `/etc/clickhouse-server/config.xml`.
 
-</div>
+شما همچنین می توانید سرور را از کنسول به صورت دستی راه اندازی کنید:
 
 ``` bash
-clickhouse-client --host=example.com
+$ clickhouse-server --config-file=/etc/clickhouse-server/config.xml
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
+در این مورد, ورود به سیستم خواهد شد به کنسول چاپ, که مناسب است در طول توسعه.
+اگر فایل پیکربندی در دایرکتوری فعلی است, شما لازم نیست برای مشخص کردن `--config-file` پارامتر. به طور پیش فرض استفاده می کند `./config.xml`.
 
-برای اطلاعات بیشتر، بخش «کلاینت Command-line» را مشاهده کنید.
+تاتر پشتیبانی از تنظیمات محدودیت دسترسی. این در واقع `users.xml` پرونده) در کنار ( `config.xml`).
+به طور پیش فرض, دسترسی از هر نقطه برای اجازه `default` کاربر, بدون رمز عبور. ببینید `user/default/networks`.
+برای کسب اطلاعات بیشتر به بخش مراجعه کنید [“Configuration Files”](../operations/configuration_files.md).
 
-چک کردن سیستم:
-
-</div>
+پس از راه اندازی سرور, شما می توانید مشتری خط فرمان برای اتصال به استفاده:
 
 ``` bash
-milovidov@hostname:~/work/metrica/src/dbms/src/Client$ ./clickhouse-client
+$ clickhouse-client
+```
+
+به طور پیش فرض به `localhost:9000` از طرف کاربر `default` بدون رمز عبور. همچنین می تواند مورد استفاده قرار گیرد برای اتصال به یک سرور از راه دور با استفاده از `--host` استدلال کردن.
+
+ترمینال باید از کدگذاری جی تی اف 8 استفاده کند.
+برای کسب اطلاعات بیشتر به بخش مراجعه کنید [“Command-line client”](../interfaces/cli.md).
+
+مثال:
+
+``` bash
+$ ./clickhouse-client
 ClickHouse client version 0.0.18749.
 Connecting to localhost:9000.
 Connected to ClickHouse server version 0.0.18749.
@@ -183,12 +185,8 @@ SELECT 1
 :)
 ```
 
-<div markdown="1" markdown="1" dir="rtl">
+**تبریک, سیستم کار می کند!**
 
-**تبریک میگم، سیستم کار می کنه!**
+برای ادامه تجربه, شما می توانید یکی از مجموعه داده های تست دانلود و یا رفتن را از طریق [اموزش](https://clickhouse.tech/tutorial.html).
 
-برای ادامه آزمایشات، شما میتوانید دیتاست های تستی را دریافت و امتحان کنید.
-
-</div>
-
-[مقاله اصلی](https://clickhouse.tech/docs/fa/getting_started/install/) <!--hide-->
+[مقاله اصلی](https://clickhouse.tech/docs/en/getting_started/install/) <!--hide-->

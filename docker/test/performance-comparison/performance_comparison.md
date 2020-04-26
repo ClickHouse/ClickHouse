@@ -38,8 +38,8 @@ Then see the `report.html` in the `output` directory.
 
 There are some environment variables that influence what the test does:
  * `-e CHCP_RUNS` -- the number of runs;
- * `-e CHPC_TEST_GLOB` -- the names of the tests (xml files) to run, interpreted
- as a shell glob.
+ * `-e CHPC_TEST_GREP` -- the names of the tests (xml files) to run, interpreted
+ as a grep pattern.
 
 #### Re-genarate report with your tweaks
 From the workspace directory (extracted test output archive):
@@ -50,7 +50,7 @@ More stages are available, e.g. restart servers or run the tests. See the code.
 
 #### Run a single test on the already configured servers
 ```
-docker/test/performance-comparison/perf.py --host=localhost --port=9000 --runs=1 dbms/tests/performance/logical_functions_small.xml
+docker/test/performance-comparison/perf.py --host=localhost --port=9000 --runs=1 tests/performance/logical_functions_small.xml
 ```
 
 ### References
