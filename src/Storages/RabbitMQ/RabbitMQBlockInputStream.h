@@ -2,7 +2,6 @@
 
 #include <DataStreams/IBlockInputStream.h>
 #include <Interpreters/Context.h>
-
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
 

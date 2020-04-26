@@ -235,7 +235,7 @@ if(USE_RDKAFKA)
 endif()
 
 if (USE_AMQPCPP)
-    add_headers_and_sources(dbms src/Storages/RabbitMQ)
+    add_headers_and_sources(dbms Storages/RabbitMQ)
 endif()
 
 list (APPEND clickhouse_common_io_sources ${CONFIG_BUILD})

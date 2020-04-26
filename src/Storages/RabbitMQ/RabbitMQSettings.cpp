@@ -1,10 +1,10 @@
 #include <Storages/RabbitMQ/RabbitMQSettings.h>
-
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Common/Exception.h>
 #include <Core/SettingsCollectionImpl.h>
+
 
 namespace DB
 {

@@ -2,11 +2,10 @@
 #include <Storages/RabbitMQ/RabbitMQHandler.h>
 #include <common/logger_useful.h>
 
-#include <stdio.h>
+
 namespace DB
 {
 
-/// to connect to rabbitmq server
 RabbitMQHandler::RabbitMQHandler(const std::pair<std::string, UInt16> & parsed_host_port, Poco::Logger * log_) :
         log(log_),
         handler_impl(new ConnectionImpl)
@@ -18,7 +17,6 @@ RabbitMQHandler::RabbitMQHandler(const std::pair<std::string, UInt16> & parsed_h
     //TODO: get credentials here properly
     user_name = "root";
     password = "clickhouse";
-    vhost = "private";
 }
 
 RabbitMQHandler::~RabbitMQHandler()
@@ -66,11 +64,11 @@ void RabbitMQHandler::process()
         library. This is done by calling the parse() method in the Connection object. */
         while (!handler_impl->closed)
         {
-            LOG_TRACE(log, "Waiting for the data to be received");
+            LOG_DEBUG(log, "Waiting for the data to be received");
 
             if (handler_impl->socket.available() > 0)
             {
-                LOG_TRACE(log, "Sending received bytes from socket to the library");
+                LOG_DEBUG(log, "Sending received bytes from socket to the library");
 
                 size_t avail = handler_impl->socket.available();
 

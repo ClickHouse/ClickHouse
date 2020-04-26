@@ -1,12 +1,13 @@
 #pragma once
+
 #include <memory>
 #include <amqpcpp.h>
 #include <amqpcpp/linux_tcp.h>
 #include <Poco/Net/StreamSocket.h>
 #include <common/types.h>
-
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
+
 
 namespace DB
 {
@@ -33,7 +34,6 @@ public:
 
     const String & get_user_name() { return user_name; }
     const String & get_password() { return password; }
-    const String & get_vhost() { return vhost; }
 
 private:
     void onReady(AMQP::Connection * conection) override;
@@ -45,7 +45,6 @@ private:
     Poco::Logger * log;
     String user_name;
     String password;
-    String vhost;
 
     std::shared_ptr<ConnectionImpl> handler_impl;
 };

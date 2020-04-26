@@ -1,12 +1,10 @@
-#include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
-
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/OneBlockInputStream.h>
-
 #include <Formats/FormatFactory.h>
 #include <Processors/Formats/InputStreamFromInputFormat.h>
-
+#include <Storages/RabbitMQ/RabbitMQBlockInputStream.h>
 #include <Storages/RabbitMQ/ReadBufferFromRabbitMQConsumer.h>
+
 
 namespace DB
 {
@@ -25,7 +23,7 @@ RabbitMQBlockInputStream::RabbitMQBlockInputStream(
                 {"_exchange", "_routingKey", "_deliveryTag"}) 
         )
 {
-    context.setSetting("input_format_skip_unknown_fields", 1u); // Always skip unknown fields regardless of the context
+    context.setSetting("input_format_skip_unknown_fields", 1u); 
     context.setSetting("input_format_allow_errors_ratio", 0.);
     context.setSetting("input_format_allow_errors_num", storage.skipBroken());
 }
@@ -38,6 +36,7 @@ RabbitMQBlockInputStream::~RabbitMQBlockInputStream()
 
     storage.pushReadBuffer(buffer);
 }
+
 
 Block RabbitMQBlockInputStream::getHeader() const
 {
@@ -57,6 +56,7 @@ void RabbitMQBlockInputStream::readPrefixImpl()
 
     buffer->start_consuming(storage.getHandler());
 }
+
 
 Block RabbitMQBlockInputStream::readImpl()
 {
@@ -154,18 +154,19 @@ Block RabbitMQBlockInputStream::readImpl()
         result_block.insert(column);
 
     return ConvertingBlockInputStream(
-            context,
             std::make_shared<OneBlockInputStream>(result_block),
             getHeader(),
             ConvertingBlockInputStream::MatchColumnsMode::Name)
             .read();
 }
 
+
 void RabbitMQBlockInputStream::readSuffixImpl()
 {
     if (commit_in_suffix)
         commit();
 }
+
 
 void RabbitMQBlockInputStream::commit()
 {
@@ -175,10 +176,9 @@ void RabbitMQBlockInputStream::commit()
     buffer->start_consuming(storage.getHandler());
 }
 
+
 void RabbitMQBlockInputStream::commitNotSubscribed(const Names & routing_keys)
 {
-    LOG_DEBUG(log, "Commit if not subbscribed");
-
     if (!buffer)
         return;
 

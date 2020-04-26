@@ -35,7 +35,7 @@ ReadBufferFromRabbitMQConsumer::ReadBufferFromRabbitMQConsumer(
         })
         .onFinalize([&]()
         {
-            LOG_TRACE(log, "Channel is closed");
+            LOG_DEBUG(log, "Channel is closed");
         });
 }
 
@@ -52,7 +52,7 @@ ReadBufferFromRabbitMQConsumer::~ReadBufferFromRabbitMQConsumer()
 
 void ReadBufferFromRabbitMQConsumer::subscribe(const String & exchange_name, const Names & routing_keys)
 {
-    // consumer_channel->setQos(batch_size, false);
+    consumer_channel->setQos(batch_size, false);
         
     for (auto key : routing_keys)
     {

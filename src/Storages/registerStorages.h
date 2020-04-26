@@ -48,7 +48,7 @@ void registerStorageKafka(StorageFactory & factory);
 #endif
 
 #if USE_AMQPCPP
-    void registerStorageRabbitMQ(StorageFactory & factory);
+void registerStorageRabbitMQ(StorageFactory & factory);
 #endif
 
 void registerStorages();

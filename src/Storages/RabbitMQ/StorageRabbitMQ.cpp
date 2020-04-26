@@ -83,7 +83,7 @@ StorageRabbitMQ::StorageRabbitMQ(
         , semaphore(0, num_consumers_)
         , connection_handler(parseAddress(host_port, 5672), log)
         , connection(&connection_handler,
-                     AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()), connection_handler.get_vhost())
+                     AMQP::Login(connection_handler.get_user_name(), connection_handler.get_password()), "/")
 {
     setColumns(columns_);
     task = global_context.getSchedulePool().createTask(log->name(), [this]{ threadFunc(); });
@@ -148,9 +148,9 @@ void StorageRabbitMQ::startup()
     LOG_DEBUG(log, "Available channels: " + std::to_string(connection.channels()));
 
     /// if connection failed report about what has failed
-    // it will also close the connection, so it has to be restored
+    // TODO:it will also close the connection, so it has to be restored
     if (!connection.usable() || !connection.ready())
-        connection.fail("Connection failed!");
+        connection.fail("Connection failed.");
 
 }
 
@@ -175,7 +175,7 @@ void StorageRabbitMQ::pushReadBuffer(ConsumerBufferPtr buffer)
 /*
  * Messages are pushed to consumers (and not pulled by consumers), so if there is no queue binding from exchange
  * to any queue with a routing key of the message, then the message is not routed anywhere from the exchange and lost.
- * So we declare queues ans subscribe for messages here.
+ * So we declare queues and subscribe for messages here.
  */
     buffer->subscribe(exchange_name, routing_keys);
 
@@ -255,8 +255,6 @@ ConsumerBufferPtr StorageRabbitMQ::createReadBuffer()
 
 bool StorageRabbitMQ::checkDependencies(const StorageID & table_id)
 {
-    LOG_DEBUG(log, "Checking dependencies");
-
     // Check if all dependencies are attached
     auto dependencies = DatabaseCatalog::instance().getDependencies(table_id);
     if (dependencies.empty())

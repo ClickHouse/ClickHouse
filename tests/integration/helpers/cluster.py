@@ -234,9 +234,9 @@ class ClickHouseCluster:
 
         if with_rabbitmq and not self.with_rabbitmq:
             self.with_rabbitmq = True
-            self.base_cmd.extend(['--file', p.join(HELPERS_DIR, 'docker_compose_rabbitmq.yml')])
+            self.base_cmd.extend(['--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_rabbitmq.yml')])
             self.base_rabbitmq_cmd = ['docker-compose', '--project-directory', self.base_dir, '--project-name',
-                                      self.project_name, '--file', p.join(HELPERS_DIR, 'docker_compose_rabbitmq.yml')]
+                                      self.project_name, '--file', p.join(DOCKER_COMPOSE_DIR, 'docker_compose_rabbitmq.yml')]
             cmds.append(self.base_rabbitmq_cmd)
 
         if with_hdfs and not self.with_hdfs:

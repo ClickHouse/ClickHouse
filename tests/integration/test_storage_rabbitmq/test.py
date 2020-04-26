@@ -61,8 +61,8 @@ def rabbitmq_check_result(result, check=False, ref_file='test_rabbitmq_json.refe
             return TSV(result) == TSV(reference)
 
 
-def callback(ch, method, properties, body):
-    assert 0 # means it worked!
+#def callback(ch, method, properties, body):
+#    assert 0 
 
 
 # Fixtures
@@ -92,49 +92,12 @@ def rabbitmq_setup_teardown():
 
 # Tests
 
-#@pytest.mark.timeout(180)
-#def test_rabbitmq_basic_commands(rabbitmq_cluster):
-#    credentials = pika.PlainCredentials('root', 'clickhouse')
-#    parameters = pika.ConnectionParameters('localhost',
-#                                       5672,
-#                                       'private',
-#                                       credentials)
-#    publisher_connection = pika.BlockingConnection(parameters)
-#    consumer_connection = pika.BlockingConnection(parameters)
-#
-#    consumer = consumer_connection.channel()
-#    consumer.exchange_declare(exchange='direct_exchange', exchange_type='direct')
-#    result = consumer.queue_declare(queue='')
-#    queue_name = result.method.queue
-#    consumer.queue_bind(exchange='direct_exchange', queue=queue_name, routing_key='new')
-#    consumer.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
-#
-#    messages = []
-#    for i in range(25):
-#        messages.append(json.dumps({'key': i, 'value': i}))
-#
-#    publisher = publisher_connection.channel()
-#    publisher.exchange_declare(exchange='direct_exchange', exchange_type='direct')
-#    for message in messages:
-#        publisher.basic_publish(exchange='direct_exchange', routing_key='new', body=message)
-#
-#    messages = []
-#    for i in range(25, 50):
-#        messages.append(json.dumps({'key': i, 'value': i}))
-#    for message in messages:
-#        publisher.basic_publish(exchange='direct_exchange', routing_key='new', body=message)
-#
-#    consumer.start_consuming()
-#    consumer_connection.close()
-#    publisher.connection.close()
-#
-
 @pytest.mark.timeout(180)
 def test_rabbitmq_settings_new_syntax(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:15672',
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_routing_key_list = 'new',
                      rabbitmq_exchange_name = 'direct_exchange',
                      rabbitmq_format = 'JSONEachRow',
@@ -145,7 +108,7 @@ def test_rabbitmq_settings_new_syntax(rabbitmq_cluster):
     credentials = pika.PlainCredentials('root', 'clickhouse')
     parameters = pika.ConnectionParameters('localhost',
                                        5672,
-                                       'private',
+                                       '/',
                                        credentials)
     connection = pika.BlockingConnection(parameters)
 
@@ -181,7 +144,7 @@ def test_rabbitmq_select_empty(rabbitmq_cluster):
     instance.query('''
         CREATE TABLE test.rabbitmq (key UInt64, value UInt64)
             ENGINE = RabbitMQ
-            SETTINGS rabbitmq_host_port = 'rabbitmq1:15672',
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
                      rabbitmq_routing_key_list = 'empty',
                      rabbitmq_format = 'TSV',
                      rabbitmq_row_delimiter = '\\n';
@@ -229,6 +192,44 @@ def test_rabbitmq_select_empty(rabbitmq_cluster):
 #    ''')
 #
 #    rabbitmq_check_result(result, True)
+
+
+#@pytest.mark.timeout(180)
+#def test_rabbitmq_basic_commands(rabbitmq_cluster):
+#    credentials = pika.PlainCredentials('root', 'clickhouse')
+#    parameters = pika.ConnectionParameters('localhost',
+#                                       5672,
+#                                       '/',
+#                                       credentials)
+#    publisher_connection = pika.BlockingConnection(parameters)
+#    consumer_connection = pika.BlockingConnection(parameters)
+#
+#    consumer = consumer_connection.channel()
+#    consumer.exchange_declare(exchange='direct_exchange', exchange_type='direct')
+#    result = consumer.queue_declare(queue='')
+#    queue_name = result.method.queue
+#    consumer.queue_bind(exchange='direct_exchange', queue=queue_name, routing_key='new')
+#    consumer.basic_consume(queue=queue_name, on_message_callback=callback, auto_ack=True)
+#
+#    messages = []
+#    for i in range(25):
+#        messages.append(json.dumps({'key': i, 'value': i}))
+#
+#    publisher = publisher_connection.channel()
+#    publisher.exchange_declare(exchange='direct_exchange', exchange_type='direct')
+#    for message in messages:
+#        publisher.basic_publish(exchange='direct_exchange', routing_key='new', body=message)
+#
+#    messages = []
+#    for i in range(25, 50):
+#        messages.append(json.dumps({'key': i, 'value': i}))
+#    for message in messages:
+#        publisher.basic_publish(exchange='direct_exchange', routing_key='new', body=message)
+#
+#    consumer.start_consuming()
+#    consumer_connection.close()
+#    publisher.connection.close()
+#
 
 
 if __name__ == '__main__':

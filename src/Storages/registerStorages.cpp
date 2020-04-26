@@ -48,7 +48,7 @@ void registerStorages()
     #endif
 
     #if USE_AMQPCPP
-        registerStorageRabbitMQ(factory);
+    registerStorageRabbitMQ(factory);
     #endif
 }
 

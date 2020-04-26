@@ -11,19 +11,18 @@ namespace ErrorCodes
     extern int CANNOT_CREATE_IO_BUFFER;
 }
 
+
 RabbitMQBlockOutputStream::RabbitMQBlockOutputStream(
         StorageRabbitMQ & storage_, const Context & context_) : storage(storage_), context(context_)
 {
 }
 
-RabbitMQBlockOutputStream::~RabbitMQBlockOutputStream()
-{
-}
 
 Block RabbitMQBlockOutputStream::getHeader() const
 {
     return storage.getSampleBlockNonMaterialized();
 }
+
 
 void RabbitMQBlockOutputStream::writePrefix()
 {
@@ -38,14 +37,15 @@ void RabbitMQBlockOutputStream::writePrefix()
             });
 }
 
+
 void RabbitMQBlockOutputStream::write(const Block & block)
 {
     child->write(block);
 }
 
+
 void RabbitMQBlockOutputStream::writeSuffix()
 {
     child->writeSuffix();
 }
-
 }

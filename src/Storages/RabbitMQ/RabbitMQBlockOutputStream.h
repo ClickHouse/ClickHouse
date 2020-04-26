@@ -3,6 +3,7 @@
 #include <Interpreters/Context.h>
 #include <Storages/RabbitMQ/StorageRabbitMQ.h>
 
+
 namespace DB
 {
 
@@ -10,7 +11,6 @@ class RabbitMQBlockOutputStream : public IBlockOutputStream
 {
 public:
     explicit RabbitMQBlockOutputStream(StorageRabbitMQ & storage_, const Context & context_);
-    ~RabbitMQBlockOutputStream() override;
 
     Block getHeader() const override;
 
