@@ -43,7 +43,7 @@ class GRPCClient {
             grpc::Status status;
             request.set_query(query);
             request.set_x_clickhouse_user("default");
-            request.set_x_clickhouse_key("default");
+            request.set_x_clickhouse_key("");
             request.set_x_clickhouse_quota("default");
             request.set_query_id(query+"123");
             request.set_interactive_delay(1000);
@@ -53,7 +53,12 @@ class GRPCClient {
             void* got_tag = (void*)1;
             bool ok = false;
             
-            status = stub_->Query(&context, request, &reply);
+            std::unique_ptr<grpc::ClientReader<GRPCConnection::QueryResponse> > reader(stub_->Query(&context, request));
+            while (reader->Read(&reply)) {
+                if (!reply.progress().empty()) {
+                std::cout << "Progress: " << reply.progress() << std::endl;
+             }
+            }
             if (status.ok() && reply.exception_occured().empty()) {
                 return reply.query_id();
             } else if (status.ok() && !reply.exception_occured().empty()) {
@@ -81,7 +86,9 @@ int main(int argc, char** argv) {
     std::cout << client.Query("INSERT INTO t FORMAT TabSeparated 10\n11\n12\n") << std::endl;
     std::cout << client.Query("SELECT a FROM t ORDER BY a") << std::endl;
     std::cout << client.Query("DROP TABLE t") << std::endl;
-    std::cout << client.Query("SELECT count() FROM numbers(10000000000)") << std::endl;
+    std::cout << client.Query("SELECT 100") << std::endl;
+    std::cout << client.Query("SELECT count() FROM numbers(100000000)") << std::endl;
+    std::cout << client.Query("SELECT count() FROM numbers(100)") << std::endl;
 
     return 0;
 }

@@ -1,71 +1,29 @@
 #include "GRPCHandler.h"
  #include <IO/ReadBufferFromString.h>
+#include<IO/WriteBufferFromOStream.h>
  #include <IO/ReadHelpers.h>
 
  #include <Interpreters/executeQuery.h>
  #include <ext/scope_guard.h>
 #include <common/getFQDNOrHostName.h>
-
-
- using GRPCConnection::HelloRequest;
- using GRPCConnection::HelloResponse;
- using GRPCConnection::QueryRequest;
- using GRPCConnection::QueryResponse;
- using GRPCConnection::GRPC;
+#include <Parsers/parseQuery.h>
+#include <Parsers/ASTInsertQuery.h>
+#include <Parsers/ParserQuery.h>
+#include <DataStreams/InputStreamFromASTInsertQuery.h>
+#include <Common/CurrentThread.h>
+#include <IO/copyData.h>
+#include <DataStreams/copyData.h>
+#include <DataStreams/NativeBlockInputStream.h>
+#include <DataStreams/NativeBlockOutputStream.h>
+using GRPCConnection::HelloRequest;
+using GRPCConnection::HelloResponse;
+using GRPCConnection::QueryRequest;
+using GRPCConnection::QueryResponse;
+using GRPCConnection::GRPC;
 
 
  namespace DB
  {
-
- namespace ErrorCodes
- {
-     extern const int READONLY;
-     extern const int UNKNOWN_COMPRESSION_METHOD;
-
-     extern const int CANNOT_PARSE_TEXT;
-     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
-     extern const int CANNOT_PARSE_QUOTED_STRING;
-     extern const int CANNOT_PARSE_DATE;
-     extern const int CANNOT_PARSE_DATETIME;
-     extern const int CANNOT_PARSE_NUMBER;
-     extern const int CANNOT_OPEN_FILE;
-
-     extern const int UNKNOWN_ELEMENT_IN_AST;
-     extern const int UNKNOWN_TYPE_OF_AST_NODE;
-     extern const int TOO_DEEP_AST;
-     extern const int TOO_BIG_AST;
-     extern const int UNEXPECTED_AST_STRUCTURE;
-
-     extern const int SYNTAX_ERROR;
-
-     extern const int INCORRECT_DATA;
-     extern const int TYPE_MISMATCH;
-
-     extern const int UNKNOWN_TABLE;
-     extern const int UNKNOWN_FUNCTION;
-     extern const int UNKNOWN_IDENTIFIER;
-     extern const int UNKNOWN_TYPE;
-     extern const int UNKNOWN_STORAGE;
-     extern const int UNKNOWN_DATABASE;
-     extern const int UNKNOWN_SETTING;
-     extern const int UNKNOWN_DIRECTION_OF_SORTING;
-     extern const int UNKNOWN_AGGREGATE_FUNCTION;
-     extern const int UNKNOWN_FORMAT;
-     extern const int UNKNOWN_DATABASE_ENGINE;
-     extern const int UNKNOWN_TYPE_OF_QUERY;
-
-     extern const int QUERY_IS_TOO_LARGE;
-
-     extern const int NOT_IMPLEMENTED;
-     extern const int SOCKET_TIMEOUT;
-
-     extern const int UNKNOWN_USER;
-     extern const int WRONG_PASSWORD;
-     extern const int REQUIRED_PASSWORD;
-
-     extern const int INVALID_SESSION_TIMEOUT;
-     extern const int HTTP_LENGTH_REQUIRED;
- }
 
  std::string ParseGrpcPeer(const grpc::ServerContext& context_) {
     String info = context_.peer();
@@ -85,12 +43,12 @@
 
          ReadBufferFromString buf(session_timeout_str);
          if (!tryReadIntText(session_timeout, buf) || !buf.eof())
-             throw Exception("Invalid session timeout: '" + session_timeout_str + "'", ErrorCodes::INVALID_SESSION_TIMEOUT);
+             throw Exception("Invalid session timeout: '" + session_timeout_str + "'", 0);
 
          if (session_timeout > max_session_timeout)
              throw Exception("Session timeout '" + session_timeout_str + "' is larger than max_session_timeout: " + std::to_string(max_session_timeout)
                  + ". Maximum session timeout could be modified in configuration file.",
-                 ErrorCodes::INVALID_SESSION_TIMEOUT);
+                 0);
      }
 
      return std::chrono::seconds(session_timeout);
@@ -111,19 +69,24 @@
         delete this;
     }
  }
+ void CallDataQuery::Execute() {
+
+
+ }
  void CallDataQuery::Proceed(bool ok) {
     if (status == CREATE) {
-        status = PROCESS;
+        status = PREPARE;
         Service->RequestQuery(&gRPCcontext, &request, &responder, CompilationQueue, CompilationQueue, this);
-    } else if (status == PROCESS) {
-        new CallDataQuery(Service, CompilationQueue, iServer, log);
-        LOG_TRACE(log, "Process query");
-            
-        String out;
-        auto in = std::make_unique<ReadBufferFromString>(request.query());
-        auto used_output = std::make_unique<WriteBufferFromString>(out);
+    } else if (status == PREPARE) {
+        if(!new_responder_created)
+        {
+            new CallDataQuery(Service, CompilationQueue, iServer, log);
+            new_responder_created = true ;
+        }
 
-        String server_display_name = iServer.config().getString("display_name", getFQDNOrHostName());
+        LOG_TRACE(log, "Process query");
+
+        String server_display_name = iServer->config().getString("display_name", getFQDNOrHostName());
 
         CurrentThread::QueryScope query_scope(context);
 
@@ -138,14 +101,12 @@
             user =  "default";
             password = "";
             quota_key = "";
-        } else if (user.empty() || password.empty()){
-            throw Exception("Invalid authentication: required password", ErrorCodes::REQUIRED_PASSWORD);
         }
 
         context.setUser(user, password, user_adress, quota_key);
         context.setCurrentQueryId(request.query_id());
 
-        const auto & config = iServer.config();
+        const auto & config = iServer->config();
         std::shared_ptr<NamedSession> session;
         String session_id;
         std::chrono::steady_clock::duration session_timeout;
@@ -164,15 +125,124 @@
             if (session)
                 session->release();
         });
-        executeQuery(*in, *used_output, /* allow_into_outfile = */ false, context, 
-        [this] (const String & current_query_id, const String & content_type, const String & format, const String & timezone)
+        
+        
+        const char * begin = request.query().data();
+        const char * end = begin + request.query().size();
+        const Settings & settings = context.getSettingsRef();
+        ParserQuery parser(end, settings.enable_debug_queries);
+        ASTPtr ast = parseQuery(parser, begin, end, "", settings.max_query_size, settings.max_parser_depth);
+        auto * insert_query = ast->as<ASTInsertQuery>();
+        auto query_end = end;
+        
+        if (insert_query && insert_query->data)
+        {
+            query_end = insert_query->data;
+            LOG_TRACE(log, "Insertion" << insert_query->data);
+        }
+        String query(begin, query_end);
+        io = executeQuery(query, context, false, QueryProcessingStage::Complete, true, true);
+        if (io.out) {
+            auto in_str = std::make_unique<ReadBufferFromString>(request.query());
+            InputStreamFromASTInsertQuery in(ast, in_str.get(), io.out->getHeader(), context, nullptr);
+            copyData(in, *io.out);
+            LOG_TRACE(log, "Insertion OK");
+        }
+        if (io.pipeline.initialized()) {
+            auto & header = io.pipeline.getHeader();
+            size_t num_threads = 1;
+            auto thread_group = CurrentThread::getGroup();
+
+            lazy_format = std::make_shared<LazyOutputFormat>(io.pipeline.getHeader());
+            io.pipeline.setOutput(lazy_format);
+            executor = io.pipeline.execute();
+
+            pool.scheduleOrThrowOnError([&]()
             {
-            }
+                try
+                {
+                    executor->execute(io.pipeline.getNumThreads());
+                }
+                catch (...)
+                {
+                    exception = true;
+                    throw;
+                }
+            });
+            progress_watch.start();
+            status = PROCESS;
+            response.set_progress("Processing");
+            responder.Write(response, (void*)this);
+        } else {
+            io.onFinish();
+            status = ONFINISH;
+            response.set_query_id("Done");
+            responder.Write(response, (void*)this);
+        }
+        
+    } else if (status == PROCESS){
+        SCOPE_EXIT(
+                lazy_format->finish();
+
+                try
+                {
+                    pool.wait();
+                }
+                catch (...)
+                {
+                    /// If exception was thrown during pipeline execution, skip it while processing other exception.
+                    tryLogCurrentException(log);
+                }
         );
-        used_output.out->finalize();
-        response.set_query_id("Result: "+ out);
+
+        while (!lazy_format->isFinished() && !exception)
+        {
+            if (auto block = lazy_format->getBlock(progress_watch.elapsedMilliseconds()))
+            {
+                progress_watch.restart();
+                if (!io.null_format) {
+                    // std::shared_ptr<WriteBuffer> used_output;
+                    
+                    // auto in = std::make_unique<ReadBufferFromString>(request.query());
+                    // std::ostream& ostr_ = std::clog;
+                    // std::vector<char> v;
+
+                    // WriteBufferFromVector used_output(v);
+                    // BlockOutputStreamPtr out = std::make_shared<NativeBlockOutputStream>(used_output, 0, block.cloneEmpty(), true);
+                    
+                    // out->write(block);
+                    // out->flush();
+                    // // used_output.next();
+                    // used_output.finalize();
+                    // // String out1(used_output->begin(), used_output->begin()+ used_output->offset() );
+                    // for (auto& el : v) {
+                    //     LOG_TRACE(log, "LOG:" << el);
+                    // }
+
+                    String out1;
+                    auto used_output = std::make_unique<WriteBufferFromString>(out1);
+                    auto my_block_out_stream = context.getOutputFormat("Pretty", *used_output, block);
+                    my_block_out_stream->write(block);
+                    my_block_out_stream->flush();
+                    LOG_TRACE(log, "LOG:" << out1);
+                    response.set_query_id("Result: " + out1);
+
+                }
+
+                    
+            }
+        }
+
+        lazy_format->finish();
+        pool.wait();
+        io.onFinish();
+        status = ONFINISH;
+        // response.set_query_id("Result: ");
+        responder.Write(response, (void*)this);
+
+    } else if (status == ONFINISH) {
         status = FINISH;
-        responder.Finish(response, grpc::Status::OK, this);
+        responder.Finish(grpc::Status(), (void*)this);
     } else {
         GPR_ASSERT(status == FINISH);
         delete this;

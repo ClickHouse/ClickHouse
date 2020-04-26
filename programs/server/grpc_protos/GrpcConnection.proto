@@ -32,5 +32,5 @@ syntax = "proto3";
 
  service GRPC {
    rpc SayHello(HelloRequest) returns (HelloResponse) {}
-   rpc Query(QueryRequest) returns (QueryResponse) {}
+   rpc Query(QueryRequest) returns (stream QueryResponse) {}
  } 
