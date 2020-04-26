@@ -3,19 +3,16 @@ from __future__ import print_function
 import sys
 import os
 import time
-import re
 import subprocess
 import threading
 from io import StringIO, SEEK_END
 from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
 
-ipv4_parser = re.compile('((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))')
-
 CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '127.0.0.1')
 CLICKHOUSE_PORT_HTTP = os.environ.get('CLICKHOUSE_PORT_HTTP', '8123')
 
 # IP-address of this host accessible from outside world.
-HTTP_SERVER_HOST = ipv4_parser.findall(subprocess.check_output(['hostname', '-i']).decode('utf-8').strip())[0][0]
+HTTP_SERVER_HOST = os.environ.get('HTTP_SERVER_HOST', subprocess.check_output(['hostname', '-i']).decode('utf-8').strip())
 HTTP_SERVER_PORT = int(os.environ.get('CLICKHOUSE_TEST_HOST_EXPOSED_PORT', 51234))
 
 # IP address and port of the HTTP server started from this script.
