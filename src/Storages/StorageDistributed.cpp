@@ -399,7 +399,16 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 
     const auto & select = query_ptr->as<ASTSelectQuery &>();
 
+    if (select.group_by_with_totals || select.group_by_with_rollup || select.group_by_with_cube)
+        return false;
+
+    // TODO: The following can be optimized too (but with some caveats, will be addressed later):
+    // - ORDER BY
+    // - LIMIT BY
+    // - LIMIT
     if (select.orderBy())
+        return false;
+    if (select.limitBy() || select.limitLength())
         return false;
 
     if (select.distinct)
@@ -415,11 +424,6 @@ bool StorageDistributed::canForceGroupByNoMerge(const Context &context, QueryPro
 
         reason = "DISTINCT " + backQuote(serializeAST(*select.select(), true));
     }
-
-    // This can use distributed_group_by_no_merge but in this case limit stage
-    // should be done later (which is not the case right now).
-    if (select.limitBy() || select.limitLength())
-        return false;
 
     const ASTPtr group_by = select.groupBy();
     if (!group_by)
