@@ -101,11 +101,12 @@ class PredefineQueryHandler : public HTTPHandler
 private:
     NameSet receive_params;
     std::string predefine_query;
+    std::optional<String> url_regex;
     std::unordered_map<String, String> header_name_with_capture_regex;
 public:
     explicit PredefineQueryHandler(
         IServer & server, const NameSet & receive_params_, const std::string & predefine_query_
-        , const std::unordered_map<String, String> & header_name_with_capture_regex_);
+        , const std::optional<String> & url_regex_, const std::unordered_map<String, String> & header_name_with_regex_);
 
     virtual void customizeContext(Poco::Net::HTTPServerRequest & request, Context & context) override;
 

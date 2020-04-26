@@ -20,7 +20,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int UNKNOWN_ELEMENT_IN_CONFIG;
 }
@@ -89,7 +88,7 @@ static inline auto headersFilter(Poco::Util::AbstractConfiguration & config, con
     {
         for (const auto & [header_name, header_expression] : headers_expression)
         {
-            const auto & header_value = request.get(header_name);
+            const auto & header_value = request.get(header_name, "");
             if (!checkExpression(StringRef(header_value.data(), header_value.size()), header_expression))
                 return false;
         }
