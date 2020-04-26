@@ -1,36 +1,38 @@
 syntax = "proto3";
 
- package GRPCConnection;
+package GRPCConnection;
 
- message HelloRequest {
-   string username = 1;
- }
+message Progress {
+   uint64 read_rows = 1;
+   uint64 read_bytes = 2;
+   uint64 total_rows_to_read = 3;
+   uint64 written_rows = 4;
+   uint64 written_bytes = 5;
+}
 
- message HelloResponse {
-   string response = 1;
- }
-
- message QueryRequest {
+message User {
+   string user = 1;
+   string key = 2;
+   string quota = 3;
+}
+message QuerySettings {
    string query = 1;
-   string X_ClickHouse_User = 2;
-   string X_ClickHouse_Key = 3;
-   string X_ClickHouse_Quota = 4;
-   string query_id = 5;
-   string session_id = 6;
-   string session_timeout = 7;
-   uint64 interactive_delay = 8;
- }
+   string query_id = 2;
+}
+message QueryRequest {
+   User user_info = 1;
+   QuerySettings query_info = 2;
+   Progress progress = 3;
+   string session_id = 4;
+   string session_timeout = 5;
+}
 
- message QueryResponse {
-   string query_id = 1;
-   string server_display_name = 2;
-   string content_type = 3;
-   string current_query_id = 4;
-   string exception_occured = 5;
-   string progress = 6;
- }
+message QueryResponse {
+   string query = 1;
+   string exception_occured = 2;
+   Progress progress = 3;
+}
 
- service GRPC {
-   rpc SayHello(HelloRequest) returns (HelloResponse) {}
-   rpc Query(QueryRequest) returns (stream QueryResponse) {}
- } 
+service GRPC {
+   rpc Query(QueryRequest) returns (QueryResponse) {}
+} 
