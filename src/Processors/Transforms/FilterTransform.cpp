@@ -85,7 +85,7 @@ IProcessor::Status FilterTransform::prepare()
 }
 
 
-void FilterTransform::removeFilterIfNeed(Chunk & chunk)
+void FilterTransform::removeFilterIfNeed(Chunk & chunk) const
 {
     if (chunk && remove_filter_column)
         chunk.erase(filter_column_position);

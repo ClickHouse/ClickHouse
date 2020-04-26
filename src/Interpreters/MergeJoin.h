@@ -105,7 +105,7 @@ private:
     const size_t max_joined_block_rows;
     const size_t max_rows_in_right_block;
 
-    void changeLeftColumns(Block & block, MutableColumns && columns);
+    void changeLeftColumns(Block & block, MutableColumns && columns) const;
     void addRightColumns(Block & block, MutableColumns && columns);
 
     template <bool is_all>

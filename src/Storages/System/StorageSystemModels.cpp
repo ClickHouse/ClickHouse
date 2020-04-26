@@ -28,13 +28,13 @@ NamesAndTypesList StorageSystemModels::getNamesAndTypes()
 void StorageSystemModels::fillData(MutableColumns & res_columns, const Context & context, const SelectQueryInfo &) const
 {
     const auto & external_models_loader = context.getExternalModelsLoader();
-    auto load_results = external_models_loader.getCurrentLoadResults();
+    auto load_results = external_models_loader.getLoadResults();
 
     for (const auto & load_result : load_results)
     {
         res_columns[0]->insert(load_result.name);
         res_columns[1]->insert(static_cast<Int8>(load_result.status));
-        res_columns[2]->insert(load_result.origin);
+        res_columns[2]->insert(load_result.config ? load_result.config->path : "");
 
         if (load_result.object)
         {

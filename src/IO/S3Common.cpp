@@ -38,13 +38,13 @@ public:
 
     void Log(Aws::Utils::Logging::LogLevel log_level, const char * tag, const char * format_str, ...) final // NOLINT
     {
-        auto & [level, prio] = convertLogLevel(log_level);
+        const auto & [level, prio] = convertLogLevel(log_level);
         LOG_SIMPLE(log, std::string(tag) + ": " + format_str, level, prio);
     }
 
     void LogStream(Aws::Utils::Logging::LogLevel log_level, const char * tag, const Aws::OStringStream & message_stream) final
     {
-        auto & [level, prio] = convertLogLevel(log_level);
+        const auto & [level, prio] = convertLogLevel(log_level);
         LOG_SIMPLE(log, std::string(tag) + ": " + message_stream.str(), level, prio);
     }
 

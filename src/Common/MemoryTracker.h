@@ -13,6 +13,7 @@
   */
 class MemoryTracker
 {
+private:
     std::atomic<Int64> amount {0};
     std::atomic<Int64> peak {0};
     std::atomic<Int64> hard_limit {0};
@@ -33,9 +34,12 @@ class MemoryTracker
     /// This description will be used as prefix into log messages (if isn't nullptr)
     const char * description = nullptr;
 
+    void updatePeak(Int64 will_be);
+    void logMemoryUsage(Int64 current) const;
+
 public:
-    MemoryTracker(VariableContext level_ = VariableContext::Thread) : level(level_) {}
-    MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread) : parent(parent_), level(level_) {}
+    MemoryTracker(VariableContext level_ = VariableContext::Thread);
+    MemoryTracker(MemoryTracker * parent_, VariableContext level_ = VariableContext::Thread);
 
     ~MemoryTracker();
 
@@ -113,12 +117,17 @@ public:
     /// Reset the accumulated data and the parent.
     void reset();
 
+    /// Reset current counter to a new value.
+    void set(Int64 to);
+
     /// Prints info about peak memory consumption into log.
     void logPeakMemoryUsage() const;
 
     /// To be able to temporarily stop memory tracker
     DB::SimpleActionBlocker blocker;
 };
+
+extern MemoryTracker total_memory_tracker;
 
 
 /// Convenience methods, that use current thread's memory_tracker if it is available.

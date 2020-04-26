@@ -12,6 +12,7 @@
 #include <Databases/IDatabase.h>
 #include <chrono>
 
+
 #if !defined(ARCADIA_BUILD)
 #    include "config_core.h"
 #endif
@@ -19,6 +20,12 @@
 #if USE_JEMALLOC
 #    include <jemalloc/jemalloc.h>
 #endif
+
+
+namespace CurrentMetrics
+{
+    extern const Metric MemoryTracking;
+}
 
 
 namespace DB
@@ -130,6 +137,25 @@ void AsynchronousMetrics::update()
 
     set("Uptime", context.getUptimeSeconds());
 
+    /// Process memory usage according to OS
+#if defined(OS_LINUX)
+    {
+        MemoryStatisticsOS::Data data = memory_stat.get();
+
+        set("MemoryVirtual", data.virt);
+        set("MemoryResident", data.resident);
+        set("MemoryShared", data.shared);
+        set("MemoryCode", data.code);
+        set("MemoryDataAndStack", data.data_and_stack);
+
+        /// We must update the value of total_memory_tracker periodically.
+        /// Otherwise it might be calculated incorrectly - it can include a "drift" of memory amount.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/10293
+        total_memory_tracker.set(data.resident);
+        CurrentMetrics::set(CurrentMetrics::MemoryTracking, data.resident);
+    }
+#endif
+
     {
         auto databases = DatabaseCatalog::instance().getDatabases();
 
@@ -154,10 +180,10 @@ void AsynchronousMetrics::update()
             /// Lazy database can not contain MergeTree tables
             if (db.second->getEngineName() == "Lazy")
                 continue;
-            for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = db.second->getTablesIterator(); iterator->isValid(); iterator->next())
             {
                 ++total_number_of_tables;
-                auto & table = iterator->table();
+                const auto & table = iterator->table();
                 StorageMergeTree * table_merge_tree = dynamic_cast<StorageMergeTree *>(table.get());
                 StorageReplicatedMergeTree * table_replicated_merge_tree = dynamic_cast<StorageReplicatedMergeTree *>(table.get());
 

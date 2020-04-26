@@ -564,6 +564,28 @@ Default value: 1,048,576.
 
 The default is slightly more than `max_block_size`. The reason for this is because certain table engines (`*MergeTree`) form a data part on the disk for each inserted block, which is a fairly large entity. Similarly, `*MergeTree` tables sort data during insertion and a large enough block size allow sorting more data in RAM.
 
+## min_insert_block_size_rows {#min-insert-block-size-rows}
+
+Sets minimum number of rows in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
+
+Possible values:
+
+- Positive integer.
+- 0 — Squashing disabled.
+
+Default value: 1048576.
+
+## min_insert_block_size_bytes {#min-insert-block-size-bytes}
+
+Sets minimum number of bytes in block which can be inserted into a table by an `INSERT` query. Smaller-sized blocks are squashed into bigger ones.
+
+Possible values:
+
+- Positive integer.
+- 0 — Squashing disabled.
+
+Default value: 268435456.
+
 ## max\_replica\_delay\_for\_distributed\_queries {#settings-max_replica_delay_for_distributed_queries}
 
 Disables lagging replicas for distributed queries. See [Replication](../../engines/table_engines/mergetree_family/replication.md).

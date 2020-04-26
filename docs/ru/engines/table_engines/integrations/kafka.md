@@ -129,7 +129,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 ``` sql
   DETACH TABLE consumer;
-  ATTACH MATERIALIZED VIEW consumer;
+  ATTACH TABLE consumer;
 ```
 
 Если необходимо изменить целевую таблицу с помощью `ALTER`, то материализованное представление рекомендуется отключить, чтобы избежать несостыковки между целевой таблицей и данными от представления.

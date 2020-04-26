@@ -98,3 +98,6 @@
 
 /// Default limit on recursion depth of recursive descend parser.
 #define DBMS_DEFAULT_MAX_PARSER_DEPTH 1000
+
+/// Max depth of hierarchical dictionary
+#define DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH 1000

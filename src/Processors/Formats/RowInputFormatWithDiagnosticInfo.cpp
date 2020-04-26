@@ -42,7 +42,7 @@ String RowInputFormatWithDiagnosticInfo::getDiagnosticInfo()
 
     WriteBufferFromOwnString out;
 
-    auto & header = getPort().getHeader();
+    const auto & header = getPort().getHeader();
     MutableColumns columns = header.cloneEmptyColumns();
 
     /// It is possible to display detailed diagnostics only if the last and next to last rows are still in the read buffer.
@@ -101,8 +101,8 @@ bool RowInputFormatWithDiagnosticInfo::deserializeFieldAndPrintDiagnosticInfo(co
         << "name: " << alignedName(col_name, max_length_of_column_name)
         << "type: " << alignedName(type->getName(), max_length_of_data_type_name);
 
-    auto prev_position = in.position();
-    auto curr_position = in.position();
+    auto * prev_position = in.position();
+    auto * curr_position = in.position();
     std::exception_ptr exception;
 
     try

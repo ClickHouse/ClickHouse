@@ -183,7 +183,7 @@ void StorageMergeTree::checkPartitionCanBeDropped(const ASTPtr & partition)
     global_context.checkPartitionCanBeDropped(table_id.database_name, table_id.table_name, partition_size);
 }
 
-void StorageMergeTree::drop(TableStructureWriteLockHolder &)
+void StorageMergeTree::drop()
 {
     shutdown();
     dropAllData();
@@ -227,7 +227,7 @@ void StorageMergeTree::alter(
 
         changeSettings(metadata.settings_ast, table_lock_holder);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     }
     else
     {
@@ -239,7 +239,7 @@ void StorageMergeTree::alter(
 
         setTTLExpressions(metadata.columns, metadata.ttl_for_table_ast);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
 
         String mutation_file_name;
         Int64 mutation_version = -1;
@@ -552,8 +552,12 @@ bool StorageMergeTree::merge(
     {
         std::lock_guard lock(currently_processing_in_background_mutex);
 
-        auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *)
+        auto can_merge = [this, &lock] (const DataPartPtr & left, const DataPartPtr & right, String *) -> bool
         {
+            /// This predicate is checked for the first part of each partition.
+            /// (left = nullptr, right = "first part of partition")
+            if (!left)
+                return !currently_merging_mutating_parts.count(right);
             return !currently_merging_mutating_parts.count(left) && !currently_merging_mutating_parts.count(right)
                 && getCurrentMutationVersion(left, lock) == getCurrentMutationVersion(right, lock);
         };

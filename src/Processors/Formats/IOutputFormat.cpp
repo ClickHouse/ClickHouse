@@ -69,6 +69,9 @@ void IOutputFormat::work()
             break;
     }
 
+    if (auto_flush)
+        flush();
+
     has_input = false;
 }
 

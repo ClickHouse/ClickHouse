@@ -36,8 +36,8 @@ int nullableCompareAt(const IColumn & left_column, const IColumn & right_column,
 
     if constexpr (has_nulls)
     {
-        auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column);
-        auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column);
+        const auto * left_nullable = checkAndGetColumn<ColumnNullable>(left_column);
+        const auto * right_nullable = checkAndGetColumn<ColumnNullable>(right_column);
 
         if (left_nullable && right_nullable)
         {
@@ -79,7 +79,7 @@ Block extractMinMax(const Block & block, const Block & keys)
 
     for (size_t i = 0; i < columns.size(); ++i)
     {
-        auto & src_column = block.getByName(keys.getByPosition(i).name);
+        const auto & src_column = block.getByName(keys.getByPosition(i).name);
 
         columns[i]->insertFrom(*src_column.column, 0);
         columns[i]->insertFrom(*src_column.column, block.rows() - 1);
@@ -151,8 +151,8 @@ public:
 
         for (size_t i = 0; i < impl.sort_columns.size(); ++i)
         {
-            auto & left_column = *impl.sort_columns[i];
-            auto & right_column = *min_max.getByName(key_names[i]).column; /// cannot get by position cause of possible duplicates
+            const auto & left_column = *impl.sort_columns[i];
+            const auto & right_column = *min_max.getByName(key_names[i]).column; /// cannot get by position cause of possible duplicates
 
             if (!first_vs_max)
                 first_vs_max = nullableCompareAt<true>(left_column, right_column, position(), 1);
@@ -200,8 +200,8 @@ private:
         int res = 0;
         for (size_t i = 0; i < impl.sort_columns_size; ++i)
         {
-            auto * left_column = impl.sort_columns[i];
-            auto * right_column = rhs.impl.sort_columns[i];
+            const auto * left_column = impl.sort_columns[i];
+            const auto * right_column = rhs.impl.sort_columns[i];
 
             res = nullableCompareAt<has_nulls>(*left_column, *right_column, lhs_pos, rhs_pos);
             if (res)
@@ -252,7 +252,7 @@ MutableColumns makeMutableColumns(const Block & block, size_t rows_to_reserve = 
 void makeSortAndMerge(const Names & keys, SortDescription & sort, SortDescription & merge)
 {
     NameSet unique_keys;
-    for (auto & key_name : keys)
+    for (const auto & key_name : keys)
     {
         merge.emplace_back(SortColumnDescription(key_name, 1, 1));
 
@@ -413,7 +413,7 @@ void MiniLSM::insert(const BlocksList & blocks)
     {
         BlockInputStreams inputs;
         inputs.reserve(blocks.size());
-        for (auto & block : blocks)
+        for (const auto & block : blocks)
             inputs.push_back(std::make_shared<OneBlockInputStream>(block));
 
         MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
@@ -851,7 +851,7 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
     return true;
 }
 
-void MergeJoin::changeLeftColumns(Block & block, MutableColumns && columns)
+void MergeJoin::changeLeftColumns(Block & block, MutableColumns && columns) const
 {
     if (is_left && is_any_join)
         return;

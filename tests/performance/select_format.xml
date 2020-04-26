@@ -2,16 +2,6 @@
 
     <create_query>CREATE TABLE IF NOT EXISTS table_{format} ENGINE = File({format}, '/dev/null') AS test.hits</create_query>
 
-    <stop_conditions>
-        <all_of>
-            <iterations>5</iterations>
-            <min_time_not_changing_for_ms>10000</min_time_not_changing_for_ms>
-        </all_of>
-        <any_of>
-            <iterations>100</iterations>
-            <total_time_ms>60000</total_time_ms>
-        </any_of>
-    </stop_conditions>
 
 
     <settings>
@@ -44,7 +34,7 @@
                 <value>ODBCDriver2</value>
                 <value>MySQLWire</value>
                 <value>Avro</value>
-<!--                <value>MsgPack</value> Does not work in performance test for unknown reason. -->
+                <value>MsgPack</value>
             </values>
         </substitution>
     </substitutions>

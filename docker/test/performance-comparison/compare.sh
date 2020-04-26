@@ -14,8 +14,8 @@ function configure
     rm right/config/config.d/text_log.xml ||:
     cp -rv right/config left ||:
 
-    sed -i 's/<tcp_port>9000/<tcp_port>9001/g' left/config/config.xml
-    sed -i 's/<tcp_port>9000/<tcp_port>9002/g' right/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9001/g' left/config/config.xml
+    sed -i 's/<tcp_port>900./<tcp_port>9002/g' right/config/config.xml
 
     # Start a temporary server to rename the tables
     while killall clickhouse-server; do echo . ; sleep 1 ; done
@@ -100,7 +100,7 @@ function run_tests
     # changes.
     test_prefix=$([ "$PR_TO_TEST" == "0" ] && echo left || echo right)/performance
 
-    for x in {test-times,skipped-tests}.tsv
+    for x in {test-times,skipped-tests,wall-clock-times}.tsv
     do
         rm -v "$x" ||:
         touch "$x"
@@ -124,11 +124,9 @@ function run_tests
     fi
 
     # Run only explicitly specified tests, if any
-    if [ -v CHPC_TEST_GLOB ]
+    if [ -v CHPC_TEST_GREP ]
     then
-        # I do want to expand the globs in the variable.
-        # shellcheck disable=SC2086
-        test_files=$(ls "$test_prefix"/$CHPC_TEST_GLOB.xml)
+        test_files=$(ls "$test_prefix" | grep "$CHPC_TEST_GREP" | xargs -I{} -n1 readlink -f "$test_prefix/{}")
     fi
 
     if [ "$test_files" == "" ]
@@ -176,6 +174,28 @@ function run_tests
     wait
 }
 
+function get_profiles_watchdog
+{
+    sleep 6000
+
+    echo "The trace collection did not finish in time." >> profile-errors.log
+
+    for pid in $(pgrep -f clickhouse)
+    do
+        gdb -p $pid --batch --ex "info proc all" --ex "thread apply all bt" --ex quit &> "$pid.gdb.log" &
+    done
+    wait
+
+    for i in {1..10}
+    do
+        if ! pkill -f clickhouse
+        then
+            break
+        fi
+        sleep 1
+    done
+}
+
 function get_profiles
 {
     # Collect the profiles
@@ -199,6 +219,11 @@ function get_profiles
     clickhouse-client --port 9002 --query "select * from system.metric_log format TSVWithNamesAndTypes" > right-metric-log.tsv ||: &
 
     wait
+
+    # Just check that the servers are alive so that we return a proper exit code.
+    # We don't consistently check the return codes of the above background jobs.
+    clickhouse-client --port 9001 --query "select 1"
+    clickhouse-client --port 9002 --query "select 1"
 }
 
 # Build and analyze randomization distribution for all queries.
@@ -228,6 +253,8 @@ done
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
 
+cat profile-errors.log >> report-errors.rep
+
 clickhouse-local --query "
 create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
     as select
@@ -235,28 +262,30 @@ create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
         -- immediately, so for now we pretend they don't exist. We don't want to
         -- remove them altogether because we want to be able to detect regressions,
         -- but the right way to do this is not yet clear.
-        left + right < 0.05 as short,
+        (left + right) / 2 < 0.02 as short,
 
-        -- Difference > 15% and > rd(99%) -- changed. We can't filter out flaky
+        -- Difference > 5% and > rd(99%) -- changed. We can't filter out flaky
         -- queries by rd(5%), because it can be zero when the difference is smaller
         -- than a typical distribution width. The difference is still real though.
-        not short and abs(diff) > 0.15 and abs(diff) > rd[4] as changed,
+        not short and abs(diff) > 0.05 and abs(diff) > rd[4] as changed,
         
-        -- Not changed but rd(99%) > 10% -- unstable.
-        not short and not changed and rd[4] > 0.10 as unstable,
+        -- Not changed but rd(99%) > 5% -- unstable.
+        not short and not changed and rd[4] > 0.05 as unstable,
         
         left, right, diff, rd,
         replaceAll(_file, '-report.tsv', '') test,
-        query
+
+        -- Truncate long queries.
+        if(length(query) < 300, query, substr(query, 1, 298) || '...') query
     from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
 
 create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
     select left, right, diff, rd, test, query from queries where changed
-    order by rd[3] desc;
+    order by abs(diff) desc;
 
 create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as
     select left, right, diff, rd, test, query from queries where unstable
-    order by rd[3] desc;
+    order by rd[4] desc;
 
 create table unstable_tests_tsv engine File(TSV, 'bad-tests.tsv') as
     select test, sum(unstable) u, sum(changed) c, u + c s from queries
@@ -305,7 +334,7 @@ do
 clickhouse-local --query "
 create view queries as
     select * from file('queries.rep', TSVWithNamesAndTypes,
-        'short int, unstable int, changed int, left float, right float,
+        'short int, changed int, unstable int, left float, right float,
             diff float, rd Array(float), test text, query text');
 
 create view query_log as select *
@@ -320,7 +349,7 @@ create view addresses_src as select *
     from file('$version-addresses.tsv', TSVWithNamesAndTypes,
         '$(cat "$version-addresses.tsv.columns")');
 
-create table addresses_join engine Join(any, left, address) as
+create table addresses_join_$version engine Join(any, left, address) as
     select addr address, name from addresses_src;
 
 create table unstable_query_runs engine File(TSVWithNamesAndTypes,
@@ -359,7 +388,7 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
         'unstable-run-traces.$version.rep') as
     select
         count() value,
-        joinGet(addresses_join, 'name', arrayJoin(trace)) metric,
+        joinGet(addresses_join_$version, 'name', arrayJoin(trace)) metric,
         unstable_query_runs.query_id,
         any(unstable_query_runs.query) query
     from unstable_query_runs
@@ -370,8 +399,8 @@ create table unstable_run_traces engine File(TSVWithNamesAndTypes,
 
 create table metric_devation engine File(TSVWithNamesAndTypes,
         'metric-deviation.$version.rep') as
-    select floor((q[3] - q[1])/q[2], 3) d,
-        quantilesExact(0, 0.5, 1)(value) q, metric, query
+    select query, floor((q[3] - q[1])/q[2], 3) d,
+        quantilesExact(0, 0.5, 1)(value) q, metric
     from (select * from unstable_run_metrics
         union all select * from unstable_run_traces
         union all select * from unstable_run_metrics_2) mm
@@ -385,7 +414,7 @@ create table stacks engine File(TSV, 'stacks.$version.rep') as
     select
         query,
         arrayStringConcat(
-            arrayMap(x -> joinGet(addresses_join, 'name', x),
+            arrayMap(x -> joinGet(addresses_join_$version, 'name', x),
                 arrayReverse(trace)
             ),
             ';'
@@ -405,11 +434,17 @@ do
     for query in $(cut -d'	' -f1 "stacks.$version.rep" | sort | uniq)
     do
         query_file=$(echo "$query" | cut -c-120 | sed 's/[/]/_/g')
+
+        # Build separate .svg flamegraph for each query.
         grep -F "$query	" "stacks.$version.rep" \
             | cut -d'	' -f 2- \
             | sed 's/\t/ /g' \
             | tee "$query_file.stacks.$version.rep" \
             | ~/fg/flamegraph.pl > "$query_file.$version.svg" &
+
+        # Copy metric stats into separate files as well.
+        grep -F "$query	" "metric-deviation.$version.rep" \
+            | cut -f2- > "$query_file.$version.metrics.rep" &
     done
 done
 wait
@@ -417,7 +452,7 @@ unset IFS
 
 # Remember that grep sets error code when nothing is found, hence the bayan
 # operator.
-grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' > run-errors.tsv ||:
+grep -H -m2 -i '\(Exception\|Error\):[^:]' ./*-err.log | sed 's/:/\t/' >> run-errors.tsv ||:
 }
 
 # Check that local and client are in PATH
@@ -438,10 +473,28 @@ case "$stage" in
     time run_tests ||:
     ;&
 "get_profiles")
+    # Getting profiles inexplicably hangs sometimes, so try to save some logs if
+    # this happens again. Give the servers some time to collect all info, then
+    # trace and kill. Start in a subshell, so that both function don't interfere
+    # with each other's jobs through `wait`. Also make the subshell have its own
+    # process group, so that we can then kill it with all its child processes.
+    # Somehow it doesn't kill the children by itself when dying.
+    set -m
+    ( get_profiles_watchdog ) &
+    watchdog_pid=$!
+    set +m
+    # Check that the watchdog started OK.
+    kill -0 $watchdog_pid
+
     # If the tests fail with OOM or something, still try to restart the servers
     # to collect the logs. Prefer not to restart, because addresses might change
-    # and we won't be able to process trace_log data.
-    time get_profiles || restart || get_profiles ||:
+    # and we won't be able to process trace_log data. Start in a subshell, so that
+    # it doesn't interfere with the watchdog through `wait`.
+    ( time get_profiles || restart || get_profiles ||: )
+
+    # Kill the whole process group, because somehow when the subshell is killed,
+    # the sleep inside remains alive and orphaned.
+    while env kill -- -$watchdog_pid ; do sleep 1; done
 
     # Stop the servers to free memory for the subsequent query analysis.
     while killall clickhouse; do echo . ; sleep 1 ; done
@@ -457,3 +510,7 @@ case "$stage" in
     time "$script_dir/report.py" > report.html
     ;&
 esac
+
+# Print some final debug info to help debug Weirdness, of which there is plenty.
+jobs
+pstree -apgT
