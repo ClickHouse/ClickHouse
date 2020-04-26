@@ -121,6 +121,42 @@ namespace Coordination
         }
         return compare;
     }
+
+    Compare prepareCompare(
+        const std::string & key,
+        std::string target,
+        std::string result,
+        Int64 value
+    )
+    {
+        Compare compare;
+        compare.set_key(key);
+        Compare::CompareResult compare_result;
+        if (result == "equal")
+        {
+            compare_result = Compare::CompareResult::Compare_CompareResult_EQUAL;
+        }
+        compare.set_result(compare_result);
+        Compare::CompareTarget compare_target;
+        if (target == "version") {
+            compare_target = Compare::CompareTarget::Compare_CompareTarget_VERSION;
+            compare.set_version(value);
+        }
+        if (target == "create") {
+            compare_target = Compare::CompareTarget::Compare_CompareTarget_CREATE;
+            compare.set_create_revision(value);
+        }
+        if (target == "mod") {
+            compare_target = Compare::CompareTarget::Compare_CompareTarget_MOD;
+            compare.set_mod_revision(value);
+        }
+        if (target == "value") {
+            compare_target = Compare::CompareTarget::Compare_CompareTarget_VALUE;
+            compare.set_value(std::to_string(value));
+        }
+        compare.set_target(compare_target);
+        return compare;
+    }
         
     TxnRequest prepareTxnRequest(
         const std::string & key,
@@ -201,38 +237,44 @@ namespace Coordination
     {
         TxnRequest txn_request;
         for (auto txn_compare: requests.compares) {
+            std::cout << "CMPR" << std::endl;
             Compare* compare = txn_request.add_compare();
             compare->CopyFrom(txn_compare);
         }
         RequestOp* req_success;
         for (auto success_range: requests.success_ranges)
         {
+            std::cout << "RG" << success_range.key() << std::endl;
             RequestOp* req_success = txn_request.add_success();
             req_success->set_allocated_request_range(std::make_unique<RangeRequest>(success_range).release());
         }
         for (auto success_put: requests.success_puts)
         {
-            std::cout << "CR" << success_put.key() << std::endl;
+            std::cout << "CR" << success_put.key() << " " << success_put.value() << std::endl;
             RequestOp* req_success = txn_request.add_success();
             req_success->set_allocated_request_put(std::make_unique<PutRequest>(success_put).release());
         }
         for (auto success_delete_range: requests.success_delete_ranges)
         {
+            std::cout << "DR" << success_delete_range.key() << std::endl;
             RequestOp* req_success = txn_request.add_success();
             req_success->set_allocated_request_delete_range(std::make_unique<DeleteRangeRequest>(success_delete_range).release());
         }
         for (auto failure_range: requests.failure_ranges)
         {
+            std::cout << "FRG" << failure_range.key() << std::endl;
             RequestOp* req_failure = txn_request.add_failure();
             req_failure->set_allocated_request_range(std::make_unique<RangeRequest>(failure_range).release());
         }
         for (auto failure_put: requests.failure_puts)
         {
+            std::cout << "FCR" << failure_put.key() << std::endl;
             RequestOp* req_failure = txn_request.add_failure();
             req_failure->set_allocated_request_put(std::make_unique<PutRequest>(failure_put).release());
         }
         for (auto failure_delete_range: requests.failure_delete_ranges)
         {
+            std::cout << "FDR" << failure_delete_range.key() << std::endl;
             RequestOp* req_failure = txn_request.add_failure();
             req_failure->set_allocated_request_delete_range(std::make_unique<DeleteRangeRequest>(failure_delete_range).release());
         }
@@ -316,26 +358,26 @@ namespace Coordination
         std::string process_path;
         EtcdKeeper::XID xid = 0;
         bool composite = false;
-        EtcdKeeper::TxnRequests pre_txn_requests;
         EtcdKeeper::TxnRequests txn_requests;
+        std::vector<ResponseOp> pre_call_responses;
         virtual bool isMutable() const { return false; }
         bool pre_call_called = false;
+        bool post_call_called = false;
+        void setPreCall()
+        {
+            pre_call_called = true;
+        }
         virtual void call(EtcdKeeper::AsyncCall& call,
             std::unique_ptr<KV::Stub>& kv_stub_,
             CompletionQueue& kv_cq_) const
         {
-            if (composite && !pre_call_called)
-            {
-                // pre_call_called = true;
-                callRequest(call, kv_stub_, kv_cq_, txn_requests);
-            }
-            else
-            {
-                callRequest(call, kv_stub_, kv_cq_, txn_requests);
-            }
+            callRequest(call, kv_stub_, kv_cq_, txn_requests);
+            setPreCall();
+            txn_requests.clear();
         }
         virtual EtcdKeeperResponsePtr makeResponse() const = 0;
-        virtual void prepareCall() const = 0;
+        virtual void preparePostCall() const = 0;
+        virtual void preparePreCall() {}
         virtual EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) = 0;
         EtcdKeeperResponsePtr makeResponseFromRepeatedPtrField(bool compare_result, google::protobuf::RepeatedPtrField<ResponseOp> fields)
         {
@@ -350,6 +392,32 @@ namespace Coordination
             EtcdKeeper::AsyncTxnCall* call = static_cast<EtcdKeeper::AsyncTxnCall*>(got_tag);
             return makeResponseFromRepeatedPtrField(call->response.succeeded(), call->response.responses());
         }
+        bool callRequired(void* got_tag)
+        {
+            if (composite && !post_call_called) {
+                EtcdKeeper::AsyncTxnCall* call = static_cast<EtcdKeeper::AsyncTxnCall*>(got_tag);
+                for (auto field : call->response.responses()) {
+                    pre_call_responses.push_back(field);
+                }
+                post_call_called = true;
+                std::cout << "CALL REQ" << std::endl;
+                return true;
+            }
+            else
+            {
+                std::cout << "CALL NOT REQ" << std::endl;
+                return false;
+            }
+        }
+        virtual void checkRequestForComposite() {}
+        virtual void prepareCall() const {
+            checkRequestForComposite();
+            if (composite && !pre_call_called) {
+                preparePreCall();
+                return;
+            }
+            preparePostCall();
+        }
     };
 
     using EtcdRequestPtr = std::shared_ptr<EtcdKeeperRequest>;
@@ -361,47 +429,71 @@ namespace Coordination
 
     struct EtcdKeeperCreateRequest final : CreateRequest, EtcdKeeperRequest
     {
+        int32_t seq_num;
         EtcdKeeperCreateRequest() {}
         EtcdKeeperCreateRequest(const CreateRequest & base) : CreateRequest(base) {}
         EtcdKeeperResponsePtr makeResponse() const override;
-        void setProcessPath()
+        void setProcessPath(int32_t seq_num_)
         {
-            std::string process_path_ = path;
+            std::cout << "SEQ NUM" << seq_num_ << std::endl;
+            seq_num = seq_num_;
             if (is_sequential)
             {
-                int32_t seq_num = seqs[parentPath(path)]++;
+                // int32_t seq_num = seqs[parentPath(path)]++;
 
                 std::stringstream seq_num_str;
                 seq_num_str << std::setw(10) << std::setfill('0') << seq_num;
 
-                process_path_ += seq_num_str.str();
+                process_path += seq_num_str.str();
             }
-            process_path = process_path_;
         }
-        void prepareCall() const override {
+        void preparePreCall()
+        {
+            txn_requests.success_ranges.push_back(prepareRangeRequest("/seq" + parentPath(path)));
+        }
+        void parsePreResponses()
+        {
+            process_path = path;
+            for (auto resp : pre_call_responses)
+            {
+                if(ResponseOp::ResponseCase::kResponseRange == resp.response_case())
+                {
+                    auto range_resp = resp.response_range();
+                    for (auto kv : range_resp.kvs())
+                    {
+                        std::cout << "KEY" << kv.key() << std::endl;
+                        if (kv.key() == "/seq" + parentPath(path))
+                        {
+                            setProcessPath(std::stoi(kv.value()));
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        void preparePostCall() const
+        {
             // TODO add creating metadata nodes
-            setProcessPath();
+            parsePreResponses();
             std::cout << "CREATE " << process_path << std::endl;
+            if (is_sequential)
+            {
+                txn_requests.compares.push_back(prepareCompare("/seq" + parentPath(process_path), "value", "equal", seq_num));
+                txn_requests.success_puts.push_back(preparePutRequest("/seq" + parentPath(process_path), std::to_string(seq_num + 1)));
+            }
             txn_requests.success_puts.push_back(preparePutRequest(process_path, data));
+            txn_requests.success_puts.push_back(preparePutRequest("/seq" + process_path, std::to_string(0)));
+        }
+        void checkRequestForComposite() {
+            if (is_sequential)
+            {
+                composite = true;
+            }
         }
         EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) override;
     };
 
-    struct EtcdKeeperCreateResponse final : CreateResponse, EtcdKeeperResponse
-    {
-        // void readFromResponses(bool compare_result, std::vector<ResponseOp> responses)
-        // {
-        //     error = Error::ZNODEEXISTS;
-        //     for (auto resp: responses) {
-        //         if(ResponseOp::ResponseCase::kResponsePut == resp.response_case())
-        //         {
-        //             auto put_resp = resp.response_put();
-        //             error = Error::ZOK;
-        //             seqs[process_path] = 0;
-        //         }
-        //     }
-        // }
-    };
+    struct EtcdKeeperCreateResponse final : CreateResponse, EtcdKeeperResponse {};
  
     struct EtcdKeeperRemoveRequest final : RemoveRequest, EtcdKeeperRequest
     {
@@ -409,7 +501,7 @@ namespace Coordination
         EtcdKeeperRemoveRequest(const RemoveRequest & base) : RemoveRequest(base) {}
         bool isMutable() const override { return true; }
         EtcdKeeperResponsePtr makeResponse() const override;
-        void prepareCall() const override {
+        void preparePostCall() const override {
             std::cout << "REMOVE " << path << std::endl;
             txn_requests.success_delete_ranges.emplace_back(prepareDeleteRangeRequest(path));
         }
@@ -420,7 +512,7 @@ namespace Coordination
     struct EtcdKeeperExistsRequest final : ExistsRequest, EtcdKeeperRequest
     {
         EtcdKeeperResponsePtr makeResponse() const override;
-        void prepareCall() const override
+        void preparePostCall() const override
         {
             std::cout << "EXISTS " << path << std::endl;
             txn_requests.success_ranges.push_back(prepareRangeRequest(path));
@@ -434,7 +526,7 @@ namespace Coordination
     {
         EtcdKeeperGetRequest() {}
         EtcdKeeperResponsePtr makeResponse() const override;
-        void prepareCall() const override
+        void preparePostCall() const override
         {
             std::cout << "GET " << path << std::endl;
             txn_requests.success_ranges.push_back(prepareRangeRequest(path));
@@ -450,16 +542,10 @@ namespace Coordination
         EtcdKeeperSetRequest(const SetRequest & base) : SetRequest(base) {}
         bool isMutable() const override { return true; }
         EtcdKeeperResponsePtr makeResponse() const override;
-        void prepareCall() const override
+        void preparePostCall() const override
         {
             std::cout << "SET " << path << std::endl;
-            // Compare::CompareResult compare_result = Compare::CompareResult::Compare_CompareResult_EQUAL;
-            // if (version == -1)
-            // {
-            //     compare_result = Compare::CompareResult::Compare_CompareResult_NOT_EQUAL;
-            // }
-            // Compare::CompareTarget compare_target = Compare::CompareTarget::Compare_CompareTarget_VERSION;
-            // txn_requests.compares.push_back(prepareCompare(path, compare_target, compare_result, version, 0, 0));
+            // txn_requests.compares.push_back(prepareCompare(path, "version", version == -1 ? "no_equal" : "equal", version));
             // txn_requests.failure_ranges.push_back(prepareRangeRequest(path));
             txn_requests.success_puts.push_back(preparePutRequest(path, data));
         }
@@ -471,7 +557,7 @@ namespace Coordination
     struct EtcdKeeperListRequest final : ListRequest, EtcdKeeperRequest
     {
         EtcdKeeperResponsePtr makeResponse() const override;
-        void prepareCall() const override {
+        void preparePostCall() const override {
             std::cout << "LIST " << path << std::endl;
             Compare::CompareResult compare_result = Compare::CompareResult::Compare_CompareResult_NOT_EQUAL;
             Compare::CompareTarget compare_target = Compare::CompareTarget::Compare_CompareTarget_VERSION;
@@ -488,7 +574,7 @@ namespace Coordination
         EtcdKeeperCheckRequest() {}
         EtcdKeeperCheckRequest(const CheckRequest & base) : CheckRequest(base) {}
         EtcdKeeperResponsePtr makeResponse() const override;
-        void prepareCall() const override
+        void preparePostCall() const override
         {
             std::cout << "CHECK " << path << std::endl;
             Compare::CompareResult compare_result = Compare::CompareResult::Compare_CompareResult_EQUAL;
@@ -519,31 +605,39 @@ using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
             {
                 if (auto * concrete_request_create = dynamic_cast<const CreateRequest *>(generic_request.get()))
                 {
-                    auto request = std::make_shared<EtcdKeeperCreateRequest>(*concrete_request_create);
-                    request->prepareCall();
-                    txn_requests += request->txn_requests;
-                    etcd_requests.push_back(std::move(request));
+                    std::cout << "concrete_request_create" << std::endl;
+                    // auto request = std::make_shared<EtcdKeeperCreateRequest>(*concrete_request_create);
+                    // request->prepareCall();
+                    // txn_requests += request->txn_requests;
+                    // etcd_requests.push_back(std::move(request));
+                    etcd_requests.push_back(std::make_shared<EtcdKeeperCreateRequest>(*concrete_request_create));
                 }
                 else if (auto * concrete_request_remove = dynamic_cast<const RemoveRequest *>(generic_request.get()))
                 {
-                    auto request = std::make_shared<EtcdKeeperRemoveRequest>(*concrete_request_remove);
-                    request->prepareCall();
-                    txn_requests += request->txn_requests;
-                    etcd_requests.push_back(std::move(request));
+                    std::cout << "concrete_request_remove" << std::endl;
+                    // auto request = std::make_shared<EtcdKeeperRemoveRequest>(*concrete_request_remove);
+                    // request->prepareCall();
+                    // txn_requests += request->txn_requests;
+                    // etcd_requests.push_back(std::move(request));
+                    etcd_requests.push_back(std::make_shared<EtcdKeeperRemoveRequest>(*concrete_request_remove));
                 }
                 else if (auto * concrete_request_set = dynamic_cast<const SetRequest *>(generic_request.get()))
                 {
-                    auto request = std::make_shared<EtcdKeeperSetRequest>(*concrete_request_set);
-                    request->prepareCall();
-                    txn_requests += request->txn_requests;
-                    etcd_requests.push_back(std::move(request));
+                    std::cout << "concrete_request_set" << std::endl;
+                    // auto request = std::make_shared<EtcdKeeperSetRequest>(*concrete_request_set);
+                    // request->prepareCall();
+                    // txn_requests += request->txn_requests;
+                    // etcd_requests.push_back(std::move(request));
+                    etcd_requests.push_back(std::make_shared<EtcdKeeperSetRequest>(*concrete_request_set));
                 }
                 else if (auto * concrete_request_check = dynamic_cast<const CheckRequest *>(generic_request.get()))
                 {
-                    auto request = std::make_shared<EtcdKeeperCheckRequest>(*concrete_request_check);
-                    request->prepareCall();
-                    txn_requests += request->txn_requests;
-                    etcd_requests.push_back(std::move(request));
+                    std::cout << "concrete_request_check" << std::endl;
+                    // auto request = std::make_shared<EtcdKeeperCheckRequest>(*concrete_request_check);
+                    // request->prepareCall();
+                    // txn_requests += request->txn_requests;
+                    // etcd_requests.push_back(std::move(request));
+                    etcd_requests.push_back(std::make_shared<EtcdKeeperCheckRequest>(*concrete_request_check));
                 }
                 else
                 {
@@ -552,8 +646,51 @@ using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
             }
         }
 
-        void prepareCall() const override {
+        void preparePreCall()
+        {
+            for (auto request : etcd_requests)
+            {
+                request->checkRequestForComposite();
+                if (request->composite)
+                {
+                    std::cout << "COMPOSITE" << std::endl;
+                    request->preparePreCall();
+                    txn_requests += request->txn_requests;
+                }
+            }
+        }
+
+        void preparePostCall() const override {
+
+            for (auto request : etcd_requests)
+            {
+                request->pre_call_responses = pre_call_responses;
+                request->preparePostCall();
+                txn_requests += request->txn_requests;
+            }
             txn_requests.interaction();
+        }
+
+        void checkRequestForComposite() {
+            std::cout << "MULTI COMP" << std::endl;
+            if (!txn_requests.empty())
+            {
+                std::cout << "MULTI COMPOS" << std::endl;
+                composite = true;
+            }
+        }
+
+        void prepareCall() const {
+            std::cout << "PREPARE" << std::endl;
+            if (!pre_call_called)
+            {
+                preparePreCall();
+            }
+            checkRequestForComposite();
+            if (composite && !pre_call_called) {
+                return;
+            }
+            preparePostCall();
         }
 
         EtcdKeeperResponsePtr makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses) override;
@@ -565,6 +702,12 @@ using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
     EtcdKeeperResponsePtr EtcdKeeperCreateRequest::makeResponseFromResponses(bool compare_result, std::vector<ResponseOp> responses)
     {
         auto response = std::make_shared<EtcdKeeperCreateResponse>();
+        if (!compare_result)
+        {
+            std::cout << "ERROR" << std::endl;
+            response->error = Error::ZNODEEXISTS;
+            return response;
+        }
         response->path_created = process_path;
         response->error = Error::ZNODEEXISTS;
         for (auto resp: responses) {
@@ -668,7 +811,7 @@ using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
                 if(ResponseOp::ResponseCase::kResponsePut == resp.response_case())
                 {
                     auto put_resp = resp.response_put();
-                    if (put_resp.prev_kv().key() == process_path) {
+                    if (put_resp.prev_kv().key() == path) {
                         response->error = Error::ZOK;
                     }
                 }
@@ -744,10 +887,14 @@ using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
         }
         else
         {
-            // response->responses.reserve(etcd_requests.size());
-            // for (int i; i != etcd_requests.size(); i++) {
-            //     response->responses[i]->error = Error::ZNONODE;
-            // }
+            std::cout << "MULTI COMP" << etcd_requests.size() << std::endl;
+            response->responses.reserve(etcd_requests.size());
+            for (int i; i != etcd_requests.size(); i++) {
+                std::cout << "MULTI COMPARE " << i << std::endl;
+                Response resp;
+                resp.error = Error::ZNONODE;
+                response->responses.push_back(std::make_shared<Response>(resp));
+            }
         }
         return response;
     }
@@ -890,8 +1037,6 @@ using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
                     request_info = std::move(it->second);
                     operations.erase(it);
 
-                    // response = request_info.request->makeResponse();
-
                     if (!call->status.ok())
                     {
                         LOG_DEBUG(log, "RPC FAILED" << call->status.error_message());
@@ -900,13 +1045,22 @@ using EtcdKeeperRequests = std::vector<EtcdKeeperRequestPtr>;
                     {
                         LOG_DEBUG(log, "READ RPC RESPONSE");
 
-                        // response->readFromTag(got_tag);
-                        response = request_info.request->makeResponseFromTag(got_tag);
-                        response->removeRootPath(root_path);
+                        if (!request_info.request->callRequired(got_tag))
+                        {
+                            response = request_info.request->makeResponseFromTag(got_tag);
+                            response->removeRootPath(root_path);
+                            if (request_info.callback)
+                            request_info.callback(*response);
+                        }
+                        else
+                        {
+                            operations[request_info.request->xid] = request_info;
+                            EtcdKeeper::AsyncCall* call = new EtcdKeeper::AsyncCall;
+                            call->xid = request_info.request->xid;
+                            request_info.request->prepareCall();
+                            request_info.request->call(*call, kv_stub_, kv_cq_);
+                        }
                     }
-                    
-                    if (request_info.callback)
-                        request_info.callback(*response);
                 } 
             }
         }
