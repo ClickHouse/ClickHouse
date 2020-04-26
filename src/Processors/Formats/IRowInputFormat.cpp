@@ -53,13 +53,14 @@ Chunk IRowInputFormat::generate()
 
     try
     {
+        RowReadExtension info;
         for (size_t rows = 0; rows < params.max_block_size; ++rows)
         {
             try
             {
                 ++total_rows;
 
-                RowReadExtension info;
+                info.read_columns.clear();
                 if (!readRow(columns, info))
                     break;
                 if (params.callback)
