@@ -75,7 +75,7 @@ PushingToViewsBlockOutputStream::PushingToViewsBlockOutputStream(
             const auto & inner_table_columns = inner_table->getColumns();
             for (auto & column : header)
                 /// But skip columns which storage doesn't have.
-                if (inner_table_columns.has(column.name))
+                if (inner_table_columns.hasPhysical(column.name))
                     list->children.emplace_back(std::make_shared<ASTIdentifier>(column.name));
 
             insert->columns = std::move(list);
