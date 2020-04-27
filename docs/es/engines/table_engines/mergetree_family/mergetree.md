@@ -68,7 +68,7 @@ Para obtener una descripción de los parámetros, consulte [Descripción de la c
 
     Una tupla de columnas o expresiones arbitrarias. Ejemplo: `ORDER BY (CounterID, EventDate)`.
 
--   `PRIMARY KEY` — The primary key if it [difiere de la clave de clasificación](mergetree.md).
+-   `PRIMARY KEY` — The primary key if it [difiere de la clave de clasificación](#choosing-a-primary-key-that-differs-from-the-sorting-key).
 
     De forma predeterminada, la clave principal es la misma que la clave de ordenación (que se especifica `ORDER BY` clausula). Por lo tanto, en la mayoría de los casos no es necesario especificar un `PRIMARY KEY` clausula.
 

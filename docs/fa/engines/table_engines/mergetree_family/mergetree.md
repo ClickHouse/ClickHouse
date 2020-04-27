@@ -68,7 +68,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
     یک تاپل از ستون ها و یا عبارات دلخواه. مثال: `ORDER BY (CounterID, EventDate)`.
 
--   `PRIMARY KEY` — The primary key if it [متفاوت از کلید مرتب سازی](mergetree.md).
+-   `PRIMARY KEY` — The primary key if it [متفاوت از کلید مرتب سازی](#choosing-a-primary-key-that-differs-from-the-sorting-key).
 
     به طور پیش فرض کلید اصلی همان کلید مرتب سازی است (که توسط مشخص شده است `ORDER BY` بند). بنابراین در اکثر موارد غیر ضروری است برای مشخص کردن یک جداگانه `PRIMARY KEY` بند بند.
 
