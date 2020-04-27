@@ -85,7 +85,8 @@ def drop_table(cluster):
     node = cluster.instances["node"]
     minio = cluster.minio_client
 
-    node.query("DROP TABLE IF EXISTS s3_test")
+    node.query("DROP TABLE IF EXISTS s3_test NO DELAY")
+    time.sleep(1)
     try:
         assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == 0
     finally:
@@ -307,7 +308,8 @@ def test_move_replace_partition_to_another_table(cluster):
     time.sleep(3)
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD*2 + FILES_OVERHEAD_PER_PART_WIDE*4
 
-    node.query("DROP TABLE s3_clone")
+    node.query("DROP TABLE s3_clone NO DELAY")
+    time.sleep(1)
     assert node.query("SELECT sum(id) FROM s3_test FORMAT Values") == "(0)"
     assert node.query("SELECT count(*) FROM s3_test FORMAT Values") == "(16384)"
     # Data should remain in S3
@@ -317,7 +319,8 @@ def test_move_replace_partition_to_another_table(cluster):
     # Number S3 objects should be unchanged.
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD + FILES_OVERHEAD_PER_PART_WIDE*4
 
-    node.query("DROP TABLE s3_test")
+    node.query("DROP TABLE s3_test NO DELAY")
+    time.sleep(1)
     # Backup data should remain in S3.
     assert len(list(minio.list_objects(cluster.minio_bucket, 'data/'))) == FILES_OVERHEAD_PER_PART_WIDE*4
 

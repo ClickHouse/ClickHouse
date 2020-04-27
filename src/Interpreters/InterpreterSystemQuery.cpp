@@ -143,7 +143,7 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
         auto access = context.getAccess();
         for (auto & elem : DatabaseCatalog::instance().getDatabases())
         {
-            for (auto iterator = elem.second->getTablesIterator(context); iterator->isValid(); iterator->next())
+            for (auto iterator = elem.second->getTablesIterator(); iterator->isValid(); iterator->next())
             {
                 if (!access->isGranted(log, getRequiredAccessType(action_type), elem.first, iterator->name()))
                     continue;
@@ -330,7 +330,7 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
     {
         /// If table was already dropped by anyone, an exception will be thrown
         auto table_lock = table->lockExclusively(context.getCurrentQueryId(), context.getSettingsRef().lock_acquire_timeout);
-        create_ast = database->getCreateTableQuery(system_context, replica.table_name);
+        create_ast = database->getCreateTableQuery(replica.table_name);
 
         database->detachTable(replica.table_name);
     }
@@ -343,16 +343,17 @@ StoragePtr InterpreterSystemQuery::tryRestartReplica(const StorageID & replica, 
 
     auto columns = InterpreterCreateQuery::getColumnsDescription(*create.columns_list->columns, system_context);
     auto constraints = InterpreterCreateQuery::getConstraintsDescription(create.columns_list->constraints);
+    auto data_path = database->getTableDataPath(create);
 
     table = StorageFactory::instance().get(create,
-        database->getTableDataPath(create),
+        data_path,
         system_context,
         system_context.getGlobalContext(),
         columns,
         constraints,
         false);
 
-    database->createTable(system_context, replica.table_name, table, create_ast);
+    database->attachTable(replica.table_name, table, data_path);
 
     table->startup();
     return table;
@@ -366,7 +367,7 @@ void InterpreterSystemQuery::restartReplicas(Context & system_context)
     for (auto & elem : catalog.getDatabases())
     {
         DatabasePtr & database = elem.second;
-        for (auto iterator = database->getTablesIterator(system_context); iterator->isValid(); iterator->next())
+        for (auto iterator = database->getTablesIterator(); iterator->isValid(); iterator->next())
         {
             if (dynamic_cast<const StorageReplicatedMergeTree *>(iterator->table().get()))
                 replica_names.emplace_back(StorageID{database->getDatabaseName(), iterator->name()});

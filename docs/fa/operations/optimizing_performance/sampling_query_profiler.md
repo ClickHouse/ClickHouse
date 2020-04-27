@@ -61,5 +61,5 @@ LIMIT 10
 ```
 
 ``` text
-{% include "operations/performance/sampling_query_profiler_example_result.txt" %}
+{% include "examples/sampling_query_profiler_result.txt" %}
 ```

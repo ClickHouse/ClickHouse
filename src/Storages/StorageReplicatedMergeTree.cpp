@@ -513,7 +513,7 @@ void StorageReplicatedMergeTree::setTableStructure(ColumnsDescription new_column
     }
 
     auto table_id = getStorageID();
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(global_context, table_id, metadata);
 
     /// Even if the primary/sorting keys didn't change we must reinitialize it
     /// because primary key column types might have changed.
@@ -2953,11 +2953,15 @@ void StorageReplicatedMergeTree::startup()
         move_parts_task_handle = pool.createTask([this] { return movePartsTask(); });
         pool.startTask(move_parts_task_handle);
     }
+    need_shutdown.store(true);
 }
 
 
 void StorageReplicatedMergeTree::shutdown()
 {
+    if (!need_shutdown.load())
+        return;
+
     clearOldPartsFromFilesystem(true);
     /// Cancel fetches, merges and mutations to force the queue_task to finish ASAP.
     fetcher.blocker.cancelForever();
@@ -2991,6 +2995,7 @@ void StorageReplicatedMergeTree::shutdown()
         std::unique_lock lock(data_parts_exchange_endpoint->rwlock);
     }
     data_parts_exchange_endpoint.reset();
+    need_shutdown.store(false);
 }
 
 
@@ -3290,7 +3295,7 @@ void StorageReplicatedMergeTree::alter(
 
         changeSettings(metadata.settings_ast, table_lock_holder);
 
-        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, metadata);
+        DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, metadata);
         return;
     }
 
@@ -3352,7 +3357,7 @@ void StorageReplicatedMergeTree::alter(
             /// Just change settings
             current_metadata.settings_ast = future_metadata.settings_ast;
             changeSettings(current_metadata.settings_ast, table_lock_holder);
-            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id.table_name, current_metadata);
+            DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(query_context, table_id, current_metadata);
         }
 
         /// We can be sure, that in case of successfull commit in zookeeper our
@@ -3687,7 +3692,7 @@ void StorageReplicatedMergeTree::checkPartitionCanBeDropped(const ASTPtr & parti
 }
 
 
-void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
+void StorageReplicatedMergeTree::drop()
 {
     {
         auto zookeeper = tryGetZooKeeper();
@@ -3724,11 +3729,9 @@ void StorageReplicatedMergeTree::drop(TableStructureWriteLockHolder &)
 }
 
 
-void StorageReplicatedMergeTree::rename(
-    const String & new_path_to_table_data, const String & new_database_name,
-    const String & new_table_name, TableStructureWriteLockHolder & lock)
+void StorageReplicatedMergeTree::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
-    MergeTreeData::rename(new_path_to_table_data, new_database_name, new_table_name, lock);
+    MergeTreeData::rename(new_path_to_table_data, new_table_id);
 
     /// Update table name in zookeeper
     auto zookeeper = getZooKeeper();
