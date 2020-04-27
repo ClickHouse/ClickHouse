@@ -80,8 +80,11 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
 
-    NamesAndTypesList all_columns = getColumns().getAll();
     std::unordered_map<String, DataTypePtr> columns_map;
+    for (const auto & column : getVirtuals())
+        columns_map.emplace(column.name, column.type);
+
+    NamesAndTypesList all_columns = getColumns().getAll();
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
 
