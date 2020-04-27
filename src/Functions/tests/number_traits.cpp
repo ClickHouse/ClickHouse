@@ -7,10 +7,14 @@ static void printType(DB::UInt8) { std::cout << "UInt8"; }
 static void printType(DB::UInt16) { std::cout << "UInt16"; }
 static void printType(DB::UInt32) { std::cout << "UInt32"; }
 static void printType(DB::UInt64) { std::cout << "UInt64"; }
+static void printType(DB::bUInt128) { std::cout << "UInt128"; }
+static void printType(DB::bUInt256) { std::cout << "UInt256"; }
 static void printType(DB::Int8) { std::cout << "Int8"; }
 static void printType(DB::Int16) { std::cout << "Int16"; }
 static void printType(DB::Int32) { std::cout << "Int32"; }
 static void printType(DB::Int64) { std::cout << "Int64"; }
+static void printType(DB::bInt128) { std::cout << "Int128"; }
+static void printType(DB::bInt256) { std::cout << "Int256"; }
 static void printType(DB::Float32) { std::cout << "Float32"; }
 static void printType(DB::Float64) { std::cout << "Float64"; }
 static void printType(DB::NumberTraits::Error) { std::cout << "Error"; }
