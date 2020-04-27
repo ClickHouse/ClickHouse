@@ -849,7 +849,7 @@ private:
         {
             time_t date_time;
             ReadBufferFromMemory in(string_value.data, string_value.size);
-            readDateTimeText(date_time, in);
+            readDateTimeText(date_time, in, dynamic_cast<const DataTypeDateTime &>(*number_type).getTimeZone());
             if (!in.eof())
                 throw Exception("String is too long for DateTime: " + string_value.toString(), ErrorCodes::TOO_LARGE_STRING_SIZE);
 
