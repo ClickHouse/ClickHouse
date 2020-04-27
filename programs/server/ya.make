@@ -18,11 +18,10 @@ SRCS(
     MySQLHandler.cpp
     MySQLHandlerFactory.cpp
     NotFoundHandler.cpp
-    PingRequestHandler.cpp
     PrometheusMetricsWriter.cpp
     PrometheusRequestHandler.cpp
     ReplicasStatusHandler.cpp
-    RootRequestHandler.cpp
+    StaticRequestHandler.cpp
     Server.cpp
     TCPHandler.cpp
 )
