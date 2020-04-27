@@ -24,7 +24,7 @@ public:
     void finishDataSerialization(IMergeTreeDataPart::Checksums & checksums) override;
 
 protected:
-    void fillIndexGranularity(size_t index_for_block, size_t rows_in_block) override;
+    void fillIndexGranularity(size_t index_granularity_for_block, size_t rows_in_block) override;
 
 private:
     /// Write single granule of one column (rows between 2 marks)
