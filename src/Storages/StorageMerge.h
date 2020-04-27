@@ -63,6 +63,8 @@ private:
 
     DatabaseTablesIteratorPtr getDatabaseIterator() const;
 
+    const NamesAndTypesList & getVirtuals() const override;
+
 protected:
     StorageMerge(
         const StorageID & table_id_,

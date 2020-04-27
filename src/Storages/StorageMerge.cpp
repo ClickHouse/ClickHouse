@@ -51,7 +51,7 @@ StorageMerge::StorageMerge(
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage(table_id_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
+    : IStorage(table_id_)
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
@@ -508,5 +508,12 @@ void registerStorageMerge(StorageFactory & factory)
             source_database, table_name_regexp, args.context);
     });
 }
-
+const NamesAndTypesList & StorageMerge::getVirtuals() const
+{
+    static const NamesAndTypesList & VIRTUALS =
+    {
+        {"_table", std::make_shared<DataTypeString>()}
+    };
+    return VIRTUALS;
+}
 }
