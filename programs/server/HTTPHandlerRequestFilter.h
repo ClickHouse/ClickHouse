@@ -31,7 +31,7 @@ static inline bool checkRegexExpression(const StringRef & match_str, const Strin
     auto compiled_regex = std::make_shared<re2_st::RE2>(regex);
 
     if (!compiled_regex->ok())
-        throw Exception("cannot compile re2: " + expression.toString() + " for routing_rule, error: " + compiled_regex->error() +
+        throw Exception("cannot compile re2: " + expression.toString() + " for http handling rule, error: " + compiled_regex->error() +
             ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
 
     int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
@@ -99,7 +99,7 @@ static inline auto headersFilter(Poco::Util::AbstractConfiguration & config, con
 
 template <typename TEndpoint>
 static inline Poco::Net::HTTPRequestHandlerFactory * addFiltersFromConfig(
-    RoutingRuleHTTPHandlerFactory <TEndpoint> * factory, Poco::Util::AbstractConfiguration & config, const std::string & prefix)
+    HandlingRuleHTTPHandlerFactory <TEndpoint> * factory, Poco::Util::AbstractConfiguration & config, const std::string & prefix)
 {
     Poco::Util::AbstractConfiguration::Keys filters_type;
     config.keys(prefix, filters_type);

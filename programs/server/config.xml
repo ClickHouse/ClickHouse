@@ -525,21 +525,21 @@
     </query_masking_rules>
     -->
 
-    <!-- Uncomment to use custom http routing.
-        routing_rule are checked from top to bottom, first match runs the handler
+    <!-- Uncomment to use custom http handlers.
+        rules are checked from top to bottom, first match runs the handler
             url - to match request URL, you can use 'regex:' prefix to use regex match(optional)
             methods - to match request method, you can use commas to separate multiple method matches(optional)
             headers - to match request headers, match each child element(child element name is header name), you can use 'regex:' prefix to use regex match(optional)
         handler is request handler
-            type - supported types: static, dynamic_query_handler, predefine_query_handler
-            query - use with predefine_query_handler type, executes query when the handler is called
+            type - supported types: static, dynamic_query_handler, predefined_query_handler
+            query - use with predefined_query_handler type, executes query when the handler is called
             query_param_name - use with dynamic_query_handler type, extracts and executes the value corresponding to the <query_param_name> value in HTTP request params
             status - use with static type, response status code
             content_type - use with static type, response content-type
             response_content - use with static type, Response content sent to client, when using the prefix 'file://' or 'config://', find the content from the file or configuration send to client.
 
-    <routing_rules>
-        <routing_rule>
+    <http_handlers>
+        <rule>
             <url>/</url>
             <methods>POST,GET</methods>
             <headers><pragma>no-cache</pragma></headers>
@@ -547,26 +547,26 @@
                 <type>dynamic_query_handler</type>
                 <query_param_name>query</query_param_name>
             </handler>
-        </routing_rule>
+        </rule>
 
-        <routing_rule>
-            <url>/predefine_query</url>
+        <rule>
+            <url>/predefined_query</url>
             <methods>POST,GET</methods>
             <handler>
-                <type>predefine_query_handler</type>
+                <type>predefined_query_handler</type>
                 <query>SELECT * FROM system.settings</query>
             </handler>
-        </routing_rule>
+        </rule>
 
-        <routing_rule>
+        <rule>
             <handler>
                 <type>static</type>
                 <status>200</status>
                 <content_type>text/plain; charset=UTF-8</content_type>
                 <response_content>config://http_server_default_response</response_content>
             </handler>
-        </routing_rule>
-    </routing_rules>
+        </rule>
+    </http_handlers>
     -->
 
     <!-- Uncomment to disable ClickHouse internal DNS caching. -->
