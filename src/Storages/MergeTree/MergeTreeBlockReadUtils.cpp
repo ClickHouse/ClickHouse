@@ -26,7 +26,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
         const auto & column_name = columns[i];
 
         /// column has files and hence does not require evaluation
-        if (part->hasColumnFiles(column_name, *storage_columns.get(column_name).type))
+        if (part->hasColumnFiles(column_name, *storage_columns.getPhysical(column_name).type))
         {
             all_column_files_missing = false;
             continue;
