@@ -18,12 +18,6 @@ CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_
         data_types[i] = sample.safeGetByPosition(i).type;
 }
 
-void CSVRowOutputFormat::consume(DB::Chunk chunk)
-{
-    IRowOutputFormat::consume(std::move(chunk));
-    if (format_settings.enable_streaming)
-        flush();
-}
 
 void CSVRowOutputFormat::writePrefix()
 {
