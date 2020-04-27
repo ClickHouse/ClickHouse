@@ -52,6 +52,8 @@ public:
         const Context & context;
     };
 
+    const NamesAndTypesList & getVirtuals() const override;
+
 protected:
     friend class StorageFileSource;
     friend class StorageFileBlockOutputStream;

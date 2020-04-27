@@ -270,17 +270,22 @@ QueryProcessingStage::Enum getQueryProcessingStageImpl(const Context & context, 
 /// For destruction of std::unique_ptr of type that is incomplete in class definition.
 StorageDistributed::~StorageDistributed() = default;
 
-static const ColumnsDescription DISTRIBUTED_VIRTUALS = ColumnsDescription(
-    {
-        NameAndTypePair("_table", std::make_shared<DataTypeString>()),
-        NameAndTypePair("_part", std::make_shared<DataTypeString>()),
-        NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
-        NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
-        NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
-        NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()),
-    },
-    /* all_virtual = */ true);
 
+const NamesAndTypesList & StorageDistributed::getVirtuals() const
+{
+    /// NOTE This is weird. Most of these virtual columns are part of MergeTree
+    /// tables info. But Distributed is general-purpose engine.
+    static const NamesAndTypesList VIRTUALS =
+    {
+            NameAndTypePair("_table", std::make_shared<DataTypeString>()),
+            NameAndTypePair("_part", std::make_shared<DataTypeString>()),
+            NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
+            NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
+            NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
+            NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()),
+    };
+    return VIRTUALS;
+}
 
 StorageDistributed::StorageDistributed(
     const StorageID & id_,
@@ -294,7 +299,7 @@ StorageDistributed::StorageDistributed(
     const String & storage_policy_,
     const String & relative_data_path_,
     bool attach_)
-    : IStorage(id_, DISTRIBUTED_VIRTUALS)
+    : IStorage(id_)
     , remote_database(remote_database_)
     , remote_table(remote_table_)
     , global_context(context_)

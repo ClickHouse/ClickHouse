@@ -245,11 +245,7 @@ StorageLiveView::StorageLiveView(
     Context & local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage(
-        table_id_,
-        ColumnsDescription(
-            {NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())},
-            /* all_virtual = */ true))
+    : IStorage(table_id_)
     , global_context(local_context.getGlobalContext())
 {
     live_view_context = std::make_unique<Context>(global_context);
@@ -618,6 +614,14 @@ BlockInputStreams StorageLiveView::watch(
 
         return { reader };
     }
+}
+
+const NamesAndTypesList & StorageLiveView::getVirtuals() const
+{
+    static NamesAndTypesList VIRTUALS = {
+        NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())
+    };
+    return VIRTUALS;
 }
 
 void registerStorageLiveView(StorageFactory & factory)

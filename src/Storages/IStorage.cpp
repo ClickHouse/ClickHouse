@@ -31,10 +31,6 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
 }
 
-IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), columns(std::move(virtuals_))
-{
-}
-
 const ColumnsDescription & IStorage::getColumns() const
 {
     return columns;
@@ -64,7 +60,7 @@ Block IStorage::getSampleBlockWithVirtuals() const
 {
     auto res = getSampleBlock();
 
-    for (const auto & column : getColumns().getVirtuals())
+    for (const auto & column : getVirtuals())
         res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;
@@ -151,7 +147,7 @@ void IStorage::check(const Names & column_names, bool include_virtuals) const
 {
     NamesAndTypesList available_columns = getColumns().getAllPhysical();
     if (include_virtuals)
-        available_columns.splice(available_columns.end(), getColumns().getVirtuals());
+        available_columns.insert(available_columns.end(), getVirtuals().begin(), getVirtuals().end());
 
     const String list_of_columns = listOfColumns(available_columns);
 
@@ -278,15 +274,7 @@ void IStorage::setColumns(ColumnsDescription columns_)
 {
     if (columns_.getOrdinary().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-    ColumnsDescription old_virtuals(columns.getVirtuals(), true);
-
     columns = std::move(columns_);
-
-    for (const auto & column : old_virtuals)
-    {
-        if (!columns.has(column.name))
-            columns.add(column);
-    }
 }
 
 void IStorage::setIndices(IndicesDescription indices_)
@@ -301,7 +289,8 @@ void IStorage::setConstraints(ConstraintsDescription constraints_)
 
 bool IStorage::isVirtualColumn(const String & column_name) const
 {
-    return getColumns().get(column_name).is_virtual;
+    /// Virtual column maybe overriden by real column
+    return !getColumns().has(column_name) && getVirtuals().contains(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -426,6 +415,12 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 {
     std::lock_guard lock(id_mutex);
     storage_id = new_table_id;
+}
+
+const NamesAndTypesList & IStorage::getVirtuals() const
+{
+    static const NamesAndTypesList VIRTUALS;
+    return VIRTUALS;
 }
 
 }
