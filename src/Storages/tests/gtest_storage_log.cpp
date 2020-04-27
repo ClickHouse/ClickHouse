@@ -80,7 +80,7 @@ std::string writeData(int rows, DB::StoragePtr & table, DB::Context & context)
         const auto & storage_columns = table->getColumns();
         ColumnWithTypeAndName column;
         column.name = "a";
-        column.type = storage_columns.get("a").type;
+        column.type = storage_columns.getPhysical("a").type;
         auto col = column.type->createColumn();
         ColumnUInt64::Container & vec = typeid_cast<ColumnUInt64 &>(*col).getData();
 

@@ -464,7 +464,7 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
         if (!header_column.type->equals(*before_column.type.get()) && processed_stage > QueryProcessingStage::FetchColumns)
         {
             NamesAndTypesList source_columns = getSampleBlock().getNamesAndTypesList();
-            auto virtual_column = getColumns().get("_table");
+            auto virtual_column = *getVirtuals().tryGetByName("_table");
             source_columns.emplace_back(NameAndTypePair{virtual_column.name, virtual_column.type});
             auto syntax_result = SyntaxAnalyzer(context).analyze(where_expression, source_columns);
             ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context}.getActions(false, false);

@@ -199,8 +199,8 @@ Pipes StorageBuffer::read(
                     boost::range::remove_erase(columns_intersection, column_name);
                     continue;
                 }
-                const auto & dst_col = dest_columns.get(column_name);
-                const auto & col = our_columns.get(column_name);
+                const auto & dst_col = dest_columns.getPhysical(column_name);
+                const auto & col = our_columns.getPhysical(column_name);
                 if (!dst_col.type->equals(*col.type))
                 {
                     LOG_WARNING(log, "Destination table " << destination_id.getNameForLogs()
