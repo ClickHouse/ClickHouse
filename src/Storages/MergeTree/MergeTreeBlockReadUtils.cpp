@@ -246,9 +246,9 @@ MergeTreeReadTaskColumns getReadTaskColumns(const MergeTreeData & storage, const
 
     if (check_columns)
     {
-        const NamesAndTypesList & physical_columns = storage.getColumns().getAllPhysical();
-        result.pre_columns = physical_columns.addTypes(pre_column_names);
-        result.columns = physical_columns.addTypes(column_names);
+        const NamesAndTypesList & columns = storage.getColumns().getAll();
+        result.pre_columns = columns.addTypes(pre_column_names);
+        result.columns = columns.addTypes(column_names);
     }
     else
     {
