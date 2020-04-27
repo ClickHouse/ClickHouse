@@ -119,7 +119,6 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
         case TypeIndex::UInt32:
             assert_cast<ColumnUInt32 &>(column).insertValue(value);
             break;
-        case TypeIndex::DateTime64: [[fallthrough]];
         case TypeIndex::UInt64:
             assert_cast<ColumnUInt64 &>(column).insertValue(value);
             break;
@@ -140,6 +139,15 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
             break;
         case TypeIndex::Float64:
             assert_cast<ColumnFloat64 &>(column).insertValue(value);
+            break;
+        case TypeIndex::Decimal32:
+            assert_cast<ColumnDecimal<Decimal32> &>(column).insertValue(value);
+            break;
+        case TypeIndex::Decimal64:
+            assert_cast<ColumnDecimal<Decimal64> &>(column).insertValue(value);
+            break;
+        case TypeIndex::DateTime64:
+            assert_cast<ColumnDecimal<DateTime64> &>(column).insertValue(value);
             break;
         default:
             throw Exception("Type is not compatible with Avro", ErrorCodes::ILLEGAL_COLUMN);
