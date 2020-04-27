@@ -17,6 +17,11 @@
 #include <IO/WriteHelpers.h>
 
 
+#include <type_traits>
+
+#include <DataTypes/DataTypesDecimal.h>
+
+
 namespace DB
 {
 // hard-codded values - part of the algorithm
@@ -80,8 +85,8 @@ struct AggregateFunctionWelchTTestData final {
         sum_y += y;
         size_x++;
         size_y++;
-        mean_x = (Float64) sum_x / size_x;
-        mean_y = (Float64) sum_y / size_y;
+        mean_x = static_cast<Float64>(sum_x) / size_x;
+        mean_y = static_cast<Float64>(sum_y) / size_y;
         square_sum_x += x * x;
         square_sum_y += y * y;
     }
@@ -91,8 +96,8 @@ struct AggregateFunctionWelchTTestData final {
         sum_y += other.sum_y;
         size_x += other.size_x;
         size_y += other.size_y;
-        mean_x = (Float64) sum_x / size_x;
-        mean_y = (Float64) sum_y / size_y;
+        mean_x = static_cast<Float64>(sum_x) / size_x;
+        mean_y = static_cast<Float64>(sum_y) / size_y;
         square_sum_x += other.square_sum_x;
         square_sum_y += other.square_sum_y;
     }
@@ -120,19 +125,19 @@ struct AggregateFunctionWelchTTestData final {
     }
 
     Float64 get_sx() const {
-        return (Float64)(square_sum_x + size_x * mean_x * mean_x - 2 * mean_x * sum_x) / (size_x - 1);
+        return static_cast<Float64>(square_sum_x + size_x * mean_x * mean_x - 2 * mean_x * sum_x) / (size_x - 1);
     }
 
     Float64 get_sy() const {
-        return (Float64)(square_sum_y + size_y * mean_y * mean_y - 2 * mean_y * sum_y) / (size_y - 1);
+        return static_cast<Float64>(square_sum_y + size_y * mean_y * mean_y - 2 * mean_y * sum_y) / (size_y - 1);
     }
 
     Float64 get_T(Float64 sx, Float64 sy) const {
-        return (Float64)(mean_x - mean_y) / std::sqrt(sx / size_x + sy / size_y);
+        return static_cast<Float64>(mean_x - mean_y) / std::sqrt(sx / size_x + sy / size_y);
     }
 
     Float64 get_degrees_of_freed(Float64 sx, Float64 sy) const {
-        return (Float64)(sx / size_x + sy / size_y) * (sx / size_x + sy / size_y) /
+        return static_cast<Float64>(sx / size_x + sy / size_y) * (sx / size_x + sy / size_y) /
                ((sx * sx / (size_x * size_x * (size_x - 1))) + (sy * sy / (size_y * size_y * (size_y - 1))));
     }
 
