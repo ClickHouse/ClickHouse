@@ -278,9 +278,9 @@ StorageSystemPartsBase::StorageSystemPartsBase(std::string name_, NamesAndTypesL
 
 const NamesAndTypesList & StorageSystemPartsBase::getVirtuals() const
 {
-    static NamesAndTypesList VIRTUALS = {
+    static const NamesAndTypesList virtuals = {
         NameAndTypePair("_state", std::make_shared<DataTypeString>())
     };
-    return VIRTUALS;
+    return virtuals;
 }
 }

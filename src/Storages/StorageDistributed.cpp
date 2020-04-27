@@ -274,7 +274,7 @@ const NamesAndTypesList & StorageDistributed::getVirtuals() const
 {
     /// NOTE This is weird. Most of these virtual columns are part of MergeTree
     /// tables info. But Distributed is general-purpose engine.
-    static const NamesAndTypesList VIRTUALS =
+    static const NamesAndTypesList virtuals =
     {
             NameAndTypePair("_table", std::make_shared<DataTypeString>()),
             NameAndTypePair("_part", std::make_shared<DataTypeString>()),
@@ -283,7 +283,7 @@ const NamesAndTypesList & StorageDistributed::getVirtuals() const
             NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
             NameAndTypePair("_shard_num", std::make_shared<DataTypeUInt32>()),
     };
-    return VIRTUALS;
+    return virtuals;
 }
 
 StorageDistributed::StorageDistributed(

@@ -172,6 +172,16 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
 
+    /// Return list of virtual columns (like _part, _table, etc). In the vast
+    /// majority of cases virtual columns are static constant part of Storage
+    /// class and don't depend on Storage object. But sometimes we have fake
+    /// storages, like Merge, which works as proxy for other storages and it's
+    /// virtual columns must contain virtual columns from underlying table.
+    ///
+    /// User can create columns with the same name as virtual column. After that
+    /// virtual column will be overriden and inaccessible.
+    ///
+    /// By default return empty list of columns.
     virtual const NamesAndTypesList & getVirtuals() const;
 
 protected: /// still thread-unsafe part.
