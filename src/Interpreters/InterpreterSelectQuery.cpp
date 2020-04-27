@@ -26,6 +26,7 @@
 #include <DataStreams/ConvertingBlockInputStream.h>
 #include <DataStreams/ReverseBlockInputStream.h>
 #include <DataStreams/FillingBlockInputStream.h>
+#include <DataStreams/SquashingBlockInputStream.h>
 
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -52,6 +53,7 @@
 #include <Interpreters/HashJoin.h>
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/ExtractExpressionInfoVisitor.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeWhereOptimizer.h>
@@ -91,6 +93,7 @@
 #include <Processors/Transforms/RollupTransform.h>
 #include <Processors/Transforms/CubeTransform.h>
 #include <Processors/Transforms/FillingTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/LimitTransform.h>
 #include <Processors/Transforms/FinishSortingTransform.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -1371,9 +1374,18 @@ void InterpreterSelectQuery::executeFetchColumns(
             if (!subquery)
                 throw Exception("Subquery expected", ErrorCodes::LOGICAL_ERROR);
 
+            SelectQueryOptions subquery_options = options.copy().subquery().noModify();
+
+            if (context->getSettingsRef().allow_squashing_after_merged_sort)
+            {
+                subquery_options.squashingMergeSorted(
+                    hasStatefulFunction(query.select(), *context) || hasStatefulFunction(query.where(), *context)
+                    || hasStatefulFunction(query.prewhere(), *context) || hasStatefulFunction(query.groupBy(), *context)
+                    || hasStatefulFunction(query.having(), *context) || hasStatefulFunction(query.orderBy(), *context));
+            }
+
             interpreter_subquery = std::make_unique<InterpreterSelectWithUnionQuery>(
-                subquery, getSubqueryContext(*context),
-                options.copy().subquery().noModify(), required_columns);
+                subquery, getSubqueryContext(*context), subquery_options, required_columns);
 
             if (query_analyzer->hasAggregation())
                 interpreter_subquery->ignoreWithTotals();
@@ -2127,7 +2139,6 @@ void InterpreterSelectQuery::executeOrder(QueryPipeline & pipeline, InputSorting
     executeMergeSorted(pipeline, output_order_descr, limit);
 }
 
-
 void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
 {
     auto & query = getSelectQuery();
@@ -2139,9 +2150,26 @@ void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline)
     {
         unifyStreams(pipeline, pipeline.firstStream()->getHeader());
         executeMergeSorted(pipeline, order_descr, limit);
+
+        if (options.squashing_after_merge_sorted)
+        {
+            pipeline.transform([&](auto & stream)
+            {
+                const Settings & settings = context->getSettingsRef();
+                size_t min_squashing_merge_sorted_rows = settings.min_squashing_merge_sorted_rows;
+                size_t min_squashing_merge_sorted_bytes = settings.min_squashing_merge_sorted_bytes;
+
+                if (!min_squashing_merge_sorted_rows)
+                    min_squashing_merge_sorted_rows = std::numeric_limits<size_t>::max();
+
+                if (!min_squashing_merge_sorted_bytes)
+                    min_squashing_merge_sorted_bytes = std::numeric_limits<size_t>::max();
+
+                stream = std::make_shared<SquashingBlockInputStream>(stream, min_squashing_merge_sorted_rows, min_squashing_merge_sorted_bytes);
+           });
+        }
     }
 }
-
 
 void InterpreterSelectQuery::executeMergeSorted(Pipeline & pipeline, const SortDescription & sort_description, UInt64 limit)
 {
@@ -2170,6 +2198,23 @@ void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline)
     UInt64 limit = getLimitForSorting(query, *context);
 
     executeMergeSorted(pipeline, order_descr, limit);
+
+    if (options.squashing_after_merge_sorted)
+    {
+        const Settings & settings = context->getSettingsRef();
+        size_t min_squashing_merge_sorted_rows = settings.min_squashing_merge_sorted_rows;
+        size_t min_squashing_merge_sorted_bytes = settings.min_squashing_merge_sorted_bytes;
+
+        if (!min_squashing_merge_sorted_rows)
+            min_squashing_merge_sorted_rows = std::numeric_limits<size_t>::max();
+
+        if (!min_squashing_merge_sorted_bytes)
+            min_squashing_merge_sorted_bytes = std::numeric_limits<size_t>::max();
+
+        auto transform = std::make_shared<SquashingTransform>(pipeline.getHeader(), min_squashing_merge_sorted_rows, min_squashing_merge_sorted_bytes);
+        pipeline.addPipe({ std::move(transform) });
+
+    }
 }
 
 void InterpreterSelectQuery::executeMergeSorted(QueryPipeline & pipeline, const SortDescription & sort_description, UInt64 limit)

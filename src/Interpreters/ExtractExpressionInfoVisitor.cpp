@@ -62,6 +62,9 @@ bool ExpressionInfoMatcher::needChildVisit(const ASTPtr & node, const ASTPtr &)
 
 bool hasStatefulFunction(const ASTPtr & node, const Context & context)
 {
+    if (!node || node->children.empty())
+        return false;
+
     for (const auto & select_expression : node->children)
     {
         ExpressionInfoVisitor::Data expression_info{.context = context, .tables = {}};

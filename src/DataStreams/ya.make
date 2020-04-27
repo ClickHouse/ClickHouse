@@ -57,7 +57,7 @@ SRCS(
     SizeLimits.cpp
     SquashingBlockInputStream.cpp
     SquashingBlockOutputStream.cpp
-    SquashingTransform.cpp
+    SquashingTransformer.cpp
     TotalsHavingBlockInputStream.cpp
     TTLBlockInputStream.cpp
 )

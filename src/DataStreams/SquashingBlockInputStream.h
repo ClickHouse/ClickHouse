@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockInputStream.h>
-#include <DataStreams/SquashingTransform.h>
+#include <DataStreams/SquashingTransformer.h>
 
 
 namespace DB
@@ -24,7 +24,7 @@ protected:
 
 private:
     Block header;
-    SquashingTransform transform;
+    SquashingTransformer transform;
     bool all_read = false;
 };
 

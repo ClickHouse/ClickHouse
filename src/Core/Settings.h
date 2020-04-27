@@ -412,6 +412,9 @@ struct Settings : public SettingsCollection<Settings>
     M(SettingBool, transform_null_in, false, "If enabled, NULL values will be matched with 'IN' operator as if they are considered equal.", 0) \
     M(SettingBool, allow_nondeterministic_mutations, false, "Allow non-deterministic functions in ALTER UPDATE/ALTER DELETE statements", 0) \
     M(SettingSeconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, "How long locking request should wait before failing", 0) \
+    M(SettingBool, allow_squashing_after_merged_sort, true, "Allow squashing blocks after merge sorted", 0) \
+    M(SettingUInt64, min_squashing_merge_sorted_rows, 0, "The minimum rows number for squashing when after merge sorted. 0 means unlimited.", 0) \
+    M(SettingUInt64, min_squashing_merge_sorted_bytes, 0, "The minimum bytes number for squashing when after merge sorted. 0 means unlimited.", 0) \
     \
     /** Obsolete settings that do nothing but left for compatibility reasons. Remove each one after half a year of obsolescence. */ \
     \

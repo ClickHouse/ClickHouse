@@ -1,4 +1,4 @@
-#include <DataStreams/SquashingTransform.h>
+#include <DataStreams/SquashingTransformer.h>
 
 
 namespace DB
@@ -8,19 +8,19 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
-SquashingTransform::SquashingTransform(size_t min_block_size_rows_, size_t min_block_size_bytes_, bool reserve_memory_)
+SquashingTransformer::SquashingTransformer(size_t min_block_size_rows_, size_t min_block_size_bytes_, bool reserve_memory_)
     : min_block_size_rows(min_block_size_rows_)
     , min_block_size_bytes(min_block_size_bytes_)
     , reserve_memory(reserve_memory_)
 {
 }
 
-Block SquashingTransform::add(Block && input_block)
+Block SquashingTransformer::add(Block && input_block)
 {
     return addImpl<Block &&>(std::move(input_block));
 }
 
-Block SquashingTransform::add(const Block & input_block)
+Block SquashingTransformer::add(const Block & input_block)
 {
     return addImpl<const Block &>(input_block);
 }
@@ -32,7 +32,7 @@ Block SquashingTransform::add(const Block & input_block)
  * have to.
  */
 template <typename ReferenceType>
-Block SquashingTransform::addImpl(ReferenceType input_block)
+Block SquashingTransformer::addImpl(ReferenceType input_block)
 {
     /// End of input stream.
     if (!input_block)
@@ -81,7 +81,7 @@ Block SquashingTransform::addImpl(ReferenceType input_block)
 
 
 template <typename ReferenceType>
-void SquashingTransform::append(ReferenceType input_block)
+void SquashingTransformer::append(ReferenceType input_block)
 {
     if (!accumulated_block)
     {
@@ -109,7 +109,7 @@ void SquashingTransform::append(ReferenceType input_block)
 }
 
 
-bool SquashingTransform::isEnoughSize(const Block & block)
+bool SquashingTransformer::isEnoughSize(const Block & block)
 {
     size_t rows = 0;
     size_t bytes = 0;
@@ -128,7 +128,7 @@ bool SquashingTransform::isEnoughSize(const Block & block)
 }
 
 
-bool SquashingTransform::isEnoughSize(size_t rows, size_t bytes) const
+bool SquashingTransformer::isEnoughSize(size_t rows, size_t bytes) const
 {
     return (!min_block_size_rows && !min_block_size_bytes)
         || (min_block_size_rows && rows >= min_block_size_rows)

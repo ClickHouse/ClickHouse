@@ -1,7 +1,7 @@
 #pragma once
 
 #include <DataStreams/IBlockOutputStream.h>
-#include <DataStreams/SquashingTransform.h>
+#include <DataStreams/SquashingTransformer.h>
 
 
 namespace DB
@@ -28,7 +28,7 @@ private:
     BlockOutputStreamPtr output;
     Block header;
 
-    SquashingTransform transform;
+    SquashingTransformer transform;
     bool all_written = false;
 
     void finalize();

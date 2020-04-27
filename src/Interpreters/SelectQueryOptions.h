@@ -29,6 +29,7 @@ struct SelectQueryOptions
     bool remove_duplicates = false;
     bool ignore_quota = false;
     bool ignore_limits = false;
+    bool squashing_after_merge_sorted = false;
 
     SelectQueryOptions(QueryProcessingStage::Enum stage = QueryProcessingStage::Complete, size_t depth = 0)
         : to_stage(stage), subquery_depth(depth)
@@ -74,6 +75,12 @@ struct SelectQueryOptions
     SelectQueryOptions & ignoreLimits(bool value = true)
     {
         ignore_limits = value;
+        return *this;
+    }
+
+    SelectQueryOptions & squashingMergeSorted(bool value = false)
+    {
+        squashing_after_merge_sorted = value;
         return *this;
     }
 };
