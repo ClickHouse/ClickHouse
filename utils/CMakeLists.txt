@@ -25,6 +25,7 @@ if (NOT DEFINED ENABLE_UTILS OR ENABLE_UTILS)
     add_subdirectory (test-data-generator)
     add_subdirectory (convert-month-partitioned-parts)
     add_subdirectory (checksum-for-compressed-block)
+    add_subdirectory (fix_metadata_adfox)
 endif ()
 
 if (ENABLE_CODE_QUALITY)
