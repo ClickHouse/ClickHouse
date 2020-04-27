@@ -981,7 +981,7 @@ void NO_INLINE Aggregator::convertToBlockImplFinal(
     MutableColumns & final_aggregate_columns) const
 {
     bool is_finalization_needed = false;
-    for (auto & function : aggregate_functions)
+    for (const auto & function : aggregate_functions)
         is_finalization_needed = is_finalization_needed || function->isFinalizationNeeded();
 
     PaddedPODArray<AggregateDataPtr> places;
