@@ -495,6 +495,7 @@ namespace ErrorCodes
     extern const int ATOMIC_RENAME_FAIL = 521;
     extern const int OPENCL_ERROR = 522;
     extern const int UNKNOWN_ROW_POLICY = 523;
+    extern const int ALTER_OF_COLUMN_IS_FORBIDDEN = 524;
 
     extern const int KEEPER_EXCEPTION = 999;
     extern const int POCO_EXCEPTION = 1000;
