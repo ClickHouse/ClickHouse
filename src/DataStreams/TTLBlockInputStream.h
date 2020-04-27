@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Core/Block.h>
+#include <Interpreters/Aggregator.h>
 
 #include <common/DateLUT.h>
 
@@ -38,6 +39,13 @@ private:
 
     time_t current_time;
     bool force;
+
+    std::unique_ptr<Aggregator> aggregator;
+    std::vector<Field> current_key_value;
+    AggregatedDataVariants agg_result;
+    ColumnRawPtrs agg_key_columns; 
+    Aggregator::AggregateColumns agg_aggregate_columns;
+    bool agg_no_more_keys;
 
     IMergeTreeDataPart::TTLInfos old_ttl_infos;
     IMergeTreeDataPart::TTLInfos new_ttl_infos;

@@ -615,16 +615,47 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
 
     auto new_column_ttls = new_columns.getColumnTTLs();
 
-    auto create_ttl_entry = [this, &new_columns](ASTPtr ttl_ast)
+    auto create_ttl_entry = [this, &new_columns](ASTPtr ttl_expr_ast)
     {
         TTLEntry result;
 
-        auto syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_ast, new_columns.getAllPhysical());
-        result.expression = ExpressionAnalyzer(ttl_ast, syntax_result, global_context).getActions(false);
+        auto ttl_syntax_result = SyntaxAnalyzer(global_context).analyze(ttl_expr_ast, new_columns.getAllPhysical());
+        result.expression = ExpressionAnalyzer(ttl_expr_ast, ttl_syntax_result, global_context).getActions(false);
+        result.result_column = ttl_expr_ast->getColumnName();
+
         result.destination_type = PartDestinationType::DELETE;
-        result.result_column = ttl_ast->getColumnName();
 
         checkTTLExpression(result.expression, result.result_column);
+        return result;
+    };
+
+    auto create_rows_ttl_entry = [this, &new_columns, &create_ttl_entry](const ASTTTLElement * ttl_element)
+    {
+        auto result = create_ttl_entry(ttl_element->ttl());
+        if (ttl_element->mode == ASTTTLElement::Mode::DELETE || ttl_element->mode ==ASTTTLElement::Mode::MOVE)         
+        {
+            if (ASTPtr where_expr_ast = ttl_element->where()) 
+            {
+                auto where_syntax_result = SyntaxAnalyzer(global_context).analyze(where_expr_ast, new_columns.getAllPhysical());
+                result.where_expression = ExpressionAnalyzer(where_expr_ast, where_syntax_result, global_context).getActions(false);
+                result.where_filter_column = where_expr_ast->getColumnName();
+            }
+        }
+        else if (ttl_element->mode == ASTTTLElement::Mode::GROUP_BY) 
+        {
+            result.group_by_keys = ttl_element->group_by_key_columns;
+            for (auto [name, value] : ttl_element->group_by_aggregations)
+            {
+                auto syntax_result = SyntaxAnalyzer(global_context).analyze(value, new_columns.getAllPhysical(), {}, true);
+                auto expr_analyzer = ExpressionAnalyzer(value, syntax_result, global_context);
+
+                result.group_by_aggregations.emplace_back(name, expr_analyzer.getActions(false));
+                result.group_by_aggregations_res_column.emplace_back(name, value->getColumnName());
+
+                for (const auto descr : expr_analyzer.getAnalyzedData().aggregate_descriptions)
+                    result.aggregate_descriptions.push_back(descr);
+            }
+        }
         return result;
     };
 
@@ -672,7 +703,8 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
                     throw Exception("More than one DELETE TTL expression is not allowed", ErrorCodes::BAD_TTL_EXPRESSION);
                 }
 
-                auto new_rows_ttl_entry = create_ttl_entry(ttl_element->children[0]);
+                LOG_DEBUG(log, "ttl_element->size is " << ttl_element->size());
+                auto new_rows_ttl_entry = create_rows_ttl_entry(ttl_element);
                 if (!only_check)
                     update_rows_ttl_entry = new_rows_ttl_entry;
 
@@ -680,7 +712,7 @@ void MergeTreeData::setTTLExpressions(const ColumnsDescription & new_columns,
             }
             else
             {
-                auto new_ttl_entry = create_ttl_entry(ttl_element->children[0]);
+                auto new_ttl_entry = create_rows_ttl_entry(ttl_element);
 
                 new_ttl_entry.entry_ast = ttl_element_ptr;
                 new_ttl_entry.destination_type = ttl_element->destination_type;
