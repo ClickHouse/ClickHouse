@@ -51,12 +51,12 @@ struct StorageInMemoryMetadata
     NameAndTypePair getColumn(const String & column_name) const;
     bool hasColumn(const String & column_name) const;
     Block getSampleBlock() const; /// ordinary + materialized.
-    Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
+    Block getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const; /// ordinary + materialized + virtuals.
     Block getSampleBlockNonMaterialized() const; /// ordinary.
     Block getSampleBlockForColumns(const Names & column_names) const; /// ordinary + materialized + aliases + virtuals.
     /// Verify that all the requested names are in the table and are set correctly:
     /// list of names is not empty and the names do not repeat.
-    void check(const Names & column_names, bool include_virtuals = false) const;
+    void check(const Names & column_names, const NamesAndTypesList & virtuals) const;
 
     /// Check that all the requested names are in the table and have the correct types.
     void check(const NamesAndTypesList & columns) const;

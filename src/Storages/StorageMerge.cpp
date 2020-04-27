@@ -51,7 +51,7 @@ StorageMerge::StorageMerge(
     const String & source_database_,
     const String & table_name_regexp_,
     const Context & context_)
-    : IStorage(table_id_, ColumnsDescription({{"_table", std::make_shared<DataTypeString>()}}, true))
+    : IStorage(table_id_)
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
@@ -60,36 +60,6 @@ StorageMerge::StorageMerge(
     meta.setColumns(columns_);
     setInMemoryMetadata(meta);
 }
-
-
-/// NOTE: structure of underlying tables as well as their set are not constant,
-///       so the results of these methods may become obsolete after the call.
-
-NameAndTypePair StorageMerge::getColumn(const String & column_name) const
-{
-    if (!IStorage::hasColumn(column_name))
-    {
-        auto first_table = getFirstTable([](auto &&) { return true; });
-        if (first_table)
-            return first_table->getColumn(column_name);
-    }
-
-    return IStorage::getColumn(column_name);
-}
-
-
-bool StorageMerge::hasColumn(const String & column_name) const
-{
-    if (!IStorage::hasColumn(column_name))
-    {
-        auto first_table = getFirstTable([](auto &&) { return true; });
-        if (first_table)
-            return first_table->hasColumn(column_name);
-    }
-
-    return true;
-}
-
 
 template <typename F>
 StoragePtr StorageMerge::getFirstTable(F && predicate) const
@@ -421,7 +391,7 @@ DatabaseTablesIteratorPtr StorageMerge::getDatabaseIterator() const
     checkStackSize();
     auto database = DatabaseCatalog::instance().getDatabase(source_database);
     auto table_name_match = [this](const String & table_name_) { return table_name_regexp.match(table_name_); };
-    return database->getTablesIterator(global_context, table_name_match);
+    return database->getTablesIterator(table_name_match);
 }
 
 
@@ -445,7 +415,7 @@ void StorageMerge::alter(
 
     StorageInMemoryMetadata storage_metadata = *getInMemoryMetadata();
     params.apply(storage_metadata);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, storage_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, storage_metadata);
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -496,8 +466,8 @@ void StorageMerge::convertingSourceStream(const Block & header, const Context & 
         if (!header_column.type->equals(*before_column.type.get()) && processed_stage > QueryProcessingStage::FetchColumns)
         {
             NamesAndTypesList source_columns = getSampleBlock().getNamesAndTypesList();
-            NameAndTypePair virtual_column = getColumn("_table");
-            source_columns.insert(source_columns.end(), virtual_column);
+            auto virtual_column = *getVirtuals().tryGetByName("_table");
+            source_columns.emplace_back(NameAndTypePair{virtual_column.name, virtual_column.type});
             auto syntax_result = SyntaxAnalyzer(context).analyze(where_expression, source_columns);
             ExpressionActionsPtr actions = ExpressionAnalyzer{where_expression, syntax_result, context}.getActions(false, false);
             Names required_columns = actions->getRequiredColumns();
@@ -540,5 +510,12 @@ void registerStorageMerge(StorageFactory & factory)
             source_database, table_name_regexp, args.context);
     });
 }
-
+const NamesAndTypesList & StorageMerge::getVirtuals() const
+{
+    static const NamesAndTypesList & VIRTUALS =
+    {
+        {"_table", std::make_shared<DataTypeString>()}
+    };
+    return VIRTUALS;
+}
 }

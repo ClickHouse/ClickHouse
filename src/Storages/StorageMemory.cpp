@@ -126,7 +126,7 @@ BlockOutputStreamPtr StorageMemory::write(
 }
 
 
-void StorageMemory::drop(TableStructureWriteLockHolder &)
+void StorageMemory::drop()
 {
     std::lock_guard lock(mutex);
     data.clear();

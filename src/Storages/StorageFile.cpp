@@ -126,7 +126,6 @@ void checkCreationIsAllowed(const Context & context_global, const std::string & 
 }
 }
 
-
 StorageFile::StorageFile(int table_fd_, CommonArguments args)
     : StorageFile(args)
 {
@@ -186,14 +185,7 @@ StorageFile::StorageFile(const std::string & relative_table_dir_path, CommonArgu
 }
 
 StorageFile::StorageFile(CommonArguments args)
-    : IStorage(args.table_id,
-               ColumnsDescription({
-                                      {"_path", std::make_shared<DataTypeString>()},
-                                      {"_file", std::make_shared<DataTypeString>()}
-                                  },
-                                  true    /// all_virtuals
-                                 )
-              )
+    : IStorage(args.table_id)
     , format_name(args.format_name)
     , compression_method(args.compression_method)
     , base_path(args.context.getPath())
@@ -504,7 +496,7 @@ Strings StorageFile::getDataPaths() const
     return paths;
 }
 
-void StorageFile::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     if (!is_db_table)
         throw Exception("Can't rename table " + getStorageID().getNameForLogs() + " binded to user-defined file (or FD)", ErrorCodes::DATABASE_ACCESS_DENIED);
@@ -519,7 +511,7 @@ void StorageFile::rename(const String & new_path_to_table_data, const String & n
     Poco::File(paths[0]).renameTo(path_new);
 
     paths[0] = std::move(path_new);
-    renameInMemory(new_database_name, new_table_name);
+    renameInMemory(new_table_id);
 }
 
 void StorageFile::truncate(const ASTPtr & /*query*/, const Context & /* context */, TableStructureWriteLockHolder &)
@@ -613,5 +605,14 @@ void registerStorageFile(StorageFactory & factory)
         {
             .source_access_type = AccessType::FILE,
         });
+}
+const NamesAndTypesList & StorageFile::getVirtuals() const
+{
+    static const NamesAndTypesList VIRTUALS = {
+        {"_path", std::make_shared<DataTypeString>()},
+        {"_file", std::make_shared<DataTypeString>()}
+    };
+
+    return VIRTUALS;
 }
 }

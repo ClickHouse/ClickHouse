@@ -19,6 +19,7 @@ RUN apt-get update \
             clickhouse-client=$version \
             clickhouse-server=$version \
             locales \
+            ca-certificates \
             wget \
     && rm -rf \
         /var/lib/apt/lists/* \

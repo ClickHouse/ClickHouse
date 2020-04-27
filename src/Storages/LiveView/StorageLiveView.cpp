@@ -245,7 +245,8 @@ StorageLiveView::StorageLiveView(
     Context & local_context,
     const ASTCreateQuery & query,
     const ColumnsDescription & columns_)
-    : IStorage(table_id_), global_context(local_context.getGlobalContext())
+    : IStorage(table_id_)
+    , global_context(local_context.getGlobalContext())
 {
     live_view_context = std::make_unique<Context>(global_context);
     live_view_context->makeQueryContext();
@@ -277,22 +278,6 @@ StorageLiveView::StorageLiveView(
     blocks_ptr = std::make_shared<BlocksPtr>();
     blocks_metadata_ptr = std::make_shared<BlocksMetadataPtr>();
     active_ptr = std::make_shared<bool>(true);
-}
-
-NameAndTypePair StorageLiveView::getColumn(const String & column_name) const
-{
-    if (column_name == "_version")
-        return NameAndTypePair("_version", std::make_shared<DataTypeUInt64>());
-
-    return IStorage::getColumn(column_name);
-}
-
-bool StorageLiveView::hasColumn(const String & column_name) const
-{
-    if (column_name == "_version")
-        return true;
-
-    return IStorage::hasColumn(column_name);
 }
 
 Block StorageLiveView::getHeader() const
@@ -509,7 +494,7 @@ StorageLiveView::~StorageLiveView()
     }
 }
 
-void StorageLiveView::drop(TableStructureWriteLockHolder &)
+void StorageLiveView::drop()
 {
     auto table_id = getStorageID();
     DatabaseCatalog::instance().removeDependency(select_table_id, table_id);
@@ -631,6 +616,14 @@ BlockInputStreams StorageLiveView::watch(
 
         return { reader };
     }
+}
+
+const NamesAndTypesList & StorageLiveView::getVirtuals() const
+{
+    static NamesAndTypesList VIRTUALS = {
+        NameAndTypePair("_version", std::make_shared<DataTypeUInt64>())
+    };
+    return VIRTUALS;
 }
 
 void registerStorageLiveView(StorageFactory & factory)

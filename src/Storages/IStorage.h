@@ -82,8 +82,7 @@ class IStorage : public std::enable_shared_from_this<IStorage>, public TypePromo
 {
 public:
     IStorage() = delete;
-    explicit IStorage(StorageID storage_id_) : storage_id(std::move(storage_id_)) {}
-    IStorage(StorageID id_, ColumnsDescription virtuals_);
+    explicit IStorage(StorageID storage_id_);
 
     virtual ~IStorage() = default;
     IStorage(const IStorage &) = delete;
@@ -154,11 +153,6 @@ public: /// thread-unsafe part. lockStructure must be acquired
     virtual StorageMetadataPtr getInMemoryMetadata() const;
     virtual void setInMemoryMetadata(StorageInMemoryMetadata new_metadata); //new columns
 
-    /// NOTE: these methods should include virtual columns,
-    ///       but should NOT include ALIAS columns (they are treated separately).
-    virtual NameAndTypePair getColumn(const String & column_name) const;
-    virtual bool hasColumn(const String & column_name) const;
-
     Block getSampleBlock() const; /// ordinary + materialized.
     Block getSampleBlockWithVirtuals() const; /// ordinary + materialized + virtuals.
     Block getSampleBlockNonMaterialized() const; /// ordinary.
@@ -179,6 +173,8 @@ public: /// thread-unsafe part. lockStructure must be acquired
     /// If |need_all| is set, then checks that all the columns of the table are in the block.
     void check(const Block & block, bool need_all = false) const;
 
+    virtual const NamesAndTypesList & getVirtuals() const;
+
 protected: /// still thread-unsafe part.
     void setIndices(IndicesDescription indices_);
 
@@ -197,7 +193,7 @@ private:
 
 private:
     RWLockImpl::LockHolder tryLockTimed(
-            const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const;
 
 public:
     /// Acquire this lock if you need the table structure to remain constant during the execution of
@@ -319,9 +315,10 @@ public:
     /** Delete the table data. Called before deleting the directory with the data.
       * The method can be called only after detaching table from Context (when no queries are performed with table).
       * The table is not usable during and after call to this method.
+      * If some queries may still use the table, then it must be called under exclusive lock.
       * If you do not need any action other than deleting the directory with data, you can leave this method blank.
       */
-    virtual void drop(TableStructureWriteLockHolder &) {}
+    virtual void drop() {}
 
     /** Clear the table data and leave it empty.
       * Must be called under lockForAlter.
@@ -335,18 +332,18 @@ public:
       * Renaming a name in a file with metadata, the name in the list of tables in the RAM, is done separately.
       * In this function, you need to rename the directory with the data, if any.
       * Called when the table structure is locked for write.
+      * Table UUID must remain unchanged, unless table moved between Ordinary and Atomic databases.
       */
-    virtual void rename(const String & /*new_path_to_table_data*/, const String & new_database_name, const String & new_table_name,
-                        TableStructureWriteLockHolder &)
+    virtual void rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id)
     {
-        renameInMemory(new_database_name, new_table_name);
+        renameInMemory(new_table_id);
     }
 
     /**
      * Just updates names of database and table without moving any data on disk
      * Can be called directly only from DatabaseAtomic.
      */
-    virtual void renameInMemory(const String & new_database_name, const String & new_table_name);
+    virtual void renameInMemory(const StorageID & new_table_id);
 
     /** ALTER tables in the form of column changes that do not affect the change to Storage or its parameters.
       * This method must fully execute the ALTER query, taking care of the locks itself.

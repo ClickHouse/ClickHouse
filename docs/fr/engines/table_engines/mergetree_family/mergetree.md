@@ -68,7 +68,7 @@ Pour une description des paramètres, voir [Créer une description de requête](
 
     Un tuple de colonnes ou d'expressions arbitraires. Exemple: `ORDER BY (CounterID, EventDate)`.
 
--   `PRIMARY KEY` — The primary key if it [diffère de la clé de tri](mergetree.md).
+-   `PRIMARY KEY` — The primary key if it [diffère de la clé de tri](#choosing-a-primary-key-that-differs-from-the-sorting-key).
 
     Par défaut, la clé primaire est la même que la clé de tri (qui est spécifiée par `ORDER BY` clause). Ainsi dans la plupart des cas il n'est pas nécessaire de spécifier un `PRIMARY KEY` clause.
 

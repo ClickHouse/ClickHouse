@@ -129,11 +129,11 @@ Block StorageInMemoryMetadata::getSampleBlock() const
 
     return res;
 }
-Block StorageInMemoryMetadata::getSampleBlockWithVirtuals() const
+Block StorageInMemoryMetadata::getSampleBlockWithVirtuals(const NamesAndTypesList & virtuals) const
 {
     auto res = getSampleBlock();
 
-    for (const auto & column : getColumns().getVirtuals())
+    for (const auto & column : virtuals)
         res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;
@@ -217,11 +217,10 @@ namespace
     }
 }
 
-void StorageInMemoryMetadata::check(const Names & column_names, bool include_virtuals) const
+void StorageInMemoryMetadata::check(const Names & column_names, const NamesAndTypesList & virtuals) const
 {
     NamesAndTypesList available_columns = getColumns().getAllPhysical();
-    if (include_virtuals)
-        available_columns.splice(available_columns.end(), getColumns().getVirtuals());
+    available_columns.insert(available_columns.end(), virtuals.begin(), virtuals.end());
 
     const String list_of_columns = listOfColumns(available_columns);
 
@@ -349,15 +348,7 @@ void StorageInMemoryMetadata::setColumns(ColumnsDescription columns_)
 {
     if (columns_.getOrdinary().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
-    ColumnsDescription old_virtuals(columns.getVirtuals(), true);
-
     columns = std::move(columns_);
-
-    for (const auto & column : old_virtuals)
-    {
-        if (!columns.has(column.name))
-            columns.add(column);
-    }
 }
 
 

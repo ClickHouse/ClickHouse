@@ -1295,9 +1295,7 @@ void MergeTreeData::clearPartsFromFilesystem(const DataPartsVector & parts_to_re
     }
 }
 
-void MergeTreeData::rename(
-    const String & new_table_path, const String & new_database_name,
-    const String & new_table_name, TableStructureWriteLockHolder &)
+void MergeTreeData::rename(const String & new_table_path, const StorageID & new_table_id)
 {
     auto disks = getStoragePolicy()->getDisks();
 
@@ -1310,14 +1308,14 @@ void MergeTreeData::rename(
     for (const auto & disk : disks)
     {
         auto new_table_path_parent = parentPath(new_table_path);
-        disk->createDirectory(new_table_path_parent);
+        disk->createDirectories(new_table_path_parent);
         disk->moveDirectory(relative_data_path, new_table_path);
     }
 
     global_context.dropCaches();
 
     relative_data_path = new_table_path;
-    renameInMemory(new_database_name, new_table_name);
+    renameInMemory(new_table_id);
 }
 
 void MergeTreeData::dropAllData()
@@ -3609,5 +3607,16 @@ MergeTreeData::AlterConversions MergeTreeData::getAlterConversionsForPart(const 
             result.rename_map[command.rename_to] = command.column_name;
 
     return result;
+}
+
+const NamesAndTypesList & MergeTreeData::getVirtuals() const
+{
+    static const NamesAndTypesList VIRTUALS = {
+        NameAndTypePair("_part", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_part_index", std::make_shared<DataTypeUInt64>()),
+        NameAndTypePair("_partition_id", std::make_shared<DataTypeString>()),
+        NameAndTypePair("_sample_factor", std::make_shared<DataTypeFloat64>()),
+    };
+    return VIRTUALS;
 }
 }

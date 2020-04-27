@@ -31,10 +31,10 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
 }
 
-IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_)
+IStorage::IStorage(StorageID storage_id_)
     : storage_id(std::move(storage_id_))
-    , columns(virtuals_)
-    , metadata(std::make_unique<StorageInMemoryMetadata>(std::move(virtuals_), IndicesDescription{}, ConstraintsDescription{}))
+    , metadata(
+        std::make_unique<StorageInMemoryMetadata>(ColumnsDescription{}, IndicesDescription{}, ConstraintsDescription{}))
 {
 }
 
@@ -53,18 +53,6 @@ const ConstraintsDescription & IStorage::getConstraints() const
     return constraints;
 }
 
-NameAndTypePair IStorage::getColumn(const String & column_name) const
-{
-    /// By default, we assume that there are no virtual columns in the storage.
-    return getColumns().getPhysical(column_name);
-}
-
-bool IStorage::hasColumn(const String & column_name) const
-{
-    /// By default, we assume that there are no virtual columns in the storage.
-    return getColumns().hasPhysical(column_name);
-}
-
 Block IStorage::getSampleBlock() const
 {
     Block res;
@@ -79,7 +67,7 @@ Block IStorage::getSampleBlockWithVirtuals() const
 {
     auto res = getSampleBlock();
 
-    for (const auto & column : getColumns().getVirtuals())
+    for (const auto & column : getVirtuals())
         res.insert({column.type->createColumn(), column.type, column.name});
 
     return res;
@@ -99,8 +87,11 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 {
     Block res;
 
-    NamesAndTypesList all_columns = getColumns().getAll();
     std::unordered_map<String, DataTypePtr> columns_map;
+    for (const auto & column : getVirtuals())
+        columns_map.emplace(column.name, column.type);
+
+    NamesAndTypesList all_columns = getColumns().getAll();
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
 
@@ -113,9 +104,8 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
         }
         else
         {
-            /// Virtual columns.
-            NameAndTypePair elem = getColumn(name);
-            res.insert({elem.type->createColumn(), elem.type, elem.name});
+            throw Exception(
+                "Column " + backQuote(name) + " not found in table " + getStorageID().getNameForLogs(), ErrorCodes::NOT_FOUND_COLUMN_IN_BLOCK);
         }
     }
 
@@ -167,7 +157,7 @@ void IStorage::check(const Names & column_names, bool include_virtuals) const
 {
     NamesAndTypesList available_columns = getColumns().getAllPhysical();
     if (include_virtuals)
-        available_columns.splice(available_columns.end(), getColumns().getVirtuals());
+        available_columns.insert(available_columns.end(), getVirtuals().begin(), getVirtuals().end());
 
     const String list_of_columns = listOfColumns(available_columns);
 
@@ -317,7 +307,8 @@ void IStorage::setConstraints(ConstraintsDescription constraints_)
 
 bool IStorage::isVirtualColumn(const String & column_name) const
 {
-    return getColumns().get(column_name).is_virtual;
+    /// Virtual column maybe overriden by real column
+    return !getColumns().has(column_name) && getVirtuals().contains(column_name);
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
@@ -401,7 +392,7 @@ void IStorage::alter(
     auto table_id = getStorageID();
     auto current_metadata = *getInMemoryMetadata();
     params.apply(current_metadata);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, current_metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, current_metadata);
     setInMemoryMetadata(current_metadata);
 }
 
@@ -439,15 +430,20 @@ BlockInputStreams IStorage::readStreams(
 
 StorageID IStorage::getStorageID() const
 {
-    std::lock_guard<std::mutex> lock(id_mutex);
+    std::lock_guard lock(id_mutex);
     return storage_id;
 }
 
-void IStorage::renameInMemory(const String & new_database_name, const String & new_table_name)
+void IStorage::renameInMemory(const StorageID & new_table_id)
 {
-    std::lock_guard<std::mutex> lock(id_mutex);
-    storage_id.database_name = new_database_name;
-    storage_id.table_name = new_table_name;
+    std::lock_guard lock(id_mutex);
+    storage_id = new_table_id;
+}
+
+const NamesAndTypesList & IStorage::getVirtuals() const
+{
+    static const NamesAndTypesList VIRTUALS;
+    return VIRTUALS;
 }
 
 }
