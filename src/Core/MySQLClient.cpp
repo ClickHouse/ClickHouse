@@ -2,8 +2,8 @@
 
 namespace DB
 {
-using namespace ReplicationProtocol;
-using namespace MySQLProtocol::Authentication;
+using namespace Replication;
+using namespace Authentication;
 
 namespace ErrorCodes
 {

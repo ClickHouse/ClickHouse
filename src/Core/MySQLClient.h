@@ -15,7 +15,6 @@
 namespace DB
 {
 using namespace MySQLProtocol;
-using namespace ReplicationProtocol;
 
 class MySQLClient
 {
@@ -26,7 +25,6 @@ public:
     bool ping();
     bool registerSlave(UInt32 slave_id);
     bool binlogDump(UInt32 slave_id, String binlog_file_name, UInt64 binlog_pos);
-    BinlogEvent readBinlogEvent();
     String error();
 
 private:
