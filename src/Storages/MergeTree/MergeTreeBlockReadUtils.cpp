@@ -42,7 +42,7 @@ NameSet injectRequiredColumns(const MergeTreeData & storage, const MergeTreeData
 
         for (const auto & identifier : identifiers)
         {
-            if (storage_columns.has(identifier))
+            if (storage_columns.hasPhysical(identifier))
             {
                 /// ensure each column is added only once
                 if (required_columns.count(identifier) == 0)
