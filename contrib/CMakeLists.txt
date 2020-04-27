@@ -1,5 +1,13 @@
 # Third-party libraries may have substandard code.
 
+get_filename_component (_current_dir_name "${CMAKE_CURRENT_LIST_DIR}" NAME)
+if (CMAKE_FOLDER)
+    set (CMAKE_FOLDER "${CMAKE_FOLDER}/${_current_dir_name}")
+else ()
+    set (CMAKE_FOLDER "${_current_dir_name}")
+endif ()
+unset (_current_dir_name)
+
 set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -w")
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
