@@ -156,25 +156,26 @@ if args.report == 'main':
 
         print(tableStart('Changes in performance'))
         columns = [
-            'Old, s',                                                        # 0
-            'New, s',                                                        # 1
-            'Relative difference (new&nbsp;-&nbsp;old)/old',                 # 2
-            'Randomization distribution quantiles \
-                [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',                         # 3
-            'Test',                                                          # 4
-            'Query',                                                         # 5
+            'Old, s',                                          # 0
+            'New, s',                                          # 1
+            'Relative difference (new&nbsp;-&nbsp;old)/old',   # 2
+            'p&nbsp;<&nbsp;0.001 threshold',                   # 3
+            'Test',                                            # 4
+            'Query',                                           # 5
             ]
 
         print(tableHeader(columns))
 
         attrs = ['' for c in columns]
         for row in rows:
-            if float(row[2]) < 0.:
-                faster_queries += 1
-                attrs[2] = 'style="background: #adbdff"'
-            else:
-                slower_queries += 1
-                attrs[2] = 'style="background: #ffb0a0"'
+            attrs[2] = ''
+            if abs(float(row[2])) > 0.10:
+                if float(row[2]) < 0.:
+                    faster_queries += 1
+                    attrs[2] = 'style="background: #adbdff"'
+                else:
+                    slower_queries += 1
+                    attrs[2] = 'style="background: #ffb0a0"'
 
             print(tableRow(row, attrs))
 
@@ -202,7 +203,7 @@ if args.report == 'main':
             'Old, s', #0
             'New, s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
-            'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]', #3
+            'p&nbsp;<&nbsp;0.001 threshold', #3
             'Test', #4
             'Query' #5
         ]
@@ -212,9 +213,7 @@ if args.report == 'main':
 
         attrs = ['' for c in columns]
         for r in unstable_rows:
-            rd = ast.literal_eval(r[3])
-            # Note the zero-based array index, this is rd[3] in SQL.
-            if rd[2] > 0.2:
+            if float(r[3]) > 0.2:
                 very_unstable_queries += 1
                 attrs[3] = 'style="background: #ffb0a0"'
             else:
@@ -256,17 +255,18 @@ if args.report == 'main':
 
         print(tableStart('Test times'))
         print(tableHeader(columns))
-
+        
+        runs = 13  # FIXME pass this as an argument
         attrs = ['' for c in columns]
         for r in rows:
-            if float(r[6]) > 22:
+            if float(r[6]) > 3 * runs:
                 # FIXME should be 15s max -- investigate parallel_insert
                 slow_average_tests += 1
                 attrs[6] = 'style="background: #ffb0a0"'
             else:
                 attrs[6] = ''
 
-            if float(r[5]) > 30:
+            if float(r[5]) > 4 * runs:
                 slow_average_tests += 1
                 attrs[5] = 'style="background: #ffb0a0"'
             else:
@@ -355,8 +355,7 @@ elif args.report == 'all-queries':
             'New, s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
             'Times speedup/slowdown',                 #3
-            'Randomization distribution quantiles \
-                [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',  #4
+            'p&nbsp;<&nbsp;0.001 threshold',          #4
             'Test',                                   #5
             'Query',                                  #6
             ]
@@ -366,10 +365,18 @@ elif args.report == 'all-queries':
 
         attrs = ['' for c in columns]
         for r in rows:
-            if float(r[2]) > 0.05:
-                attrs[3] = 'style="background: #ffb0a0"'
-            elif float(r[2]) < -0.05:
-                attrs[3] = 'style="background: #adbdff"'
+            threshold = float(r[3])
+            if threshold > 0.2:
+                attrs[4] = 'style="background: #ffb0a0"'
+            else:
+                attrs[4] = ''
+
+            diff = float(r[2])
+            if abs(diff) > threshold and threshold >= 0.05:
+                if diff > 0.:
+                    attrs[3] = 'style="background: #ffb0a0"'
+                else:
+                    attrs[3] = 'style="background: #adbdff"'
             else:
                 attrs[3] = ''
 

@@ -11,7 +11,7 @@ namespace DB
 JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(WriteBuffer & out_, const Block & header_, FormatFactory::WriteCallback callback, const FormatSettings & settings_)
     : IRowOutputFormat(header_, out_, callback), settings(settings_)
 {
-    auto & sample = getPort(PortKind::Main).getHeader();
+    const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
     fields.resize(columns);
 
@@ -22,12 +22,6 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(WriteBuffer & out_, const
     }
 }
 
-void JSONEachRowRowOutputFormat::consume(DB::Chunk chunk)
-{
-    IRowOutputFormat::consume(std::move(chunk));
-    if (settings.enable_streaming)
-        flush();
-}
 
 void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {

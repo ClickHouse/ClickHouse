@@ -15,7 +15,7 @@ LimitByTransform::LimitByTransform(const Block & header, size_t group_length_, s
     for (const auto & name : columns)
     {
         auto position = header.getPositionByName(name);
-        auto & column = header.getByPosition(position).column;
+        const auto & column = header.getByPosition(position).column;
 
         /// Ignore all constant columns.
         if (!(column && isColumnConst(*column)))

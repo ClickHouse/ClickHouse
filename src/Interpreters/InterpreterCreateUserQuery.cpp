@@ -68,7 +68,7 @@ namespace
 
 BlockIO InterpreterCreateUserQuery::execute()
 {
-    auto & query = query_ptr->as<const ASTCreateUserQuery &>();
+    const auto & query = query_ptr->as<const ASTCreateUserQuery &>();
     auto & access_control = context.getAccessControlManager();
     auto access = context.getAccess();
     access->checkAccess(query.alter ? AccessType::ALTER_USER : AccessType::CREATE_USER);

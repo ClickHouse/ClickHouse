@@ -207,7 +207,7 @@ void ThreadFuzzer::signalHandler(int)
     errno = saved_errno;
 }
 
-void ThreadFuzzer::setup()
+void ThreadFuzzer::setup() const
 {
     struct sigaction sa{};
     sa.sa_handler = signalHandler;

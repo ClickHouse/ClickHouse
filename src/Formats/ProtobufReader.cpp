@@ -1,16 +1,14 @@
-#include "config_formats.h"
-#if USE_PROTOBUF
-
 #include "ProtobufReader.h"
 
-#include <AggregateFunctions/IAggregateFunction.h>
-#include <boost/numeric/conversion/cast.hpp>
-#include <DataTypes/DataTypesDecimal.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteBufferFromVector.h>
-#include <IO/WriteHelpers.h>
-#include <optional>
+#if USE_PROTOBUF
+#    include <optional>
+#    include <AggregateFunctions/IAggregateFunction.h>
+#    include <DataTypes/DataTypesDecimal.h>
+#    include <IO/ReadBufferFromString.h>
+#    include <IO/ReadHelpers.h>
+#    include <IO/WriteBufferFromVector.h>
+#    include <IO/WriteHelpers.h>
+#    include <boost/numeric/conversion/cast.hpp>
 
 
 namespace DB
@@ -272,25 +270,25 @@ UInt64 ProtobufReader::SimpleReader::continueReadingVarint(UInt64 first_byte)
     UInt64 result = (first_byte & ~static_cast<UInt64>(0x80));
     char c;
 
-#define PROTOBUF_READER_READ_VARINT_BYTE(byteNo) \
-    do \
-    { \
-        in.readStrict(c); \
-        ++cursor; \
-        if constexpr ((byteNo) < 10) \
+#    define PROTOBUF_READER_READ_VARINT_BYTE(byteNo) \
+        do \
         { \
-            result |= static_cast<UInt64>(static_cast<UInt8>(c)) << (7 * ((byteNo) - 1)); \
-            if (likely(!(c & 0x80))) \
-                return result; \
-        } \
-        else \
-        { \
-            if (likely(c == 1)) \
-                return result; \
-        } \
-        if constexpr ((byteNo) < 9) \
-            result &= ~(static_cast<UInt64>(0x80) << (7 * ((byteNo) - 1))); \
-    } while (false)
+            in.readStrict(c); \
+            ++cursor; \
+            if constexpr ((byteNo) < 10) \
+            { \
+                result |= static_cast<UInt64>(static_cast<UInt8>(c)) << (7 * ((byteNo)-1)); \
+                if (likely(!(c & 0x80))) \
+                    return result; \
+            } \
+            else \
+            { \
+                if (likely(c == 1)) \
+                    return result; \
+            } \
+            if constexpr ((byteNo) < 9) \
+                result &= ~(static_cast<UInt64>(0x80) << (7 * ((byteNo)-1))); \
+        } while (false)
 
     PROTOBUF_READER_READ_VARINT_BYTE(2);
     PROTOBUF_READER_READ_VARINT_BYTE(3);
@@ -302,7 +300,7 @@ UInt64 ProtobufReader::SimpleReader::continueReadingVarint(UInt64 first_byte)
     PROTOBUF_READER_READ_VARINT_BYTE(9);
     PROTOBUF_READER_READ_VARINT_BYTE(10);
 
-#undef PROTOBUF_READER_READ_VARINT_BYTE
+#    undef PROTOBUF_READER_READ_VARINT_BYTE
 
     throwUnknownFormat();
 }
@@ -311,22 +309,22 @@ void ProtobufReader::SimpleReader::ignoreVarint()
 {
     char c;
 
-#define PROTOBUF_READER_IGNORE_VARINT_BYTE(byteNo) \
-    do \
-    { \
-        in.readStrict(c); \
-        ++cursor; \
-        if constexpr ((byteNo) < 10) \
+#    define PROTOBUF_READER_IGNORE_VARINT_BYTE(byteNo) \
+        do \
         { \
-            if (likely(!(c & 0x80))) \
-                return; \
-        } \
-        else \
-        { \
-            if (likely(c == 1)) \
-                return; \
-        } \
-    } while (false)
+            in.readStrict(c); \
+            ++cursor; \
+            if constexpr ((byteNo) < 10) \
+            { \
+                if (likely(!(c & 0x80))) \
+                    return; \
+            } \
+            else \
+            { \
+                if (likely(c == 1)) \
+                    return; \
+            } \
+        } while (false)
 
     PROTOBUF_READER_IGNORE_VARINT_BYTE(1);
     PROTOBUF_READER_IGNORE_VARINT_BYTE(2);
@@ -338,7 +336,8 @@ void ProtobufReader::SimpleReader::ignoreVarint()
     PROTOBUF_READER_IGNORE_VARINT_BYTE(8);
     PROTOBUF_READER_IGNORE_VARINT_BYTE(9);
     PROTOBUF_READER_IGNORE_VARINT_BYTE(10);
-#undef PROTOBUF_READER_IGNORE_VARINT_BYTE
+
+#    undef PROTOBUF_READER_IGNORE_VARINT_BYTE
 
     throwUnknownFormat();
 }
@@ -694,16 +693,17 @@ private:
     std::optional<std::unordered_map<StringRef, Int16>> enum_name_to_value_map;
 };
 
-#define PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(field_type_id) \
-    template <> \
-    std::unique_ptr<ProtobufReader::IConverter> ProtobufReader::createConverter<field_type_id>( \
-        const google::protobuf::FieldDescriptor * field) \
-    { \
-        return std::make_unique<ConverterFromString>(simple_reader, field); \
-    }
+#    define PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(field_type_id) \
+        template <> \
+        std::unique_ptr<ProtobufReader::IConverter> ProtobufReader::createConverter<field_type_id>( \
+            const google::protobuf::FieldDescriptor * field) \
+        { \
+            return std::make_unique<ConverterFromString>(simple_reader, field); \
+        }
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_STRING)
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS(google::protobuf::FieldDescriptor::TYPE_BYTES)
-#undef PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS
+
+#    undef PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_STRINGS
 
 
 template <int field_type_id, typename FromType>
@@ -850,13 +850,14 @@ private:
     std::optional<std::unordered_set<Int16>> set_of_enum_values;
 };
 
-#define PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(field_type_id, field_type) \
-    template <> \
-    std::unique_ptr<ProtobufReader::IConverter> ProtobufReader::createConverter<field_type_id>( \
-        const google::protobuf::FieldDescriptor * field) \
-    { \
-        return std::make_unique<ConverterFromNumber<field_type_id, field_type>>(simple_reader, field); /* NOLINT */ \
-    }
+#    define PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(field_type_id, field_type) \
+        template <> \
+        std::unique_ptr<ProtobufReader::IConverter> ProtobufReader::createConverter<field_type_id>( \
+            const google::protobuf::FieldDescriptor * field) \
+        { \
+            return std::make_unique<ConverterFromNumber<field_type_id, field_type>>(simple_reader, field); /* NOLINT */ \
+        }
+
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_INT32, Int64);
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SINT32, Int64);
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_UINT32, UInt64);
@@ -869,7 +870,8 @@ PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::Fi
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_SFIXED64, Int64);
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_FLOAT, float);
 PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS(google::protobuf::FieldDescriptor::TYPE_DOUBLE, double);
-#undef PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS
+
+#    undef PROTOBUF_READER_CREATE_CONVERTER_SPECIALIZATION_FOR_NUMBERS
 
 
 class ProtobufReader::ConverterFromBool : public ConverterBaseImpl
@@ -1021,7 +1023,7 @@ private:
         enum_pbnumber_always_equals_value = true;
         for (const auto & name_value_pair : name_value_pairs)
         {
-            Int16 value = name_value_pair.second;
+            Int16 value = name_value_pair.second; // NOLINT
             const auto * enum_descriptor = field->enum_type()->FindValueByName(name_value_pair.first);
             if (enum_descriptor)
             {
@@ -1073,10 +1075,10 @@ void ProtobufReader::setTraitsDataAfterMatchingColumns(Message * message)
         }
         switch (field.field_descriptor->type())
         {
-#define PROTOBUF_READER_CONVERTER_CREATING_CASE(field_type_id) \
-            case field_type_id: \
-                field.data.converter = createConverter<field_type_id>(field.field_descriptor); \
-                break
+#    define PROTOBUF_READER_CONVERTER_CREATING_CASE(field_type_id) \
+        case field_type_id: \
+            field.data.converter = createConverter<field_type_id>(field.field_descriptor); \
+            break
             PROTOBUF_READER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_STRING);
             PROTOBUF_READER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_BYTES);
             PROTOBUF_READER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_INT32);
@@ -1093,8 +1095,9 @@ void ProtobufReader::setTraitsDataAfterMatchingColumns(Message * message)
             PROTOBUF_READER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_DOUBLE);
             PROTOBUF_READER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_BOOL);
             PROTOBUF_READER_CONVERTER_CREATING_CASE(google::protobuf::FieldDescriptor::TYPE_ENUM);
-#undef PROTOBUF_READER_CONVERTER_CREATING_CASE
-            default: __builtin_unreachable();
+#    undef PROTOBUF_READER_CONVERTER_CREATING_CASE
+            default:
+                __builtin_unreachable();
         }
         message->data.field_number_to_field_map.emplace(field.field_number, &field);
     }
@@ -1171,4 +1174,5 @@ bool ProtobufReader::readColumnIndex(size_t & column_index)
 }
 
 }
+
 #endif

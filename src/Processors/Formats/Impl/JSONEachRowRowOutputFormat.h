@@ -25,7 +25,6 @@ public:
     void writeRowEndDelimiter() override;
 
 protected:
-    void consume(Chunk chunk) override;
     /// No totals and extremes.
     void consumeTotals(Chunk) override {}
     void consumeExtremes(Chunk) override {}

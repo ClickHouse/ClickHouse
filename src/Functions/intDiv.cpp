@@ -3,7 +3,6 @@
 
 #if defined(__SSE2__)
 #    define LIBDIVIDE_SSE2 1
-#    define LIBDIVIDE_VECTOR_TYPE
 #endif
 
 #include <libdivide.h>

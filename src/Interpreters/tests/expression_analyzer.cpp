@@ -71,8 +71,8 @@ private:
     {
         ParserSelectQuery parser;
         std::string message;
-        auto text = query.data();
-        if (ASTPtr ast = tryParseQuery(parser, text, text + query.size(), message, false, "", false, 0))
+        const auto * text = query.data();
+        if (ASTPtr ast = tryParseQuery(parser, text, text + query.size(), message, false, "", false, 0, 0))
             return ast;
         throw Exception(message, ErrorCodes::SYNTAX_ERROR);
     }
@@ -95,14 +95,15 @@ int main()
         }
     };
 
-    Context context = Context::createGlobal();
+    SharedContextHolder shared_context = Context::createShared();
+    Context context = Context::createGlobal(shared_context.get());
     context.makeGlobalContext();
 
     auto system_database = std::make_shared<DatabaseMemory>("system");
     DatabaseCatalog::instance().attachDatabase("system", system_database);
     //context.setCurrentDatabase("system");
-    system_database->attachTable("one", StorageSystemOne::create("one"));
-    system_database->attachTable("numbers", StorageSystemNumbers::create(StorageID("system", "numbers"), false));
+    system_database->attachTable("one", StorageSystemOne::create("one"), {});
+    system_database->attachTable("numbers", StorageSystemNumbers::create(StorageID("system", "numbers"), false), {});
 
     size_t success = 0;
     for (auto & entry : queries)

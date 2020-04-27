@@ -14,6 +14,7 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/TerminalSize.h>
+#include <Core/Defines.h>
 
 
 namespace DB
@@ -123,7 +124,7 @@ int mainEntryClickHouseCompressor(int argc, char ** argv)
             DB::ParserCodec codec_parser;
 
             std::string codecs_line = boost::algorithm::join(codecs, ",");
-            auto ast = DB::parseQuery(codec_parser, "(" + codecs_line + ")", 0);
+            auto ast = DB::parseQuery(codec_parser, "(" + codecs_line + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
             codec = DB::CompressionCodecFactory::instance().get(ast, nullptr);
         }
         else
