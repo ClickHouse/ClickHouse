@@ -1,5 +1,8 @@
 # Third-party libraries may have substandard code.
 
+# Put all targets defined here and in added subfolders under "contrib/" folder in GUI-based IDEs by default.
+# Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they will
+# appear not in "contrib/" as originally planned here.
 get_filename_component (_current_dir_name "${CMAKE_CURRENT_LIST_DIR}" NAME)
 if (CMAKE_FOLDER)
     set (CMAKE_FOLDER "${CMAKE_FOLDER}/${_current_dir_name}")
