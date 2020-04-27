@@ -1,5 +1,5 @@
 ---
-toc_folder_title: Introduction
+toc_folder_title: Введение
 toc_priority: 1
 ---
 

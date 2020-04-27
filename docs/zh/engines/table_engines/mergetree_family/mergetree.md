@@ -58,7 +58,7 @@ Clickhouse 中最强大的表引擎当属 `MergeTree` （合并树）引擎及�
 
         可以是一组列的元组或任意的表达式。 例如: `ORDER BY (CounterID, EventDate)` 。
 
--   `PRIMARY KEY` - 主键，如果要设成 [跟排序键不相同](mergetree.md)。
+-   `PRIMARY KEY` - 主键，如果要设成 [跟排序键不相同](#xuan-ze-gen-pai-xu-jian-bu-yi-yang-zhu-jian)。
 
         默认情况下主键跟排序键（由 `ORDER BY` 子句指定）相同。
         因此，大部分情况下不需要再专门指定一个 `PRIMARY KEY` 子句。

@@ -13,9 +13,12 @@
 #include <Poco/URI.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/ShellCommand.h>
-#include <Common/config.h>
 #include <common/logger_useful.h>
 #include <ext/range.h>
+
+#if !defined(ARCADIA_BUILD)
+#    include <Common/config.h>
+#endif
 
 namespace DB
 {

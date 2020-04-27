@@ -66,7 +66,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
     A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
 
--   `PRIMARY KEY` — The primary key if it [differs from the sorting key](mergetree.md).
+-   `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key).
 
     By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause). Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
 
@@ -505,14 +505,14 @@ Configuration structure:
 <storage_configuration>
     <disks>
         <disk_name_1> <!-- disk name -->
-            <path>/mnt/fast_ssd/clickhouse</path>
+            <path>/mnt/fast_ssd/clickhouse/</path>
         </disk_name_1>
         <disk_name_2>
-            <path>/mnt/hdd1/clickhouse</path>
+            <path>/mnt/hdd1/clickhouse/</path>
             <keep_free_space_bytes>10485760</keep_free_space_bytes>
         </disk_name_2>
         <disk_name_3>
-            <path>/mnt/hdd2/clickhouse</path>
+            <path>/mnt/hdd2/clickhouse/</path>
             <keep_free_space_bytes>10485760</keep_free_space_bytes>
         </disk_name_3>
 

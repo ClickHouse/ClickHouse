@@ -27,7 +27,7 @@ void removeConstantsFromSortDescription(const Block & header, SortDescription & 
     description.erase(std::remove_if(description.begin(), description.end(),
         [&](const SortColumnDescription & elem)
         {
-            auto & column = !elem.column_name.empty() ? header.getByName(elem.column_name)
+            const auto & column = !elem.column_name.empty() ? header.getByName(elem.column_name)
                                                       : header.safeGetByPosition(elem.column_number);
             return column.column && isColumnConst(*column.column);
         }), description.end());

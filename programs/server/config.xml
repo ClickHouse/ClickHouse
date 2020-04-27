@@ -90,6 +90,29 @@
     <!-- Maximum number of concurrent queries. -->
     <max_concurrent_queries>100</max_concurrent_queries>
 
+    <!-- Maximum memory usage (resident set size) for server process.
+         Zero value or unset means default. Default is "max_server_memory_usage_to_ram_ratio" of available physical RAM.
+         If the value is larger than "max_server_memory_usage_to_ram_ratio" of available physical RAM, it will be cut down.
+
+         The constraint is checked on query execution time.
+         If a query tries to allocate memory and the current memory usage plus allocation is greater
+          than specified threshold, exception will be thrown.
+
+         It is not practical to set this constraint to small values like just a few gigabytes,
+          because memory allocator will keep this amount of memory in caches and the server will deny service of queries.
+      -->
+    <max_server_memory_usage>0</max_server_memory_usage>
+
+    <!-- On memory constrained environments you may have to set this to value larger than 1.
+      -->
+    <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
+
+    <!-- Simple server-wide memory profiler. Collect a stack trace at every peak allocation step (in bytes).
+         Data will be stored in system.trace_log table with query_id = empty string.
+         Zero means disabled. Minimal effective value is 4 MiB.
+      -->
+    <total_memory_profiler_step>4194304</total_memory_profiler_step>
+
     <!-- Set limit on number of open files (default: maximum). This setting makes sense on Mac OS X because getrlimit() fails to retrieve
          correct maximum value. -->
     <!-- <max_open_files>262144</max_open_files> -->

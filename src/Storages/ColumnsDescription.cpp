@@ -23,10 +23,12 @@
 #include <Interpreters/Context.h>
 #include <Storages/IStorage.h>
 #include <Common/typeid_cast.h>
+#include <Core/Defines.h>
 #include <Compression/CompressionFactory.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/SyntaxAnalyzer.h>
 #include <Interpreters/ExpressionActions.h>
+
 
 namespace DB
 {
@@ -102,7 +104,7 @@ void ColumnDescription::readText(ReadBuffer & buf)
     ParserColumnDeclaration column_parser(/* require type */ true);
     String column_line;
     readEscapedStringUntilEOL(column_line, buf);
-    ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0);
+    ASTPtr ast = parseQuery(column_parser, column_line, "column parser", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH);
     if (const auto * col_ast = ast->as<ASTColumnDeclaration>())
     {
         name = col_ast->name;
@@ -452,7 +454,7 @@ Block validateColumnsDefaultsAndGetSampleBlock(ASTPtr default_expr_list, const N
     {
         auto syntax_analyzer_result = SyntaxAnalyzer(context).analyze(default_expr_list, all_columns);
         const auto actions = ExpressionAnalyzer(default_expr_list, syntax_analyzer_result, context).getActions(true);
-        for (auto & action : actions->getActions())
+        for (const auto & action : actions->getActions())
             if (action.type == ExpressionAction::Type::JOIN || action.type == ExpressionAction::Type::ARRAY_JOIN)
                 throw Exception("Unsupported default value that requires ARRAY JOIN or JOIN action", ErrorCodes::THERE_IS_NO_DEFAULT_VALUE);
 

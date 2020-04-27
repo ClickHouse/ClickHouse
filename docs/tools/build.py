@@ -111,6 +111,7 @@ def build_for_lang(lang, args):
             'codehilite',
             'nl2br',
             'sane_lists',
+            'pymdownx.details',
             'pymdownx.magiclink',
             'pymdownx.superfences',
             'extra',
@@ -126,8 +127,10 @@ def build_for_lang(lang, args):
         if args.htmlproofer:
             plugins.append('htmlproofer')
 
+        site_name = site_names.get(lang, site_names['en']) % args.version_prefix
+        site_name = site_name.replace('  ', ' ')
         raw_config = dict(
-            site_name=site_names.get(lang, site_names['en']) % args.version_prefix,
+            site_name=site_name,
             site_url=f'https://clickhouse.tech/docs/{lang}/',
             docs_dir=os.path.join(args.docs_dir, lang),
             site_dir=site_dir,
@@ -138,18 +141,18 @@ def build_for_lang(lang, args):
             repo_name='ClickHouse/ClickHouse',
             repo_url='https://github.com/ClickHouse/ClickHouse/',
             edit_uri=f'edit/master/docs/{lang}',
-            extra_css=[f'assets/stylesheets/custom.css?{args.rev_short}'],
             markdown_extensions=markdown_extensions,
             plugins=plugins,
             extra={
                 'stable_releases': args.stable_releases,
                 'version_prefix': args.version_prefix,
                 'single_page': False,
-                'rev':       args.rev,
+                'rev': args.rev,
                 'rev_short': args.rev_short,
-                'rev_url':   args.rev_url,
-                'events':    args.events,
-                'languages': languages
+                'rev_url': args.rev_url,
+                'events': args.events,
+                'languages': languages,
+                'includes_dir':  os.path.join(os.path.dirname(__file__), '..', '_includes')
             }
         )
 
@@ -303,7 +306,7 @@ def write_redirect_html(out_path, to_url):
     except OSError:
         pass
     with open(out_path, 'w') as f:
-        f.write(f'''<!-- Redirect: {to_url} -->
+        f.write(f'''<!--[if IE 6]> Redirect: {to_url} <![endif]-->
 <!DOCTYPE HTML>
 <html lang="en-US">
     <head>
@@ -359,9 +362,12 @@ def build(args):
     build_releases(args, build_docs)
 
     if not args.skip_website:
+        website.process_benchmark_results(args)
         website.minify_website(args)
 
     for static_redirect in [
+        ('benchmark.html', '/benchmark/dbms/'),
+        ('benchmark_hardware.html', '/benchmark/hardware/'),
         ('tutorial.html', '/docs/en/getting_started/tutorial/',),
         ('reference_en.html', '/docs/en/single/', ),
         ('reference_ru.html', '/docs/ru/single/',),

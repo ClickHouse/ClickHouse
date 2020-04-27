@@ -58,7 +58,7 @@ public:
 
 protected:
     StorageFromMergeTreeDataPart(const MergeTreeData::DataPartPtr & part_)
-        : IStorage(getIDFromPart(part_), part_->storage.getVirtuals())
+        : IStorage(getIDFromPart(part_), ColumnsDescription(part_->storage.getColumns().getVirtuals(), true))
         , part(part_)
     {
         setColumns(part_->storage.getColumns());

@@ -145,7 +145,7 @@ boost::shared_ptr<const EnabledQuota::Intervals> QuotaCache::QuotaInfo::rebuildI
                 continue;
 
             /// Found an interval with the same duration, we need to copy its usage information to `result`.
-            auto & current_interval = *lower_bound;
+            const auto & current_interval = *lower_bound;
             for (auto resource_type : ext::range(MAX_RESOURCE_TYPE))
             {
                 new_interval.used[resource_type].store(current_interval.used[resource_type].load());
@@ -255,16 +255,18 @@ void QuotaCache::quotaRemoved(const UUID & quota_id)
 void QuotaCache::chooseQuotaToConsume()
 {
     /// `mutex` is already locked.
-    std::erase_if(
-        enabled_quotas,
-        [&](const std::pair<EnabledQuota::Params, std::weak_ptr<EnabledQuota>> & pr)
+
+    for (auto i = enabled_quotas.begin(), e = enabled_quotas.end(); i != e;)
+    {
+        auto elem = i->second.lock();
+        if (!elem)
+            i = enabled_quotas.erase(i);
+        else
         {
-            auto elem = pr.second.lock();
-            if (!elem)
-                return true; // remove from the `enabled_quotas` list.
             chooseQuotaToConsumeFor(*elem);
-            return false; // keep in the `enabled_quotas` list.
-        });
+            ++i;
+        }
+    }
 }
 
 void QuotaCache::chooseQuotaToConsumeFor(EnabledQuota & enabled)
