@@ -124,9 +124,10 @@ namespace ActionLocks
 }
 
 
-static const auto QUEUE_UPDATE_ERROR_SLEEP_MS     = 1 * 1000;
-static const auto MERGE_SELECTING_SLEEP_MS        = 5 * 1000;
-static const auto MUTATIONS_FINALIZING_SLEEP_MS   = 1 * 1000;
+static const auto QUEUE_UPDATE_ERROR_SLEEP_MS        = 1 * 1000;
+static const auto MERGE_SELECTING_SLEEP_MS           = 5 * 1000;
+static const auto MUTATIONS_FINALIZING_SLEEP_MS      = 1 * 1000;
+static const auto MUTATIONS_FINALIZING_IDLE_SLEEP_MS = 5 * 1000;
 
 /** There are three places for each part, where it should be
   * 1. In the RAM, data_parts, all_data_parts.
@@ -2277,7 +2278,18 @@ void StorageReplicatedMergeTree::mutationsFinalizingTask()
     }
 
     if (needs_reschedule)
+    {
         mutations_finalizing_task->scheduleAfter(MUTATIONS_FINALIZING_SLEEP_MS);
+    }
+    else
+    {
+        /// Even if no mutations seems to be done or appeared we are trying to
+        /// finalize them in background because manual control the launch of
+        /// this function is error prone. This can lead to mutations that
+        /// processed all the parts but have is_done=0 state for a long time. Or
+        /// killed mutations, which are also considered as undone.
+        mutations_finalizing_task->scheduleAfter(MUTATIONS_FINALIZING_IDLE_SLEEP_MS);
+    }
 }
 
 
