@@ -13,10 +13,6 @@
 namespace DB
 {
 
-namespace ErrorCodes
-{
-}
-
 TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     : size_limits(SizeLimits{settings.max_rows_in_join, settings.max_bytes_in_join, settings.join_overflow_mode})
     , default_max_bytes(settings.default_max_bytes_in_join)
@@ -26,6 +22,7 @@ TableJoin::TableJoin(const Settings & settings, VolumePtr tmp_volume_)
     , partial_merge_join_optimizations(settings.partial_merge_join_optimizations)
     , partial_merge_join_rows_in_right_blocks(settings.partial_merge_join_rows_in_right_blocks)
     , max_files_to_merge(settings.join_on_disk_max_files_to_merge)
+    , temporary_files_codec(settings.temporary_files_codec)
     , tmp_volume(tmp_volume_)
 {
     if (settings.partial_merge_join)

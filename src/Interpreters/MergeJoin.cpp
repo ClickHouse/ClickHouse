@@ -498,7 +498,8 @@ bool MergeJoin::saveRightBlock(Block && block)
         if (!has_memory)
         {
             disk_writer = std::make_unique<SortedBlocksWriter>(size_limits, table_join->getTemporaryVolume(),
-                                right_sample_block, right_sort_description, right_blocks, max_rows_in_right_block, max_files_to_merge);
+                                right_sample_block, right_sort_description, right_blocks,
+                                max_rows_in_right_block, max_files_to_merge, table_join->temporaryFilesCodec());
             is_in_memory = false;
         }
     }

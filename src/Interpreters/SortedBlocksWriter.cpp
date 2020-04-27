@@ -16,12 +16,12 @@ namespace ErrorCodes
 namespace
 {
 
-std::unique_ptr<TemporaryFile> flushToFile(const String & tmp_path, const Block & header, IBlockInputStream & stream)
+std::unique_ptr<TemporaryFile> flushToFile(const String & tmp_path, const Block & header, IBlockInputStream & stream, const String & codec)
 {
     auto tmp_file = createTemporaryFile(tmp_path);
 
     std::atomic<bool> is_cancelled{false};
-    TemporaryFileStream::write(tmp_file->path(), header, stream, &is_cancelled);
+    TemporaryFileStream::write(tmp_file->path(), header, stream, &is_cancelled, codec);
     if (is_cancelled)
         throw Exception("Cannot flush MergeJoin data on disk. No space at " + tmp_path, ErrorCodes::NOT_ENOUGH_SPACE);
 
@@ -29,7 +29,7 @@ std::unique_ptr<TemporaryFile> flushToFile(const String & tmp_path, const Block 
 }
 
 SortedBlocksWriter::SortedFiles flushToManyFiles(const String & tmp_path, const Block & header, IBlockInputStream & stream,
-                                                 std::function<void(const Block &)> callback = [](const Block &){})
+                                                 const String & codec, std::function<void(const Block &)> callback = [](const Block &){})
 {
     std::vector<std::unique_ptr<TemporaryFile>> files;
 
@@ -41,7 +41,7 @@ SortedBlocksWriter::SortedFiles flushToManyFiles(const String & tmp_path, const 
         callback(block);
 
         OneBlockInputStream block_stream(block);
-        auto tmp_file = flushToFile(tmp_path, header, block_stream);
+        auto tmp_file = flushToFile(tmp_path, header, block_stream, codec);
         files.emplace_back(std::move(tmp_file));
     }
 
@@ -123,7 +123,7 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
     if (blocks.size() == 1)
     {
         OneBlockInputStream sorted_input(blocks.front());
-        return flushToFile(path, sample_block, sorted_input);
+        return flushToFile(path, sample_block, sorted_input, codec);
     }
 
     BlockInputStreams inputs;
@@ -133,7 +133,7 @@ SortedBlocksWriter::TmpFilePtr SortedBlocksWriter::flush(const BlocksList & bloc
             inputs.push_back(std::make_shared<OneBlockInputStream>(block));
 
     MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
-    return flushToFile(path, sample_block, sorted_input);
+    return flushToFile(path, sample_block, sorted_input, codec);
 }
 
 SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<void(const Block &)> callback)
@@ -166,7 +166,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
                 if (inputs.size() == num_files_for_merge || &file == &sorted_files.back())
                 {
                     MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
-                    new_files.emplace_back(flushToFile(getPath(), sample_block, sorted_input));
+                    new_files.emplace_back(flushToFile(getPath(), sample_block, sorted_input, codec));
                     inputs.clear();
                 }
             }
@@ -181,7 +181,7 @@ SortedBlocksWriter::SortedFiles SortedBlocksWriter::finishMerge(std::function<vo
 
     MergingSortedBlockInputStream sorted_input(inputs, sort_description, rows_in_block);
 
-    SortedFiles out = flushToManyFiles(getPath(), sample_block, sorted_input, callback);
+    SortedFiles out = flushToManyFiles(getPath(), sample_block, sorted_input, codec, callback);
     sorted_files.clear();
     return out; /// There're also inserted_blocks counters as indirect output
 }

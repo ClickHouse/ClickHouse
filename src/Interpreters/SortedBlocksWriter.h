@@ -63,6 +63,7 @@ struct SortedBlocksWriter
     Blocks & inserted_blocks;
     const size_t rows_in_block;
     const size_t num_files_for_merge;
+    const String & codec;
     SortedFiles sorted_files;
     size_t row_count_in_flush = 0;
     size_t bytes_in_flush = 0;
@@ -70,7 +71,7 @@ struct SortedBlocksWriter
     size_t flush_inflight = 0;
 
     SortedBlocksWriter(const SizeLimits & size_limits_, VolumePtr volume_, const Block & sample_block_, const SortDescription & description,
-                       Blocks & blocks, size_t rows_in_block_, size_t num_files_to_merge_)
+                       Blocks & blocks, size_t rows_in_block_, size_t num_files_to_merge_, const String & codec_)
         : size_limits(size_limits_)
         , volume(volume_)
         , sample_block(sample_block_)
@@ -78,6 +79,7 @@ struct SortedBlocksWriter
         , inserted_blocks(blocks)
         , rows_in_block(rows_in_block_)
         , num_files_for_merge(num_files_to_merge_)
+        , codec(codec_)
     {
         sorted_files.emplace_back(flush(inserted_blocks.blocks));
         inserted_blocks.clear();

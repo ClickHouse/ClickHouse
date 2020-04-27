@@ -33,10 +33,11 @@ struct TemporaryFileStream
     {}
 
     /// Flush data from input stream into file for future reading
-    static void write(const std::string & path, const Block & header, IBlockInputStream & input, std::atomic<bool> * is_cancelled = nullptr)
+    static void write(const std::string & path, const Block & header, IBlockInputStream & input,
+                      std::atomic<bool> * is_cancelled, const std::string & codec)
     {
         WriteBufferFromFile file_buf(path);
-        CompressedWriteBuffer compressed_buf(file_buf);
+        CompressedWriteBuffer compressed_buf(file_buf, CompressionCodecFactory::instance().get(codec, {}));
         NativeBlockOutputStream output(compressed_buf, 0, header);
         copyData(input, output, is_cancelled);
     }
