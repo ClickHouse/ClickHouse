@@ -27,14 +27,14 @@ Se recomienda utilizar pre-compilado oficial `deb` Paquetes para Debian o Ubuntu
 
 Para instalar paquetes oficiales, agregue el repositorio de Yandex en `/etc/apt/sources.list` o en otra `/etc/apt/sources.list.d/clickhouse.list` file:
 
-      deb http://repo.clickhouse.tech/deb/stable/ main/
+      deb https://repo.clickhouse.tech/deb/stable/ main/
 
 Si desea utilizar la versión más reciente, reemplace `stable` con `testing` (esto se recomienda para sus entornos de prueba).
 
 A continuación, ejecute estos comandos para instalar paquetes:
 
 ``` bash
-sudo apt-get install dirmngr # optional
+sudo apt-get install apt-transport-https ca-certificates dirmngr # optional
 sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server

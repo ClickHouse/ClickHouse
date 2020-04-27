@@ -25,14 +25,14 @@ It is recommended to use official pre-compiled `deb` packages for Debian or Ubun
 
 To install official packages add the Yandex repository in `/etc/apt/sources.list` or in a separate `/etc/apt/sources.list.d/clickhouse.list` file:
 
-      deb http://repo.clickhouse.tech/deb/stable/ main/
+      deb https://repo.clickhouse.tech/deb/stable/ main/
 
 If you want to use the most recent version, replace `stable` with `testing` (this is recommended for your testing environments).
 
 Then run these commands to install packages:
 
 ``` bash
-sudo apt-get install dirmngr # optional
+sudo apt-get install apt-transport-https ca-certificates dirmngr # optional
 sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv E0C56BD4    # optional
 sudo apt-get update
 sudo apt-get install clickhouse-client clickhouse-server
