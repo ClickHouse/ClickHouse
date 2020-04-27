@@ -28,7 +28,6 @@ import kafka_pb2
 
 # TODO: add test for run-time offset update in CH, if we manually update it on Kafka side.
 # TODO: add test for SELECT LIMIT is working.
-# TODO: modify tests to respect `skip_broken_messages` setting.
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance('instance',
