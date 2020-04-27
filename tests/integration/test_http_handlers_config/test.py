@@ -16,9 +16,7 @@ class SimpleCluster:
 
     def add_instance(self, name, config_dir):
         script_path = os.path.dirname(os.path.realpath(__file__))
-        return self.cluster.add_instance(name, config_dir=os.path.join(script_path, config_dir),
-                                         main_configs=[os.path.join(script_path, 'common_configs', 'common_config.xml')],
-                                         user_configs=[os.path.join(script_path, 'common_configs', 'common_users.xml')])
+        return self.cluster.add_instance(name, main_configs=[os.path.join(script_path, config_dir, 'config.xml')])
 
 
 def test_dynamic_query_handler():
