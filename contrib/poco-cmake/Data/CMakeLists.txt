@@ -44,4 +44,27 @@ if (USE_INTERNAL_POCO_LIBRARY)
     endif ()
     target_include_directories (poco_data PUBLIC ${LIBRARY_DIR}/Data/include)
     target_link_libraries (poco_data PUBLIC poco_foundation)
+else ()
+    find_library(LIBRARY_POCO_DATA PocoData)
+    find_path(INCLUDE_POCO_DATA Poco/Data/Data.h)
+
+    add_library (poco_data UNKNOWN IMPORTED)
+    set_property (TARGET poco_data PROPERTY IMPORTED_LOCATION ${LIBRARY_POCO_DATA})
+    set_property (TARGET poco_data PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_DATA})
+
+    set (CMAKE_REQUIRED_LIBRARIES poco_data)
+    check_cxx_source_compiles (
+        "
+        #include <Poco/Data/Time.h>
+
+        int main() {
+            Poco::Data::Time();
+        }
+        "
+        EXTERNAL_POCO_DATA_WORKS
+    )
+
+    if (NOT EXTERNAL_POCO_DATA_WORKS)
+        message (FATAL_ERROR "Poco::Data is unusable: ${LIBRARY_POCO_DATA} ${INCLUDE_POCO_DATA}")
+    endif ()
 endif ()

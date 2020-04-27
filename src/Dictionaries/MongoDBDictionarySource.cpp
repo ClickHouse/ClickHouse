@@ -5,10 +5,6 @@
 
 namespace DB
 {
-namespace ErrorCodes
-{
-    extern const int SUPPORT_IS_DISABLED;
-}
 
 void registerDictionarySourceMongoDB(DictionarySourceFactory & factory)
 {

@@ -5,23 +5,20 @@
 
 namespace DB
 {
-    namespace ErrorCodes
-    {
-        extern const int SUPPORT_IS_DISABLED;
-    }
 
-    void registerDictionarySourceRedis(DictionarySourceFactory & factory)
-    {
-        auto create_table_source = [=](const DictionaryStructure & dict_struct,
-                                       const Poco::Util::AbstractConfiguration & config,
-                                       const String & config_prefix,
-                                       Block & sample_block,
-                                       const Context & /* context */,
-                                       bool /* check_config */) -> DictionarySourcePtr {
-            return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);
-        };
-        factory.registerSource("redis", create_table_source);
-    }
+void registerDictionarySourceRedis(DictionarySourceFactory & factory)
+{
+    auto create_table_source = [=](const DictionaryStructure & dict_struct,
+                                   const Poco::Util::AbstractConfiguration & config,
+                                   const String & config_prefix,
+                                   Block & sample_block,
+                                   const Context & /* context */,
+                                   bool /* check_config */) -> DictionarySourcePtr {
+        return std::make_unique<RedisDictionarySource>(dict_struct, config, config_prefix + ".redis", sample_block);
+    };
+    factory.registerSource("redis", create_table_source);
+}
+
 }
 
 

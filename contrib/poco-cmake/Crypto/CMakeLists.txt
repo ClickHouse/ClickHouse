@@ -30,5 +30,34 @@ if (ENABLE_SSL)
         target_compile_options (poco_crypto PUBLIC -Wno-newline-eof)
         target_include_directories (poco_crypto PUBLIC ${LIBRARY_DIR}/Crypto/include)
         target_link_libraries (poco_crypto PUBLIC poco_foundation ssl)
+    else ()
+        find_library(LIBRARY_POCO_CRYPTO PocoCrypto)
+        find_path(INCLUDE_POCO_CRYPTO Poco/Crypto/Crypto.h)
+
+        add_library (poco_crypto UNKNOWN IMPORTED)
+        set_property (TARGET poco_crypto PROPERTY IMPORTED_LOCATION ${LIBRARY_POCO_CRYPTO})
+        set_property (TARGET poco_crypto PROPERTY INTERFACE_INCLUDE_DIRECTORIES ${INCLUDE_POCO_CRYPTO})
+
+        set (CMAKE_REQUIRED_LIBRARIES poco_crypto)
+        check_cxx_source_compiles (
+            "
+            #include <Poco/Crypto/Crypto.h>
+
+            int main() {
+                Poco::Crypto::initializeCrypto();
+            }
+            "
+            EXTERNAL_POCO_CRYPTO_WORKS
+        )
+
+        if (NOT EXTERNAL_POCO_CRYPTO_WORKS)
+            message (FATAL_ERROR "Poco::Crypto is unusable: ${LIBRARY_POCO_CRYPTO} ${INCLUDE_POCO_CRYPTO}")
+        endif ()
     endif ()
+
+    message (STATUS "Using Poco::Crypto")
+else ()
+    add_library (poco_crypto INTERFACE)
+
+    message (STATUS "Not using Poco::Crypto")
 endif ()
