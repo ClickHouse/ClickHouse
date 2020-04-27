@@ -12,6 +12,7 @@
 #include <functional>
 #include <boost/noncopyable.hpp>
 #include <Common/ZooKeeper/Types.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
 
@@ -49,7 +50,8 @@ public:
 
     size_t getNumberOfThreads() const { return size; }
 
-    BackgroundSchedulePool(size_t size_);
+    /// thread_name_ cannot be longer then 13 bytes (2 bytes is reserved for "/D" suffix for delayExecutionThreadFunction())
+    BackgroundSchedulePool(size_t size_, CurrentMetrics::Metric tasks_metric_, CurrentMetrics::Metric memory_metric_, const char *thread_name_);
     ~BackgroundSchedulePool();
 
 private:
@@ -81,6 +83,10 @@ private:
 
     /// Thread group used for profiling purposes
     ThreadGroupStatusPtr thread_group;
+
+    CurrentMetrics::Metric tasks_metric;
+    CurrentMetrics::Metric memory_metric;
+    std::string thread_name;
 
     void attachToThreadGroup();
 };
