@@ -44,7 +44,8 @@ bool inappropriateNameInside(ASTFunction * func_node, const char * inter_func_na
            inter_func_name != func_node->arguments->children[1]->as<ASTFunction>()->name);
 }
 
-bool isInapprop(ASTPtr & node, const char * inter_func_name) {
+bool isInapprop(ASTPtr & node, const char * inter_func_name)
+{
     return !node->as<ASTFunction>() || inter_func_name != node->as<ASTFunction>()->name;
 }
 
@@ -100,9 +101,7 @@ std::pair<ASTs, ASTs> findAllConsts(ASTFunction * func_node, const char * inter_
         return {};
 
     if (onlyConstsInside(func_node))
-    {
         return tryGetConst(func_node->name.c_str(), func_node->arguments->children);
-    }
     else if (inappropriateNameInside(func_node, inter_func_name))
     {
         if (func_node->arguments->children[0]->as<ASTLiteral>() &&
@@ -115,9 +114,7 @@ std::pair<ASTs, ASTs> findAllConsts(ASTFunction * func_node, const char * inter_
         else
         {
             if (isInapprop(func_node->arguments->children[0], inter_func_name) && isInapprop(func_node->arguments->children[1], inter_func_name))
-            {
                 return {{}, {func_node->arguments->children[0], func_node->arguments->children[1]}};
-            }
             else if (isInapprop(func_node->arguments->children[0], inter_func_name))
             {
                 std::pair<ASTs, ASTs> ans = findAllConsts(func_node->arguments->children[1]->as<ASTFunction>(), inter_func_name);
