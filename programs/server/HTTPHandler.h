@@ -7,6 +7,12 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/HTMLForm.h>
 
+#include <re2/re2.h>
+#if USE_RE2_ST
+#include <re2_st/re2.h>
+#else
+#define re2_st re2
+#endif
 
 namespace CurrentMetrics
 {
@@ -20,6 +26,7 @@ namespace DB
 
 class WriteBufferFromHTTPServerResponse;
 
+typedef std::shared_ptr<const re2_st::RE2> CompiledRegexPtr;
 
 class HTTPHandler : public Poco::Net::HTTPRequestHandler
 {
@@ -101,12 +108,12 @@ class PredefinedQueryHandler : public HTTPHandler
 private:
     NameSet receive_params;
     std::string predefined_query;
-    std::optional<String> url_regex;
-    std::unordered_map<String, String> header_name_with_capture_regex;
+    CompiledRegexPtr url_regex;
+    std::unordered_map<String, CompiledRegexPtr> header_name_with_capture_regex;
 public:
     explicit PredefinedQueryHandler(
         IServer & server, const NameSet & receive_params_, const std::string & predefined_query_
-        , const std::optional<String> & url_regex_, const std::unordered_map<String, String> & header_name_with_regex_);
+        , const CompiledRegexPtr & url_regex_, const std::unordered_map<String, CompiledRegexPtr> & header_name_with_regex_);
 
     virtual void customizeContext(Poco::Net::HTTPServerRequest & request, Context & context) override;
 
