@@ -34,39 +34,18 @@ namespace ErrorCodes
 }
 
 template <typename T>
-void ColumnVector<T>::insertData(const char * pos, size_t /*length*/)
+void ColumnVector<T>::insertData([[maybe_unused]] const char * pos, size_t /*length*/)
 {
-    data.push_back(unalignedLoad<T>(pos));
-}
-
-template <>
-void ColumnVector<bUInt128>::insertData(const char *, size_t)
-{
-    throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
-}
-
-template <>
-void ColumnVector<bInt128>::insertData(const char *, size_t)
-{
-    throw Exception("Int256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
-}
-
-template <>
-void ColumnVector<bUInt256>::insertData(const char *, size_t)
-{
-    throw Exception("UInt256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
-}
-
-template <>
-void ColumnVector<bInt256>::insertData(const char *, size_t)
-{
-    throw Exception("Int256 is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+    if constexpr (is_big_int_v<T>)
+        throw Exception("Big ints is not POD value", ErrorCodes::BAD_TYPE_OF_FIELD);
+    else
+        data.push_back(unalignedLoad<T>(pos));
 }
 
 template <typename T>
 void ColumnVector<T>::insertManyDefaults(size_t length)
 {
-    if constexpr (sizeof(T) <= 16 && !std::is_same_v<T, bUInt128>)
+    if constexpr (!is_big_int_v<T>)
         data.resize_fill(data.size() + length, T());
     else
         data.resize(data.size() + length, T());
@@ -75,7 +54,7 @@ void ColumnVector<T>::insertManyDefaults(size_t length)
 template <typename T>
 void ColumnVector<T>::popBack(size_t n)
 {
-    if constexpr (sizeof(T) <= 16 && !std::is_same_v<T, bUInt128>)
+    if constexpr (!is_big_int_v<T>)
         data.resize_assume_reserved(data.size() - n);
     else
         data.resize(data.size() - n);
@@ -170,7 +149,7 @@ void ColumnVector<T>::updateWeakHash32(WeakHash32 & hash) const
 template <typename T>
 size_t ColumnVector<T>::allocatedBytes() const
 {
-    if constexpr (sizeof(T) <= 16 && !std::is_same_v<T, bUInt128>)
+    if constexpr (!is_big_int_v<T>)
         return data.allocated_bytes();
     else
         return data.capacity() * sizeof(data[0]);
@@ -179,7 +158,7 @@ size_t ColumnVector<T>::allocatedBytes() const
 template <typename T>
 void ColumnVector<T>::protect()
 {
-    if constexpr (sizeof(T) <= 16 && !std::is_same_v<T, bUInt128>)
+    if constexpr (!is_big_int_v<T>)
         data.protect();
     else
         throw Exception("", ErrorCodes::BAD_TYPE_OF_FIELD);
@@ -335,7 +314,7 @@ MutableColumnPtr ColumnVector<T>::cloneResized(size_t size) const
         new_col.data.resize(size);
 
         size_t count = std::min(this->size(), size);
-        if constexpr (sizeof(T) <= 16 && !std::is_same_v<T, bUInt128>) {
+        if constexpr (!is_big_int_v<T>) {
             memcpy(new_col.data.data(), data.data(), count * sizeof(data[0]));
 
             if (size > count)
@@ -382,7 +361,7 @@ void ColumnVector<T>::insertRangeFrom(const IColumn & src, size_t start, size_t 
 
     size_t old_size = data.size();
     data.resize(old_size + length);
-    if constexpr (sizeof(T) <= 16 && !std::is_same_v<T, bUInt128>)
+    if constexpr (!is_big_int_v<T>)
         memcpy(data.data() + old_size, &src_vec.data[start], length * sizeof(data[0]));
     else {
         for (size_t i = 0; i < length; i++) {
@@ -404,7 +383,7 @@ ColumnPtr ColumnVector<T>::filter(const IColumn::Filter & filt, ssize_t result_s
     if (result_size_hint)
         res_data.reserve(result_size_hint > 0 ? result_size_hint : size);
 
-    if constexpr (sizeof(T) <= 16 && !std::is_same_v<T, bUInt128>)
+    if constexpr (!is_big_int_v<T>)
     {
         const UInt8 * filt_pos = filt.data();
         const UInt8 * filt_end = filt_pos + size;

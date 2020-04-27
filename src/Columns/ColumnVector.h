@@ -105,7 +105,7 @@ private:
 
 public:
     using ValueType = T;
-    using Container = std::conditional_t<sizeof(T) <= 16 && !std::is_same_v<T, bUInt128>,
+    using Container = std::conditional_t<!is_big_int_v<ValueType>,
                                          PaddedPODArray<ValueType>,
                                          std::vector<ValueType>>;
 

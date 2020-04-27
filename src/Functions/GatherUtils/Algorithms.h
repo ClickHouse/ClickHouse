@@ -11,6 +11,7 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::GatherUtils
@@ -32,7 +33,20 @@ void writeSlice(const NumericArraySlice<T> & slice, NumericArraySink<U> & sink)
     sink.elements.resize(sink.current_offset + slice.size);
     for (size_t i = 0; i < slice.size; ++i)
     {
-        sink.elements[sink.current_offset] = static_cast<U>(slice.data[i]);
+        if constexpr (is_big_int_v<U> && std::is_same_v<T, UInt8>)
+            sink.elements[sink.current_offset] = static_cast<U>(static_cast<UInt16>(slice.data[i]));
+        else if constexpr (is_big_int_v<U> && std::is_same_v<T, Decimal32>)
+            sink.elements[sink.current_offset] = static_cast<U>(static_cast<Int32>(slice.data[i]));
+        else if constexpr (is_big_int_v<U> && std::is_same_v<T, Decimal64>)
+            sink.elements[sink.current_offset] = static_cast<U>(static_cast<Int64>(slice.data[i]));
+        else if constexpr (is_big_int_v<U> && std::is_same_v<T, Decimal128>)
+            throw Exception("Function writeSlice are not implemented for big ints and Decimal128.",
+                            ErrorCodes::NOT_IMPLEMENTED);
+        else if constexpr (IsDecimalNumber<U> && is_big_int_v<T>)
+            throw Exception("Function writeSlice are not implemented for big ints and Decimals.",
+                            ErrorCodes::NOT_IMPLEMENTED);
+        else
+            sink.elements[sink.current_offset] = static_cast<U>(slice.data[i]);
         ++sink.current_offset;
     }
 }

@@ -135,7 +135,12 @@ public:
 
     T operator() (const UInt64 & x) const { return x; }
     T operator() (const Int64 & x) const { return x; }
-    T operator() (const Float64 & x) const { return x; }
+    T operator() (const Float64 & x) const {
+        if constexpr (is_big_int_v<T>)
+            return static_cast<Int64>(x);
+        else
+            return x; 
+    }
 
     T operator() (const UInt128 &) const
     {

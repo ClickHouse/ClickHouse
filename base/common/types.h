@@ -37,8 +37,8 @@ struct is_signed
     static constexpr bool value = std::is_signed_v<T>;
 };
 
-template <> struct is_signed<bUInt128> { static constexpr bool value = true; };
-template <> struct is_signed<bUInt256> { static constexpr bool value = true; };
+template <> struct is_signed<bInt128> { static constexpr bool value = true; };
+template <> struct is_signed<bInt256> { static constexpr bool value = true; };
 
 template <typename T>
 inline constexpr bool is_signed_v = is_signed<T>::value;
