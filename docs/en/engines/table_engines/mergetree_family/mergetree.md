@@ -66,7 +66,7 @@ For a description of parameters, see the [CREATE query description](../../../sql
 
     A tuple of columns or arbitrary expressions. Example: `ORDER BY (CounterID, EventDate)`.
 
--   `PRIMARY KEY` — The primary key if it [differs from the sorting key](mergetree.md).
+-   `PRIMARY KEY` — The primary key if it [differs from the sorting key](#choosing-a-primary-key-that-differs-from-the-sorting-key).
 
     By default the primary key is the same as the sorting key (which is specified by the `ORDER BY` clause). Thus in most cases it is unnecessary to specify a separate `PRIMARY KEY` clause.
 
