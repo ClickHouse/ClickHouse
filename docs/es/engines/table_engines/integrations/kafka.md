@@ -136,7 +136,7 @@ Para detener la recepción de datos de tema o cambiar la lógica de conversión,
 
 ``` sql
   DETACH TABLE consumer;
-  ATTACH MATERIALIZED VIEW consumer;
+  ATTACH TABLE consumer;
 ```
 
 Si desea cambiar la tabla de destino utilizando `ALTER`, recomendamos deshabilitar la vista de material para evitar discrepancias entre la tabla de destino y los datos de la vista.

@@ -195,7 +195,7 @@ struct Dictionary
                 const auto size = string.size();
                 if (size != 0)
                 {
-                    auto string_ptr = string_arena->alloc(size + 1);
+                    auto * string_ptr = string_arena->alloc(size + 1);
                     std::copy(string.data(), string.data() + size + 1, string_ptr);
                     string_ref = StringRef{string_ptr, size};
                 }
@@ -260,7 +260,7 @@ int main(int argc, char ** argv)
 
         for (const auto & s : data)
         {
-            auto ptr = arena.alloc(s.size() + 1);
+            auto * ptr = arena.alloc(s.size() + 1);
             memcpy(ptr, s.data(), s.size() + 1);
             refs.emplace_back(ptr, s.size() + 1);
         }
@@ -286,7 +286,7 @@ int main(int argc, char ** argv)
 
             arena.free(const_cast<char *>(refs[index_to].data), refs[index_to].size);
             const auto & s = data[index_from];
-            auto ptr = arena.alloc(s.size() + 1);
+            auto * ptr = arena.alloc(s.size() + 1);
             memcpy(ptr, s.data(), s.size() + 1);
             bytes += s.size() + 1;
 

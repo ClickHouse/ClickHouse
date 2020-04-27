@@ -95,3 +95,9 @@
 /// Actually, there may be multiple acquisitions of different locks for a given table within one query.
 /// Check with IStorage class for the list of possible locks
 #define DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC 120
+
+/// Default limit on recursion depth of recursive descend parser.
+#define DBMS_DEFAULT_MAX_PARSER_DEPTH 1000
+
+/// Max depth of hierarchical dictionary
+#define DBMS_HIERARCHICAL_DICTIONARY_MAX_DEPTH 1000

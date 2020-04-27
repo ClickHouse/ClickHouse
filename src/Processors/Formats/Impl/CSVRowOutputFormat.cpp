@@ -11,7 +11,7 @@ namespace DB
 CSVRowOutputFormat::CSVRowOutputFormat(WriteBuffer & out_, const Block & header_, bool with_names_, FormatFactory::WriteCallback callback, const FormatSettings & format_settings_)
     : IRowOutputFormat(header_, out_, callback), with_names(with_names_), format_settings(format_settings_)
 {
-    auto & sample = getPort(PortKind::Main).getHeader();
+    const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
     data_types.resize(columns);
     for (size_t i = 0; i < columns; ++i)
@@ -27,7 +27,7 @@ void CSVRowOutputFormat::consume(DB::Chunk chunk)
 
 void CSVRowOutputFormat::writePrefix()
 {
-    auto & sample = getPort(PortKind::Main).getHeader();
+    const auto & sample = getPort(PortKind::Main).getHeader();
     size_t columns = sample.columns();
 
     if (with_names)

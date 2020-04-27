@@ -58,8 +58,9 @@ timeout $TIMEOUT bash -c thread4 2> /dev/null &
 
 wait
 
-echo "DROP TABLE $CLICKHOUSE_DATABASE.src" | ${CLICKHOUSE_CLIENT}
-echo "DROP TABLE $CLICKHOUSE_DATABASE.dst" | ${CLICKHOUSE_CLIENT}
+echo "DROP TABLE $CLICKHOUSE_DATABASE.src NO DELAY" | ${CLICKHOUSE_CLIENT}
+echo "DROP TABLE $CLICKHOUSE_DATABASE.dst NO DELAY" | ${CLICKHOUSE_CLIENT}
+sleep 5
 
 # Check for deadlocks
 echo "SELECT * FROM system.processes WHERE query_id LIKE 'query%'" | ${CLICKHOUSE_CLIENT}

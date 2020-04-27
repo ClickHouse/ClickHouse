@@ -10,7 +10,7 @@ namespace DB
 JSONRowOutputFormat::JSONRowOutputFormat(WriteBuffer & out_, const Block & header, FormatFactory::WriteCallback callback, const FormatSettings & settings_)
     : IRowOutputFormat(header, out_, callback), settings(settings_)
 {
-    auto & sample = getPort(PortKind::Main).getHeader();
+    const auto & sample = getPort(PortKind::Main).getHeader();
     NamesAndTypesList columns(sample.getNamesAndTypesList());
     fields.assign(columns.begin(), columns.end());
 

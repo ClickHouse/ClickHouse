@@ -148,7 +148,7 @@ Chunk MergeTreeBaseSelectProcessor::readFromPartImpl()
     if (read_result.num_rows == 0)
         read_result.columns.clear();
 
-    auto & sample_block = task->range_reader.getSampleBlock();
+    const auto & sample_block = task->range_reader.getSampleBlock();
     if (read_result.num_rows != 0 && sample_block.columns() != read_result.columns.size())
         throw Exception("Inconsistent number of columns got from MergeTreeRangeReader. "
                         "Have " + toString(sample_block.columns()) + " in sample block "

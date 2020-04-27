@@ -61,6 +61,11 @@ public:
         move_fault_probability = move_fault_probability_;
     }
 
+    void setExperimentalUseSampleOffset(bool value)
+    {
+        experimental_use_sample_offset = value;
+    }
+
 protected:
 
     String getWorkersPath() const
@@ -210,6 +215,8 @@ private:
     bool is_safe_mode = false;
     double copy_fault_probability = 0.0;
     double move_fault_probability = 0.0;
+
+    bool experimental_use_sample_offset{false};
 
     Context & context;
     Poco::Logger * log;

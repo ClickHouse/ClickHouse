@@ -1,5 +1,8 @@
 #include <Storages/IStorage.h>
 
+#include <sparsehash/dense_hash_map>
+#include <sparsehash/dense_hash_set>
+
 #include <Storages/AlterCommands.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -8,9 +11,6 @@
 #include <Common/quoteString.h>
 
 #include <Processors/Executors/TreeExecutorBlockInputStream.h>
-
-#include <sparsehash/dense_hash_map>
-#include <sparsehash/dense_hash_set>
 
 
 namespace DB
@@ -31,18 +31,13 @@ namespace ErrorCodes
     extern const int DEADLOCK_AVOIDED;
 }
 
-IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), virtuals(std::move(virtuals_))
+IStorage::IStorage(StorageID storage_id_, ColumnsDescription virtuals_) : storage_id(std::move(storage_id_)), columns(std::move(virtuals_))
 {
 }
 
 const ColumnsDescription & IStorage::getColumns() const
 {
     return columns;
-}
-
-const ColumnsDescription & IStorage::getVirtuals() const
-{
-    return virtuals;
 }
 
 const IndicesDescription & IStorage::getIndices() const
@@ -126,8 +121,13 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
 
 namespace
 {
-    using NamesAndTypesMap = ::google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
-    using UniqueStrings = ::google::dense_hash_set<StringRef, StringRefHash>;
+#if !defined(ARCADIA_BUILD)
+    using NamesAndTypesMap = google::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = google::dense_hash_set<StringRef, StringRefHash>;
+#else
+    using NamesAndTypesMap = google::sparsehash::dense_hash_map<StringRef, const IDataType *, StringRefHash>;
+    using UniqueStrings = google::sparsehash::dense_hash_set<StringRef, StringRefHash>;
+#endif
 
     String listOfColumns(const NamesAndTypesList & available_columns)
     {
@@ -291,9 +291,11 @@ void IStorage::setColumns(ColumnsDescription columns_)
 {
     if (columns_.getOrdinary().empty())
         throw Exception("Empty list of columns passed", ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED);
+    ColumnsDescription old_virtuals(columns.getVirtuals(), true);
+
     columns = std::move(columns_);
 
-    for (const auto & column : virtuals)
+    for (const auto & column : old_virtuals)
     {
         if (!columns.has(column.name))
             columns.add(column);
@@ -316,7 +318,7 @@ bool IStorage::isVirtualColumn(const String & column_name) const
 }
 
 RWLockImpl::LockHolder IStorage::tryLockTimed(
-        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout)
+        const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const SettingSeconds & acquire_timeout) const
 {
     auto lock_holder = rwlock->getLock(type, query_id, std::chrono::milliseconds(acquire_timeout.totalMilliseconds()));
     if (!lock_holder)
@@ -391,7 +393,7 @@ void IStorage::alter(
     auto table_id = getStorageID();
     StorageInMemoryMetadata metadata = getInMemoryMetadata();
     params.apply(metadata);
-    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id.table_name, metadata);
+    DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(context, table_id, metadata);
     setColumns(std::move(metadata.columns));
 }
 
@@ -429,15 +431,14 @@ BlockInputStreams IStorage::readStreams(
 
 StorageID IStorage::getStorageID() const
 {
-    std::lock_guard<std::mutex> lock(id_mutex);
+    std::lock_guard lock(id_mutex);
     return storage_id;
 }
 
-void IStorage::renameInMemory(const String & new_database_name, const String & new_table_name)
+void IStorage::renameInMemory(const StorageID & new_table_id)
 {
-    std::lock_guard<std::mutex> lock(id_mutex);
-    storage_id.database_name = new_database_name;
-    storage_id.table_name = new_table_name;
+    std::lock_guard lock(id_mutex);
+    storage_id = new_table_id;
 }
 
 }

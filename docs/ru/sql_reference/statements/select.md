@@ -1,3 +1,8 @@
+---
+toc_priority: 33
+toc_title: SELECT
+---
+
 # Синтаксис запросов SELECT {#sintaksis-zaprosov-select}
 
 `SELECT` осуществляет выборку данных.

@@ -84,9 +84,10 @@ option (ENABLE_FUZZING "Enables fuzzing instrumentation" OFF)
 if (ENABLE_FUZZING)
     message (STATUS "Fuzzing instrumentation enabled")
     set (WITH_COVERAGE ON)
-    set (SANITIZE "libfuzzer")
+    set (FUZZER "libfuzzer")
 endif()
 
+include (cmake/fuzzer.cmake)
 include (cmake/sanitize.cmake)
 
 if (CMAKE_GENERATOR STREQUAL "Ninja" AND NOT DISABLE_COLORED_BUILD)
@@ -213,10 +214,14 @@ if (COMPILER_CLANG)
     # TODO investigate that
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fno-omit-frame-pointer")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-omit-frame-pointer")
+
     if (OS_DARWIN)
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++ -Wl,-U,_inside_main")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-U,_inside_main")
     endif()
+
+    # Display absolute paths in error messages. Otherwise KDevelop fails to navigate to correct file and opens a new file instead.
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -fdiagnostics-absolute-paths")
 endif ()
 
 option (ENABLE_LIBRARIES "Enable all libraries (Global default switch)" ON)
