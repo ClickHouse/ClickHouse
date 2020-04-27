@@ -279,6 +279,10 @@ OutputFormatPtr FormatFactory::getOutputFormat(
       */
     auto format = output_getter(buf, sample, std::move(callback), format_settings);
 
+    /// Enable auto-flush for streaming mode. Currently it is needed by INSERT WATCH query.
+    if (format_settings.enable_streaming)
+        format->setAutoFlush();
+
     /// It's a kludge. Because I cannot remove context from MySQL format.
     if (auto * mysql = typeid_cast<MySQLOutputFormat *>(format.get()))
         mysql->setContext(context);
