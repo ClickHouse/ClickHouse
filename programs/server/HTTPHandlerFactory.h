@@ -13,7 +13,7 @@ namespace DB
 {
 
 /// Handle request using child handlers
-class HTTPRequestHandlerFactoryMain : public Poco::Net::HTTPRequestHandlerFactory
+class HTTPRequestHandlerFactoryMain : public Poco::Net::HTTPRequestHandlerFactory, boost::noncopyable
 {
 private:
     using TThis = HTTPRequestHandlerFactoryMain;
@@ -34,14 +34,14 @@ public:
 };
 
 template <typename TEndpoint>
-class RoutingRuleHTTPHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
+class HandlingRuleHTTPHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory
 {
 public:
-    using TThis = RoutingRuleHTTPHandlerFactory<TEndpoint>;
+    using TThis = HandlingRuleHTTPHandlerFactory<TEndpoint>;
     using Filter = std::function<bool(const Poco::Net::HTTPServerRequest &)>;
 
     template <typename... TArgs>
-    RoutingRuleHTTPHandlerFactory(TArgs &&... args)
+    HandlingRuleHTTPHandlerFactory(TArgs &&... args)
     {
         creator = [args = std::tuple<TArgs...>(std::forward<TArgs>(args) ...)]()
         {
@@ -107,7 +107,7 @@ Poco::Net::HTTPRequestHandlerFactory * createStaticHandlerFactory(IServer & serv
 
 Poco::Net::HTTPRequestHandlerFactory * createDynamicHandlerFactory(IServer & server, const std::string & config_prefix);
 
-Poco::Net::HTTPRequestHandlerFactory * createPredefineHandlerFactory(IServer & server, const std::string & config_prefix);
+Poco::Net::HTTPRequestHandlerFactory * createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix);
 
 Poco::Net::HTTPRequestHandlerFactory * createHandlerFactory(IServer & server, AsynchronousMetrics & async_metrics, const std::string & name);
 

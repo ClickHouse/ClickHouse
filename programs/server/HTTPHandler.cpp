@@ -755,15 +755,15 @@ std::string DynamicQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request
     return full_query;
 }
 
-PredefineQueryHandler::PredefineQueryHandler(
-    IServer & server, const NameSet & receive_params_, const std::string & predefine_query_
+PredefinedQueryHandler::PredefinedQueryHandler(
+    IServer & server, const NameSet & receive_params_, const std::string & predefined_query_
     , const std::optional<String> & url_regex_, const std::unordered_map<String, String> & header_name_with_regex_)
-    : HTTPHandler(server, "PredefineQueryHandler"), receive_params(receive_params_), predefine_query(predefine_query_)
+    : HTTPHandler(server, "PredefinedQueryHandler"), receive_params(receive_params_), predefined_query(predefined_query_)
     , url_regex(url_regex_), header_name_with_capture_regex(header_name_with_regex_)
 {
 }
 
-bool PredefineQueryHandler::customizeQueryParam(Context & context, const std::string & key, const std::string & value)
+bool PredefinedQueryHandler::customizeQueryParam(Context & context, const std::string & key, const std::string & value)
 {
     if (receive_params.count(key))
     {
@@ -774,7 +774,7 @@ bool PredefineQueryHandler::customizeQueryParam(Context & context, const std::st
     return false;
 }
 
-void PredefineQueryHandler::customizeContext(Poco::Net::HTTPServerRequest & request, DB::Context & context)
+void PredefinedQueryHandler::customizeContext(Poco::Net::HTTPServerRequest & request, DB::Context & context)
 {
     /// If in the configuration file, the handler's header is regex and contains named capture group
     /// We will extract regex named capture groups as query parameters
@@ -784,7 +784,7 @@ void PredefineQueryHandler::customizeContext(Poco::Net::HTTPServerRequest & requ
         auto compiled_regex = std::make_shared<re2_st::RE2>(regex);
 
         if (!compiled_regex->ok())
-            throw Exception("cannot compile re2: " + regex + " for routing_rule, error: " + compiled_regex->error() +
+            throw Exception("cannot compile re2: " + regex + " for http handling rule, error: " + compiled_regex->error() +
                 ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
 
         int num_captures = compiled_regex->NumberOfCapturingGroups() + 1;
@@ -816,7 +816,7 @@ void PredefineQueryHandler::customizeContext(Poco::Net::HTTPServerRequest & requ
     }
 }
 
-std::string PredefineQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
+std::string PredefinedQueryHandler::getQuery(Poco::Net::HTTPServerRequest & request, HTMLForm & params, Context & context)
 {
     if (unlikely(startsWith(request.getContentType(), "multipart/form-data")))
     {
@@ -825,13 +825,13 @@ std::string PredefineQueryHandler::getQuery(Poco::Net::HTTPServerRequest & reque
         params.load(request, request.stream(), handler);
     }
 
-    return predefine_query;
+    return predefined_query;
 }
 
 Poco::Net::HTTPRequestHandlerFactory * createDynamicHandlerFactory(IServer & server, const std::string & config_prefix)
 {
     std::string query_param_name = server.config().getString(config_prefix + ".handler.query_param_name", "query");
-    return addFiltersFromConfig(new RoutingRuleHTTPHandlerFactory<DynamicQueryHandler>(server, std::move(query_param_name)), server.config(), config_prefix);
+    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<DynamicQueryHandler>(server, std::move(query_param_name)), server.config(), config_prefix);
 }
 
 static inline bool capturingNamedQueryParam(NameSet receive_params, const std::string & expression)
@@ -839,7 +839,7 @@ static inline bool capturingNamedQueryParam(NameSet receive_params, const std::s
     auto compiled_regex = std::make_shared<re2_st::RE2>(expression);
 
     if (!compiled_regex->ok())
-        throw Exception("Cannot compile re2: " + expression + " for routing_rule, error: " +
+        throw Exception("Cannot compile re2: " + expression + " for http handling rule, error: " +
             compiled_regex->error() + ". Look at https://github.com/google/re2/wiki/Syntax for reference.", ErrorCodes::CANNOT_COMPILE_REGEXP);
 
     const auto & capturing_names = compiled_regex->NamedCapturingGroups();
@@ -850,15 +850,15 @@ static inline bool capturingNamedQueryParam(NameSet receive_params, const std::s
     });
 }
 
-Poco::Net::HTTPRequestHandlerFactory * createPredefineHandlerFactory(IServer & server, const std::string & config_prefix)
+Poco::Net::HTTPRequestHandlerFactory * createPredefinedHandlerFactory(IServer & server, const std::string & config_prefix)
 {
     Poco::Util::AbstractConfiguration & configuration = server.config();
 
     if (!configuration.has(config_prefix + ".handler.query"))
         throw Exception("There is no path '" + config_prefix + ".handler.query" + "' in configuration file.", ErrorCodes::NO_ELEMENTS_IN_CONFIG);
 
-    std::string predefine_query = configuration.getString(config_prefix + ".handler.query");
-    NameSet analyze_receive_params = analyzeReceiveQueryParams(predefine_query);
+    std::string predefined_query = configuration.getString(config_prefix + ".handler.query");
+    NameSet analyze_receive_params = analyzeReceiveQueryParams(predefined_query);
 
     std::unordered_map<String, String> headers_name_with_regex;
     Poco::Util::AbstractConfiguration::Keys headers_name;
@@ -884,13 +884,13 @@ Poco::Net::HTTPRequestHandlerFactory * createPredefineHandlerFactory(IServer & s
             url_expression = url_expression.substr(6);
 
         if (capturingNamedQueryParam(analyze_receive_params, url_expression))
-            return addFiltersFromConfig(new RoutingRuleHTTPHandlerFactory<PredefineQueryHandler>(
-                server, std::move(analyze_receive_params), std::move(predefine_query), std::optional<String>(url_expression),
+            return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
+                server, std::move(analyze_receive_params), std::move(predefined_query), std::optional<String>(url_expression),
                 std::move(headers_name_with_regex)), configuration, config_prefix);
     }
 
-    return addFiltersFromConfig(new RoutingRuleHTTPHandlerFactory<PredefineQueryHandler>(
-        server, std::move(analyze_receive_params), std::move(predefine_query), std::optional<String>{} ,std::move(headers_name_with_regex)),
+    return addFiltersFromConfig(new HandlingRuleHTTPHandlerFactory<PredefinedQueryHandler>(
+        server, std::move(analyze_receive_params), std::move(predefined_query), std::optional<String>{} ,std::move(headers_name_with_regex)),
         configuration, config_prefix);
 }
 
