@@ -156,13 +156,12 @@ if args.report == 'main':
 
         print(tableStart('Changes in performance'))
         columns = [
-            'Old, s',                                                        # 0
-            'New, s',                                                        # 1
-            'Relative difference (new&nbsp;-&nbsp;old)/old',                 # 2
-            'Randomization distribution quantiles \
-                [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',                         # 3
-            'Test',                                                          # 4
-            'Query',                                                         # 5
+            'Old, s',                                          # 0
+            'New, s',                                          # 1
+            'Relative difference (new&nbsp;-&nbsp;old)/old',   # 2
+            'p&nbsp;<&nbsp;0.001 threshold',                   # 3
+            'Test',                                            # 4
+            'Query',                                           # 5
             ]
 
         print(tableHeader(columns))
@@ -204,7 +203,7 @@ if args.report == 'main':
             'Old, s', #0
             'New, s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
-            'Randomization distribution quantiles [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]', #3
+            'p&nbsp;<&nbsp;0.001 threshold', #3
             'Test', #4
             'Query' #5
         ]
@@ -214,9 +213,7 @@ if args.report == 'main':
 
         attrs = ['' for c in columns]
         for r in unstable_rows:
-            rd = ast.literal_eval(r[3])
-            # Note the zero-based array index, this is rd[4] in SQL.
-            if rd[3] > 0.2:
+            if float(r[3]) > 0.2:
                 very_unstable_queries += 1
                 attrs[3] = 'style="background: #ffb0a0"'
             else:
@@ -358,8 +355,7 @@ elif args.report == 'all-queries':
             'New, s', #1
             'Relative difference (new&nbsp;-&nbsp;old)/old', #2
             'Times speedup/slowdown',                 #3
-            'Randomization distribution quantiles \
-                [5%,&nbsp;50%,&nbsp;95%,&nbsp;99%]',  #4
+            'p&nbsp;<&nbsp;0.001 threshold',          #4
             'Test',                                   #5
             'Query',                                  #6
             ]
@@ -369,9 +365,7 @@ elif args.report == 'all-queries':
 
         attrs = ['' for c in columns]
         for r in rows:
-            rd = ast.literal_eval(r[4])
-            # Note the zero-based array index, this is rd[4] in SQL.
-            threshold = rd[3]
+            threshold = float(r[3])
             if threshold > 0.2:
                 attrs[4] = 'style="background: #ffb0a0"'
             else:

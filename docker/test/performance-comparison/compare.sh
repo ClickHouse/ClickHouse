@@ -229,12 +229,38 @@ function get_profiles
 # Build and analyze randomization distribution for all queries.
 function analyze_queries
 {
-    find . -maxdepth 1 -name "*-queries.tsv" -print0 | \
-        xargs -0 -n1 -I% basename % -queries.tsv | \
-        parallel --verbose clickhouse-local --file "{}-queries.tsv" \
-            --structure "\"query text, run int, version UInt32, time float\"" \
-            --query "\"$(cat "$script_dir/eqmed.sql")\"" \
-            ">" {}-report.tsv
+rm -v analyze-commands.txt analyze-errors.log all-queries.tsv unstable-queries.tsv *-report.tsv ||:
+
+# This is a lateral join in bash... please forgive me.
+# We don't have arrayPermute(), so I have to make random permutations with 
+# `order by rand`, and it becomes really slow if I do it for more than one
+# query. We also don't have lateral joins. So I just put all runs of each
+# query into a separate file, and then compute randomization distribution
+# for each file. I do this in parallel using GNU parallel.
+IFS=$'\n'
+for test_file in $(find . -maxdepth 1 -name "*-queries.tsv" -print)
+do
+    test_name=$(basename "$test_file" "-queries.tsv")
+    query_index=1
+    for query in $(cut -d'	' -f1 "$test_file" | sort | uniq)
+    do
+        query_prefix="$test_name.q$query_index"
+        query_index=$(($query_index + 1))
+        grep -F "$query	" "$test_file" > "$query_prefix.tmp"
+        printf "%s\0\n" \
+            "clickhouse-local \
+                --file "$query_prefix.tmp" \
+                --structure 'query text, run int, version UInt32, time float' \
+                --query \"$(cat "$script_dir/eqmed.sql")\" \
+                >> "$test_name-report.tsv"" \
+                2>> analyze-errors.log \
+            >> analyze-commands.txt
+    done
+done
+wait
+unset IFS
+
+parallel --verbose --null < analyze-commands.txt
 }
 
 # Analyze results
@@ -253,7 +279,8 @@ done
 
 rm ./*.{rep,svg} test-times.tsv test-dump.tsv unstable.tsv unstable-query-ids.tsv unstable-query-metrics.tsv changed-perf.tsv unstable-tests.tsv unstable-queries.tsv bad-tests.tsv slow-on-client.tsv all-queries.tsv ||:
 
-cat profile-errors.log >> report-errors.rep
+cat analyze-errors.log >> report-errors.rep ||:
+cat profile-errors.log >> report-errors.rep ||:
 
 clickhouse-local --query "
 create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
@@ -264,28 +291,24 @@ create table queries engine File(TSVWithNamesAndTypes, 'queries.rep')
         -- but the right way to do this is not yet clear.
         (left + right) / 2 < 0.02 as short,
 
-        -- Difference > 5% and > rd(99%) -- changed. We can't filter out flaky
-        -- queries by rd(5%), because it can be zero when the difference is smaller
-        -- than a typical distribution width. The difference is still real though.
-        not short and abs(diff) > 0.05 and abs(diff) > rd[4] as changed,
+        not short and abs(diff) > 0.05 and abs(diff) > threshold as changed,
         
-        -- Not changed but rd(99%) > 5% -- unstable.
-        not short and not changed and rd[4] > 0.05 as unstable,
+        not short and not changed and threshold > 0.05 as unstable,
         
-        left, right, diff, rd,
+        left, right, diff, threshold,
         replaceAll(_file, '-report.tsv', '') test,
 
         -- Truncate long queries.
         if(length(query) < 300, query, substr(query, 1, 298) || '...') query
-    from file('*-report.tsv', TSV, 'left float, right float, diff float, rd Array(float), query text');
+    from file('*-report.tsv', TSV, 'left float, right float, diff float, threshold float, query text');
 
 create table changed_perf_tsv engine File(TSV, 'changed-perf.tsv') as
-    select left, right, diff, rd, test, query from queries where changed
+    select left, right, diff, threshold, test, query from queries where changed
     order by abs(diff) desc;
 
 create table unstable_queries_tsv engine File(TSV, 'unstable-queries.tsv') as
-    select left, right, diff, rd, test, query from queries where unstable
-    order by rd[4] desc;
+    select left, right, diff, threshold, test, query from queries where unstable
+    order by threshold desc;
 
 create table unstable_tests_tsv engine File(TSV, 'bad-tests.tsv') as
     select test, sum(unstable) u, sum(changed) c, u + c s from queries
@@ -325,7 +348,7 @@ create table test_times_tsv engine File(TSV, 'test-times.tsv') as
 create table all_tests_tsv engine File(TSV, 'all-queries.tsv') as
     select left, right, diff,
         floor(left > right ? left / right : right / left, 3),
-        rd, test, query
+        threshold, test, query
     from queries order by test, query;
 " 2> >(head -2 >> report-errors.rep) ||:
 
@@ -335,7 +358,7 @@ clickhouse-local --query "
 create view queries as
     select * from file('queries.rep', TSVWithNamesAndTypes,
         'short int, changed int, unstable int, left float, right float,
-            diff float, rd Array(float), test text, query text');
+            diff float, threshold float, test text, query text');
 
 create view query_log as select *
     from file('$version-query-log.tsv', TSVWithNamesAndTypes,
@@ -407,7 +430,7 @@ create table metric_devation engine File(TSVWithNamesAndTypes,
     join queries using query
     group by query, metric
     having d > 0.5
-    order by any(rd[3]) desc, query desc, d desc
+    order by any(threshold) desc, query desc, d desc
     ;
 
 create table stacks engine File(TSV, 'stacks.$version.rep') as
