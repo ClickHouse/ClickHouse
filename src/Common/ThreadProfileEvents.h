@@ -6,9 +6,6 @@
 #include <sys/resource.h>
 #include <pthread.h>
 
-/// TODO: DEBUG
-//#define __linux__
-//#undef __APPLE__
 
 #if defined(__linux__)
 #include <linux/taskstats.h>
