@@ -13,6 +13,8 @@ namespace DB
   */
 struct FormatSettings
 {
+    /// Format will be used for streaming. Not every formats support it
+    /// Option means that each chunk of data need to be formatted independently. Also each chunk will be flushed at the end of processing.
     bool enable_streaming = false;
 
     struct JSON
