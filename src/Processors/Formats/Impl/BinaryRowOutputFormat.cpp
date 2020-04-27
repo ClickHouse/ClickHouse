@@ -16,7 +16,7 @@ BinaryRowOutputFormat::BinaryRowOutputFormat(WriteBuffer & out_, const Block & h
 
 void BinaryRowOutputFormat::writePrefix()
 {
-    auto & header = getPort(PortKind::Main).getHeader();
+    const auto & header = getPort(PortKind::Main).getHeader();
     size_t columns = header.columns();
 
     if (with_names || with_types)

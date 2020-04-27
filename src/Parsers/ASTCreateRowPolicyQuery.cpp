@@ -172,7 +172,7 @@ void ASTCreateRowPolicyQuery::formatImpl(const FormatSettings & settings, Format
 }
 
 
-void ASTCreateRowPolicyQuery::replaceCurrentUserTagWithName(const String & current_user_name)
+void ASTCreateRowPolicyQuery::replaceCurrentUserTagWithName(const String & current_user_name) const
 {
     if (roles)
         roles->replaceCurrentUserTagWithName(current_user_name);

@@ -375,7 +375,7 @@ void StorageTinyLog::addFiles(const String & column_name, const IDataType & type
 }
 
 
-void StorageTinyLog::rename(const String & new_path_to_table_data, const String & new_database_name, const String & new_table_name, TableStructureWriteLockHolder &)
+void StorageTinyLog::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
 
@@ -386,7 +386,7 @@ void StorageTinyLog::rename(const String & new_path_to_table_data, const String 
 
     for (auto & file : files)
         file.second.data_file_path = table_path + fileName(file.second.data_file_path);
-    renameInMemory(new_database_name, new_table_name);
+    renameInMemory(new_table_id);
 }
 
 
@@ -437,12 +437,14 @@ void StorageTinyLog::truncate(const ASTPtr &, const Context &, TableStructureWri
         addFiles(column.name, *column.type);
 }
 
-void StorageTinyLog::drop(TableStructureWriteLockHolder &)
+void StorageTinyLog::drop()
 {
     std::unique_lock<std::shared_mutex> lock(rwlock);
-    disk->removeRecursive(table_path);
+    if (disk->exists(table_path))
+        disk->removeRecursive(table_path);
     files.clear();
 }
+
 
 void registerStorageTinyLog(StorageFactory & factory)
 {

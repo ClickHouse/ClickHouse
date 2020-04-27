@@ -136,7 +136,7 @@ Kafka(kafka_broker_list, kafka_topic_list, kafka_group_name, kafka_format
 
 ``` sql
   DETACH TABLE consumer;
-  ATTACH MATERIALIZED VIEW consumer;
+  ATTACH TABLE consumer;
 ```
 
 ターゲットテーブルを次のように変更する場合 `ALTER` お勧めいたしま字の材質ビューを避ける異なるターゲットテーブルのデータからの眺め。

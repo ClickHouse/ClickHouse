@@ -68,7 +68,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
     列または任意の式のタプル。 例えば: `ORDER BY (CounterID, EventDate)`.
 
--   `PRIMARY KEY` — The primary key if it [ソートキーとは異なります](mergetree.md).
+-   `PRIMARY KEY` — The primary key if it [ソートキーとは異なります](#choosing-a-primary-key-that-differs-from-the-sorting-key).
 
     デフォルトでは、プライマリキーはソートキー(プライマリキーで指定)と同じです。 `ORDER BY` 句）。 したがって、ほとんどの場合、別の `PRIMARY KEY` 句。
 
@@ -507,14 +507,14 @@ ALTER TABLE example_table
 <storage_configuration>
     <disks>
         <disk_name_1> <!-- disk name -->
-            <path>/mnt/fast_ssd/clickhouse</path>
+            <path>/mnt/fast_ssd/clickhouse/</path>
         </disk_name_1>
         <disk_name_2>
-            <path>/mnt/hdd1/clickhouse</path>
+            <path>/mnt/hdd1/clickhouse/</path>
             <keep_free_space_bytes>10485760</keep_free_space_bytes>
         </disk_name_2>
         <disk_name_3>
-            <path>/mnt/hdd2/clickhouse</path>
+            <path>/mnt/hdd2/clickhouse/</path>
             <keep_free_space_bytes>10485760</keep_free_space_bytes>
         </disk_name_3>
 

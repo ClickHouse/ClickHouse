@@ -39,7 +39,6 @@ public:
 
 protected:
 
-    void consume(Chunk chunk) override;
     bool with_names;
     const FormatSettings format_settings;
     DataTypes data_types;

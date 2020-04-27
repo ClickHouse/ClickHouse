@@ -1,3 +1,8 @@
+---
+toc_priority: 36
+toc_title: ALTER
+---
+
 ## ALTER {#query_language_queries_alter}
 
 Запрос `ALTER` поддерживается только для таблиц типа `*MergeTree`, а также `Merge` и `Distributed`. Запрос имеет несколько вариантов.

@@ -1,3 +1,8 @@
+---
+toc_priority: 35
+toc_title: CREATE
+---
+
 ## CREATE DATABASE {#query-language-create-database}
 
 Создает базу данных.

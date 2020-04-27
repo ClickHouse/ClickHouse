@@ -20,7 +20,6 @@ class MergeTreeDataPartCompact : public IMergeTreeDataPart
 public:
     static constexpr auto DATA_FILE_NAME = "data";
     static constexpr auto DATA_FILE_EXTENSION = ".bin";
-    static constexpr auto TEMP_FILE_SUFFIX = "_temp";
     static constexpr auto DATA_FILE_NAME_WITH_EXTENSION = "data.bin";
 
     MergeTreeDataPartCompact(

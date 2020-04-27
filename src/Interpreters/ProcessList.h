@@ -295,9 +295,6 @@ protected:
     /// Stores info about queries grouped by their priority
     QueryPriorities priorities;
 
-    /// Limit and counter for memory of all simultaneously running queries.
-    MemoryTracker total_memory_tracker{VariableContext::Global};
-
     /// Limit network bandwidth for all users
     ThrottlerPtr total_network_throttler;
 

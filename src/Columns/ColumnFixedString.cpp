@@ -86,7 +86,7 @@ void ColumnFixedString::insertData(const char * pos, size_t length)
 
 StringRef ColumnFixedString::serializeValueIntoArena(size_t index, Arena & arena, char const *& begin) const
 {
-    auto pos = arena.allocContinue(n, begin);
+    auto * pos = arena.allocContinue(n, begin);
     memcpy(pos, &chars[n * index], n);
     return StringRef(pos, n);
 }
