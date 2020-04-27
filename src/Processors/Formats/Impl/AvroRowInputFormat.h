@@ -74,7 +74,7 @@ private:
                     skip_fn(decoder);
                     break;
                 case Record:
-                    for (const auto& action : actions)
+                    for (const auto & action : actions)
                         action.execute(columns, decoder, ext);
                     break;
                 case Union:
