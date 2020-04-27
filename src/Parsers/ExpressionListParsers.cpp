@@ -742,4 +742,13 @@ bool ParserKeyValuePairsList::parseImpl(Pos & pos, ASTPtr & node, Expected & exp
     return parser.parse(pos, node, expected);
 }
 
+
+bool ParserIdentifierList::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    return ParserList(
+        std::make_unique<ParserIdentifier>(),
+        std::make_unique<ParserToken>(TokenType::Comma))
+        .parse(pos, node, expected);
+}
+
 }

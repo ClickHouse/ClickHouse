@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Interpreters/PartLog.h>
 #include <Disks/StoragePolicy.h>
+#include <Interpreters/Aggregator.h>
 
 #include <boost/multi_index_container.hpp>
 #include <boost/multi_index/ordered_index.hpp>
@@ -651,6 +652,14 @@ public:
     {
         ExpressionActionsPtr expression;
         String result_column;
+
+        ExpressionActionsPtr where_expression;
+        String where_filter_column;
+
+        Names group_by_keys;
+        std::vector<std::pair<String, ExpressionActionsPtr>> group_by_aggregations;
+        std::vector<std::pair<String, String>> group_by_aggregations_res_column;
+        AggregateDescriptions aggregate_descriptions;
 
         /// Name and type of a destination are only valid in table-level context.
         PartDestinationType destination_type;

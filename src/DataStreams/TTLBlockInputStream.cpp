@@ -67,6 +67,30 @@ TTLBlockInputStream::TTLBlockInputStream(
             default_expr_list, storage.getColumns().getAllPhysical());
         defaults_expression = ExpressionAnalyzer{default_expr_list, syntax_result, storage.global_context}.getActions(true);
     }
+
+    if (storage.hasRowsTTL() && !storage.rows_ttl_entry.group_by_keys.empty())
+    {
+        ColumnNumbers keys;
+        for (const auto & key : storage.rows_ttl_entry.group_by_keys)
+            keys.push_back(header.getPositionByName(key));
+        agg_key_columns.resize(storage.rows_ttl_entry.group_by_keys.size());
+
+        AggregateDescriptions aggregates = storage.rows_ttl_entry.aggregate_descriptions;
+        for (auto & descr : aggregates)
+            if (descr.arguments.empty())
+                for (const auto & name : descr.argument_names)
+                    descr.arguments.push_back(header.getPositionByName(name));
+        agg_aggregate_columns.resize(storage.rows_ttl_entry.aggregate_descriptions.size());
+
+        const Settings & settings = storage.global_context.getSettingsRef();
+
+        Aggregator::Params params(header, keys, aggregates,
+            false, settings.max_rows_to_group_by, settings.group_by_overflow_mode,
+            SettingUInt64(0), SettingUInt64(0),
+            settings.max_bytes_before_external_group_by, settings.empty_result_for_aggregation_by_empty_set,
+            storage.global_context.getTemporaryVolume(), settings.max_threads, settings.min_free_disk_space_for_temporary_data);
+        aggregator = std::make_unique<Aggregator>(params);
+    }
 }
 
 bool TTLBlockInputStream::isTTLExpired(time_t ttl) const
@@ -77,7 +101,8 @@ bool TTLBlockInputStream::isTTLExpired(time_t ttl) const
 Block TTLBlockInputStream::readImpl()
 {
     /// Skip all data if table ttl is expired for part
-    if (storage.hasRowsTTL() && isTTLExpired(old_ttl_infos.table_ttl.max))
+    if (storage.hasRowsTTL() && !storage.rows_ttl_entry.where_expression &&
+        storage.rows_ttl_entry.group_by_keys.empty() && isTTLExpired(old_ttl_infos.table_ttl.max))
     {
         rows_removed = data_part->rows_count;
         return {};
@@ -85,7 +110,43 @@ Block TTLBlockInputStream::readImpl()
 
     Block block = children.at(0)->read();
     if (!block)
+    {
+        if (aggregator && !agg_result.empty())
+        {
+            MutableColumns result_columns;
+            const auto & column_names = header.getNames();
+            for (const auto & column_name : column_names)
+            {
+                const IColumn * values_column = header.getByName(column_name).column.get();
+                MutableColumnPtr result_column = values_column->cloneEmpty();
+                result_columns.emplace_back(std::move(result_column));
+            }
+
+            auto aggregated_res = aggregator->convertToBlocks(agg_result, true, 1);
+            for (auto & agg_block : aggregated_res)
+            {
+                for (const auto & [name, actions] : storage.rows_ttl_entry.group_by_aggregations)
+                    actions->execute(agg_block);
+                for (const auto & name : storage.rows_ttl_entry.group_by_keys)
+                {
+                    const IColumn * values_column = agg_block.getByName(name).column.get();
+                    auto & result_column = result_columns[header.getPositionByName(name)];
+                    result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+                }
+                for (const auto & [name, res_column] : storage.rows_ttl_entry.group_by_aggregations_res_column)
+                {
+                    const IColumn * values_column = agg_block.getByName(res_column).column.get();
+                    auto & result_column = result_columns[header.getPositionByName(name)];
+                    result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+                }
+            }
+
+            block = header.cloneWithColumns(std::move(result_columns));
+            agg_result.invalidate();
+        }
+
         return block;
+    }
 
     if (storage.hasRowsTTL() && (force || isTTLExpired(old_ttl_infos.table_ttl.min)))
         removeRowsWithExpiredTableTTL(block);
@@ -114,35 +175,171 @@ void TTLBlockInputStream::readSuffixImpl()
 void TTLBlockInputStream::removeRowsWithExpiredTableTTL(Block & block)
 {
     storage.rows_ttl_entry.expression->execute(block);
+    if (storage.rows_ttl_entry.where_expression)
+        storage.rows_ttl_entry.where_expression->execute(block);
 
     const IColumn * ttl_column =
         block.getByName(storage.rows_ttl_entry.result_column).column.get();
 
+    const IColumn * where_filter_column = storage.rows_ttl_entry.where_expression ?
+        block.getByName(storage.rows_ttl_entry.where_filter_column).column.get() : nullptr;
+
     const auto & column_names = header.getNames();
-    MutableColumns result_columns;
-    result_columns.reserve(column_names.size());
 
-    for (auto it = column_names.begin(); it != column_names.end(); ++it)
+    if (!aggregator)
     {
-        const IColumn * values_column = block.getByName(*it).column.get();
-        MutableColumnPtr result_column = values_column->cloneEmpty();
-        result_column->reserve(block.rows());
+        MutableColumns result_columns;
+        result_columns.reserve(column_names.size());
+        for (auto it = column_names.begin(); it != column_names.end(); ++it)
+        {
+            const IColumn * values_column = block.getByName(*it).column.get();
+            MutableColumnPtr result_column = values_column->cloneEmpty();
+            result_column->reserve(block.rows());
 
+            for (size_t i = 0; i < block.rows(); ++i)
+            {
+                UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
+                bool where_filter_passed = !where_filter_column || where_filter_column->getBool(i);
+                if (!isTTLExpired(cur_ttl) || !where_filter_passed)
+                {
+                    new_ttl_infos.table_ttl.update(cur_ttl);
+                    result_column->insertFrom(*values_column, i);
+                }
+                else if (it == column_names.begin())
+                    ++rows_removed;
+            }
+            result_columns.emplace_back(std::move(result_column));
+        }
+        block = header.cloneWithColumns(std::move(result_columns));
+    }
+    else
+    {
+        MutableColumns result_columns;
+        MutableColumns aggregate_columns;
+
+        for (const auto & column_name : column_names)
+        {
+            const IColumn * values_column = block.getByName(column_name).column.get();
+            MutableColumnPtr result_column = values_column->cloneEmpty();
+            result_column->reserve(block.rows());
+            result_columns.emplace_back(std::move(result_column));
+
+            MutableColumnPtr aggregate_column = values_column->cloneEmpty();
+            aggregate_column->reserve(block.rows());
+            aggregate_columns.emplace_back(std::move(aggregate_column));
+        }
+
+        size_t rows_aggregated = 0;
+        size_t current_key_start = 0;
+        size_t rows_with_current_key = 0; 
         for (size_t i = 0; i < block.rows(); ++i)
         {
             UInt32 cur_ttl = getTimestampByIndex(ttl_column, i);
-            if (!isTTLExpired(cur_ttl))
+            bool where_filter_passed = !where_filter_column || where_filter_column->getBool(i);
+            bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
+
+            bool same_as_current = true;
+            if (current_key_value.empty())
+            {
+                same_as_current = false;
+                current_key_value.resize(storage.rows_ttl_entry.group_by_keys.size());
+            }
+            for (size_t j = 0; j < storage.rows_ttl_entry.group_by_keys.size(); ++j)
+            {
+                const String & key_column = storage.rows_ttl_entry.group_by_keys[j];
+                const IColumn * values_column = block.getByName(key_column).column.get();
+                if (!same_as_current)
+                    values_column->get(i, current_key_value[j]);
+                else
+                {
+                    Field value;
+                    values_column->get(i, value);
+                    if (value != current_key_value[j])
+                    {
+                        current_key_value[j] = value;
+                        same_as_current = false;
+                    }
+                }
+            }
+            if (!same_as_current)
+            {
+                if (rows_with_current_key)
+                {
+                    Columns aggregate_chunk;
+                    aggregate_chunk.reserve(aggregate_columns.size());
+                    for (const auto & name : column_names)
+                    {
+                        const auto & column = aggregate_columns[header.getPositionByName(name)];
+                        ColumnPtr chunk_column = column->cut(current_key_start, rows_with_current_key);
+                        aggregate_chunk.emplace_back(std::move(chunk_column));
+                    }
+                    aggregator->executeOnBlock(aggregate_chunk, rows_with_current_key, agg_result, agg_key_columns,
+                                            agg_aggregate_columns, agg_no_more_keys);
+                }
+                if (!agg_result.empty())
+                {
+                    auto aggregated_res = aggregator->convertToBlocks(agg_result, true, 1);
+                    for (auto & agg_block : aggregated_res)
+                    {
+                        for (const auto & [name, actions] : storage.rows_ttl_entry.group_by_aggregations)
+                            actions->execute(agg_block);
+                        for (const auto & name : storage.rows_ttl_entry.group_by_keys)
+                        {
+                            const IColumn * values_column = agg_block.getByName(name).column.get();
+                            auto & result_column = result_columns[header.getPositionByName(name)];
+                            result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+                        }
+                        for (const auto & [name, res_column] : storage.rows_ttl_entry.group_by_aggregations_res_column)
+                        {
+                            const IColumn * values_column = agg_block.getByName(res_column).column.get();
+                            auto & result_column = result_columns[header.getPositionByName(name)];
+                            result_column->insertRangeFrom(*values_column, 0, agg_block.rows());
+                        }
+                    }
+                }
+                agg_result.invalidate();
+                current_key_start = rows_aggregated;
+                rows_with_current_key = 0;
+            }
+            if (ttl_expired)
+            {
+                ++rows_with_current_key;
+                ++rows_aggregated;
+                for (const auto & name : column_names)
+                {
+                    const IColumn * values_column = block.getByName(name).column.get();
+                    auto & column = aggregate_columns[header.getPositionByName(name)];
+                    column->insertFrom(*values_column, i);
+                }
+            }
+            else
             {
                 new_ttl_infos.table_ttl.update(cur_ttl);
-                result_column->insertFrom(*values_column, i);
+                for (const auto & name : column_names)
+                {
+                    const IColumn * values_column = block.getByName(name).column.get();
+                    auto & column = result_columns[header.getPositionByName(name)];
+                    column->insertFrom(*values_column, i);
+                }
             }
-            else if (it == column_names.begin())
-                ++rows_removed;
         }
-        result_columns.emplace_back(std::move(result_column));
-    }
 
-    block = header.cloneWithColumns(std::move(result_columns));
+        if (rows_with_current_key)
+        {
+            Columns aggregate_chunk;
+            aggregate_chunk.reserve(aggregate_columns.size());
+            for (const auto & name : column_names)
+            {
+                const auto & column = aggregate_columns[header.getPositionByName(name)];
+                ColumnPtr chunk_column = column->cut(current_key_start, rows_with_current_key);
+                aggregate_chunk.emplace_back(std::move(chunk_column));
+            }
+            aggregator->executeOnBlock(aggregate_chunk, rows_with_current_key, agg_result, agg_key_columns,
+                                       agg_aggregate_columns, agg_no_more_keys);
+        }
+
+        block = header.cloneWithColumns(std::move(result_columns));
+    }
 }
 
 void TTLBlockInputStream::removeValuesWithExpiredColumnTTL(Block & block)

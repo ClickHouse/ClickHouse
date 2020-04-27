@@ -192,10 +192,10 @@ void ExpressionAnalyzer::analyzeAggregation()
 
     if (has_aggregation)
     {
-        getSelectQuery(); /// assertSelect()
+        // getSelectQuery(); /// assertSelect()
 
         /// Find out aggregation keys.
-        if (select_query->groupBy())
+        if (select_query && select_query->groupBy())
         {
             NameSet unique_keys;
             ASTs & group_asts = select_query->groupBy()->children;
@@ -926,7 +926,10 @@ void ExpressionAnalyzer::appendExpression(ExpressionActionsChain & chain, const 
 
 ExpressionActionsPtr ExpressionAnalyzer::getActions(bool add_aliases, bool project_result)
 {
-    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(sourceColumns(), context);
+    NamesAndTypesList columns(sourceColumns());
+    for (const auto & col : aggregated_columns)
+        columns.push_back(col);
+    ExpressionActionsPtr actions = std::make_shared<ExpressionActions>(columns, context);
     NamesWithAliases result_columns;
     Names result_names;
 
