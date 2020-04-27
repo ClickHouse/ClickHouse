@@ -22,12 +22,6 @@ JSONEachRowRowOutputFormat::JSONEachRowRowOutputFormat(WriteBuffer & out_, const
     }
 }
 
-void JSONEachRowRowOutputFormat::consume(DB::Chunk chunk)
-{
-    IRowOutputFormat::consume(std::move(chunk));
-    if (settings.enable_streaming)
-        flush();
-}
 
 void JSONEachRowRowOutputFormat::writeField(const IColumn & column, const IDataType & type, size_t row_num)
 {
