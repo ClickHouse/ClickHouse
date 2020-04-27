@@ -630,14 +630,14 @@ void registerStorageKafka(StorageFactory & factory)
 
 const NamesAndTypesList & StorageKafka::getVirtuals() const
 {
-    static const NamesAndTypesList VIRTUALS = {
+    static const NamesAndTypesList virtuals = {
             {"_topic", std::make_shared<DataTypeString>()},
             {"_key", std::make_shared<DataTypeString>()},
             {"_offset", std::make_shared<DataTypeUInt64>()},
             {"_partition", std::make_shared<DataTypeUInt64>()},
             {"_timestamp", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>())}
     };
-    return VIRTUALS;
+    return virtuals;
 }
 
 }

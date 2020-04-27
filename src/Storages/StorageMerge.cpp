@@ -55,8 +55,12 @@ StorageMerge::StorageMerge(
     , source_database(source_database_)
     , table_name_regexp(table_name_regexp_)
     , global_context(context_)
+    , virtuals({{"_table", std::make_shared<DataTypeString>()}})
 {
     setColumns(columns_);
+    auto first_table = getFirstTable([](auto &&) { return true; });
+    if (first_table)
+        virtuals.insert(virtuals.end(), first_table->getVirtuals().begin(), first_table->getVirtuals().end());
 }
 
 template <typename F>
@@ -510,10 +514,6 @@ void registerStorageMerge(StorageFactory & factory)
 }
 const NamesAndTypesList & StorageMerge::getVirtuals() const
 {
-    static const NamesAndTypesList & VIRTUALS =
-    {
-        {"_table", std::make_shared<DataTypeString>()}
-    };
-    return VIRTUALS;
+    return virtuals;
 }
 }

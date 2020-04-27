@@ -60,6 +60,8 @@ Block IStorage::getSampleBlockWithVirtuals() const
 {
     auto res = getSampleBlock();
 
+    /// Virtual columns must be appended after ordinary, because user can
+    /// override them.
     for (const auto & column : getVirtuals())
         res.insert({column.type->createColumn(), column.type, column.name});
 
@@ -81,12 +83,15 @@ Block IStorage::getSampleBlockForColumns(const Names & column_names) const
     Block res;
 
     std::unordered_map<String, DataTypePtr> columns_map;
-    for (const auto & column : getVirtuals())
-        columns_map.emplace(column.name, column.type);
 
     NamesAndTypesList all_columns = getColumns().getAll();
     for (const auto & elem : all_columns)
         columns_map.emplace(elem.name, elem.type);
+
+    /// Virtual columns must be appended after ordinary, because user can
+    /// override them.
+    for (const auto & column : getVirtuals())
+        columns_map.emplace(column.name, column.type);
 
     for (const auto & name : column_names)
     {
@@ -422,8 +427,8 @@ void IStorage::renameInMemory(const StorageID & new_table_id)
 
 const NamesAndTypesList & IStorage::getVirtuals() const
 {
-    static const NamesAndTypesList VIRTUALS;
-    return VIRTUALS;
+    static const NamesAndTypesList virtuals;
+    return virtuals;
 }
 
 }
