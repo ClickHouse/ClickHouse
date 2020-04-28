@@ -1,34 +1,31 @@
 #include "DiskS3.h"
 
-#if USE_AWS_S3
-#    include "DiskFactory.h"
+#include "Disks/DiskFactory.h"
 
-#    include <random>
-#    include <utility>
-#    include <IO/ReadBufferFromFile.h>
-#    include <IO/ReadBufferFromS3.h>
-#    include <IO/ReadHelpers.h>
-#    include <IO/S3Common.h>
-#    include <IO/WriteBufferFromFile.h>
-#    include <IO/WriteBufferFromS3.h>
-#    include <IO/WriteHelpers.h>
-#    include <Poco/File.h>
-#    include <Common/checkStackSize.h>
-#    include <Common/createHardLink.h>
-#    include <Common/quoteString.h>
-#    include <Common/thread_local_rng.h>
+#include <random>
+#include <utility>
+#include <IO/ReadBufferFromFile.h>
+#include <IO/ReadBufferFromS3.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
+#include <IO/WriteBufferFromS3.h>
+#include <IO/WriteHelpers.h>
+#include <Poco/File.h>
+#include <Common/checkStackSize.h>
+#include <Common/createHardLink.h>
+#include <Common/quoteString.h>
+#include <Common/thread_local_rng.h>
 
-#    include <aws/s3/model/CopyObjectRequest.h>
-#    include <aws/s3/model/DeleteObjectRequest.h>
-#    include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/CopyObjectRequest.h>
+#include <aws/s3/model/DeleteObjectRequest.h>
+#include <aws/s3/model/GetObjectRequest.h>
 
 namespace DB
 {
+
 namespace ErrorCodes
 {
-    extern const int LOGICAL_ERROR;
     extern const int FILE_ALREADY_EXISTS;
-    extern const int PATH_ACCESS_DENIED;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int UNKNOWN_FORMAT;
 }
@@ -394,12 +391,14 @@ private:
 DiskS3::DiskS3(
     String name_,
     std::shared_ptr<Aws::S3::S3Client> client_,
+    std::unique_ptr<S3::DynamicProxyConfiguration> proxy_configuration_,
     String bucket_,
     String s3_root_path_,
     String metadata_path_,
     size_t min_upload_part_size_)
     : name(std::move(name_))
     , client(std::move(client_))
+    , proxy_configuration(std::move(proxy_configuration_))
     , bucket(std::move(bucket_))
     , s3_root_path(std::move(s3_root_path_))
     , metadata_path(std::move(metadata_path_))
@@ -686,64 +685,4 @@ DiskS3Reservation::~DiskS3Reservation()
     }
 }
 
-namespace
-{
-
-void checkWriteAccess(IDisk & disk)
-{
-    auto file = disk.writeFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite);
-    file->write("test", 4);
 }
-
-void checkReadAccess(const String & disk_name, IDisk & disk)
-{
-    auto file = disk.readFile("test_acl", DBMS_DEFAULT_BUFFER_SIZE);
-    String buf(4, '0');
-    file->readStrict(buf.data(), 4);
-    if (buf != "test")
-        throw Exception("No read access to S3 bucket in disk " + disk_name, ErrorCodes::PATH_ACCESS_DENIED);
-}
-
-void checkRemoveAccess(IDisk & disk)
-{
-    disk.remove("test_acl");
-}
-
-}
-
-void registerDiskS3(DiskFactory & factory)
-{
-    auto creator = [](const String & name,
-                      const Poco::Util::AbstractConfiguration & config,
-                      const String & config_prefix,
-                      const Context & context) -> DiskPtr {
-        Poco::File disk{context.getPath() + "disks/" + name};
-        disk.createDirectories();
-
-        S3::URI uri(Poco::URI(config.getString(config_prefix + ".endpoint")));
-        auto client = S3::ClientFactory::instance().create(
-            uri.endpoint,
-            config.getString(config_prefix + ".access_key_id", ""),
-            config.getString(config_prefix + ".secret_access_key", ""));
-
-        if (uri.key.back() != '/')
-            throw Exception("S3 path must ends with '/', but '" + uri.key + "' doesn't.", ErrorCodes::LOGICAL_ERROR);
-
-        String metadata_path = context.getPath() + "disks/" + name + "/";
-
-        auto s3disk
-            = std::make_shared<DiskS3>(name, client, uri.bucket, uri.key, metadata_path, context.getSettingsRef().s3_min_upload_part_size);
-
-        /// This code is used only to check access to the corresponding disk.
-        checkWriteAccess(*s3disk);
-        checkReadAccess(name, *s3disk);
-        checkRemoveAccess(*s3disk);
-
-        return s3disk;
-    };
-    factory.registerDiskType("s3", creator);
-}
-
-}
-
-#endif
