@@ -9,8 +9,12 @@ from
    (
       -- quantiles of randomization distributions
       select quantileExact(0.999)(abs(time_by_label[1] - time_by_label[2]) as d) threshold
-      -- uncomment to see what the distribution is really like
-      -- , sumMap([d], [1]) full_histogram
+      ---- uncomment to see what the distribution is really like
+      --, uniqExact(d) u
+      --, arraySort(x->x.1,
+      --      arrayZip(
+      --          (sumMap([d], [1]) as f).1,
+      --          f.2)) full_histogram
       from
          (
             select virtual_run, groupArrayInsertAt(median_time, random_label) time_by_label -- make array 'random label' -> 'median time'
