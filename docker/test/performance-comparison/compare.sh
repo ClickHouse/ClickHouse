@@ -549,7 +549,8 @@ case "$stage" in
     echo Servers stopped.
     ;&
 "analyze_queries")
-    time analyze_queries
+    # FIXME grep for set_index fails -- argument list too long.
+    time analyze_queries ||:
     ;&
 "report")
     time report
