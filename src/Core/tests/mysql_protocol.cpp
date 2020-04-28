@@ -42,12 +42,12 @@ int main(int, char **)
         client_handshake.readPayloadImpl(in0);
 
         /// Check packet
-        ASSERT(server_handshake.capability_flags == client_handshake.capability_flags);
-        ASSERT(server_handshake.status_flags == client_handshake.status_flags);
-        ASSERT(server_handshake.server_version == client_handshake.server_version);
-        ASSERT(server_handshake.protocol_version == client_handshake.protocol_version);
-        ASSERT(server_handshake.auth_plugin_data.substr(0, 20) == client_handshake.auth_plugin_data);
-        ASSERT(server_handshake.auth_plugin_name == client_handshake.auth_plugin_name);
+        ASSERT(server_handshake.capability_flags == client_handshake.capability_flags)
+        ASSERT(server_handshake.status_flags == client_handshake.status_flags)
+        ASSERT(server_handshake.server_version == client_handshake.server_version)
+        ASSERT(server_handshake.protocol_version == client_handshake.protocol_version)
+        ASSERT(server_handshake.auth_plugin_data.substr(0, 20) == client_handshake.auth_plugin_data)
+        ASSERT(server_handshake.auth_plugin_name == client_handshake.auth_plugin_name)
 
         /// 2. Greeting Response:
         std::string s1;
@@ -66,12 +66,12 @@ int main(int, char **)
         server_handshake_response.readPayloadImpl(in1);
 
         /// Check
-        ASSERT(server_handshake_response.capability_flags == client_handshake_response.capability_flags);
-        ASSERT(server_handshake_response.character_set == client_handshake_response.character_set);
-        ASSERT(server_handshake_response.username == client_handshake_response.username);
-        ASSERT(server_handshake_response.database == client_handshake_response.database);
-        ASSERT(server_handshake_response.auth_response == client_handshake_response.auth_response);
-        ASSERT(server_handshake_response.auth_plugin_name == client_handshake_response.auth_plugin_name);
+        ASSERT(server_handshake_response.capability_flags == client_handshake_response.capability_flags)
+        ASSERT(server_handshake_response.character_set == client_handshake_response.character_set)
+        ASSERT(server_handshake_response.username == client_handshake_response.username)
+        ASSERT(server_handshake_response.database == client_handshake_response.database)
+        ASSERT(server_handshake_response.auth_response == client_handshake_response.auth_response)
+        ASSERT(server_handshake_response.auth_plugin_name == client_handshake_response.auth_plugin_name)
     }
 
     /// OK Packet
@@ -88,10 +88,10 @@ int main(int, char **)
         client.readPayloadImpl(in0);
 
         // Check
-        ASSERT(client.getType() == PACKET_OK);
-        ASSERT(client.ok.header == server.header);
-        ASSERT(client.ok.status_flags == server.status_flags);
-        ASSERT(client.ok.capabilities == server.capabilities);
+        ASSERT(client.getType() == PACKET_OK)
+        ASSERT(client.ok.header == server.header)
+        ASSERT(client.ok.status_flags == server.status_flags)
+        ASSERT(client.ok.capabilities == server.capabilities)
     }
 
     /// ERR Packet
@@ -108,11 +108,11 @@ int main(int, char **)
         client.readPayloadImpl(in0);
 
         // Check
-        ASSERT(client.getType() == PACKET_ERR);
-        ASSERT(client.err.header == server.header);
-        ASSERT(client.err.error_code == server.error_code);
-        ASSERT(client.err.sql_state == server.sql_state);
-        ASSERT(client.err.error_message.data() == server.error_message);
+        ASSERT(client.getType() == PACKET_ERR)
+        ASSERT(client.err.header == server.header)
+        ASSERT(client.err.error_code == server.error_code)
+        ASSERT(client.err.sql_state == server.sql_state)
+        ASSERT(client.err.error_message.data() == server.error_message)
     }
 
     /// EOF Packet
@@ -129,10 +129,10 @@ int main(int, char **)
         client.readPayloadImpl(in0);
 
         // Check
-        ASSERT(client.getType() == PACKET_EOF);
-        ASSERT(client.eof.header == server.header);
-        ASSERT(client.eof.warnings == server.warnings);
-        ASSERT(client.eof.status_flags == server.status_flags);
+        ASSERT(client.getType() == PACKET_EOF)
+        ASSERT(client.eof.header == server.header)
+        ASSERT(client.eof.warnings == server.warnings)
+        ASSERT(client.eof.status_flags == server.status_flags)
     }
 
     /// ColumnDefinition Packet
@@ -149,16 +149,16 @@ int main(int, char **)
         client.readPayloadImpl(in0);
 
         // Check
-        ASSERT(client.column_type == server.column_type);
-        ASSERT(client.column_length == server.column_length);
-        ASSERT(client.next_length == server.next_length);
-        ASSERT(client.character_set == server.character_set);
-        ASSERT(client.decimals == server.decimals);
-        ASSERT(client.name == server.name);
-        ASSERT(client.org_name == server.org_name);
-        ASSERT(client.table == server.table);
-        ASSERT(client.org_table == server.org_table);
-        ASSERT(client.schema == server.schema);
+        ASSERT(client.column_type == server.column_type)
+        ASSERT(client.column_length == server.column_length)
+        ASSERT(client.next_length == server.next_length)
+        ASSERT(client.character_set == server.character_set)
+        ASSERT(client.decimals == server.decimals)
+        ASSERT(client.name == server.name)
+        ASSERT(client.org_name == server.org_name)
+        ASSERT(client.table == server.table)
+        ASSERT(client.org_table == server.org_table)
+        ASSERT(client.schema == server.schema)
     }
 
     {
